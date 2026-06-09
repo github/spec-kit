@@ -69,8 +69,6 @@ from ._utils import (
     _display_project_path,
     check_tool as check_tool,
     handle_vscode_settings as handle_vscode_settings,
-    init_git_repo as init_git_repo,
-    is_git_repo as is_git_repo,
     merge_json_files as merge_json_files,
     run_command as run_command,
 )
@@ -453,9 +451,6 @@ def check():
 
     tracker = StepTracker("Check Available Tools")
 
-    tracker.add("git", "Git version control")
-    git_ok = check_tool("git", tracker=tracker)
-
     agent_results = {}
     for agent_key, agent_config in AGENT_CONFIG.items():
         if agent_key == "generic":
@@ -482,9 +477,6 @@ def check():
     console.print(tracker.render())
 
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
-
-    if not git_ok:
-        console.print("[dim]Tip: Install git for repository management[/dim]")
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")

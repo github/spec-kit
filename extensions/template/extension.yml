@@ -79,6 +79,14 @@ hooks:
   #   optional: false  # Auto-execute without prompting
   #   description: "Runs automatically after implementation"
 
+  # MULTIPLE COMMANDS ON ONE EVENT: use a list of entries.
+  # Add optional `priority` (integer >= 1, default 10) to order them, lowest first.
+  # after_plan:
+  #   - command: "speckit.my-extension.verify"
+  #     priority: 5
+  #   - command: "speckit.my-extension.report"
+  #     priority: 10
+
 # CUSTOMIZE: Add relevant tags (2-5 recommended)
 # Used for discovery in catalog
 tags:

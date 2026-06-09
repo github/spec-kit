@@ -325,7 +325,7 @@ class SkillsIntegrationTests:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "sh", "--no-git",
+                "init", "--here", "--integration", self.KEY, "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -346,7 +346,7 @@ class SkillsIntegrationTests:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "sh", "--no-git",
+                "init", "--here", "--integration", self.KEY, "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -369,7 +369,7 @@ class SkillsIntegrationTests:
             os.chdir(project)
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", self.KEY, "--script", "sh",
-                "--no-git", "--ignore-agent-tools",
+                "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -471,15 +471,15 @@ class SkillsIntegrationTests:
         try:
             os.chdir(project)
             result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY,
-                "--script", "sh", "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--integration", self.KEY, "--script", "sh",
+                "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(
             p.relative_to(project).as_posix()
-            for p in project.rglob("*") if p.is_file()
+            for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("sh")
         assert actual == expected, (
@@ -498,15 +498,15 @@ class SkillsIntegrationTests:
         try:
             os.chdir(project)
             result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY,
-                "--script", "ps", "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--integration", self.KEY, "--script", "ps",
+                "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(
             p.relative_to(project).as_posix()
-            for p in project.rglob("*") if p.is_file()
+            for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("ps")
         assert actual == expected, (

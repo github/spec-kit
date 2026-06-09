@@ -80,7 +80,6 @@ class TestZedHookInvocations:
                 "zed",
                 "--script",
                 "sh",
-                "--no-git",
                 "--ignore-agent-tools",
             ],
             catch_exceptions=False,

@@ -25,8 +25,7 @@ def _run_init(project, *flags: str) -> Result:
         os.chdir(project)
         return CliRunner().invoke(
             app,
-            ["init", "--here", *flags, "--script", "sh",
-             "--no-git", "--ignore-agent-tools"],
+            ["init", "--here", *flags, "--script", "sh", "--ignore-agent-tools"],
             catch_exceptions=False,
         )
     finally:

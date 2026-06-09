@@ -16,15 +16,8 @@ if ($Help) {
 # Source common functions
 . "$PSScriptRoot/common.ps1"
 
-# Get feature paths and validate branch
+# Get feature paths
 $paths = Get-FeaturePathsEnv
-
-# If feature.json pins an existing feature directory, branch naming is not required.
-if (-not (Test-FeatureJsonMatchesFeatureDir -RepoRoot $paths.REPO_ROOT -ActiveFeatureDir $paths.FEATURE_DIR)) {
-    if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit $paths.HAS_GIT)) {
-        exit 1
-    }
-}
 
 if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: plan.md not found in $($paths.FEATURE_DIR)")

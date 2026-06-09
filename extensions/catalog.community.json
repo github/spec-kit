@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-04T00:00:00Z",
+  "updated_at": "2026-06-08T18:02:51Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -242,11 +242,11 @@
       "id": "architecture-guard",
       "description": "Framework-agnostic architecture review extension for validating implementation against governance and architecture constitutions, detecting architectural drift, and generating non-blocking refactor tasks.",
       "author": "DyanGalih",
-      "version": "1.8.9",
-      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.8.9.zip",
+      "version": "1.8.17",
+      "download_url": "https://github.com/DyanGalih/spec-kit-architecture-guard/archive/refs/tags/v1.8.17.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-architecture-guard",
       "homepage": "https://github.com/DyanGalih/spec-kit-architecture-guard",
-      "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/README.md",
+      "documentation": "https://github.com/DyanGalih/spec-kit-architecture-guard/blob/main/docs/architecture-overview.md",
       "changelog": "https://github.com/DyanGalih/spec-kit-architecture-guard/releases",
       "license": "MIT",
       "requires": {
@@ -269,7 +269,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-05T07:26:00Z",
-      "updated_at": "2026-05-27T00:00:00Z"
+      "updated_at": "2026-06-08T00:00:00Z"
     },
     "archive": {
       "name": "Archive Extension",
@@ -849,10 +849,10 @@
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
-      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero NPM runtime dependencies.",
+      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise.",
       "author": "raccioly",
-      "version": "0.9.11",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.9.11/spec-kit-docguard-v0.9.11.zip",
+      "version": "0.25.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.25.0/spec-kit-docguard-v0.25.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -886,7 +886,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-03-18T18:53:31Z"
+      "updated_at": "2026-06-08T18:02:51Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1251,12 +1251,12 @@
       "id": "linear",
       "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
       "author": "Ash Brener",
-      "version": "0.2.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-linear/archive/refs/tags/v0.2.0.zip",
-      "repository": "https://github.com/ashbrener/spec-kit-linear",
-      "homepage": "https://github.com/ashbrener/spec-kit-linear",
-      "documentation": "https://github.com/ashbrener/spec-kit-linear/blob/main/README.md",
-      "changelog": "https://github.com/ashbrener/spec-kit-linear/releases",
+      "version": "0.3.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/ashbrener/spec-kit-linear-sync",
+      "homepage": "https://github.com/ashbrener/spec-kit-linear-sync",
+      "documentation": "https://github.com/ashbrener/spec-kit-linear-sync/blob/main/README.md",
+      "changelog": "https://github.com/ashbrener/spec-kit-linear-sync/releases",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.1.0"
@@ -1277,7 +1277,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
-      "updated_at": "2026-06-01T00:00:00Z"
+      "updated_at": "2026-06-08T00:00:00Z"
     },
     "m365": {
       "name": "Microsoft 365 Integration",
@@ -2554,9 +2554,9 @@
       "name": "Security Review",
       "id": "security-review",
       "description": "Full-project secure-by-design security audits plus staged, branch/PR, plan, task, follow-up, and apply reviews",
-      "author": "DyanGalih",
-      "version": "1.5.0",
-      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.5.0.zip",
+      "author": "Spec-Kit Security Team",
+      "version": "1.5.3",
+      "download_url": "https://github.com/DyanGalih/spec-kit-security-review/archive/refs/tags/v1.5.3.zip",
       "repository": "https://github.com/DyanGalih/spec-kit-security-review",
       "homepage": "https://github.com/DyanGalih/spec-kit-security-review",
       "documentation": "https://github.com/DyanGalih/spec-kit-security-review/blob/main/README.md",
@@ -2580,7 +2580,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-03T03:24:03Z",
-      "updated_at": "2026-05-11T14:58:00Z"
+      "updated_at": "2026-06-08T00:00:00Z"
     },
     "sf": {
       "name": "SFSpeckit — Salesforce Spec-Driven Development",

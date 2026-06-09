@@ -39,7 +39,7 @@ class TestAgyInitFlow:
 
         runner = CliRunner()
         target = tmp_path / "test-proj"
-        result = runner.invoke(app, ["init", str(target), "--integration", "agy", "--no-git", "--script", "sh", "--ignore-agent-tools"])
+        result = runner.invoke(app, ["init", str(target), "--integration", "agy", "--script", "sh", "--ignore-agent-tools"])
 
         assert result.exit_code == 0, f"init --integration agy failed: {result.output}"
         assert (target / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
@@ -52,7 +52,7 @@ class TestAgyInitFlow:
         # Click >= 8.2 separates stdout and stderr natively
         runner = CliRunner()
         target = tmp_path / "test-proj2"
-        result = runner.invoke(app, ["init", str(target), "--integration", "agy", "--no-git", "--script", "sh", "--ignore-agent-tools"])
+        result = runner.invoke(app, ["init", str(target), "--integration", "agy", "--script", "sh", "--ignore-agent-tools"])
 
         assert result.exit_code == 0
         assert "Warning: The .agents/ layout requires Antigravity v1.20.5 or newer" in result.stderr

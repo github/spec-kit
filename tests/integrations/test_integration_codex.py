@@ -24,7 +24,7 @@ class TestCodexInitFlow:
 
         runner = CliRunner()
         target = tmp_path / "test-proj"
-        result = runner.invoke(app, ["init", str(target), "--integration", "codex", "--no-git", "--ignore-agent-tools", "--script", "sh"])
+        result = runner.invoke(app, ["init", str(target), "--integration", "codex", "--ignore-agent-tools", "--script", "sh"])
 
         assert result.exit_code == 0, f"init --integration codex failed: {result.output}"
         assert (target / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()

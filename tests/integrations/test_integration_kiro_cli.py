@@ -140,7 +140,7 @@ class TestKiroIntegration:
             runner = CliRunner()
             result = runner.invoke(app, [
                 "init", "--here", "--integration", "kiro-cli",
-                "--ignore-agent-tools", "--script", "sh", "--no-git",
+                "--ignore-agent-tools", "--script", "sh",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)

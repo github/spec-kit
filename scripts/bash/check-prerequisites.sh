@@ -111,9 +111,6 @@ if $PATHS_ONLY; then
     exit 0
 fi
 
-# Validate branch name
-check_feature_branch "$CURRENT_BRANCH" "$HAS_GIT" || exit 1
-
 # Validate required directories and files
 if [[ ! -d "$FEATURE_DIR" ]]; then
     echo "ERROR: Feature directory not found: $FEATURE_DIR" >&2

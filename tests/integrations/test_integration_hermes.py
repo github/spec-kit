@@ -232,7 +232,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
             os.chdir(project)
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", self.KEY,
-                "--script", "sh", "--no-git", "--ignore-agent-tools",
+                "--script", "sh", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -270,7 +270,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
             os.chdir(project)
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", self.KEY,
-                "--script", "ps", "--no-git", "--ignore-agent-tools",
+                "--script", "ps", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -342,7 +342,6 @@ class TestHermesInitFlow:
         result = runner.invoke(app, [
             "init", str(target),
             "--integration", "hermes",
-            "--no-git",
             "--ignore-agent-tools",
             "--script", "sh",
         ])

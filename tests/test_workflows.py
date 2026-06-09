@@ -658,6 +658,47 @@ class TestCommandStep:
         # Claude is a SkillsIntegration so uses /speckit-specify
         assert "/speckit-specify login" in call_args[0][0][2]
 
+    def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
+        """Command preflight falls back to build_exec_args() argv[0]."""
+        from unittest.mock import MagicMock, patch
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
+        seen_which: list[str] = []
+
+        def fake_which(name: str) -> str | None:
+            seen_which.append(name)
+            return name if name == "/opt/claude" else None
+
+        step = CommandStep()
+        ctx = StepContext(
+            inputs={"name": "login"},
+            default_integration="claude",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.specify",
+            "input": {"args": "{{ inputs.name }}"},
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"result": "done"}'
+        mock_result.stderr = ""
+
+        with patch("specify_cli.workflows.steps.command.shutil.which", side_effect=fake_which), \
+             patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
+        assert seen_which[:2] == ["claude", "/opt/claude"]
+        call_args = mock_run.call_args
+        assert call_args[0][0][0] == "/opt/claude"
+        assert "/speckit-specify login" in call_args[0][0][2]
+
     def test_dispatch_failure_returns_failed_status(self, tmp_path):
         """When the CLI exits non-zero, the step should fail."""
         from unittest.mock import patch, MagicMock
@@ -809,6 +850,46 @@ class TestPromptStep:
         assert result.status == StepStatus.COMPLETED
         assert result.output["dispatched"] is True
         assert result.output["exit_code"] == 0
+
+    def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
+        """Prompt preflight falls back to build_exec_args() argv[0]."""
+        from unittest.mock import MagicMock, patch
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
+        seen_which: list[str] = []
+
+        def fake_which(name: str) -> str | None:
+            seen_which.append(name)
+            return name if name == "/opt/claude" else None
+
+        step = PromptStep()
+        ctx = StepContext(
+            default_integration="claude",
+            project_root=str(tmp_path),
+        )
+        config = {
+            "id": "ask",
+            "type": "prompt",
+            "prompt": "Explain this code",
+        }
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Here is the explanation"
+        mock_result.stderr = ""
+
+        with patch("specify_cli.workflows.steps.prompt.shutil.which", side_effect=fake_which), \
+             patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dispatched"] is True
+        assert seen_which[:2] == ["claude", "/opt/claude"]
+        call_args = mock_run.call_args
+        assert call_args[0][0][0] == "/opt/claude"
+        assert call_args[0][0][2] == "Explain this code"
 
     def test_validate_missing_prompt(self):
         from specify_cli.workflows.steps.prompt import PromptStep

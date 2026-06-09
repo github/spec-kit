@@ -2,6 +2,20 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.10.0] - 2026-06-09
+
+### Changed
+
+- feat: make git extension opt-in and remove --no-git at v0.10.0 (#2873)
+- [Preset] UpdateFiction book writing v1.9.0 - Illustration support (#2821)
+- test(workflows): cover executable override fallback preflight (#2843)
+- Add GitHub Copilot CLI guidance to readme (#2891)
+- Update Security Review extension to v1.5.3 (#2898)
+- Update Architecture Guard extension to v1.8.17 (#2897)
+- feat(extensions): per-event hook lists with priority ordering (#2798)
+- feat!: remove legacy --ai, --ai-commands-dir, and --ai-skills flags (0.10.0) (#2872)
+- chore: release 0.9.5, begin 0.9.6.dev0 development (#2875)
+
 ## [0.9.5] - 2026-06-05
 
 ### Changed

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Git extension: create-new-feature.sh
-# Adapted from core scripts/bash/create-new-feature.sh for extension layout.
+# Git extension: create-new-feature-branch.sh
+# Creates a git feature branch only. The feature directory and spec file
+# are created by the core create-new-feature.sh script.
 # Sources common.sh from the project's installed scripts, falling back to
 # git-common.sh for minimal git helpers.
 

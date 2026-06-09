@@ -458,7 +458,6 @@ class TestIntegrationListCatalog:
                 "init", "--here",
                 "--integration", "copilot",
                 "--script", "sh",
-                "--no-git",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -556,7 +555,6 @@ class TestIntegrationUpgrade:
                 "init", "--here",
                 "--integration", integration,
                 "--script", "sh",
-                "--no-git",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
