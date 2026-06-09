@@ -2855,6 +2855,39 @@ class TestPresetSkills:
         content = skill_file.read_text()
         assert "untouched" in content, "Skill should not be modified when ai_skills=False"
 
+    def test_skill_created_when_ai_skills_false_but_marketplace_source(self, project_dir, temp_dir):
+        """When ai_skills is False but skills_source is 'marketplace', skill override IS created.
+
+        A marketplace-integrated project sets skills_source=marketplace in integration.json
+        and ai_skills=false in init-options.json.  The preset install must still write a
+        local SKILL.md so the local file can shadow the marketplace plugin skill.
+        """
+        import json as _json
+
+        # ai_skills disabled, but integration.json declares marketplace as the source
+        self._write_init_options(project_dir, ai="claude", ai_skills=False)
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir(parents=True, exist_ok=True)
+        integration_json = specify_dir / "integration.json"
+        integration_json.write_text(
+            _json.dumps({"skills_source": "marketplace", "integration_state_schema": 1})
+        )
+
+        # The parent skills dir must exist for _get_skills_dir() to return it,
+        # but the specific skill subdir must NOT exist yet (create_missing_skills path).
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True, exist_ok=True)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert skill_file.exists(), (
+            "SKILL.md should be created for marketplace projects even when ai_skills=False"
+        )
+        content = skill_file.read_text()
+        assert "preset:self-test" in content, "Skill should reference preset source"
+
     def test_get_skills_dir_returns_none_for_non_string_ai(self, project_dir):
         """Corrupted init-options ai values should not crash preset skill resolution."""
         init_options = project_dir / ".specify" / "init-options.json"

@@ -1111,6 +1111,20 @@ class PresetManager:
         that callers can fall back gracefully.
         """
         from . import resolve_active_skills_dir, _print_cli_warning
+        from .integrations._helpers import _read_integration_json
+
+        # For marketplace integrations, presets must still create local skill overrides
+        # to shadow the marketplace plugin version, bypassing the ai_skills guard.
+        integration_data = _read_integration_json(self.project_root)
+        if integration_data.get("skills_source") == "marketplace":
+            from . import load_init_options, _get_skills_dir as _module_get_skills_dir
+            opts = load_init_options(self.project_root) or {}
+            agent = opts.get("ai")
+            if not isinstance(agent, str) or not agent:
+                return None
+            skills_dir = _module_get_skills_dir(self.project_root, agent)
+            return skills_dir if skills_dir.is_dir() else None
+
         try:
             return resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
@@ -1119,6 +1133,7 @@ class PresetManager:
                 continuing="Continuing without skill registration.",
             )
             return None
+
 
     @staticmethod
     def _skill_names_for_command(cmd_name: str) -> tuple[str, str]:
@@ -1254,6 +1269,7 @@ class PresetManager:
             return []
 
         from . import SKILL_DESCRIPTIONS, load_init_options
+        from .integrations._helpers import _read_integration_json
         from .agents import CommandRegistrar
         from .integrations import get_integration
 
@@ -1264,6 +1280,12 @@ class PresetManager:
         if not isinstance(selected_ai, str):
             return []
         ai_skills_enabled = is_ai_skills_enabled(init_opts)
+        integration_data = _read_integration_json(self.project_root)
+        skills_source = integration_data.get("skills_source")
+        # When skills_source is "marketplace" the user needs a local SKILL.md to
+        # shadow the marketplace plugin version, so treat ai_skills as effectively
+        # enabled regardless of the init-options flag.
+        ai_skills_effective = ai_skills_enabled or skills_source == "marketplace"
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai)
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
@@ -1271,7 +1293,7 @@ class PresetManager:
         # preset skills in _register_commands() because their detected agent
         # directory is already the skills directory. This flag is only for
         # command-backed agents that also mirror commands into skills.
-        create_missing_skills = ai_skills_enabled and agent_config.get("extension") != "/SKILL.md"
+        create_missing_skills = ai_skills_effective and agent_config.get("extension") != "/SKILL.md"
 
         written: List[str] = []
 
