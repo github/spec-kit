@@ -15,16 +15,13 @@ specify init [<project_name>]
 | `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                       |
 | `--here`                 | Initialize in the current directory instead of creating a new one        |
 | `--force`                | Force merge/overwrite when initializing in an existing directory         |
-| `--no-git`               | Skip git repository initialization                                       |
 | `--ignore-agent-tools`   | Skip checks for AI coding agent CLI tools                                |
 | `--preset <id>`          | Install a preset during initialization                                   |
-| `--branch-numbering`     | Branch numbering strategy: `sequential` (default) or `timestamp`         |
 
 Creates a new Spec Kit project with the necessary directory structure, templates, scripts, and AI coding agent integration files.
 
 > [!NOTE]
-> The git extension is currently enabled by default during `specify init`.
-> Starting in `v0.10.0`, it will require explicit opt-in. To add it after init, run `specify extension add git`.
+> Git repository initialization and branching are managed by the **git extension**, which is not installed by default. Run `specify extension add git` after init to enable git workflows.
 
 Use `<project_name>` to create a new directory, or `--here` (or `.`) to initialize in the current directory. If the directory already has files, use `--force` to merge without confirmation.
 
@@ -45,14 +42,8 @@ specify init --here --force --integration copilot
 # Use PowerShell scripts (Windows/cross-platform)
 specify init my-project --integration copilot --script ps
 
-# Skip git initialization
-specify init my-project --integration copilot --no-git
-
 # Install a preset during initialization
 specify init my-project --integration copilot --preset compliance
-
-# Use timestamp-based branch numbering (useful for distributed teams)
-specify init my-project --integration copilot --branch-numbering timestamp
 ```
 
 ### Environment Variables
@@ -67,7 +58,9 @@ specify init my-project --integration copilot --branch-numbering timestamp
 specify check
 ```
 
-Checks that required tools are available on your system: `git` and any CLI-based AI coding agents. IDE-based agents are skipped since they don't require a CLI tool.
+Checks that CLI-based AI coding agents are available on your system. IDE-based agents are skipped since they don't require a CLI tool.
+
+This command stays offline. If a command behaves like an older Spec Kit version or an expected CLI feature is missing, run `specify self check` to check whether your local CLI is behind the latest release.
 
 ## Version Information
 
@@ -76,6 +69,16 @@ specify version
 ```
 
 Displays the Spec Kit CLI version, Python version, platform, and architecture.
+
+To inspect local CLI capabilities without checking the network:
+
+```bash
+specify version --features
+specify version --features --json
+```
+
+The JSON form is intended for scripts and coding agents that need to choose a
+workflow based on the installed CLI's supported features.
 
 A quick version check is also available via:
 

@@ -115,7 +115,7 @@ if (Test-Path $configFile) {
         }
     }
 } else {
-    # No config file — auto-commit disabled by default
+    # No config file -- auto-commit disabled by default
     exit 0
 }
 

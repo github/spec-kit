@@ -28,6 +28,8 @@ from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
+from .integrations.base import IntegrationBase
+from ._init_options import is_ai_skills_enabled
 
 
 def _substitute_core_template(
@@ -1048,15 +1050,18 @@ class PresetManager:
                     short_name = cmd_name
                     if short_name.startswith("speckit."):
                         short_name = short_name[len("speckit."):]
-                    desc = SKILL_DESCRIPTIONS.get(
+                    desc = fm.get("description", "") or SKILL_DESCRIPTIONS.get(
                         short_name.replace(".", "-"),
-                        fm.get("description", f"Command: {short_name}"),
+                        f"Command: {short_name}",
                     )
                     init_opts = load_init_options(self.project_root)
                     selected_ai = init_opts.get("ai") if isinstance(init_opts, dict) else ""
                     if isinstance(selected_ai, str):
                         body = registrar.resolve_skill_placeholders(
                             selected_ai, fm, body, self.project_root
+                        )
+                        body = self._resolve_skill_command_refs(
+                            body, registrar, selected_ai
                         )
                     fm_data = registrar.build_skill_frontmatter(
                         selected_ai if isinstance(selected_ai, str) else "",
@@ -1097,36 +1102,23 @@ class PresetManager:
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
 
-        Reads ``.specify/init-options.json`` to determine whether skills
-        are enabled and which agent was selected, then delegates to
-        the module-level ``_get_skills_dir()`` helper for the concrete path.
+        Delegates to :func:`resolve_active_skills_dir` which reads
+        init-options, applies the Kimi native-skills fallback, and
+        safely creates the directory when ``ai_skills`` is enabled.
 
-        Kimi is treated as a native-skills agent: if ``ai == "kimi"`` and
-        ``.kimi/skills`` exists, presets should still propagate command
-        overrides to skills even when ``ai_skills`` is false.
-
-        Returns:
-            The skills directory ``Path``, or ``None`` if skills were not
-            enabled and no native-skills fallback applies.
+        Returns ``None`` (instead of raising) when the directory cannot
+        be created due to symlink, containment, or permission issues so
+        that callers can fall back gracefully.
         """
-        from . import load_init_options, _get_skills_dir
-
-        opts = load_init_options(self.project_root)
-        if not isinstance(opts, dict):
-            opts = {}
-        agent = opts.get("ai")
-        if not isinstance(agent, str) or not agent:
+        from . import resolve_active_skills_dir, _print_cli_warning
+        try:
+            return resolve_active_skills_dir(self.project_root)
+        except (ValueError, OSError) as exc:
+            _print_cli_warning(
+                "resolve", "skills directory", None, exc,
+                continuing="Continuing without skill registration.",
+            )
             return None
-
-        ai_skills_enabled = bool(opts.get("ai_skills"))
-        if not ai_skills_enabled and agent != "kimi":
-            return None
-
-        skills_dir = _get_skills_dir(self.project_root, agent)
-        if not skills_dir.is_dir():
-            return None
-
-        return skills_dir
 
     @staticmethod
     def _skill_names_for_command(cmd_name: str) -> tuple[str, str]:
@@ -1146,6 +1138,23 @@ class PresetManager:
         if title_name.startswith("speckit."):
             title_name = title_name[len("speckit."):]
         return title_name.replace(".", " ").replace("-", " ").title()
+
+    @staticmethod
+    def _resolve_skill_command_refs(
+        body: str, registrar: "CommandRegistrar", selected_ai: str
+    ) -> str:
+        """Render ``__SPECKIT_COMMAND_*__`` tokens in a skill body as invocations.
+
+        Looks up the agent's invoke separator and rewrites each
+        ``__SPECKIT_COMMAND_<NAME>__`` placeholder into the matching
+        slash-command invocation — ``/speckit-<cmd>`` for a ``-`` separator,
+        ``/speckit.<cmd>`` for ``.`` — the same rendering the command layer
+        applies via ``CommandRegistrar.register_commands()``.
+        """
+        separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
+            "invoke_separator", "."
+        )
+        return IntegrationBase.resolve_command_refs(body, separator)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
         """Index extension-backed skill restore data by skill directory name."""
@@ -1210,7 +1219,7 @@ class PresetManager:
         directory.  If so, the skill is overwritten with content derived
         from the preset's command file.  This ensures that presets that
         override commands also propagate to the agentskills.io skill
-        layer when ``--ai-skills`` was used during project initialisation.
+        layer when skills mode was used during project initialisation.
 
         Args:
             manifest: Preset manifest.
@@ -1254,7 +1263,7 @@ class PresetManager:
         selected_ai = init_opts.get("ai")
         if not isinstance(selected_ai, str):
             return []
-        ai_skills_enabled = bool(init_opts.get("ai_skills"))
+        ai_skills_enabled = is_ai_skills_enabled(init_opts)
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai)
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
@@ -1314,15 +1323,16 @@ class PresetManager:
                         frontmatter[key] = core_frontmatter[key]
 
             original_desc = frontmatter.get("description", "")
-            enhanced_desc = SKILL_DESCRIPTIONS.get(
+            enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                 short_name,
-                original_desc or f"Spec-kit workflow command: {short_name}",
+                f"Spec-kit workflow command: {short_name}",
             )
             frontmatter = dict(frontmatter)
             frontmatter["description"] = enhanced_desc
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )
+            body = self._resolve_skill_command_refs(body, registrar, selected_ai)
 
             for target_skill_name in target_skill_names:
                 skill_subdir = skills_dir / target_skill_name
@@ -1415,11 +1425,14 @@ class PresetManager:
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
                     )
+                    body = self._resolve_skill_command_refs(
+                        body, registrar, selected_ai
+                    )
 
                 original_desc = frontmatter.get("description", "")
-                enhanced_desc = SKILL_DESCRIPTIONS.get(
+                enhanced_desc = original_desc or SKILL_DESCRIPTIONS.get(
                     short_name,
-                    original_desc or f"Spec-kit workflow command: {short_name}",
+                    f"Spec-kit workflow command: {short_name}",
                 )
 
                 frontmatter_data = registrar.build_skill_frontmatter(
@@ -1451,6 +1464,9 @@ class PresetManager:
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
+                    )
+                    body = self._resolve_skill_command_refs(
+                        body, registrar, selected_ai
                     )
 
                 command_name = extension_restore["command_name"]
@@ -1543,7 +1559,7 @@ class PresetManager:
                 "registered_commands": registered_commands,
             })
 
-            # Update corresponding skills when --ai-skills was previously used
+            # Update corresponding skills when skills mode was previously used
             # and persist that result as well.
             registered_skills = self._register_skills(manifest, dest_dir)
             self.registry.update(manifest.id, {
@@ -1852,13 +1868,71 @@ class PresetCatalog:
         from specify_cli.authentication.http import build_request
         return build_request(url)
 
-    def _open_url(self, url: str, timeout: int = 10):
+    def _open_url(
+        self,
+        url: str,
+        timeout: int = 10,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
         from specify_cli.authentication.http import open_url
-        return open_url(url, timeout)
+        return open_url(url, timeout, extra_headers=extra_headers)
+
+    def _resolve_github_release_asset_api_url(
+        self,
+        download_url: str,
+        timeout: int = 60,
+    ) -> Optional[str]:
+        """Resolve a GitHub release asset URL to its REST API asset URL."""
+        from specify_cli._github_http import resolve_github_release_asset_api_url
+        return resolve_github_release_asset_api_url(
+            download_url, self._open_url, timeout=timeout
+        )
+
+    def _validate_catalog_payload(self, catalog_data: Any, url: str) -> None:
+        """Validate a parsed preset-catalog payload's shape.
+
+        Applied to both network-fetched and cache-loaded payloads so a
+        once-poisoned cache (older spec-kit version, manual edit, upstream
+        served a bad payload before the network-side guards were added)
+        cannot re-crash ``_get_merged_packs`` on subsequent calls.
+
+        Checking only key presence would let a payload like
+        ``{"presets": []}`` or ``{"presets": null}`` slip through here and
+        then crash with ``AttributeError: 'list' object has no attribute
+        'items'`` deep inside ``_get_merged_packs``. The sibling
+        integration catalog reader already guards both the root object and
+        the nested mapping (see ``integrations/catalog.py``); the preset
+        catalog must stay consistent so a malformed payload surfaces as
+        the user-facing ``Invalid preset catalog format`` error instead of
+        a raw Python traceback.
+
+        Args:
+            catalog_data: Parsed JSON payload from the catalog source.
+            url: Source URL — used in the error message so the user can
+                tell which catalog in a multi-catalog stack is malformed.
+
+        Raises:
+            PresetError: If the payload's shape is invalid.
+        """
+        if not isinstance(catalog_data, dict):
+            raise PresetError(
+                f"Invalid preset catalog format from {url}: "
+                "expected a JSON object"
+            )
+        if (
+            "schema_version" not in catalog_data
+            or "presets" not in catalog_data
+        ):
+            raise PresetError(f"Invalid preset catalog format from {url}")
+        if not isinstance(catalog_data.get("presets"), dict):
+            raise PresetError(
+                f"Invalid preset catalog format from {url}: "
+                "'presets' must be a JSON object"
+            )
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[PresetCatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
@@ -1903,12 +1977,24 @@ class PresetCatalog:
             if not url:
                 continue
             self._validate_catalog_url(url)
+            raw_priority = item.get("priority", idx + 1)
+            # Reject bools explicitly: ``bool`` is a subclass of ``int`` so
+            # ``int(True)`` silently returns 1, which would let a YAML
+            # ``priority: true`` slip through as a valid priority of 1. The
+            # sibling integration-catalog reader in ``catalogs.py`` already
+            # guards this; mirror the check here so the three catalog
+            # validators stay consistent.
+            if isinstance(raw_priority, bool):
+                raise PresetValidationError(
+                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
+                    f"expected integer, got {raw_priority!r}"
+                )
             try:
-                priority = int(item.get("priority", idx + 1))
+                priority = int(raw_priority)
             except (TypeError, ValueError):
                 raise PresetValidationError(
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
-                    f"expected integer, got {item.get('priority')!r}"
+                    f"expected integer, got {raw_priority!r}"
                 )
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):
@@ -2009,7 +2095,7 @@ class PresetCatalog:
         if not cache_file.exists() or not metadata_file.exists():
             return False
         try:
-            metadata = json.loads(metadata_file.read_text())
+            metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
             if cached_at.tzinfo is None:
                 cached_at = cached_at.replace(tzinfo=timezone.utc)
@@ -2017,7 +2103,23 @@ class PresetCatalog:
                 datetime.now(timezone.utc) - cached_at
             ).total_seconds()
             return age_seconds < self.CACHE_DURATION
-        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+        except (
+            json.JSONDecodeError,
+            OSError,
+            UnicodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+        ):
+            # Cache validity is best-effort: invalid/missing fields, an
+            # unreadable metadata file (permissions / disk), a wrongly
+            # encoded one (written by a tool using the system locale
+            # codec), or a metadata payload that parses to a non-mapping
+            # like ``[]`` or ``"oops"`` (so ``metadata.get(...)`` raises
+            # ``AttributeError``) all degrade to "cache invalid" so the
+            # caller falls through to a network refetch instead of
+            # crashing.
             return False
 
     def _fetch_single_catalog(self, entry: PresetCatalogEntry, force_refresh: bool = False) -> Dict[str, Any]:
@@ -2035,29 +2137,55 @@ class PresetCatalog:
         """
         cache_file, metadata_file = self._get_cache_paths(entry.url)
 
+        # Use cache if valid. A previously-cached payload must clear the
+        # same shape checks as a freshly-fetched one — otherwise a once-
+        # poisoned cache would re-crash on every invocation despite the
+        # cache being "valid" by age. If validation fails on the cached
+        # read, fall through to the network fetch path so the cache gets
+        # refreshed.
         if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
-                return json.loads(cache_file.read_text())
-            except json.JSONDecodeError:
+                cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
+                self._validate_catalog_payload(cached_data, entry.url)
+                return cached_data
+            except (json.JSONDecodeError, OSError, UnicodeError, PresetError):
+                # Cache is best-effort: a JSON-decode failure, an OS-level
+                # read failure (permissions / disk / handle limit), or a
+                # text-encoding failure on a cache file written by an
+                # older client all fall through to the network fetch path.
+                # Only the network failure is surfaced to the caller.
                 pass
 
         try:
             with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
-            if (
-                "schema_version" not in catalog_data
-                or "presets" not in catalog_data
-            ):
-                raise PresetError("Invalid preset catalog format")
+            self._validate_catalog_payload(catalog_data, entry.url)
 
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(catalog_data, indent=2))
-            metadata = {
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "catalog_url": entry.url,
-            }
-            metadata_file.write_text(json.dumps(metadata, indent=2))
+            # Both files are written explicitly as UTF-8 to match the
+            # ``read_text(encoding="utf-8")`` on the read side and the
+            # ``integrations/catalog.py`` precedent. Without this,
+            # platforms whose default encoding isn't UTF-8 would write
+            # locale-encoded bytes the read path can't decode, forcing an
+            # unnecessary refetch on every invocation. The write itself
+            # is best-effort like the read side: an unwritable cache dir
+            # (read-only checkout, permissions) must not be re-raised as
+            # a ``PresetError`` for a payload that was already fetched
+            # and validated.
+            try:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(
+                    json.dumps(catalog_data, indent=2), encoding="utf-8"
+                )
+                metadata = {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": entry.url,
+                }
+                metadata_file.write_text(
+                    json.dumps(metadata, indent=2), encoding="utf-8"
+                )
+            except OSError:
+                pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
 
@@ -2083,6 +2211,17 @@ class PresetCatalog:
             try:
                 data = self._fetch_single_catalog(entry, force_refresh)
                 for pack_id, pack_data in data.get("presets", {}).items():
+                    # Per-entry guard: ``_fetch_single_catalog`` already
+                    # validates that ``data["presets"]`` is a mapping, but it
+                    # does not (and should not) validate every entry shape
+                    # there — one malformed entry shouldn't poison an
+                    # otherwise valid catalog. Skip non-mapping entries here
+                    # so a payload like ``{"presets": {"foo": [], "bar":
+                    # {...}}}`` still merges the valid entries without
+                    # crashing on ``**pack_data``. Mirrors
+                    # ``integrations/catalog.py:245``.
+                    if not isinstance(pack_data, dict):
+                        continue
                     pack_data_with_catalog = {**pack_data, "_catalog_name": entry.name, "_install_allowed": entry.install_allowed}
                     merged[pack_id] = pack_data_with_catalog
             except PresetError:
@@ -2093,6 +2232,12 @@ class PresetCatalog:
     def is_cache_valid(self) -> bool:
         """Check if cached catalog is still valid.
 
+        Returns ``False`` for any read/decoding failure on the metadata
+        file (missing fields, malformed JSON, permissions / disk errors,
+        wrong text encoding) so callers fall through to a network refetch
+        instead of crashing. Treating cache validity as best-effort
+        matches the contract used by ``_is_url_cache_valid`` above.
+
         Returns:
             True if cache exists and is within cache duration
         """
@@ -2100,7 +2245,9 @@ class PresetCatalog:
             return False
 
         try:
-            metadata = json.loads(self.cache_metadata_file.read_text())
+            metadata = json.loads(
+                self.cache_metadata_file.read_text(encoding="utf-8")
+            )
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
             if cached_at.tzinfo is None:
                 cached_at = cached_at.replace(tzinfo=timezone.utc)
@@ -2108,7 +2255,20 @@ class PresetCatalog:
                 datetime.now(timezone.utc) - cached_at
             ).total_seconds()
             return age_seconds < self.CACHE_DURATION
-        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+        except (
+            json.JSONDecodeError,
+            OSError,
+            UnicodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+        ):
+            # ``AttributeError`` covers the case where the metadata file
+            # parses to a non-mapping (``[]``, ``"oops"``, ``42``) so
+            # ``metadata.get(...)`` would otherwise crash. All decode /
+            # shape failures degrade to "cache invalid" so the caller
+            # falls through to a network refetch.
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -2125,35 +2285,61 @@ class PresetCatalog:
         """
         catalog_url = self.get_catalog_url()
 
+        # Match the ``_fetch_single_catalog`` cache contract: a poisoned
+        # or unreadable cache silently falls through to a network refetch
+        # rather than crashing the caller. ``_validate_catalog_payload``
+        # is reused here so a cache written by an older client
+        # (pre-validation) is rejected and refreshed instead of returning
+        # the stale malformed payload.
         if not force_refresh and self.is_cache_valid():
             try:
-                metadata = json.loads(self.cache_metadata_file.read_text())
+                metadata = json.loads(
+                    self.cache_metadata_file.read_text(encoding="utf-8")
+                )
                 if metadata.get("catalog_url") == catalog_url:
-                    return json.loads(self.cache_file.read_text())
-            except (json.JSONDecodeError, OSError):
-                # Cache is corrupt or unreadable; fall through to network fetch
+                    cached_data = json.loads(
+                        self.cache_file.read_text(encoding="utf-8")
+                    )
+                    self._validate_catalog_payload(cached_data, catalog_url)
+                    return cached_data
+            except (json.JSONDecodeError, OSError, UnicodeError, PresetError):
+                # Cache is corrupt, unreadable, or fails the shape check;
+                # fall through to network fetch.
                 pass
 
         try:
             with self._open_url(catalog_url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
-            if (
-                "schema_version" not in catalog_data
-                or "presets" not in catalog_data
-            ):
-                raise PresetError("Invalid preset catalog format")
+            # Validate catalog structure. Reuses the same helper as
+            # ``_fetch_single_catalog`` so all three branches (root type,
+            # missing keys, nested-mapping type) stay consistent.
+            self._validate_catalog_payload(catalog_data, catalog_url)
 
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            self.cache_file.write_text(json.dumps(catalog_data, indent=2))
+            # Save to cache. Explicit UTF-8 on both writes mirrors the
+            # ``read_text(encoding="utf-8")`` on the read side and the
+            # ``integrations/catalog.py`` precedent — otherwise platforms
+            # whose default encoding isn't UTF-8 would write
+            # locale-encoded bytes the read path can't decode, forcing an
+            # unnecessary refetch on every invocation. Like the read
+            # side, the write is best-effort: an unwritable cache dir
+            # must not be re-raised as a ``PresetError`` for a payload
+            # that was already fetched and validated.
+            try:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                self.cache_file.write_text(
+                    json.dumps(catalog_data, indent=2), encoding="utf-8"
+                )
 
-            metadata = {
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "catalog_url": catalog_url,
-            }
-            self.cache_metadata_file.write_text(
-                json.dumps(metadata, indent=2)
-            )
+                metadata = {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": catalog_url,
+                }
+                self.cache_metadata_file.write_text(
+                    json.dumps(metadata, indent=2), encoding="utf-8"
+                )
+            except OSError:
+                pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
 
@@ -2304,8 +2490,14 @@ class PresetCatalog:
         zip_filename = f"{pack_id}-{version}.zip"
         zip_path = target_dir / zip_filename
 
+        extra_headers = None
+        resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
+        if resolved_download_url:
+            download_url = resolved_download_url
+            extra_headers = {"Accept": "application/octet-stream"}
+
         try:
-            with self._open_url(download_url, timeout=60) as response:
+            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)

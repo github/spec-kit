@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from packaging import version as pkg_version
 
+from ..catalogs import CatalogEntry, CatalogStackBase
+
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -43,21 +45,15 @@ class IntegrationDescriptorError(Exception):
 # ---------------------------------------------------------------------------
 
 @dataclass
-class IntegrationCatalogEntry:
+class IntegrationCatalogEntry(CatalogEntry):
     """Represents a single catalog source in the catalog stack."""
-
-    url: str
-    name: str
-    priority: int
-    install_allowed: bool
-    description: str = ""
 
 
 # ---------------------------------------------------------------------------
 # IntegrationCatalog
 # ---------------------------------------------------------------------------
 
-class IntegrationCatalog:
+class IntegrationCatalog(CatalogStackBase):
     """Manages integration catalog fetching, caching, and searching."""
 
     DEFAULT_CATALOG_URL = (
@@ -67,135 +63,14 @@ class IntegrationCatalog:
         "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.community.json"
     )
     CACHE_DURATION = 3600  # 1 hour
+    CONFIG_FILENAME = "integration-catalogs.yml"
+    ENTRY_CLASS = IntegrationCatalogEntry
+    ERROR_TYPE = IntegrationCatalogError
+    VALIDATION_ERROR_TYPE = IntegrationValidationError
 
     def __init__(self, project_root: Path) -> None:
         self.project_root = project_root
         self.cache_dir = project_root / ".specify" / "integrations" / ".cache"
-
-    # -- URL validation ---------------------------------------------------
-
-    @staticmethod
-    def _validate_catalog_url(url: str) -> None:
-        from urllib.parse import urlparse
-
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
-            raise IntegrationCatalogError(
-                f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
-                "HTTP is only allowed for localhost."
-            )
-        if not parsed.netloc:
-            raise IntegrationCatalogError(
-                "Catalog URL must be a valid URL with a host."
-            )
-
-    # -- Catalog stack ----------------------------------------------------
-
-    def _load_catalog_config(
-        self, config_path: Path
-    ) -> Optional[List[IntegrationCatalogEntry]]:
-        """Load catalog stack from a YAML file.
-
-        Returns None when the file does not exist.
-
-        Raises:
-            IntegrationValidationError: on any local-config / YAML problem
-                (parse failures, wrong shape, missing/invalid fields,
-                invalid catalog URLs, etc.). This is a subclass of
-                :class:`IntegrationCatalogError`, so any caller that already
-                catches ``IntegrationCatalogError`` keeps working — but
-                callers that want to distinguish *local config* problems
-                from *remote/network* problems can match the subclass.
-        """
-        if not config_path.exists():
-            return None
-        try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        except (yaml.YAMLError, OSError, UnicodeError) as exc:
-            raise IntegrationValidationError(
-                f"Failed to read catalog config {config_path}: {exc}"
-            ) from exc
-        if data is None:
-            data = {}
-        if not isinstance(data, dict):
-            raise IntegrationValidationError(
-                f"Invalid catalog config {config_path}: expected a YAML mapping at the root"
-            )
-        catalogs_data = data.get("catalogs", [])
-        if not isinstance(catalogs_data, list):
-            raise IntegrationValidationError(
-                f"Invalid catalog config {config_path}: 'catalogs' must be a list, "
-                f"got {type(catalogs_data).__name__}"
-            )
-        if not catalogs_data:
-            raise IntegrationValidationError(
-                f"Catalog config {config_path} exists but contains no 'catalogs' entries. "
-                f"Remove the file to use built-in defaults, or add valid catalog entries."
-            )
-        entries: List[IntegrationCatalogEntry] = []
-        skipped: List[int] = []
-        for idx, item in enumerate(catalogs_data):
-            if not isinstance(item, dict):
-                raise IntegrationValidationError(
-                    f"Invalid catalog config {config_path}: catalog entry at index {idx}: "
-                    f"expected a mapping, got {type(item).__name__}"
-                )
-            url = str(item.get("url", "")).strip()
-            if not url:
-                skipped.append(idx)
-                continue
-            try:
-                self._validate_catalog_url(url)
-            except IntegrationCatalogError as exc:
-                # ``_validate_catalog_url`` raises the base class for direct
-                # callers (e.g. ``add_catalog`` validating user input); when
-                # the bad URL came from a local config file, surface it as a
-                # validation error so CLI handlers can route it accordingly.
-                raise IntegrationValidationError(
-                    f"Invalid catalog URL in {config_path} at index {idx}: {exc}"
-                ) from exc
-            raw_priority = item.get("priority", idx + 1)
-            if isinstance(raw_priority, bool):
-                raise IntegrationValidationError(
-                    f"Invalid catalog config {config_path}: "
-                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
-                    f"expected integer, got {raw_priority!r}"
-                )
-            try:
-                priority = int(raw_priority)
-            except (TypeError, ValueError):
-                raise IntegrationValidationError(
-                    f"Invalid catalog config {config_path}: "
-                    f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
-                    f"expected integer, got {raw_priority!r}"
-                )
-            raw_install = item.get("install_allowed", False)
-            if isinstance(raw_install, str):
-                install_allowed = raw_install.strip().lower() in ("true", "yes", "1")
-            else:
-                install_allowed = bool(raw_install)
-            raw_name = item.get("name")
-            name = str(raw_name).strip() if raw_name is not None else ""
-            if not name:
-                name = f"catalog-{len(entries) + 1}"
-            entries.append(
-                IntegrationCatalogEntry(
-                    url=url,
-                    name=name,
-                    priority=priority,
-                    install_allowed=install_allowed,
-                    description=str(item.get("description", "")),
-                )
-            )
-        entries.sort(key=lambda e: e.priority)
-        if not entries:
-            raise IntegrationValidationError(
-                f"Catalog config {config_path} contains {len(catalogs_data)} "
-                f"entries but none have valid URLs (entries at indices {skipped} "
-                f"were skipped). Each catalog entry must have a 'url' field."
-            )
-        return entries
 
     def get_active_catalogs(self) -> List[IntegrationCatalogEntry]:
         """Return the ordered list of active integration catalogs.
@@ -443,8 +318,6 @@ class IntegrationCatalog:
                     f.unlink(missing_ok=True)
 
     # -- Catalog-source management ----------------------------------------
-
-    CONFIG_FILENAME = "integration-catalogs.yml"
 
     def get_catalog_configs(self) -> List[Dict[str, Any]]:
         """Return the active catalog stack as a list of dicts.
