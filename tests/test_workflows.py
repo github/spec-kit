@@ -3985,6 +3985,8 @@ class TestStepCatalog:
         assert 42 not in merged
         assert merged["42"]["id"] == "42"
 
+    def test_get_step_info_returns_entry_or_none(self, project_dir, monkeypatch):
+        """get_step_info returns matching entry or None for missing ids."""
         from specify_cli.workflows.catalog import StepCatalog
 
         catalog = StepCatalog(project_dir)
