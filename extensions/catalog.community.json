@@ -1221,7 +1221,7 @@
       "description": "An idempotent, drift-aware, fail-closed reconcile engine that mirrors spec-kit specs into Jira (Epic per repo, Story per spec, Subtask per phase).",
       "author": "Ash Brener",
       "version": "0.2.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-jira-sync/archive/refs/tags/v0.2.0.tar.gz",
+      "download_url": "https://github.com/ashbrener/spec-kit-jira-sync/archive/refs/tags/v0.2.0.zip",
       "repository": "https://github.com/ashbrener/spec-kit-jira-sync",
       "homepage": "https://github.com/ashbrener/spec-kit-jira-sync",
       "documentation": "https://github.com/ashbrener/spec-kit-jira-sync/blob/main/README.md",
