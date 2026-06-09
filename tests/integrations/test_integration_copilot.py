@@ -127,8 +127,8 @@ class TestCopilotIntegration:
         agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
         assert len(agent_files) == 9
         expected_commands = {
-            "analyze", "checklist", "clarify", "constitution",
-            "implement", "plan", "specify", "tasks", "taskstoissues",
+            "analyze", "clarify", "constitution", "implement",
+            "plan", "checklist", "specify", "tasks", "taskstoissues",
         }
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
         assert actual_commands == expected_commands
@@ -321,8 +321,8 @@ class TestCopilotSkillsMode:
     """Tests for Copilot integration in --skills mode."""
 
     _SKILL_COMMANDS = [
-        "analyze", "checklist", "clarify", "constitution",
-        "implement", "plan", "specify", "tasks", "taskstoissues",
+        "analyze", "clarify", "constitution", "implement",
+        "plan", "checklist", "specify", "tasks", "taskstoissues",
     ]
 
     def _make_copilot(self):

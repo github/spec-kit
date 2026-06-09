@@ -26,19 +26,22 @@ from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .catalogs import CatalogEntry as BaseCatalogEntry, CatalogStackBase
+from ._init_options import is_ai_skills_enabled
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset({
     "analyze",
-    "checklist",
     "clarify",
     "constitution",
     "implement",
     "plan",
+    "checklist",
     "specify",
     "tasks",
     "taskstoissues",
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+
+DEFAULT_HOOK_PRIORITY = 10
 
 REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
 
@@ -88,24 +91,35 @@ class CompatibilityError(ExtensionError):
     pass
 
 
-def normalize_priority(value: Any, default: int = 10) -> int:
+def normalize_priority(value: Any, default: int = DEFAULT_HOOK_PRIORITY) -> int:
     """Normalize a stored priority value for sorting and display.
 
-    Corrupted registry data may contain missing, non-numeric, or non-positive
-    values. In those cases, fall back to the default priority.
+    Corrupted registry data may contain missing, non-numeric, non-positive, or
+    boolean values. In those cases, fall back to the default priority.
 
     Args:
         value: Priority value to normalize (may be int, str, None, etc.)
-        default: Default priority to use for invalid values (default: 10)
+        default: Default priority to use for invalid values
 
     Returns:
         Normalized priority as positive integer (>= 1)
     """
+    if isinstance(value, bool):
+        return default
     try:
         priority = int(value)
     except (TypeError, ValueError):
         return default
     return priority if priority >= 1 else default
+
+
+def coerce_hook_entries(hook_config: Any) -> List[Any]:
+    """Return a hook event's config as a list of entries.
+
+    A hook event may be declared as a single mapping or a list of mappings.
+    Both shapes are normalized to a list so callers can iterate uniformly.
+    """
+    return hook_config if isinstance(hook_config, list) else [hook_config]
 
 
 @dataclass
@@ -214,17 +228,36 @@ class ExtensionManifest:
                 "Extension must provide at least one command or hook"
             )
 
-        # Validate hook values (if present)
+        # Validate hook values (if present).
+        # Each event is a single mapping or a list of mappings.
         if hooks:
             for hook_name, hook_config in hooks.items():
-                if not isinstance(hook_config, dict):
+                if isinstance(hook_config, list) and not hook_config:
                     raise ValidationError(
-                        f"Invalid hook '{hook_name}': expected a mapping"
+                        f"Invalid hook '{hook_name}': list must contain at least one entry"
                     )
-                if not hook_config.get("command"):
-                    raise ValidationError(
-                        f"Hook '{hook_name}' missing required 'command' field"
-                    )
+                for entry in coerce_hook_entries(hook_config):
+                    if not isinstance(entry, dict):
+                        raise ValidationError(
+                            f"Invalid hook '{hook_name}': "
+                            "expected a mapping or list of mappings"
+                        )
+                    if not entry.get("command"):
+                        raise ValidationError(
+                            f"Hook '{hook_name}' missing required 'command' field"
+                        )
+                    if "priority" in entry:
+                        priority = entry["priority"]
+                        if not isinstance(priority, int) or isinstance(priority, bool):
+                            raise ValidationError(
+                                f"Hook '{hook_name}' has invalid 'priority': "
+                                "must be an integer"
+                            )
+                        if priority < 1:
+                            raise ValidationError(
+                                f"Hook '{hook_name}' has invalid 'priority': "
+                                "must be >= 1"
+                            )
 
         # Validate commands; track renames so hook references can be rewritten.
         rename_map: Dict[str, str] = {}
@@ -274,28 +307,30 @@ class ExtensionManifest:
         # an alias-form ref (ext.cmd → speckit.ext.cmd).  Always emit a warning when
         # the reference is changed so extension authors know to update the manifest.
         for hook_name, hook_data in self.data.get("hooks", {}).items():
-            if not isinstance(hook_data, dict):
-                raise ValidationError(
-                    f"Hook '{hook_name}' must be a mapping, got {type(hook_data).__name__}"
-                )
-            command_ref = hook_data.get("command")
-            if not isinstance(command_ref, str):
-                continue
-            # Step 1: apply any rename from the auto-correction pass.
-            after_rename = rename_map.get(command_ref, command_ref)
-            # Step 2: lift alias-form '{ext_id}.cmd' to canonical 'speckit.{ext_id}.cmd'.
-            parts = after_rename.split(".")
-            if len(parts) == 2 and parts[0] == ext["id"]:
-                final_ref = f"speckit.{ext['id']}.{parts[1]}"
-            else:
-                final_ref = after_rename
-            if final_ref != command_ref:
-                hook_data["command"] = final_ref
-                self.warnings.append(
-                    f"Hook '{hook_name}' referenced command '{command_ref}'; "
-                    f"updated to canonical form '{final_ref}'. "
-                    f"The extension author should update the manifest."
-                )
+            for entry in coerce_hook_entries(hook_data):
+                if not isinstance(entry, dict):
+                    raise ValidationError(
+                        f"Hook '{hook_name}' must be a mapping or list of mappings, "
+                        f"got {type(entry).__name__}"
+                    )
+                command_ref = entry.get("command")
+                if not isinstance(command_ref, str):
+                    continue
+                # Step 1: apply any rename from the auto-correction pass.
+                after_rename = rename_map.get(command_ref, command_ref)
+                # Step 2: lift alias-form '{ext_id}.cmd' to canonical 'speckit.{ext_id}.cmd'.
+                parts = after_rename.split(".")
+                if len(parts) == 2 and parts[0] == ext["id"]:
+                    final_ref = f"speckit.{ext['id']}.{parts[1]}"
+                else:
+                    final_ref = after_rename
+                if final_ref != command_ref:
+                    entry["command"] = final_ref
+                    self.warnings.append(
+                        f"Hook '{hook_name}' referenced command '{command_ref}'; "
+                        f"updated to canonical form '{final_ref}'. "
+                        f"The extension author should update the manifest."
+                    )
 
     @staticmethod
     def _try_correct_command_name(name: str, ext_id: str) -> Optional[str]:
@@ -830,15 +865,53 @@ class ExtensionManager:
         be created due to symlink, containment, or permission issues so
         that callers can fall back gracefully.
         """
-        from . import resolve_active_skills_dir, _print_cli_warning
+        from . import (
+            _print_cli_warning,
+            load_init_options,
+            resolve_active_skills_dir,
+        )
+
+        def _ensure_usable(skills_dir: Path) -> Optional[Path]:
+            try:
+                skills_dir.mkdir(parents=True, exist_ok=True)
+                if not skills_dir.is_dir():
+                    raise NotADirectoryError(f"{skills_dir} is not a directory")
+            except (OSError, ValueError) as exc:
+                _print_cli_warning(
+                    "resolve", "skills directory", str(skills_dir), exc,
+                    continuing="Continuing without skill registration.",
+                )
+                return None
+            return skills_dir
+
         try:
-            return resolve_active_skills_dir(self.project_root)
+            skills_dir = resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
             _print_cli_warning(
                 "resolve", "skills directory", None, exc,
                 continuing="Continuing without skill registration.",
             )
             return None
+        if skills_dir is None:
+            return None
+
+        opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            return _ensure_usable(skills_dir)
+        selected_ai = opts.get("ai")
+        if not isinstance(selected_ai, str) or not selected_ai:
+            return _ensure_usable(skills_dir)
+
+        from .agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(selected_ai)
+        if agent_config and agent_config.get("extension") == "/SKILL.md":
+            agent_skills_dir = registrar._resolve_agent_dir(
+                selected_ai, agent_config, self.project_root
+            )
+            return _ensure_usable(agent_skills_dir)
+        return _ensure_usable(skills_dir)
 
     def _register_extension_skills(
         self,
@@ -850,7 +923,7 @@ class ExtensionManager:
 
         For every command in the extension manifest, creates a SKILL.md
         file in the agent's skills directory following the agentskills.io
-        specification.  This is only done when ``--ai-skills`` was used
+        specification.  This is only done when skills mode was used
         during project initialisation.
 
         Args:
@@ -1249,10 +1322,14 @@ class ExtensionManager:
             registrar = CommandRegistrar()
             # Register for all detected agents
             registered_commands = registrar.register_commands_for_all_agents(
-                manifest, dest_dir, self.project_root, link_outputs=link_commands
+                manifest,
+                dest_dir,
+                self.project_root,
+                link_outputs=link_commands,
+                create_missing_active_skills_dir=True,
             )
 
-        # Auto-register extension commands as agent skills when --ai-skills
+        # Auto-register extension commands as agent skills when skills mode
         # was used during project initialisation (feature parity).
         registered_skills = self._register_extension_skills(
             manifest, dest_dir, link_outputs=link_commands
@@ -1540,9 +1617,10 @@ class ExtensionManager:
             init_options = {}
 
         active_agent = init_options.get("ai")
+        ai_skills_enabled = is_ai_skills_enabled(init_options)
         skills_mode_active = (
             active_agent == agent_name
-            and bool(init_options.get("ai_skills"))
+            and ai_skills_enabled
             and bool(agent_config)
             and agent_config.get("extension") != "/SKILL.md"
         )
@@ -1736,6 +1814,7 @@ class CommandRegistrar:
         extension_dir: Path,
         project_root: Path,
         link_outputs: bool = False,
+        create_missing_active_skills_dir: bool = False,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
@@ -1743,6 +1822,7 @@ class CommandRegistrar:
             manifest.commands, manifest.id, extension_dir, project_root,
             context_note=context_note,
             link_outputs=link_outputs,
+            create_missing_active_skills_dir=create_missing_active_skills_dir,
         )
 
     def unregister_commands(
@@ -1815,41 +1895,15 @@ class ExtensionCatalog(CatalogStackBase):
         download_url: str,
         timeout: int = 60,
     ) -> Optional[str]:
-        """Resolve a GitHub release asset URL to its API asset URL."""
-        import urllib.error
-        from urllib.parse import unquote, urlparse
+        """Resolve a GitHub release asset URL to its API asset URL.
 
-        parsed = urlparse(download_url)
-        parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
-        if (
-            parsed.hostname == "api.github.com"
-            and len(parts) >= 6
-            and parts[:1] == ["repos"]
-            and parts[3:5] == ["releases", "assets"]
-        ):
-            return download_url
+        Delegates to the shared helper in :mod:`specify_cli._github_http`.
+        """
+        from specify_cli._github_http import resolve_github_release_asset_api_url
 
-        if parsed.hostname != "github.com":
-            return None
-
-        if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
-            return None
-
-        owner, repo, tag = parts[0], parts[1], parts[4]
-        asset_name = "/".join(parts[5:])
-        release_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
-
-        try:
-            with self._open_url(release_url, timeout=timeout) as response:
-                release_data = json.loads(response.read())
-        except (urllib.error.URLError, json.JSONDecodeError):
-            return None
-
-        for asset in release_data.get("assets", []):
-            if asset.get("name") == asset_name and asset.get("url"):
-                return str(asset["url"])
-
-        return None
+        return resolve_github_release_asset_api_url(
+            download_url, self._open_url, timeout=timeout
+        )
 
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
@@ -2530,10 +2584,11 @@ class HookExecutor:
 
         init_options = self._load_init_options()
         selected_ai = init_options.get("ai")
-        codex_skill_mode = selected_ai == "codex" and bool(init_options.get("ai_skills"))
-        claude_skill_mode = selected_ai == "claude" and bool(init_options.get("ai_skills"))
+        ai_skills_enabled = is_ai_skills_enabled(init_options)
+        codex_skill_mode = selected_ai == "codex" and ai_skills_enabled
+        claude_skill_mode = selected_ai == "claude" and ai_skills_enabled
         kimi_skill_mode = selected_ai == "kimi"
-        cursor_skill_mode = selected_ai == "cursor-agent" and bool(init_options.get("ai_skills"))
+        cursor_skill_mode = selected_ai == "cursor-agent" and ai_skills_enabled
         cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
@@ -2713,9 +2768,6 @@ class HookExecutor:
         # Always ensure the extension is in the installed list
         self.register_extension(manifest.id)
 
-        if not hasattr(manifest, "hooks") or not manifest.hooks:
-            return
-
         config = self.get_project_config()
 
         # Ensure config is a dict (defensive)
@@ -2741,38 +2793,67 @@ class HookExecutor:
                         config["hooks"][h_name] = sanitized_h_list
                         changed = True
 
+        # Purge this extension's entries from events the new manifest no longer
+        # declares, so dropping an event on reinstall leaves no orphans.
+        declared_events = set(manifest.hooks.keys())
+        for h_name in list(config["hooks"].keys()):
+            if h_name in declared_events:
+                continue
+            kept = [
+                h for h in config["hooks"][h_name]
+                if not (isinstance(h, dict) and h.get("extension") == manifest.id)
+            ]
+            if kept != config["hooks"][h_name]:
+                config["hooks"][h_name] = kept
+                changed = True
+
         # Register each hook
         for hook_name, hook_config in manifest.hooks.items():
             if hook_name not in config["hooks"] or not isinstance(config["hooks"][hook_name], list):
                 config["hooks"][hook_name] = []
                 changed = True
 
-            # Add hook entry
-            hook_entry = {
-                "extension": manifest.id,
-                "command": hook_config.get("command"),
-                "enabled": True,
-                "optional": hook_config.get("optional", True),
-                "prompt": hook_config.get(
-                    "prompt", f"Execute {hook_config.get('command')}?"
-                ),
-                "description": hook_config.get("description", ""),
-                "condition": hook_config.get("condition"),
-            }
+            # Key by command to dedup within the manifest. Deleting before
+            # re-insert moves a duplicate to the end so "last wins" also breaks ties.
+            new_entries: Dict[str, Dict[str, Any]] = {}
+            for entry in coerce_hook_entries(hook_config):
+                if not isinstance(entry, dict):
+                    continue
+                command = entry.get("command")
+                if not command:
+                    continue
+                if command in new_entries:
+                    del new_entries[command]
+                new_entries[command] = {
+                    "extension": manifest.id,
+                    "command": command,
+                    "enabled": True,
+                    "optional": entry.get("optional", True),
+                    "priority": normalize_priority(
+                        entry.get("priority"), DEFAULT_HOOK_PRIORITY
+                    ),
+                    "prompt": entry.get("prompt", f"Execute {command}?"),
+                    "description": entry.get("description", ""),
+                    "condition": entry.get("condition"),
+                }
 
-            # Deduplicate: remove all existing entries for this extension on this
-            # hook event, then append the single canonical entry. This prevents
-            # multiple hooks firing when hand-edited or older versions leave
-            # duplicate entries behind. (Feedback from review)
+            # Purge then re-add all of this extension's entries for the event.
+            # A reinstall with a changed shape (single<->list or a shorter list)
+            # then leaves no orphaned entries behind.
             original_list = config["hooks"][hook_name]
             deduped = [
                 h for h in original_list
                 if not (isinstance(h, dict) and h.get("extension") == manifest.id)
             ]
-            deduped.append(hook_entry)
+            deduped.extend(new_entries.values())
             if deduped != original_list:
                 config["hooks"][hook_name] = deduped
                 changed = True
+
+        non_empty = {name: hooks for name, hooks in config["hooks"].items() if hooks}
+        if non_empty != config["hooks"]:
+            config["hooks"] = non_empty
+            changed = True
 
         if changed:
             self.save_project_config(config)
@@ -2817,19 +2898,26 @@ class HookExecutor:
         self.save_project_config(config)
 
     def get_hooks_for_event(self, event_name: str) -> List[Dict[str, Any]]:
-        """Get all registered hooks for a specific event.
+        """Get all enabled hooks for a specific event, sorted by priority ascending.
+
+        Lower ``priority`` runs first. Ties keep insertion order via a stable
+        sort. Missing or corrupted on-disk priorities fall back to the default.
 
         Args:
             event_name: Name of the event (e.g., 'after_tasks')
 
         Returns:
-            List of hook configurations
+            List of enabled hook configurations sorted by priority.
         """
         config = self.get_project_config()
         hooks = config.get("hooks", {}).get(event_name, [])
 
         # Filter to enabled hooks only
-        return [h for h in hooks if h.get("enabled", True)]
+        enabled = [h for h in hooks if h.get("enabled", True)]
+        return sorted(
+            enabled,
+            key=lambda h: normalize_priority(h.get("priority"), DEFAULT_HOOK_PRIORITY),
+        )
 
     def should_execute_hook(self, hook: Dict[str, Any]) -> bool:
         """Determine if a hook should be executed based on its condition.

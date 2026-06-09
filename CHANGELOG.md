@@ -2,6 +2,34 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.9.5] - 2026-06-05
+
+### Changed
+
+- feat(extensions): add bundled bug triage workflow extension (#2871)
+- fix: resolve GitHub release asset API URL for private repo preset and workflow downloads (#2855)
+- chore(deps): bump github/gh-aw-actions from 0.77.0 to 0.78.1 (#2860)
+- chore(deps): bump actions/checkout from 6.0.2 to 6.0.3 (#2859)
+- chore(deps): bump astral-sh/setup-uv from 8.1.0 to 8.2.0 (#2858)
+- chore(deps): bump github/codeql-action from 4.36.0 to 4.36.2 (#2857)
+- fix(workflows): render gate show_file contents in the interactive prompt (#2810)
+- feat: add support for rovodev (#2539)
+- chore: release 0.9.4, begin 0.9.5.dev0 development (#2853)
+
+## [0.9.4] - 2026-06-04
+
+### Changed
+
+- feat(workflows): add JSON output for workflow run resume and status (#2814)
+- Update workflow-preset community catalog to v1.3.2 (#2841)
+- fix: recover active skills registration for extensions (#2803)
+- fix(cursor-agent): enable headless CLI dispatch end-to-end (-p --trust --approve-mcps --force + Windows .cmd shim resolution) (#2631)
+- Update Superpowers Implementation Bridge extension to v1.0.2 (#2852)
+- docs(agents): add PR review response guidance to AGENTS.md (#2850)
+- Allow `specify workflow run` to execute YAML files without a project (#2825)
+- feat(extensions): add --force flag to extension add for overwrite reinstall (#2530)
+- chore: release 0.9.3, begin 0.9.4.dev0 development (#2836)
+
 ## [0.9.3] - 2026-06-03
 
 ### Changed

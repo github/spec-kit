@@ -29,6 +29,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .integrations.base import IntegrationBase
+from ._init_options import is_ai_skills_enabled
 
 
 def _substitute_core_template(
@@ -1218,7 +1219,7 @@ class PresetManager:
         directory.  If so, the skill is overwritten with content derived
         from the preset's command file.  This ensures that presets that
         override commands also propagate to the agentskills.io skill
-        layer when ``--ai-skills`` was used during project initialisation.
+        layer when skills mode was used during project initialisation.
 
         Args:
             manifest: Preset manifest.
@@ -1262,7 +1263,7 @@ class PresetManager:
         selected_ai = init_opts.get("ai")
         if not isinstance(selected_ai, str):
             return []
-        ai_skills_enabled = bool(init_opts.get("ai_skills"))
+        ai_skills_enabled = is_ai_skills_enabled(init_opts)
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai)
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
@@ -1558,7 +1559,7 @@ class PresetManager:
                 "registered_commands": registered_commands,
             })
 
-            # Update corresponding skills when --ai-skills was previously used
+            # Update corresponding skills when skills mode was previously used
             # and persist that result as well.
             registered_skills = self._register_skills(manifest, dest_dir)
             self.registry.update(manifest.id, {
@@ -1867,13 +1868,29 @@ class PresetCatalog:
         from specify_cli.authentication.http import build_request
         return build_request(url)
 
-    def _open_url(self, url: str, timeout: int = 10):
+    def _open_url(
+        self,
+        url: str,
+        timeout: int = 10,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
         from specify_cli.authentication.http import open_url
-        return open_url(url, timeout)
+        return open_url(url, timeout, extra_headers=extra_headers)
+
+    def _resolve_github_release_asset_api_url(
+        self,
+        download_url: str,
+        timeout: int = 60,
+    ) -> Optional[str]:
+        """Resolve a GitHub release asset URL to its REST API asset URL."""
+        from specify_cli._github_http import resolve_github_release_asset_api_url
+        return resolve_github_release_asset_api_url(
+            download_url, self._open_url, timeout=timeout
+        )
 
     def _load_catalog_config(self, config_path: Path) -> Optional[List[PresetCatalogEntry]]:
         """Load catalog stack configuration from a YAML file.
@@ -2331,8 +2348,14 @@ class PresetCatalog:
         zip_filename = f"{pack_id}-{version}.zip"
         zip_path = target_dir / zip_filename
 
+        extra_headers = None
+        resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
+        if resolved_download_url:
+            download_url = resolved_download_url
+            extra_headers = {"Accept": "application/octet-stream"}
+
         try:
-            with self._open_url(download_url, timeout=60) as response:
+            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
                 zip_data = response.read()
 
             zip_path.write_bytes(zip_data)

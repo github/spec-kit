@@ -1528,17 +1528,33 @@ class TestPresetCatalog:
             zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
         zip_bytes = zip_buf.getvalue()
 
-        mock_response = MagicMock()
-        mock_response.read.return_value = zip_bytes
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        release_response = MagicMock()
+        release_response.read.return_value = json.dumps(
+            {
+                "assets": [
+                    {
+                        "name": "test-pack.zip",
+                        "url": "https://api.github.com/repos/org/repo/releases/assets/1",
+                    }
+                ]
+            }
+        ).encode()
+        release_response.__enter__ = lambda s: s
+        release_response.__exit__ = MagicMock(return_value=False)
 
-        captured = {}
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
         mock_opener = MagicMock()
 
         def fake_open(req, timeout=None):
-            captured["req"] = req
-            return mock_response
+            captured.append(req)
+            if req.full_url.endswith("/releases/tags/v1"):
+                return release_response
+            return asset_response
 
         mock_opener.open.side_effect = fake_open
 
@@ -1554,7 +1570,56 @@ class TestPresetCatalog:
              patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_pack("test-pack", target_dir=project_dir)
 
-        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/tags/v1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].get_header("Accept") == "application/octet-stream"
+
+    def test_download_pack_accepts_direct_github_rest_asset_url(self, project_dir, monkeypatch):
+        """download_pack can use a GitHub REST release asset URL directly."""
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
+        catalog = PresetCatalog(project_dir)
+
+        import io
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured.append(req)
+            return asset_response
+
+        mock_opener.open.side_effect = fake_open
+
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://api.github.com/repos/org/repo/releases/assets/1",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+            catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert len(captured) == 1
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].get_header("Accept") == "application/octet-stream"
 
 
 # ===== Integration Tests =====
@@ -2255,6 +2320,51 @@ class TestInitOptions:
         assert loaded["ai"] == "claude"
         assert loaded["ai_skills"] is True
 
+    def test_save_and_load_available_from_init_options_module(self, project_dir):
+        from specify_cli._init_options import load_init_options, save_init_options
+
+        opts = {"ai": "codex", "ai_skills": True, "script": "sh"}
+        save_init_options(project_dir, opts)
+
+        assert load_init_options(project_dir) == opts
+
+    def test_save_uses_utf8_encoding(self, project_dir, monkeypatch):
+        from specify_cli import save_init_options
+
+        original_write_text = Path.write_text
+        seen: dict[str, str | None] = {}
+
+        def spy_write_text(path, data, *args, **kwargs):
+            if path == project_dir / ".specify" / "init-options.json":
+                seen["encoding"] = kwargs.get("encoding")
+            return original_write_text(path, data, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", spy_write_text)
+
+        save_init_options(project_dir, {"label": "中文测试"})
+
+        assert seen["encoding"] == "utf-8"
+
+    def test_load_uses_utf8_encoding(self, project_dir, monkeypatch):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text('{"ai": "codex"}', encoding="utf-8")
+
+        original_read_text = Path.read_text
+        seen: dict[str, str | None] = {}
+
+        def spy_read_text(path, *args, **kwargs):
+            if path == opts_file:
+                seen["encoding"] = kwargs.get("encoding")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", spy_read_text)
+
+        assert load_init_options(project_dir) == {"ai": "codex"}
+        assert seen["encoding"] == "utf-8"
+
     def test_load_returns_empty_when_missing(self, project_dir):
         from specify_cli import load_init_options
 
@@ -2348,6 +2458,51 @@ class TestInitOptions:
 
         assert load_init_options(project_dir) == {}
 
+    @pytest.mark.parametrize("payload", ["[]", '"value"', "42", "true", "null"])
+    def test_load_returns_empty_on_non_object_json(self, project_dir, payload):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text(payload, encoding="utf-8")
+
+        assert load_init_options(project_dir) == {}
+
+    def test_load_returns_empty_on_unicode_decode_error(self, project_dir, monkeypatch):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_bytes(b"{}")
+
+        original_read_text = Path.read_text
+
+        def raise_decode_error(path, *args, **kwargs):
+            if path == opts_file:
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", raise_decode_error)
+
+        assert load_init_options(project_dir) == {}
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (True, True),
+            (False, False),
+            ("true", False),
+            ("false", False),
+            (1, False),
+            (0, False),
+            (None, False),
+        ],
+    )
+    def test_is_ai_skills_enabled_requires_boolean_true(self, value, expected):
+        from specify_cli._init_options import is_ai_skills_enabled
+
+        assert is_ai_skills_enabled({"ai_skills": value}) is expected
+
 
 class TestPresetSkills:
     """Tests for preset skill registration and unregistration.
@@ -2402,8 +2557,8 @@ class TestPresetSkills:
         return preset_dir
 
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
-        """When --ai-skills was used, a preset command override should update the skill."""
-        # Simulate --ai-skills having been used: write init-options + create skill
+        """When skills mode was used, a preset command override should update the skill."""
+        # Simulate skills mode having been used: write init-options + create skill
         self._write_init_options(project_dir, ai="claude")
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify")
@@ -2688,7 +2843,7 @@ class TestPresetSkills:
         assert "override taskstoissues body" in content
 
     def test_skill_not_updated_when_ai_skills_disabled(self, project_dir, temp_dir):
-        """When --ai-skills was NOT used, preset install should not touch skills."""
+        """When skills mode was NOT used, preset install should not touch skills."""
         self._write_init_options(project_dir, ai="qwen", ai_skills=False)
         skills_dir = project_dir / ".qwen" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
@@ -2807,7 +2962,7 @@ class TestPresetSkills:
     def test_no_skills_registered_when_no_skill_dir_exists(self, project_dir, temp_dir):
         """Skills should not be created when no existing skill dir is found."""
         self._write_init_options(project_dir, ai="claude")
-        # Don't create skills dir — simulate --ai-skills never created them
+        # Don't create skills dir — simulate skills mode never created them
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3741,6 +3896,119 @@ class TestBundledPresetLocator:
         assert "reinstall" in output, result.output
 
 
+class TestPresetAddFromUrlResolution:
+    """CLI-level tests for preset add --from <url> GitHub release resolution."""
+
+    def test_preset_add_from_github_release_url_resolves_and_downloads(self, project_dir):
+        """'preset add --from <github-release-url>' resolves to API asset URL."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = __import__("io").BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "preset.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://github.com/org/repo/releases/download/v1.0/preset.zip",
+            ])
+
+        assert result.exit_code == 0, result.output
+        assert "My Preset" in result.output
+        # First call should resolve the release tag
+        assert any("releases/tags/v1.0" in url for url, _ in captured_urls)
+        # Second call should download from the resolved asset URL with octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_preset_add_from_direct_api_asset_url_passes_through(self, project_dir):
+        """'preset add --from <api-asset-url>' uses URL directly with octet-stream."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = __import__("io").BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://api.github.com/repos/org/repo/releases/assets/42",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # Should go directly to the asset URL with Accept header
+        assert len(captured_urls) == 1
+        assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
+        assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
+
+
 class TestWrapStrategy:
     """Tests for strategy: wrap preset command substitution."""
 
@@ -3855,7 +4123,7 @@ class TestWrapStrategy:
             "---\ndescription: core wrap-test\n---\n\n# Core Wrap-Test Body\n"
         )
 
-        # Set up skills dir (simulating --ai claude)
+        # Set up skills dir (simulating --integration claude)
         skills_dir = project_dir / ".claude" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
         skill_subdir = skills_dir / "speckit-wrap-test"

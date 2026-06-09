@@ -1,12 +1,15 @@
 """Tests for GitHub-authenticated HTTP request helpers."""
 
+import json
 import os
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from specify_cli._github_http import (
     build_github_request,
+    resolve_github_release_asset_api_url,
 )
 
 
@@ -77,3 +80,111 @@ class TestBuildGitHubRequest:
         """build_github_request() must reject URLs with valid scheme but no hostname."""
         with pytest.raises(ValueError, match="url must include a hostname"):
             build_github_request("http://")
+
+
+class TestResolveGitHubReleaseAssetApiUrl:
+    """Tests for resolve_github_release_asset_api_url()."""
+
+    def _make_open_url_fn(self, release_json):
+        """Create a fake open_url_fn that returns release JSON."""
+        @contextmanager
+        def fake_open(url, timeout=None, extra_headers=None):
+            resp = MagicMock()
+            resp.read.return_value = json.dumps(release_json).encode()
+            yield resp
+        return fake_open
+
+    def test_returns_none_for_non_github_url(self):
+        """Non-GitHub URLs should return None."""
+        result = resolve_github_release_asset_api_url(
+            "https://example.com/file.zip", lambda *a, **kw: None
+        )
+        assert result is None
+
+    def test_returns_none_for_non_release_github_url(self):
+        """GitHub URLs that aren't release downloads return None."""
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/archive/refs/tags/v1.zip",
+            lambda *a, **kw: None,
+        )
+        assert result is None
+
+    def test_passthrough_for_existing_api_asset_url(self):
+        """Already-resolved REST API asset URLs are returned as-is."""
+        url = "https://api.github.com/repos/org/repo/releases/assets/12345"
+        result = resolve_github_release_asset_api_url(url, lambda *a, **kw: None)
+        assert result == url
+
+    def test_resolves_browser_url_to_api_url(self):
+        """Browser release URL resolves to REST API asset URL."""
+        release_json = {
+            "assets": [
+                {"name": "pack.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/99"}
+            ]
+        }
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/v1.0/pack.zip",
+            self._make_open_url_fn(release_json),
+        )
+        assert result == "https://api.github.com/repos/org/repo/releases/assets/99"
+
+    def test_returns_none_when_asset_not_found(self):
+        """Returns None when the release exists but asset name doesn't match."""
+        release_json = {"assets": [{"name": "other.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/1"}]}
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/v1/missing.zip",
+            self._make_open_url_fn(release_json),
+        )
+        assert result is None
+
+    def test_returns_none_on_network_error(self):
+        """Returns None when the API request fails."""
+        import urllib.error
+
+        @contextmanager
+        def failing_open(url, timeout=None, extra_headers=None):
+            raise urllib.error.URLError("network error")
+            yield  # noqa: unreachable
+
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/v1/pack.zip",
+            failing_open,
+        )
+        assert result is None
+
+    def test_tag_with_special_characters_is_url_encoded(self):
+        """Tags with reserved characters (e.g. '/') are encoded in the API URL."""
+        captured_urls = []
+
+        @contextmanager
+        def capturing_open(url, timeout=None, extra_headers=None):
+            captured_urls.append(url)
+            resp = MagicMock()
+            resp.read.return_value = json.dumps({"assets": []}).encode()
+            yield resp
+
+        resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/feature%2Fv1/pack.zip",
+            capturing_open,
+        )
+        # The tag "feature/v1" (decoded from %2F) must be re-encoded as "feature%2Fv1"
+        assert len(captured_urls) == 1
+        assert "releases/tags/feature%2Fv1" in captured_urls[0]
+
+    def test_tag_with_hash_is_url_encoded(self):
+        """Tags with '#' character are properly encoded."""
+        captured_urls = []
+
+        @contextmanager
+        def capturing_open(url, timeout=None, extra_headers=None):
+            captured_urls.append(url)
+            resp = MagicMock()
+            resp.read.return_value = json.dumps({"assets": []}).encode()
+            yield resp
+
+        resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/v1%23beta/pack.zip",
+            capturing_open,
+        )
+        assert len(captured_urls) == 1
+        assert "releases/tags/v1%23beta" in captured_urls[0]

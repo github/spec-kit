@@ -100,8 +100,8 @@ class SkillsIntegrationTests:
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
-            "analyze", "checklist", "clarify", "constitution",
-            "implement", "plan", "specify", "tasks", "taskstoissues",
+            "analyze", "clarify", "constitution", "implement",
+            "plan", "checklist", "specify", "tasks", "taskstoissues",
         }
 
         # Derive command names from the skill directory names
@@ -312,9 +312,9 @@ class SkillsIntegrationTests:
             assert "<!-- SPECKIT END -->" not in remaining
             assert "# My Rules" in remaining
 
-    # -- CLI auto-promote -------------------------------------------------
+    # -- CLI integration flag -------------------------------------------------
 
-    def test_ai_flag_auto_promotes(self, tmp_path):
+    def test_integration_flag_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -325,15 +325,15 @@ class SkillsIntegrationTests:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", self.KEY, "--script", "sh", "--no-git",
+                "init", "--here", "--integration", self.KEY, "--script", "sh", "--no-git",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
-        assert result.exit_code == 0, f"init --ai {self.KEY} failed: {result.output}"
+        assert result.exit_code == 0, f"init --integration {self.KEY} failed: {result.output}"
         i = get_integration(self.KEY)
         skills_dir = i.skills_dest(project)
-        assert skills_dir.is_dir(), f"--ai {self.KEY} did not create skills directory"
+        assert skills_dir.is_dir(), f"--integration {self.KEY} did not create skills directory"
 
     def test_integration_flag_creates_files(self, tmp_path):
         from typer.testing import CliRunner
@@ -393,8 +393,8 @@ class SkillsIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     _SKILL_COMMANDS = [
-        "analyze", "checklist", "clarify", "constitution",
-        "implement", "plan", "specify", "tasks", "taskstoissues",
+        "analyze", "clarify", "constitution", "implement",
+        "plan", "checklist", "specify", "tasks", "taskstoissues",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:

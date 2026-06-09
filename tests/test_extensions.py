@@ -23,6 +23,7 @@ from tests.conftest import strip_ansi
 from specify_cli.extensions import (
     CatalogEntry,
     CORE_COMMAND_NAMES,
+    DEFAULT_HOOK_PRIORITY,
     ExtensionManifest,
     ExtensionRegistry,
     ExtensionManager,
@@ -189,6 +190,12 @@ class TestNormalizePriority:
         """Test custom default value."""
         assert normalize_priority(None, default=20) == 20
         assert normalize_priority("invalid", default=1) == 1
+
+    def test_boolean_returns_default(self):
+        """Booleans fall back to the default rather than acting as int 0/1."""
+        assert normalize_priority(True) == 10
+        assert normalize_priority(False) == 10
+        assert normalize_priority(True, default=5) == 5
 
 
 # ===== ExtensionManifest Tests =====
@@ -457,6 +464,137 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid hook 'after_tasks'"):
             ExtensionManifest(manifest_path)
+
+    def test_hook_single_mapping_still_accepted(self, extension_dir):
+        """Existing single-mapping hook manifests parse unchanged (regression)."""
+        manifest_path = extension_dir / "extension.yml"
+        manifest = ExtensionManifest(manifest_path)
+
+        assert "after_tasks" in manifest.hooks
+        assert isinstance(manifest.hooks["after_tasks"], dict)
+        assert manifest.hooks["after_tasks"]["command"] == "speckit.test-ext.hello"
+
+    def test_hook_list_of_mappings_accepted(self, temp_dir, valid_manifest_data):
+        """A hook event may be configured as a list of mappings."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"].append({
+            "name": "speckit.test-ext.bye",
+            "file": "commands/bye.md",
+            "description": "Second test command",
+        })
+        valid_manifest_data["hooks"]["after_tasks"] = [
+            {"command": "speckit.test-ext.hello", "description": "first"},
+            {"command": "speckit.test-ext.bye", "description": "second"},
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        entries = manifest.hooks["after_tasks"]
+        assert isinstance(entries, list)
+        assert [e["command"] for e in entries] == [
+            "speckit.test-ext.hello",
+            "speckit.test-ext.bye",
+        ]
+
+    def test_hook_list_with_non_mapping_entry_rejected(self, temp_dir, valid_manifest_data):
+        """A list entry that is not a mapping must raise ValidationError."""
+        import yaml
+
+        valid_manifest_data["hooks"]["after_tasks"] = [
+            {"command": "speckit.test-ext.hello"},
+            "not-a-mapping",
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(
+            ValidationError,
+            match="Invalid hook 'after_tasks': expected a mapping or list of mappings",
+        ):
+            ExtensionManifest(manifest_path)
+
+    def test_hook_list_command_refs_normalized(self, temp_dir, valid_manifest_data):
+        """Alias-form command refs are lifted to canonical form for every entry
+        in a list hook, each emitting a warning."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"].append({
+            "name": "speckit.test-ext.bye",
+            "file": "commands/bye.md",
+            "description": "Second test command",
+        })
+        valid_manifest_data["hooks"]["after_tasks"] = [
+            {"command": "test-ext.hello"},
+            {"command": "test-ext.bye"},
+        ]
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert [e["command"] for e in manifest.hooks["after_tasks"]] == [
+            "speckit.test-ext.hello",
+            "speckit.test-ext.bye",
+        ]
+        lifted = [w for w in manifest.warnings if "updated to canonical form" in w]
+        assert len(lifted) == 2
+
+    def test_hook_empty_list_rejected(self, temp_dir, valid_manifest_data):
+        """An empty list for a hook event is rejected rather than silently
+        registering nothing."""
+        import yaml
+
+        valid_manifest_data["hooks"]["after_tasks"] = []
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="must contain at least one entry"):
+            ExtensionManifest(manifest_path)
+
+    def test_hook_priority_field_validation(self, temp_dir, valid_manifest_data):
+        """Hook entry ``priority`` must be a positive integer when provided."""
+        import yaml
+
+        manifest_path = temp_dir / "extension.yml"
+
+        valid_manifest_data["hooks"]["after_tasks"] = {
+            "command": "speckit.test-ext.hello",
+            "priority": "high",
+        }
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+        with pytest.raises(ValidationError, match="invalid 'priority'.*integer"):
+            ExtensionManifest(manifest_path)
+
+        valid_manifest_data["hooks"]["after_tasks"]["priority"] = 0
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+        with pytest.raises(ValidationError, match="invalid 'priority'.*>= 1"):
+            ExtensionManifest(manifest_path)
+
+        # bool is a subclass of int, so it must be rejected explicitly.
+        valid_manifest_data["hooks"]["after_tasks"]["priority"] = True
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+        with pytest.raises(ValidationError, match="invalid 'priority'.*integer"):
+            ExtensionManifest(manifest_path)
+
+        valid_manifest_data["hooks"]["after_tasks"]["priority"] = 5
+        with open(manifest_path, 'w', encoding="utf-8") as f:
+            yaml.dump(valid_manifest_data, f)
+        manifest = ExtensionManifest(manifest_path)
+        assert manifest.hooks["after_tasks"]["priority"] == 5
 
     def test_manifest_hash(self, extension_dir):
         """Test manifest hash calculation."""
@@ -781,6 +919,71 @@ class TestExtensionManager:
         assert ext_dir.exists()
         assert (ext_dir / "extension.yml").exists()
         assert (ext_dir / "commands" / "hello.md").exists()
+
+    def test_install_from_directory_explicitly_recovers_active_skills_dir(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Extension install should explicitly request active skills-dir recovery."""
+        captured = {}
+
+        def fake_register_all(
+            self,
+            manifest,
+            extension_dir,
+            project_root,
+            link_outputs=False,
+            create_missing_active_skills_dir=False,
+        ):
+            captured["create_missing_active_skills_dir"] = (
+                create_missing_active_skills_dir
+            )
+            return {}
+
+        monkeypatch.setattr(
+            CommandRegistrar,
+            "register_commands_for_all_agents",
+            fake_register_all,
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=True)
+
+        assert captured["create_missing_active_skills_dir"] is True
+
+    def test_command_registrar_default_does_not_recover_active_skills_dir(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """The extension wrapper should preserve the core registrar's conservative default."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        captured = {}
+
+        def fake_register_all(
+            self,
+            commands,
+            source_id,
+            source_dir,
+            project_root,
+            context_note=None,
+            link_outputs=False,
+            create_missing_active_skills_dir=False,
+        ):
+            captured["create_missing_active_skills_dir"] = (
+                create_missing_active_skills_dir
+            )
+            return {}
+
+        monkeypatch.setattr(
+            AgentCommandRegistrar,
+            "register_commands_for_all_agents",
+            fake_register_all,
+        )
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_all_agents(manifest, extension_dir, project_dir)
+
+        assert captured["create_missing_active_skills_dir"] is False
 
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
@@ -4841,6 +5044,405 @@ class TestExtensionPriorityBackwardsCompatibility:
         assert result[2][0] == "ext-low-priority"
 
 
+class _StubManifest(ExtensionManifest):
+    """ExtensionManifest stub for HookExecutor tests.
+
+    Subclasses the real manifest so it satisfies ``register_hooks``'s type
+    while bypassing the file-based parsing/validation pipeline. The inherited
+    ``id`` and ``hooks`` properties read from ``data``, so populating ``data``
+    is enough.
+    """
+
+    def __init__(self, ext_id: str, hooks: dict):
+        self.data = {"extension": {"id": ext_id}, "hooks": hooks}
+
+
+class TestHookExecutorRegistration:
+    """Tests for HookExecutor.register_hooks / get_hooks_for_event with
+    multi-entry hook events and per-entry priority ordering."""
+
+    def test_register_hooks_single_mapping_back_compat(self, project_dir):
+        """Single-mapping form continues to register exactly one entry with
+        default priority."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})
+        )
+
+        config = executor.get_project_config()
+        entries = config["hooks"]["after_tasks"]
+        assert len(entries) == 1
+        assert entries[0]["extension"] == "ext-a"
+        assert entries[0]["command"] == "speckit.ext-a.go"
+        assert entries[0]["priority"] == DEFAULT_HOOK_PRIORITY
+
+    def test_register_hooks_multiple_entries_same_event(self, project_dir):
+        """A list of mappings registers each entry under the same event."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": [
+                        {"command": "speckit.ext-a.first", "description": "1st"},
+                        {"command": "speckit.ext-a.second", "description": "2nd"},
+                    ]
+                },
+            )
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert len(entries) == 2
+        assert [e["command"] for e in entries] == [
+            "speckit.ext-a.first",
+            "speckit.ext-a.second",
+        ]
+        assert all(e["extension"] == "ext-a" for e in entries)
+
+    def test_register_hooks_dedup_on_extension_and_command(self, project_dir):
+        """Re-registering the same (extension, command) updates in place
+        rather than appending a duplicate entry."""
+        executor = HookExecutor(project_dir)
+        manifest = _StubManifest(
+            "ext-a",
+            {
+                "after_tasks": [
+                    {"command": "speckit.ext-a.first", "description": "v1"},
+                    {"command": "speckit.ext-a.second", "description": "v1"},
+                ]
+            },
+        )
+        executor.register_hooks(manifest)
+
+        manifest.hooks["after_tasks"][0]["description"] = "v2"
+        executor.register_hooks(manifest)
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert len(entries) == 2
+        first = next(e for e in entries if e["command"] == "speckit.ext-a.first")
+        assert first["description"] == "v2"
+
+    def test_register_hooks_shape_change_removes_orphans(self, project_dir):
+        """Reinstalling with a shorter hook shape (list → single mapping, or a
+        shrunk list) purges the dropped commands instead of leaving orphans."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": [
+                        {"command": "speckit.ext-a.first"},
+                        {"command": "speckit.ext-a.second"},
+                    ]
+                },
+            )
+        )
+
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.first"}})
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert [e["command"] for e in entries] == ["speckit.ext-a.first"]
+
+    def test_register_hooks_single_to_list_reinstall_adds_entries(self, project_dir):
+        """Reinstalling a single-mapping hook as a list adds the new entries."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.first"}})
+        )
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": [
+                        {"command": "speckit.ext-a.first"},
+                        {"command": "speckit.ext-a.second"},
+                    ]
+                },
+            )
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert [e["command"] for e in entries] == [
+            "speckit.ext-a.first",
+            "speckit.ext-a.second",
+        ]
+
+    def test_register_hooks_skips_entry_without_command(self, project_dir):
+        """An entry lacking a command is skipped (defensive; validated
+        manifests never reach this state)."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": [
+                        {"command": "speckit.ext-a.go"},
+                        {"optional": True},
+                    ]
+                },
+            )
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert [e["command"] for e in entries] == ["speckit.ext-a.go"]
+
+    def test_register_hooks_skips_non_dict_entry(self, project_dir):
+        """A non-dict entry in a hook list is skipped rather than crashing
+        (defensive; validated manifests never reach this state)."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {"after_tasks": [{"command": "speckit.ext-a.go"}, "not-a-mapping"]},
+            )
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert [e["command"] for e in entries] == ["speckit.ext-a.go"]
+
+    def test_register_hooks_purges_dropped_event_orphans(self, project_dir):
+        """Re-registering without an event it previously declared purges this
+        extension's entries from that event, scoped to this extension."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": {"command": "speckit.ext-a.tasks"},
+                    "after_plan": {"command": "speckit.ext-a.plan"},
+                    "after_implement": {"command": "speckit.ext-a.impl"},
+                },
+            )
+        )
+        executor.register_hooks(
+            _StubManifest("ext-b", {"after_plan": {"command": "speckit.ext-b.plan"}})
+        )
+
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.tasks"}})
+        )
+
+        hooks = executor.get_project_config()["hooks"]
+        assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-a.tasks"]
+        assert [e["command"] for e in hooks["after_plan"]] == ["speckit.ext-b.plan"]
+        assert "after_implement" not in hooks
+
+    def test_register_hooks_dropping_all_hooks_purges_orphans(self, project_dir):
+        """Reinstalling with an empty hooks mapping still purges this
+        extension's entries, scoped to this extension."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})
+        )
+        executor.register_hooks(
+            _StubManifest("ext-b", {"after_tasks": {"command": "speckit.ext-b.go"}})
+        )
+
+        executor.register_hooks(_StubManifest("ext-a", {}))
+
+        hooks = executor.get_project_config()["hooks"]
+        assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-b.go"]
+
+    def test_register_hooks_empty_hooks_purge_survives_corrupt_entry(self, project_dir):
+        """A corrupt non-dict entry already on disk does not break the
+        empty-hooks orphan purge; it is dropped and valid entries survive."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})
+        )
+        executor.register_hooks(
+            _StubManifest("ext-b", {"after_tasks": {"command": "speckit.ext-b.go"}})
+        )
+        config = executor.get_project_config()
+        config["hooks"]["after_tasks"].append("corrupt-non-dict-entry")
+        executor.save_project_config(config)
+
+        executor.register_hooks(_StubManifest("ext-a", {}))
+
+        hooks = executor.get_project_config()["hooks"]
+        assert [e["command"] for e in hooks["after_tasks"]] == ["speckit.ext-b.go"]
+
+    def test_register_hooks_duplicate_command_moves_to_end(self, project_dir):
+        """A command repeated in one manifest keeps the last value and the last
+        insertion position, so equal-priority tie order is 'last wins'."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": [
+                        {"command": "speckit.ext-a.dup", "description": "first"},
+                        {"command": "speckit.ext-a.other"},
+                        {"command": "speckit.ext-a.dup", "description": "last"},
+                    ]
+                },
+            )
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert [e["command"] for e in entries] == [
+            "speckit.ext-a.other",
+            "speckit.ext-a.dup",
+        ]
+        assert entries[-1]["description"] == "last"
+
+    def test_register_hooks_preserves_other_extensions(self, project_dir):
+        """Re-registering one extension must not disturb another extension's
+        entries on the same event."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})
+        )
+        executor.register_hooks(
+            _StubManifest("ext-b", {"after_tasks": {"command": "speckit.ext-b.go"}})
+        )
+
+        executor.register_hooks(
+            _StubManifest("ext-a", {"after_tasks": {"command": "speckit.ext-a.go"}})
+        )
+
+        entries = executor.get_project_config()["hooks"]["after_tasks"]
+        assert sorted(e["extension"] for e in entries) == ["ext-a", "ext-b"]
+
+    def test_get_hooks_for_event_sorts_by_priority(self, project_dir):
+        """Returned entries are sorted by priority ascending; equal priorities
+        preserve insertion order via stable sort."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": [
+                        {"command": "speckit.ext-a.mid", "priority": 10},
+                        {"command": "speckit.ext-a.first", "priority": 1},
+                        {"command": "speckit.ext-a.late", "priority": 20},
+                        {"command": "speckit.ext-a.mid-tied", "priority": 10},
+                    ]
+                },
+            )
+        )
+
+        ordered = executor.get_hooks_for_event("after_tasks")
+        assert [e["command"] for e in ordered] == [
+            "speckit.ext-a.first",
+            "speckit.ext-a.mid",
+            "speckit.ext-a.mid-tied",
+            "speckit.ext-a.late",
+        ]
+
+    def test_get_hooks_for_event_orders_across_extensions(self, project_dir):
+        """Priority controls execution order across extensions regardless of
+        install order (Issue #2378 use case)."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-report",
+                {"after_plan": {"command": "speckit.ext-report.run", "priority": 20}},
+            )
+        )
+        executor.register_hooks(
+            _StubManifest(
+                "ext-verify",
+                {"after_plan": {"command": "speckit.ext-verify.run", "priority": 5}},
+            )
+        )
+
+        ordered = executor.get_hooks_for_event("after_plan")
+        assert [e["command"] for e in ordered] == [
+            "speckit.ext-verify.run",
+            "speckit.ext-report.run",
+        ]
+
+    def test_get_hooks_for_event_treats_missing_priority_as_default(self, project_dir):
+        """Entries persisted before priority was introduced should be sorted
+        as if their priority equaled DEFAULT_HOOK_PRIORITY."""
+        executor = HookExecutor(project_dir)
+        # Legacy on-disk entry with no priority key.
+        # register_hooks now always sets one, so write this state directly.
+        executor.save_project_config({
+            "installed": [],
+            "settings": {"auto_execute_hooks": True},
+            "hooks": {
+                "after_tasks": [
+                    {
+                        "extension": "legacy",
+                        "command": "speckit.legacy.go",
+                        "enabled": True,
+                    },
+                    {
+                        "extension": "newer",
+                        "command": "speckit.newer.first",
+                        "enabled": True,
+                        "priority": 1,
+                    },
+                ]
+            },
+        })
+
+        ordered = executor.get_hooks_for_event("after_tasks")
+        assert [e["command"] for e in ordered] == [
+            "speckit.newer.first",
+            "speckit.legacy.go",
+        ]
+
+    def test_get_hooks_for_event_tolerates_corrupted_priority(self, project_dir):
+        """A corrupted on-disk ``priority`` (non-numeric, None, or < 1) is
+        normalized to the default instead of raising during sort."""
+        executor = HookExecutor(project_dir)
+        executor.save_project_config({
+            "installed": [],
+            "settings": {"auto_execute_hooks": True},
+            "hooks": {
+                "after_tasks": [
+                    {
+                        "extension": "corrupt",
+                        "command": "speckit.corrupt.go",
+                        "enabled": True,
+                        "priority": "not-a-number",
+                    },
+                    {
+                        "extension": "early",
+                        "command": "speckit.early.go",
+                        "enabled": True,
+                        "priority": 1,
+                    },
+                ]
+            },
+        })
+
+        ordered = executor.get_hooks_for_event("after_tasks")
+        assert [e["command"] for e in ordered] == [
+            "speckit.early.go",
+            "speckit.corrupt.go",
+        ]
+
+    def test_unregister_hooks_removes_all_extension_entries(self, project_dir):
+        """unregister_hooks removes every entry for the extension regardless
+        of how many were registered to a given event."""
+        executor = HookExecutor(project_dir)
+        executor.register_hooks(
+            _StubManifest(
+                "ext-a",
+                {
+                    "after_tasks": [
+                        {"command": "speckit.ext-a.first"},
+                        {"command": "speckit.ext-a.second"},
+                    ]
+                },
+            )
+        )
+        executor.register_hooks(
+            _StubManifest("ext-b", {"after_tasks": {"command": "speckit.ext-b.solo"}})
+        )
+
+        executor.unregister_hooks("ext-a")
+
+        entries = executor.get_project_config()["hooks"].get("after_tasks", [])
+        assert [e["extension"] for e in entries] == ["ext-b"]
+
+
 class TestHookInvocationRendering:
     """Test hook invocation formatting for different agent modes."""
 
@@ -4867,7 +5469,7 @@ class TestHookInvocationRendering:
         assert "EXECUTE_COMMAND_INVOCATION: /skill:speckit-plan" in message
 
     def test_codex_hooks_render_dollar_skill_invocation(self, project_dir):
-        """Codex projects with --ai-skills should render $speckit-* invocations."""
+        """Codex projects with skills mode should render $speckit-* invocations."""
         init_options = project_dir / ".specify" / "init-options.json"
         init_options.parent.mkdir(parents=True, exist_ok=True)
         init_options.write_text(json.dumps({"ai": "codex", "ai_skills": True}))
@@ -4883,6 +5485,26 @@ class TestHookInvocationRendering:
 
         assert execution["command"] == "speckit.tasks"
         assert execution["invocation"] == "$speckit-tasks"
+
+    def test_non_boolean_ai_skills_keeps_default_hook_invocation(self, project_dir):
+        """Corrupted truthy ai_skills values should not enable skill invocation."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(
+            json.dumps({"ai": "codex", "ai_skills": "false"}), encoding="utf-8"
+        )
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "/speckit.tasks"
 
     def test_cline_hooks_render_hyphenated_invocation(self, project_dir):
         """Cline projects should render /speckit-* invocations."""
