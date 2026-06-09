@@ -25,8 +25,6 @@ EXT_CREATE_FEATURE_PS = (
     PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
 )
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
-EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature-branch.sh"
-EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
 
 HAS_PWSH = shutil.which("pwsh") is not None
 
