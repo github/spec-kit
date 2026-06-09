@@ -103,11 +103,11 @@ def load_custom_steps(project_root: Path) -> list[str]:
 
     loaded: list[str] = []
     for step_dir in steps_dir.iterdir():
-        if not step_dir.is_dir():
-            continue
-        # Skip symlinked step directories so the imported package always
-        # resolves to a real directory inside the project root.
+        # Check symlinks before is_dir() since the latter follows symlinks
+        # and would stat an external target through a symlinked directory.
         if step_dir.is_symlink():
+            continue
+        if not step_dir.is_dir():
             continue
         step_yml = step_dir / "step.yml"
         init_py = step_dir / "__init__.py"

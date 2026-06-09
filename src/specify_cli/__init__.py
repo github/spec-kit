@@ -3873,9 +3873,11 @@ def workflow_step_remove(
             )
             raise typer.Exit(1)
     elif in_registry:
-        # Remove the registry entry FIRST so that, if the registry write fails
-        # (read-only filesystem, permission denied), the on-disk step directory
-        # is left intact and the registry/filesystem state remains consistent.
+        # Remove the registry entry, then the directory. If the directory
+        # delete fails, restore the registry entry so state stays consistent
+        # and a future `step add` isn't blocked by an orphaned directory
+        # with no registry entry.
+        registry_metadata = registry.get(step_id)
         try:
             registry.remove(step_id)
         except StepValidationError as exc:
@@ -3886,6 +3888,11 @@ def workflow_step_remove(
             try:
                 shutil.rmtree(step_dir)
             except OSError as exc:
+                # Restore registry entry to keep state consistent
+                try:
+                    registry.add(step_id, registry_metadata or {})
+                except Exception:  # noqa: BLE001
+                    pass
                 console.print(
                     f"[red]Error:[/red] Failed to remove step directory {step_dir}: {exc}"
                 )
