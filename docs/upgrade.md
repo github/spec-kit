@@ -111,6 +111,26 @@ These files are **never touched** by the upgrade—the template packages don't e
 
 The `specs/` directory is completely excluded from template packages and will never be modified during upgrades.
 
+### Keeping specs current in existing projects
+
+For brownfield projects, separate two loops:
+
+- **Spec Kit project-file updates** refresh managed commands, scripts, templates, and shared memory files.
+- **Feature artifact evolution** keeps your repository-specific `specs/` artifacts aligned with the code and product behavior you intend to ship.
+
+When you add another feature to an existing project, create a new feature spec through your installed `/speckit.specify` command and continue through `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement`. The new feature gets its own directory under `specs/`, while previous feature directories remain as historical project artifacts.
+
+When you extend or correct an existing feature, update that feature's current artifacts instead of regenerating the whole project:
+
+1. Start from a clean working tree or a dedicated branch so you can review every generated change.
+2. Decide whether the work changes the feature's intended behavior or only fixes the implementation.
+3. If the intended behavior changes, revise the existing `spec.md` with `/speckit.clarify` or an explicit edit, then rerun `/speckit.plan` and `/speckit.tasks` so the downstream artifacts match the revised spec.
+4. If only the code changed, compare the implementation against the existing `spec.md`, `plan.md`, and `tasks.md`; update those artifacts only when they no longer describe the behavior you want to preserve.
+5. Run `/speckit.analyze` before implementation resumes to catch gaps between the spec, plan, and tasks.
+6. Run `/speckit.implement` with the updated artifacts, then review the resulting code and artifact diffs together.
+
+Before refreshing Spec Kit project files with `specify init --here --force`, protect any project-specific material that lives outside `specs/`, especially `.specify/memory/constitution.md` and any customized files under `.specify/templates/` or `.specify/scripts/`. Your `specs/` directory is not part of the template package, but those shared project files can be overwritten by a forced refresh.
+
 ### Update command
 
 Run this inside your project directory:

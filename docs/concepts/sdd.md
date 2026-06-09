@@ -24,6 +24,8 @@ those artifacts over time.
 | **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
 
+In brownfield work, Spec Kit is not a one-time scaffold. Treat project-file updates and feature artifact updates as separate loops: refresh managed commands and templates when you upgrade Spec Kit, and evolve `specs/` artifacts when product behavior changes. See the [upgrade guide](../upgrade.md#keeping-specs-current-in-existing-projects) for the existing-project workflow.
+
 ## Experimental Goals
 
 Our research and experimentation focus on:

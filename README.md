@@ -254,6 +254,8 @@ Spec-Driven Development is a structured process that emphasizes:
 | **Creative Exploration**                 | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul>                         |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul>                                                                |
 
+For existing projects, keep Spec Kit tooling updates separate from feature artifact evolution: refresh managed project files when upgrading, and update `specs/` artifacts when intended behavior changes. The [Upgrade Guide](./docs/upgrade.md#keeping-specs-current-in-existing-projects) describes the recommended brownfield loop.
+
 ## 🎯 Experimental Goals
 
 Our research and experimentation focus on:
