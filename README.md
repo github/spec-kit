@@ -584,6 +584,16 @@ Once the implementation is complete, test the application and resolve any runtim
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=github%2Fspec-kit&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=github/spec-kit&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=github/spec-kit&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=github/spec-kit&type=date&legend=top-left" />
+ </picture>
+</a>
+
 ## 💬 Support
 
 For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
