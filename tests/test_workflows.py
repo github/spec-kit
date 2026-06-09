@@ -990,7 +990,7 @@ class TestInitStep:
         ctx = StepContext(
             project_root=str(tmp_path), default_integration="copilot"
         )
-        config = {"id": "bootstrap", "here": True, "script": "sh", "no_git": True}
+        config = {"id": "bootstrap", "here": True, "script": "sh"}
         result = step.execute(config, ctx)
 
         assert result.status == StepStatus.COMPLETED
@@ -1011,7 +1011,7 @@ class TestInitStep:
             project_root=str(tmp_path), default_integration="copilot"
         )
         result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh", "no_git": True}, ctx
+            {"id": "bootstrap", "here": True, "script": "sh"}, ctx
         )
         assert result.status == StepStatus.COMPLETED
         assert result.output["integration"] == "copilot"
@@ -1029,7 +1029,6 @@ class TestInitStep:
                 "id": "bootstrap",
                 "project": "demo",
                 "script": "sh",
-                "no_git": True,
             },
             ctx,
         )
@@ -1048,7 +1047,6 @@ class TestInitStep:
                 "here": True,
                 "integration": "no-such-agent",
                 "script": "sh",
-                "no_git": True,
             },
             ctx,
         )
@@ -1067,7 +1065,7 @@ class TestInitStep:
             project_root=str(tmp_path), default_integration="copilot"
         )
         result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh", "no_git": True},
+            {"id": "bootstrap", "here": True, "script": "sh"},
             ctx,
         )
         assert result.status == StepStatus.FAILED

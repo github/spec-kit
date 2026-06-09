@@ -53,14 +53,10 @@ class InitStep(StepBase):
     ``force``
         Merge/overwrite without confirmation when the directory is not
         empty.
-    ``no_git``
-        Skip git repository initialization.
     ``ignore_agent_tools``
         Skip checks for the coding agent CLI (defaults to ``true``).
     ``preset``
         Preset ID to install during initialization.
-    ``branch_numbering``
-        Branch numbering strategy (``sequential`` or ``timestamp``).
     """
 
     type_key = "init"
@@ -74,10 +70,8 @@ class InitStep(StepBase):
 
         script = self._resolve(config.get("script"), context)
         preset = self._resolve(config.get("preset"), context)
-        branch_numbering = self._resolve(config.get("branch_numbering"), context)
 
         force = self._resolve_bool(config.get("force"), context)
-        no_git = self._resolve_bool(config.get("no_git"), context)
         # Workflows run unattended; skip the agent CLI presence check by default.
         ignore_agent_tools = self._resolve_bool(
             config.get("ignore_agent_tools", True), context
@@ -128,14 +122,10 @@ class InitStep(StepBase):
             argv.extend(["--integration", str(integration)])
         if script:
             argv.extend(["--script", str(script)])
-        if branch_numbering:
-            argv.extend(["--branch-numbering", str(branch_numbering)])
         if preset:
             argv.extend(["--preset", str(preset)])
         if force:
             argv.append("--force")
-        if no_git:
-            argv.append("--no-git")
         if ignore_agent_tools:
             argv.append("--ignore-agent-tools")
 
