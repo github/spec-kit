@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from ..base import SkillsIntegration
+from ..base import IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 # Mapping of command template stem → argument-hint text shown inline
@@ -44,6 +44,17 @@ class ClaudeIntegration(SkillsIntegration):
     }
     context_file = "CLAUDE.md"
     multi_install_safe = True
+
+    @classmethod
+    def options(cls) -> list[IntegrationOption]:
+        return [
+            IntegrationOption(
+                "--no-model-invocation",
+                is_flag=True,
+                default=False,
+                help="Set generated Claude skills to user-invocable only",
+            ),
+        ]
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
@@ -149,11 +160,55 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
-    def post_process_skill_content(self, content: str) -> str:
+    @staticmethod
+    def _set_frontmatter_flag(content: str, key: str, value: str) -> str:
+        """Set ``key: value`` in frontmatter, inserting it when missing."""
+        lines = content.splitlines(keepends=True)
+        out: list[str] = []
+        dash_count = 0
+        replaced = False
+
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped == "---":
+                dash_count += 1
+                out.append(line)
+                continue
+            if dash_count == 1 and stripped.startswith(f"{key}:"):
+                if line.endswith("\r\n"):
+                    eol = "\r\n"
+                elif line.endswith("\n"):
+                    eol = "\n"
+                else:
+                    eol = ""
+                out.append(f"{key}: {value}{eol}")
+                replaced = True
+                continue
+            out.append(line)
+
+        if replaced:
+            return "".join(out)
+        return ClaudeIntegration._inject_frontmatter_flag(content, key, value)
+
+    def post_process_skill_content(
+        self,
+        content: str,
+        parsed_options: dict[str, Any] | None = None,
+    ) -> str:
         """Inject Claude-specific frontmatter flags and hook notes."""
-        updated = super().post_process_skill_content(content)
+        updated = super().post_process_skill_content(
+            content,
+            parsed_options=parsed_options,
+        )
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        disable_model_invocation = bool(
+            parsed_options and parsed_options.get("no_model_invocation")
+        )
+        updated = self._set_frontmatter_flag(
+            updated,
+            "disable-model-invocation",
+            "true" if disable_model_invocation else "false",
+        )
         return updated
 
     def setup(

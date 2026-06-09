@@ -282,7 +282,11 @@ class CopilotIntegration(IntegrationBase):
         """Copilot commands use ``.agent.md`` extension."""
         return f"speckit.{template_name}.agent.md"
 
-    def post_process_skill_content(self, content: str) -> str:
+    def post_process_skill_content(
+        self,
+        content: str,
+        parsed_options: dict[str, Any] | None = None,
+    ) -> str:
         """Inject shared hook guidance into Copilot skill content.
 
         Delegates to :class:`_CopilotSkillsHelper` for shared post-processing.
@@ -413,7 +417,10 @@ class CopilotIntegration(IntegrationBase):
                 continue
 
             content = path.read_text(encoding="utf-8")
-            updated = self.post_process_skill_content(content)
+            updated = self.post_process_skill_content(
+                content,
+                parsed_options=parsed_options,
+            )
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))
                 self.record_file_in_manifest(path, project_root, manifest)

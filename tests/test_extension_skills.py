@@ -303,6 +303,28 @@ class TestExtensionSkillRegistration:
         assert "description" in parsed
         assert parsed["disable-model-invocation"] is False
 
+    def test_claude_skill_respects_no_model_invocation_init_option(
+        self,
+        skills_project,
+        extension_dir,
+    ):
+        """Extension skills inherit Claude's persisted no-model-invocation option."""
+        project_dir, skills_dir = skills_project
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts = json.loads(opts_file.read_text(encoding="utf-8"))
+        opts["integration_options"] = "--no-model-invocation"
+        opts["integration_parsed_options"] = {"no_model_invocation": True}
+        opts_file.write_text(json.dumps(opts), encoding="utf-8")
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        parsed = yaml.safe_load(skill_file.read_text().split("---", 2)[1])
+        assert parsed["disable-model-invocation"] is True
+
     def test_no_skills_when_ai_skills_disabled(self, no_skills_project, extension_dir):
         """No skills should be created when ai_skills is false."""
         manager = ExtensionManager(no_skills_project)

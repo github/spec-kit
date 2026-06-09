@@ -951,6 +951,9 @@ class ExtensionManager:
         selected_ai = opts.get("ai")
         if not isinstance(selected_ai, str) or not selected_ai:
             return []
+        integration_parsed_options = opts.get("integration_parsed_options")
+        if not isinstance(integration_parsed_options, dict):
+            integration_parsed_options = None
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai)
 
@@ -1043,7 +1046,8 @@ class ExtensionManager:
             )
             if integration is not None and hasattr(integration, "post_process_skill_content"):
                 skill_content = integration.post_process_skill_content(
-                    skill_content
+                    skill_content,
+                    parsed_options=integration_parsed_options,
                 )
 
             if link_outputs:

@@ -38,6 +38,13 @@ class TestClaudeIntegration:
         integration = get_integration("claude")
         assert integration.context_file == "CLAUDE.md"
 
+    def test_options_include_no_model_invocation(self):
+        integration = get_integration("claude")
+        options = {option.name: option for option in integration.options()}
+        assert "--no-model-invocation" in options
+        assert options["--no-model-invocation"].is_flag is True
+        assert options["--no-model-invocation"].default is False
+
     def test_setup_creates_skill_files(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
@@ -445,7 +452,7 @@ class TestClaudeArgumentHints:
 
 
 class TestClaudeDisableModelInvocation:
-    """Verify disable-model-invocation is false for Claude skills."""
+    """Verify Claude skill model-invocation frontmatter."""
 
     def test_setup_sets_disable_model_invocation_false(self, tmp_path):
         """Generated SKILL.md files must have disable-model-invocation: false."""
@@ -461,6 +468,151 @@ class TestClaudeDisableModelInvocation:
             assert parsed["disable-model-invocation"] is False, (
                 f"{f.parent.name}: expected disable-model-invocation: false"
             )
+
+    def test_setup_honors_no_model_invocation_option(self, tmp_path):
+        """--no-model-invocation sets generated Claude skills to user-invocable only."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(
+            tmp_path,
+            m,
+            parsed_options={"no_model_invocation": True},
+            script_type="sh",
+        )
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            parsed = yaml.safe_load(parts[1])
+            assert parsed["user-invocable"] is True
+            assert parsed["disable-model-invocation"] is True, (
+                f"{f.parent.name}: expected disable-model-invocation: true"
+            )
+
+    def test_init_no_model_invocation_persists_and_updates_claude_skills(
+        self,
+        tmp_path,
+    ):
+        """init stores the option and applies it to core and extension skills."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "claude-no-model"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            runner = CliRunner()
+            result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "claude",
+                    "--integration-options",
+                    "--no-model-invocation",
+                    "--script",
+                    "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+
+        init_options = json.loads(
+            (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
+        )
+        assert init_options["integration_options"] == "--no-model-invocation"
+        assert init_options["integration_parsed_options"] == {
+            "no_model_invocation": True,
+        }
+
+        integration_state = json.loads(
+            (project / ".specify" / "integration.json").read_text(encoding="utf-8")
+        )
+        claude_settings = integration_state["integration_settings"]["claude"]
+        assert claude_settings["raw_options"] == "--no-model-invocation"
+        assert claude_settings["parsed_options"] == {"no_model_invocation": True}
+
+        skill_files = [
+            project / ".claude" / "skills" / "speckit-plan" / "SKILL.md",
+            project
+            / ".claude"
+            / "skills"
+            / "speckit-agent-context-update"
+            / "SKILL.md",
+        ]
+        for skill_file in skill_files:
+            assert skill_file.exists()
+            parts = skill_file.read_text(encoding="utf-8").split("---", 2)
+            parsed = yaml.safe_load(parts[1])
+            assert parsed["disable-model-invocation"] is True
+
+    def test_upgrade_reuses_stored_no_model_invocation_option(self, tmp_path):
+        """upgrade without --integration-options preserves the stored opt-out."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "claude-upgrade-no-model"
+        project.mkdir()
+        runner = CliRunner()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            init_result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    "claude",
+                    "--integration-options",
+                    "--no-model-invocation",
+                    "--script",
+                    "sh",
+                    "--no-git",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+            assert init_result.exit_code == 0, init_result.output
+
+            plan_skill = (
+                project / ".claude" / "skills" / "speckit-plan" / "SKILL.md"
+            )
+            plan_skill.write_text(
+                plan_skill.read_text(encoding="utf-8").replace(
+                    "disable-model-invocation: true",
+                    "disable-model-invocation: false",
+                ),
+                encoding="utf-8",
+            )
+
+            upgrade_result = runner.invoke(
+                app,
+                ["integration", "upgrade", "claude", "--force"],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert upgrade_result.exit_code == 0, upgrade_result.output
+        parts = plan_skill.read_text(encoding="utf-8").split("---", 2)
+        parsed = yaml.safe_load(parts[1])
+        assert parsed["disable-model-invocation"] is True
+
+        init_options = json.loads(
+            (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
+        )
+        assert init_options["integration_parsed_options"] == {
+            "no_model_invocation": True,
+        }
 
     def test_disable_model_invocation_not_true(self, tmp_path):
         """No Claude skill should have disable-model-invocation: true."""
@@ -575,6 +727,17 @@ class TestClaudeHookCommandNote:
         assert "user-invocable: true" in result
         assert "disable-model-invocation: false" in result
         assert "replace dots" in result
+
+    def test_post_process_honors_no_model_invocation_option(self):
+        """post_process_skill_content should honor persisted parsed options."""
+        i = get_integration("claude")
+        content = "---\nname: test\ndescription: test\n---\n\nBody\n"
+        result = i.post_process_skill_content(
+            content,
+            parsed_options={"no_model_invocation": True},
+        )
+        assert "user-invocable: true" in result
+        assert "disable-model-invocation: true" in result
 
 
 class TestSpeckitManifestRecordsSkippedFiles:
