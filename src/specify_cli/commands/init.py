@@ -836,14 +836,16 @@ def register(app: typer.Typer) -> None:
         usage_label = "skills" if native_skill_mode else "slash commands"
 
         def _display_cmd(name: str) -> str:
-            if codex_skill_mode or agy_skill_mode or trae_skill_mode:
+            if codex_skill_mode:
                 return f"$speckit-{name}"
             if claude_skill_mode:
                 return f"/speckit-{name}"
             if kimi_skill_mode:
                 return f"/skill:speckit-{name}"
             if (
-                cursor_agent_skill_mode
+                agy_skill_mode
+                or trae_skill_mode
+                or cursor_agent_skill_mode
                 or copilot_skill_mode
                 or devin_skill_mode
                 or zed_skill_mode
