@@ -51,6 +51,22 @@ CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
+
+def is_slash_skills_agent(selected_ai: str, ai_skills_enabled: bool) -> bool:
+    """Return True if *selected_ai* uses ``/speckit-<name>`` hook invocations.
+
+    The decision is based on the agent sets defined above:
+
+    *   Agents in `ALWAYS_SLASH_AGENTS` always use slash invocations.
+    *   Agents in `CONDITIONAL_SLASH_AGENTS` only use them when
+        *ai_skills_enabled* is ``True``.
+    *   All other agents return ``False``.
+    """
+    return selected_ai in ALWAYS_SLASH_AGENTS or (
+        selected_ai in CONDITIONAL_SLASH_AGENTS and ai_skills_enabled
+    )
+
+
 DEFAULT_HOOK_PRIORITY = 10
 
 REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
@@ -2807,12 +2823,7 @@ class HookExecutor:
 
             return f"/{format_cline_command_name(command_id)}"
 
-        # Agents that use /speckit-<name> (slash-skills invocation):
-        # - Always skills-based: devin, trae, zed
-        # - Conditional on ai_skills: agy, claude, copilot, cursor-agent
-        use_slash = selected_ai in ALWAYS_SLASH_AGENTS or (
-            selected_ai in CONDITIONAL_SLASH_AGENTS and ai_skills_enabled
-        )
+        use_slash = is_slash_skills_agent(selected_ai, ai_skills_enabled)
 
         if skill_name and use_slash:
             return f"/{skill_name}"

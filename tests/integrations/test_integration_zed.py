@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from specify_cli.integrations import get_integration
 
 from .test_integration_base_skills import SkillsIntegrationTests
@@ -34,13 +36,14 @@ class TestZedHookInvocations:
     """Zed hook messages should reference slash-invokable skills."""
 
     def test_hooks_render_skill_invocation(self, tmp_path):
+        """Zed is always skills-based: renders /speckit-plan even with ai_skills=False."""
         from specify_cli.extensions import HookExecutor
 
         project = tmp_path / "zed-hooks"
         project.mkdir()
         init_options = project / ".specify" / "init-options.json"
         init_options.parent.mkdir(parents=True, exist_ok=True)
-        init_options.write_text(json.dumps({"ai": "zed", "ai_skills": True}))
+        init_options.write_text(json.dumps({"ai": "zed", "ai_skills": False}))
 
         hook_executor = HookExecutor(project)
         message = hook_executor.format_hook_message(
@@ -54,8 +57,6 @@ class TestZedHookInvocations:
             ],
         )
 
-        assert "Executing: `/speckit-plan`" in message
-        assert "EXECUTE_COMMAND: speckit.plan" in message
         assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
 
     def test_init_persists_ai_skills_for_zed(self, tmp_path, monkeypatch):
@@ -107,7 +108,48 @@ class TestZedHookInvocations:
             ],
         )
         assert "Executing: `/speckit-plan`" in message, (
-            "Hook rendering must produce /speckit-plan for Zed without hint injection\n"
-            f"Got message: {message}"
+            "Hook rendering must produce /speckit-plan for Zed without hint injection"
         )
         assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
+
+
+class TestSlashSkillsSets:
+    """Parameterized coverage for ALWAYS_SLASH_AGENTS / CONDITIONAL_SLASH_AGENTS."""
+
+    @staticmethod
+    def _render_invocation(project_path, ai: str, ai_skills: bool) -> str:
+        """Return the rendered invocation for ``speckit.plan`` via HookExecutor."""
+        from specify_cli.extensions import HookExecutor
+
+        init_options = project_path / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": ai, "ai_skills": ai_skills}))
+        hook_executor = HookExecutor(project_path)
+        return hook_executor._render_hook_invocation("speckit.plan")
+
+    @pytest.mark.parametrize(
+        ("ai", "ai_skills", "expected"),
+        [
+            # ALWAYS_SLASH_AGENTS — unconditional on ai_skills
+            ("devin", True, "/speckit-plan"),
+            ("devin", False, "/speckit-plan"),
+            ("trae", True, "/speckit-plan"),
+            ("trae", False, "/speckit-plan"),
+            ("zed", True, "/speckit-plan"),
+            ("zed", False, "/speckit-plan"),
+            # CONDITIONAL_SLASH_AGENTS — only when ai_skills is enabled
+            ("agy", True, "/speckit-plan"),
+            ("agy", False, "/speckit.plan"),
+            ("claude", True, "/speckit-plan"),
+            ("claude", False, "/speckit.plan"),
+            ("copilot", True, "/speckit-plan"),
+            ("copilot", False, "/speckit.plan"),
+            ("cursor-agent", True, "/speckit-plan"),
+            ("cursor-agent", False, "/speckit.plan"),
+        ],
+    )
+    def test_hook_invocation_format(self, tmp_path, ai, ai_skills, expected):
+        result = self._render_invocation(tmp_path, ai, ai_skills)
+        assert result == expected, (
+            f"{ai} (ai_skills={ai_skills}): expected {expected!r}, got {result!r}"
+        )

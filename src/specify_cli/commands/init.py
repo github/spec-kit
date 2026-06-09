@@ -738,20 +738,15 @@ def register(app: typer.Typer) -> None:
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"
 
+        from ..extensions import is_slash_skills_agent as _is_slash_skills_agent
+
         def _display_cmd(name: str) -> str:
             if codex_skill_mode:
                 return f"$speckit-{name}"
-            if claude_skill_mode:
-                return f"/speckit-{name}"
             if kimi_skill_mode:
                 return f"/skill:speckit-{name}"
             if (
-                agy_skill_mode
-                or trae_skill_mode
-                or cursor_agent_skill_mode
-                or copilot_skill_mode
-                or devin_skill_mode
-                or zed_skill_mode
+                _is_slash_skills_agent(selected_ai, _is_skills_integration)
                 or cline_skill_mode
             ):
                 return f"/speckit-{name}"
