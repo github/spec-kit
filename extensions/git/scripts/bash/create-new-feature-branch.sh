@@ -235,12 +235,11 @@ if [ "$_common_loaded" != "true" ]; then
     exit 1
 fi
 
-# SPECIFY_INIT_DIR is resolved (and validated) by the core get_repo_root. If only
-# the minimal git-common.sh was loaded (core common.sh absent), refuse rather
-# than silently falling back to the git toplevel — honoring the no-silent-fallback
-# contract instead of creating the feature in the wrong project.
-if [ -n "${SPECIFY_INIT_DIR:-}" ] && ! type get_repo_root >/dev/null 2>&1; then
-    echo "Error: SPECIFY_INIT_DIR requires the Spec Kit core scripts (common.sh), which were not found." >&2
+# SPECIFY_INIT_DIR is resolved (and validated) by the core resolver. If only the
+# minimal git-common.sh was loaded, or an older core common.sh without the
+# resolver was loaded, refuse rather than silently falling back to the wrong root.
+if [ -n "${SPECIFY_INIT_DIR:-}" ] && ! type resolve_specify_init_dir >/dev/null 2>&1; then
+    echo "Error: SPECIFY_INIT_DIR requires updated Spec Kit core scripts (common.sh with resolve_specify_init_dir), which were not found." >&2
     exit 1
 fi
 

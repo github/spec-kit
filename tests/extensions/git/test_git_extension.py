@@ -349,7 +349,23 @@ class TestCreateFeatureBash:
             env_extra={"SPECIFY_INIT_DIR": str(project)},
         )
         assert result.returncode != 0
-        assert "requires the Spec Kit core scripts" in result.stderr
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_specify_init_dir_with_stale_core_errors(self, tmp_path: Path):
+        """With an older core common.sh, a set SPECIFY_INIT_DIR must hard-error
+        instead of calling the stale get_repo_root that ignores the override."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "bash" / "common.sh").write_text(
+            "#!/usr/bin/env bash\nget_repo_root() { pwd; }\n",
+            encoding="utf-8",
+        )
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "x", "X feature",
+            env_extra={"SPECIFY_INIT_DIR": str(tmp_path / "missing")},
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
 
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
@@ -406,7 +422,27 @@ class TestCreateFeaturePowerShell:
             env=env,
         )
         assert result.returncode != 0
-        assert "requires the Spec Kit core scripts" in result.stderr
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_specify_init_dir_with_stale_core_errors(self, tmp_path: Path):
+        """With an older core common.ps1, a set SPECIFY_INIT_DIR must hard-error
+        instead of calling the stale Get-RepoRoot that ignores the override."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "powershell" / "common.ps1").write_text(
+            "function Get-RepoRoot { return (Get-Location).Path }\n",
+            encoding="utf-8",
+        )
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+        env = {**os.environ, **_GIT_ENV, "SPECIFY_INIT_DIR": str(tmp_path / "missing")}
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-ShortName", "x", "X feature"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
 
 
 # ── auto-commit.sh Tests ─────────────────────────────────────────────────────
