@@ -1086,10 +1086,12 @@ class TestInitStep:
             project_root=str(tmp_path), default_integration="copilot"
         )
         result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh", "force": True},
+            {"id": "bootstrap", "here": True, "script": "sh"},
             ctx,
         )
         assert result.status == StepStatus.COMPLETED
+        # Verify --force was implicitly added
+        assert "--force" in result.output["argv"]
 
     def test_default_integration_when_none_provided(self, tmp_path):
         from specify_cli.workflows.steps.init import InitStep

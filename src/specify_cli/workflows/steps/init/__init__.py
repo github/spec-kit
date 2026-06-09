@@ -107,18 +107,21 @@ class InitStep(StepBase):
         # ``specify init`` prompts for confirmation if the directory is not
         # empty.  Workflows run unattended (no stdin), so the prompt would
         # abort with a confusing error.  Fail fast with an actionable message.
+        # Exception: if the only pre-existing content is engine-owned (e.g.
+        # .specify/workflows/runs/), treat it as implicitly empty and auto-add
+        # --force so init can proceed unattended.
         targets_current_dir = here or not project or str(project) == "."
         if targets_current_dir and not force:
             base = context.project_root or os.getcwd()
             try:
                 with os.scandir(base) as it:
-                    not_empty = any(
+                    non_engine_entries = [
                         entry for entry in it
                         if entry.name not in _ENGINE_OWNED_DIRS
-                    )
+                    ]
             except OSError:
-                not_empty = False
-            if not_empty:
+                non_engine_entries = []
+            if non_engine_entries:
                 error_message = (
                     f"Target directory {base!r} is not empty. Set "
                     "'force: true' to merge into a non-empty directory."
@@ -138,6 +141,10 @@ class InitStep(StepBase):
                     },
                     error=error_message,
                 )
+            else:
+                # Only engine-owned dirs exist — implicitly force so specify
+                # init doesn't prompt about the non-empty directory.
+                force = True
 
         if integration:
             argv.extend(["--integration", str(integration)])
