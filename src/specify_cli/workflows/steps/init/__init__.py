@@ -11,11 +11,18 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from specify_cli._agent_config import DEFAULT_INIT_INTEGRATION
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
 #: Valid ``script`` values, mirroring ``specify init --script``.
 VALID_SCRIPT_TYPES = ("sh", "ps")
+
+#: Directories the workflow engine may create before steps run.
+#: These are excluded from the "non-empty directory" fast-fail check so
+#: that ``here: true`` works without requiring ``force: true`` when the
+#: only pre-existing content is engine run-state.
+_ENGINE_OWNED_DIRS = {".specify"}
 
 
 class InitStep(StepBase):
@@ -47,7 +54,10 @@ class InitStep(StepBase):
         Initialize in the target directory instead of creating a new one.
     ``integration``
         Integration key (e.g. ``copilot``).  Defaults to the workflow's
-        default integration.
+        default integration, then to ``DEFAULT_INIT_INTEGRATION``.
+    ``integration_options``
+        Extra options for the integration (e.g. ``"--skills"`` or
+        ``"--commands-dir .myagent/cmds"``).
     ``script``
         Script type, ``sh`` or ``ps``.
     ``force``
@@ -67,7 +77,14 @@ class InitStep(StepBase):
 
         integration = config.get("integration") or context.default_integration
         integration = self._resolve(integration, context)
+        # Apply the same default that specify init uses in non-interactive mode
+        # so that output.integration reflects the actual integration used.
+        if not integration:
+            integration = DEFAULT_INIT_INTEGRATION
 
+        integration_options = self._resolve(
+            config.get("integration_options"), context
+        )
         script = self._resolve(config.get("script"), context)
         preset = self._resolve(config.get("preset"), context)
 
@@ -95,7 +112,10 @@ class InitStep(StepBase):
             base = context.project_root or os.getcwd()
             try:
                 with os.scandir(base) as it:
-                    not_empty = any(it)
+                    not_empty = any(
+                        entry for entry in it
+                        if entry.name not in _ENGINE_OWNED_DIRS
+                    )
             except OSError:
                 not_empty = False
             if not_empty:
@@ -110,6 +130,7 @@ class InitStep(StepBase):
                         "project": project,
                         "here": here,
                         "integration": integration,
+                        "integration_options": integration_options,
                         "script": script,
                         "exit_code": 1,
                         "stdout": "",
@@ -120,6 +141,8 @@ class InitStep(StepBase):
 
         if integration:
             argv.extend(["--integration", str(integration)])
+        if integration_options:
+            argv.extend(["--integration-options", str(integration_options)])
         if script:
             argv.extend(["--script", str(script)])
         if preset:
@@ -136,6 +159,7 @@ class InitStep(StepBase):
             "project": project,
             "here": here,
             "integration": integration,
+            "integration_options": integration_options,
             "script": script,
             "exit_code": exit_code,
             "stdout": stdout,

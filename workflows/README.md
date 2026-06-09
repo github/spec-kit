@@ -126,6 +126,7 @@ and resolves the integration from the step config or the workflow default:
   type: init
   here: true                 # or: project: my-project
   integration: copilot       # Optional: defaults to workflow integration
+  integration_options: "--skills"  # Optional: extra options for the integration
   script: sh                 # Optional: sh or ps
   force: true                # Optional: required to merge into a non-empty directory
   preset: healthcare-compliance   # Optional preset ID

@@ -1072,6 +1072,62 @@ class TestInitStep:
         assert "force: true" in (result.error or "")
         assert not (tmp_path / ".specify").exists()
 
+    def test_engine_owned_dirs_do_not_trigger_non_empty_check(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Simulate the engine creating its run-state directory before steps run
+        (tmp_path / ".specify" / "workflows" / "runs" / "abc123").mkdir(
+            parents=True
+        )
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh", "force": True},
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+
+    def test_default_integration_when_none_provided(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        # No default_integration on context either
+        ctx = StepContext(project_root=str(tmp_path))
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"},
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["integration"] == "copilot"
+
+    def test_integration_options_passed_through(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "script": "sh",
+                "integration": "copilot",
+                "integration_options": "--skills",
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert "--integration-options" in result.output["argv"]
+        assert "--skills" in result.output["argv"]
+        assert result.output["integration_options"] == "--skills"
+
     def test_validate_rejects_bad_script(self):
         from specify_cli.workflows.steps.init import InitStep
 
