@@ -15,10 +15,10 @@ The following community-contributed extensions are available in [`catalog.commun
 - `integration` — syncs with external platforms
 - `visibility` — reports on project health or progress
 
-**Effect:**
+**Effect** (canonical `extension.yml`/catalog values):
 
-- `Read-only` — produces reports without modifying files
-- `Read+Write` — modifies files, creates artifacts, or updates specs
+- `read-only` — produces reports without modifying files (displayed as `Read-only` in the table)
+- `read-write` — modifies files, creates artifacts, or updates specs (displayed as `Read+Write` in the table)
 
 > [!TIP]
 > Extension authors can declare `category` and `effect` in their `extension.yml` under the `extension:` block. These fields are also available in `catalog.community.json` for tooling and the CLI (`specify extension info`).

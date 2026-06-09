@@ -119,7 +119,7 @@ Determine the category and effect from the extension's behavior:
 ```
 
 **Category** — free-form; common values: `docs`, `code`, `process`, `integration`, `visibility`
-**Effect** — `Read-only` (produces reports only) or `Read+Write` (modifies project files)
+**Effect** — write canonical values `read-only` or `read-write` in `extension.yml` and `catalog.community.json`; use `Read-only`/`Read+Write` only for the docs table display
 
 ### 6. Commit, push, and open PR
 
