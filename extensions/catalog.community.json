@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-08T18:02:51Z",
+  "updated_at": "2026-06-09T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -438,7 +438,7 @@
       "updated_at": "2026-04-10T00:00:00Z"
     },
     "brownkit": {
-      "name": "BrownKit \u2014 Brownfield Discovery for Spec-Kit",
+      "name": "BrownKit — Brownfield Discovery for Spec-Kit",
       "id": "brownkit",
       "description": "Evidence-driven capability discovery, security and QA risk assessment for existing codebases.",
       "author": "Maksim Shautsou",
@@ -851,8 +851,8 @@
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise.",
       "author": "raccioly",
-      "version": "0.25.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.25.0/spec-kit-docguard-v0.25.0.zip",
+      "version": "0.25.1",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.25.1/spec-kit-docguard-v0.25.1.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -886,7 +886,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-06-08T18:02:51Z"
+      "updated_at": "2026-06-09T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
