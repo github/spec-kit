@@ -2,6 +2,8 @@
 
 <!-- insert new changelog below this comment -->
 
+- feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
+
 ## [0.10.1] - 2026-06-09
 
 ### Changed

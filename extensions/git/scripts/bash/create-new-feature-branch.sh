@@ -235,9 +235,20 @@ if [ "$_common_loaded" != "true" ]; then
     exit 1
 fi
 
-# Resolve repository root
+# SPECIFY_INIT_DIR is resolved (and validated) by the core get_repo_root. If only
+# the minimal git-common.sh was loaded (core common.sh absent), refuse rather
+# than silently falling back to the git toplevel — honoring the no-silent-fallback
+# contract instead of creating the feature in the wrong project.
+if [ -n "${SPECIFY_INIT_DIR:-}" ] && ! type get_repo_root >/dev/null 2>&1; then
+    echo "Error: SPECIFY_INIT_DIR requires the Spec Kit core scripts (common.sh), which were not found." >&2
+    exit 1
+fi
+
+# Resolve repository root. When the core scripts are present, get_repo_root
+# honors SPECIFY_INIT_DIR (the explicit project override for non-interactive /
+# CI use) and hard-fails on an invalid value with no silent fallback.
 if type get_repo_root >/dev/null 2>&1; then
-    REPO_ROOT=$(get_repo_root)
+    REPO_ROOT=$(get_repo_root) || exit 1
 elif git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT=$(git rev-parse --show-toplevel)
 elif [ -n "$_PROJECT_ROOT" ]; then

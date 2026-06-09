@@ -197,7 +197,17 @@ if (-not $commonLoaded) {
     throw "Unable to locate common script file. Please ensure the Specify core scripts are installed."
 }
 
-# Resolve repository root
+# SPECIFY_INIT_DIR is resolved (and validated) by core Get-RepoRoot. If only the
+# minimal git-common.ps1 was loaded (core common.ps1 absent), refuse rather than
+# silently falling back to the script-dir walk-up project -- honoring the
+# no-silent-fallback contract instead of targeting the wrong project.
+if ($env:SPECIFY_INIT_DIR -and -not (Get-Command Get-RepoRoot -ErrorAction SilentlyContinue)) {
+    throw "SPECIFY_INIT_DIR requires the Spec Kit core scripts (common.ps1), which were not found."
+}
+
+# Resolve repository root. When the core scripts are present, Get-RepoRoot
+# honors SPECIFY_INIT_DIR (the explicit project override for non-interactive /
+# CI use) and hard-fails on an invalid value with no silent fallback.
 if (Get-Command Get-RepoRoot -ErrorAction SilentlyContinue) {
     $repoRoot = Get-RepoRoot
 } elseif ($projectRoot) {
