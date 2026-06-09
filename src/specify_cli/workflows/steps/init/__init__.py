@@ -206,6 +206,8 @@ class InitStep(StepBase):
             try:
                 os.chdir(prev_cwd)
             except OSError:
+                # Best-effort cleanup: avoid masking the init command result
+                # if restoring the previous working directory fails.
                 pass
 
         stdout = result.output or ""
