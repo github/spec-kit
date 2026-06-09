@@ -3001,8 +3001,8 @@
       "id": "superb",
       "description": "Bridges selected Superpowers disciplines into Spec Kit as evidence-first trust gates for agent workflows.",
       "author": "RbBtSn0w",
-      "version": "1.5.2",
-      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.5.2/superpowers-bridge.zip",
+      "version": "1.6.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.6.0/superpowers-bridge.zip",
       "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/superpowers-bridge/README.md",
@@ -3019,8 +3019,8 @@
         ]
       },
       "provides": {
-        "commands": 9,
-        "hooks": 4
+        "commands": 10,
+        "hooks": 5
       },
       "tags": [
         "methodology",
