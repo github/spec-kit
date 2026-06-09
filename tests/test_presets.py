@@ -4276,7 +4276,12 @@ class TestBundledPresetLocator:
 
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
-        monkeypatch.setattr("specify_cli.authentication.http.open_url", lambda url, timeout: FakeResponse(b"zip"))
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            assert redirect_validator is not None
+            redirect_validator(url, "http://example.com/preset.zip")
+            return FakeResponse(b"zip")
+
+        monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
 
         installed = False
 
@@ -4304,7 +4309,9 @@ class TestBundledPresetLocator:
             result = runner.invoke(app, ["preset", "add", "--from", "https:///preset.zip"])
 
         assert result.exit_code == 1
-        assert "URL must use HTTPS" in strip_ansi(result.output)
+        output = strip_ansi(result.output)
+        assert "URL must use HTTPS with a hostname" in output
+        assert "got https://" not in output
         open_url.assert_not_called()
 
     def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
@@ -4324,7 +4331,10 @@ class TestBundledPresetLocator:
 
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
-        monkeypatch.setattr("specify_cli.authentication.http.open_url", lambda url, timeout: FakeResponse(b"zip"))
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None, redirect_validator=None: FakeResponse(b"zip"),
+        )
         monkeypatch.setattr(PresetManager, "install_from_zip", lambda *args, **kwargs: None)
 
         with pytest.raises(typer.Exit) as exc_info:
@@ -4369,7 +4379,10 @@ class TestBundledPresetLocator:
 
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
-        monkeypatch.setattr("specify_cli.authentication.http.open_url", lambda url, timeout: response)
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None, redirect_validator=None: response,
+        )
         monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
 
         preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=7)

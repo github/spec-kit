@@ -702,8 +702,20 @@ def preset_add(
                         pass
                 return parsed_url.scheme == "https" or (parsed_url.scheme == "http" and is_loopback)
 
+            def _validate_download_redirect(old_url, new_url):
+                if not _is_allowed_download_url(_urlparse(new_url)):
+                    import urllib.error
+
+                    raise urllib.error.URLError(
+                        "redirect target must use HTTPS with a hostname, "
+                        "or HTTP for localhost/loopback"
+                    )
+
             if not _is_allowed_download_url(_parsed):
-                console.print(f"[red]Error:[/red] URL must use HTTPS (got {_parsed.scheme}://). HTTP is only allowed for localhost/loopback.")
+                console.print(
+                    "[red]Error:[/red] URL must use HTTPS with a hostname, "
+                    "or HTTP for localhost/loopback."
+                )
                 raise typer.Exit(1)
 
             console.print(f"Installing preset from [cyan]{from_url}[/cyan]...")
@@ -723,7 +735,12 @@ def preset_add(
                         from_url = _resolved_from_url
                         _preset_extra_headers = {"Accept": "application/octet-stream"}
 
-                    with _open_url(from_url, timeout=60, extra_headers=_preset_extra_headers) as response:
+                    with _open_url(
+                        from_url,
+                        timeout=60,
+                        extra_headers=_preset_extra_headers,
+                        redirect_validator=_validate_download_redirect,
+                    ) as response:
                         final_url = response.geturl() if hasattr(response, "geturl") else from_url
                         if not _is_allowed_download_url(_urlparse(final_url)):
                             console.print(
