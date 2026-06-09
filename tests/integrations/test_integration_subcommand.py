@@ -1549,3 +1549,85 @@ class TestSwitchClearsMetadataAfterTeardown:
         opts_json = project / ".specify" / "init-options.json"
         opts = json.loads(opts_json.read_text(encoding="utf-8"))
         assert opts.get("ai") == "copilot"
+
+
+# ── agent-context: no inert config when the extension is absent ──────
+
+
+class TestAgentContextNoInertConfig:
+    """The bundled agent-context extension is opt-in (single-agent install only)
+    and is not provisioned for multi-agent setups.  Integration commands must
+    therefore NOT leave an inert ``agent-context-config.yml`` behind when the
+    extension is absent — a config that nothing reads (see #2881) — but must
+    still manage it when the extension IS installed.
+    """
+
+    EXT_CONFIG = (".specify", "extensions", "agent-context", "agent-context-config.yml")
+
+    def _remove_agent_context_extension(self, project):
+        """Mimic a project without the agent-context extension: drop its
+        registry entry, package dir, and config file."""
+        import shutil
+
+        registry = project / ".specify" / "extensions" / ".registry"
+        if registry.exists():
+            data = json.loads(registry.read_text(encoding="utf-8"))
+            data.get("extensions", {}).pop("agent-context", None)
+            registry.write_text(json.dumps(data), encoding="utf-8")
+        shutil.rmtree(
+            project / ".specify" / "extensions" / "agent-context",
+            ignore_errors=True,
+        )
+
+    def _config_path(self, project):
+        return project.joinpath(*self.EXT_CONFIG)
+
+    def test_switch_writes_no_inert_config_when_extension_absent(self, tmp_path):
+        from specify_cli.extensions import ExtensionManager
+
+        project = _init_project(tmp_path, "claude")
+        install = _run_in_project(
+            project, ["integration", "install", "codex", "--script", "sh"]
+        )
+        assert install.exit_code == 0, install.output
+        self._remove_agent_context_extension(project)
+        assert not ExtensionManager(project).registry.is_installed("agent-context")
+
+        # Switching the default to an already-installed integration runs
+        # _update_init_options_for_integration, which manages the config.
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+        assert result.exit_code == 0, result.output
+        assert not ExtensionManager(project).registry.is_installed("agent-context")
+        assert not self._config_path(project).exists()
+
+    def test_upgrade_writes_no_inert_config_when_extension_absent(self, tmp_path):
+        from specify_cli.extensions import ExtensionManager
+
+        project = _init_project(tmp_path, "claude")
+        self._remove_agent_context_extension(project)
+        assert not ExtensionManager(project).registry.is_installed("agent-context")
+
+        result = _run_in_project(
+            project, ["integration", "upgrade", "claude", "--script", "sh"]
+        )
+        assert result.exit_code == 0, result.output
+        assert not ExtensionManager(project).registry.is_installed("agent-context")
+        assert not self._config_path(project).exists()
+
+    def test_switch_manages_config_when_extension_present(self, tmp_path):
+        from specify_cli import _load_agent_context_config
+        from specify_cli.extensions import ExtensionManager
+
+        project = _init_project(tmp_path, "claude")
+        install = _run_in_project(
+            project, ["integration", "install", "codex", "--script", "sh"]
+        )
+        assert install.exit_code == 0, install.output
+        assert ExtensionManager(project).registry.is_installed("agent-context")
+
+        # Switching the default to codex re-points the (installed) extension's
+        # config — the gate's positive branch still manages it.
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+        assert result.exit_code == 0, result.output
+        assert self._config_path(project).exists()
+        assert _load_agent_context_config(project)["context_file"] == "AGENTS.md"

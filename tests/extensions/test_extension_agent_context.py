@@ -335,8 +335,10 @@ class TestExtensionConfigWriters:
     def test_update_init_options_writes_context_file_to_ext_config(self, tmp_path):
         from specify_cli import _update_init_options_for_integration
 
-        # Pre-create the extension config so _update_init_options_for_integration
-        # updates it (rather than skipping it when ext config doesn't exist yet).
+        # The extension config is only managed when the extension is installed/
+        # registered; register it and pre-create its config so the call updates
+        # it (an absent extension is left alone — see #2881).
+        _write_registry(tmp_path, enabled=True)
         _write_ext_config(tmp_path, context_file="")
         i = _CtxIntegration()
         _update_init_options_for_integration(tmp_path, i, script_type="sh")
@@ -352,6 +354,7 @@ class TestExtensionConfigWriters:
     def test_update_init_options_preserves_custom_markers(self, tmp_path):
         from specify_cli import _update_init_options_for_integration
 
+        _write_registry(tmp_path, enabled=True)
         _write_ext_config(
             tmp_path,
             context_file="",
@@ -361,6 +364,23 @@ class TestExtensionConfigWriters:
         _update_init_options_for_integration(tmp_path, i)
         cfg = _load_agent_context_config(tmp_path)
         assert cfg["context_markers"] == {"start": "<!-- B -->", "end": "<!-- E -->"}
+
+    def test_update_init_options_skips_ext_config_when_extension_absent(self, tmp_path):
+        """When the agent-context extension is not installed/registered, the
+        config is not written — projects must not be left with an inert file
+        that nothing reads (see #2881)."""
+        from specify_cli import (
+            _AGENT_CTX_EXT_CONFIG,
+            _update_init_options_for_integration,
+        )
+
+        i = _CtxIntegration()
+        _update_init_options_for_integration(tmp_path, i, script_type="sh")
+        # init-options.json is still updated...
+        opts = load_init_options(tmp_path)
+        assert opts["integration"] == i.key
+        # ...but no agent-context config is created.
+        assert not (tmp_path / _AGENT_CTX_EXT_CONFIG).exists()
 
     def test_reinit_preserves_custom_markers(self, tmp_path):
         """specify init (reinit) must not overwrite user-customised markers."""

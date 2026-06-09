@@ -285,11 +285,11 @@ def _update_init_options_for_integration(
     falls back to the class-level defaults.
     """
     from .. import (
-        _AGENT_CTX_EXT_CONFIG,
         _update_agent_context_config_file,
         load_init_options,
         save_init_options,
     )
+    from ..extensions import ExtensionManager
     from .base import SkillsIntegration
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
@@ -307,20 +307,17 @@ def _update_init_options_for_integration(
 
     # Update the agent-context extension config BEFORE init-options.json
     # so a failure here doesn't leave init-options partially updated.
-    ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
-    if ext_cfg_path.exists():
+    #
+    # Only touch the config when the agent-context extension is installed and
+    # registered.  Keying off the registry (rather than the config file's
+    # presence) means a project without the extension isn't handed an inert
+    # config that nothing reads, and a stale file left by an older version
+    # isn't perpetuated (see #2881).
+    if ExtensionManager(project_root).registry.is_installed("agent-context"):
         _update_agent_context_config_file(
             project_root,
             integration.context_file,
             preserve_markers=True,
-        )
-    elif integration.context_file:
-        # Extension config doesn't exist yet (extension not installed).
-        # Write defaults so scripts have something to read.
-        _update_agent_context_config_file(
-            project_root,
-            integration.context_file,
-            preserve_markers=False,
         )
 
     save_init_options(project_root, opts)
