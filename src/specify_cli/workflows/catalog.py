@@ -924,7 +924,9 @@ class StepCatalog:
         if not force_refresh and self._is_url_cache_valid(entry.url):
             try:
                 with open(cache_file, encoding="utf-8") as f:
-                    return json.load(f)
+                    cached = json.load(f)
+                if isinstance(cached, dict):
+                    return cached
             except (json.JSONDecodeError, OSError):
                 pass
 
@@ -955,7 +957,9 @@ class StepCatalog:
             if cache_file.exists():
                 try:
                     with open(cache_file, encoding="utf-8") as f:
-                        return json.load(f)
+                        cached = json.load(f)
+                    if isinstance(cached, dict):
+                        return cached
                 except (json.JSONDecodeError, ValueError, OSError):
                     pass
             raise StepCatalogError(

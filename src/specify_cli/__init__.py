@@ -6104,8 +6104,12 @@ def workflow_step_add(
 
     # Create steps_base_dir now so the staging temp dir is on the same filesystem,
     # enabling a truly atomic os.rename() below.
-    steps_base_dir.mkdir(parents=True, exist_ok=True)
-    tmp_path = Path(tempfile.mkdtemp(prefix="speckit_step_tmp_", dir=steps_base_dir))
+    try:
+        steps_base_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = Path(tempfile.mkdtemp(prefix="speckit_step_tmp_", dir=steps_base_dir))
+    except OSError as exc:
+        console.print(f"[red]Error:[/red] Failed to create staging directory: {exc}")
+        raise typer.Exit(1)
     try:
         try:
             step_yml_content = _safe_fetch(step_yml_url)
@@ -6209,7 +6213,11 @@ def workflow_step_add(
         # Both paths are under steps_base_dir (same filesystem), so os.rename()
         # is atomic on POSIX and won't leave a partially-written directory at
         # step_dir on failure.
-        os.rename(tmp_path, step_dir)
+        try:
+            os.rename(tmp_path, step_dir)
+        except OSError as exc:
+            console.print(f"[red]Error:[/red] Failed to install step '{step_id}': {exc}")
+            raise typer.Exit(1)
     finally:
         # Clean up if the rename hasn't moved tmp_path yet (i.e. on any failure).
         shutil.rmtree(tmp_path, ignore_errors=True)
