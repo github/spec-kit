@@ -163,6 +163,7 @@ Essential commands for the Spec-Driven Development workflow:
 | `/speckit.tasks`         | `speckit-tasks`        | Generate actionable task lists for implementation                          |
 | `/speckit.taskstoissues` | `speckit-taskstoissues`| Convert generated task lists into GitHub issues for tracking and execution |
 | `/speckit.implement`     | `speckit-implement`    | Execute all tasks to build the feature according to the plan               |
+| `/speckit.converge`      | `speckit-converge`     | Assess the codebase against spec/plan/tasks and append remaining work as new tasks |
 
 ### Optional Commands
 

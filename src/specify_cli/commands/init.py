@@ -578,6 +578,7 @@ def register(app: typer.Typer) -> None:
         steps_lines.append(f"   {step_num}.3 [cyan]{_display_cmd('plan')}[/] - Create implementation plan")
         steps_lines.append(f"   {step_num}.4 [cyan]{_display_cmd('tasks')}[/] - Generate actionable tasks")
         steps_lines.append(f"   {step_num}.5 [cyan]{_display_cmd('implement')}[/] - Execute implementation")
+        steps_lines.append(f"   {step_num}.6 [cyan]{_display_cmd('converge')}[/] - Assess the codebase and append remaining work as tasks")
 
         steps_panel = Panel("\n".join(steps_lines), title="Next Steps", border_style="cyan", padding=(1, 2))
         console.print()

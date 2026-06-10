@@ -17,6 +17,7 @@ ARGUMENT_HINTS: dict[str, str] = {
     "plan": "Optional guidance for the planning phase",
     "tasks": "Optional task generation constraints",
     "implement": "Optional implementation guidance or task filter",
+    "converge": "Optional feature name to converge",
     "analyze": "Optional focus areas for analysis",
     "clarify": "Optional areas to clarify in the spec",
     "constitution": "Principles or values for the project constitution",
