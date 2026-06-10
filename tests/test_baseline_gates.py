@@ -316,6 +316,16 @@ class TestBanditSpecific:
         _install_script(repo, BANDIT_SCRIPT)
         return GateHandle(config=BANDIT_GATE, repo=repo)
 
+    def test_unresolvable_base_ref_fails_closed(self, gate: GateHandle):
+        # A base ref that cannot be resolved (unfetched, typo) must block
+        # the gate, not be treated as "baseline did not exist yet".
+        gate.commit([("a.py", 10)], "base")
+
+        result = gate.run(base="0123456789abcdef0123456789abcdef01234567")
+
+        assert result.returncode == 1
+        assert "Refusing to fail-open" in result.stderr
+
     def test_no_base_ref_is_skipped(self, gate: GateHandle):
         gate.commit([], "init")  # need at least one commit so HEAD resolves
         result = gate.run(base="")

@@ -1,5 +1,6 @@
 """Tests for the integration catalog system (catalog.py)."""
 
+import io
 import json
 import os
 
@@ -323,8 +324,11 @@ class TestCatalogFetch:
         )
 
         class FakeResponse:
-            def read(self, _size=-1):
-                return b"{}"
+            def __init__(self):
+                self._stream = io.BytesIO(b"{}")
+
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return entry.url

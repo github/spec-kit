@@ -43,13 +43,37 @@ BASELINE_PATH = ".github/bandit-baseline.json"
 ACK_LABEL = "security-baseline-change"
 
 
+def _git_ok(*args: str) -> bool:
+    """True if the git command exits 0 (output discarded)."""
+    return (
+        subprocess.run(
+            ["git", *args],
+            cwd=REPO_ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
+
+
 def _read_baseline_at(ref: str) -> tuple[dict, bool]:
     """Return (baseline_json, file_existed_at_ref).
 
     Used for the base side. The head side reads the working tree to avoid
     silently fail-opening on an unfetched/invalid head ref.
+
+    Only a missing *path* at a resolvable ref counts as "did not exist";
+    an unresolvable ref or a failing ``git show`` aborts instead, so a
+    transient git failure cannot silently disable the gate.
     """
     if not ref:
+        return {"results": []}, False
+    if not _git_ok("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"):
+        raise SystemExit(
+            f"Base ref {ref!r} cannot be resolved (unfetched or invalid). "
+            f"Refusing to fail-open on a security gate."
+        )
+    if not _git_ok("cat-file", "-e", f"{ref}:{BASELINE_PATH}"):
         return {"results": []}, False
     try:
         blob = subprocess.run(
@@ -60,8 +84,11 @@ def _read_baseline_at(ref: str) -> tuple[dict, bool]:
             stderr=subprocess.PIPE,
             text=True,
         ).stdout
-    except subprocess.CalledProcessError:
-        return {"results": []}, False
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(
+            f"Could not read baseline at {ref!r}: {exc.stderr.strip()}. "
+            f"Refusing to fail-open on a security gate."
+        )
     try:
         return json.loads(blob), True
     except json.JSONDecodeError:

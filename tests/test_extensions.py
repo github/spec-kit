@@ -3766,7 +3766,6 @@ class TestExtensionCatalog:
         """download_extension can use a GitHub REST release asset URL directly."""
         from unittest.mock import patch, MagicMock
         import zipfile
-        import io
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")

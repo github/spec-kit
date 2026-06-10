@@ -101,26 +101,10 @@ def preset_add(
 
         elif from_url:
             # Validate URL scheme before downloading
-            from ipaddress import ip_address
-            from urllib.parse import urlparse as _urlparse
-
-            _parsed = _urlparse(from_url)
-
-            def _is_allowed_download_url(parsed_url):
-                host = parsed_url.hostname
-                if not host:
-                    return False
-                is_loopback = host == "localhost"
-                if not is_loopback:
-                    try:
-                        is_loopback = ip_address(host).is_loopback
-                    except ValueError:
-                        # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-                        pass
-                return parsed_url.scheme == "https" or (parsed_url.scheme == "http" and is_loopback)
+            from specify_cli._download_security import is_https_or_localhost_http
 
             def _validate_download_redirect(old_url, new_url):
-                if not _is_allowed_download_url(_urlparse(new_url)):
+                if not is_https_or_localhost_http(new_url):
                     import urllib.error
 
                     raise urllib.error.URLError(
@@ -128,7 +112,7 @@ def preset_add(
                         "or HTTP for localhost/loopback"
                     )
 
-            if not _is_allowed_download_url(_parsed):
+            if not is_https_or_localhost_http(from_url):
                 console.print(
                     "[red]Error:[/red] URL must use HTTPS with a hostname, "
                     "or HTTP for localhost/loopback."
@@ -142,12 +126,17 @@ def preset_add(
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
                 try:
+                    from functools import partial
+
                     from specify_cli._download_security import read_response_limited
                     from specify_cli.authentication.http import open_url as _open_url
                     from specify_cli._github_http import resolve_github_release_asset_api_url
 
                     _preset_extra_headers = None
-                    _resolved_from_url = resolve_github_release_asset_api_url(from_url, _open_url)
+                    _resolved_from_url = resolve_github_release_asset_api_url(
+                        from_url,
+                        partial(_open_url, strict_redirects=True),
+                    )
                     if _resolved_from_url:
                         from_url = _resolved_from_url
                         _preset_extra_headers = {"Accept": "application/octet-stream"}
@@ -159,7 +148,7 @@ def preset_add(
                         redirect_validator=_validate_download_redirect,
                     ) as response:
                         final_url = response.geturl() if hasattr(response, "geturl") else from_url
-                        if not _is_allowed_download_url(_urlparse(final_url)):
+                        if not is_https_or_localhost_http(final_url):
                             console.print(
                                 "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
                                 f"{final_url}. Redirect targets must use HTTPS with a hostname, "

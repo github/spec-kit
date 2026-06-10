@@ -38,8 +38,9 @@ SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 def is_https_or_localhost_http(url: str) -> bool:
     """Return True if *url* is HTTPS, or HTTP limited to loopback hosts.
 
-    Shared redirect-safety predicate used by the GitHub and auth HTTP redirect
-    handlers so the rule (and any future tightening of it) lives in one place.
+    Shared scheme-safety predicate used by the auth HTTP redirect handler and
+    by the direct URL validations in the CLI download flows, so the rule (and
+    any future tightening of it) lives in one place.
 
     The loopback allowance is a deliberate *exact-string* match on
     ``localhost`` / ``127.0.0.1`` / ``::1``, not an IP-range check: other
@@ -304,6 +305,10 @@ def safe_extract_zip(
                     exc,
                 )
             written = 0
+            # Raised outside the try below: if error_type subclasses OSError or
+            # RuntimeError, raising inside would re-wrap the limit error as
+            # "Failed to extract" and lose the size-bound message.
+            limit_error: str | None = None
             try:
                 with zf.open(member, "r") as source, member_path.open("wb") as dest:
                     while True:
@@ -312,18 +317,18 @@ def safe_extract_zip(
                             break
                         written += len(chunk)
                         if written > max_member_bytes:
-                            _raise(
-                                error_type,
+                            limit_error = (
                                 f"ZIP member {member.filename} exceeds maximum size "
-                                f"of {max_member_bytes} bytes",
+                                f"of {max_member_bytes} bytes"
                             )
+                            break
                         total_written += len(chunk)
                         if total_written > max_total_bytes:
-                            _raise(
-                                error_type,
+                            limit_error = (
                                 f"ZIP archive exceeds maximum uncompressed size "
-                                f"of {max_total_bytes} bytes",
+                                f"of {max_total_bytes} bytes"
                             )
+                            break
                         dest.write(chunk)
             except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
                 _raise_from(
@@ -331,3 +336,5 @@ def safe_extract_zip(
                     f"Failed to extract ZIP member {member.filename}: {exc}",
                     exc,
                 )
+            if limit_error is not None:
+                _raise(error_type, limit_error)

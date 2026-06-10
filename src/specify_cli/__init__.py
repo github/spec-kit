@@ -2488,6 +2488,8 @@ def workflow_add(
 
     # Try as URL (http/https)
     if source.startswith("http://") or source.startswith("https://"):
+        from functools import partial
+
         from specify_cli._download_security import read_response_limited as _read_response_limited
         from specify_cli.authentication.http import open_url as _open_url
 
@@ -2498,7 +2500,9 @@ def workflow_add(
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
 
         _wf_url_extra_headers = None
-        _resolved_wf_url = _resolve_gh_asset(source, _open_url, timeout=30)
+        _resolved_wf_url = _resolve_gh_asset(
+            source, partial(_open_url, strict_redirects=True), timeout=30
+        )
         if _resolved_wf_url:
             source = _resolved_wf_url
             _wf_url_extra_headers = {"Accept": "application/octet-stream"}
@@ -2588,12 +2592,16 @@ def workflow_add(
     workflow_file = workflow_dir / "workflow.yml"
 
     try:
+        from functools import partial
+
         from specify_cli.authentication.http import open_url as _open_url
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
         from specify_cli._download_security import read_response_limited as _read_response_limited
 
         _wf_cat_extra_headers = None
-        _resolved_workflow_url = _resolve_gh_asset(workflow_url, _open_url, timeout=30)
+        _resolved_workflow_url = _resolve_gh_asset(
+            workflow_url, partial(_open_url, strict_redirects=True), timeout=30
+        )
         if _resolved_workflow_url:
             workflow_url = _resolved_workflow_url
             _wf_cat_extra_headers = {"Accept": "application/octet-stream"}

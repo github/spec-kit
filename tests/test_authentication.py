@@ -851,6 +851,18 @@ class TestRedirectStripping:
         auth3 = req3.get_header("Authorization") or req3.unredirected_hdrs.get("Authorization")
         assert auth3 == "Bearer tok"
 
+    def test_redirect_rejects_https_downgrade(self):
+        """HTTPS downloads must not follow redirects to non-local HTTP URLs."""
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+        import urllib.error
+        handler = _StripAuthOnRedirect(("example.com",))
+        req = Request("https://example.com/archive.zip")
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "http://evil.example.com/archive.zip")
+
 
 # ---------------------------------------------------------------------------
 # _fetch_latest_release_tag delegation
@@ -890,19 +902,25 @@ class TestFetchLatestReleaseTagDelegation:
         assert captured["request"].get_header("Authorization") == "Bearer forwarded-sentinel"
 
     def test_no_config_means_no_auth(self, monkeypatch):
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         from specify_cli._version import _fetch_latest_release_tag
         self._set_config(monkeypatch, [])
         captured, side_effect = self._capture_request()
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
+        # The release fetch uses strict_redirects=True, so the unauthenticated
+        # path goes through build_opener().open(), not urlopen.
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = side_effect
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         assert captured["request"].get_header("Authorization") is None
 
     def test_accept_header_present(self, monkeypatch):
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         from specify_cli._version import _fetch_latest_release_tag
         self._set_config(monkeypatch, [])
         captured, side_effect = self._capture_request()
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=side_effect):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = side_effect
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         assert captured["request"].get_header("Accept") == "application/vnd.github+json"

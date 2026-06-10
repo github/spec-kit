@@ -3853,11 +3853,13 @@ class TestWorkflowCatalog:
         # Bounded read was invoked (not raw resp.read()). error_type must
         # be the WorkflowCatalogError so an oversized response surfaces
         # as a workflow-catalog domain error, not a generic ValueError
-        # that callers might miss. The size cap itself relies on the
-        # module-level default in _download_security.MAX_DOWNLOAD_BYTES.
+        # that callers might miss.
+        from specify_cli._download_security import MAX_JSON_CATALOG_BYTES
+
         assert "kwargs" in recorded, "read_response_limited was not called"
         assert recorded["kwargs"]["error_type"] is WorkflowCatalogError
         assert recorded["kwargs"]["label"] == "workflow catalog"
+        assert recorded["kwargs"]["max_bytes"] == MAX_JSON_CATALOG_BYTES
 
 
 # ===== Integration Test =====

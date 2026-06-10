@@ -7,6 +7,9 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    # labeled/unlabeled so the baseline-growth gates re-evaluate when the
+    # acknowledgement label is added or removed, without requiring a push.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   schedule:
     - cron: "17 4 * * 1"
   workflow_dispatch:
@@ -27,7 +30,7 @@ jobs:
           fetch-depth: 2
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
@@ -73,7 +76,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
@@ -154,7 +157,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
@@ -168,6 +171,7 @@ jobs:
       # rewriting the baseline file (so there's no spurious git diff).
       - name: Run detect-secrets
         run: |
+          set -euo pipefail
           git ls-files -z \
             -- ':!:.secrets.baseline' \
                ':!:uv.lock' \

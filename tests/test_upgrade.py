@@ -27,7 +27,10 @@ from specify_cli._version import (
     _normalize_tag,
 )
 from tests.conftest import strip_ansi
-from tests.http_helpers import mock_urlopen_response
+from tests.http_helpers import (
+    mock_urlopen_response,
+    route_opener_open_through_urlopen,  # noqa: F401 (autouse fixture)
+)
 
 runner = CliRunner()
 

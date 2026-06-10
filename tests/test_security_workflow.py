@@ -69,10 +69,6 @@ def _step(job_name: str, step_name: str) -> dict:
     raise AssertionError(f"Step {step_name!r} not found in job {job_name!r}.")
 
 
-def _step_run(job_name: str, step_name: str) -> str:
-    return _step(job_name, step_name)["run"]
-
-
 def _find_step_by_run_signature(job_name: str, marker: str) -> dict:
     """Locate a step in *job_name* whose ``run`` command contains *marker*.
 
@@ -175,7 +171,11 @@ class TestSecurityWorkflow:
         triggers = _workflow_triggers()
 
         assert triggers["push"]["branches"] == ["main"]
-        assert triggers["pull_request"] is None
+        # labeled/unlabeled so the baseline-growth gates re-evaluate when the
+        # acknowledgement label is toggled, without requiring a new push.
+        assert triggers["pull_request"] == {
+            "types": ["opened", "synchronize", "reopened", "labeled", "unlabeled"]
+        }
         assert triggers["workflow_dispatch"] is None
         assert triggers["schedule"] == [{"cron": "17 4 * * 1"}]
 
@@ -228,14 +228,14 @@ class TestSecurityWorkflow:
         baseline = json.loads(BANDIT_BASELINE.read_text(encoding="utf-8"))
         results = baseline["results"]
 
+        # Identify entries by (filename, test_id), not line number: unrelated
+        # edits shift lines and force a baseline regen, and the growth gate
+        # (check_bandit_baseline.py) already guards full identities.
         assert {
-            (result["filename"], result["line_number"], result["test_id"])
-            for result in results
+            (result["filename"], result["test_id"]) for result in results
         } == {
-            ("src/specify_cli/_github_http.py", 104, "B310"),
-            ("src/specify_cli/authentication/azure_devops.py", 114, "B310"),
-            ("src/specify_cli/authentication/http.py", 171, "B310"),
-            ("src/specify_cli/workflows/steps/shell/__init__.py", 35, "B602"),
+            ("src/specify_cli/authentication/http.py", "B310"),
+            ("src/specify_cli/workflows/steps/shell/__init__.py", "B602"),
         }
         assert {result["issue_severity"] for result in results} == {"MEDIUM", "HIGH"}
 
