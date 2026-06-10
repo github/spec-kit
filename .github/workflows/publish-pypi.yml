@@ -30,7 +30,7 @@ jobs:
           fi
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # v5
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
       - name: Verify tag matches package version
         run: |
@@ -66,7 +66,7 @@ jobs:
           path: dist/
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # v5
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
       - name: Publish to PyPI
         run: uv publish --trusted-publishing always
