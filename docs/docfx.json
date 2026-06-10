@@ -7,6 +7,7 @@
           "toc.yml",
           "community/*.md",
           "concepts/*.md",
+          "guides/*.md",
           "reference/*.md",
           "install/*.md"
         ]
@@ -78,4 +79,3 @@
     }
   }
 }
-

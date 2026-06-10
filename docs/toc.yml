@@ -49,6 +49,8 @@
   items:
     - name: Local Development
       href: local-development.md
+    - name: Evolving Specs
+      href: guides/evolving-specs.md
 
 # Community
 - name: Community

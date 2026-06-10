@@ -13,8 +13,9 @@ Spec-Driven Development is a structured process that emphasizes:
 
 Spec Kit does not prescribe how teams preserve or mutate `spec.md`, `plan.md`,
 and `tasks.md` after requirements change. See
-[Spec Persistence Models](spec-persistence.md) for three common ways to manage
-those artifacts over time.
+[Spec Persistence Models](spec-persistence.md) for the concepts and
+[Evolving Specs in Existing Projects](../guides/evolving-specs.md) for the
+brownfield workflow.
 
 ## Development Phases
 
@@ -23,8 +24,6 @@ those artifacts over time.
 | **0-to-1 Development** ("Greenfield") | Generate from scratch | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
 | **Creative Exploration** | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul> |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul> |
-
-In brownfield work, Spec Kit is not a one-time scaffold. Treat project-file updates and feature artifact updates as separate loops: refresh managed commands and templates when you upgrade Spec Kit, and evolve `specs/` artifacts when product behavior changes. See the [upgrade guide](../upgrade.md#keeping-specs-current-in-existing-projects) for the existing-project workflow.
 
 ## Experimental Goals
 
