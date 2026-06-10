@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -28,18 +29,18 @@ jobs:
             exit 1
           fi
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # v5
+
       - name: Verify tag matches package version
         run: |
           TAG_VERSION="${{ inputs.tag }}"
           TAG_VERSION="${TAG_VERSION#v}"
-          PROJECT_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          PROJECT_VERSION="$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
           if [[ "$TAG_VERSION" != "$PROJECT_VERSION" ]]; then
             echo "Error: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PROJECT_VERSION)"
             exit 1
           fi
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # v5
 
       - name: Build package
         run: uv build
@@ -56,6 +57,7 @@ jobs:
     environment: pypi
     permissions:
       id-token: write
+      actions: read
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
