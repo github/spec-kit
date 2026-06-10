@@ -90,7 +90,7 @@ def _create_extension_dir(temp_dir: Path, ext_id: str = "test-ext") -> Path:
     }
 
     with open(ext_dir / "extension.yml", "w") as f:
-        yaml.dump(manifest_data, f)
+        yaml.safe_dump(manifest_data, f)
 
     commands_dir = ext_dir / "commands"
     commands_dir.mkdir()
@@ -146,7 +146,7 @@ def _create_unicode_extension_dir(temp_dir: Path, ext_id: str = "uni-ext") -> Pa
     }
 
     with open(ext_dir / "extension.yml", "w", encoding="utf-8") as f:
-        yaml.dump(manifest_data, f, allow_unicode=True)
+        yaml.safe_dump(manifest_data, f, allow_unicode=True)
 
     commands_dir = ext_dir / "commands"
     commands_dir.mkdir()
@@ -748,7 +748,7 @@ class TestExtensionSkillRegistration:
             },
         }
         with open(ext_dir / "extension.yml", "w") as f:
-            yaml.dump(manifest_data, f)
+            yaml.safe_dump(manifest_data, f)
 
         (ext_dir / "commands").mkdir()
         (ext_dir / "commands" / "plan.md").write_text(
@@ -803,7 +803,7 @@ class TestExtensionSkillRegistration:
             },
         }
         with open(ext_dir / "extension.yml", "w") as f:
-            yaml.dump(manifest_data, f)
+            yaml.safe_dump(manifest_data, f)
 
         (ext_dir / "commands").mkdir()
         (ext_dir / "commands" / "exists.md").write_text(
@@ -1359,7 +1359,7 @@ class TestExtensionSkillEdgeCases:
             },
         }
         with open(ext_dir / "extension.yml", "w") as f:
-            yaml.dump(manifest_data, f)
+            yaml.safe_dump(manifest_data, f)
 
         (ext_dir / "commands").mkdir()
         (ext_dir / "commands" / "plain.md").write_text(
@@ -1446,7 +1446,7 @@ class TestExtensionSkillEdgeCases:
             },
         }
         with open(ext_dir / "extension.yml", "w") as f:
-            yaml.dump(manifest_data, f)
+            yaml.safe_dump(manifest_data, f)
 
         (ext_dir / "commands").mkdir()
         # Malformed YAML: invalid key-value syntax

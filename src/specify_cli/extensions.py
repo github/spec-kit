@@ -28,6 +28,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from ._init_options import is_ai_skills_enabled
 from ._invocation_style import is_slash_skills_agent
+from ._utils import dump_frontmatter
 from .catalogs import CatalogEntry as BaseCatalogEntry
 from .catalogs import CatalogStackBase
 
@@ -1073,7 +1074,7 @@ class ExtensionManager:
                 and hasattr(integration, "inject_argument_hint")
             ):
                 frontmatter_data["argument-hint"] = str(argument_hint)
-            frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False, allow_unicode=True).strip()
+            frontmatter_text = dump_frontmatter(frontmatter_data)
 
             # Derive a human-friendly title from the command name
             short_name = cmd_name

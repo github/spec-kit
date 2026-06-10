@@ -30,6 +30,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
+from .._utils import dump_frontmatter
 
 
 def _substitute_core_template(
@@ -1068,7 +1069,7 @@ class PresetManager:
                         skill_name, desc,
                         f"override:{cmd_name}",
                     )
-                    fm_text = yaml.safe_dump(fm_data, sort_keys=False, allow_unicode=True).strip()
+                    fm_text = dump_frontmatter(fm_data)
                     skill_title = self._skill_title_from_command(cmd_name)
                     skill_content = (
                         f"---\n{fm_text}\n---\n\n"
@@ -1345,9 +1346,7 @@ class PresetManager:
                     enhanced_desc,
                     f"preset:{manifest.id}",
                 )
-                frontmatter_text = yaml.safe_dump(
-                    frontmatter_data, sort_keys=False, allow_unicode=True
-                ).strip()
+                frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_content = (
                     f"---\n"
                     f"{frontmatter_text}\n"
@@ -1443,9 +1442,7 @@ class PresetManager:
                     enhanced_desc,
                     f"templates/commands/{short_name}.md",
                 )
-                frontmatter_text = yaml.safe_dump(
-                    frontmatter_data, sort_keys=False, allow_unicode=True
-                ).strip()
+                frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_title = self._skill_title_from_command(short_name)
                 skill_content = (
                     f"---\n"
@@ -1482,9 +1479,7 @@ class PresetManager:
                     frontmatter.get("description", f"Extension command: {command_name}"),
                     extension_restore["source"],
                 )
-                frontmatter_text = yaml.safe_dump(
-                    frontmatter_data, sort_keys=False, allow_unicode=True
-                ).strip()
+                frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_content = (
                     f"---\n"
                     f"{frontmatter_text}\n"
@@ -3282,7 +3277,7 @@ class PresetResolver:
             if top_fm:
                 top_frontmatter_text = (
                     "---\n"
-                    + yaml.safe_dump(top_fm, sort_keys=False, allow_unicode=True).strip()
+                    + dump_frontmatter(top_fm)
                     + "\n---"
                 )
             else:
