@@ -19,6 +19,7 @@ class TestZedIntegration(SkillsIntegrationTests):
     def test_options_include_skills_flag(self):
         """Zed is always skills-based; no --skills option needed."""
         i = get_integration(self.KEY)
+        assert i is not None
         skills_opts = [o for o in i.options() if o.name == "--skills"]
         assert len(skills_opts) == 0, (
             "Zed is always skills-based and should not expose a --skills option"
