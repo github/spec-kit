@@ -220,7 +220,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
             content_bytes = path.read_bytes()
             content = content_bytes.decode("utf-8")
 
-            updated = self.post_process_skill_content(content)
+            updated = content
 
             # Inject argument-hint if available for this skill
             skill_dir_name = path.parent.name  # e.g. "speckit-plan"
