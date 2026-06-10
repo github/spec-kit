@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="./media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
+    <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
     <h1>🌱 Spec Kit</h1>
     <h3><em>Build high-quality software faster.</em></h3>
 </div>
@@ -379,7 +379,7 @@ specify init . --force
 specify init --here --force
 ```
 
-![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
+![Specify CLI bootstrapping a new project in the terminal](https://raw.githubusercontent.com/github/spec-kit/main/media/specify_cli.gif)
 
 In an interactive terminal, you will be prompted to select the coding agent integration you are using. In non-interactive sessions, such as CI or piped runs, `specify init` defaults to GitHub Copilot unless you pass `--integration`. You can also proactively specify the integration directly in the terminal:
 
@@ -413,7 +413,7 @@ specify init <project_name> --integration copilot --ignore-agent-tools
 
 Go to the project folder and run your coding agent. In our example, we're using `claude`.
 
-![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
+![Bootstrapping Claude Code environment](https://raw.githubusercontent.com/github/spec-kit/main/media/bootstrap-claude-code.gif)
 
 You will know that things are configured correctly if you see the `/speckit.constitution`, `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement` commands available.
 
