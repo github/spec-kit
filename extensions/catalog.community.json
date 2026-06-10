@@ -939,7 +939,7 @@
       "name": "Data Model Diagram",
       "id": "data-model-diagram",
       "description": "Generates Mermaid ER diagrams from Spec Kit data models after planning.",
-      "author": "benizzio",
+      "author": "Igor Benicio de Mesquita",
       "version": "0.2.2",
       "download_url": "https://github.com/benizzio/spec-kit-data-model-diagram/archive/refs/tags/v0.2.2.zip",
       "repository": "https://github.com/benizzio/spec-kit-data-model-diagram",
