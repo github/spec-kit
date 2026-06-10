@@ -239,24 +239,39 @@ def scaffold_integration(
         labels = ", ".join(path.relative_to(project_root).as_posix() for path in existing)
         raise FileExistsError(f"Refusing to overwrite existing scaffold file(s): {labels}")
 
-    integration_dir.mkdir(parents=True, exist_ok=True)
-    test_file.parent.mkdir(parents=True, exist_ok=True)
-    integration_file.write_text(
-        _integration_content(
-            key=clean_key,
-            class_name=class_name,
-            integration_type=normalized_type,
-        ),
-        encoding="utf-8",
-    )
-    test_file.write_text(
-        _test_content(
-            key=clean_key,
-            class_name=class_name,
-            integration_type=normalized_type,
-        ),
-        encoding="utf-8",
-    )
+    created_integration_dir = not integration_dir.exists()
+    try:
+        integration_dir.mkdir(parents=True, exist_ok=True)
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        integration_file.write_text(
+            _integration_content(
+                key=clean_key,
+                class_name=class_name,
+                integration_type=normalized_type,
+            ),
+            encoding="utf-8",
+        )
+        test_file.write_text(
+            _test_content(
+                key=clean_key,
+                class_name=class_name,
+                integration_type=normalized_type,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        for path in (test_file, integration_file):
+            try:
+                if path.is_file() or path.is_symlink():
+                    path.unlink()
+            except OSError:
+                pass
+        if created_integration_dir:
+            try:
+                integration_dir.rmdir()
+            except OSError:
+                pass
+        raise
 
     next_steps = (
         f"Register {class_name} in src/specify_cli/integrations/__init__.py.",

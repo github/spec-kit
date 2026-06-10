@@ -146,6 +146,28 @@ def test_scaffold_refuses_overwrite(tmp_path):
         scaffold_integration(root, "my-agent", "markdown")
 
 
+def test_scaffold_rolls_back_partial_files_on_write_failure(tmp_path, monkeypatch):
+    root = _repo_root(tmp_path)
+    integration_dir = root / "src" / "specify_cli" / "integrations" / "my_agent"
+    integration_file = integration_dir / "__init__.py"
+    test_file = root / "tests" / "integrations" / "test_integration_my_agent.py"
+    original_write_text = Path.write_text
+
+    def fail_test_write(path, *args, **kwargs):
+        if path == test_file:
+            raise PermissionError("simulated test file write failure")
+        return original_write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_test_write)
+
+    with pytest.raises(PermissionError, match="simulated test file write failure"):
+        scaffold_integration(root, "my-agent", "markdown")
+
+    assert not integration_file.exists()
+    assert not integration_dir.exists()
+    assert not test_file.exists()
+
+
 def test_scaffold_requires_repo_root(tmp_path):
     with pytest.raises(ValueError, match="Spec Kit repository root"):
         scaffold_integration(tmp_path, "my-agent", "markdown")
