@@ -3500,24 +3500,46 @@ def workflow_step_list():
 # not be used as custom step IDs (dotfile check is done separately at runtime).
 _RESERVED_STEP_IDS: frozenset[str] = frozenset({".cache", "step-registry.json"})
 
+# Windows reserved device names (case-insensitive, with or without extensions)
+_WINDOWS_RESERVED_NAMES: frozenset[str] = frozenset({
+    "con", "prn", "aux", "nul",
+    "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9",
+    "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+})
+
+# Characters invalid in filenames on Windows
+_WINDOWS_INVALID_CHARS: frozenset[str] = frozenset('<>:"|?*')
+
 
 def _validate_step_id_or_exit(step_id: str) -> None:
     """Validate that ``step_id`` is a single safe path component.
 
-    Rejects empty strings, path separators, ``.``/``..`` components, dotfile
-    prefixes, and reserved names. Exits with code 1 on failure.
+    Rejects empty strings, whitespace-only strings, leading/trailing whitespace,
+    path separators, ``.``/``..`` components, dotfile prefixes, reserved names,
+    Windows-invalid filename characters, trailing dots/spaces, and Windows
+    reserved device names. Exits with code 1 on failure.
     """
+    # Strip the stem (before first dot) for Windows reserved-name check
+    stem = step_id.split(".")[0].lower() if step_id else ""
     if (
         not step_id
+        or not step_id.strip()
+        or step_id != step_id.strip()
         or "/" in step_id
         or "\\" in step_id
         or step_id in (".", "..")
         or step_id.startswith(".")
+        or step_id.endswith(".")
+        or step_id.endswith(" ")
         or step_id in _RESERVED_STEP_IDS
+        or stem in _WINDOWS_RESERVED_NAMES
+        or any(c in _WINDOWS_INVALID_CHARS for c in step_id)
+        or any(ord(c) < 32 for c in step_id)
     ):
         console.print(
             f"[red]Error:[/red] Invalid step id '{step_id}': must be a single safe "
-            "path component (no separators, no leading dot, not a reserved name)"
+            "path component (no separators, no leading dot, not a reserved name, "
+            "no invalid filename characters)"
         )
         raise typer.Exit(1)
 
@@ -3711,8 +3733,14 @@ def workflow_step_add(
             raise typer.Exit(1)
 
         # Write the two required files.
-        (tmp_path / "step.yml").write_bytes(step_yml_content)
-        (tmp_path / "__init__.py").write_bytes(init_py_content)
+        try:
+            (tmp_path / "step.yml").write_bytes(step_yml_content)
+            (tmp_path / "__init__.py").write_bytes(init_py_content)
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to write step files to staging directory: {exc}"
+            )
+            raise typer.Exit(1)
 
         # Optionally download additional package files declared in the catalog entry
         # (e.g. helper modules). Each entry in ``extra_files`` is a mapping of
@@ -3769,8 +3797,14 @@ def workflow_step_add(
                     f"[red]Error:[/red] Failed to download extra file '{rel_path}': {exc}"
                 )
                 raise typer.Exit(1)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(file_content)
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(file_content)
+            except OSError as exc:
+                console.print(
+                    f"[red]Error:[/red] Failed to write extra file '{rel_path}': {exc}"
+                )
+                raise typer.Exit(1)
 
         # Atomically rename the staging directory to the final location.
         # Both paths are under steps_base_dir (same filesystem), so os.rename()
@@ -3888,11 +3922,16 @@ def workflow_step_remove(
             try:
                 shutil.rmtree(step_dir)
             except OSError as exc:
-                # Restore registry entry to keep state consistent
+                # Restore the original registry entry verbatim so metadata
+                # (timestamps, version, etc.) is preserved exactly.
                 try:
-                    registry.add(step_id, registry_metadata or {})
-                except Exception:  # noqa: BLE001
-                    pass
+                    if registry_metadata is not None:
+                        registry.add(step_id, registry_metadata)
+                except Exception as restore_exc:  # noqa: BLE001
+                    console.print(
+                        f"[yellow]Warning:[/yellow] Failed to restore registry entry "
+                        f"for '{step_id}' after directory removal failure: {restore_exc}"
+                    )
                 console.print(
                     f"[red]Error:[/red] Failed to remove step directory {step_dir}: {exc}"
                 )
