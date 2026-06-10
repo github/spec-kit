@@ -6,6 +6,8 @@ Extensions are modular packages that add commands and functionality to spec-kit
 without bloating the core framework.
 """
 
+from __future__ import annotations
+
 import copy
 import hashlib
 import json

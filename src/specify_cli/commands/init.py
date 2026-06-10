@@ -740,13 +740,18 @@ def register(app: typer.Typer) -> None:
 
         from ..extensions import is_slash_skills_agent as _is_slash_skills_agent
 
+        # `_is_skills_integration` means the integration is installed in
+        # skills mode, which is the semantic equivalent of `ai_skills_enabled`
+        # used by `is_slash_skills_agent()`.
+        _ai_skills_enabled = _is_skills_integration
+
         def _display_cmd(name: str) -> str:
             if codex_skill_mode:
                 return f"$speckit-{name}"
             if kimi_skill_mode:
                 return f"/skill:speckit-{name}"
             if (
-                _is_slash_skills_agent(selected_ai, _is_skills_integration)
+                _is_slash_skills_agent(selected_ai, _ai_skills_enabled)
                 or cline_skill_mode
             ):
                 return f"/speckit-{name}"
