@@ -17,10 +17,11 @@ class TestZedIntegration(SkillsIntegrationTests):
     CONTEXT_FILE = "AGENTS.md"
 
     def test_options_include_skills_flag(self):
-        """Zed is always skills-based; no --skills option needed."""
+        """Zed is always skills-based and does not expose a --skills option."""
         i = get_integration(self.KEY)
         assert i is not None
-        skills_opts = [o for o in i.options() if o.name == "--skills"]
+        opts = i.options()
+        skills_opts = [o for o in opts if o.name == "--skills"]
         assert len(skills_opts) == 0, (
             "Zed is always skills-based and should not expose a --skills option"
         )
