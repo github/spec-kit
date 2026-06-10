@@ -36,12 +36,10 @@ from pathlib import Path
 
 from typing import Any, Optional
 
-import click
 import typer
 from rich.panel import Panel
 from rich.align import Align
 from rich.table import Table
-from .integration_scaffold import supported_integration_scaffold_types
 from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
@@ -568,58 +566,6 @@ def version(
     console.print()
 
 app.add_typer(_self_app, name="self")
-
-
-# ===== Developer Commands =====
-
-dev_app = typer.Typer(
-    name="dev",
-    help="Developer utilities for contributing to Spec Kit",
-    add_completion=False,
-)
-app.add_typer(dev_app, name="dev")
-
-dev_integration_app = typer.Typer(
-    name="integration",
-    help="Developer helpers for built-in integrations",
-    add_completion=False,
-)
-dev_app.add_typer(dev_integration_app, name="integration")
-
-INTEGRATION_SCAFFOLD_TYPES = supported_integration_scaffold_types()
-
-
-@dev_integration_app.command("scaffold")
-def dev_integration_scaffold(
-    key: str = typer.Argument(help="Integration key in lowercase kebab-case, e.g. my-agent"),
-    integration_type: str = typer.Option(
-        "markdown",
-        "--type",
-        click_type=click.Choice(INTEGRATION_SCAFFOLD_TYPES, case_sensitive=False),
-        help=f"Scaffold type: {', '.join(INTEGRATION_SCAFFOLD_TYPES)}",
-    ),
-):
-    """Create a minimal built-in integration package and test skeleton."""
-    from .integration_scaffold import scaffold_integration
-
-    project_root = Path.cwd()
-    try:
-        result = scaffold_integration(project_root, key, integration_type)
-    except (OSError, ValueError) as exc:
-        # OSError covers filesystem failures during mkdir()/write_text()
-        # (permission denied, read-only checkout, a path component that is a
-        # file, ...) as well as FileExistsError; surface them as a clean CLI
-        # error instead of a traceback.
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1)
-
-    console.print(f"[green]Created integration scaffold:[/green] {result.key}")
-    console.print(f"  {result.integration_file.relative_to(project_root).as_posix()}")
-    console.print(f"  {result.test_file.relative_to(project_root).as_posix()}")
-    console.print()
-    console.print("[bold]Next steps:[/bold]")
-    for index, step in enumerate(result.next_steps, start=1):
-        console.print(f"{index}. {step}")
 
 
 # ===== Extension Commands =====

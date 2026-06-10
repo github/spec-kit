@@ -1,4 +1,4 @@
-"""Tests for developer integration scaffolding commands."""
+"""Tests for integration scaffolding commands."""
 
 from pathlib import Path
 
@@ -26,12 +26,12 @@ def _repo_root(tmp_path: Path) -> Path:
     return root
 
 
-def test_dev_integration_scaffold_creates_markdown_files(tmp_path, monkeypatch):
+def test_integration_scaffold_creates_markdown_files(tmp_path, monkeypatch):
     root = _repo_root(tmp_path)
     monkeypatch.chdir(root)
 
     result = runner.invoke(app, [
-        "dev", "integration", "scaffold", "my-agent",
+        "integration", "scaffold", "my-agent",
         "--type", "markdown",
     ], catch_exceptions=False)
 
@@ -87,14 +87,14 @@ def test_scaffold_type_templates(
     assert "multi_install_safe = False" in content
 
 
-def test_dev_integration_scaffold_rejects_unknown_type_before_scaffolding(tmp_path, monkeypatch):
+def test_integration_scaffold_rejects_unknown_type_before_scaffolding(tmp_path, monkeypatch):
     root = _repo_root(tmp_path)
     monkeypatch.chdir(root)
 
     result = runner.invoke(app, [
-        "dev", "integration", "scaffold", "my-agent",
+        "integration", "scaffold", "my-agent",
         "--type", "xml",
-    ], catch_exceptions=False)
+    ])
 
     output = strip_ansi(result.output)
     assert result.exit_code == 2
@@ -102,7 +102,7 @@ def test_dev_integration_scaffold_rejects_unknown_type_before_scaffolding(tmp_pa
     assert not (root / "src" / "specify_cli" / "integrations" / "my_agent").exists()
 
 
-def test_dev_integration_scaffold_reports_filesystem_errors_cleanly(tmp_path, monkeypatch):
+def test_integration_scaffold_reports_filesystem_errors_cleanly(tmp_path, monkeypatch):
     root = _repo_root(tmp_path)
     monkeypatch.chdir(root)
 
@@ -114,7 +114,7 @@ def test_dev_integration_scaffold_reports_filesystem_errors_cleanly(tmp_path, mo
     monkeypatch.setattr(scaffold_module, "scaffold_integration", boom)
 
     result = runner.invoke(app, [
-        "dev", "integration", "scaffold", "my-agent",
+        "integration", "scaffold", "my-agent",
         "--type", "markdown",
     ], catch_exceptions=False)
 
@@ -180,12 +180,12 @@ def test_scaffold_refuses_symlinked_target_directory(tmp_path):
     assert not (outside / "my_agent").exists()
 
 
-def test_dev_integration_scaffold_accepts_uppercase_type(tmp_path, monkeypatch):
+def test_integration_scaffold_accepts_uppercase_type(tmp_path, monkeypatch):
     root = _repo_root(tmp_path)
     monkeypatch.chdir(root)
 
     result = runner.invoke(app, [
-        "dev", "integration", "scaffold", "my-agent",
+        "integration", "scaffold", "my-agent",
         "--type", "YAML",
     ], catch_exceptions=False)
 

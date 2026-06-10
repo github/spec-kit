@@ -100,14 +100,14 @@ On Windows you will instead use the `.ps1` scripts (no chmod needed).
 
 ## 6. Scaffold a Built-In Integration
 
-Use the developer scaffold command to create the initial Python package and
+Use the integration scaffold command to create the initial Python package and
 test skeleton for a new built-in integration:
 
 ```bash
-specify dev integration scaffold my-agent --type markdown
-specify dev integration scaffold my-agent --type toml
-specify dev integration scaffold my-agent --type yaml
-specify dev integration scaffold my-agent --type skills
+specify integration scaffold my-agent --type markdown
+specify integration scaffold my-agent --type toml
+specify integration scaffold my-agent --type yaml
+specify integration scaffold my-agent --type skills
 ```
 
 Hyphenated keys are converted to Python-safe package names, for example
