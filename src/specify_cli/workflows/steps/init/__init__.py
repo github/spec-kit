@@ -11,12 +11,12 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from specify_cli._agent_config import DEFAULT_INIT_INTEGRATION
+from specify_cli._agent_config import DEFAULT_INIT_INTEGRATION, SCRIPT_TYPE_CHOICES
 from specify_cli.workflows.base import StepBase, StepContext, StepResult, StepStatus
 from specify_cli.workflows.expressions import evaluate_expression
 
-#: Valid ``script`` values, mirroring ``specify init --script``.
-VALID_SCRIPT_TYPES = ("sh", "ps")
+#: Valid ``script`` values, derived from the canonical source in _agent_config.
+VALID_SCRIPT_TYPES = tuple(SCRIPT_TYPE_CHOICES.keys())
 
 #: Directories the workflow engine may create before steps run.
 #: These are excluded from the "non-empty directory" fast-fail check so
@@ -119,8 +119,28 @@ class InitStep(StepBase):
                         entry for entry in it
                         if entry.name not in _ENGINE_OWNED_DIRS
                     ]
-            except OSError:
-                non_engine_entries = []
+            except OSError as exc:
+                error_message = (
+                    f"Cannot inspect target directory {base!r}: {exc}"
+                )
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    output={
+                        "argv": argv,
+                        "project": project,
+                        "here": here,
+                        "integration": integration,
+                        "integration_options": integration_options,
+                        "script": script,
+                        "preset": preset,
+                        "force": force,
+                        "ignore_agent_tools": ignore_agent_tools,
+                        "exit_code": 1,
+                        "stdout": "",
+                        "stderr": error_message,
+                    },
+                    error=error_message,
+                )
             if non_engine_entries:
                 error_message = (
                     f"Target directory {base!r} is not empty. Set "
@@ -135,6 +155,9 @@ class InitStep(StepBase):
                         "integration": integration,
                         "integration_options": integration_options,
                         "script": script,
+                        "preset": preset,
+                        "force": force,
+                        "ignore_agent_tools": ignore_agent_tools,
                         "exit_code": 1,
                         "stdout": "",
                         "stderr": error_message,
@@ -168,6 +191,9 @@ class InitStep(StepBase):
             "integration": integration,
             "integration_options": integration_options,
             "script": script,
+            "preset": preset,
+            "force": force,
+            "ignore_agent_tools": ignore_agent_tools,
             "exit_code": exit_code,
             "stdout": stdout,
             "stderr": stderr,
