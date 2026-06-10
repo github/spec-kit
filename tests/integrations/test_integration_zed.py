@@ -125,7 +125,10 @@ class TestSlashSkillsSets:
         init_options.parent.mkdir(parents=True, exist_ok=True)
         init_options.write_text(json.dumps({"ai": ai, "ai_skills": ai_skills}))
         hook_executor = HookExecutor(project_path)
-        return hook_executor._render_hook_invocation("speckit.plan")
+        result = hook_executor.execute_hook(
+            {"extension": "test-ext", "command": "speckit.plan", "optional": False}
+        )
+        return result.get("invocation", "")
 
     @pytest.mark.parametrize(
         ("ai", "ai_skills", "expected"),

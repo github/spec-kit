@@ -47,12 +47,12 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
 # - CONDITIONAL_SLASH_AGENTS: render as /speckit-<name> only when ai_skills is enabled.
 ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset({"devin", "trae", "zed"})
 CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
-    {"agy", "claude", "copilot", "cursor-agent"}
+    {"agy", "claude", "copilot", "cursor-agent", "hermes", "lingma", "rovodev", "vibe"}
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
 
-def is_slash_skills_agent(selected_ai: str, ai_skills_enabled: bool) -> bool:
+def is_slash_skills_agent(selected_ai: str | None, ai_skills_enabled: bool) -> bool:
     """Return True if *selected_ai* uses ``/speckit-<name>`` hook invocations.
 
     The decision is based on the agent sets defined above:
@@ -62,6 +62,8 @@ def is_slash_skills_agent(selected_ai: str, ai_skills_enabled: bool) -> bool:
         *ai_skills_enabled* is ``True``.
     *   All other agents return ``False``.
     """
+    if selected_ai is None:
+        return False
     return selected_ai in ALWAYS_SLASH_AGENTS or (
         selected_ai in CONDITIONAL_SLASH_AGENTS and ai_skills_enabled
     )
