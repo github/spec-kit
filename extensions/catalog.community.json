@@ -935,6 +935,38 @@
       "created_at": "2026-05-03T00:00:00Z",
       "updated_at": "2026-05-05T00:00:00Z"
     },
+    "data-model-diagram": {
+      "name": "Data Model Diagram",
+      "id": "data-model-diagram",
+      "description": "Generates Mermaid ER diagrams from Spec Kit data models after planning.",
+      "author": "benizzio",
+      "version": "0.2.2",
+      "download_url": "https://github.com/benizzio/spec-kit-data-model-diagram/archive/refs/tags/v0.2.2.zip",
+      "repository": "https://github.com/benizzio/spec-kit-data-model-diagram",
+      "homepage": "https://github.com/benizzio/spec-kit-data-model-diagram",
+      "documentation": "https://github.com/benizzio/spec-kit-data-model-diagram#readme",
+      "changelog": "https://github.com/benizzio/spec-kit-data-model-diagram/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "diagram",
+        "documentation",
+        "mermaid"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-10T00:00:00Z",
+      "updated_at": "2026-06-10T00:00:00Z"
+    },
     "diagram": {
       "name": "Spec Diagram",
       "id": "diagram",
