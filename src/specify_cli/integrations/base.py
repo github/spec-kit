@@ -34,6 +34,21 @@ _HOOK_COMMAND_NOTE = (
     "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
 )
 
+_CORE_COMMAND_TEMPLATE_ORDER = (
+    "analyze",
+    "clarify",
+    "constitution",
+    "implement",
+    "plan",
+    "checklist",
+    "specify",
+    "tasks",
+    "taskstoissues",
+)
+_CORE_COMMAND_TEMPLATE_RANK = {
+    command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)
+}
+
 
 # ---------------------------------------------------------------------------
 # IntegrationOption
@@ -270,6 +285,16 @@ class IntegrationBase(ABC):
             )
             raise NotImplementedError(msg)
 
+        # Windows: ``subprocess.run`` calls ``CreateProcess`` which does not
+        # consult ``PATHEXT``, so a bare command name like ``cursor-agent``
+        # that resolves to ``cursor-agent.cmd`` fails with ``WinError 2``.
+        # Resolve via ``shutil.which`` (which does honor ``PATHEXT``) so
+        # ``.cmd``/``.bat`` shims work transparently.  On POSIX this is a
+        # no-op for absolute paths and a harmless lookup otherwise.
+        resolved = shutil.which(exec_args[0])
+        if resolved:
+            exec_args = [resolved, *exec_args[1:]]
+
         cwd = str(project_root) if project_root else None
 
         if stream:
@@ -345,11 +370,19 @@ class IntegrationBase(ABC):
         return None
 
     def list_command_templates(self) -> list[Path]:
-        """Return sorted list of command template files from the shared directory."""
+        """Return ordered list of command template files from the shared directory."""
         cmd_dir = self.shared_commands_dir()
         if not cmd_dir or not cmd_dir.is_dir():
             return []
-        return sorted(f for f in cmd_dir.iterdir() if f.is_file() and f.suffix == ".md")
+        return sorted(
+            (f for f in cmd_dir.iterdir() if f.is_file() and f.suffix == ".md"),
+            key=lambda f: (
+                _CORE_COMMAND_TEMPLATE_RANK.get(
+                    f.stem, len(_CORE_COMMAND_TEMPLATE_ORDER)
+                ),
+                f.name,
+            ),
+        )
 
     def command_filename(self, template_name: str) -> str:
         """Return the destination filename for a command template.

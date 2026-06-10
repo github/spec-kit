@@ -33,6 +33,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Qoder CLI](https://qoder.com/cli)                                                   | `qodercli`       |                                                                                                                                           |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | `qwen`           |                                                                                                                                           |
 | [Roo Code](https://roocode.com/)                                                     | `roo`            |                                                                                                                                           |
+| [RovoDev](https://www.atlassian.com/software/rovo-dev)                               | `rovodev`        | Generates `.rovodev/skills/`, prompt wrappers, and `prompts.yml`; runtime dispatch uses `acli rovodev`                                   |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | `shai`           |                                                                                                                                           |
 | [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | `tabnine`        |                                                                                                                                           |
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
@@ -124,6 +125,27 @@ specify integration upgrade [<key>]
 | `--integration-options`  | Options for the integration                                              |
 
 Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.
+
+## Report Integration Status
+
+```bash
+specify integration status
+specify integration status --json
+```
+
+Reports the current project's integration status without changing files. The
+status report includes the default integration, installed integrations,
+multi-install safety, missing managed files, modified managed files, invalid
+manifest paths, shared Spec Kit infrastructure health, unchecked manifests, and
+the target integration for default-sensitive shared templates. The JSON form is
+intended for CI and coding agents that need stable machine-readable status data;
+it also reports the raw recorded integrations and the integration manifests that
+were checked when state repair heuristics differ from the recorded file.
+The command exits 0 when the report status is `ok` or `warning`; it exits 1
+only when the report status is `error`. In JSON output, `multi_install_safe`
+is `null` when no installed integration set can be evaluated, such as when the
+integration state is missing, unreadable, lacks a valid recorded integration
+list, or records no installed integrations.
 
 ## Integration-Specific Options
 

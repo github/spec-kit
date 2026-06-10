@@ -267,9 +267,9 @@ class YamlIntegrationTests:
             assert "<!-- SPECKIT END -->" not in remaining
             assert "# My Rules" in remaining
 
-    # -- CLI auto-promote -------------------------------------------------
+    # -- CLI integration flag -------------------------------------------------
 
-    def test_ai_flag_auto_promotes(self, tmp_path):
+    def test_integration_flag_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -284,21 +284,20 @@ class YamlIntegrationTests:
                 [
                     "init",
                     "--here",
-                    "--ai",
+                    "--integration",
                     self.KEY,
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
             )
         finally:
             os.chdir(old_cwd)
-        assert result.exit_code == 0, f"init --ai {self.KEY} failed: {result.output}"
+        assert result.exit_code == 0, f"init --integration {self.KEY} failed: {result.output}"
         i = get_integration(self.KEY)
         cmd_dir = i.commands_dest(project)
-        assert cmd_dir.is_dir(), f"--ai {self.KEY} did not create commands directory"
+        assert cmd_dir.is_dir(), f"--integration {self.KEY} did not create commands directory"
 
     def test_integration_flag_creates_files(self, tmp_path):
         from typer.testing import CliRunner
@@ -319,7 +318,6 @@ class YamlIntegrationTests:
                     self.KEY,
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -348,7 +346,7 @@ class YamlIntegrationTests:
             os.chdir(project)
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", self.KEY, "--script", "sh",
-                "--no-git", "--ignore-agent-tools",
+                "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -365,11 +363,11 @@ class YamlIntegrationTests:
     COMMAND_STEMS = [
         "agent-context.update",
         "analyze",
-        "checklist",
         "clarify",
         "constitution",
         "implement",
         "plan",
+        "checklist",
         "specify",
         "tasks",
         "taskstoissues",
@@ -459,7 +457,6 @@ class YamlIntegrationTests:
                     self.KEY,
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -468,7 +465,7 @@ class YamlIntegrationTests:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(
-            p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file()
+            p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("sh")
         assert actual == expected, (
@@ -495,7 +492,6 @@ class YamlIntegrationTests:
                     self.KEY,
                     "--script",
                     "ps",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -504,7 +500,7 @@ class YamlIntegrationTests:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(
-            p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file()
+            p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("ps")
         assert actual == expected, (

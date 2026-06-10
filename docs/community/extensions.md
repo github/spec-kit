@@ -7,7 +7,7 @@
 
 The following community-contributed extensions are available in [`catalog.community.json`](https://github.com/github/spec-kit/blob/main/extensions/catalog.community.json):
 
-**Categories:**
+**Categories** (common values, but any string is allowed):
 
 - `docs` — reads, validates, or generates spec artifacts
 - `code` — reviews, validates, or modifies source code
@@ -15,10 +15,13 @@ The following community-contributed extensions are available in [`catalog.commun
 - `integration` — syncs with external platforms
 - `visibility` — reports on project health or progress
 
-**Effect:**
+**Effect** (canonical `extension.yml`/catalog values):
 
-- `Read-only` — produces reports without modifying files
-- `Read+Write` — modifies files, creates artifacts, or updates specs
+- `read-only` — produces reports without modifying files (displayed as `Read-only` in the table)
+- `read-write` — modifies files, creates artifacts, or updates specs (displayed as `Read+Write` in the table)
+
+> [!TIP]
+> Extension authors can declare `category` and `effect` in their `extension.yml` under the `extension:` block. These fields are also available in `catalog.community.json` for tooling and the CLI (`specify extension info`).
 
 | Extension | Purpose | Category | Effect | URL |
 |-----------|---------|----------|--------|-----|
@@ -44,7 +47,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Conduct Extension | Orchestrates spec-kit phases via sub-agent delegation to reduce context pollution. | `process` | Read+Write | [spec-kit-conduct-ext](https://github.com/twbrandon7/spec-kit-conduct-ext) |
 | Confluence Extension | Create a doc in Confluence summarizing the specifications and planning files | `integration` | Read+Write | [spec-kit-confluence](https://github.com/aaronrsun/spec-kit-confluence) |
 | Cost Tracker | Track real LLM dollar cost across SDD workflows — per-feature budgets, per-integration comparison, and finance-ready exports | `visibility` | Read+Write | [spec-kit-cost](https://github.com/Quratulain-bilal/spec-kit-cost) |
-| DocGuard — CDD Enforcement | Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. Zero NPM runtime dependencies. | `docs` | Read+Write | [spec-kit-docguard](https://github.com/raccioly/docguard) |
+| DocGuard — CDD Enforcement | Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise. | `docs` | Read+Write | [spec-kit-docguard](https://github.com/raccioly/docguard) |
 | Extensify | Create and validate extensions and extension catalogs | `process` | Read+Write | [extensify](https://github.com/mnriem/spec-kit-extensions/tree/main/extensify) |
 | Fix Findings | Automated analyze-fix-reanalyze loop that resolves spec findings until clean | `code` | Read+Write | [spec-kit-fix-findings](https://github.com/Quratulain-bilal/spec-kit-fix-findings) |
 | FixIt Extension | Spec-aware bug fixing — maps bugs to spec artifacts, proposes a plan, applies minimal changes | `code` | Read+Write | [spec-kit-fixit](https://github.com/speckit-community/spec-kit-fixit) |
@@ -55,8 +58,9 @@ The following community-contributed extensions are available in [`catalog.commun
 | Intelligent Agent Orchestrator | Cross-catalog agent discovery and intelligent prompt-to-command routing | `process` | Read+Write | [spec-kit-orchestrator](https://github.com/pragya247/spec-kit-orchestrator) |
 | Iterate | Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building | `docs` | Read+Write | [spec-kit-iterate](https://github.com/imviancagrace/spec-kit-iterate) |
 | Jira Integration | Create Jira Epics, Stories, and Issues from spec-kit specifications and task breakdowns with configurable hierarchy and custom field support | `integration` | Read+Write | [spec-kit-jira](https://github.com/mbachorik/spec-kit-jira) |
+| Jira Integration (Sync Engine) | Idempotent, drift-aware, fail-closed reconcile engine mirroring spec-kit specs into Jira (Epic per repo, Story per spec, Subtask per phase) | `integration` | Read+Write | [spec-kit-jira-sync](https://github.com/ashbrener/spec-kit-jira-sync) |
 | Learning Extension | Generate educational guides from implementations and enhance clarifications with mentoring context | `docs` | Read+Write | [spec-kit-learn](https://github.com/imviancagrace/spec-kit-learn) |
-| Linear Integration | Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional). | `integration` | Read+Write | [spec-kit-linear](https://github.com/ashbrener/spec-kit-linear) |
+| Linear Integration | Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional). | `integration` | Read+Write | [spec-kit-linear-sync](https://github.com/ashbrener/spec-kit-linear-sync) |
 | MAQA — Multi-Agent & Quality Assurance | Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins. Optional CI gate. | `process` | Read+Write | [spec-kit-maqa-ext](https://github.com/GenieRobot/spec-kit-maqa-ext) |
 | MAQA Azure DevOps Integration | Azure DevOps Boards integration for MAQA — syncs User Stories and Task children as features progress | `integration` | Read+Write | [spec-kit-maqa-azure-devops](https://github.com/GenieRobot/spec-kit-maqa-azure-devops) |
 | MAQA CI/CD Gate | Auto-detects GitHub Actions, CircleCI, GitLab CI, and Bitbucket Pipelines. Blocks QA handoff until pipeline is green. | `process` | Read+Write | [spec-kit-maqa-ci](https://github.com/GenieRobot/spec-kit-maqa-ci) |

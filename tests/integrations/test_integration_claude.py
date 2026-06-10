@@ -118,7 +118,7 @@ class TestClaudeIntegration:
         assert b"<!-- SPECKIT" not in remaining
         assert b"# CLAUDE.md" in remaining
 
-    def test_ai_flag_auto_promotes_and_enables_skills(self, tmp_path):
+    def test_integration_flag_creates_skill_files_cli(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -133,11 +133,10 @@ class TestClaudeIntegration:
                 [
                     "init",
                     "--here",
-                    "--ai",
+                    "--integration",
                     "claude",
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -175,7 +174,6 @@ class TestClaudeIntegration:
                     "claude",
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -208,7 +206,6 @@ class TestClaudeIntegration:
                         "--here",
                         "--script",
                         "sh",
-                        "--no-git",
                         "--ignore-agent-tools",
                     ],
                     catch_exceptions=False,
@@ -234,7 +231,7 @@ class TestClaudeIntegration:
         assert init_options["integration"] == "claude"
 
     def test_claude_init_remains_usable_when_converter_fails(self, tmp_path):
-        """Claude init should succeed even without install_ai_skills."""
+        """Claude init should succeed even without install_skills."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -243,7 +240,7 @@ class TestClaudeIntegration:
 
         result = runner.invoke(
             app,
-            ["init", str(target), "--ai", "claude", "--script", "sh", "--no-git", "--ignore-agent-tools"],
+            ["init", str(target), "--integration", "claude", "--script", "sh", "--ignore-agent-tools"],
         )
 
         assert result.exit_code == 0

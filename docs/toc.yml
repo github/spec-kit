@@ -41,6 +41,8 @@
   items:
     - name: What is SDD?
       href: concepts/sdd.md
+    - name: Spec Persistence Models
+      href: concepts/spec-persistence.md
 
 # Development workflows
 - name: Development

@@ -11,6 +11,11 @@ Spec-Driven Development is a structured process that emphasizes:
 - **Multi-step refinement** rather than one-shot code generation from prompts
 - **Heavy reliance** on advanced AI model capabilities for specification interpretation
 
+Spec Kit does not prescribe how teams preserve or mutate `spec.md`, `plan.md`,
+and `tasks.md` after requirements change. See
+[Spec Persistence Models](spec-persistence.md) for three common ways to manage
+those artifacts over time.
+
 ## Development Phases
 
 | Phase | Focus | Key Activities |
