@@ -156,7 +156,9 @@ def test_safe_extract_zip_rejects_traversal(tmp_path, member_name):
         safe_extract_zip(zip_path, tmp_path / "out")
 
 
-@pytest.mark.parametrize("member_name", ["", ".", "./file.txt", "nested/./file.txt", "nested//file.txt"])
+# An empty member name is rejected by _safe_zip_name too, but zipfile cannot
+# even write such an entry, so it is not testable through this API.
+@pytest.mark.parametrize("member_name", [".", "./file.txt", "nested/./file.txt", "nested//file.txt"])
 def test_safe_extract_zip_rejects_dot_path_segments(tmp_path, member_name):
     zip_path = tmp_path / "bad.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
