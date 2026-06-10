@@ -486,6 +486,7 @@ class TomlIntegrationTests:
         "analyze",
         "clarify",
         "constitution",
+        "converge",
         "implement",
         "plan",
         "checklist",

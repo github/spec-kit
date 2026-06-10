@@ -97,19 +97,22 @@ templates/
     └── converge.md                       # NEW — the command template (primary deliverable)
 
 src/specify_cli/
-├── __init__.py                           # EDIT — add "converge" to SKILL_DESCRIPTIONS + post-init "Next Steps" panel (after implement)
+├── __init__.py                           # EDIT — add "converge" to SKILL_DESCRIPTIONS
 ├── extensions.py                         # EDIT — add "converge" to _FALLBACK_CORE_COMMAND_NAMES
+├── commands/
+│   └── init.py                           # EDIT — add "converge" to the post-init "Next Steps" panel (after implement)
 └── integrations/
     └── claude/__init__.py                # EDIT — add "converge" argument hint
 
 tests/
 ├── test_agent_config_consistency.py      # VERIFY — converge token resolves correctly
 └── integrations/
-    ├── test_integration_base_markdown.py # EDIT — add "converge" to expected command stems
+    ├── test_integration_base_markdown.py # EDIT — add "converge" to COMMAND_STEMS
     ├── test_integration_base_toml.py     # EDIT — add "converge" to COMMAND_STEMS
     ├── test_integration_base_yaml.py     # EDIT — add "converge" to COMMAND_STEMS
     ├── test_integration_base_skills.py   # EDIT — add "converge" to expected_commands + _SKILL_COMMANDS
-    └── test_integration_copilot.py       # EDIT — add "converge" to expected_commands + _SKILL_COMMANDS
+    ├── test_integration_copilot.py       # EDIT — add "converge" to expected_commands + _SKILL_COMMANDS
+    └── test_integration_generic.py       # EDIT — add "converge" to the constitution-context parametrize list
 
 README.md                                 # EDIT — add "/speckit.converge" to the Core Commands table (the canonical slash-command enumeration; Constitution III & V)
 ```
