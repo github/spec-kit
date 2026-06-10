@@ -738,7 +738,7 @@ def register(app: typer.Typer) -> None:
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"
 
-        from ..extensions import is_slash_skills_agent as _is_slash_skills_agent
+        from .._invocation_style import is_slash_skills_agent as _is_slash_skills_agent
 
         # `_is_skills_integration` means the integration is installed in
         # skills mode, which is the semantic equivalent of `ai_skills_enabled`

@@ -27,6 +27,7 @@ from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from ._init_options import is_ai_skills_enabled
+from ._invocation_style import is_slash_skills_agent
 from .catalogs import CatalogEntry as BaseCatalogEntry
 from .catalogs import CatalogStackBase
 
@@ -43,32 +44,7 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
         "taskstoissues",
     }
 )
-
-# Agents that use /speckit-<name> (slash-skills invocation) in hook messages.
-# - ALWAYS_SLASH_AGENTS: always render as /speckit-<name> regardless of ai_skills.
-# - CONDITIONAL_SLASH_AGENTS: render as /speckit-<name> only when ai_skills is enabled.
-ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset({"devin", "trae", "zed"})
-CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
-    {"agy", "claude", "copilot", "cursor-agent", "hermes", "lingma", "rovodev", "vibe"}
-)
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
-
-
-def is_slash_skills_agent(selected_ai: str | None, ai_skills_enabled: bool) -> bool:
-    """Return True if *selected_ai* uses ``/speckit-<name>`` hook invocations.
-
-    The decision is based on the agent sets defined above:
-
-    *   Agents in `ALWAYS_SLASH_AGENTS` always use slash invocations.
-    *   Agents in `CONDITIONAL_SLASH_AGENTS` only use them when
-        *ai_skills_enabled* is ``True``.
-    *   All other agents return ``False``.
-    """
-    if selected_ai is None:
-        return False
-    return selected_ai in ALWAYS_SLASH_AGENTS or (
-        selected_ai in CONDITIONAL_SLASH_AGENTS and ai_skills_enabled
-    )
 
 
 DEFAULT_HOOK_PRIORITY = 10
