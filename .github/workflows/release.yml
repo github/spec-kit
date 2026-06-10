@@ -66,8 +66,14 @@ jobs:
           ## Install
 
           \`\`\`bash
-          uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@${VERSION}
+          uv tool install specify-cli@latest
           specify init my-project
+          \`\`\`
+
+          Or install from source:
+
+          \`\`\`bash
+          uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@${VERSION}
           \`\`\`
 
           NOTES_EOF
