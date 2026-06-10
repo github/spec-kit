@@ -1918,6 +1918,45 @@ class TestIntegrationSwitch:
         assert "/speckit.plan" in updated
         assert "/speckit-plan" not in updated
 
+    def test_switch_preserves_recovered_files(self, tmp_path):
+        """Regression for #2918: files marked recovered in the manifest are not overwritten.
+
+        When a file already exists on disk before init and is recorded with
+        ``recovered=True``, ``integration use``/``switch`` must not treat it as
+        managed even when the on-disk hash matches the manifest hash.
+        """
+        import hashlib
+
+        project = _init_project(tmp_path, "claude")
+        shared_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
+        assert shared_script.is_file()
+
+        # Simulate a team-customized file that was recorded as recovered:
+        # write custom content, then update the manifest to record its hash
+        # with the recovered flag set.
+        custom_bytes = b"#!/usr/bin/env bash\n# team custom workflow\nexit 0\n"
+        shared_script.write_bytes(custom_bytes)
+
+        manifest_path = project / ".specify" / "integrations" / "speckit.manifest.json"
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        rel = ".specify/scripts/bash/setup-tasks.sh"
+        manifest_data["files"][rel] = hashlib.sha256(custom_bytes).hexdigest()
+        manifest_data.setdefault("recovered_files", []).append(rel)
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, [
+                "integration", "switch", "copilot",
+                "--script", "sh",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0
+        # Recovered file must NOT be overwritten — team content preserved.
+        assert shared_script.read_bytes() == custom_bytes
+
     def test_switch_skips_symlinked_parent_directory(self, tmp_path):
         """Regression: if .specify/scripts/bash is a symlink, switch must not write through it.
 
