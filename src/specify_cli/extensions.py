@@ -1073,7 +1073,7 @@ class ExtensionManager:
                 and hasattr(integration, "inject_argument_hint")
             ):
                 frontmatter_data["argument-hint"] = str(argument_hint)
-            frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+            frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False, allow_unicode=True).strip()
 
             # Derive a human-friendly title from the command name
             short_name = cmd_name

@@ -119,6 +119,50 @@ def _create_extension_dir(temp_dir: Path, ext_id: str = "test-ext") -> Path:
     return ext_dir
 
 
+def _create_unicode_extension_dir(temp_dir: Path, ext_id: str = "uni-ext") -> Path:
+    """Create an extension whose command description contains non-ASCII characters."""
+    ext_dir = temp_dir / ext_id
+    ext_dir.mkdir()
+    description = "Prüfe Konformität der Implementierung"
+
+    manifest_data = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": ext_id,
+            "name": "Unicode Extension",
+            "version": "1.0.0",
+            "description": description,
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "commands": [
+                {
+                    "name": f"speckit.{ext_id}.hello",
+                    "file": "commands/hello.md",
+                    "description": description,
+                },
+            ]
+        },
+    }
+
+    with open(ext_dir / "extension.yml", "w", encoding="utf-8") as f:
+        yaml.dump(manifest_data, f, allow_unicode=True)
+
+    commands_dir = ext_dir / "commands"
+    commands_dir.mkdir()
+    (commands_dir / "hello.md").write_text(
+        "---\n"
+        f'description: "{description}"\n'
+        "---\n"
+        "\n"
+        "# Hello\n"
+        "\n"
+        "Body.\n",
+        encoding="utf-8",
+    )
+    return ext_dir
+
+
 def _can_create_symlink(temp_dir: Path) -> bool:
     """Return True when the current platform/user can create file symlinks."""
     target = temp_dir / "symlink-target.txt"
@@ -431,6 +475,18 @@ class TestExtensionSkillRegistration:
         assert skill_file.exists()
         parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
         assert "argument-hint" not in parsed
+
+    def test_skill_md_unicode(self, skills_project, temp_dir):
+        """SKILL.md generation should preserve non-ASCII characters."""
+        project_dir, skills_dir = skills_project
+        ext_dir = _create_unicode_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        skill_file = skills_dir / "speckit-uni-ext-hello" / "SKILL.md"
+        content = skill_file.read_text(encoding="utf-8")
+
+        assert "Prüfe Konformität" in content
 
     def test_no_skills_when_ai_skills_disabled(self, no_skills_project, extension_dir):
         """No skills should be created when ai_skills is false."""

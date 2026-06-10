@@ -1068,7 +1068,7 @@ class PresetManager:
                         skill_name, desc,
                         f"override:{cmd_name}",
                     )
-                    fm_text = yaml.safe_dump(fm_data, sort_keys=False).strip()
+                    fm_text = yaml.safe_dump(fm_data, sort_keys=False, allow_unicode=True).strip()
                     skill_title = self._skill_title_from_command(cmd_name)
                     skill_content = (
                         f"---\n{fm_text}\n---\n\n"
@@ -1345,7 +1345,9 @@ class PresetManager:
                     enhanced_desc,
                     f"preset:{manifest.id}",
                 )
-                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                frontmatter_text = yaml.safe_dump(
+                    frontmatter_data, sort_keys=False, allow_unicode=True
+                ).strip()
                 skill_content = (
                     f"---\n"
                     f"{frontmatter_text}\n"
@@ -1441,7 +1443,9 @@ class PresetManager:
                     enhanced_desc,
                     f"templates/commands/{short_name}.md",
                 )
-                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                frontmatter_text = yaml.safe_dump(
+                    frontmatter_data, sort_keys=False, allow_unicode=True
+                ).strip()
                 skill_title = self._skill_title_from_command(short_name)
                 skill_content = (
                     f"---\n"
@@ -1478,7 +1482,9 @@ class PresetManager:
                     frontmatter.get("description", f"Extension command: {command_name}"),
                     extension_restore["source"],
                 )
-                frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
+                frontmatter_text = yaml.safe_dump(
+                    frontmatter_data, sort_keys=False, allow_unicode=True
+                ).strip()
                 skill_content = (
                     f"---\n"
                     f"{frontmatter_text}\n"
@@ -3276,7 +3282,7 @@ class PresetResolver:
             if top_fm:
                 top_frontmatter_text = (
                     "---\n"
-                    + yaml.safe_dump(top_fm, sort_keys=False).strip()
+                    + yaml.safe_dump(top_fm, sort_keys=False, allow_unicode=True).strip()
                     + "\n---"
                 )
             else:

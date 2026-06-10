@@ -103,7 +103,9 @@ class ClaudeIntegration(SkillsIntegration):
         skill_frontmatter = self._build_skill_fm(
             skill_name, description, f"templates/commands/{template_name}.md"
         )
-        frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
+        frontmatter_text = yaml.safe_dump(
+            skill_frontmatter, sort_keys=False, allow_unicode=True
+        ).strip()
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 
     def _build_skill_fm(self, name: str, description: str, source: str) -> dict:

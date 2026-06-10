@@ -66,6 +66,16 @@ class TestClaudeIntegration:
         assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
+    def test_render_skill_unicode(self):
+        """Test rendering a skill preserves non-ASCII characters."""
+        integration = get_integration("claude")
+        rendered = integration._render_skill(
+            "constitution",
+            {"description": "Prüfe Konformität der Implementierung"},
+            "Body",
+        )
+        assert "Prüfe Konformität" in rendered
+
     def test_setup_upserts_context_section(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
