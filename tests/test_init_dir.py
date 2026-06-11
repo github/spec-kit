@@ -80,6 +80,23 @@ def _feature_dir_line(stdout: str) -> str | None:
     return None
 
 
+def _bash_path(path: Path) -> str:
+    """Return the path format emitted by Bash `pwd`.
+
+    Git-for-Windows Bash reports absolute paths as /c/... while pathlib reports
+    them as C:\\..., so Bash stdout comparisons need an expected value in Bash's
+    own path shape.
+    """
+    if os.name != "nt":
+        return str(path)
+
+    resolved = path.resolve()
+    path_str = str(resolved).replace("\\", "/")
+    if resolved.drive.endswith(":"):
+        return f"/{resolved.drive[0].lower()}{path_str[len(resolved.drive):]}"
+    return path_str
+
+
 requires_pwsh = pytest.mark.skipif(
     not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available"
 )
@@ -95,7 +112,7 @@ def test_valid_path_resolves_from_outside(tmp_path: Path) -> None:
     env = {**_clean_env(), "SPECIFY_INIT_DIR": str(web)}
     result = _bash("get_repo_root", cwd=tmp_path, env=env)
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == str(web)
+    assert result.stdout.strip() == _bash_path(web)
 
 
 @requires_bash
@@ -105,7 +122,7 @@ def test_relative_path_normalized_against_cwd(tmp_path: Path) -> None:
     env = {**_clean_env(), "SPECIFY_INIT_DIR": "web"}
     result = _bash("get_repo_root", cwd=tmp_path, env=env)
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == str(web)
+    assert result.stdout.strip() == _bash_path(web)
 
 
 @requires_bash
@@ -115,7 +132,7 @@ def test_trailing_slash_tolerated(tmp_path: Path) -> None:
     env = {**_clean_env(), "SPECIFY_INIT_DIR": f"{web}/"}
     result = _bash("get_repo_root", cwd=tmp_path, env=env)
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == str(web)
+    assert result.stdout.strip() == _bash_path(web)
 
 
 @requires_bash
@@ -137,8 +154,8 @@ def test_precedence_over_cwd_project(tmp_path: Path) -> None:
     }
     result = _bash("get_feature_paths", cwd=cwd_proj, env=env)
     assert result.returncode == 0, result.stderr
-    assert _feature_dir_line(result.stdout) == str(web / "specs" / "001-demo")
-    assert str(cwd_proj) not in result.stdout
+    assert _feature_dir_line(result.stdout) == _bash_path(web / "specs" / "001-demo")
+    assert _bash_path(cwd_proj) not in result.stdout
 
 
 @requires_bash
@@ -153,7 +170,7 @@ def test_composes_with_feature_directory_override(tmp_path: Path) -> None:
     }
     result = _bash("get_feature_paths", cwd=tmp_path, env=env)
     assert result.returncode == 0, result.stderr
-    assert _feature_dir_line(result.stdout) == str(web / "specs" / "003-x")
+    assert _feature_dir_line(result.stdout) == _bash_path(web / "specs" / "003-x")
 
 
 @requires_bash
@@ -166,7 +183,7 @@ def test_composes_with_target_feature_json(tmp_path: Path) -> None:
     env = {**_clean_env(), "SPECIFY_INIT_DIR": str(web)}
     result = _bash("get_feature_paths", cwd=tmp_path, env=env)
     assert result.returncode == 0, result.stderr
-    assert _feature_dir_line(result.stdout) == str(web / "specs" / "004-fj")
+    assert _feature_dir_line(result.stdout) == _bash_path(web / "specs" / "004-fj")
 
 
 # ── Bash: negative / contract cases ─────────────────────────────────────────
@@ -180,7 +197,7 @@ def test_unset_preserves_cwd_walk(tmp_path: Path) -> None:
     sub.mkdir(parents=True)
     result = _bash("get_repo_root", cwd=sub, env=_clean_env())
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == str(web)
+    assert result.stdout.strip() == _bash_path(web)
 
 
 @requires_bash
@@ -198,7 +215,7 @@ def test_empty_string_treated_as_unset(tmp_path: Path) -> None:
     env = {**_clean_env(), "SPECIFY_INIT_DIR": ""}
     result = _bash("get_repo_root", cwd=sub, env=env)
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == str(web)
+    assert result.stdout.strip() == _bash_path(web)
 
 
 @requires_bash
@@ -232,7 +249,7 @@ def test_nonexistent_path_errors_no_fallback(tmp_path: Path) -> None:
     result = _bash("get_repo_root", cwd=web, env=env)
     assert result.returncode != 0
     assert "does not point to an existing directory" in result.stderr
-    assert str(web) not in result.stdout
+    assert _bash_path(web) not in result.stdout
 
 
 @requires_bash
@@ -245,7 +262,7 @@ def test_path_without_specify_errors_no_fallback(tmp_path: Path) -> None:
     result = _bash("get_repo_root", cwd=web, env=env)
     assert result.returncode != 0
     assert "not a Spec Kit project" in result.stderr
-    assert str(web) not in result.stdout
+    assert _bash_path(web) not in result.stdout
 
 
 @requires_bash
@@ -259,7 +276,7 @@ def test_file_path_errors_no_fallback(tmp_path: Path) -> None:
     result = _bash("get_repo_root", cwd=web, env=env)
     assert result.returncode != 0
     assert "does not point to an existing directory" in result.stderr
-    assert str(web) not in result.stdout
+    assert _bash_path(web) not in result.stdout
 
 
 # ── Bash: bundled Git extension entrypoint ──────────────────────────────────
