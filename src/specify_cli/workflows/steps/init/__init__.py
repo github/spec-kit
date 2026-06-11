@@ -263,7 +263,10 @@ class InitStep(StepBase):
         try:
             stderr = result.stderr or ""
         except (ValueError, AttributeError):
-            stderr = ""
+            # Older Click: stderr is mixed into stdout.  On failure, treat
+            # stdout as stderr so workflows can consistently read
+            # steps.<id>.output.stderr for error details.
+            stderr = stdout if result.exit_code != 0 else ""
 
         if result.exit_code != 0 and result.exception is not None:
             detail = f"{type(result.exception).__name__}: {result.exception}"
