@@ -46,6 +46,7 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
+VALID_EFFECTS = frozenset({"read-only", "read-write"})
 
 DEFAULT_HOOK_PRIORITY = 10
 
@@ -209,6 +210,21 @@ class ExtensionManifest:
             pkg_version.Version(ext["version"])
         except pkg_version.InvalidVersion:
             raise ValidationError(f"Invalid version: {ext['version']}")
+
+        # Validate optional category field (free-form string)
+        if "category" in ext:
+            if not isinstance(ext["category"], str) or not ext["category"].strip():
+                raise ValidationError(
+                    "Invalid extension.category: must be a non-empty string"
+                )
+
+        # Validate optional effect field
+        if "effect" in ext:
+            if not isinstance(ext["effect"], str) or ext["effect"] not in VALID_EFFECTS:
+                raise ValidationError(
+                    f"Invalid extension.effect '{ext.get('effect')}': "
+                    f"must be one of {sorted(VALID_EFFECTS)}"
+                )
 
         # Validate requires section
         requires = self.data["requires"]
@@ -376,6 +392,16 @@ class ExtensionManifest:
     def description(self) -> str:
         """Get extension description."""
         return self.data["extension"]["description"]
+
+    @property
+    def category(self) -> Optional[str]:
+        """Get extension category (free-form; common values: docs, code, process, integration, visibility)."""
+        return self.data["extension"].get("category")
+
+    @property
+    def effect(self) -> Optional[str]:
+        """Get extension effect (read-only, read-write)."""
+        return self.data["extension"].get("effect")
 
     @property
     def requires_speckit_version(self) -> str:

@@ -7,7 +7,7 @@
 
 The following community-contributed extensions are available in [`catalog.community.json`](https://github.com/github/spec-kit/blob/main/extensions/catalog.community.json):
 
-**Categories:**
+**Categories** (common values, but any string is allowed):
 
 - `docs` — reads, validates, or generates spec artifacts
 - `code` — reviews, validates, or modifies source code
@@ -15,10 +15,13 @@ The following community-contributed extensions are available in [`catalog.commun
 - `integration` — syncs with external platforms
 - `visibility` — reports on project health or progress
 
-**Effect:**
+**Effect** (canonical `extension.yml`/catalog values):
 
-- `Read-only` — produces reports without modifying files
-- `Read+Write` — modifies files, creates artifacts, or updates specs
+- `read-only` — produces reports without modifying files (displayed as `Read-only` in the table)
+- `read-write` — modifies files, creates artifacts, or updates specs (displayed as `Read+Write` in the table)
+
+> [!TIP]
+> Extension authors can declare `category` and `effect` in their `extension.yml` under the `extension:` block. These fields are also available in `catalog.community.json` for tooling and the CLI (`specify extension info`).
 
 | Extension | Purpose | Category | Effect | URL |
 |-----------|---------|----------|--------|-----|
@@ -55,6 +58,7 @@ The following community-contributed extensions are available in [`catalog.commun
 | Intelligent Agent Orchestrator | Cross-catalog agent discovery and intelligent prompt-to-command routing | `process` | Read+Write | [spec-kit-orchestrator](https://github.com/pragya247/spec-kit-orchestrator) |
 | Iterate | Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building | `docs` | Read+Write | [spec-kit-iterate](https://github.com/imviancagrace/spec-kit-iterate) |
 | Jira Integration | Create Jira Epics, Stories, and Issues from spec-kit specifications and task breakdowns with configurable hierarchy and custom field support | `integration` | Read+Write | [spec-kit-jira](https://github.com/mbachorik/spec-kit-jira) |
+| Jira Integration (Sync Engine) | Idempotent, drift-aware, fail-closed reconcile engine mirroring spec-kit specs into Jira (Epic per repo, Story per spec, Subtask per phase) | `integration` | Read+Write | [spec-kit-jira-sync](https://github.com/ashbrener/spec-kit-jira-sync) |
 | Learning Extension | Generate educational guides from implementations and enhance clarifications with mentoring context | `docs` | Read+Write | [spec-kit-learn](https://github.com/imviancagrace/spec-kit-learn) |
 | Linear Integration | Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional). | `integration` | Read+Write | [spec-kit-linear-sync](https://github.com/ashbrener/spec-kit-linear-sync) |
 | MAQA — Multi-Agent & Quality Assurance | Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins. Optional CI gate. | `process` | Read+Write | [spec-kit-maqa-ext](https://github.com/GenieRobot/spec-kit-maqa-ext) |

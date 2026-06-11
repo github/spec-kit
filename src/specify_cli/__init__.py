@@ -1975,7 +1975,11 @@ def extension_info(
             author = ext_manifest.data.get("extension", {}).get("author")
             if author:
                 console.print(f"[dim]Author:[/dim] {author}")
-                console.print()
+            if ext_manifest.category:
+                console.print(f"[dim]Category:[/dim] {ext_manifest.category}")
+            if ext_manifest.effect:
+                console.print(f"[dim]Effect:[/dim] {ext_manifest.effect}")
+            console.print()
 
             if ext_manifest.commands:
                 console.print("[bold]Commands:[/bold]")
@@ -2024,6 +2028,12 @@ def _print_extension_info(ext_info: dict, manager):
     # Author and License
     console.print(f"[dim]Author:[/dim] {ext_info.get('author', 'Unknown')}")
     console.print(f"[dim]License:[/dim] {ext_info.get('license', 'Unknown')}")
+
+    # Category and Effect
+    if ext_info.get('category'):
+        console.print(f"[dim]Category:[/dim] {ext_info['category']}")
+    if ext_info.get('effect'):
+        console.print(f"[dim]Effect:[/dim] {ext_info['effect']}")
 
     # Source catalog
     if ext_info.get("_catalog_name"):
