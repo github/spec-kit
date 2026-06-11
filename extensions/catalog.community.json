@@ -785,7 +785,9 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.8.5",
-        "tools": [{ "name": "python3", "required": false }]
+        "tools": [
+          { "name": "python3", "required": false }
+        ]
       },
       "provides": {
         "commands": 10,
@@ -795,6 +797,7 @@
         "tracking",
         "companion",
         "progress",
+        "vscode",
         "lifecycle",
         "resume"
       ],
