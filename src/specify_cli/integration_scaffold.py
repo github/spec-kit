@@ -136,7 +136,7 @@ def _test_content(
     display_name = _display_name(key)
     package_name = _package_name(key)
     commands_dir = f".{key}/{template.commands_subdir}"
-    return f'''"""Tests for the {key} integration scaffold."""
+    return f'''"""Tests for the {key} integration."""
 
 from specify_cli.integrations.{package_name} import {class_name}
 from specify_cli.integrations.base import {template.base_class}

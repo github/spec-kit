@@ -118,9 +118,15 @@ The scaffold does not register the integration automatically. Review the
 generated metadata, then add the import and `_register()` call in
 `src/specify_cli/integrations/__init__.py`.
 
-## 7. Run Lint / Basic Checks (Add Your Own)
+## 7. Run Lint / Basic Checks
 
-Currently no enforced lint config is bundled, but you can quickly sanity check importability:
+CI enforces `ruff check src/` (see `.github/workflows/test.yml`), so run it locally before pushing:
+
+```bash
+uvx ruff check src/
+```
+
+You can also quickly sanity check importability:
 
 ```bash
 python -c "import specify_cli; print('Import OK')"
