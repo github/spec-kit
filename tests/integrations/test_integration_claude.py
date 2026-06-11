@@ -601,6 +601,36 @@ class TestClaudeForkContext:
         assert content.count("context: fork") == 1
         assert content.count("agent: general-purpose") == 1
 
+    def test_fork_context_injected_via_post_process(self):
+        """Preset/extension generators call post_process_skill_content directly,
+        bypassing setup(); fork context must be injected there too."""
+        i = get_integration("claude")
+        content = '---\nname: "speckit-analyze"\ndescription: "x"\n---\n\nBody\n'
+        result = i.post_process_skill_content(content)
+        parsed = yaml.safe_load(result.split("---", 2)[1])
+        assert parsed.get("context") == "fork"
+        assert parsed.get("agent") == "general-purpose"
+        assert parsed.get("argument-hint") == ARGUMENT_HINTS["analyze"]
+
+    def test_post_process_no_fork_for_other_skills(self):
+        """Skills not in FORK_CONTEXT_COMMANDS must not gain context/agent."""
+        i = get_integration("claude")
+        content = '---\nname: "speckit-plan"\ndescription: "x"\n---\n\nBody\n'
+        result = i.post_process_skill_content(content)
+        parsed = yaml.safe_load(result.split("---", 2)[1])
+        assert "context" not in parsed
+        assert "agent" not in parsed
+
+    def test_post_process_fork_idempotent(self):
+        """Re-running post_process must not duplicate fork frontmatter keys."""
+        i = get_integration("claude")
+        content = '---\nname: "speckit-analyze"\ndescription: "x"\n---\n\nBody\n'
+        once = i.post_process_skill_content(content)
+        twice = i.post_process_skill_content(once)
+        assert once == twice
+        assert twice.count("context: fork") == 1
+        assert twice.count("agent: general-purpose") == 1
+
 
 class TestClaudeHookCommandNote:
     """Verify dot-to-hyphen normalization note is injected in hook sections."""

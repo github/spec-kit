@@ -157,11 +157,49 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
+    @staticmethod
+    def _skill_stem_from_content(content: str) -> str | None:
+        """Derive the command stem (e.g. ``analyze``) from a skill's frontmatter.
+
+        Reads the ``name:`` field of the first frontmatter block and strips
+        the ``speckit-`` prefix. Returns ``None`` when no name is present.
+        """
+        dash_count = 0
+        for line in content.splitlines():
+            stripped = line.rstrip("\r\n")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("name:"):
+                name = stripped[len("name:"):].strip().strip('"').strip("'")
+                if name.startswith("speckit-"):
+                    return name[len("speckit-"):]
+                return name or None
+        return None
+
     def post_process_skill_content(self, content: str) -> str:
-        """Inject Claude-specific frontmatter flags and hook notes."""
+        """Inject Claude-specific frontmatter flags, hook notes, and any
+        per-command frontmatter.
+
+        Applied by every skill-generation path (setup, presets, extensions),
+        so command-specific frontmatter (argument-hint, fork context) stays
+        consistent however the SKILL.md was produced.
+        """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
         updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+
+        stem = self._skill_stem_from_content(updated)
+        if stem:
+            hint = ARGUMENT_HINTS.get(stem, "")
+            if hint:
+                updated = self.inject_argument_hint(updated, hint)
+            fork_config = FORK_CONTEXT_COMMANDS.get(stem)
+            if fork_config:
+                for key, value in fork_config.items():
+                    updated = self._inject_frontmatter_flag(updated, key, value)
         return updated
 
     def setup(
@@ -188,21 +226,7 @@ class ClaudeIntegration(SkillsIntegration):
             content_bytes = path.read_bytes()
             content = content_bytes.decode("utf-8")
 
-            updated = content
-
-            # Inject argument-hint if available for this skill
-            skill_dir_name = path.parent.name  # e.g. "speckit-plan"
-            stem = skill_dir_name
-            if stem.startswith("speckit-"):
-                stem = stem[len("speckit-"):]
-            hint = ARGUMENT_HINTS.get(stem, "")
-            if hint:
-                updated = self.inject_argument_hint(updated, hint)
-
-            fork_config = FORK_CONTEXT_COMMANDS.get(stem)
-            if fork_config:
-                for key, value in fork_config.items():
-                    updated = self._inject_frontmatter_flag(updated, key, value)
+            updated = self.post_process_skill_content(content)
 
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))
