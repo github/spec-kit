@@ -49,7 +49,11 @@ function Resolve-SpecifyInitDir {
         [Console]::Error.WriteLine("ERROR: SPECIFY_INIT_DIR does not point to an existing directory: $($env:SPECIFY_INIT_DIR)")
         exit 1
     }
-    $initRoot = $resolved.Path
+    # Resolve-Path echoes back any trailing separator from the input; trim it so
+    # the returned root matches the bash resolver, whose `cd && pwd` never yields
+    # one. TrimEndingDirectorySeparator is a no-op on a bare root and on a path
+    # that already has no trailing separator.
+    $initRoot = [System.IO.Path]::TrimEndingDirectorySeparator($resolved.Path)
     if (-not (Test-Path -LiteralPath (Join-Path $initRoot '.specify') -PathType Container)) {
         [Console]::Error.WriteLine("ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): $initRoot")
         exit 1

@@ -319,7 +319,8 @@ def test_git_ext_create_feature_invalid_init_dir_errors(tmp_path: Path) -> None:
     assert _json_line(result.stdout) is None
 
 
-# ── PowerShell mirror (skipped when no PowerShell, incl. CI) ─────────────────
+# ── PowerShell mirror (skipped only when no PowerShell is installed; the CI
+#    ubuntu/windows runners ship pwsh, so these DO run there) ─────────────────
 
 
 @requires_pwsh
