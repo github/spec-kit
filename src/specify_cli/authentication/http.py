@@ -64,13 +64,20 @@ RedirectValidator = Callable[[str, str], None]
 def _validate_strict_redirect(_old_url: str, new_url: str) -> None:
     if not is_https_or_localhost_http(new_url):
         raise urllib.error.URLError(
-            "redirect target must use HTTPS with a hostname, "
+            "unsafe redirect: target must use HTTPS with a hostname, "
             "or HTTP for localhost (127.0.0.1, ::1)"
         )
 
 
 class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
-    """Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades."""
+    """Redirect handler that guards every redirect it is installed for.
+
+    1. Reject redirects that are not HTTPS with a hostname, except HTTP to
+       localhost / 127.0.0.1 / ::1 (the exact hosts allowed by
+       ``is_https_or_localhost_http``).
+    2. Run any caller-provided redirect validator.
+    3. Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades.
+    """
 
     def __init__(
         self,
@@ -82,6 +89,7 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         self._redirect_validator = redirect_validator
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_strict_redirect(req.full_url, newurl)
         if self._redirect_validator is not None:
             self._redirect_validator(req.full_url, newurl)
 
@@ -145,18 +153,17 @@ def open_url(
     *extra_headers* (e.g. ``Accept``) are merged into every attempt.
     *redirect_validator*, when provided, is called with ``(old_url, new_url)``
     before following each redirect and may raise to reject the redirect.
-    *strict_redirects* rejects redirect targets that are not HTTPS with a
-    hostname, except HTTP to localhost / 127.0.0.1 / ::1
-    (the exact hosts allowed by ``is_https_or_localhost_http``).
+
+    Redirect scheme safety: every authenticated attempt goes through
+    ``_StripAuthOnRedirect``, which always rejects redirects to non-HTTPS
+    URLs (except HTTP to localhost / 127.0.0.1 / ::1, the hosts allowed by
+    ``is_https_or_localhost_http``). *strict_redirects* extends that same
+    scheme guard and the optional redirect validator to the unauthenticated
+    fallback; without it, the fallback follows redirects without that handler.
     """
     entries = find_entries_for_url(url, _load_config())
 
     effective_redirect_validator = redirect_validator
-    if strict_redirects:
-        def effective_redirect_validator(old_url: str, new_url: str) -> None:
-            _validate_strict_redirect(old_url, new_url)
-            if redirect_validator is not None:
-                redirect_validator(old_url, new_url)
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
         merged = {}
