@@ -7,9 +7,15 @@ scripts:
 
 ## Checklist Purpose: "Unit Tests for English"
 
-**CRITICAL CONCEPT**: Checklists are **UNIT TESTS FOR REQUIREMENTS WRITING** - they validate the quality, clarity, and completeness of requirements in a given domain. They are NOT for verification/testing - NOT "Verify the button clicks correctly", NOT checking if code/implementation matches the spec.
+**CRITICAL CONCEPT**: Checklists are **UNIT TESTS FOR REQUIREMENTS WRITING** - they validate the quality, clarity, and completeness of requirements in a given domain.
+
+**NOT for verification/testing**:
 
 - ❌ NOT "Test error handling works"
+- ❌ NOT checking if code/implementation matches the spec
+
+**FOR requirements quality validation**:
+
 - ✅ "Is 'prominent display' quantified with specific sizing/positioning?" (clarity)
 
 **Metaphor**: If your spec is code written in English, the checklist is its unit test suite - testing whether the requirements are well-written, complete, unambiguous, and ready for implementation, NOT whether the implementation works.
@@ -61,7 +67,11 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 2. **IF EXISTS**: Load `/memory/constitution.md` for project principles and governance constraints.
 
-3. **Clarify intent (dynamic)**: Derive up to THREE initial contextual clarifying questions (no pre-baked catalog). They MUST be generated from the user's phrasing + extracted signals from spec/plan/tasks, only ask about information that materially changes checklist content, be skipped individually if already unambiguous in `$ARGUMENTS`, and prefer precision over breadth.
+3. **Clarify intent (dynamic)**: Derive up to THREE initial contextual clarifying questions (no pre-baked catalog). They MUST:
+   - Be generated from the user's phrasing + extracted signals from spec/plan/tasks
+   - Only ask about information that materially changes checklist content
+   - Be skipped individually if already unambiguous in `$ARGUMENTS`
+   - Prefer precision over breadth
 
    Generation algorithm:
    1. Extract signals: feature domain keywords (e.g., auth, latency, UX, API), risk indicators ("critical", "must", "compliance"), stakeholder hints ("QA", "review", "security team"), explicit deliverables ("a11y", "rollback", "contracts").
@@ -70,26 +80,58 @@ You **MUST** consider the user input before proceeding (if not empty).
    4. Detect missing dimensions: scope breadth, depth/rigor, risk emphasis, exclusion boundaries, measurable acceptance criteria.
    5. Formulate questions from these archetypes: scope refinement, risk prioritization, depth calibration, audience framing, boundary exclusion, scenario class gap (e.g., "No recovery flows detected—are rollback / partial failure paths in scope?").
 
-   Question formatting rules: if presenting options, generate a compact table with columns Option | Candidate | Why It Matters; limit to A–E options maximum; omit the table if a free-form answer is clearer; never ask the user to restate what they already said; avoid speculative categories (no hallucination) - if uncertain, ask explicitly: "Confirm whether X belongs in scope."
+   Question formatting rules:
+   - If presenting options, generate a compact table with columns Option | Candidate | Why It Matters
+   - Limit to A–E options maximum; omit the table if a free-form answer is clearer
+   - Never ask the user to restate what they already said
+   - Avoid speculative categories (no hallucination) - if uncertain, ask explicitly: "Confirm whether X belongs in scope."
 
-   Defaults when interaction impossible: Depth: Standard; Audience: Reviewer (PR) if code-related, Author otherwise; Focus: top 2 relevance clusters.
+   Defaults when interaction impossible:
+   - Depth: Standard
+   - Audience: Reviewer (PR) if code-related, Author otherwise
+   - Focus: top 2 relevance clusters
 
    Output the questions (label Q1/Q2/Q3). After answers: if ≥2 scenario classes (Alternate / Exception / Recovery / Non-Functional domain) remain unclear, you MAY ask up to TWO more targeted follow-ups (Q4/Q5) with a one-line justification each (e.g., "Unresolved recovery path risk"). Do not exceed five total questions. Skip escalation if user explicitly declines more.
 
-4. **Understand user request**: Combine `$ARGUMENTS` + clarifying answers: derive checklist theme (e.g., security, review, deploy, ux); consolidate explicit must-have items mentioned by user; map focus selections to category scaffolding; infer any missing context from spec/plan/tasks (do NOT hallucinate).
+4. **Understand user request**: Combine `$ARGUMENTS` + clarifying answers:
+   - Derive checklist theme (e.g., security, review, deploy, ux)
+   - Consolidate explicit must-have items mentioned by user
+   - Map focus selections to category scaffolding
+   - Infer any missing context from spec/plan/tasks (do NOT hallucinate)
 
-5. **Load feature context**: Read from FEATURE_DIR: spec.md (feature requirements and scope), plan.md if exists (technical details, dependencies), tasks.md if exists (implementation tasks). Load only the portions relevant to active focus areas (avoid full-file dumping); prefer summarizing long sections into concise scenario/requirement bullets; use progressive disclosure (add follow-on retrieval only if gaps detected); if source docs are large, generate interim summary items instead of embedding raw text.
+5. **Load feature context**: Read from FEATURE_DIR: spec.md (feature requirements and scope), plan.md if exists (technical details, dependencies), tasks.md if exists (implementation tasks).
+
+   Context loading strategy:
+   - Load only the portions relevant to active focus areas (avoid full-file dumping)
+   - Prefer summarizing long sections into concise scenario/requirement bullets
+   - Use progressive disclosure (add follow-on retrieval only if gaps detected)
+   - If source docs are large, generate interim summary items instead of embedding raw text
 
 6. **Generate checklist** - Create "Unit Tests for Requirements":
    - Create `FEATURE_DIR/checklists/` directory if it doesn't exist
    - Filename: short, descriptive domain name, format `[domain].md` (e.g., `ux.md`, `api.md`, `security.md`)
-   - If the file does NOT exist: create it and number items starting from CHK001. If it exists: append new items, continuing from the last CHK ID (e.g., if last item is CHK015, start at CHK016). Never delete or replace existing checklist content - always preserve and append.
+   - If the file does NOT exist: create it and number items starting from CHK001
+   - If it exists: append new items, continuing from the last CHK ID (e.g., if last item is CHK015, start at CHK016)
+   - Never delete or replace existing checklist content - always preserve and append
 
-   **CORE PRINCIPLE - Test the Requirements, Not the Implementation**: every checklist item MUST evaluate the REQUIREMENTS THEMSELVES for **Completeness** (all necessary requirements present?), **Clarity** (unambiguous and specific?), **Consistency** (requirements align with each other?), **Measurability** (objectively verifiable?), **Coverage** (all scenarios/edge cases addressed?). See Anti-Examples below for wrong vs correct item style.
+   **CORE PRINCIPLE - Test the Requirements, Not the Implementation**: every checklist item MUST evaluate the REQUIREMENTS THEMSELVES for:
+   - **Completeness** (all necessary requirements present?)
+   - **Clarity** (unambiguous and specific?)
+   - **Consistency** (requirements align with each other?)
+   - **Measurability** (objectively verifiable?)
+   - **Coverage** (all scenarios/edge cases addressed?)
+
+   See Anti-Examples below for wrong vs correct item style.
 
    **Category Structure** - group items by requirement quality dimension: Requirement Completeness, Requirement Clarity, Requirement Consistency, Acceptance Criteria Quality (success criteria measurable?), Scenario Coverage (all flows/cases addressed?), Edge Case Coverage (boundary conditions defined?), Non-Functional Requirements (performance, security, accessibility, etc. - specified?), Dependencies & Assumptions (documented and validated?), Ambiguities & Conflicts (what needs clarification?).
 
-   **ITEM STRUCTURE** - each item: question format asking about requirement quality; focus on what's WRITTEN (or not written) in the spec/plan; include the quality dimension in brackets [Completeness/Clarity/Consistency/etc.]; reference spec section `[Spec §X.Y]` when checking existing requirements; use the `[Gap]` marker when checking for missing requirements. Example: "Is 'fast loading' quantified with specific timing thresholds? [Clarity, Spec §NFR-2]"
+   **ITEM STRUCTURE** - each item:
+   - Question format asking about requirement quality
+   - Focus on what's WRITTEN (or not written) in the spec/plan
+   - Include the quality dimension in brackets [Completeness/Clarity/Consistency/etc.]
+   - Reference spec section `[Spec §X.Y]` when checking existing requirements
+   - Use the `[Gap]` marker when checking for missing requirements
+   - Example: "Is 'fast loading' quantified with specific timing thresholds? [Clarity, Spec §NFR-2]"
 
    **Scenario Classification & Coverage** (Requirements Quality Focus):
    - Check if requirements exist for: Primary, Alternate, Exception/Error, Recovery, Non-Functional scenarios
