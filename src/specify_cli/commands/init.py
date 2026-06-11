@@ -381,8 +381,12 @@ def register(app: typer.Typer) -> None:
         ]:
             tracker.add(key, label)
 
+        # Disable transient mode on Windows: PowerShell 5.1's legacy console
+        # hangs when Rich tries to restore cursor state via VT escape sequences.
+        _transient = sys.platform != "win32"
+
         with Live(
-            tracker.render(), console=console, refresh_per_second=8, transient=True
+            tracker.render(), console=console, refresh_per_second=8, transient=_transient
         ) as live:
             tracker.attach_refresh(lambda: live.update(tracker.render()))
             try:
