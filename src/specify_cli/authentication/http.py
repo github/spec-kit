@@ -65,7 +65,7 @@ def _validate_strict_redirect(_old_url: str, new_url: str) -> None:
     if not is_https_or_localhost_http(new_url):
         raise urllib.error.URLError(
             "redirect target must use HTTPS with a hostname, "
-            "or HTTP for localhost/loopback"
+            "or HTTP for localhost (127.0.0.1, ::1)"
         )
 
 
@@ -146,7 +146,8 @@ def open_url(
     *redirect_validator*, when provided, is called with ``(old_url, new_url)``
     before following each redirect and may raise to reject the redirect.
     *strict_redirects* rejects redirect targets that are not HTTPS with a
-    hostname, except HTTP localhost/loopback URLs.
+    hostname, except HTTP to localhost / 127.0.0.1 / ::1
+    (the exact hosts allowed by ``is_https_or_localhost_http``).
     """
     entries = find_entries_for_url(url, _load_config())
 

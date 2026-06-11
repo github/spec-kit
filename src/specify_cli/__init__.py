@@ -976,7 +976,7 @@ def extension_add(
 
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             console.print("[red]Error:[/red] URL must use HTTPS for security.")
-            console.print("HTTP is only allowed for localhost URLs.")
+            console.print("HTTP is only allowed for localhost (127.0.0.1, ::1) URLs.")
             raise typer.Exit(1)
 
         safe_url = _escape_markup(from_url)
@@ -2494,7 +2494,10 @@ def workflow_add(
         from specify_cli.authentication.http import open_url as _open_url
 
         if not is_https_or_localhost_http(source):
-            console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
+            console.print(
+                "[red]Error:[/red] Only HTTPS URLs are allowed, "
+                "except HTTP for localhost (127.0.0.1, ::1)."
+            )
             raise typer.Exit(1)
 
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
@@ -2578,7 +2581,7 @@ def workflow_add(
     if not is_https_or_localhost_http(workflow_url):
         console.print(
             f"[red]Error:[/red] Workflow '{source}' has an invalid install URL. "
-            "Only HTTPS URLs are allowed, except HTTP for localhost."
+            "Only HTTPS URLs are allowed, except HTTP for localhost (127.0.0.1, ::1)."
         )
         raise typer.Exit(1)
 

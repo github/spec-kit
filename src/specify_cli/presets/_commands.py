@@ -109,13 +109,13 @@ def preset_add(
 
                     raise urllib.error.URLError(
                         "redirect target must use HTTPS with a hostname, "
-                        "or HTTP for localhost/loopback"
+                        "or HTTP for localhost (127.0.0.1, ::1)"
                     )
 
             if not is_https_or_localhost_http(from_url):
                 console.print(
                     "[red]Error:[/red] URL must use HTTPS with a hostname, "
-                    "or HTTP for localhost/loopback."
+                    "or HTTP for localhost (127.0.0.1, ::1)."
                 )
                 raise typer.Exit(1)
 
@@ -152,7 +152,7 @@ def preset_add(
                             console.print(
                                 "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
                                 f"{final_url}. Redirect targets must use HTTPS with a hostname, "
-                                "or HTTP for localhost/loopback."
+                                "or HTTP for localhost (127.0.0.1, ::1)."
                             )
                             raise typer.Exit(1)
                         zip_path.write_bytes(
