@@ -755,6 +755,15 @@ class StepCatalog:
         self.steps_dir = project_root / ".specify" / "workflows" / "steps"
         self.cache_dir = self.steps_dir / ".cache"
 
+    def _is_cache_path_safe(self) -> bool:
+        """Return False if any component of the cache path is a symlink."""
+        current = self.project_root
+        for part in (".specify", "workflows", "steps", ".cache"):
+            current = current / part
+            if current.is_symlink():
+                return False
+        return True
+
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
@@ -919,9 +928,10 @@ class StepCatalog:
         self, entry: StepCatalogEntry, force_refresh: bool = False
     ) -> dict[str, Any]:
         """Fetch a single catalog, using cache when possible."""
+        cache_safe = self._is_cache_path_safe()
         cache_file, meta_file = self._get_cache_paths(entry.url)
 
-        if not force_refresh and self._is_url_cache_valid(entry.url):
+        if cache_safe and not force_refresh and self._is_url_cache_valid(entry.url):
             try:
                 with open(cache_file, encoding="utf-8") as f:
                     cached = json.load(f)
@@ -954,7 +964,7 @@ class StepCatalog:
                 _validate_url(resp.geturl())
                 data = json.loads(resp.read().decode("utf-8"))
         except Exception as exc:
-            if cache_file.exists():
+            if cache_safe and cache_file.exists():
                 try:
                     with open(cache_file, encoding="utf-8") as f:
                         cached = json.load(f)
@@ -971,14 +981,15 @@ class StepCatalog:
                 f"Catalog from {entry.url} is not a valid JSON object."
             )
 
-        try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            with open(meta_file, "w", encoding="utf-8") as f:
-                json.dump({"url": entry.url, "fetched_at": time.time()}, f)
-        except OSError:
-            pass  # Proceed without caching if disk write fails
+        if cache_safe:
+            try:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                with open(cache_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+                with open(meta_file, "w", encoding="utf-8") as f:
+                    json.dump({"url": entry.url, "fetched_at": time.time()}, f)
+            except OSError:
+                pass  # Proceed without caching if disk write fails
 
         return data
 

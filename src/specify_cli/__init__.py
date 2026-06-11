@@ -3922,11 +3922,12 @@ def workflow_step_remove(
             try:
                 shutil.rmtree(step_dir)
             except OSError as exc:
-                # Restore the original registry entry verbatim so metadata
-                # (timestamps, version, etc.) is preserved exactly.
+                # Restore the original registry entry verbatim (bypass add()
+                # which would overwrite timestamps).
                 try:
                     if registry_metadata is not None:
-                        registry.add(step_id, registry_metadata)
+                        registry.data["steps"][step_id] = registry_metadata
+                        registry.save()
                 except Exception as restore_exc:  # noqa: BLE001
                     console.print(
                         f"[yellow]Warning:[/yellow] Failed to restore registry entry "
