@@ -974,8 +974,8 @@
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise.",
       "author": "raccioly",
-      "version": "0.25.1",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.25.1/spec-kit-docguard-v0.25.1.zip",
+      "version": "0.26.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.26.0/spec-kit-docguard-v0.26.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1011,7 +1011,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-06-09T00:00:00Z"
+      "updated_at": "2026-06-11T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
