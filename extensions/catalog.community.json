@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-09T00:00:00Z",
+  "updated_at": "2026-06-11T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -735,6 +735,39 @@
       "stars": 0,
       "created_at": "2026-02-22T00:00:00Z",
       "updated_at": "2026-02-22T00:00:00Z"
+    },
+    "coding-standards-drift-control": {
+      "name": "Coding Standards Drift Control",
+      "id": "coding-standards-drift-control",
+      "description": "Generate coding-standards drift reports and remediation tasks for active Spec Kit features",
+      "author": "Igor Benicio de Mesquita",
+      "version": "0.3.1",
+      "download_url": "https://github.com/benizzio/spec-kit-coding-standards-drift-control/archive/refs/tags/v0.3.1.zip",
+      "repository": "https://github.com/benizzio/spec-kit-coding-standards-drift-control",
+      "homepage": "https://github.com/benizzio/spec-kit-coding-standards-drift-control",
+      "documentation": "https://github.com/benizzio/spec-kit-coding-standards-drift-control#readme",
+      "changelog": "https://github.com/benizzio/spec-kit-coding-standards-drift-control/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "code",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "analysis",
+        "standards",
+        "quality",
+        "maintenance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-11T00:00:00Z",
+      "updated_at": "2026-06-11T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
