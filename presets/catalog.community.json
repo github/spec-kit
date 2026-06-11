@@ -474,11 +474,11 @@
     "security-governance": {
       "name": "Security Governance",
       "id": "security-governance",
-      "version": "0.4.0",
-      "description": "Adds memory-safe-language preference, language-specific secure coding profiles, ASVS verification, SBOM/AI-SBOM supply-chain transparency, and EU Cyber Resilience Act awareness.",
+      "version": "0.5.0",
+      "description": "Adds memory-safe-language preference, language-specific secure coding, ASVS, SBOM/AI-SBOM supply-chain transparency, CRA awareness, and regulatory applicability screening.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-security-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.4.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-security-governance/archive/refs/tags/v0.5.0.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-security-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-security-governance/blob/main/README.md",
       "license": "MIT",
@@ -486,7 +486,7 @@
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 12,
+        "templates": 13,
         "commands": 3
       },
       "tags": [
@@ -511,10 +511,14 @@
         "typescript",
         "g7",
         "bsi",
-        "cra"
+        "cra",
+        "nis2",
+        "ai-act",
+        "dora",
+        "regulatory"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-05-26T00:00:00Z"
+      "updated_at": "2026-06-11T00:00:00Z"
     },
     "spec2cloud": {
       "name": "Spec2Cloud",
