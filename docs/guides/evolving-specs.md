@@ -7,14 +7,14 @@ Existing projects need two separate maintenance loops:
 - **Feature artifact evolution** keeps repository-specific `specs/` artifacts
   aligned with the code and product behavior you intend to ship.
 
-Use the upgrade workflow when you need newer Spec Kit project files. Use one of
-the artifact persistence models below when requirements or implementation
-insights change an existing project.
+Use the [upgrade workflow](../upgrade.md) when you need newer Spec Kit project
+files. Use one of the artifact persistence models below when requirements or
+implementation insights change an existing project.
 
 For the conceptual model definitions, see
 [Spec Persistence Models](../concepts/spec-persistence.md).
 
-## Flow-Forward
+## Flow-Forward Spec
 
 Use flow-forward when each feature directory should remain a historical record.
 
@@ -55,7 +55,7 @@ Preserve important implementation rationale before replacing derived artifacts.
 If a plan or task list contains decisions that still matter, carry them forward
 explicitly.
 
-## Flow-Back
+## Flow-Back Spec
 
 Use flow-back when implementation discoveries are allowed to reshape the
 artifact set.
