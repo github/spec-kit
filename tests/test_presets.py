@@ -11,6 +11,7 @@ Tests cover:
 """
 
 import pytest
+import io
 import json
 import tempfile
 import shutil
@@ -18,6 +19,7 @@ import warnings
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import yaml
 
@@ -4257,6 +4259,141 @@ class TestBundledPresetLocator:
         assert "Lean Workflow" in result.output
         assert "installed" in result.output.lower()
 
+    def test_preset_add_from_url_rejects_insecure_redirect(self, project_dir, monkeypatch):
+        """URL installs reject redirects from HTTPS to non-loopback HTTP."""
+        import typer
+        from specify_cli import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "http://example.com/preset.zip"
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            assert redirect_validator is not None
+            redirect_validator(url, "http://example.com/preset.zip")
+            return FakeResponse(b"zip")
+
+        monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+        installed = False
+
+        def fake_install_from_zip(self, zip_path, speckit_version, priority=10):
+            nonlocal installed
+            installed = True
+
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=10)
+
+        assert exc_info.value.exit_code == 1
+        assert installed is False
+
+    def test_preset_add_from_url_rejects_hostless_https_url(self, project_dir):
+        """URL installs reject HTTPS URLs without a hostname before downloading."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(app, ["preset", "add", "--from", "https:///preset.zip"])
+
+        assert result.exit_code == 1
+        output = strip_ansi(result.output)
+        assert "URL must use HTTPS with a hostname" in output
+        assert "got https://" not in output
+        open_url.assert_not_called()
+
+    def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
+        """Redirect rejection message covers hostless HTTPS, not only non-HTTPS URLs."""
+        import typer
+        from specify_cli import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https:///preset.zip"
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None, redirect_validator=None: FakeResponse(b"zip"),
+        )
+        monkeypatch.setattr(PresetManager, "install_from_zip", lambda *args, **kwargs: None)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=10)
+
+        assert exc_info.value.exit_code == 1
+        output = strip_ansi(capsys.readouterr().out)
+        assert "redirected to a disallowed URL" in output
+        assert "must use HTTPS with a hostname" in output
+
+    def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
+        """URL installs stream response bytes to disk before installing the ZIP."""
+        from specify_cli import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __init__(self, data):
+                super().__init__(data)
+                self.read_sizes = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://example.com/preset.zip"
+
+            def read(self, size=-1):
+                assert size not in (-1, None)
+                self.read_sizes.append(size)
+                return super().read(size)
+
+        response = FakeResponse(b"zip-bytes")
+        installed = {}
+
+        def fake_install_from_zip(self, zip_path, speckit_version, priority=10):
+            installed["zip_bytes"] = Path(zip_path).read_bytes()
+            installed["speckit_version"] = speckit_version
+            installed["priority"] = priority
+            return SimpleNamespace(name="Test Preset", version="1.0.0")
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None, redirect_validator=None: response,
+        )
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=7)
+
+        assert response.read_sizes
+        assert installed == {
+            "zip_bytes": b"zip-bytes",
+            "speckit_version": "0.6.0",
+            "priority": 7,
+        }
+
     def test_bundled_preset_in_catalog(self):
         """Verify the lean preset is listed in catalog.json with bundled marker."""
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
@@ -4346,7 +4483,7 @@ class TestPresetAddFromUrlResolution:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
@@ -4404,7 +4541,7 @@ class TestPresetAddFromUrlResolution:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             return FakeResponse(zip_bytes)
 

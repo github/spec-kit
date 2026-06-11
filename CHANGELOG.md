@@ -4,6 +4,21 @@
 
 - feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
 
+## [0.10.2] - 2026-06-11
+
+### Changed
+
+- Add Research Harness extension to community catalog (#2935)
+- Add Coding Standards Drift Control extension to community catalog (#2934)
+- Add Spec Trace extension to community catalog (#2527)
+- fix(extensions): preserve argument-hint in extension Claude SKILL.md (#2916)
+- fix(presets): harden preset URL installs against unsafe redirects (#2911)
+- fix: skip recovered files during refresh_managed overwrite check (#2918) (#2919)
+- Update multi-model-review extension to v0.1.1 (#2900)
+- feat: add category and effect as first-class fields in extension schema (#2899)
+- chore(catalog): add Jira Integration (Sync Engine) extension (#2895)
+- chore: release 0.10.1, begin 0.10.2.dev0 development (#2910)
+
 ## [0.10.1] - 2026-06-09
 
 ### Changed
@@ -1734,4 +1749,3 @@
 ### Changed
 
 - Update release.yml
-

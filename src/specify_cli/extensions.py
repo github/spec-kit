@@ -41,6 +41,8 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
+VALID_EFFECTS = frozenset({"read-only", "read-write"})
+
 DEFAULT_HOOK_PRIORITY = 10
 
 REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
@@ -200,6 +202,21 @@ class ExtensionManifest:
             pkg_version.Version(ext["version"])
         except pkg_version.InvalidVersion:
             raise ValidationError(f"Invalid version: {ext['version']}")
+
+        # Validate optional category field (free-form string)
+        if "category" in ext:
+            if not isinstance(ext["category"], str) or not ext["category"].strip():
+                raise ValidationError(
+                    "Invalid extension.category: must be a non-empty string"
+                )
+
+        # Validate optional effect field
+        if "effect" in ext:
+            if not isinstance(ext["effect"], str) or ext["effect"] not in VALID_EFFECTS:
+                raise ValidationError(
+                    f"Invalid extension.effect '{ext.get('effect')}': "
+                    f"must be one of {sorted(VALID_EFFECTS)}"
+                )
 
         # Validate requires section
         requires = self.data["requires"]
@@ -373,6 +390,16 @@ class ExtensionManifest:
     def description(self) -> str:
         """Get extension description."""
         return self.data["extension"]["description"]
+
+    @property
+    def category(self) -> Optional[str]:
+        """Get extension category (free-form; common values: docs, code, process, integration, visibility)."""
+        return self.data["extension"].get("category")
+
+    @property
+    def effect(self) -> Optional[str]:
+        """Get extension effect (read-only, read-write)."""
+        return self.data["extension"].get("effect")
 
     @property
     def requires_speckit_version(self) -> str:
@@ -1026,6 +1053,22 @@ class ExtensionManager:
                 description,
                 f"extension:{manifest.id}",
             )
+            # Preserve the command's argument-hint in the generated skill,
+            # mirroring the core template path (ClaudeIntegration.setup injects
+            # it for built-in commands). The value is added to the frontmatter
+            # dict before serialization — rather than via the string-based
+            # inject_argument_hint helper — so that a folded multi-line
+            # description cannot be split by the inserted line. Gated on the
+            # integration exposing inject_argument_hint so only argument-hint
+            # aware agents receive the key, leaving build_skill_frontmatter's
+            # shared shape unchanged for every other agent.
+            argument_hint = frontmatter.get("argument-hint")
+            if (
+                argument_hint
+                and integration is not None
+                and hasattr(integration, "inject_argument_hint")
+            ):
+                frontmatter_data["argument-hint"] = str(argument_hint)
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
 
             # Derive a human-friendly title from the command name
