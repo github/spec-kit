@@ -1237,6 +1237,70 @@ class TestIntegrationInstall:
         assert "/speckit-specify" in script_content
         assert "/speckit.specify" not in script_content
 
+    def test_install_registers_extension_commands_for_new_agent(self, tmp_path):
+        """Installing a second integration registers enabled extensions for it.
+
+        Regression for #2886: only ``switch`` used to register extension
+        commands for the newly active agent, so a second integration added via
+        ``install`` was silently missing the extension commands the first agent
+        had. ``install`` must reach full parity with ``switch``.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered
+        assert "codex" not in registered, "precondition: codex not yet installed"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # The new agent now carries the git extension's commands too, and the
+        # existing agent's registration is preserved.
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered, "existing agent registration preserved"
+        assert "codex" in registered, "new agent should receive extension commands (#2886)"
+
+        # codex renders command-derived artifacts as skills (.agents/skills).
+        assert (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_install_does_not_register_disabled_extensions(self, tmp_path):
+        """A disabled extension must not be registered for a newly installed agent."""
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, ["extension", "disable", "git"])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        git_meta = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]
+        assert git_meta["enabled"] is False
+        assert "codex" not in git_meta["registered_commands"]
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 
@@ -2323,6 +2387,54 @@ class TestIntegrationUpgrade:
         assert script.stat().st_mode & 0o111, (
             "shared .sh scripts must be executable after upgrade"
         )
+
+    def test_upgrade_backfills_extension_commands_for_agent(self, tmp_path):
+        """Upgrade re-registers enabled extensions for the upgraded agent.
+
+        Regression for #2886: agents installed before extension back-fill
+        existed (or whose extension artifacts went missing) should regain the
+        enabled extensions' commands on ``upgrade``, reaching parity with
+        ``switch``.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Simulate a project created before the install/upgrade back-fill: drop
+        # codex's extension registration and its rendered artifacts.
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registry["extensions"]["git"]["registered_commands"].pop("codex", None)
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        agents_skills = project / ".agents" / "skills"
+        for skill_dir in agents_skills.glob("speckit-git-*"):
+            shutil.rmtree(skill_dir)
+
+        # Precondition: codex is now missing the git extension.
+        assert "codex" not in json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert not (agents_skills / "speckit-git-feature" / "SKILL.md").exists()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Upgrade back-filled the git extension for codex.
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, "upgrade should re-register extension commands (#2886)"
+        assert (agents_skills / "speckit-git-feature" / "SKILL.md").exists()
 
 
 # ── Full lifecycle ───────────────────────────────────────────────────

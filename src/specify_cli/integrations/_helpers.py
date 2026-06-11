@@ -388,6 +388,46 @@ def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Extension registration helper (shared by switch / install / upgrade)
+# ---------------------------------------------------------------------------
+
+def _register_extensions_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Register all enabled extensions' commands/skills for ``agent_key``.
+
+    ``switch`` has always re-registered enabled extensions for the agent it
+    activates; ``install`` and ``upgrade`` call this so a newly added (or
+    refreshed) agent reaches the same parity — every installed agent ends up
+    with every enabled extension's commands. See issue #2886.
+
+    Best-effort: any failure is surfaced as a warning via ``_print_cli_warning``
+    and never aborts the surrounding integration operation. ``continuing``
+    describes what already succeeded so the warning makes the partial outcome
+    clear.
+    """
+    try:
+        from ..extensions import ExtensionManager
+
+        ext_mgr = ExtensionManager(project_root)
+        ext_mgr.register_enabled_extensions_for_agent(agent_key)
+    except Exception as ext_err:
+        # Best-effort: extension registration must never abort install/upgrade/switch.
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "register extension artifacts for",
+            "integration",
+            agent_key,
+            ext_err,
+            continuing=continuing,
+        )
+
+
+# ---------------------------------------------------------------------------
 # CLI formatting helpers (re-exported from _commands.py)
 # ---------------------------------------------------------------------------
 

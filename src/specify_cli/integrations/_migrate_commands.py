@@ -27,6 +27,7 @@ from ._helpers import (
     _get_speckit_version,
     _read_integration_json,
     _refresh_init_options_speckit_version,
+    _register_extensions_for_agent,
     _remove_integration_json,
     _resolve_integration_options,
     _resolve_integration_script_type,
@@ -272,19 +273,11 @@ def integration_switch(
 
         # Re-register extension commands for the new agent so that
         # previously-installed extensions are available in the new integration.
-        try:
-            from ..extensions import ExtensionManager
-
-            ext_mgr = ExtensionManager(project_root)
-            ext_mgr.register_enabled_extensions_for_agent(target)
-        except Exception as ext_err:
-            _print_cli_warning(
-                "register extension artifacts for",
-                "integration",
-                target,
-                ext_err,
-                continuing="The integration switch succeeded, but installed extensions may need re-registration.",
-            )
+        _register_extensions_for_agent(
+            project_root,
+            target,
+            continuing="The integration switch succeeded, but installed extensions may need re-registration.",
+        )
 
     except Exception as exc:
         # Attempt rollback of any files written by setup
@@ -471,6 +464,15 @@ def integration_upgrade(
             _update_init_options_for_integration(project_root, integration, script_type=selected_script)
         else:
             _refresh_init_options_speckit_version(project_root)
+
+        # Re-register enabled extensions for the upgraded agent so its
+        # extension commands are (re)created — including agents installed
+        # before this back-fill existed. Mirrors switch; see #2886.
+        _register_extensions_for_agent(
+            project_root,
+            key,
+            continuing="The integration was upgraded, but installed extensions may need re-registration.",
+        )
     except Exception as exc:
         # Don't teardown — setup overwrites in-place, so teardown would
         # delete files that were working before the upgrade.  Just report.
