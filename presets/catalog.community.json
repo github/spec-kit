@@ -92,11 +92,11 @@
     "architecture-governance": {
       "name": "Architecture Governance",
       "id": "architecture-governance",
-      "version": "0.3.0",
-      "description": "Adds secure architecture governance, threat modeling, STRIDE/CAPEC, Zero Trust, S-ADRs, OWASP SAMM, and BSI C3A cloud autonomy applicability to Spec Kit.",
+      "version": "0.4.0",
+      "description": "Adds secure architecture governance, STRIDE/CAPEC threat modeling, S-ADRs, Zero Trust, OWASP SAMM, BSI C3A cloud autonomy, and BSI C5 cloud compliance assurance.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.3.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.4.0.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-architecture-governance/blob/main/README.md",
       "license": "MIT",
@@ -104,7 +104,7 @@
         "speckit_version": ">=0.8.0"
       },
       "provides": {
-        "templates": 12,
+        "templates": 13,
         "commands": 3
       },
       "tags": [
@@ -120,7 +120,9 @@
         "isaqb",
         "cloud",
         "sovereignty",
-        "c3a"
+        "c3a",
+        "c5",
+        "assurance"
       ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-06-11T00:00:00Z"
