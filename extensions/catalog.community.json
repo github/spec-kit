@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-11T00:00:00Z",
+  "updated_at": "2026-06-12T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1222,6 +1222,40 @@
       "stars": 0,
       "created_at": "2026-04-12T15:30:00Z",
       "updated_at": "2026-04-13T14:39:00Z"
+    },
+    "harness": {
+      "name": "Research Harness",
+      "id": "harness",
+      "description": "State-externalizing research harness: budgeted exploration, evidence curation, and claim verification for spec-driven development",
+      "author": "formin",
+      "version": "1.0.0",
+      "download_url": "https://github.com/formin/spec-kit-harness/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/formin/spec-kit-harness",
+      "homepage": "https://github.com/formin/spec-kit-harness",
+      "documentation": "https://github.com/formin/spec-kit-harness/blob/main/README.md",
+      "changelog": "https://github.com/formin/spec-kit-harness/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "research",
+        "verification",
+        "evidence",
+        "context-management",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-12T00:00:00Z",
+      "updated_at": "2026-06-12T00:00:00Z"
     },
     "issue": {
       "name": "GitHub Issues Integration 2",
