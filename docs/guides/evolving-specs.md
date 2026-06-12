@@ -79,7 +79,7 @@ spec is meant to remain trustworthy.
 
 ## Before Updating Spec Kit Project Files
 
-Before refreshing Spec Kit project files with
+Before refreshing Spec Kit project files with the terminal command
 `specify init --here --force`, protect any project-specific material that lives
 outside `specs/`, especially `.specify/memory/constitution.md` and customized
 files under `.specify/templates/` or `.specify/scripts/`.
