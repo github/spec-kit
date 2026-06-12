@@ -254,7 +254,7 @@ class MarkdownIntegrationTests:
 
     COMMAND_STEMS = [
         "agent-context.update",
-        "analyze", "clarify", "constitution", "implement",
+        "analyze", "clarify", "constitution", "delta", "implement",
         "plan", "checklist", "specify", "tasks", "taskstoissues",
     ]
 

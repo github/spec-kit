@@ -42,6 +42,31 @@
 
 [Gates determined based on constitution file]
 
+## Vision Alignment Check
+
+*GATE: Must pass before Phase 0 research. Independent of Constitution Check —
+Constitution gates evaluate **principles** (HOW we build); this gates the feature
+against **Vision & Direction** (WHY and WHERE we are heading).*
+
+Read `.specify/memory/constitution.md` → `Vision & Direction` section. For each
+item, record a one-line judgement:
+
+| Vision Element | Verdict | Notes |
+|----------------|---------|-------|
+| North Star — does this feature move toward it? | Aligned / Neutral / Misaligned | <why> |
+| Target Users & Value — does this serve the stated users with the stated value? | Yes / Partial / No | <which user, which value> |
+| Long-Term Objective(s) advanced | List the specific objective IDs/titles | <how this advances them> |
+| Non-Goals — does this respect every stated Non-Goal? | Pass / Violation | <which non-goal, and why this still respects it> |
+
+**Pass criteria** (all must hold):
+- At least one Long-Term Objective is materially advanced.
+- No Non-Goal is violated.
+- North Star verdict is Aligned (Neutral is acceptable only with explicit justification in the Complexity Tracking section).
+
+**On failure**: stop. Either narrow the feature scope until it passes, or run
+`__SPECKIT_COMMAND_DELTA__` to identify a better-aligned next feature, or run
+`__SPECKIT_COMMAND_CONSTITUTION__` if the Vision itself needs amendment.
+
 ## Project Structure
 
 ### Documentation (this feature)
