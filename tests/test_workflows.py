@@ -3944,3 +3944,71 @@ steps:
         asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
         assert len(asset_calls) >= 1
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+
+class TestWorkflowRunExitCodes:
+    """CLI-level tests for the run/resume process exit codes."""
+
+    _WF_OK = """
+schema_version: "1.0"
+workflow:
+  id: "exit-ok"
+  name: "Exit OK"
+  version: "1.0.0"
+steps:
+  - id: fine
+    type: shell
+    run: "true"
+"""
+
+    _WF_FAIL = """
+schema_version: "1.0"
+workflow:
+  id: "exit-fail"
+  name: "Exit Fail"
+  version: "1.0.0"
+steps:
+  - id: boom
+    type: shell
+    run: "false"
+"""
+
+    def _write(self, tmp_path, content):
+        path = tmp_path / "wf.yml"
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_run_completed_exits_zero(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "run", str(self._write(tmp_path, self._WF_OK))])
+        assert result.exit_code == 0
+        assert "Status: completed" in result.stdout
+
+    def test_run_failed_exits_nonzero(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL))])
+        assert "Status: failed" in result.stdout
+        assert result.exit_code == 1
+
+    def test_run_failed_exits_nonzero_with_json(self, tmp_path, monkeypatch):
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
+        )
+        payload = _json.loads(result.stdout)
+        assert payload["status"] == "failed"
+        assert result.exit_code == 1

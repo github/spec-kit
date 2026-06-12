@@ -162,7 +162,9 @@ class TestWorkflowRunWithoutProject:
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
-        assert result.exit_code == 0, f"workflow run failed unexpectedly: {result.output}"
+        # A failed workflow now maps to a non-zero process exit code so
+        # scripts and CI can rely on $? (the CLI itself still ran fine).
+        assert result.exit_code == 1, f"expected exit 1 on failed run: {result.output}"
         assert "Status: failed" in result.output
 
     def test_workflow_run_yaml_rejects_symlinked_specify_dir(self, tmp_path):
