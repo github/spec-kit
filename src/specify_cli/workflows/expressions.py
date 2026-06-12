@@ -6,6 +6,7 @@ No file I/O, no imports, no arbitrary code execution.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -55,6 +56,23 @@ def _filter_contains(value: Any, substring: str) -> bool:
     if isinstance(value, list):
         return substring in value
     return False
+
+
+def _filter_from_json(value: Any) -> Any:
+    """Parse a JSON string into a typed value (list/dict/scalar).
+
+    Raises ``ValueError`` on non-string input or invalid JSON — a parse
+    failure here means the pipeline wiring is wrong, and silently
+    passing the unparsed value through would hide it.
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            f"from_json: expected a JSON string, got {type(value).__name__}"
+        )
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"from_json: invalid JSON: {exc}") from exc
 
 
 # -- Expression resolution ------------------------------------------------
@@ -122,7 +140,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     - Comparisons: ``==``, ``!=``, ``>``, ``<``, ``>=``, ``<=``
     - Boolean operators: ``and``, ``or``, ``not``
     - ``in``, ``not in``
-    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| map('...')``
+    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``
     - String and numeric literals
     """
     expr = expr.strip()
@@ -157,6 +175,8 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         filter_name = filter_expr.strip()
         if filter_name == "default":
             return _filter_default(value)
+        if filter_name == "from_json":
+            return _filter_from_json(value)
         return value
 
     # Boolean operators — parse 'or' first (lower precedence) so that
