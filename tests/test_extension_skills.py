@@ -1036,6 +1036,54 @@ class TestExtensionSkillRegistration:
         assert metadata["registered_skills"] == []
         assert (project_dir / ".github" / "agents").is_dir()
 
+    def test_one_failing_extension_does_not_abort_the_rest(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A single failing extension must not block registration of the others.
+
+        Regression for #2950: ``register_enabled_extensions_for_agent`` iterates
+        enabled extensions; before the per-extension isolation, the first one
+        that raised (e.g. an OSError writing a command file) aborted the loop and
+        the exception propagated, so every later extension was silently skipped.
+        """
+        from specify_cli.extensions import CommandRegistrar
+
+        _create_init_options(project_dir, ai="claude", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        # Two enabled extensions; the first one iterated ("aaa-fail") will raise.
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="aaa-fail"), "0.1.0",
+            register_commands=False,
+        )
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="bbb-ok"), "0.1.0",
+            register_commands=False,
+        )
+
+        original = CommandRegistrar.register_commands_for_agent
+
+        def flaky(self, agent_name, manifest, ext_dir, project_root, link_outputs=False):
+            if manifest.id == "aaa-fail":
+                raise OSError("simulated command-file write failure")
+            return original(
+                self, agent_name, manifest, ext_dir, project_root,
+                link_outputs=link_outputs,
+            )
+
+        monkeypatch.setattr(CommandRegistrar, "register_commands_for_agent", flaky)
+
+        # Must not propagate, despite the first extension failing.
+        manager.register_enabled_extensions_for_agent("claude")
+
+        # The healthy extension was still registered for the agent...
+        ok_meta = manager.registry.get("bbb-ok")
+        assert "claude" in ok_meta["registered_commands"], (
+            "a later extension must still register after an earlier one fails (#2950)"
+        )
+        # ...and the failing one was not.
+        fail_meta = manager.registry.get("aaa-fail")
+        assert "claude" not in fail_meta.get("registered_commands", {})
+
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir
     ):
