@@ -42,6 +42,9 @@ def is_https_or_localhost_http(url: str) -> bool:
     by the direct URL validations in the CLI download flows, so the rule (and
     any future tightening of it) lives in one place.
 
+    A hostname is always required: a URL without one (e.g. ``https:///x``)
+    has no real target and is rejected regardless of scheme.
+
     The loopback allowance is a deliberate *exact-string* match on
     ``localhost`` / ``127.0.0.1`` / ``::1``, not an IP-range check: other
     loopback addresses (e.g. ``127.0.0.2``) are intentionally not covered.
@@ -49,6 +52,8 @@ def is_https_or_localhost_http(url: str) -> bool:
     case-insensitive.
     """
     parsed = urlparse(url)
+    if not parsed.hostname:
+        return False
     is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
     return parsed.scheme == "https" or (parsed.scheme == "http" and is_localhost)
 

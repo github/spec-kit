@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from specify_cli._download_security import (
+    is_https_or_localhost_http,
     read_response_limited,
     read_zip_member_limited,
     safe_extract_zip,
@@ -23,6 +24,26 @@ LOCAL_FILE_HASH_READ_ALLOWLIST = {
     ("src/specify_cli/integrations/catalog.py", "get_hash"),
     ("src/specify_cli/presets/__init__.py", "get_hash"),
 }
+
+
+@pytest.mark.parametrize(
+    "url, allowed",
+    [
+        ("https://example.com/preset.zip", True),
+        ("http://localhost:8000/preset.zip", True),
+        ("http://127.0.0.1/preset.zip", True),
+        ("http://[::1]/preset.zip", True),
+        # Non-loopback HTTP is rejected.
+        ("http://example.com/preset.zip", False),
+        # Loopback allowance is an exact-string match: 127.0.0.2 is not covered.
+        ("http://127.0.0.2/preset.zip", False),
+        # A hostname is always required, even for HTTPS.
+        ("https:///preset.zip", False),
+        ("https://", False),
+    ],
+)
+def test_is_https_or_localhost_http(url, allowed):
+    assert is_https_or_localhost_http(url) is allowed
 
 
 class _Response:
