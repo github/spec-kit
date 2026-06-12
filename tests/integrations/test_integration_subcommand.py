@@ -15,19 +15,22 @@ from tests.conftest import strip_ansi
 runner = CliRunner()
 
 
-def _init_project(tmp_path, integration="copilot"):
+def _init_project(tmp_path, integration="copilot", integration_options=None):
     """Helper: init a spec-kit project with the given integration."""
     project = tmp_path / "proj"
     project.mkdir()
+    args = [
+        "init", "--here",
+        "--integration", integration,
+        "--script", "sh",
+        "--ignore-agent-tools",
+    ]
+    if integration_options:
+        args += ["--integration-options", integration_options]
     old_cwd = os.getcwd()
     try:
         os.chdir(project)
-        result = runner.invoke(app, [
-            "init", "--here",
-            "--integration", integration,
-            "--script", "sh",
-            "--ignore-agent-tools",
-        ], catch_exceptions=False)
+        result = runner.invoke(app, args, catch_exceptions=False)
     finally:
         os.chdir(old_cwd)
     assert result.exit_code == 0, f"init failed: {result.output}"
@@ -1329,16 +1332,23 @@ class TestIntegrationInstall:
         ])
         assert result.exit_code == 0, result.output
 
+        # Precondition that makes --skills load-bearing: copilot IS in skills
+        # mode, so its own core commands are scaffolded as skills.
+        assert (
+            project / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        ).exists(), "precondition: copilot installed in skills mode"
+
         git_meta = json.loads(
             (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
         )["extensions"]["git"]
-        # Registered as commands for the non-active copilot agent...
+        # The git extension is still registered as commands for the non-active
+        # copilot agent...
         assert "copilot" in git_meta["registered_commands"]
         assert (
             project / ".github" / "agents" / "speckit.git.feature.agent.md"
         ).exists()
-        # ...not as skills (that path is reserved for the active agent; #2948).
-        assert "speckit-git-feature" not in git_meta.get("registered_skills", [])
+        # ...and does NOT follow copilot's core commands into skills, because
+        # skill rendering is scoped to the active agent (claude here); #2948.
         assert not (
             project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
@@ -2477,6 +2487,47 @@ class TestIntegrationUpgrade:
         ]["git"]["registered_commands"]
         assert "codex" in registered, "upgrade should re-register extension commands (#2886)"
         assert (agents_skills / "speckit-git-feature" / "SKILL.md").exists()
+
+    def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
+        """Upgrading a non-active agent must not touch the active agent's skills.
+
+        Regression for the #2886 wiring: extension skill rendering is
+        active-agent-scoped, so routing install/upgrade of a *secondary* agent
+        through ``register_enabled_extensions_for_agent`` used to re-render the
+        *active* skills-mode agent's extension skills as a side effect —
+        resurrecting skill files the user had deliberately deleted. The skills
+        pass is now gated on the target being the active agent. (Skills parity
+        for non-active agents is tracked separately in #2948.)
+        """
+        import shutil
+
+        # Active agent: copilot in skills mode → git extension renders as skills.
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert skill.exists(), "precondition: active copilot has the git extension skill"
+
+        # Add a secondary (non-active) agent; copilot is not multi_install_safe.
+        result = _run_in_project(project, [
+            "integration", "install", "codex", "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # The user deliberately removes the active agent's git skill.
+        shutil.rmtree(skill.parent)
+        assert not skill.exists()
+
+        # Upgrading the *non-active* agent must not re-render copilot's skills.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "codex", "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+        assert not skill.exists(), (
+            "upgrading a non-active agent must not resurrect the active agent's "
+            "deleted extension skill (#2886)"
+        )
 
 
 # ── Full lifecycle ───────────────────────────────────────────────────

@@ -1744,31 +1744,46 @@ class ExtensionManager:
                     if new_registered != registered_commands:
                         updates["registered_commands"] = new_registered
 
-                try:
-                    registered_skills = self._register_extension_skills(manifest, ext_dir)
-                except Exception as skills_err:
-                    # Skills are a companion artifact.  If command registration
-                    # already succeeded, still persist it so later cleanup can
-                    # find those command files.
-                    from .. import _print_cli_warning
-
-                    _print_cli_warning(
-                        "register extension skills for",
-                        "extension",
-                        ext_id,
-                        skills_err,
-                        continuing=(
-                            "Continuing with available registration results for this "
-                            "extension and the remaining extensions."
-                        ),
-                    )
-                else:
-                    if registered_skills:
-                        existing_skills = self._valid_name_list(
-                            metadata.get("registered_skills", [])
+                # Extension *skills* are only ever rendered for the active agent:
+                # `_register_extension_skills` resolves the skills dir and
+                # frontmatter from init-options["ai"], ignoring ``agent_name``.
+                # When this method runs for a non-active agent — as install/upgrade
+                # now do for a secondary integration (#2886) — the skills pass would
+                # re-render the *active* agent's extension skills as a side effect,
+                # resurrecting skill files the user deliberately deleted. Skip it
+                # unless the target is the active agent; `switch` is unaffected
+                # because it activates the target before registering. (Rendering
+                # skills for a non-active target is tracked separately in #2948.)
+                if agent_name == active_agent:
+                    try:
+                        registered_skills = self._register_extension_skills(
+                            manifest, ext_dir
                         )
-                        merged_skills = list(dict.fromkeys(existing_skills + registered_skills))
-                        updates["registered_skills"] = merged_skills
+                    except Exception as skills_err:
+                        # Skills are a companion artifact.  If command registration
+                        # already succeeded, still persist it so later cleanup can
+                        # find those command files.
+                        from .. import _print_cli_warning
+
+                        _print_cli_warning(
+                            "register extension skills for",
+                            "extension",
+                            ext_id,
+                            skills_err,
+                            continuing=(
+                                "Continuing with available registration results for this "
+                                "extension and the remaining extensions."
+                            ),
+                        )
+                    else:
+                        if registered_skills:
+                            existing_skills = self._valid_name_list(
+                                metadata.get("registered_skills", [])
+                            )
+                            merged_skills = list(
+                                dict.fromkeys(existing_skills + registered_skills)
+                            )
+                            updates["registered_skills"] = merged_skills
 
                 if updates:
                     self.registry.update(ext_id, updates)
