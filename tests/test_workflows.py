@@ -5341,3 +5341,60 @@ steps:
         assert resumed.exit_code == 1, resumed.stdout
         payload = _json.loads(resumed.stdout)
         assert payload["status"] == "failed"
+
+
+class TestWorkflowRunGateOutcomeJson:
+    """CLI-level tests: the --json payload surfaces gate pauses."""
+
+    _WF_GATE = """
+schema_version: "1.0"
+workflow:
+  id: "gate-json"
+  name: "Gate JSON"
+  version: "1.0.0"
+steps:
+  - id: review
+    type: gate
+    message: "Approve the thing?"
+    options: ["approve", "reject"]
+"""
+
+    _WF_PLAIN = """
+schema_version: "1.0"
+workflow:
+  id: "plain-json"
+  name: "Plain JSON"
+  version: "1.0.0"
+steps:
+  - id: fine
+    type: shell
+    run: "true"
+"""
+
+    def _run_json(self, tmp_path, monkeypatch, content):
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        path = tmp_path / "wf.yml"
+        path.write_text(content, encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "run", str(path), "--json"])
+        return _json.loads(result.stdout)
+
+    def test_gate_pause_carries_gate_block(self, tmp_path, monkeypatch):
+        # CliRunner stdin is not a TTY, so the gate pauses for resume.
+        payload = self._run_json(tmp_path, monkeypatch, self._WF_GATE)
+        assert payload["status"] == "paused"
+        assert payload["gate"] == {
+            "step_id": "review",
+            "message": "Approve the thing?",
+            "options": ["approve", "reject"],
+            "choice": None,
+        }
+
+    def test_completed_run_has_no_gate_block(self, tmp_path, monkeypatch):
+        payload = self._run_json(tmp_path, monkeypatch, self._WF_PLAIN)
+        assert payload["status"] == "completed"
+        assert "gate" not in payload

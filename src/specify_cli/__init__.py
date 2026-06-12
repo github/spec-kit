@@ -2092,12 +2092,36 @@ def _parse_input_values(input_values: list[str] | None) -> dict[str, Any]:
 
 def _workflow_run_payload(state: Any) -> dict[str, Any]:
     """Machine-readable summary of a run/resume outcome."""
-    return {
+    payload = {
         "run_id": state.run_id,
         "workflow_id": state.workflow_id,
         "status": state.status.value,
         "current_step_id": state.current_step_id,
         "current_step_index": state.current_step_index,
+    }
+    gate = _gate_outcome(state)
+    if gate is not None:
+        payload["gate"] = gate
+    return payload
+
+
+def _gate_outcome(state: Any) -> dict[str, Any] | None:
+    """Gate detail for the structured outcome, if the run sits at a gate.
+
+    A paused run is otherwise indistinguishable from any other pause in
+    the machine-readable payload; surfacing the gate's prompt, options,
+    and (after an interactive choice) the decision lets orchestrators
+    drive review gates without parsing the human-facing stream.
+    """
+    step = (getattr(state, "step_results", None) or {}).get(state.current_step_id)
+    if not isinstance(step, dict) or step.get("type") != "gate":
+        return None
+    output = step.get("output") or {}
+    return {
+        "step_id": state.current_step_id,
+        "message": output.get("message"),
+        "options": output.get("options"),
+        "choice": output.get("choice"),
     }
 
 
