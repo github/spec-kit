@@ -404,6 +404,15 @@ def _register_extensions_for_agent(
     refreshed) agent reaches the same parity — every installed agent ends up
     with every enabled extension's commands. See issue #2886.
 
+    Known limitation: extension *skill* rendering is scoped to the active
+    agent (init-options track a single ``ai`` / ``ai_skills`` pair). A
+    skills-mode agent registered while it is *not* the active agent (e.g.
+    Copilot ``--skills`` installed as a secondary integration) therefore
+    receives command files rather than skills here — matching ``extension
+    add``'s multi-agent behavior. ``switch`` avoids this only because it makes
+    the target the active agent first. Per-agent skills parity is tracked in
+    #2948.
+
     Best-effort: any failure is surfaced as a warning via ``_print_cli_warning``
     and never aborts the surrounding integration operation. ``continuing``
     describes what already succeeded so the warning makes the partial outcome

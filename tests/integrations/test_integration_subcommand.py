@@ -1301,6 +1301,48 @@ class TestIntegrationInstall:
             project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
 
+    def test_install_skills_mode_secondary_agent_registers_commands(self, tmp_path):
+        """A non-active skills-mode agent gets extension *commands*, not skills.
+
+        Pins a known, system-wide limitation (tracked in #2948): extension
+        skill rendering is scoped to the active agent — init-options track a
+        single ``ai`` / ``ai_skills`` pair — so a skills-mode agent installed
+        as a *non-active* secondary integration (Copilot ``--skills``) receives
+        ``.github/agents/*.agent.md`` command files rather than
+        ``.github/skills/.../SKILL.md``. This matches what ``extension add``
+        already does across multiple agents; ``install`` (the #2886 fix) stays
+        consistent with it. ``switch`` differs only because it makes the target
+        the active agent before registering.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        # Copilot is not multi_install_safe, so --force is required to add it
+        # alongside the existing default integration.
+        result = _run_in_project(project, [
+            "integration", "install", "copilot",
+            "--script", "sh",
+            "--integration-options", "--skills",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        git_meta = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )["extensions"]["git"]
+        # Registered as commands for the non-active copilot agent...
+        assert "copilot" in git_meta["registered_commands"]
+        assert (
+            project / ".github" / "agents" / "speckit.git.feature.agent.md"
+        ).exists()
+        # ...not as skills (that path is reserved for the active agent; #2948).
+        assert "speckit-git-feature" not in git_meta.get("registered_skills", [])
+        assert not (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 
