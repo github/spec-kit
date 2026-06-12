@@ -1475,9 +1475,9 @@ class TestFanOutStep:
         assert result.output["item_count"] == 2
         assert result.output["max_concurrency"] == 3
 
-    def test_execute_non_list_items_resolves_empty(self):
+    def test_execute_non_list_items_fails_loudly(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
-        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanOutStep()
         ctx = StepContext()
@@ -1487,8 +1487,24 @@ class TestFanOutStep:
             "step": {"id": "impl", "command": "speckit.implement"},
         }
         result = step.execute(config, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "'items' must resolve to a list" in (result.error or "")
         assert result.output["item_count"] == 0
-        assert result.output["items"] == []
+
+    def test_execute_empty_list_items_is_valid(self):
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanOutStep()
+        ctx = StepContext(steps={"tasks": {"output": {"task_list": []}}})
+        config = {
+            "id": "parallel",
+            "items": "{{ steps.tasks.output.task_list }}",
+            "step": {"id": "impl", "command": "speckit.implement"},
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["item_count"] == 0
 
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
