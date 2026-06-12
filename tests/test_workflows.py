@@ -941,6 +941,55 @@ class TestShellStep:
         assert any("missing 'run'" in e for e in errors)
 
 
+    def test_output_format_json_exposes_data(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {
+            "id": "emit",
+            "run": "echo '{\"items\": [1, 2]}'",
+            "output_format": "json",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["data"] == {"items": [1, 2]}
+        assert result.output["exit_code"] == 0  # raw keys still present
+
+    def test_output_format_json_invalid_stdout_fails(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {
+            "id": "emit",
+            "run": "echo not-json",
+            "output_format": "json",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "output_format: json" in (result.error or "")
+
+    def test_no_output_format_keeps_raw_output_only(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {"id": "emit", "run": "echo '{\"items\": []}'"}
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert "data" not in result.output
+
+    def test_validate_rejects_unknown_output_format(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        errors = step.validate({"id": "emit", "run": "true", "output_format": "yaml"})
+        assert any("'output_format' must be 'json'" in e for e in errors)
+
 class _StubStdin:
     """Stdin stub exposing only a fixed ``isatty`` result.
 
