@@ -427,8 +427,7 @@ def _register_extensions_for_agent(
 
     ``switch`` has always re-registered enabled extensions for the agent it
     activates; ``install`` and ``upgrade`` call this so a newly added (or
-    refreshed) agent reaches the same parity — every installed agent ends up
-    with every enabled extension's commands. See issue #2886.
+    refreshed) agent reaches command-registration parity. See issue #2886.
 
     Known limitation: extension *skill* rendering is scoped to the active
     agent (init-options track a single ``ai`` / ``ai_skills`` pair). A

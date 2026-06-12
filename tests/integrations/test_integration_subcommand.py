@@ -1246,7 +1246,9 @@ class TestIntegrationInstall:
         Regression for #2886: only ``switch`` used to register extension
         commands for the newly active agent, so a second integration added via
         ``install`` was silently missing the extension commands the first agent
-        had. ``install`` must reach full parity with ``switch``.
+        had. ``install`` must reach command-registration parity with
+        ``switch``; active-agent-scoped extension skill rendering remains
+        tracked in #2948.
         """
         project = _init_project(tmp_path, "claude")
 

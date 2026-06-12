@@ -1678,16 +1678,12 @@ class ExtensionManager:
     def register_enabled_extensions_for_agent(self, agent_name: str) -> None:
         """Register installed, enabled extensions for ``agent_name``.
 
-        This is intended to be called after switching integrations. Command
-        registration is scoped to the explicit ``agent_name`` argument, but some
-        behavior still depends on the current init-options state (for example,
-        skills-mode handling uses the active ``ai`` / ``ai_skills`` settings).
-
-        Callers should therefore pass the agent that has just been made active
-        in init-options; in normal use, ``agent_name`` is expected to match the
-        current ``ai`` value. This mirrors extension install behavior while
-        avoiding stale default-mode command directories when that active agent
-        is running in skills mode (notably Copilot ``--skills``).
+        Command-file registration is scoped to the explicit ``agent_name``
+        argument, so this method can be used after install, upgrade, or switch.
+        Extension skill rendering is still scoped to the active ``ai`` /
+        ``ai_skills`` settings in init-options, so non-active skills-mode
+        targets receive command files here. Per-agent skills parity is tracked
+        separately in #2948.
         """
         if not agent_name:
             return

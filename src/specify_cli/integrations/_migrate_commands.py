@@ -485,9 +485,10 @@ def integration_upgrade(
 
     # Re-register enabled extensions for the upgraded agent so its extension
     # commands are (re)created — including agents installed before this
-    # back-fill existed. Mirrors switch; see #2886. Done after the upgrade has
-    # fully settled (Phase 2 included) and outside the try/except above so this
-    # best-effort step cannot affect upgrade success.
+    # back-fill existed. Mirrors switch for command registration; see #2886.
+    # Done after the upgrade has fully settled (Phase 2 included) and outside
+    # the try/except above so this best-effort step cannot affect upgrade
+    # success.
     _register_extensions_for_agent(
         project_root,
         key,
