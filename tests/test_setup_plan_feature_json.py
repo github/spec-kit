@@ -18,7 +18,7 @@ SETUP_PLAN_PS = PROJECT_ROOT / "scripts" / "powershell" / "setup-plan.ps1"
 PLAN_TEMPLATE = PROJECT_ROOT / "templates" / "plan-template.md"
 
 HAS_PWSH = shutil.which("pwsh") is not None
-_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershell")) if os.name == "nt" else None
 
 
 def _install_bash_scripts(repo: Path) -> None:

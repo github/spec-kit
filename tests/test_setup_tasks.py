@@ -20,7 +20,7 @@ CHECK_PREREQ_PS = PROJECT_ROOT / "scripts" / "powershell" / "check-prerequisites
 TASKS_TEMPLATE = PROJECT_ROOT / "templates" / "tasks-template.md"
  
 HAS_PWSH = shutil.which("pwsh") is not None
-_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershell")) if os.name == "nt" else None
  
  
 # ---------------------------------------------------------------------------
