@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from specify_cli import (
@@ -25,6 +26,7 @@ def _write_ext_config(project_root: Path, **overrides: object) -> None:
     """Write a minimal agent-context extension config."""
     cfg: dict = {
         "context_file": overrides.get("context_file", ""),
+        "context_files": overrides.get("context_files", []),
         "context_markers": overrides.get(
             "context_markers",
             {
@@ -200,6 +202,92 @@ class TestUpsertWithCustomMarkers:
         assert text.startswith("# header\n")
         assert "footer" in text
 
+    def test_upsert_uses_configured_context_files(self, tmp_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["AGENTS.md", "CLAUDE.md"],
+        )
+        i = _CtxIntegration()
+        result = i.upsert_context_section(
+            tmp_path, plan_path="specs/001-foo/plan.md"
+        )
+        assert result == tmp_path / "AGENTS.md"
+        for name in ("AGENTS.md", "CLAUDE.md"):
+            text = (tmp_path / name).read_text(encoding="utf-8")
+            assert IntegrationBase.CONTEXT_MARKER_START in text
+            assert "specs/001-foo/plan.md" in text
+
+    def test_remove_uses_configured_context_files(self, tmp_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["AGENTS.md", "CLAUDE.md"],
+        )
+        i = _CtxIntegration()
+        for name in ("AGENTS.md", "CLAUDE.md"):
+            (tmp_path / name).write_text(
+                f"head\n{IntegrationBase.CONTEXT_MARKER_START}\nbody\n"
+                f"{IntegrationBase.CONTEXT_MARKER_END}\ntail\n",
+                encoding="utf-8",
+            )
+        assert i.remove_context_section(tmp_path) is True
+        for name in ("AGENTS.md", "CLAUDE.md"):
+            text = (tmp_path / name).read_text(encoding="utf-8")
+            assert "body" not in text
+            assert "head" in text
+            assert "tail" in text
+
+    @pytest.mark.parametrize(
+        "bad_path",
+        [
+            "../outside.md",
+            "nested/../../outside.md",
+            "nested\\outside.md",
+            str(Path("/tmp/outside.md")),
+            "C:/tmp/outside.md",
+        ],
+    )
+    def test_upsert_rejects_context_files_outside_project(self, tmp_path, bad_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["AGENTS.md", bad_path],
+        )
+        i = _CtxIntegration()
+        with pytest.raises(ValueError, match="project-relative|must not contain"):
+            i.upsert_context_section(tmp_path)
+
+        assert not (tmp_path / "AGENTS.md").exists()
+        assert not (tmp_path.parent / "outside.md").exists()
+
+    @pytest.mark.parametrize(
+        "bad_path",
+        [
+            "../outside.md",
+            "nested\\outside.md",
+            str(Path("/tmp/outside.md")),
+            "C:/tmp/outside.md",
+        ],
+    )
+    def test_remove_rejects_context_files_outside_project(self, tmp_path, bad_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["AGENTS.md", bad_path],
+        )
+        outside = tmp_path.parent / "outside.md"
+        outside.write_text(
+            f"{IntegrationBase.CONTEXT_MARKER_START}\nbody\n"
+            f"{IntegrationBase.CONTEXT_MARKER_END}\n",
+            encoding="utf-8",
+        )
+        i = _CtxIntegration()
+        with pytest.raises(ValueError, match="project-relative|must not contain"):
+            i.remove_context_section(tmp_path)
+
+        assert "body" in outside.read_text(encoding="utf-8")
+
     def test_remove_uses_custom_markers(self, tmp_path):
         i = self._setup(
             tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"}
@@ -270,6 +358,17 @@ class TestExtensionEnabledGate:
         assert result is None
         assert not (tmp_path / "CLAUDE.md").exists()
 
+    def test_upsert_disabled_ignores_bad_context_files_config(self, tmp_path):
+        _write_registry(tmp_path, enabled=False)
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["../disabled-upsert-outside.md"],
+        )
+        i = _CtxIntegration()
+        assert i.upsert_context_section(tmp_path) is None
+        assert not (tmp_path.parent / "disabled-upsert-outside.md").exists()
+
     def test_remove_skipped_when_disabled(self, tmp_path):
         _write_registry(tmp_path, enabled=False)
         i = _CtxIntegration()
@@ -282,6 +381,35 @@ class TestExtensionEnabledGate:
         assert i.remove_context_section(tmp_path) is False
         # File must be unchanged when extension is disabled
         assert ctx.read_text(encoding="utf-8") == original
+
+    def test_remove_disabled_ignores_bad_context_files_config(self, tmp_path):
+        _write_registry(tmp_path, enabled=False)
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["../disabled-remove-outside.md"],
+        )
+        outside = tmp_path.parent / "disabled-remove-outside.md"
+        outside.write_text(
+            f"{IntegrationBase.CONTEXT_MARKER_START}\nbody\n"
+            f"{IntegrationBase.CONTEXT_MARKER_END}\n",
+            encoding="utf-8",
+        )
+        i = _CtxIntegration()
+        assert i.remove_context_section(tmp_path) is False
+        assert "body" in outside.read_text(encoding="utf-8")
+
+    def test_context_file_display_disabled_ignores_bad_context_files_config(
+        self, tmp_path
+    ):
+        _write_registry(tmp_path, enabled=False)
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["../outside.md"],
+        )
+        i = _CtxIntegration()
+        assert i._context_file_display(tmp_path) == i.context_file
 
 
 # ── Extension config writers ─────────────────────────────────────────────────
@@ -348,6 +476,37 @@ class TestExtensionConfigWriters:
         cfg = _load_agent_context_config(tmp_path)
         assert cfg["context_file"] == i.context_file
         assert "context_markers" in cfg
+
+    def test_update_init_options_preserves_context_files(self, tmp_path):
+        from specify_cli import _update_init_options_for_integration
+
+        _write_ext_config(
+            tmp_path,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md", "CLAUDE.md"],
+        )
+        i = _CtxIntegration()
+        _update_init_options_for_integration(tmp_path, i, script_type="sh")
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg["context_file"] == i.context_file
+        assert cfg["context_files"] == ["AGENTS.md", "CLAUDE.md"]
+
+    def test_clear_init_options_clears_context_files(self, tmp_path):
+        from specify_cli import _clear_init_options_for_integration
+
+        save_init_options(
+            tmp_path,
+            {"integration": "claude", "ai": "claude"},
+        )
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["AGENTS.md", "CLAUDE.md"],
+        )
+        _clear_init_options_for_integration(tmp_path, "claude")
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg.get("context_file") == ""
+        assert "context_files" not in cfg
 
     def test_update_init_options_preserves_custom_markers(self, tmp_path):
         from specify_cli import _update_init_options_for_integration

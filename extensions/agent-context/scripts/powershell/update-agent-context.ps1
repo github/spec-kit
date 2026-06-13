@@ -1,10 +1,10 @@
 #!/usr/bin/env pwsh
 # update-agent-context.ps1
 #
-# Refresh the managed Spec Kit section in the coding agent's context file
+# Refresh the managed Spec Kit section in the coding agent's context file(s)
 # (e.g. CLAUDE.md, .github/copilot-instructions.md, AGENTS.md).
 #
-# Reads `context_file` and `context_markers.{start,end}` from the
+# Reads `context_files` or `context_file`, plus `context_markers.{start,end}`, from the
 # agent-context extension config:
 #   .specify/extensions/agent-context/agent-context-config.yml
 #
@@ -87,8 +87,10 @@ if ($null -eq $Options) {
     }
 
     if ($pythonCmd) {
+        $pyScript = $null
         try {
-            $jsonOut = & $pythonCmd -c @'
+            $pyScript = [System.IO.Path]::GetTempFileName()
+            Set-Content -LiteralPath $pyScript -Encoding UTF8 -Value @'
 import json
 import sys
 try:
@@ -114,12 +116,17 @@ if not isinstance(data, dict):
     data = {}
 
 print(json.dumps(data))
-'@ $ExtConfig
+'@
+            $jsonOut = & $pythonCmd $pyScript $ExtConfig
             if ($LASTEXITCODE -eq 0 -and $jsonOut) {
                 $Options = $jsonOut | ConvertFrom-Json -ErrorAction Stop
             }
         } catch {
             $Options = $null
+        } finally {
+            if ($pyScript -and (Test-Path -LiteralPath $pyScript)) {
+                Remove-Item -LiteralPath $pyScript -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
@@ -134,21 +141,38 @@ if (-not (Test-ConfigObject -Object $Options)) {
     exit 0
 }
 
-$ContextFile = Get-ConfigValue -Object $Options -Key 'context_file'
-if (-not $ContextFile) {
-    Write-Warning 'agent-context: context_file not set in extension config; nothing to do.'
+$ConfiguredContextFiles = Get-ConfigValue -Object $Options -Key 'context_files'
+$ContextFiles = @()
+if ($ConfiguredContextFiles -is [System.Array]) {
+    foreach ($item in $ConfiguredContextFiles) {
+        if ($item -is [string] -and -not [string]::IsNullOrWhiteSpace($item)) {
+            $ContextFiles += $item.Trim()
+        }
+    }
+}
+if ($ContextFiles.Count -eq 0) {
+    $ContextFile = Get-ConfigValue -Object $Options -Key 'context_file'
+    if ($ContextFile -is [string] -and -not [string]::IsNullOrWhiteSpace($ContextFile)) {
+        $ContextFiles += $ContextFile.Trim()
+    }
+}
+$ContextFiles = @($ContextFiles | Select-Object -Unique)
+if ($ContextFiles.Count -eq 0) {
+    Write-Warning 'agent-context: context_files/context_file not set in extension config; nothing to do.'
     exit 0
 }
 
-# Reject absolute paths and '..' path segments in context_file
-if ([System.IO.Path]::IsPathRooted($ContextFile)) {
-    Write-Warning "agent-context: context_file must be a project-relative path; got '$ContextFile'."
-    exit 1
-}
-$cfSegments = $ContextFile -split '[/\\]'
-if ($cfSegments -contains '..') {
-    Write-Warning "agent-context: context_file must not contain '..' path segments; got '$ContextFile'."
-    exit 1
+foreach ($ContextFile in $ContextFiles) {
+    # Reject absolute paths and '..' path segments in context files
+    if ([System.IO.Path]::IsPathRooted($ContextFile)) {
+        Write-Warning "agent-context: context files must be project-relative paths; got '$ContextFile'."
+        exit 1
+    }
+    $cfSegments = $ContextFile -split '[/\\]'
+    if ($cfSegments -contains '..') {
+        Write-Warning "agent-context: context files must not contain '..' path segments; got '$ContextFile'."
+        exit 1
+    }
 }
 
 $MarkerStart = $DefaultStart
@@ -184,12 +208,6 @@ if (-not $PlanPath) {
     }
 }
 
-$CtxPath = Join-Path $ProjectRoot $ContextFile
-$CtxDir  = Split-Path -Parent $CtxPath
-if ($CtxDir -and -not (Test-Path -LiteralPath $CtxDir)) {
-    New-Item -ItemType Directory -Path $CtxDir -Force | Out-Null
-}
-
 $lines = @($MarkerStart,
            'For additional context about technologies to be used, project structure,',
            'shell commands, and other important information, read the current plan')
@@ -199,39 +217,47 @@ if ($PlanPath) {
 $lines += $MarkerEnd
 $Section = ($lines -join "`n") + "`n"
 
-if (Test-Path -LiteralPath $CtxPath) {
-    $rawBytes = [System.IO.File]::ReadAllBytes($CtxPath)
-    # Strip UTF-8 BOM if present
-    if ($rawBytes.Length -ge 3 -and $rawBytes[0] -eq 0xEF -and $rawBytes[1] -eq 0xBB -and $rawBytes[2] -eq 0xBF) {
-        $content = [System.Text.Encoding]::UTF8.GetString($rawBytes, 3, $rawBytes.Length - 3)
-    } else {
-        $content = [System.Text.Encoding]::UTF8.GetString($rawBytes)
+foreach ($ContextFile in $ContextFiles) {
+    $CtxPath = Join-Path $ProjectRoot $ContextFile
+    $CtxDir  = Split-Path -Parent $CtxPath
+    if ($CtxDir -and -not (Test-Path -LiteralPath $CtxDir)) {
+        New-Item -ItemType Directory -Path $CtxDir -Force | Out-Null
     }
 
-    $s = $content.IndexOf($MarkerStart)
-    $e = if ($s -ge 0) { $content.IndexOf($MarkerEnd, $s) } else { $content.IndexOf($MarkerEnd) }
+    if (Test-Path -LiteralPath $CtxPath) {
+        $rawBytes = [System.IO.File]::ReadAllBytes($CtxPath)
+        # Strip UTF-8 BOM if present
+        if ($rawBytes.Length -ge 3 -and $rawBytes[0] -eq 0xEF -and $rawBytes[1] -eq 0xBB -and $rawBytes[2] -eq 0xBF) {
+            $content = [System.Text.Encoding]::UTF8.GetString($rawBytes, 3, $rawBytes.Length - 3)
+        } else {
+            $content = [System.Text.Encoding]::UTF8.GetString($rawBytes)
+        }
 
-    if ($s -ge 0 -and $e -ge 0 -and $e -gt $s) {
-        $endOfMarker = $e + $MarkerEnd.Length
-        if ($endOfMarker -lt $content.Length -and $content[$endOfMarker] -eq "`r") { $endOfMarker++ }
-        if ($endOfMarker -lt $content.Length -and $content[$endOfMarker] -eq "`n") { $endOfMarker++ }
-        $newContent = $content.Substring(0, $s) + $Section + $content.Substring($endOfMarker)
-    } elseif ($s -ge 0) {
-        $newContent = $content.Substring(0, $s) + $Section
-    } elseif ($e -ge 0) {
-        $endOfMarker = $e + $MarkerEnd.Length
-        if ($endOfMarker -lt $content.Length -and $content[$endOfMarker] -eq "`r") { $endOfMarker++ }
-        if ($endOfMarker -lt $content.Length -and $content[$endOfMarker] -eq "`n") { $endOfMarker++ }
-        $newContent = $Section + $content.Substring($endOfMarker)
+        $s = $content.IndexOf($MarkerStart)
+        $e = if ($s -ge 0) { $content.IndexOf($MarkerEnd, $s) } else { $content.IndexOf($MarkerEnd) }
+
+        if ($s -ge 0 -and $e -ge 0 -and $e -gt $s) {
+            $endOfMarker = $e + $MarkerEnd.Length
+            if ($endOfMarker -lt $content.Length -and $content[$endOfMarker] -eq "`r") { $endOfMarker++ }
+            if ($endOfMarker -lt $content.Length -and $content[$endOfMarker] -eq "`n") { $endOfMarker++ }
+            $newContent = $content.Substring(0, $s) + $Section + $content.Substring($endOfMarker)
+        } elseif ($s -ge 0) {
+            $newContent = $content.Substring(0, $s) + $Section
+        } elseif ($e -ge 0) {
+            $endOfMarker = $e + $MarkerEnd.Length
+            if ($endOfMarker -lt $content.Length -and $content[$endOfMarker] -eq "`r") { $endOfMarker++ }
+            if ($endOfMarker -lt $content.Length -and $content[$endOfMarker] -eq "`n") { $endOfMarker++ }
+            $newContent = $Section + $content.Substring($endOfMarker)
+        } else {
+            if ($content -and -not $content.EndsWith("`n")) { $content += "`n" }
+            if ($content) { $newContent = $content + "`n" + $Section } else { $newContent = $Section }
+        }
     } else {
-        if ($content -and -not $content.EndsWith("`n")) { $content += "`n" }
-        if ($content) { $newContent = $content + "`n" + $Section } else { $newContent = $Section }
+        $newContent = $Section
     }
-} else {
-    $newContent = $Section
+
+    $newContent = $newContent.Replace("`r`n", "`n").Replace("`r", "`n")
+    [System.IO.File]::WriteAllText($CtxPath, $newContent, (New-Object System.Text.UTF8Encoding($false)))
+
+    Write-Host "agent-context: updated $ContextFile"
 }
-
-$newContent = $newContent.Replace("`r`n", "`n").Replace("`r", "`n")
-[System.IO.File]::WriteAllText($CtxPath, $newContent, (New-Object System.Text.UTF8Encoding($false)))
-
-Write-Host "agent-context: updated $ContextFile"

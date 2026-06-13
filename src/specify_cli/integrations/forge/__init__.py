@@ -134,7 +134,7 @@ class ForgeIntegration(MarkdownIntegration):
             # Process template with standard MarkdownIntegration logic
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
+                context_file=self._context_file_display(project_root),
                 invoke_separator=self.invoke_separator,
             )
 

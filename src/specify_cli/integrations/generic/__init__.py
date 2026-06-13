@@ -124,7 +124,7 @@ class GenericIntegration(MarkdownIntegration):
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
+                context_file=self._context_file_display(project_root),
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(

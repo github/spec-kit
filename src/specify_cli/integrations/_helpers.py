@@ -131,7 +131,7 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
         ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
         if ext_cfg_path.exists():
             _update_agent_context_config_file(
-                project_root, "", preserve_markers=True
+                project_root, "", preserve_markers=True, preserve_context_files=False
             )
     elif has_legacy_context_keys:
         save_init_options(project_root, opts)
@@ -277,12 +277,14 @@ def _update_init_options_for_integration(
     """Update init-options.json and the agent-context extension config to
     reflect *integration* as the active one.
 
-    ``context_file`` and ``context_markers`` are stored in the agent-context
+    ``context_file``, ``context_files``, and ``context_markers`` are stored in the agent-context
     extension config (``.specify/extensions/agent-context/agent-context-config.yml``),
     not in ``init-options.json``.  Existing user-customised markers are
-    always preserved when the config already exists; invalid marker values
-    are silently ignored at runtime by ``_resolve_context_markers()`` which
-    falls back to the class-level defaults.
+    always preserved when the config already exists. Existing non-empty
+    ``context_files`` lists are also preserved so projects can keep multi-agent
+    context anchors during integration switches. Invalid marker values are
+    silently ignored at runtime by ``_resolve_context_markers()`` which falls
+    back to the class-level defaults.
     """
     from .. import (
         _AGENT_CTX_EXT_CONFIG,

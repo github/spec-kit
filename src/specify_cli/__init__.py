@@ -277,6 +277,7 @@ def _load_agent_context_config(project_root: Path) -> dict[str, Any]:
 
     defaults: dict[str, Any] = {
         "context_file": "",
+        "context_files": [],
         "context_markers": {
             "start": IntegrationBase.CONTEXT_MARKER_START,
             "end": IntegrationBase.CONTEXT_MARKER_END,
@@ -308,6 +309,7 @@ def _update_agent_context_config_file(
     context_file: str | None,
     *,
     preserve_markers: bool = True,
+    preserve_context_files: bool = True,
 ) -> None:
     """Update the agent-context extension config with *context_file*.
 
@@ -315,11 +317,23 @@ def _update_agent_context_config_file(
     ``context_markers`` values are kept unchanged so user customisations
     survive integration changes and reinit.  When False, the default
     markers are written unconditionally.
+
+    When *preserve_context_files* is True (default), an existing non-empty
+    ``context_files`` list is kept unchanged.  This lets projects opt into
+    updating multiple agent context files while still preserving the legacy
+    singular ``context_file`` value for compatibility.
     """
     from .integrations.base import IntegrationBase
 
     cfg = _load_agent_context_config(project_root)
     cfg["context_file"] = context_file or ""
+    existing_context_files = cfg.get("context_files")
+    has_context_files = (
+        isinstance(existing_context_files, list)
+        and any(isinstance(item, str) and item.strip() for item in existing_context_files)
+    )
+    if not preserve_context_files or not has_context_files:
+        cfg.pop("context_files", None)
     if not preserve_markers or not isinstance(cfg.get("context_markers"), dict):
         cfg["context_markers"] = {
             "start": IntegrationBase.CONTEXT_MARKER_START,
