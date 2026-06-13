@@ -794,13 +794,12 @@
         "hooks": 4
       },
       "tags": [
-        "spec-driven-development",
-        "spec-kit",
-        "tracking",
-        "turbo",
-        "capture",
         "vscode",
-        "resume"
+        "progress",
+        "status",
+        "resume",
+        "configurable",
+        "extensible"
       ],
       "verified": false,
       "downloads": 0,
