@@ -774,8 +774,8 @@
       "id": "companion",
       "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, and a turbo pipeline profile.",
       "author": "alfredoperez",
-      "version": "0.3.0",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.3.0/companion-0.3.0.zip",
+      "version": "0.4.1",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/companion-latest/companion.zip",
       "repository": "https://github.com/alfredoperez/speckit-companion",
       "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/speckit-extension",
       "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/README.md",
@@ -794,18 +794,19 @@
         "hooks": 4
       },
       "tags": [
+        "spec-driven-development",
+        "spec-kit",
         "tracking",
-        "companion",
-        "progress",
+        "turbo",
+        "capture",
         "vscode",
-        "lifecycle",
         "resume"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-06-11T00:00:00Z"
+      "updated_at": "2026-06-12T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
