@@ -2997,6 +2997,84 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" in metadata.get("registered_skills", [])
 
+    def _install_arg_hint_preset(self, project_dir, temp_dir, ai, skills_dir, description, arg_hint):
+        """Install a preset whose command declares argument-hint; return the SKILL.md path."""
+        self._write_init_options(project_dir, ai=ai)
+        self._create_skill(skills_dir, "speckit-hinttest-cmd")
+        (project_dir / ".specify" / "extensions" / "hinttest").mkdir(parents=True, exist_ok=True)
+
+        preset_dir = temp_dir / f"hint-preset-{ai}"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.hinttest.cmd.md").write_text(
+            "---\n"
+            f'description: "{description}"\n'
+            f'argument-hint: "{arg_hint}"\n'
+            "---\n\n"
+            "Preset command body.\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": f"hint-preset-{ai}",
+                "name": "Hint Preset",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.hinttest.cmd",
+                        "file": "commands/speckit.hinttest.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        return skills_dir / "speckit-hinttest-cmd" / "SKILL.md"
+
+    def test_argument_hint_preserved_for_preset_command(self, project_dir, temp_dir):
+        """argument-hint from a preset command must survive into the SKILL.md.
+
+        Follow-up to #2903/#2916 for the preset skill generator. The
+        description is long enough to fold across lines when serialized,
+        guarding against an in-place string injection that would split the
+        folded scalar into invalid YAML.
+        """
+        long_description = (
+            "Build and maintain a lean, static context/ knowledge folder so "
+            "coding agents load only what is relevant and save tokens"
+        )
+        arg_hint = "<init | update | list | check> [area] [slug] [-- notes]"
+        skills_dir = project_dir / ".claude" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "claude", skills_dir, long_description, arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert parsed["argument-hint"] == arg_hint
+        assert parsed["description"] == long_description
+
+    def test_argument_hint_not_added_for_non_claude_preset_command(self, project_dir, temp_dir):
+        """Non-Claude skills agents must not receive argument-hint in preset skills."""
+        arg_hint = "<init | update | list | check> [area]"
+        skills_dir = project_dir / ".agents" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "codex", skills_dir, "Build context", arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert "argument-hint" not in parsed
+
     def test_register_skills_resolves_command_refs(self, project_dir, temp_dir):
         """Preset skill overrides must resolve __SPECKIT_COMMAND_*__ tokens (issue #2717).
 

@@ -357,6 +357,33 @@ class CommandRegistrar:
         return skill_frontmatter
 
     @staticmethod
+    def apply_argument_hint(
+        source_frontmatter: dict,
+        skill_frontmatter: dict,
+        integration: object,
+    ) -> None:
+        """Carry a command's ``argument-hint`` into its generated skill frontmatter.
+
+        Copies ``argument-hint`` from the parsed source command frontmatter into
+        *skill_frontmatter* (mutated in place) before serialization, so that a
+        folded multi-line ``description`` cannot be split into invalid YAML. Only
+        integrations that support the field — those exposing
+        ``inject_argument_hint`` (currently Claude) — receive the key, leaving
+        :meth:`build_skill_frontmatter`'s shared shape unchanged for every other
+        agent. Built-in templates carry no ``argument-hint``, so this is a no-op
+        for the core path.
+        """
+        if not isinstance(source_frontmatter, dict):
+            return
+        argument_hint = source_frontmatter.get("argument-hint")
+        if (
+            argument_hint
+            and integration is not None
+            and hasattr(integration, "inject_argument_hint")
+        ):
+            skill_frontmatter["argument-hint"] = str(argument_hint)
+
+    @staticmethod
     def resolve_skill_placeholders(
         agent_name: str, frontmatter: dict, body: str, project_root: Path
     ) -> str:
