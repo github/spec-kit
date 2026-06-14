@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-05T00:00:00Z",
+  "updated_at": "2026-06-14T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -171,11 +171,11 @@
     "cross-platform-governance": {
       "name": "Cross-Platform Governance",
       "id": "cross-platform-governance",
-      "version": "0.1.0",
-      "description": "Adds Bash and PowerShell parity, dry-run/WhatIf parity, man-page expectations, and Verb-Noun Cmdlet discipline.",
+      "version": "0.2.0",
+      "description": "Adds Bash + PowerShell parity, Unix man-pages, bilingual comment-based help, Verb-Noun Cmdlet discipline, and audit-ready Spec-Kit run evidence to Spec Kit-managed scripting projects.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.1.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.2.0.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/main/README.md",
       "license": "MIT",
@@ -188,13 +188,18 @@
       },
       "tags": [
         "cross-platform",
+        "governance",
         "bash",
         "powershell",
         "man-page",
-        "cmdlet"
+        "cmdlet",
+        "verb-noun",
+        "windows",
+        "macos",
+        "linux"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-04-27T00:00:00Z"
+      "updated_at": "2026-06-14T00:00:00Z"
     },
     "explicit-task-dependencies": {
       "name": "Explicit Task Dependencies",
