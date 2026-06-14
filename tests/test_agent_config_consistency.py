@@ -82,17 +82,17 @@ class TestAgentConfigConsistency:
     def test_kimi_in_agent_config(self):
         """AGENT_CONFIG should include kimi with correct folder and commands_subdir."""
         assert "kimi" in AGENT_CONFIG
-        assert AGENT_CONFIG["kimi"]["folder"] == ".kimi/"
+        assert AGENT_CONFIG["kimi"]["folder"] == ".kimi-code/"
         assert AGENT_CONFIG["kimi"]["commands_subdir"] == "skills"
         assert AGENT_CONFIG["kimi"]["requires_cli"] is True
 
     def test_kimi_in_extension_registrar(self):
-        """Extension command registrar should include kimi using .kimi/skills and SKILL.md."""
+        """Extension command registrar should include kimi using .kimi-code/skills and SKILL.md."""
         cfg = CommandRegistrar.AGENT_CONFIGS
 
         assert "kimi" in cfg
         kimi_cfg = cfg["kimi"]
-        assert kimi_cfg["dir"] == ".kimi/skills"
+        assert kimi_cfg["dir"] == ".kimi-code/skills"
         assert kimi_cfg["extension"] == "/SKILL.md"
 
     def test_agent_config_includes_kimi(self):

@@ -9,10 +9,10 @@ from .test_integration_base_skills import SkillsIntegrationTests
 
 class TestKimiIntegration(SkillsIntegrationTests):
     KEY = "kimi"
-    FOLDER = ".kimi/"
+    FOLDER = ".kimi-code/"
     COMMANDS_SUBDIR = "skills"
-    REGISTRAR_DIR = ".kimi/skills"
-    CONTEXT_FILE = "KIMI.md"
+    REGISTRAR_DIR = ".kimi-code/skills"
+    CONTEXT_FILE = "AGENTS.md"
 
 
 class TestKimiOptions:
@@ -103,12 +103,13 @@ class TestKimiLegacyMigration:
         assert migrated == 0
         assert removed == 0
 
-    def test_setup_with_migrate_legacy_option(self, tmp_path):
-        """KimiIntegration.setup() with --migrate-legacy migrates dotted dirs."""
+    def test_setup_migrate_legacy_moves_old_skills_dir(self, tmp_path):
+        """--migrate-legacy moves hyphenated skills from .kimi/skills to .kimi-code/skills."""
         i = get_integration("kimi")
 
-        skills_dir = tmp_path / ".kimi" / "skills"
-        legacy = skills_dir / "speckit.oldcmd"
+        old_skills_dir = tmp_path / ".kimi" / "skills"
+        new_skills_dir = tmp_path / ".kimi-code" / "skills"
+        legacy = old_skills_dir / "speckit-oldcmd"
         legacy.mkdir(parents=True)
         (legacy / "SKILL.md").write_text("# Legacy\n")
 
@@ -116,9 +117,126 @@ class TestKimiLegacyMigration:
         i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
 
         assert not legacy.exists()
-        assert (skills_dir / "speckit-oldcmd" / "SKILL.md").exists()
+        assert not old_skills_dir.exists()
+        assert (new_skills_dir / "speckit-oldcmd" / "SKILL.md").exists()
         # New skills from templates should also exist
-        assert (skills_dir / "speckit-specify" / "SKILL.md").exists()
+        assert (new_skills_dir / "speckit-specify" / "SKILL.md").exists()
+
+    def test_setup_with_migrate_legacy_option(self, tmp_path):
+        """KimiIntegration.setup() with --migrate-legacy migrates dotted dirs."""
+        i = get_integration("kimi")
+
+        old_skills_dir = tmp_path / ".kimi" / "skills"
+        new_skills_dir = tmp_path / ".kimi-code" / "skills"
+        legacy = old_skills_dir / "speckit.oldcmd"
+        legacy.mkdir(parents=True)
+        (legacy / "SKILL.md").write_text("# Legacy\n")
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
+
+        assert not legacy.exists()
+        assert (new_skills_dir / "speckit-oldcmd" / "SKILL.md").exists()
+        # New skills from templates should also exist
+        assert (new_skills_dir / "speckit-specify" / "SKILL.md").exists()
+
+
+class TestKimiContextFileMigration:
+    """KIMI.md → AGENTS.md migration under --migrate-legacy."""
+
+    def test_setup_migrate_legacy_moves_kimi_md_user_content(self, tmp_path):
+        i = get_integration("kimi")
+
+        kimi_md = tmp_path / "KIMI.md"
+        kimi_md.write_text(
+            "# Project context\n\n"
+            "<!-- SPECKIT START -->\n"
+            "old managed section\n"
+            "<!-- SPECKIT END -->\n\n"
+            "Keep this user note.\n"
+        )
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
+
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md.exists()
+        content = agents_md.read_text(encoding="utf-8")
+        assert "Keep this user note." in content
+        assert "old managed section" not in content
+        assert "<!-- SPECKIT START -->" in content
+        assert not kimi_md.exists()
+
+    def test_setup_migrate_legacy_removes_empty_kimi_md(self, tmp_path):
+        i = get_integration("kimi")
+
+        kimi_md = tmp_path / "KIMI.md"
+        kimi_md.write_text(
+            "<!-- SPECKIT START -->\n"
+            "only managed section\n"
+            "<!-- SPECKIT END -->\n"
+        )
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
+
+        assert (tmp_path / "AGENTS.md").exists()
+        assert not kimi_md.exists()
+
+    def test_setup_migrate_legacy_appends_to_existing_agents_md(self, tmp_path):
+        i = get_integration("kimi")
+
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text("# Existing AGENTS.md\n\nExisting note.\n")
+
+        kimi_md = tmp_path / "KIMI.md"
+        kimi_md.write_text("# Kimi context\n\nKimi-specific note.\n")
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
+
+        content = agents_md.read_text(encoding="utf-8")
+        assert "Existing note." in content
+        assert "Kimi-specific note." in content
+        assert "<!-- SPECKIT START -->" in content
+        assert not kimi_md.exists()
+
+
+class TestKimiTeardownLegacyCleanup:
+    """teardown() removes leftover legacy .kimi/skills/ directories."""
+
+    def test_teardown_removes_legacy_speckit_skills(self, tmp_path):
+        i = get_integration("kimi")
+
+        legacy_skill = tmp_path / ".kimi" / "skills" / "speckit-plan" / "SKILL.md"
+        legacy_skill.parent.mkdir(parents=True)
+        legacy_skill.write_text(
+            "---\n"
+            "name: \"speckit-plan\"\n"
+            "description: \"Plan workflow\"\n"
+            "metadata:\n"
+            "  author: \"github-spec-kit\"\n"
+            "  source: \"templates/commands/plan.md\"\n"
+            "---\n"
+        )
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.teardown(tmp_path, m)
+
+        assert not legacy_skill.exists()
+        assert not (tmp_path / ".kimi" / "skills").exists()
+
+    def test_teardown_preserves_user_skills_in_legacy_dir(self, tmp_path):
+        i = get_integration("kimi")
+
+        user_skill = tmp_path / ".kimi" / "skills" / "my-custom" / "SKILL.md"
+        user_skill.parent.mkdir(parents=True)
+        user_skill.write_text("# My custom skill\n")
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.teardown(tmp_path, m)
+
+        assert user_skill.exists()
 
 
 class TestKimiNextSteps:

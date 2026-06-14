@@ -1812,7 +1812,7 @@ Agent __AGENT__
 
     @pytest.mark.parametrize("agent_name,skills_path", [
         ("codex", ".agents/skills"),
-        ("kimi", ".kimi/skills"),
+        ("kimi", ".kimi-code/skills"),
         ("claude", ".claude/skills"),
         ("cursor-agent", ".cursor/skills"),
         ("trae", ".trae/skills"),

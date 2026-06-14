@@ -3577,7 +3577,7 @@ class TestPresetSkills:
     def test_kimi_legacy_dotted_skill_override_still_applies(self, project_dir, temp_dir):
         """Preset overrides should still target legacy dotted Kimi skill directories."""
         self._write_init_options(project_dir, ai="kimi")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit.specify", body="untouched")
 
         (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
@@ -3597,7 +3597,7 @@ class TestPresetSkills:
     def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi presets should still propagate command overrides to existing skills."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
         (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
@@ -3617,7 +3617,7 @@ class TestPresetSkills:
     def test_kimi_new_skill_created_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi native skills should still receive brand-new preset commands."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-new-skill"
@@ -3666,7 +3666,7 @@ class TestPresetSkills:
     def test_kimi_preset_skill_override_resolves_script_placeholders(self, project_dir, temp_dir):
         """Kimi preset skill overrides should resolve placeholders and rewrite project paths."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False, script="sh")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
         (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
 

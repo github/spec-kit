@@ -1677,7 +1677,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, f"extension add failed: {result.output}"
 
         # Verify git extension skills exist for kimi
-        kimi_git_feature = project / ".kimi" / "skills" / "speckit-git-feature" / "SKILL.md"
+        kimi_git_feature = project / ".kimi-code" / "skills" / "speckit-git-feature" / "SKILL.md"
         assert kimi_git_feature.exists(), "Git extension skill should exist for kimi"
 
         result = _run_in_project(project, [
