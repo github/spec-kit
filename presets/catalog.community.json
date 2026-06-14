@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-11T00:00:00Z",
+  "updated_at": "2026-06-14T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -92,11 +92,11 @@
     "architecture-governance": {
       "name": "Architecture Governance",
       "id": "architecture-governance",
-      "version": "0.4.0",
-      "description": "Adds secure architecture governance, STRIDE/CAPEC threat modeling, S-ADRs, Zero Trust, OWASP SAMM, BSI C3A cloud autonomy, and BSI C5 cloud compliance assurance.",
+      "version": "0.5.0",
+      "description": "Adds secure software architecture, STRIDE+CAPEC threat modeling, arc42 security cross-cutting concepts, S-ADRs, Zero Trust applicability, OWASP SAMM governance, BSI C3A cloud autonomy, BSI C5 cloud compliance assurance, and audit-ready Spec-Kit run evidence to Spec Kit.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.4.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.5.0.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
       "documentation": "https://github.com/hindermath/spec-kit-preset-architecture-governance/blob/main/README.md",
       "license": "MIT",
@@ -125,7 +125,7 @@
         "assurance"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-06-11T00:00:00Z"
+      "updated_at": "2026-06-14T00:00:00Z"
     },
     "canon-core": {
       "name": "Canon Core",
