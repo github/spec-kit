@@ -299,7 +299,7 @@
       "name": "iSAQB Architecture Governance",
       "id": "isaqb-architecture-governance",
       "version": "0.2.0",
-      "description": "Adds general iSAQB/CPSA-F and arc42 software-architecture governance, including audit-ready Spec-Kit run evidence for architecture goals, views, quality scenarios, ADRs, risks, and technical debt.",
+      "description": "Adds general iSAQB/CPSA-F and arc42 software-architecture governance, including audit-ready Spec Kit run evidence for architecture goals, views, quality scenarios, ADRs, risks, and technical debt.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
       "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.2.0.zip",
