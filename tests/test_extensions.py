@@ -4874,6 +4874,42 @@ class TestExtensionAddCLI:
         else:
             assert not agent_file.is_symlink()
 
+    def test_add_dev_writes_codex_skills_as_files(self, extension_dir, project_dir):
+        """Codex dev skills should be written as files so Codex can load them."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.write_text(
+            json.dumps({"ai": "codex", "ai_skills": True}), encoding="utf-8"
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+
+        skill_file = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "name: speckit-test-ext-hello" in content
+        assert "metadata:" in content
+        assert "source: test-ext:commands/hello.md" in content
+
     def test_add_dev_falls_back_to_copy_when_windows_symlinks_unavailable(
         self, extension_dir, project_dir, monkeypatch
     ):

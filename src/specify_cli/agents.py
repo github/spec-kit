@@ -806,7 +806,7 @@ class CommandRegistrar:
         link_outputs: bool,
     ) -> None:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
-        if not link_outputs:
+        if not link_outputs or (agent_name == "codex" and extension == "/SKILL.md"):
             dest_file.write_text(content, encoding="utf-8")
             return
 

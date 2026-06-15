@@ -1030,13 +1030,14 @@ class ExtensionManager:
             skill_file = skill_subdir / "SKILL.md"
             cache_root = extension_dir / ".specify-dev" / "extension-skills"
             cache_file = cache_root / skill_name / "SKILL.md"
+            use_dev_symlink = link_outputs and selected_ai != "codex"
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if skill_file.exists() or skill_file.is_symlink():
                 # Do not overwrite user-customized skills, but allow dev-mode
                 # symlinks that point back to this extension's generated cache
                 # to be refreshed on a subsequent dev install.
                 if not (
-                    link_outputs
+                    use_dev_symlink
                     and self._is_expected_dev_symlink(skill_file, cache_file)
                 ):
                     continue
@@ -1093,7 +1094,7 @@ class ExtensionManager:
             ):
                 skill_content = integration.post_process_skill_content(skill_content)
 
-            if link_outputs:
+            if use_dev_symlink:
                 try:
                     cache_file.parent.mkdir(parents=True, exist_ok=True)
                     cache_file.write_text(skill_content, encoding="utf-8")
