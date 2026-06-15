@@ -100,8 +100,8 @@ class SkillsIntegrationTests:
         skill_files = [f for f in created if "scripts" not in f.parts]
 
         expected_commands = {
-            "analyze", "checklist", "clarify", "constitution",
-            "implement", "plan", "specify", "tasks", "taskstoissues",
+            "analyze", "clarify", "constitution", "implement",
+            "plan", "checklist", "specify", "tasks", "taskstoissues",
         }
 
         # Derive command names from the skill directory names
@@ -175,6 +175,39 @@ class SkillsIntegrationTests:
                 f"{f.name} contains dot-notation /speckit. reference; "
                 f"skills agents must use /speckit-<name>"
             )
+
+    def test_hook_sections_explain_dotted_command_conversion(self, tmp_path):
+        """Generated skills with hook sections must explain dotted command conversion."""
+        i = get_integration(self.KEY)
+        m = IntegrationManifest(self.KEY, tmp_path)
+        i.setup(tmp_path, m)
+        specify_skill = i.skills_dest(tmp_path) / "speckit-specify" / "SKILL.md"
+        assert specify_skill.exists()
+        content = specify_skill.read_text(encoding="utf-8")
+        assert "replace dots" in content, (
+            "speckit-specify should explain dotted hook command conversion"
+        )
+        assert content.count("replace dots") == content.count(
+            "- For each executable hook, output the following"
+        )
+
+    def test_hook_note_injected_for_each_instruction_independently(self):
+        """Existing hook notes should not suppress later missing notes."""
+        content = (
+            "---\n"
+            "name: test\n"
+            "---\n\n"
+            "- When constructing slash commands from hook command names, "
+            "replace dots (`.`) with hyphens (`-`). "
+            "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
+            "- For each executable hook, output the following first block:\n"
+            "\n"
+            "- For each executable hook, output the following second block:\n"
+        )
+
+        result = SkillsIntegration._inject_hook_command_note(content)
+
+        assert result.count("replace dots (`.`) with hyphens") == 2
 
     def test_skill_body_has_content(self, tmp_path):
         """Each SKILL.md body should contain template content after the frontmatter."""
@@ -279,9 +312,9 @@ class SkillsIntegrationTests:
             assert "<!-- SPECKIT END -->" not in remaining
             assert "# My Rules" in remaining
 
-    # -- CLI auto-promote -------------------------------------------------
+    # -- CLI integration flag -------------------------------------------------
 
-    def test_ai_flag_auto_promotes(self, tmp_path):
+    def test_integration_flag_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -292,15 +325,15 @@ class SkillsIntegrationTests:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", self.KEY, "--script", "sh", "--no-git",
+                "init", "--here", "--integration", self.KEY, "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
-        assert result.exit_code == 0, f"init --ai {self.KEY} failed: {result.output}"
+        assert result.exit_code == 0, f"init --integration {self.KEY} failed: {result.output}"
         i = get_integration(self.KEY)
         skills_dir = i.skills_dest(project)
-        assert skills_dir.is_dir(), f"--ai {self.KEY} did not create skills directory"
+        assert skills_dir.is_dir(), f"--integration {self.KEY} did not create skills directory"
 
     def test_integration_flag_creates_files(self, tmp_path):
         from typer.testing import CliRunner
@@ -313,7 +346,7 @@ class SkillsIntegrationTests:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "sh", "--no-git",
+                "init", "--here", "--integration", self.KEY, "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -324,8 +357,8 @@ class SkillsIntegrationTests:
         assert skills_dir.is_dir(), f"Skills directory {skills_dir} not created"
 
     def test_init_options_includes_context_file(self, tmp_path):
-        """init-options.json must include context_file for the active integration."""
-        import json
+        """agent-context extension config must include context_file for the active integration."""
+        import yaml
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -336,15 +369,16 @@ class SkillsIntegrationTests:
             os.chdir(project)
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", self.KEY, "--script", "sh",
-                "--no-git", "--ignore-agent-tools",
+                "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        opts = json.loads((project / ".specify" / "init-options.json").read_text())
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        ext_cfg = yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8")) if ext_cfg_path.exists() else {}
         i = get_integration(self.KEY)
-        assert opts.get("context_file") == i.context_file, (
-            f"Expected context_file={i.context_file!r}, got {opts.get('context_file')!r}"
+        assert ext_cfg.get("context_file") == i.context_file, (
+            f"Expected context_file={i.context_file!r}, got {ext_cfg.get('context_file')!r}"
         )
 
     # -- IntegrationOption ------------------------------------------------
@@ -359,8 +393,8 @@ class SkillsIntegrationTests:
     # -- Complete file inventory ------------------------------------------
 
     _SKILL_COMMANDS = [
-        "analyze", "checklist", "clarify", "constitution",
-        "implement", "plan", "specify", "tasks", "taskstoissues",
+        "analyze", "clarify", "constitution", "implement",
+        "plan", "checklist", "specify", "tasks", "taskstoissues",
     ]
 
     def _expected_files(self, script_variant: str) -> list[str]:
@@ -369,9 +403,11 @@ class SkillsIntegrationTests:
         skills_prefix = i.config["folder"].rstrip("/") + "/" + i.config.get("commands_subdir", "skills")
 
         files = []
-        # Skill files
+        # Skill files (core commands)
         for cmd in self._SKILL_COMMANDS:
             files.append(f"{skills_prefix}/speckit-{cmd}/SKILL.md")
+        # Extension-installed skill (agent-context)
+        files.append(f"{skills_prefix}/speckit-agent-context-update/SKILL.md")
         # Integration metadata
         files += [
             ".specify/init-options.json",
@@ -410,6 +446,15 @@ class SkillsIntegrationTests:
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
         ]
+        # Bundled agent-context extension
+        files.append(".specify/extensions.yml")
+        files.append(".specify/extensions/.registry")
+        files.append(".specify/extensions/agent-context/README.md")
+        files.append(".specify/extensions/agent-context/agent-context-config.yml")
+        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
+        files.append(".specify/extensions/agent-context/extension.yml")
+        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
+        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
         # Agent context file (if set)
         if i.context_file:
             files.append(i.context_file)
@@ -426,15 +471,15 @@ class SkillsIntegrationTests:
         try:
             os.chdir(project)
             result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY,
-                "--script", "sh", "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--integration", self.KEY, "--script", "sh",
+                "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(
             p.relative_to(project).as_posix()
-            for p in project.rglob("*") if p.is_file()
+            for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("sh")
         assert actual == expected, (
@@ -453,15 +498,15 @@ class SkillsIntegrationTests:
         try:
             os.chdir(project)
             result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY,
-                "--script", "ps", "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--integration", self.KEY, "--script", "ps",
+                "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(
             p.relative_to(project).as_posix()
-            for p in project.rglob("*") if p.is_file()
+            for p in project.rglob("*") if p.is_file() and ".git" not in p.parts
         )
         expected = self._expected_files("ps")
         assert actual == expected, (

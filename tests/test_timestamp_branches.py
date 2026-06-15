@@ -19,14 +19,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CREATE_FEATURE = PROJECT_ROOT / "scripts" / "bash" / "create-new-feature.sh"
 CREATE_FEATURE_PS = PROJECT_ROOT / "scripts" / "powershell" / "create-new-feature.ps1"
 EXT_CREATE_FEATURE = (
-    PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+    PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature-branch.sh"
 )
 EXT_CREATE_FEATURE_PS = (
-    PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
+    PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
 )
 COMMON_SH = PROJECT_ROOT / "scripts" / "bash" / "common.sh"
-EXT_CREATE_FEATURE = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
-EXT_CREATE_FEATURE_PS = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
 
 HAS_PWSH = shutil.which("pwsh") is not None
 
@@ -77,7 +75,7 @@ def ext_git_repo(tmp_path: Path) -> Path:
     # Copy extension script
     ext_dir = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "bash"
     ext_dir.mkdir(parents=True)
-    shutil.copy(EXT_CREATE_FEATURE, ext_dir / "create-new-feature.sh")
+    shutil.copy(EXT_CREATE_FEATURE, ext_dir / "create-new-feature-branch.sh")
     # Also copy git-common.sh if it exists
     git_common = PROJECT_ROOT / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
     if git_common.exists():
@@ -106,7 +104,7 @@ def ext_ps_git_repo(tmp_path: Path) -> Path:
     # Copy extension script
     ext_ps = tmp_path / ".specify" / "extensions" / "git" / "scripts" / "powershell"
     ext_ps.mkdir(parents=True)
-    shutil.copy(EXT_CREATE_FEATURE_PS, ext_ps / "create-new-feature.ps1")
+    shutil.copy(EXT_CREATE_FEATURE_PS, ext_ps / "create-new-feature-branch.ps1")
     git_common_ps = PROJECT_ROOT / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
     if git_common_ps.exists():
         shutil.copy(git_common_ps, ext_ps / "git-common.ps1")
@@ -279,64 +277,13 @@ class TestSequentialBranchPowerShell:
 
 
 @requires_bash
-class TestCheckFeatureBranch:
-    def test_accepts_timestamp_branch(self):
-        """Test 6: check_feature_branch accepts timestamp branch."""
-        result = source_and_call('check_feature_branch "20260319-143022-feat" "true"')
-        assert result.returncode == 0
-
-    def test_accepts_sequential_branch(self):
-        """Test 7: check_feature_branch accepts sequential branch."""
-        result = source_and_call('check_feature_branch "004-feat" "true"')
-        assert result.returncode == 0
-
-    def test_rejects_main(self):
-        """Test 8: check_feature_branch rejects main."""
-        result = source_and_call('check_feature_branch "main" "true"')
+class TestCoreCommonRemovesGitHelpers:
+    def test_check_feature_branch_removed(self):
+        result = source_and_call('declare -F check_feature_branch >/dev/null')
         assert result.returncode != 0
 
-    def test_accepts_four_digit_sequential_branch(self):
-        """check_feature_branch accepts 4+ digit sequential branch."""
-        result = source_and_call('check_feature_branch "1234-feat" "true"')
-        assert result.returncode == 0
-
-    def test_rejects_partial_timestamp(self):
-        """Test 9: check_feature_branch rejects 7-digit date."""
-        result = source_and_call('check_feature_branch "2026031-143022-feat" "true"')
-        assert result.returncode != 0
-
-    def test_rejects_timestamp_without_slug(self):
-        """check_feature_branch rejects timestamp-like branch missing trailing slug."""
-        result = source_and_call('check_feature_branch "20260319-143022" "true"')
-        assert result.returncode != 0
-
-    def test_rejects_7digit_timestamp_without_slug(self):
-        """check_feature_branch rejects 7-digit date + 6-digit time without slug."""
-        result = source_and_call('check_feature_branch "2026031-143022" "true"')
-        assert result.returncode != 0
-
-    def test_accepts_single_prefix_sequential(self):
-        """Optional gitflow-style prefix: one segment + sequential feature name."""
-        result = source_and_call('check_feature_branch "feat/004-my-feature" "true"')
-        assert result.returncode == 0
-
-    def test_accepts_single_prefix_timestamp(self):
-        """Optional prefix + timestamp-style feature name."""
-        result = source_and_call('check_feature_branch "release/20260319-143022-feat" "true"')
-        assert result.returncode == 0
-
-    def test_rejects_invalid_suffix_with_single_prefix(self):
-        result = source_and_call('check_feature_branch "feat/main" "true"')
-        assert result.returncode != 0
-        assert "feat/main" in result.stderr
-
-    def test_rejects_two_level_prefix_before_feature(self):
-        """More than one slash: no stripping; whole name must match (fails)."""
-        result = source_and_call('check_feature_branch "feat/fix/004-feat" "true"')
-        assert result.returncode != 0
-
-    def test_rejects_malformed_timestamp_with_prefix(self):
-        result = source_and_call('check_feature_branch "feat/2026031-143022-feat" "true"')
+    def test_has_git_removed(self):
+        result = source_and_call('declare -F has_git >/dev/null')
         assert result.returncode != 0
 
 
@@ -344,50 +291,11 @@ class TestCheckFeatureBranch:
 
 
 @requires_bash
-class TestFindFeatureDirByPrefix:
-    def test_timestamp_branch(self, tmp_path: Path):
-        """Test 10: find_feature_dir_by_prefix with timestamp branch."""
-        (tmp_path / "specs" / "20260319-143022-user-auth").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "20260319-143022-user-auth"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-user-auth"
-
-    def test_cross_branch_prefix(self, tmp_path: Path):
-        """Test 11: find_feature_dir_by_prefix cross-branch (different suffix, same timestamp)."""
-        (tmp_path / "specs" / "20260319-143022-original-feat").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "20260319-143022-different-name"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-original-feat"
-
-    def test_four_digit_sequential_prefix(self, tmp_path: Path):
-        """find_feature_dir_by_prefix resolves 4+ digit sequential prefix."""
-        (tmp_path / "specs" / "1000-original-feat").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "1000-different-name"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/1000-original-feat"
-
-    def test_sequential_with_single_path_prefix(self, tmp_path: Path):
-        """Strip one optional prefix segment before prefix directory lookup."""
-        (tmp_path / "specs" / "004-only-dir").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "feat/004-other-suffix"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/004-only-dir"
-
-    def test_timestamp_with_single_path_prefix_cross_branch(self, tmp_path: Path):
-        (tmp_path / "specs" / "20260319-143022-canonical").mkdir(parents=True)
-        result = source_and_call(
-            f'find_feature_dir_by_prefix "{tmp_path}" "hotfix/20260319-143022-alias"'
-        )
-        assert result.returncode == 0
-        assert result.stdout.strip() == f"{tmp_path}/specs/20260319-143022-canonical"
+class TestFindFeatureDirByPrefixRemoved:
+    def test_find_feature_dir_by_prefix_removed(self):
+        """Directory scanning helper is removed from core common.sh."""
+        result = source_and_call('declare -F find_feature_dir_by_prefix >/dev/null')
+        assert result.returncode != 0
 
 
 # ── get_feature_paths + single-prefix integration ───────────────────────────
@@ -395,26 +303,29 @@ class TestFindFeatureDirByPrefix:
 
 class TestGetFeaturePathsSinglePrefix:
     @requires_bash
-    def test_bash_specify_feature_prefixed_resolves_by_prefix(self, tmp_path: Path):
-        """get_feature_paths: SPECIFY_FEATURE with one optional prefix uses effective name for lookup."""
+    def test_bash_specify_feature_prefixed_requires_explicit_feature_context(
+        self, tmp_path: Path
+    ):
+        """SPECIFY_FEATURE alone no longer triggers path lookup in bash."""
         (tmp_path / ".specify").mkdir()
         (tmp_path / "specs" / "001-target-spec").mkdir(parents=True)
         cmd = (
             f'cd "{tmp_path}" && export SPECIFY_FEATURE="feat/001-other" && '
-            f'source "{COMMON_SH}" && eval "$(get_feature_paths)" && printf "%s" "$FEATURE_DIR"'
+            f'source "{COMMON_SH}" && get_feature_paths'
         )
         result = subprocess.run(
             ["bash", "-c", cmd],
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, result.stderr
-        assert result.stdout.strip() == str(tmp_path / "specs" / "001-target-spec")
-
+        assert result.returncode != 0
+        assert "Feature directory not found" in result.stderr
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
-    def test_ps_specify_feature_prefixed_resolves_by_prefix(self, git_repo: Path):
-        """PowerShell Get-FeaturePathsEnv: same prefix stripping as bash."""
+    def test_ps_specify_feature_prefixed_requires_explicit_feature_context(
+        self, git_repo: Path
+    ):
+        """PowerShell also requires feature.json or SPECIFY_FEATURE_DIRECTORY."""
         common_ps = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
         spec_dir = git_repo / "specs" / "001-ps-prefix-spec"
         spec_dir.mkdir(parents=True)
@@ -426,14 +337,8 @@ class TestGetFeaturePathsSinglePrefix:
             text=True,
             env={**os.environ, "SPECIFY_FEATURE": "feat/001-other"},
         )
-        assert result.returncode == 0, result.stderr
-        for line in result.stdout.splitlines():
-            if line.startswith("FEATURE_DIR="):
-                val = line.split("=", 1)[1].strip()
-                assert val == str(spec_dir)
-                break
-        else:
-            pytest.fail("FEATURE_DIR not found in PowerShell output")
+        assert result.returncode != 0
+        assert "Feature directory not found" in (result.stderr + result.stdout)
 
 
 # ── get_current_branch Tests ─────────────────────────────────────────────────
@@ -453,12 +358,11 @@ class TestGetCurrentBranch:
 @requires_bash
 class TestNoGitTimestamp:
     def test_no_git_timestamp(self, no_git_dir: Path):
-        """Test 13: No-git repo + timestamp creates spec dir with warning."""
+        """Test 13: Timestamp mode works without git and creates a spec dir."""
         result = run_script(no_git_dir, "--timestamp", "--short-name", "no-git-feat", "No git feature")
         assert result.returncode == 0, result.stderr
         spec_dirs = list((no_git_dir / "specs").iterdir()) if (no_git_dir / "specs").exists() else []
         assert len(spec_dirs) > 0, "spec dir not created"
-        assert "git" in result.stderr.lower() or "warning" in result.stderr.lower()
 
 
 # ── E2E Flow Tests ───────────────────────────────────────────────────────────
@@ -467,32 +371,65 @@ class TestNoGitTimestamp:
 @requires_bash
 class TestE2EFlow:
     def test_e2e_timestamp(self, git_repo: Path):
-        """Test 14: E2E timestamp flow — branch, dir, validation."""
-        run_script(git_repo, "--timestamp", "--short-name", "e2e-ts", "E2E timestamp test")
-        branch = subprocess.run(
+        """Test 14: E2E timestamp flow creates only a feature directory."""
+        before = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=git_repo,
             capture_output=True,
             text=True,
+            check=True,
         ).stdout.strip()
-        assert re.match(r"^\d{8}-\d{6}-e2e-ts$", branch), f"branch: {branch}"
-        assert (git_repo / "specs" / branch).is_dir()
-        val = source_and_call(f'check_feature_branch "{branch}" "true"')
-        assert val.returncode == 0
+        result = run_script(git_repo, "--timestamp", "--short-name", "e2e-ts", "E2E timestamp test")
+        assert result.returncode == 0, result.stderr
+
+        branch_name = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch_name = line.split(":", 1)[1].strip()
+                break
+
+        assert branch_name is not None
+        assert re.match(r"^\d{8}-\d{6}-e2e-ts$", branch_name), f"branch: {branch_name}"
+        assert (git_repo / "specs" / branch_name).is_dir()
+
+        after = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert after == before
 
     def test_e2e_sequential(self, git_repo: Path):
-        """Test 15: E2E sequential flow (regression guard)."""
-        run_script(git_repo, "--short-name", "seq-feat", "Sequential feature")
-        branch = subprocess.run(
+        """Test 15: E2E sequential flow creates only a feature directory."""
+        before = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=git_repo,
             capture_output=True,
             text=True,
+            check=True,
         ).stdout.strip()
-        assert re.match(r"^\d{3,}-seq-feat$", branch), f"branch: {branch}"
-        assert (git_repo / "specs" / branch).is_dir()
-        val = source_and_call(f'check_feature_branch "{branch}" "true"')
-        assert val.returncode == 0
+        result = run_script(git_repo, "--short-name", "seq-feat", "Sequential feature")
+        assert result.returncode == 0, result.stderr
+
+        branch_name = None
+        for line in result.stdout.splitlines():
+            if line.startswith("BRANCH_NAME:"):
+                branch_name = line.split(":", 1)[1].strip()
+                break
+
+        assert branch_name == "001-seq-feat"
+        assert (git_repo / "specs" / branch_name).is_dir()
+
+        after = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        assert after == before
 
 
 # ── Allow Existing Branch Tests ──────────────────────────────────────────────
@@ -500,67 +437,22 @@ class TestE2EFlow:
 
 @requires_bash
 class TestAllowExistingBranch:
-    def test_allow_existing_switches_to_branch(self, git_repo: Path):
-        """T006: Pre-create branch, verify script switches to it."""
-        subprocess.run(
-            ["git", "checkout", "-b", "004-pre-exist"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "-"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
+    def test_allow_existing_reuses_existing_feature_dir(self, git_repo: Path):
+        """T006: Existing feature directory can be reused when the flag is set."""
+        feature_dir = git_repo / "specs" / "004-pre-exist"
+        feature_dir.mkdir(parents=True)
+
         result = run_script(
             git_repo, "--allow-existing-branch", "--short-name", "pre-exist",
             "--number", "4", "Pre-existing feature",
         )
         assert result.returncode == 0, result.stderr
-        current = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=git_repo, capture_output=True, text=True,
-        ).stdout.strip()
-        assert current == "004-pre-exist", f"expected 004-pre-exist, got {current}"
-
-    def test_allow_existing_already_on_branch(self, git_repo: Path):
-        """T007: Verify success when already on the target branch."""
-        subprocess.run(
-            ["git", "checkout", "-b", "005-already-on"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        result = run_script(
-            git_repo, "--allow-existing-branch", "--short-name", "already-on",
-            "--number", "5", "Already on branch",
-        )
-        assert result.returncode == 0, result.stderr
-
-    def test_allow_existing_creates_spec_dir(self, git_repo: Path):
-        """T008: Verify spec directory created on existing branch."""
-        subprocess.run(
-            ["git", "checkout", "-b", "006-spec-dir"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "-"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        result = run_script(
-            git_repo, "--allow-existing-branch", "--short-name", "spec-dir",
-            "--number", "6", "Spec dir feature",
-        )
-        assert result.returncode == 0, result.stderr
-        assert (git_repo / "specs" / "006-spec-dir").is_dir()
-        assert (git_repo / "specs" / "006-spec-dir" / "spec.md").exists()
+        assert feature_dir.is_dir()
+        assert (feature_dir / "spec.md").exists()
 
     def test_without_flag_still_errors(self, git_repo: Path):
-        """T009: Verify backwards compatibility (error without flag)."""
-        subprocess.run(
-            ["git", "checkout", "-b", "007-no-flag"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "-"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
+        """T009: Existing feature directories still fail without the flag."""
+        (git_repo / "specs" / "007-no-flag").mkdir(parents=True)
         result = run_script(
             git_repo, "--short-name", "no-flag", "--number", "7", "No flag feature",
         )
@@ -569,18 +461,11 @@ class TestAllowExistingBranch:
 
     def test_allow_existing_no_overwrite_spec(self, git_repo: Path):
         """T010: Pre-create spec.md with content, verify it is preserved."""
-        subprocess.run(
-            ["git", "checkout", "-b", "008-no-overwrite"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
         spec_dir = git_repo / "specs" / "008-no-overwrite"
         spec_dir.mkdir(parents=True)
         spec_file = spec_dir / "spec.md"
         spec_file.write_text("# My custom spec content\n")
-        subprocess.run(
-            ["git", "checkout", "-"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
+
         result = run_script(
             git_repo, "--allow-existing-branch", "--short-name", "no-overwrite",
             "--number", "8", "No overwrite feature",
@@ -588,31 +473,20 @@ class TestAllowExistingBranch:
         assert result.returncode == 0, result.stderr
         assert spec_file.read_text() == "# My custom spec content\n"
 
-    def test_allow_existing_creates_branch_if_not_exists(self, git_repo: Path):
-        """T011: Verify normal creation when branch doesn't exist."""
+    def test_allow_existing_creates_feature_dir_when_missing(self, git_repo: Path):
+        """T011: Verify normal directory creation when the feature dir does not exist."""
         result = run_script(
             git_repo, "--allow-existing-branch", "--short-name", "new-branch",
             "New branch feature",
         )
         assert result.returncode == 0, result.stderr
-        current = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=git_repo, capture_output=True, text=True,
-        ).stdout.strip()
-        assert "new-branch" in current
+        assert (git_repo / "specs" / "001-new-branch").is_dir()
 
     def test_allow_existing_with_json(self, git_repo: Path):
         """T012: Verify JSON output is correct."""
         import json
 
-        subprocess.run(
-            ["git", "checkout", "-b", "009-json-test"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "-"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
+        (git_repo / "specs" / "009-json-test").mkdir(parents=True)
         result = run_script(
             git_repo, "--allow-existing-branch", "--json", "--short-name", "json-test",
             "--number", "9", "JSON test",
@@ -622,49 +496,12 @@ class TestAllowExistingBranch:
         assert data["BRANCH_NAME"] == "009-json-test"
 
     def test_allow_existing_no_git(self, no_git_dir: Path):
-        """T013: Verify flag is silently ignored in non-git repos."""
+        """T013: Verify flag also works in non-git repos."""
         result = run_script(
             no_git_dir, "--allow-existing-branch", "--short-name", "no-git",
             "No git feature",
         )
         assert result.returncode == 0, result.stderr
-
-    def test_allow_existing_surfaces_checkout_error(self, git_repo: Path):
-        """Checkout failures on an existing branch should include Git's stderr."""
-        shared_file = git_repo / "shared.txt"
-        shared_file.write_text("base\n")
-        subprocess.run(
-            ["git", "add", "shared.txt"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "commit", "-m", "add shared file", "-q"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "-b", "010-checkout-failure"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        shared_file.write_text("branch version\n")
-        subprocess.run(
-            ["git", "commit", "-am", "branch change", "-q"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "checkout", "-"],
-            cwd=git_repo, check=True, capture_output=True,
-        )
-        shared_file.write_text("uncommitted main change\n")
-
-        result = run_script(
-            git_repo, "--allow-existing-branch", "--short-name", "checkout-failure",
-            "--number", "10", "Checkout failure",
-        )
-
-        assert result.returncode != 0, "checkout should fail with conflicting local changes"
-        assert "Failed to switch to existing branch '010-checkout-failure'" in result.stderr
-        assert "would be overwritten by checkout" in result.stderr
-        assert "shared.txt" in result.stderr
 
 
 class TestAllowExistingBranchPowerShell:
@@ -672,14 +509,13 @@ class TestAllowExistingBranchPowerShell:
         """Static guard: PS script exposes and uses -AllowExistingBranch."""
         contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
         assert "-AllowExistingBranch" in contents
-        # Ensure the flag is referenced in script logic, not just declared
         assert "AllowExistingBranch" in contents.replace("-AllowExistingBranch", "")
 
-    def test_powershell_surfaces_checkout_errors(self):
-        """Static guard: PS script preserves checkout stderr on existing-branch failures."""
+    def test_powershell_reuses_existing_feature_dir(self):
+        """Static guard: PS script handles existing feature directories without git."""
         contents = CREATE_FEATURE_PS.read_text(encoding="utf-8")
-        assert "$switchBranchError = git checkout -q $branchName 2>&1 | Out-String" in contents
-        assert "exists but could not be checked out.`n$($switchBranchError.Trim())" in contents
+        assert "Feature directory '$featureDir' already exists" in contents
+        assert "-not $AllowExistingBranch" in contents
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     @pytest.mark.skipif(
@@ -754,20 +590,27 @@ class TestDryRun:
                 branch = line.split(":", 1)[1].strip()
         assert branch == "003-new-feat", f"expected 003-new-feat, got: {branch}"
 
-    def test_dry_run_no_branch_created(self, git_repo: Path):
-        """T010: Dry-run does not create a git branch."""
+    def test_dry_run_does_not_change_git_branch(self, git_repo: Path):
+        """T010: Dry-run leaves the current git branch untouched."""
+        before = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
         result = run_script(
             git_repo, "--dry-run", "--short-name", "no-branch", "No branch feature"
         )
         assert result.returncode == 0, result.stderr
-        branches = subprocess.run(
-            ["git", "branch", "--list", "*no-branch*"],
+        after = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=git_repo,
             capture_output=True,
             text=True,
-        )
-        assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
-        assert branches.stdout.strip() == "", "branch should not exist after dry-run"
+            check=True,
+        ).stdout.strip()
+        assert after == before
 
     def test_dry_run_no_spec_dir_created(self, git_repo: Path):
         """T011: Dry-run does not create any directories (including root specs/)."""
@@ -832,50 +675,22 @@ class TestDryRun:
                 real_branch = line.split(":", 1)[1].strip()
         assert dry_branch == real_branch, f"dry={dry_branch} != real={real_branch}"
 
-    def test_dry_run_accounts_for_remote_branches(self, git_repo: Path):
-        """Dry-run queries remote refs via ls-remote (no fetch) for accurate numbering."""
+    def test_dry_run_ignores_git_branches(self, git_repo: Path):
+        """Dry-run uses only spec directories for numbering."""
         (git_repo / "specs" / "001-existing").mkdir(parents=True)
-
-        # Set up a bare remote and push (use subdirs of git_repo for isolation)
-        remote_dir = git_repo / "test-remote.git"
         subprocess.run(
-            ["git", "init", "--bare", str(remote_dir)],
-            check=True, capture_output=True,
+            ["git", "checkout", "-b", "005-git-only"],
+            cwd=git_repo,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
-            ["git", "remote", "add", "origin", str(remote_dir)],
-            check=True, cwd=git_repo, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "push", "-u", "origin", "HEAD"],
-            check=True, cwd=git_repo, capture_output=True,
+            ["git", "checkout", "-"],
+            cwd=git_repo,
+            check=True,
+            capture_output=True,
         )
 
-        # Clone into a second copy, create a higher-numbered branch, push it
-        second_clone = git_repo / "test-second-clone"
-        subprocess.run(
-            ["git", "clone", str(remote_dir), str(second_clone)],
-            check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.email", "test@example.com"],
-            cwd=second_clone, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Test User"],
-            cwd=second_clone, check=True, capture_output=True,
-        )
-        # Create branch 005 on the remote (higher than local 001)
-        subprocess.run(
-            ["git", "checkout", "-b", "005-remote-only"],
-            cwd=second_clone, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "push", "origin", "005-remote-only"],
-            cwd=second_clone, check=True, capture_output=True,
-        )
-
-        # Primary repo: dry-run should see 005 via ls-remote and return 006
         dry_result = run_script(
             git_repo, "--dry-run", "--short-name", "remote-test", "Remote test"
         )
@@ -884,7 +699,7 @@ class TestDryRun:
         for line in dry_result.stdout.splitlines():
             if line.startswith("BRANCH_NAME:"):
                 dry_branch = line.split(":", 1)[1].strip()
-        assert dry_branch == "006-remote-test", f"expected 006-remote-test, got: {dry_branch}"
+        assert dry_branch == "002-remote-test", f"expected 002-remote-test, got: {dry_branch}"
 
     def test_dry_run_json_includes_field(self, git_repo: Path):
         """T015: JSON output includes DRY_RUN field when --dry-run is active."""
@@ -910,7 +725,14 @@ class TestDryRun:
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
 
     def test_dry_run_with_timestamp(self, git_repo: Path):
-        """T017: Dry-run works with --timestamp flag."""
+        """T017: Dry-run works with --timestamp flag without mutating git state."""
+        before = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
         result = run_script(
             git_repo, "--dry-run", "--timestamp", "--short-name", "ts-feat", "Timestamp feature"
         )
@@ -921,15 +743,14 @@ class TestDryRun:
                 branch = line.split(":", 1)[1].strip()
         assert branch is not None, "no BRANCH_NAME in output"
         assert re.match(r"^\d{8}-\d{6}-ts-feat$", branch), f"unexpected: {branch}"
-        # Verify no side effects
-        branches = subprocess.run(
-            ["git", "branch", "--list", f"*ts-feat*"],
+        after = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=git_repo,
             capture_output=True,
             text=True,
-        )
-        assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
-        assert branches.stdout.strip() == ""
+            check=True,
+        ).stdout.strip()
+        assert after == before
 
     def test_dry_run_with_number(self, git_repo: Path):
         """T018: Dry-run works with --number flag."""
@@ -989,20 +810,27 @@ class TestPowerShellDryRun:
                 branch = line.split(":", 1)[1].strip()
         assert branch == "002-ps-feat", f"expected 002-ps-feat, got: {branch}"
 
-    def test_ps_dry_run_no_branch_created(self, ps_git_repo: Path):
-        """PowerShell -DryRun does not create a git branch."""
+    def test_ps_dry_run_does_not_change_git_branch(self, ps_git_repo: Path):
+        """PowerShell -DryRun leaves the current git branch untouched."""
+        before = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=ps_git_repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
         result = run_ps_script(
             ps_git_repo, "-DryRun", "-ShortName", "no-ps-branch", "No branch"
         )
         assert result.returncode == 0, result.stderr
-        branches = subprocess.run(
-            ["git", "branch", "--list", "*no-ps-branch*"],
+        after = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=ps_git_repo,
             capture_output=True,
             text=True,
-        )
-        assert branches.returncode == 0, f"'git branch --list' failed: {branches.stderr}"
-        assert branches.stdout.strip() == "", "branch should not exist after dry-run"
+            check=True,
+        ).stdout.strip()
+        assert after == before
 
     def test_ps_dry_run_no_spec_dir_created(self, ps_git_repo: Path):
         """PowerShell -DryRun does not create specs/ directory."""
@@ -1046,10 +874,10 @@ class TestPowerShellDryRun:
 
 @requires_bash
 class TestGitBranchNameOverrideBash:
-    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.sh."""
+    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature-branch.sh."""
 
     def _run_ext(self, ext_git_repo: Path, env_extras: dict, *extra_args: str):
-        script = ext_git_repo / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature.sh"
+        script = ext_git_repo / ".specify" / "extensions" / "git" / "scripts" / "bash" / "create-new-feature-branch.sh"
         cmd = ["bash", str(script), "--json", *extra_args, "ignored"]
         return subprocess.run(cmd, cwd=ext_git_repo, capture_output=True, text=True,
                               env={**os.environ, **env_extras})
@@ -1101,10 +929,10 @@ class TestGitBranchNameOverrideBash:
 
 @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
 class TestGitBranchNameOverridePowerShell:
-    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature.ps1."""
+    """Tests for GIT_BRANCH_NAME env var override in extension create-new-feature-branch.ps1."""
 
     def _run_ext(self, ext_ps_git_repo: Path, env_extras: dict):
-        script = ext_ps_git_repo / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature.ps1"
+        script = ext_ps_git_repo / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
         return subprocess.run(
             ["pwsh", "-NoProfile", "-File", str(script), "-Json", "ignored"],
             cwd=ext_ps_git_repo, capture_output=True, text=True,
@@ -1230,9 +1058,8 @@ class TestFeatureDirectoryResolution:
             pytest.fail("FEATURE_DIR not found in output")
 
     @requires_bash
-    def test_fallback_to_branch_lookup(self, git_repo: Path):
-        """Without env var or feature.json, falls back to branch-based lookup."""
-        subprocess.run(["git", "checkout", "-q", "-b", "001-test-feat"], cwd=git_repo, check=True)
+    def test_errors_without_env_var_or_feature_json(self, git_repo: Path):
+        """Without env var or feature.json, get_feature_paths now errors."""
         spec_dir = git_repo / "specs" / "001-test-feat"
         spec_dir.mkdir(parents=True)
 
@@ -1242,14 +1069,8 @@ class TestFeatureDirectoryResolution:
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, result.stderr
-        for line in result.stdout.splitlines():
-            if line.startswith("FEATURE_DIR="):
-                val = line.split("=", 1)[1].strip("'\"")
-                assert val == str(spec_dir)
-                break
-        else:
-            pytest.fail("FEATURE_DIR not found in output")
+        assert result.returncode != 0
+        assert "Feature directory not found" in result.stderr
 
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_ps_env_var_overrides_branch_lookup(self, git_repo: Path):
@@ -1343,7 +1164,7 @@ class TestDescriptionQuoting:
         ids=["apostrophe", "double-quotes", "backslashes", "mixed"],
     )
     def test_ext_script_handles_special_chars(self, ext_git_repo: Path, description: str):
-        """Extension create-new-feature.sh succeeds with special characters in description."""
+        """Extension create-new-feature-branch.sh succeeds with special characters in description."""
         script = (
             ext_git_repo
             / ".specify"
@@ -1351,7 +1172,7 @@ class TestDescriptionQuoting:
             / "git"
             / "scripts"
             / "bash"
-            / "create-new-feature.sh"
+            / "create-new-feature-branch.sh"
         )
         result = subprocess.run(
             ["bash", str(script), "--dry-run", "--short-name", "feat", description],

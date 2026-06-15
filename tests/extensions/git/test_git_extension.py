@@ -3,7 +3,7 @@ Tests for the bundled git extension (extensions/git/).
 
 Validates:
 - extension.yml manifest
-- Bash scripts (create-new-feature.sh, initialize-repo.sh, auto-commit.sh, git-common.sh)
+- Bash scripts (create-new-feature-branch.sh, initialize-repo.sh, auto-commit.sh, git-common.sh)
 - PowerShell scripts (where pwsh is available)
 - Config reading from git-config.yml
 - Extension install via ExtensionManager
@@ -193,11 +193,11 @@ class TestGitExtensionInstall:
         manager.install_from_directory(EXT_DIR, "0.5.0", register_commands=False)
 
         ext_installed = tmp_path / ".specify" / "extensions" / "git"
-        assert (ext_installed / "scripts" / "bash" / "create-new-feature.sh").is_file()
+        assert (ext_installed / "scripts" / "bash" / "create-new-feature-branch.sh").is_file()
         assert (ext_installed / "scripts" / "bash" / "initialize-repo.sh").is_file()
         assert (ext_installed / "scripts" / "bash" / "auto-commit.sh").is_file()
         assert (ext_installed / "scripts" / "bash" / "git-common.sh").is_file()
-        assert (ext_installed / "scripts" / "powershell" / "create-new-feature.ps1").is_file()
+        assert (ext_installed / "scripts" / "powershell" / "create-new-feature-branch.ps1").is_file()
         assert (ext_installed / "scripts" / "powershell" / "initialize-repo.ps1").is_file()
         assert (ext_installed / "scripts" / "powershell" / "auto-commit.ps1").is_file()
         assert (ext_installed / "scripts" / "powershell" / "git-common.ps1").is_file()
@@ -270,16 +270,16 @@ class TestInitializeRepoPowerShell:
         assert result.returncode == 0
 
 
-# ── create-new-feature.sh Tests ──────────────────────────────────────────────
+# ── create-new-feature-branch.sh Tests ──────────────────────────────────────────────
 
 
 @requires_bash
 class TestCreateFeatureBash:
     def test_creates_branch_sequential(self, tmp_path: Path):
-        """Extension create-new-feature.sh creates sequential branch."""
+        """Extension create-new-feature-branch.sh creates sequential branch."""
         project = _setup_project(tmp_path)
         result = _run_bash(
-            "create-new-feature.sh", project,
+            "create-new-feature-branch.sh", project,
             "--json", "--short-name", "user-auth", "Add user authentication",
         )
         assert result.returncode == 0, result.stderr
@@ -288,10 +288,10 @@ class TestCreateFeatureBash:
         assert data["FEATURE_NUM"] == "001"
 
     def test_creates_branch_timestamp(self, tmp_path: Path):
-        """Extension create-new-feature.sh creates timestamp branch."""
+        """Extension create-new-feature-branch.sh creates timestamp branch."""
         project = _setup_project(tmp_path)
         result = _run_bash(
-            "create-new-feature.sh", project,
+            "create-new-feature-branch.sh", project,
             "--json", "--timestamp", "--short-name", "feat", "Feature",
         )
         assert result.returncode == 0, result.stderr
@@ -305,7 +305,7 @@ class TestCreateFeatureBash:
         (project / "specs" / "002-second").mkdir(parents=True)
 
         result = _run_bash(
-            "create-new-feature.sh", project,
+            "create-new-feature-branch.sh", project,
             "--json", "--short-name", "third", "Third feature",
         )
         assert result.returncode == 0, result.stderr
@@ -313,10 +313,10 @@ class TestCreateFeatureBash:
         assert data["FEATURE_NUM"] == "003"
 
     def test_no_git_graceful_degradation(self, tmp_path: Path):
-        """create-new-feature.sh works without git (outputs branch name, skips branch creation)."""
+        """create-new-feature-branch.sh works without git (outputs branch name, skips branch creation)."""
         project = _setup_project(tmp_path, git=False)
         result = _run_bash(
-            "create-new-feature.sh", project,
+            "create-new-feature-branch.sh", project,
             "--json", "--short-name", "no-git", "No git feature",
         )
         assert result.returncode == 0, result.stderr
@@ -329,7 +329,7 @@ class TestCreateFeatureBash:
         """--dry-run computes branch name without creating anything."""
         project = _setup_project(tmp_path)
         result = _run_bash(
-            "create-new-feature.sh", project,
+            "create-new-feature-branch.sh", project,
             "--json", "--dry-run", "--short-name", "dry", "Dry run test",
         )
         assert result.returncode == 0, result.stderr
@@ -341,10 +341,10 @@ class TestCreateFeatureBash:
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestCreateFeaturePowerShell:
     def test_creates_branch_sequential(self, tmp_path: Path):
-        """Extension create-new-feature.ps1 creates sequential branch."""
+        """Extension create-new-feature-branch.ps1 creates sequential branch."""
         project = _setup_project(tmp_path)
         result = _run_pwsh(
-            "create-new-feature.ps1", project,
+            "create-new-feature-branch.ps1", project,
             "-Json", "-ShortName", "user-auth", "Add user authentication",
         )
         assert result.returncode == 0, result.stderr
@@ -352,10 +352,10 @@ class TestCreateFeaturePowerShell:
         assert data["BRANCH_NAME"] == "001-user-auth"
 
     def test_creates_branch_timestamp(self, tmp_path: Path):
-        """Extension create-new-feature.ps1 creates timestamp branch."""
+        """Extension create-new-feature-branch.ps1 creates timestamp branch."""
         project = _setup_project(tmp_path)
         result = _run_pwsh(
-            "create-new-feature.ps1", project,
+            "create-new-feature-branch.ps1", project,
             "-Json", "-Timestamp", "-ShortName", "feat", "Feature",
         )
         assert result.returncode == 0, result.stderr
@@ -363,15 +363,15 @@ class TestCreateFeaturePowerShell:
         assert re.match(r"^\d{8}-\d{6}-feat$", data["BRANCH_NAME"])
 
     def test_no_git_graceful_degradation(self, tmp_path: Path):
-        """create-new-feature.ps1 works without git."""
+        """create-new-feature-branch.ps1 works without git."""
         project = _setup_project(tmp_path, git=False)
         result = _run_pwsh(
-            "create-new-feature.ps1", project,
+            "create-new-feature-branch.ps1", project,
             "-Json", "-ShortName", "no-git", "No git feature",
         )
         assert result.returncode == 0, result.stderr
         # pwsh may prefix warnings to stdout; find the JSON line
-        json_line = [l for l in result.stdout.splitlines() if l.strip().startswith("{")]
+        json_line = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
         assert json_line, f"No JSON in output: {result.stdout}"
         data = json.loads(json_line[-1])
         assert "BRANCH_NAME" in data

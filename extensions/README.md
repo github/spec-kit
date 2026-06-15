@@ -76,7 +76,7 @@ specify extension add <extension-name> --from https://github.com/org/spec-kit-ex
 
 🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
 
-See the [Community Extensions](../README.md#-community-extensions) section in the main README for the full list of available community-contributed extensions.
+See the [Community Extensions](https://github.github.io/spec-kit/community/extensions.html) page for the full list of available community-contributed extensions.
 
 For the raw catalog data, see [`catalog.community.json`](catalog.community.json).
 

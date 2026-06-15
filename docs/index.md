@@ -43,7 +43,7 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">91 community extensions</span> (50+ authors), <span class="pillar-stat">18 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
+<span class="pillar-stat">105 community extensions</span> (60+ authors), <span class="pillar-stat">22 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
 
 Including entirely different SDD processes:
 
@@ -82,7 +82,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 
 <div class="stats-grid">
   <div class="stat-item">
-    <span class="stat-number">96K+</span>
+    <span class="stat-number">106K+</span>
     <span class="stat-label">GitHub stars</span>
   </div>
   <div class="stat-item">
@@ -94,11 +94,11 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
     <span class="stat-label">Integrations</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">91</span>
+    <span class="stat-number">105</span>
     <span class="stat-label">Extensions</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">18</span>
+    <span class="stat-number">22</span>
     <span class="stat-label">Presets</span>
   </div>
   <div class="stat-item">
@@ -150,3 +150,5 @@ specify init my-project --integration copilot
 Ready to start? Follow the [Quick Start Guide](quickstart.md).
 
 </div>
+
+<p class="text-end small text-body-secondary">Last updated: May 27, 2026</p>

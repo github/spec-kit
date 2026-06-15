@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
-# Git extension: create-new-feature.ps1
-# Adapted from core scripts/powershell/create-new-feature.ps1 for extension layout.
+# Git extension: create-new-feature-branch.ps1
+# Creates a git feature branch only. The feature directory and spec file
+# are created by the core create-new-feature.ps1 script.
 # Sources common.ps1 from the project's installed scripts, falling back to
 # git-common.ps1 for minimal git helpers.
 [CmdletBinding()]
@@ -19,7 +20,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Host "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
@@ -37,7 +38,7 @@ if ($Help) {
 }
 
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Error "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
     exit 1
 }
 

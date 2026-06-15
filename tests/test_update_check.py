@@ -122,6 +122,23 @@ class TestCache:
 
         assert not victim.exists()
 
+    def test_write_refuses_symlinked_ancestor_dir(self, tmp_path):
+        # An ancestor *above* the immediate parent is the symlink, and the
+        # cache directory itself does not exist yet. mkdir(parents=True) would
+        # happily create the tail through the symlinked ancestor; the
+        # component-by-component walk must refuse instead.
+        real_target_dir = tmp_path / "victim_dir"
+        real_target_dir.mkdir()
+
+        link_ancestor = tmp_path / "cache_root"
+        os.symlink(real_target_dir, link_ancestor)
+        cache_file = link_ancestor / "specify-cli" / "version_check.json"
+
+        _write_update_check_cache(cache_file, "v9.9.9")
+
+        assert not (real_target_dir / "specify-cli").exists()
+        assert not cache_file.exists()
+
 
 
 class TestCheckForUpdates:
