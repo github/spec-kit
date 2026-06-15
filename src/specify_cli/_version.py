@@ -18,6 +18,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1427,3 +1428,177 @@ def self_upgrade(
         f"Upgraded specify-cli: {pre_upgrade_display} → {verified_display}",
         soft_wrap=True,
     )
+
+
+# ===== Opt-in startup update check (addresses #1320) =====
+#
+# Silent companion to `specify self check`: when SPECIFY_ENABLE_UPDATE_CHECK=1
+# is set in an interactive non-CI shell, the top-level Typer callback prints
+# upgrade guidance if a newer release is available. Result is cached for 24h in
+# the platform user-cache dir; cache misses are written even on fetch failure
+# (`latest=null`) so a transient outage doesn't trigger a network call on every
+# CLI invocation. Best-effort: every error path swallows the exception so the
+# helper never fails the command the user actually invoked, though cache misses
+# may add a bounded startup delay while contacting GitHub.
+
+_UPDATE_CHECK_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+
+def _update_check_cache_path() -> Path | None:
+    try:
+        from platformdirs import user_cache_dir
+        return Path(user_cache_dir("specify-cli")) / "version_check.json"
+    except Exception:
+        return None
+
+
+def _read_update_check_cache(path: Path) -> dict | None:
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+
+        checked_at = float(data.get("checked_at", 0))
+        now = time.time()
+        if not math.isfinite(checked_at) or checked_at > now:
+            return None
+        if now - checked_at > _UPDATE_CHECK_CACHE_TTL_SECONDS:
+            return None
+
+        latest = data.get("latest")
+        if latest is not None and not isinstance(latest, str):
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _create_cache_dir_no_symlinks(directory: Path) -> bool:
+    """Create *directory* (with missing parents) without following symlinks.
+
+    ``mkdir(parents=True)`` silently traverses symlinked ancestors, so a planted
+    symlink anywhere on the way could redirect the cache write to an arbitrary
+    location. Instead we walk one component at a time: the deepest pre-existing
+    ancestor must be a real directory (not a symlink), and every component we
+    create is re-checked after ``mkdir``. Everything at/above the first existing
+    directory is trusted, mirroring the project's other safe-write helpers.
+
+    Returns False (and writes nothing) when any managed component is a symlink.
+    """
+    missing: list[Path] = []
+    current = directory
+    while not current.exists():
+        missing.append(current)
+        parent = current.parent
+        if parent == current:  # reached the filesystem root
+            break
+        current = parent
+    # Deepest pre-existing ancestor: refuse if it's a symlink or not a directory.
+    if current.is_symlink() or not current.is_dir():
+        return False
+    # Create the missing tail top-down, one component at a time, re-checking each
+    # so a concurrently-planted symlink can't slip in under a TOCTOU race.
+    for component in reversed(missing):
+        try:
+            component.mkdir()
+        except FileExistsError:
+            pass  # created concurrently; validated immediately below
+        if component.is_symlink() or not component.is_dir():
+            return False
+    return True
+
+
+def _write_update_check_cache(path: Path, latest: str | None) -> None:
+    try:
+        # Refuse to follow symlinks anywhere on the way to the cache file: an
+        # attacker (or misconfigured XDG_CACHE_HOME) could otherwise have us
+        # overwrite an arbitrary file the current user can write.
+        if not _create_cache_dir_no_symlinks(path.parent):
+            return
+        if path.is_symlink():
+            return
+
+        payload = json.dumps({"checked_at": time.time(), "latest": latest}).encode("utf-8")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(str(path), flags, 0o600)
+        try:
+            os.write(fd, payload)
+        finally:
+            os.close(fd)
+    except Exception:
+        # Cache write failures are non-fatal.
+        pass
+
+
+def _should_skip_update_check() -> bool:
+    # Opt-in only: air-gapped / network-constrained environments cannot reach
+    # GitHub, so the check is off by default.
+    if os.environ.get("SPECIFY_ENABLE_UPDATE_CHECK", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return True
+    # Belt-and-suspenders: even when opted in, suppress in CI and when the
+    # caller isn't a TTY so we don't dirty machine-readable output.
+    if os.environ.get("CI"):
+        return True
+    try:
+        if not sys.stdout.isatty():
+            return True
+    except Exception:
+        return True
+    return False
+
+
+def _check_for_updates() -> None:
+    """Print upgrade guidance when a newer spec-kit release is available.
+
+    Fully best-effort — any error (offline, rate-limited, parse failure) is
+    swallowed so the command the user actually invoked is never failed.
+    """
+    if _should_skip_update_check():
+        return
+    try:
+        current = _get_installed_version()
+        if current == "unknown":
+            return
+
+        cache_path = _update_check_cache_path()
+        cached = _read_update_check_cache(cache_path) if cache_path is not None else None
+        if cached is not None:
+            # Fresh cache hit — may be a positive (`latest=v…`) or
+            # negative (`latest=null`) entry; either way, no fetch.
+            latest_tag = cached.get("latest")
+        else:
+            try:
+                latest_tag, _reason = _fetch_latest_release_tag()
+            except Exception:
+                if cache_path is not None:
+                    # Cache malformed/unexpected fetch failures too, so they
+                    # don't trigger a network call on every CLI invocation.
+                    _write_update_check_cache(cache_path, None)
+                return
+            if cache_path is not None:
+                # Cache the attempt even on failure so transient outages
+                # don't trigger a network call on every CLI invocation.
+                _write_update_check_cache(cache_path, latest_tag)
+
+        if not latest_tag:
+            return
+        latest_display = _normalize_tag(latest_tag)
+        if not _is_newer(latest_display, current):
+            return
+
+        console.print(
+            f"[yellow]⚠  A new spec-kit version is available: "
+            f"v{latest_display} (you have v{current})[/yellow]"
+        )
+        console.print(
+            f"[dim]   Upgrade: uv tool install specify-cli --force "
+            f"--from git+https://github.com/github/spec-kit.git@{latest_tag}[/dim]"
+        )
+        console.print(
+            "[dim]   (unset SPECIFY_ENABLE_UPDATE_CHECK to disable this check)[/dim]"
+        )
+    except Exception:
+        # Update check must never surface an error to the user.
+        return

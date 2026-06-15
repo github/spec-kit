@@ -2,6 +2,12 @@
 
 <!-- insert new changelog below this comment -->
 
+## [Unreleased]
+
+### Added
+
+- feat(cli): warn when a newer spec-kit release is available (opt-in via `SPECIFY_ENABLE_UPDATE_CHECK=1`; suppressed when `CI` is set or stdout is not a TTY; result cached for 24h) (#1320)
+
 ## [0.10.2] - 2026-06-11
 
 ### Changed

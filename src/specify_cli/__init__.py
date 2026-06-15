@@ -77,6 +77,7 @@ from ._version import (
     self_app as _self_app,
     self_check as self_check,
     self_upgrade as self_upgrade,
+    _check_for_updates,
 )
 from ._agent_config import (
     AGENT_CONFIG as AGENT_CONFIG,
@@ -113,6 +114,16 @@ def callback(
         show_banner()
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
+    # Addresses #1320: nudge users running outdated CLIs. The `version` subcommand
+    # already surfaces the version, so skip there to avoid double-printing; also
+    # skip help invocations. Runs on bare `specify` too so the banner launch
+    # benefits from the nudge when the user has opted in.
+    if (
+        ctx.invoked_subcommand not in {"version", "self"}
+        and "--help" not in sys.argv
+        and "-h" not in sys.argv
+    ):
+        _check_for_updates()
 
 def _refresh_shared_templates(
     project_path: Path,
