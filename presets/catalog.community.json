@@ -172,7 +172,7 @@
       "name": "Cross-Platform Governance",
       "id": "cross-platform-governance",
       "version": "0.2.0",
-      "description": "Adds Bash + PowerShell parity, Unix man-pages, bilingual comment-based help, Verb-Noun Cmdlet discipline, and audit-ready Spec-Kit run evidence to Spec Kit-managed scripting projects.",
+      "description": "Adds Bash + PowerShell parity, Unix man-pages, bilingual comment-based help, Verb-Noun Cmdlet discipline, and audit-ready Spec Kit run evidence for scripting projects managed with Spec Kit.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
       "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.2.0.zip",
