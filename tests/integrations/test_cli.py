@@ -992,8 +992,8 @@ class TestGitExtensionAutoInstall:
         preset_registry = json.loads((project / ".specify" / "presets" / ".registry").read_text())
         workflow_entry = preset_registry["presets"]["workflow-preset"]
         installed_manifest = yaml.safe_load((preset_dir / "preset.yml").read_text(encoding="utf-8"))
-        assert installed_manifest["preset"]["version"] == "1.3.4"
-        assert workflow_entry["version"] == "1.3.4"
+        assert installed_manifest["preset"]["version"] == "1.3.5"
+        assert workflow_entry["version"] == "1.3.5"
         assert workflow_entry["version"] == installed_manifest["preset"]["version"]
         expected_preset_commands = {
             "speckit.specify",

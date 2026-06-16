@@ -59,8 +59,8 @@ jobs:
           registry = json.loads(Path(".specify/presets/.registry").read_text(encoding="utf-8"))
           manifest_version = manifest["preset"]["version"]
           registry_version = registry["presets"]["workflow-preset"]["version"]
-          assert manifest_version == "1.3.4", manifest_version
-          assert registry_version == "1.3.4", registry_version
+          assert manifest_version == "1.3.5", manifest_version
+          assert registry_version == "1.3.5", registry_version
           assert registry_version == manifest_version
           PY
           test -f .specify/presets/workflow-preset/templates/behavior/behavior-scenarios-draft.json
