@@ -182,7 +182,7 @@ class WorkflowCatalog:
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise WorkflowValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
-            )
+            ) from exc
         if not isinstance(data, dict):
             raise WorkflowValidationError(
                 f"Invalid catalog config: expected a mapping, "
@@ -797,7 +797,7 @@ class StepCatalog:
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise StepValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
-            )
+            ) from exc
         if not isinstance(data, dict):
             raise StepValidationError(
                 f"Invalid catalog config: expected a mapping, "
