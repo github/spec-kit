@@ -1240,15 +1240,13 @@ class TestIntegrationInstall:
         assert "/speckit-specify" in script_content
         assert "/speckit.specify" not in script_content
 
-    def test_install_registers_extension_commands_for_new_agent(self, tmp_path):
-        """Installing a second integration registers enabled extensions for it.
+    def test_install_defers_extension_commands_until_use(self, tmp_path):
+        """Installing a second integration does not register enabled extensions.
 
-        Regression for #2886: only ``switch`` used to register extension
-        commands for the newly active agent, so a second integration added via
-        ``install`` was silently missing the extension commands the first agent
-        had. ``install`` must reach command-registration parity with
-        ``switch``; active-agent-scoped extension skill rendering remains
-        tracked in #2948.
+        Maintainer-requested behavior for #2886: extension command back-fill is
+        limited to ``integration use`` / ``switch`` / ``upgrade``. Plain
+        ``install`` only adds the integration; selecting it with ``use`` then
+        registers the enabled extensions for that agent.
         """
         project = _init_project(tmp_path, "claude")
 
@@ -1268,15 +1266,24 @@ class TestIntegrationInstall:
         ])
         assert result.exit_code == 0, result.output
 
-        # The new agent now carries the git extension's commands too, and the
-        # existing agent's registration is preserved.
+        # Install alone does not back-fill the git extension for the secondary
+        # agent.
         registered = json.loads(registry_path.read_text(encoding="utf-8"))[
             "extensions"
         ]["git"]["registered_commands"]
         assert "claude" in registered, "existing agent registration preserved"
-        assert "codex" in registered, "new agent should receive extension commands (#2886)"
+        assert "codex" not in registered
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
 
-        # codex renders command-derived artifacts as skills (.agents/skills).
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, "use should register extension commands (#2886)"
         assert (
             project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
@@ -1306,18 +1313,12 @@ class TestIntegrationInstall:
             project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
 
-    def test_install_skills_mode_secondary_agent_registers_commands(self, tmp_path):
-        """A non-active skills-mode agent gets extension *commands*, not skills.
+    def test_install_skills_mode_secondary_agent_defers_extension_artifacts(self, tmp_path):
+        """A non-active skills-mode agent gets extension artifacts only on use.
 
-        Pins a known, system-wide limitation (tracked in #2948): extension
-        skill rendering is scoped to the active agent — init-options track a
-        single ``ai`` / ``ai_skills`` pair — so a skills-mode agent installed
-        as a *non-active* secondary integration (Copilot ``--skills``) receives
-        ``.github/agents/*.agent.md`` command files rather than
-        ``.github/skills/.../SKILL.md``. This matches what ``extension add``
-        already does across multiple agents; ``install`` (the #2886 fix) stays
-        consistent with it. ``switch`` differs only because it makes the target
-        the active agent before registering.
+        Plain ``install`` has no extension side effects. Once the secondary
+        Copilot ``--skills`` integration is selected with ``use``, it becomes the
+        active agent and receives extension skills.
         """
         project = _init_project(tmp_path, "claude")
 
@@ -1340,18 +1341,33 @@ class TestIntegrationInstall:
             project / ".github" / "skills" / "speckit-specify" / "SKILL.md"
         ).exists(), "precondition: copilot installed in skills mode"
 
+        # The git extension is not registered for the non-active copilot agent
+        # during install.
         git_meta = json.loads(
             (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
         )["extensions"]["git"]
-        # The git extension is still registered as commands for the non-active
-        # copilot agent...
-        assert "copilot" in git_meta["registered_commands"]
-        assert (
+        assert "copilot" not in git_meta["registered_commands"]
+        assert not (
             project / ".github" / "agents" / "speckit.git.feature.agent.md"
         ).exists()
-        # ...and does NOT follow copilot's core commands into skills, because
-        # skill rendering is scoped to the active agent (claude here); #2948.
         assert not (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+        result = _run_in_project(project, ["integration", "use", "copilot"])
+        assert result.exit_code == 0, result.output
+
+        git_meta = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )["extensions"]["git"]
+        # `use` makes copilot active, so extension artifacts follow copilot's
+        # skills-mode layout.
+        assert "copilot" not in git_meta["registered_commands"]
+        assert "speckit-git-feature" in git_meta["registered_skills"]
+        assert not (
+            project / ".github" / "agents" / "speckit.git.feature.agent.md"
+        ).exists()
+        assert (
             project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
 
@@ -2494,8 +2510,8 @@ class TestIntegrationUpgrade:
         """Upgrading a non-active agent must not touch the active agent's skills.
 
         Regression for the #2886 wiring: extension skill rendering is
-        active-agent-scoped, so routing install/upgrade of a *secondary* agent
-        through ``register_enabled_extensions_for_agent`` used to re-render the
+        active-agent-scoped, so routing upgrade of a *secondary* agent through
+        ``register_enabled_extensions_for_agent`` used to re-render the
         *active* skills-mode agent's extension skills as a side effect —
         resurrecting skill files the user had deliberately deleted. The skills
         pass is now gated on the target being the active agent. (Skills parity

@@ -26,7 +26,6 @@ from ._helpers import (
     _get_speckit_version,
     _read_integration_json,
     _refresh_init_options_speckit_version,
-    _register_extensions_for_agent,
     _remove_integration_json,
     _resolve_integration_options,
     _resolve_script_type,
@@ -188,18 +187,6 @@ def integration_install(
             f"{_cli_error_detail(exc)}"
         )
         raise typer.Exit(1)
-
-    # Register enabled extensions for the newly installed agent so it gets the
-    # same extension commands the existing agents already have for command
-    # registration parity with switch; otherwise a second integration silently
-    # lacks the first agent's extension commands. See #2886. Done after the
-    # try/except (the install has committed) so this best-effort step can never
-    # trigger the rollback above.
-    _register_extensions_for_agent(
-        project_root,
-        integration.key,
-        continuing="The integration was installed, but installed extensions may need re-registration.",
-    )
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' installed successfully")

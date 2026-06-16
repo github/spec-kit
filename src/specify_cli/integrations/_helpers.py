@@ -388,7 +388,7 @@ def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Extension (un)registration helpers (shared by switch / install / upgrade)
+# Extension (un)registration helpers (shared by use / switch / upgrade)
 # ---------------------------------------------------------------------------
 
 def _best_effort_extension_op(
@@ -425,21 +425,23 @@ def _register_extensions_for_agent(
 ) -> None:
     """Register all enabled extensions' commands/skills for ``agent_key``.
 
-    ``switch`` has always re-registered enabled extensions for the agent it
-    activates; ``install`` and ``upgrade`` call this so a newly added (or
-    refreshed) agent reaches command-registration parity. See issue #2886.
+    ``use`` / ``switch`` re-register enabled extensions for the agent they
+    activate; ``upgrade`` backfills them for the refreshed agent. Plain
+    ``install`` deliberately does not call this helper so adding a secondary
+    integration has no extension side effects until it is selected or upgraded.
+    See issue #2886.
 
     Known limitation: extension *skill* rendering is scoped to the active
     agent (init-options track a single ``ai`` / ``ai_skills`` pair). A
     skills-mode agent registered while it is *not* the active agent (e.g.
-    Copilot ``--skills`` installed as a secondary integration) therefore
+    Copilot ``--skills`` registered while non-active) therefore
     receives command files rather than skills here — matching ``extension
-    add``'s multi-agent behavior. ``switch`` avoids this only because it makes
-    the target the active agent first. Per-agent skills parity is tracked in
+    add``'s multi-agent behavior. ``use`` / ``switch`` avoid this because they
+    make the target the active agent first. Per-agent skills parity is tracked in
     #2948.
 
     Best-effort: never aborts the surrounding integration operation. Callers
-    invoke it *after* the install/upgrade/switch transaction has committed so a
+    invoke it *after* the use/upgrade/switch transaction has committed so a
     failure here cannot trigger a rollback.
     """
     _best_effort_extension_op(
