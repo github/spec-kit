@@ -93,7 +93,7 @@
       "name": "Architecture Governance",
       "id": "architecture-governance",
       "version": "0.5.0",
-      "description": "Adds secure software architecture, STRIDE+CAPEC threat modeling, arc42 security cross-cutting concepts, S-ADRs, Zero Trust applicability, OWASP SAMM governance, BSI C3A cloud autonomy, BSI C5 cloud compliance assurance, and audit-ready Spec-Kit run evidence to Spec Kit.",
+      "description": "Adds secure software architecture, STRIDE+CAPEC threat modeling, arc42 security cross-cutting concepts, S-ADRs, Zero Trust applicability, OWASP SAMM governance, BSI C3A cloud autonomy, BSI C5 cloud compliance assurance, and audit-ready Spec Kit run evidence.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-architecture-governance",
       "download_url": "https://github.com/hindermath/spec-kit-preset-architecture-governance/archive/refs/tags/v0.5.0.zip",
