@@ -1538,6 +1538,40 @@
       "created_at": "2026-06-01T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
     },
+    "loop": {
+      "name": "Loop Engineering",
+      "id": "loop",
+      "description": "Engineer safe autonomous agent loops for spec-driven development: a maker/checker split, externalized loop state, and stay-the-engineer guardrails against comprehension debt and cognitive surrender",
+      "author": "formin",
+      "version": "1.0.0",
+      "download_url": "https://github.com/formin/spec-kit-loop/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/formin/spec-kit-loop",
+      "homepage": "https://github.com/formin/spec-kit-loop",
+      "documentation": "https://github.com/formin/spec-kit-loop/blob/main/README.md",
+      "changelog": "https://github.com/formin/spec-kit-loop/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "loop-engineering",
+        "automation",
+        "verification",
+        "maker-checker",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-16T00:00:00Z",
+      "updated_at": "2026-06-16T00:00:00Z"
+    },
     "m365": {
       "name": "Microsoft 365 Integration",
       "id": "m365",
