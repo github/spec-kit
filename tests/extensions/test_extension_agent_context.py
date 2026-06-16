@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -155,6 +156,8 @@ def shlex_quote(value: str) -> str:
 
 def _run_powershell_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
     script = EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
+    env = os.environ.copy()
+    env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
     return subprocess.run(
         [
             POWERSHELL,
@@ -165,6 +168,7 @@ def _run_powershell_agent_context_script(project_root: Path) -> subprocess.Compl
             str(script),
         ],
         cwd=project_root,
+        env=env,
         capture_output=True,
         text=True,
         timeout=30,
@@ -530,6 +534,26 @@ class TestSkillPlaceholderContextValidation:
             context_files=["../outside.md"],
         )
         save_init_options(tmp_path, {"context_file": "AGENTS.md"})
+
+        content = CommandRegistrar.resolve_skill_placeholders(
+            "codex",
+            {},
+            "Read __CONTEXT_FILE__",
+            tmp_path,
+        )
+
+        assert content == "Read AGENTS.md"
+
+    def test_disabled_extension_uses_extension_context_file_before_init_options(
+        self, tmp_path
+    ):
+        _write_registry(tmp_path, enabled=False)
+        _write_ext_config(
+            tmp_path,
+            context_file="AGENTS.md",
+            context_files=["CLAUDE.md"],
+        )
+        save_init_options(tmp_path, {"context_file": "LEGACY.md"})
 
         content = CommandRegistrar.resolve_skill_placeholders(
             "codex",

@@ -398,18 +398,19 @@ class CommandRegistrar:
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
-        # Resolve __CONTEXT_FILE__ from the agent-context extension config
-        # when enabled. Fall back to init-options.json for projects that
-        # haven't migrated or that explicitly disabled the extension.
+        # Resolve __CONTEXT_FILE__ from the agent-context extension config.
+        # When disabled, ignore stale context_files but keep the singular
+        # context_file value so generated commands still point at the agent
+        # context file managed before the extension was disabled.
         context_file = ""
         from .integrations.base import IntegrationBase
 
-        if IntegrationBase._agent_context_extension_enabled(project_root):
-            # Local import: _load_agent_context_config lives in __init__.py which
-            # imports agents.py, so a top-level import would be circular.
-            from . import _load_agent_context_config
+        # Local import: _load_agent_context_config lives in __init__.py which
+        # imports agents.py, so a top-level import would be circular.
+        from . import _load_agent_context_config
 
-            ac_cfg = _load_agent_context_config(project_root)
+        ac_cfg = _load_agent_context_config(project_root)
+        if IntegrationBase._agent_context_extension_enabled(project_root):
             context_files = ac_cfg.get("context_files")
             if isinstance(context_files, list):
                 context_file_values = []
@@ -435,6 +436,10 @@ class CommandRegistrar:
                         context_file = IntegrationBase._validate_context_file_path(
                             project_root, candidate
                         )
+        else:
+            configured_context_file = ac_cfg.get("context_file")
+            if isinstance(configured_context_file, str):
+                context_file = configured_context_file.strip()
         if not context_file:
             context_file = init_opts.get("context_file") or ""
         body = body.replace("__CONTEXT_FILE__", context_file)
