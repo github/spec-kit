@@ -656,7 +656,8 @@ def register(app: typer.Typer) -> None:
             finally:
                 pass
 
-        console.print(tracker.render())
+        if _transient:
+            console.print(tracker.render())
         console.print("\n[bold green]Project ready.[/bold green]")
 
         agent_config = AGENT_CONFIG.get(selected_ai)
