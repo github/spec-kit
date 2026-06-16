@@ -8,10 +8,7 @@ Defines the user-facing invocation contract for `/speckit.converge`.
 /speckit.converge [feature-name]
 ```
 
-- `feature-name` (optional positional argument): the feature to assess. When omitted, the
-  command resolves the active feature via the standard mechanism
-  (`SPECIFY_FEATURE_DIRECTORY` → `.specify/feature.json` → branch-prefix fallback), the
-  same resolution used by `analyze` and `implement`.
+- `feature-name` (optional positional argument): the feature directory to assess (e.g. `specs/003-user-auth`). When omitted, the command resolves the active feature via `SPECIFY_FEATURE_DIRECTORY` or `.specify/feature.json` (the same mechanism used by `analyze` and `implement`). If neither is set, the command must stop with an actionable error explaining how to set feature context (for example by running `specify` first or exporting `SPECIFY_FEATURE_DIRECTORY`).
 - Invocation convention follows the agent's separator: `/speckit.converge` (dot agents) or
   `/speckit-converge` (skills/hyphen agents). This is produced automatically from the
   `__SPECKIT_COMMAND_CONVERGE__` token — no per-agent code required.
