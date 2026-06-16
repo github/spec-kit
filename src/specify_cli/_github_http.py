@@ -1,9 +1,11 @@
-"""Shared GitHub-authenticated HTTP helpers.
+"""Shared GitHub HTTP request helpers.
 
-Used by both ExtensionCatalog and PresetCatalog to attach
-GITHUB_TOKEN / GH_TOKEN credentials to requests targeting
-GitHub-hosted domains, while preventing token leakage to
-third-party hosts on redirects.
+Provides ``build_github_request()`` for attaching GITHUB_TOKEN / GH_TOKEN
+credentials to requests targeting GitHub-hosted domains, and
+``resolve_github_release_asset_api_url()`` — used by extensions, presets,
+and workflow URL resolution — to translate browser release-download URLs
+into GitHub REST API asset URLs. Authenticated downloads themselves go
+through the config-driven helpers in :mod:`specify_cli.authentication.http`.
 """
 
 import os
@@ -52,28 +54,6 @@ def build_github_request(url: str) -> urllib.request.Request:
     if token and hostname in GITHUB_HOSTS:
         headers["Authorization"] = f"Bearer {token}"
     return urllib.request.Request(url, headers=headers)
-
-
-class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
-    """Redirect handler that drops the Authorization header when leaving GitHub.
-
-    Prevents token leakage to CDNs or other third-party hosts that GitHub
-    may redirect to (e.g. S3 for release asset downloads, objects.githubusercontent.com).
-    Auth is preserved as long as the redirect target remains within GITHUB_HOSTS.
-    """
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        original_auth = req.get_header("Authorization")
-        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if new_req is not None:
-            hostname = (urlparse(newurl).hostname or "").lower()
-            if hostname in GITHUB_HOSTS:
-                if original_auth:
-                    new_req.add_unredirected_header("Authorization", original_auth)
-            else:
-                new_req.headers.pop("Authorization", None)
-                new_req.unredirected_hdrs.pop("Authorization", None)
-        return new_req
 
 
 def resolve_github_release_asset_api_url(
@@ -147,20 +127,3 @@ def resolve_github_release_asset_api_url(
             return str(asset["url"])
 
     return None
-
-
-def open_github_url(url: str, timeout: int = 10):
-    """Open a URL with GitHub auth, stripping the header on cross-host redirects.
-
-    When the request carries an Authorization header, a custom redirect
-    handler drops that header if the redirect target is not a GitHub-owned
-    domain, preventing token leakage to CDNs or other third-party hosts
-    that GitHub may redirect to (e.g. S3 for release asset downloads).
-    """
-    req = build_github_request(url)
-
-    if not req.get_header("Authorization"):
-        return urllib.request.urlopen(req, timeout=timeout)
-
-    opener = urllib.request.build_opener(_StripAuthOnRedirect)
-    return opener.open(req, timeout=timeout)

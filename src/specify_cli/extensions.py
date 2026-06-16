@@ -41,6 +41,8 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
 })
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 
+VALID_EFFECTS = frozenset({"read-only", "read-write"})
+
 DEFAULT_HOOK_PRIORITY = 10
 
 REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
@@ -200,6 +202,21 @@ class ExtensionManifest:
             pkg_version.Version(ext["version"])
         except pkg_version.InvalidVersion:
             raise ValidationError(f"Invalid version: {ext['version']}")
+
+        # Validate optional category field (free-form string)
+        if "category" in ext:
+            if not isinstance(ext["category"], str) or not ext["category"].strip():
+                raise ValidationError(
+                    "Invalid extension.category: must be a non-empty string"
+                )
+
+        # Validate optional effect field
+        if "effect" in ext:
+            if not isinstance(ext["effect"], str) or ext["effect"] not in VALID_EFFECTS:
+                raise ValidationError(
+                    f"Invalid extension.effect '{ext.get('effect')}': "
+                    f"must be one of {sorted(VALID_EFFECTS)}"
+                )
 
         # Validate requires section
         requires = self.data["requires"]
@@ -373,6 +390,16 @@ class ExtensionManifest:
     def description(self) -> str:
         """Get extension description."""
         return self.data["extension"]["description"]
+
+    @property
+    def category(self) -> Optional[str]:
+        """Get extension category (free-form; common values: docs, code, process, integration, visibility)."""
+        return self.data["extension"].get("category")
+
+    @property
+    def effect(self) -> Optional[str]:
+        """Get extension effect (read-only, read-write)."""
+        return self.data["extension"].get("effect")
 
     @property
     def requires_speckit_version(self) -> str:
@@ -1026,6 +1053,22 @@ class ExtensionManager:
                 description,
                 f"extension:{manifest.id}",
             )
+            # Preserve the command's argument-hint in the generated skill,
+            # mirroring the core template path (ClaudeIntegration.setup injects
+            # it for built-in commands). The value is added to the frontmatter
+            # dict before serialization — rather than via the string-based
+            # inject_argument_hint helper — so that a folded multi-line
+            # description cannot be split by the inserted line. Gated on the
+            # integration exposing inject_argument_hint so only argument-hint
+            # aware agents receive the key, leaving build_skill_frontmatter's
+            # shared shape unchanged for every other agent.
+            argument_hint = frontmatter.get("argument-hint")
+            if (
+                argument_hint
+                and integration is not None
+                and hasattr(integration, "inject_argument_hint")
+            ):
+                frontmatter_data["argument-hint"] = str(argument_hint)
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
 
             # Derive a human-friendly title from the command name
@@ -1905,6 +1948,44 @@ class ExtensionCatalog(CatalogStackBase):
             download_url, self._open_url, timeout=timeout
         )
 
+    def _validate_catalog_payload(self, catalog_data: Any, url: str) -> None:
+        """Validate a parsed catalog payload's shape.
+
+        Applied to both network-fetched and cache-loaded payloads so a
+        once-poisoned cache (older spec-kit version, manual edit, upstream
+        served a bad payload before the network-side guards were added)
+        cannot re-crash ``_get_merged_extensions`` on subsequent calls.
+
+        Checking only key presence would let a payload like
+        ``{"extensions": []}`` or ``{"extensions": null}`` slip through
+        here and then crash with ``AttributeError: 'list' object has no
+        attribute 'items'`` deep inside ``_get_merged_extensions``. The
+        sibling integration catalog reader already guards both the root
+        object and the nested mapping (see ``integrations/catalog.py``);
+        the extension catalog must stay consistent so a malformed payload
+        surfaces as the user-facing ``Invalid catalog format`` error
+        instead of a raw Python traceback.
+
+        Args:
+            catalog_data: Parsed JSON payload from the catalog source.
+            url: Source URL — used in the error message so the user can
+                tell which catalog in a multi-catalog stack is malformed.
+
+        Raises:
+            ExtensionError: If the payload's shape is invalid.
+        """
+        if not isinstance(catalog_data, dict):
+            raise ExtensionError(
+                f"Invalid catalog format from {url}: expected a JSON object"
+            )
+        if "schema_version" not in catalog_data or "extensions" not in catalog_data:
+            raise ExtensionError(f"Invalid catalog format from {url}")
+        if not isinstance(catalog_data.get("extensions"), dict):
+            raise ExtensionError(
+                f"Invalid catalog format from {url}: "
+                "'extensions' must be a JSON object"
+            )
+
     def get_active_catalogs(self) -> List[CatalogEntry]:
         """Get the ordered list of active catalogs.
 
@@ -2020,21 +2101,51 @@ class ExtensionCatalog(CatalogStackBase):
             is_valid = False
             if not force_refresh and cache_file.exists() and cache_meta_file.exists():
                 try:
-                    metadata = json.loads(cache_meta_file.read_text())
+                    metadata = json.loads(
+                        cache_meta_file.read_text(encoding="utf-8")
+                    )
                     cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
                     if cached_at.tzinfo is None:
                         cached_at = cached_at.replace(tzinfo=timezone.utc)
                     age = (datetime.now(timezone.utc) - cached_at).total_seconds()
                     is_valid = age < self.CACHE_DURATION
-                except (json.JSONDecodeError, ValueError, KeyError, TypeError):
-                    # If metadata is invalid or missing expected fields, treat cache as invalid
+                except (
+                    json.JSONDecodeError,
+                    OSError,
+                    UnicodeError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    AttributeError,
+                ):
+                    # Cache validity is best-effort: invalid/missing metadata
+                    # fields, an unreadable metadata file (permissions / disk),
+                    # a wrongly-encoded metadata file (written by a tool using
+                    # the system locale codec), or a metadata payload that
+                    # parses to a non-mapping like ``[]`` or ``"oops"`` (so
+                    # ``metadata.get(...)`` raises ``AttributeError``) all
+                    # degrade to "cache invalid" so the caller falls through
+                    # to a network refetch instead of crashing.
                     pass
 
-        # Use cache if valid
+        # Use cache if valid. A previously-cached payload must clear the
+        # same shape checks as a freshly-fetched one — otherwise a once-
+        # poisoned cache (older spec-kit version, manual edit, upstream
+        # served a bad payload before the network-side guards were added)
+        # would re-crash on every invocation despite the cache being
+        # "valid" by age. If validation fails on the cached read, fall
+        # through to the network fetch path so the cache gets refreshed.
         if is_valid:
             try:
-                return json.loads(cache_file.read_text())
-            except json.JSONDecodeError:
+                cached_data = json.loads(cache_file.read_text(encoding="utf-8"))
+                self._validate_catalog_payload(cached_data, entry.url)
+                return cached_data
+            except (json.JSONDecodeError, OSError, UnicodeError, ExtensionError):
+                # Cache is best-effort: a JSON-decode failure, an OS-level
+                # read failure (permissions / disk / handle limit), or a
+                # text-encoding failure on a cache file written by an older
+                # client all fall through to the network fetch path. Only
+                # the network failure is surfaced to the caller.
                 pass
 
         # Fetch from network
@@ -2042,16 +2153,32 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(entry.url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
-            if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-                raise ExtensionError(f"Invalid catalog format from {entry.url}")
+            self._validate_catalog_payload(catalog_data, entry.url)
 
-            # Save to cache
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(catalog_data, indent=2))
-            cache_meta_file.write_text(json.dumps({
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "catalog_url": entry.url,
-            }, indent=2))
+            # Save to cache. Both files are explicitly UTF-8 to match the
+            # ``read_text(encoding="utf-8")`` on the read side and the
+            # ``integrations/catalog.py`` precedent (see the cache write
+            # helpers in ``CatalogCache`` there). Without this, platforms
+            # whose default encoding isn't UTF-8 would write locale-encoded
+            # bytes that the read path can't decode, forcing an unnecessary
+            # network refetch on every invocation. The write itself is
+            # best-effort, matching the read side: an unwritable cache dir
+            # (read-only checkout, permissions) must not fail a fetch whose
+            # payload was already fetched and validated.
+            try:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                cache_file.write_text(
+                    json.dumps(catalog_data, indent=2), encoding="utf-8"
+                )
+                cache_meta_file.write_text(
+                    json.dumps({
+                        "cached_at": datetime.now(timezone.utc).isoformat(),
+                        "catalog_url": entry.url,
+                    }, indent=2),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
 
@@ -2098,6 +2225,16 @@ class ExtensionCatalog(CatalogStackBase):
                 continue
 
             for ext_id, ext_data in catalog_data.get("extensions", {}).items():
+                # Per-entry guard: ``_fetch_single_catalog`` already validates
+                # that ``catalog_data["extensions"]`` is a mapping, but it
+                # does not (and should not) validate every entry shape there
+                # — one malformed entry shouldn't poison an otherwise valid
+                # catalog. Skip non-mapping entries here so a payload like
+                # ``{"extensions": {"foo": [], "bar": {...}}}`` still merges
+                # the valid entries without crashing on ``**ext_data``.
+                # Mirrors ``integrations/catalog.py:245``.
+                if not isinstance(ext_data, dict):
+                    continue
                 if ext_id not in merged:  # Higher-priority catalog wins
                     merged[ext_id] = {
                         **ext_data,
@@ -2114,6 +2251,12 @@ class ExtensionCatalog(CatalogStackBase):
     def is_cache_valid(self) -> bool:
         """Check if cached catalog is still valid.
 
+        Returns ``False`` for any read/decoding failure on the metadata
+        file (missing fields, malformed JSON, permissions / disk errors,
+        wrong text encoding) so callers fall through to a network refetch
+        instead of crashing. Treating cache validity as best-effort
+        matches the contract used by the per-URL cache check below.
+
         Returns:
             True if cache exists and is within cache duration
         """
@@ -2121,13 +2264,28 @@ class ExtensionCatalog(CatalogStackBase):
             return False
 
         try:
-            metadata = json.loads(self.cache_metadata_file.read_text())
+            metadata = json.loads(
+                self.cache_metadata_file.read_text(encoding="utf-8")
+            )
             cached_at = datetime.fromisoformat(metadata.get("cached_at", ""))
             if cached_at.tzinfo is None:
                 cached_at = cached_at.replace(tzinfo=timezone.utc)
             age_seconds = (datetime.now(timezone.utc) - cached_at).total_seconds()
             return age_seconds < self.CACHE_DURATION
-        except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+        except (
+            json.JSONDecodeError,
+            OSError,
+            UnicodeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+        ):
+            # ``AttributeError`` covers the case where the metadata file is
+            # valid JSON but parses to a non-mapping (``[]``, ``"oops"``,
+            # ``42``) so ``metadata.get(...)`` would otherwise crash. All
+            # decode/shape failures degrade to "cache invalid" so the
+            # caller falls through to a network refetch.
             return False
 
     def fetch_catalog(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -2142,15 +2300,26 @@ class ExtensionCatalog(CatalogStackBase):
         Raises:
             ExtensionError: If catalog cannot be fetched
         """
-        # Check cache first unless force refresh
+        catalog_url = self.get_catalog_url()
+
+        # Check the cache first unless ``force_refresh`` was requested,
+        # then fall through to a network fetch. Match the
+        # ``_fetch_single_catalog`` cache contract: a poisoned or
+        # unreadable cache silently falls through to a network refetch
+        # rather than crashing the caller. ``_validate_catalog_payload``
+        # is reused here so a cache written by an older client
+        # (pre-validation) is rejected and refreshed instead of returning
+        # the stale malformed payload. ``is_cache_valid`` itself swallows
+        # OSError/UnicodeError on the metadata read, so a cache-validity
+        # check can't crash this method before the read-side fallback
+        # runs.
         if not force_refresh and self.is_cache_valid():
             try:
-                return json.loads(self.cache_file.read_text())
-            except json.JSONDecodeError:
+                cached_data = json.loads(self.cache_file.read_text(encoding="utf-8"))
+                self._validate_catalog_payload(cached_data, catalog_url)
+                return cached_data
+            except (json.JSONDecodeError, OSError, UnicodeError, ExtensionError):
                 pass  # Fall through to network fetch
-
-        # Fetch from network
-        catalog_url = self.get_catalog_url()
 
         try:
             import urllib.error
@@ -2158,20 +2327,35 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(catalog_url, timeout=10) as response:
                 catalog_data = json.loads(response.read())
 
-            # Validate catalog structure
-            if "schema_version" not in catalog_data or "extensions" not in catalog_data:
-                raise ExtensionError("Invalid catalog format")
+            # Validate catalog structure. Reuses the same helper as
+            # ``_fetch_single_catalog`` so all three branches (root type,
+            # missing keys, nested-mapping type) stay consistent.
+            self._validate_catalog_payload(catalog_data, catalog_url)
 
-            # Save to cache
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            self.cache_file.write_text(json.dumps(catalog_data, indent=2))
+            # Save to cache. Explicit UTF-8 on both writes mirrors the
+            # ``read_text(encoding="utf-8")`` on the read side and the
+            # ``integrations/catalog.py`` precedent — otherwise platforms
+            # whose default encoding isn't UTF-8 would write locale-encoded
+            # bytes the read path can't decode, forcing an unnecessary
+            # refetch on every invocation. Like the read side, the write
+            # is best-effort: an unwritable cache dir must not abort a
+            # fetch whose payload was already fetched and validated.
+            try:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                self.cache_file.write_text(
+                    json.dumps(catalog_data, indent=2), encoding="utf-8"
+                )
 
-            # Save cache metadata
-            metadata = {
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-                "catalog_url": catalog_url,
-            }
-            self.cache_metadata_file.write_text(json.dumps(metadata, indent=2))
+                # Save cache metadata
+                metadata = {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": catalog_url,
+                }
+                self.cache_metadata_file.write_text(
+                    json.dumps(metadata, indent=2), encoding="utf-8"
+                )
+            except OSError:
+                pass  # Cache is best-effort; proceed with fetched data
 
             return catalog_data
 

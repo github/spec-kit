@@ -41,6 +41,13 @@ def _minimal_templates(repo: Path) -> None:
     shutil.copy(PLAN_TEMPLATE, tdir / "plan-template.md")
 
 
+def _write_feature_json(repo: Path, feature_directory: str) -> None:
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": feature_directory}),
+        encoding="utf-8",
+    )
+
+
 def _clean_env() -> dict[str, str]:
     """Return a copy of the current environment with any SPECIFY_* vars removed.
 
@@ -89,10 +96,7 @@ def test_setup_plan_passes_custom_branch_when_feature_json_valid(plan_repo: Path
     feat = plan_repo / "specs" / "001-tiny-notes-app"
     feat.mkdir(parents=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
-    (plan_repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": "specs/001-tiny-notes-app"}),
-        encoding="utf-8",
-    )
+    _write_feature_json(plan_repo, "specs/001-tiny-notes-app")
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
     result = subprocess.run(
         ["bash", str(script)],
@@ -107,12 +111,8 @@ def test_setup_plan_passes_custom_branch_when_feature_json_valid(plan_repo: Path
 
 
 @requires_bash
-def test_setup_plan_fails_custom_branch_without_feature_json(plan_repo: Path) -> None:
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
-        cwd=plan_repo,
-        check=True,
-    )
+def test_setup_plan_errors_without_feature_context(plan_repo: Path) -> None:
+    """Without feature.json or SPECIFY_FEATURE_DIRECTORY, setup-plan must error."""
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
     result = subprocess.run(
         ["bash", str(script)],
@@ -123,13 +123,14 @@ def test_setup_plan_fails_custom_branch_without_feature_json(plan_repo: Path) ->
         env=_clean_env(),
     )
     assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    assert "Feature directory not found" in result.stderr
 
 
 @requires_bash
-def test_setup_plan_numbered_branch_unchanged_without_feature_json(
+def test_setup_plan_numbered_branch_works_with_feature_json(
     plan_repo: Path,
 ) -> None:
+    """A numbered branch still works when feature.json explicitly pins the spec dir."""
     subprocess.run(
         ["git", "checkout", "-q", "-b", "001-tiny-notes-app"],
         cwd=plan_repo,
@@ -138,6 +139,7 @@ def test_setup_plan_numbered_branch_unchanged_without_feature_json(
     feat = plan_repo / "specs" / "001-tiny-notes-app"
     feat.mkdir(parents=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    _write_feature_json(plan_repo, "specs/001-tiny-notes-app")
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
     result = subprocess.run(
         ["bash", str(script)],
@@ -161,10 +163,7 @@ def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: P
     feat = plan_repo / "specs" / "001-tiny-notes-app"
     feat.mkdir(parents=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
-    (plan_repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": "specs/001-tiny-notes-app"}),
-        encoding="utf-8",
-    )
+    _write_feature_json(plan_repo, "specs/001-tiny-notes-app")
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
     result = subprocess.run(
@@ -180,14 +179,9 @@ def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: P
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
-def test_setup_plan_ps_fails_custom_branch_without_feature_json(
+def test_setup_plan_ps_errors_without_feature_context(
     plan_repo: Path,
 ) -> None:
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
-        cwd=plan_repo,
-        check=True,
-    )
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
     exe = "pwsh" if HAS_PWSH else _POWERSHELL
     result = subprocess.run(
@@ -198,5 +192,6 @@ def test_setup_plan_ps_fails_custom_branch_without_feature_json(
         check=False,
         env=_clean_env(),
     )
+    combined = result.stderr + result.stdout
     assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    assert "Feature directory not found" in combined

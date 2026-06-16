@@ -2,6 +2,64 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.10.3] - 2026-06-16
+
+### Changed
+
+- Update Superpowers Bridge extension to v1.6.0 (#2998)
+- Add Improve Extension to community catalog (#2997)
+- Update Product Forge extension to v1.7.0 (#2996)
+- Update Linear Integration extension to v0.5.0 (#2995)
+- Update Superpowers Implementation Bridge extension to v1.0.3 (#2993)
+- Update Ralph community extension to v1.1.1 (#2861)
+- Update Linear Integration extension to v0.4.0 (#2942)
+- Update DocGuard — CDD Enforcement to v0.26.0 (#2941)
+- Add SpecKit Companion extension to community catalog (#2937)
+- chore: release 0.10.2, begin 0.10.3.dev0 development (#2936)
+
+## [0.10.2] - 2026-06-11
+
+### Changed
+
+- Add Research Harness extension to community catalog (#2935)
+- Add Coding Standards Drift Control extension to community catalog (#2934)
+- Add Spec Trace extension to community catalog (#2527)
+- fix(extensions): preserve argument-hint in extension Claude SKILL.md (#2916)
+- fix(presets): harden preset URL installs against unsafe redirects (#2911)
+- fix: skip recovered files during refresh_managed overwrite check (#2918) (#2919)
+- Update multi-model-review extension to v0.1.1 (#2900)
+- feat: add category and effect as first-class fields in extension schema (#2899)
+- chore(catalog): add Jira Integration (Sync Engine) extension (#2895)
+- chore: release 0.10.1, begin 0.10.2.dev0 development (#2910)
+
+## [0.10.1] - 2026-06-09
+
+### Changed
+
+- Update DocGuard — CDD Enforcement extension to v0.25.1 (#2909)
+- Update a11y-governance preset to v0.3.0 (#2867)
+- docs: document spec persistence models (#2856)
+- chore(catalog): bump Linear Integration to v0.3.0 (repo renamed to spec-kit-linear-sync) (#2893)
+- chore: update DocGuard extension to v0.25.0 (#2707)
+- chore: remove unused open_github_url/_StripAuthOnRedirect from _github_http.py (#2883)
+- fix(catalogs): validate extension and preset catalog payload shape (#2621)
+- feat(integration): add status reporting (#2674)
+- chore: release 0.10.0, begin 0.10.1.dev0 development (#2904)
+
+## [0.10.0] - 2026-06-09
+
+### Changed
+
+- feat: make git extension opt-in and remove --no-git at v0.10.0 (#2873)
+- [Preset] UpdateFiction book writing v1.9.0 - Illustration support (#2821)
+- test(workflows): cover executable override fallback preflight (#2843)
+- Add GitHub Copilot CLI guidance to readme (#2891)
+- Update Security Review extension to v1.5.3 (#2898)
+- Update Architecture Guard extension to v1.8.17 (#2897)
+- feat(extensions): per-event hook lists with priority ordering (#2798)
+- feat!: remove legacy --ai, --ai-commands-dir, and --ai-skills flags (0.10.0) (#2872)
+- chore: release 0.9.5, begin 0.9.6.dev0 development (#2875)
+
 ## [0.9.5] - 2026-06-05
 
 ### Changed

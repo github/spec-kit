@@ -313,6 +313,8 @@ def install_shared_infra(
         expected = prior_hashes.get(rel)
         if not expected or not dst.is_file() or dst.is_symlink():
             return False
+        if manifest.is_recovered(rel):
+            return False
         try:
             return _sha256(dst) == expected
         except OSError:

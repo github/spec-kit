@@ -24,6 +24,7 @@ from specify_cli.extensions import (
     CatalogEntry,
     CORE_COMMAND_NAMES,
     DEFAULT_HOOK_PRIORITY,
+    VALID_EFFECTS,
     ExtensionManifest,
     ExtensionRegistry,
     ExtensionManager,
@@ -299,6 +300,69 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid version"):
             ExtensionManifest(manifest_path)
+
+    def test_valid_category(self, temp_dir, valid_manifest_data):
+        """Test manifest with various category values (free-form string)."""
+        import yaml
+
+        for category in ("docs", "code", "process", "integration", "visibility", "custom-category"):
+            valid_manifest_data["extension"]["category"] = category
+            manifest_path = temp_dir / "extension.yml"
+            with open(manifest_path, 'w') as f:
+                yaml.dump(valid_manifest_data, f)
+            manifest = ExtensionManifest(manifest_path)
+            assert manifest.category == category
+
+    def test_valid_effect(self, temp_dir, valid_manifest_data):
+        """Test manifest with valid effect values."""
+        import yaml
+
+        for effect in sorted(VALID_EFFECTS):
+            valid_manifest_data["extension"]["effect"] = effect
+            manifest_path = temp_dir / "extension.yml"
+            with open(manifest_path, 'w') as f:
+                yaml.dump(valid_manifest_data, f)
+            manifest = ExtensionManifest(manifest_path)
+            assert manifest.effect == effect
+
+    def test_invalid_category(self, temp_dir, valid_manifest_data):
+        """Test manifest with empty category raises ValidationError."""
+        import yaml
+
+        valid_manifest_data["extension"]["category"] = ""
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid extension.category"):
+            ExtensionManifest(manifest_path)
+
+    def test_invalid_effect(self, temp_dir, valid_manifest_data):
+        """Test manifest with invalid effect raises ValidationError."""
+        import yaml
+
+        valid_manifest_data["extension"]["effect"] = "write-only"
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid extension.effect"):
+            ExtensionManifest(manifest_path)
+
+    def test_category_and_effect_optional(self, temp_dir, valid_manifest_data):
+        """Test that omitting category and effect still passes validation."""
+        import yaml
+
+        # Ensure no category/effect in data
+        valid_manifest_data["extension"].pop("category", None)
+        valid_manifest_data["extension"].pop("effect", None)
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+        assert manifest.category is None
+        assert manifest.effect is None
 
     def test_invalid_command_name(self, temp_dir, valid_manifest_data):
         """Test manifest with command name that cannot be auto-corrected raises ValidationError."""
@@ -3086,6 +3150,424 @@ class TestExtensionCatalog:
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # Root is not a JSON object.
+            [],
+            "oops",
+            42,
+            None,
+            # Root is fine but ``extensions`` is the wrong type.
+            {"schema_version": "1.0", "extensions": []},
+            {"schema_version": "1.0", "extensions": "oops"},
+            {"schema_version": "1.0", "extensions": None},
+            {"schema_version": "1.0", "extensions": 42},
+        ],
+    )
+    def test_fetch_single_catalog_rejects_malformed_payload(self, temp_dir, payload):
+        """Malformed catalog payloads raise ExtensionError, not AttributeError.
+
+        Without this guard, a payload like ``{"extensions": []}`` would pass the
+        key-presence check and then crash with ``AttributeError: 'list' object
+        has no attribute 'items'`` deep inside ``_get_merged_extensions``. The
+        sibling integration catalog reader already validates both the root
+        object and the nested mapping (see ``integrations/catalog.py``); the
+        extension catalog must stay consistent.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="Invalid catalog format"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    @pytest.mark.parametrize(
+        "cached_payload",
+        [
+            [],
+            "oops",
+            42,
+            None,
+            {"schema_version": "1.0", "extensions": []},
+            {"schema_version": "1.0", "extensions": "oops"},
+            {"schema_version": "1.0", "extensions": None},
+        ],
+    )
+    def test_fetch_single_catalog_rejects_malformed_cached_payload(
+        self, temp_dir, cached_payload
+    ):
+        """A poisoned cache silently falls back to the network instead of
+        crashing — cached payloads pass through the same shape validation
+        as freshly-fetched ones.
+
+        Without this, a cache poisoned by an older spec-kit version (or a
+        manual edit, or an upstream that briefly served a bad payload
+        before the network guards landed) would re-crash every invocation
+        of ``_get_merged_extensions`` despite the cache being "valid" by
+        age. The recovery contract is: if the cached payload fails
+        validation, drop it and refetch — never propagate
+        ``AttributeError`` to the caller.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+
+        # Poison the default-URL cache. ``DEFAULT_CATALOG_URL`` is the
+        # branch that goes through ``is_cache_valid()`` (the non-default
+        # branch uses per-URL hashed cache files but the same code path
+        # below).
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(cached_payload))
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                }
+            )
+        )
+
+        # Network refetch returns a valid payload so the recovery path
+        # can complete.
+        valid = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = CatalogEntry(
+            url=ExtensionCatalog.DEFAULT_CATALOG_URL,
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog._fetch_single_catalog(entry, force_refresh=False)
+
+        # The poisoned cache was discarded and the network payload returned.
+        assert result == valid
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # Root is not a JSON object.
+            [],
+            "oops",
+            42,
+            None,
+            # Root is fine but ``extensions`` is the wrong type.
+            {"schema_version": "1.0", "extensions": []},
+            {"schema_version": "1.0", "extensions": "oops"},
+            {"schema_version": "1.0", "extensions": None},
+        ],
+    )
+    def test_fetch_catalog_rejects_malformed_payload(self, temp_dir, payload):
+        """Legacy ``fetch_catalog`` reuses the same shape-validation helper.
+
+        Before this change ``fetch_catalog`` only checked key presence — so
+        a payload like ``42`` would crash with
+        ``TypeError: argument of type 'int' is not iterable`` during the
+        ``"schema_version" in catalog_data`` check, and an entry mapping
+        of the wrong type would crash downstream. Reusing
+        ``_validate_catalog_payload`` keeps the network-side behaviour of
+        the legacy single-catalog method consistent with the multi-catalog
+        ``_fetch_single_catalog`` path.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="Invalid catalog format"):
+                catalog.fetch_catalog(force_refresh=True)
+
+    def test_fetch_catalog_recovers_from_unreadable_cache(self, temp_dir):
+        """An unreadable / wrong-encoded cache file silently refetches.
+
+        The cache contract is best-effort: a JSON-decode failure, an OS
+        read failure (permissions / disk / handle limit), or an invalid
+        text encoding on a cache file written by an older client must
+        all fall through to the network fetch rather than crash the
+        caller. Covers Copilot's review point that the previous
+        ``except (json.JSONDecodeError,)`` was too narrow.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        # Write invalid UTF-8 bytes to the cache file so ``read_text``
+        # raises ``UnicodeDecodeError`` (a subclass of ``UnicodeError``).
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_bytes(b"\xff\xfe\x00not-utf-8")
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        valid = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.fetch_catalog(force_refresh=False)
+
+        # Recovered via network rather than crashing on the unreadable cache.
+        assert result == valid
+
+    def test_fetch_catalog_recovers_from_unreadable_metadata(self, temp_dir):
+        """A wrongly-encoded metadata file degrades to a cache miss.
+
+        ``is_cache_valid`` is consulted *before* the cache payload is
+        read; if the metadata file itself can't be decoded (e.g. it was
+        written on a Windows host whose default codec isn't UTF-8) the
+        validity check must return ``False`` rather than propagate
+        ``UnicodeDecodeError``. Without that guard, a corrupted metadata
+        file would crash every invocation instead of falling through to
+        a network refetch.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text("{}", encoding="utf-8")
+        # Bytes that are not valid UTF-8 — ``read_text(encoding="utf-8")``
+        # will raise ``UnicodeDecodeError`` (subclass of ``UnicodeError``).
+        catalog.cache_metadata_file.write_bytes(b"\xff\xfe\x00bad")
+
+        # is_cache_valid must absorb the decode failure, not crash.
+        assert catalog.is_cache_valid() is False
+
+        valid = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.fetch_catalog(force_refresh=False)
+
+        assert result == valid
+
+    @pytest.mark.parametrize(
+        "non_mapping_metadata",
+        [
+            "[]",       # JSON array
+            '"oops"',   # JSON string
+            "42",       # JSON number
+            "true",     # JSON bool
+            "null",     # JSON null
+        ],
+    )
+    def test_is_cache_valid_handles_non_mapping_metadata(
+        self, temp_dir, non_mapping_metadata
+    ):
+        """Metadata that parses to a non-mapping degrades to cache-invalid.
+
+        The cache-validity check calls ``metadata.get("cached_at", "")``
+        immediately after ``json.loads``. If the metadata file is valid
+        JSON but parses to a non-mapping (``[]``, ``"oops"``, ``42``,
+        ``true``, ``null``), ``.get`` raises ``AttributeError`` — which
+        previously slipped past the except tuple and crashed the
+        caller. The contract documented on ``is_cache_valid`` says any
+        decode/shape failure should return ``False`` so ``fetch_catalog``
+        falls through to a network refetch. This test pins that
+        contract across every JSON non-mapping root type so a regression
+        in the except clause can't silently re-introduce the crash.
+        """
+        catalog = self._make_catalog(temp_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text("{}", encoding="utf-8")
+        catalog.cache_metadata_file.write_text(
+            non_mapping_metadata, encoding="utf-8"
+        )
+
+        # Must not raise — the contract is "any decode/shape failure → False".
+        assert catalog.is_cache_valid() is False
+
+    def test_fetch_catalog_writes_cache_as_utf8(self, temp_dir, monkeypatch):
+        """Cache + metadata writes pass ``encoding="utf-8"``, observably.
+
+        The earlier version of this test claimed to assert UTF-8 at the
+        byte level but actually only round-tripped a non-ASCII string
+        through ``json.dumps`` and ``read_text(encoding="utf-8")``.
+        Because ``json.dumps`` defaults to ``ensure_ascii=True``, "café"
+        was serialized as the all-ASCII escape ``caf\\u00e9`` before it
+        ever reached ``write_text`` — the bytes on disk were identical
+        regardless of the encoding kwarg, so a locale-encoded write
+        would have round-tripped just fine. The drift Copilot's review
+        flagged wasn't actually being caught.
+
+        Fix: directly observe the ``encoding`` argument passed to every
+        ``write_text`` call made against the cache directory. This is
+        the production code's encoding choice, which is exactly what
+        the regression guard cares about; non-ASCII payload tricks are
+        unnecessary because the assertion is about the kwarg, not the
+        bytes.
+        """
+        from unittest.mock import patch, MagicMock
+        from pathlib import Path as _PathCls
+
+        catalog = self._make_catalog(temp_dir)
+        payload = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        # Record every ``write_text`` call's encoding kwarg so the
+        # assertion observes the production writer's argument directly.
+        recorded: list[dict] = []
+        real_write_text = _PathCls.write_text
+
+        def recording_write_text(self, data, *args, **kwargs):
+            recorded.append(
+                {"path": str(self), "encoding": kwargs.get("encoding")}
+            )
+            return real_write_text(self, data, *args, **kwargs)
+
+        monkeypatch.setattr(_PathCls, "write_text", recording_write_text)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            catalog.fetch_catalog(force_refresh=True)
+
+        # Filter to writes inside the catalog's cache directory so
+        # unrelated writes from other machinery don't pollute the
+        # assertion.
+        cache_writes = [
+            r for r in recorded if str(catalog.cache_dir) in r["path"]
+        ]
+        assert cache_writes, "fetch_catalog made no writes to the cache dir"
+        for record in cache_writes:
+            assert record["encoding"] == "utf-8", (
+                f"write_text on {record['path']} used encoding "
+                f"{record['encoding']!r}; expected 'utf-8'"
+            )
+
+    def test_fetch_catalog_survives_unwritable_cache(self, temp_dir, monkeypatch):
+        """An unwritable cache dir doesn't fail a successful fetch.
+
+        Cache writes are best-effort, mirroring the read side and the
+        ``integrations/catalog.py`` precedent: if ``mkdir``/``write_text``
+        raises ``OSError`` (read-only checkout, permissions), the
+        already-fetched-and-validated payload must still be returned
+        rather than surfacing the cache failure to the caller.
+        """
+        from unittest.mock import patch, MagicMock
+        from pathlib import Path as _PathCls
+
+        catalog = self._make_catalog(temp_dir)
+        valid = {
+            "schema_version": "1.0",
+            "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        # Simulate an unwritable cache dir: every write_text under the
+        # cache directory raises PermissionError (an OSError subclass).
+        real_write_text = _PathCls.write_text
+
+        def failing_write_text(self, data, *args, **kwargs):
+            if str(catalog.cache_dir) in str(self):
+                raise PermissionError("cache dir is read-only")
+            return real_write_text(self, data, *args, **kwargs)
+
+        monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            # Legacy single-catalog path.
+            assert catalog.fetch_catalog(force_refresh=True) == valid
+
+            # Multi-catalog path.
+            entry = CatalogEntry(
+                url="https://example.com/catalog.json",
+                name="default",
+                priority=1,
+                install_allowed=True,
+            )
+            assert catalog._fetch_single_catalog(entry, force_refresh=True) == valid
+
+    def test_get_merged_extensions_skips_non_mapping_entries(self, temp_dir):
+        """Per-entry guard: one malformed entry shouldn't poison the merge.
+
+        ``_fetch_single_catalog`` validates that ``extensions`` is a mapping,
+        but it doesn't (and shouldn't) validate every entry inside it — a
+        single bad entry in an otherwise-valid catalog should be skipped, not
+        crash the whole resolve path. Mirrors the per-entry skip in
+        ``integrations/catalog.py``: a malformed entry returns no error,
+        valid entries continue to merge normally.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        # Mix of valid entry, list-shaped entry, and string-shaped entry.
+        payload = {
+            "schema_version": "1.0",
+            "extensions": {
+                "good": {"name": "Good", "version": "1.0.0"},
+                "bad-list": [],
+                "bad-str": "oops",
+            },
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch.object(catalog, "get_active_catalogs", return_value=[entry]):
+            merged = catalog._get_merged_extensions(force_refresh=True)
+
+        # Only the well-formed entry survives; the two malformed entries are
+        # silently dropped rather than raising or crashing.
+        assert [ext["id"] for ext in merged] == ["good"]
 
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
         """download_extension passes Authorization header when a provider is configured."""

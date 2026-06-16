@@ -69,8 +69,6 @@ from ._utils import (
     _display_project_path,
     check_tool as check_tool,
     handle_vscode_settings as handle_vscode_settings,
-    init_git_repo as init_git_repo,
-    is_git_repo as is_git_repo,
     merge_json_files as merge_json_files,
     run_command as run_command,
 )
@@ -453,9 +451,6 @@ def check():
 
     tracker = StepTracker("Check Available Tools")
 
-    tracker.add("git", "Git version control")
-    git_ok = check_tool("git", tracker=tracker)
-
     agent_results = {}
     for agent_key, agent_config in AGENT_CONFIG.items():
         if agent_key == "generic":
@@ -482,9 +477,6 @@ def check():
     console.print(tracker.render())
 
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")
-
-    if not git_ok:
-        console.print("[dim]Tip: Install git for repository management[/dim]")
 
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")
@@ -692,16 +684,44 @@ def preset_add(
 
         elif from_url:
             # Validate URL scheme before downloading
+            from ipaddress import ip_address
             from urllib.parse import urlparse as _urlparse
+
             _parsed = _urlparse(from_url)
-            _is_localhost = _parsed.hostname in ("localhost", "127.0.0.1", "::1")
-            if _parsed.scheme != "https" and not (_parsed.scheme == "http" and _is_localhost):
-                console.print(f"[red]Error:[/red] URL must use HTTPS (got {_parsed.scheme}://). HTTP is only allowed for localhost.")
+
+            def _is_allowed_download_url(parsed_url):
+                host = parsed_url.hostname
+                if not host:
+                    return False
+                is_loopback = host == "localhost"
+                if not is_loopback:
+                    try:
+                        is_loopback = ip_address(host).is_loopback
+                    except ValueError:
+                        # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
+                        pass
+                return parsed_url.scheme == "https" or (parsed_url.scheme == "http" and is_loopback)
+
+            def _validate_download_redirect(old_url, new_url):
+                if not _is_allowed_download_url(_urlparse(new_url)):
+                    import urllib.error
+
+                    raise urllib.error.URLError(
+                        "redirect target must use HTTPS with a hostname, "
+                        "or HTTP for localhost/loopback"
+                    )
+
+            if not _is_allowed_download_url(_parsed):
+                console.print(
+                    "[red]Error:[/red] URL must use HTTPS with a hostname, "
+                    "or HTTP for localhost/loopback."
+                )
                 raise typer.Exit(1)
 
             console.print(f"Installing preset from [cyan]{from_url}[/cyan]...")
             import urllib.error
             import tempfile
+            import shutil
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
@@ -715,8 +735,25 @@ def preset_add(
                         from_url = _resolved_from_url
                         _preset_extra_headers = {"Accept": "application/octet-stream"}
 
-                    with _open_url(from_url, timeout=60, extra_headers=_preset_extra_headers) as response:
-                        zip_path.write_bytes(response.read())
+                    with _open_url(
+                        from_url,
+                        timeout=60,
+                        extra_headers=_preset_extra_headers,
+                        redirect_validator=_validate_download_redirect,
+                    ) as response:
+                        final_url = response.geturl() if hasattr(response, "geturl") else from_url
+                        if not _is_allowed_download_url(_urlparse(final_url)):
+                            console.print(
+                                "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
+                                f"{final_url}. Redirect targets must use HTTPS with a hostname, "
+                                "or HTTP for localhost/loopback."
+                            )
+                            raise typer.Exit(1)
+                        with zip_path.open("wb") as output:
+                            try:
+                                shutil.copyfileobj(response, output)
+                            except TypeError:
+                                output.write(response.read())
                 except urllib.error.URLError as e:
                     console.print(f"[red]Error:[/red] Failed to download: {e}")
                     raise typer.Exit(1)
@@ -1194,7 +1231,7 @@ def preset_catalog_add(
     })
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     install_label = "install allowed" if install_allowed else "discovery only"
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
@@ -1234,7 +1271,7 @@ def preset_catalog_remove(
         raise typer.Exit(1)
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     console.print(f"[green]✓[/green] Removed catalog '{name}'")
     if not catalogs:
@@ -1983,7 +2020,11 @@ def extension_info(
             author = ext_manifest.data.get("extension", {}).get("author")
             if author:
                 console.print(f"[dim]Author:[/dim] {author}")
-                console.print()
+            if ext_manifest.category:
+                console.print(f"[dim]Category:[/dim] {ext_manifest.category}")
+            if ext_manifest.effect:
+                console.print(f"[dim]Effect:[/dim] {ext_manifest.effect}")
+            console.print()
 
             if ext_manifest.commands:
                 console.print("[bold]Commands:[/bold]")
@@ -2032,6 +2073,12 @@ def _print_extension_info(ext_info: dict, manager):
     # Author and License
     console.print(f"[dim]Author:[/dim] {ext_info.get('author', 'Unknown')}")
     console.print(f"[dim]License:[/dim] {ext_info.get('license', 'Unknown')}")
+
+    # Category and Effect
+    if ext_info.get('category'):
+        console.print(f"[dim]Category:[/dim] {ext_info['category']}")
+    if ext_info.get('effect'):
+        console.print(f"[dim]Effect:[/dim] {ext_info['effect']}")
 
     # Source catalog
     if ext_info.get("_catalog_name"):
