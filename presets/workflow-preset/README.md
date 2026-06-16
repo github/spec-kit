@@ -33,6 +33,7 @@ Requirement capabilities:
 
 - Wraps `/speckit.specify` so it produces or updates `spec.md` only.
 - Wraps `/speckit.clarify` so it resolves requirement ambiguity in `spec.md` only.
+- When a Figma Evidence Packet has already been written into `spec.md`, `/speckit.clarify` clarifies Figma-derived gaps already written in `spec.md` and does not call Figma.
 - Wraps `/speckit.checklist` to add `checklists/behavior-testability.md` as a BDD readiness gate and NFR readiness gate.
 - Checks user stories, acceptance criteria, Given/When/Then readiness, roles, permissions, states, data, validation, boundary, exception, state-conflict behavior, and non-functional requirements directly from `spec.md`.
 - Requires NFR dimensions to be marked Required, Not Applicable, or Unknown in product language before planning.
@@ -123,7 +124,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.4/spec-kit-workflow-preset-v1.3.4.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.5/spec-kit-workflow-preset-v1.3.5.zip
 ```
 
 Local development install:
@@ -348,7 +349,7 @@ Release install smoke validation is intentionally owned by GitHub Actions, not b
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.4/spec-kit-workflow-preset-v1.3.4.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.5/spec-kit-workflow-preset-v1.3.5.zip
 ```
 
 ## Source Rationale
