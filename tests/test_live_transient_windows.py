@@ -44,7 +44,7 @@ def _invoke_select_with_arrows(platform: str) -> bool:
 
         select_with_arrows({"a": "Option A", "b": "Option B"}, "Pick one", "a")
 
-    return captured.get("transient")
+    return captured["transient"]
 
 
 class TestSelectWithArrowsLiveTransient:
@@ -66,16 +66,18 @@ class TestSelectWithArrowsLiveTransient:
 
 
 class TestSourceContainsPlatformGuard:
-    """Ensure the platform guard is present in source (prevents regression)."""
+    """Ensure the platform guard and its usage in Live() are present in source."""
 
     def test_init_has_win32_guard(self):
-        """init.py must contain the win32 platform check for transient."""
+        """init.py must check platform and pass transient to Live."""
         init_src = Path(__file__).resolve().parent.parent / "src" / "specify_cli" / "commands" / "init.py"
         content = init_src.read_text(encoding="utf-8")
-        assert '_transient = sys.platform != "win32"' in content
+        assert 'sys.platform != "win32"' in content
+        assert "transient=_transient" in content
 
     def test_console_has_win32_guard(self):
-        """_console.py must contain the win32 platform check for transient."""
+        """_console.py must check platform and pass transient to Live."""
         console_src = Path(__file__).resolve().parent.parent / "src" / "specify_cli" / "_console.py"
         content = console_src.read_text(encoding="utf-8")
-        assert '_transient = sys.platform != "win32"' in content
+        assert 'sys.platform != "win32"' in content
+        assert "transient=_transient" in content
