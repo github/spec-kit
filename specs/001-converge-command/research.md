@@ -27,8 +27,9 @@ that shape the design, with rationale and rejected alternatives.
   `FEATURE_DIR` and confirm `plan.md` + `tasks.md` exist.
 - **Rationale**: This is the same mechanism `analyze` and `implement` use. It already
   resolves the feature directory via `SPECIFY_FEATURE_DIRECTORY` → `.specify/feature.json`
-  → branch-prefix fallback, so it works with or without git (Constitution Principle II).
-  No new script is introduced, preserving cross-platform parity by construction.
+  and otherwise exits with a clear prerequisite error, so converge keeps the same
+  no-git behavior (Constitution Principle II). No new script is introduced, preserving
+  cross-platform parity by construction.
 - **Alternatives considered**:
   - *New `converge`-specific helper script* — rejected: would require Bash + PowerShell
     parity maintenance for no added capability, violating the "focused contribution"
