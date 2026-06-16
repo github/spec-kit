@@ -21,7 +21,7 @@ Instead of letting implement run through every task at once, tell it to stop
 early:
 
 ```text
-/speckit.implement only execute tasks 1-10, then stop and report progress
+/speckit.implement only execute tasks T001-T010, then stop and report progress
 ```
 
 or scope by phase:
@@ -73,6 +73,7 @@ that are too large to handle any other way.
 | --- | --- |
 | Limit to N tasks or a phase | Any agent; simplest; no sub-agent support needed |
 | Sub-agent delegation | Agents that support sub-agents; maximizes parallelism |
+| Combine scoping + delegation | Large features on sub-agent-capable agents; balances both |
 | Decompose into smaller specs | When even a single phase overwhelms the context |
 
 For most cases, limiting task scope per run is the simplest fix. Reach for
