@@ -3366,7 +3366,7 @@
       "name": "Superpowers Bridge",
       "id": "superb",
       "description": "Bridges selected Superpowers disciplines into Spec Kit as evidence-first trust gates for agent workflows.",
-      "author": "rbbtsn0w",
+      "author": "RbBtSn0w",
       "version": "1.6.0",
       "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.6.0/superpowers-bridge.zip",
       "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
@@ -3391,12 +3391,11 @@
         "hooks": 5
       },
       "tags": [
-        "methodology",
+        "quality-gates",
         "tdd",
         "code-review",
         "workflow",
         "superpowers",
-        "brainstorming",
         "verification",
         "debugging",
         "branch-management"
