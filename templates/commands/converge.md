@@ -85,12 +85,10 @@ skip constitution checks gracefully rather than failing.
 ### 1. Initialize Convergence Context
 
 Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
-
 - SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md
 - TASKS = FEATURE_DIR/tasks.md
-- CONSTITUTION = `.specify/memory/constitution.md` (if present)
-
+- CONSTITUTION = `/memory/constitution.md` (if present)
 If `plan.md` or `tasks.md` is missing, STOP with a clear, actionable message naming the
 prerequisite command to run (`__SPECKIT_COMMAND_PLAN__` for a missing plan,
 `__SPECKIT_COMMAND_TASKS__` for missing tasks). Do not produce partial output.
