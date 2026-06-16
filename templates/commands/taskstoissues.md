@@ -1,6 +1,6 @@
 ---
 description: Convert existing tasks into actionable, dependency-ordered GitHub issues for the feature based on available design artifacts.
-tools: ['github/github-mcp-server/issue_write']
+tools: ['github/github-mcp-server/list_issues', 'github/github-mcp-server/issue_write']
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
@@ -62,7 +62,10 @@ git config --get remote.origin.url
 > [!CAUTION]
 > ONLY PROCEED TO NEXT STEPS IF THE REMOTE IS A GITHUB URL
 
-1. For each task in the list, use the GitHub MCP server to create a new issue in the repository that is representative of the Git remote.
+1. **Fetch existing issues for deduplication**: Before creating anything, use the GitHub MCP server's `list_issues` tool to list the repository's issues with state `all`, so both open and closed issues are covered. Build a set of task IDs that already have an issue by extracting the leading task ID (e.g. `T001`) from each issue title. This prevents duplicate issues when the command is re-run after `tasks.md` is regenerated or the skill is re-invoked.
+1. For each task in the list, use the GitHub MCP server to create a new issue in the repository that is representative of the Git remote. Prefix the issue title with the task ID so it can be matched on later runs (for example, `T001: Create project structure`).
+   - **Skip** any task whose ID is already present in the set of existing issues from the previous step, and report it (for example, `T001 already has issue #42 — skipping`).
+   - Only create issues for tasks that do not yet have a matching issue.
 
 > [!CAUTION]
 > UNDER NO CIRCUMSTANCES EVER CREATE ISSUES IN REPOSITORIES THAT DO NOT MATCH THE REMOTE URL
