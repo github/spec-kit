@@ -168,6 +168,26 @@ def test_scaffold_rolls_back_partial_files_on_write_failure(tmp_path, monkeypatc
     assert not test_file.exists()
 
 
+def test_scaffold_creates_only_leaf_integration_directory(tmp_path, monkeypatch):
+    root = _repo_root(tmp_path)
+    original_mkdir = Path.mkdir
+    mkdir_calls = []
+
+    def record_mkdir(path, *args, **kwargs):
+        mkdir_calls.append((path, args, kwargs))
+        return original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", record_mkdir)
+
+    scaffold_integration(root, "my-agent", "markdown")
+
+    assert any(
+        path == root / "src" / "specify_cli" / "integrations" / "my_agent"
+        for path, _args, _kwargs in mkdir_calls
+    )
+    assert all(not kwargs.get("parents", False) for _path, _args, kwargs in mkdir_calls)
+
+
 def test_scaffold_requires_repo_root(tmp_path):
     with pytest.raises(ValueError, match="Spec Kit repository root"):
         scaffold_integration(tmp_path, "my-agent", "markdown")

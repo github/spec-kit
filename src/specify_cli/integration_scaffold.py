@@ -241,8 +241,7 @@ def scaffold_integration(
 
     created_integration_dir = not integration_dir.exists()
     try:
-        integration_dir.mkdir(parents=True, exist_ok=True)
-        test_file.parent.mkdir(parents=True, exist_ok=True)
+        integration_dir.mkdir(exist_ok=True)
         integration_file.write_text(
             _integration_content(
                 key=clean_key,
