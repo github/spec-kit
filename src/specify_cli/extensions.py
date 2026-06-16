@@ -1337,9 +1337,11 @@ class ExtensionManager:
         # --force this would delete the source before copying it (issue #2990).
         dest_dir = self.extensions_dir / manifest.id
         try:
-            same_location = source_dir.resolve() == dest_dir.resolve()
-        except OSError:
-            same_location = False
+            same_location = source_dir.resolve(strict=False) == dest_dir.resolve(
+                strict=False
+            )
+        except (OSError, RuntimeError):
+            same_location = source_dir.absolute() == dest_dir.absolute()
         if same_location:
             raise ValidationError(
                 f"Source path is the install destination for '{manifest.id}' "

@@ -1141,6 +1141,33 @@ class TestExtensionManager:
         assert (install_dir / "extension.yml").exists()
         assert (install_dir / "commands" / "hello.md").exists()
 
+    def test_install_from_install_dir_is_rejected_when_resolve_fails(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Resolution failures must not bypass the self-install guard."""
+        manager = ExtensionManager(project_dir)
+
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        install_dir = project_dir / ".specify" / "extensions" / "test-ext"
+
+        original_resolve = Path.resolve
+
+        def fail_resolve(self, *args, **kwargs):
+            if self in {install_dir, manager.extensions_dir / "test-ext"}:
+                raise OSError("cannot resolve path")
+            return original_resolve(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", fail_resolve)
+
+        with pytest.raises(ValidationError, match="install destination"):
+            manager.install_from_directory(
+                install_dir, "0.1.0", register_commands=False, force=True
+            )
+
+        assert install_dir.exists()
+        assert (install_dir / "extension.yml").exists()
+        assert (install_dir / "commands" / "hello.md").exists()
+
     def test_install_zip_force_reinstall(self, extension_dir, project_dir):
         """Test force-reinstalling from ZIP when already installed."""
         import zipfile
