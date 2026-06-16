@@ -32,6 +32,7 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset({
     "analyze",
     "clarify",
     "constitution",
+    "delta",
     "implement",
     "plan",
     "checklist",

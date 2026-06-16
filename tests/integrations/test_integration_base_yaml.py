@@ -365,6 +365,7 @@ class YamlIntegrationTests:
         "analyze",
         "clarify",
         "constitution",
+        "delta",
         "implement",
         "plan",
         "checklist",

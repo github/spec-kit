@@ -73,8 +73,15 @@ Follow this execution flow:
 3. Draft the updated constitution content:
    - Replace every placeholder with concrete text (no bracketed tokens left except intentionally retained template slots that the project has chosen not to define yet—explicitly justify any left).
    - Preserve heading hierarchy and comments can be removed once replaced unless they still add clarifying guidance.
+   - Ensure the **Vision & Direction** section is populated with:
+     - A single, durable **North Star** statement (1–2 sentences).
+     - **Target Users & Value** — who the project serves and the enduring value delivered.
+     - **Long-Term Objectives** — 3–7 outcome-oriented, observable objectives (not feature lists). Each must be phrased so progress against it can be assessed by inspecting repo state (`__SPECKIT_COMMAND_DELTA__` depends on this).
+     - **Non-Goals** — explicit out-of-scope statements that bound the project.
+     If user input does not supply Vision content, infer it from `README.md`, existing docs, and the prior constitution. If still indeterminate, mark with `TODO(VISION): ...` and include in the Sync Impact Report — do **not** leave bracketed placeholders.
    - Ensure each Principle section: succinct name line, paragraph (or bullet list) capturing non‑negotiable rules, explicit rationale if not obvious.
    - Ensure Governance section lists amendment procedure, versioning policy, and compliance review expectations.
+   - Vision amendments are governed by the same Governance rules: changes to **North Star** or **Long-Term Objectives** are MAJOR bumps; adding/removing **Non-Goals** or refining **Target Users & Value** is MINOR; wording polish is PATCH.
 
 4. Consistency propagation checklist (convert prior checklist into active validations):
    - Read `.specify/templates/plan-template.md` and ensure any "Constitution Check" or rules align with updated principles.

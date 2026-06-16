@@ -433,6 +433,7 @@ SKILL_DESCRIPTIONS = {
     "clarify": "Structured clarification workflow for underspecified requirements.",
     "constitution": "Create or update project governing principles and development guidelines.",
     "checklist": "Generate custom quality checklists for validating requirements completeness and clarity.",
+    "delta": "Compute the gap between the constitution's Vision and current repo state to recommend the next feature.",
     "taskstoissues": "Convert tasks from tasks.md into GitHub issues.",
 }
 
