@@ -1021,8 +1021,10 @@ class StepCatalog:
                 for step_data in steps:
                     if not isinstance(step_data, dict):
                         continue
-                    raw_step_id = step_data.get("id", "")
-                    step_id = str(raw_step_id or "").strip()
+                    raw_step_id = step_data.get("id")
+                    if raw_step_id is None:
+                        continue
+                    step_id = str(raw_step_id).strip()
                     if step_id:
                         step_data["id"] = step_id
                         step_data["_catalog_name"] = entry.name
