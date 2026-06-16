@@ -154,10 +154,7 @@ def load_custom_steps(project_root: Path) -> list[str]:
             _sys.modules[module_name] = module
             registered = False
             try:
-                try:
-                    spec.loader.exec_module(module)  # type: ignore[union-attr]
-                except Exception:
-                    raise
+                spec.loader.exec_module(module)  # type: ignore[union-attr]
 
                 # Find the StepBase subclass in the module
                 from .base import StepBase as _StepBase
