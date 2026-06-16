@@ -187,7 +187,6 @@ The currently declared multi-install safe integrations are:
 | `iflow` | `.iflow/commands`, `IFLOW.md` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |
 | `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
-| `kimi` | `.kimi-code/skills`, `AGENTS.md` |
 | `qodercli` | `.qoder/commands`, `QODER.md` |
 | `qwen` | `.qwen/commands`, `QWEN.md` |
 | `roo` | `.roo/commands`, `.roo/rules/specify-rules.md` |

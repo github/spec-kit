@@ -239,6 +239,77 @@ class TestKimiTeardownLegacyCleanup:
         assert user_skill.exists()
 
 
+class TestKimiCommandInvocation:
+    """Kimi dispatch must use the native ``/skill:`` slash command."""
+
+    def test_build_command_invocation_uses_skill_prefix(self):
+        i = get_integration("kimi")
+        assert i.build_command_invocation("specify") == "/skill:speckit-specify"
+        assert i.build_command_invocation("speckit.plan") == "/skill:speckit-plan"
+
+    def test_build_command_invocation_dotted_extension(self):
+        i = get_integration("kimi")
+        assert (
+            i.build_command_invocation("speckit.git.commit")
+            == "/skill:speckit-git-commit"
+        )
+
+    def test_build_command_invocation_appends_args(self):
+        i = get_integration("kimi")
+        assert (
+            i.build_command_invocation("specify", "my feature")
+            == "/skill:speckit-specify my feature"
+        )
+
+
+class TestKimiLegacySymlinkSafety:
+    """Legacy migration/cleanup must not follow symlinks out of the project."""
+
+    def test_migrate_skips_symlinked_legacy_skills_dir(self, tmp_path):
+        # An attacker-controlled directory outside the project root. Use a
+        # non-template skill name so a successful migration would be visible
+        # (the bundled templates never create "speckit-evillegacy").
+        outside = tmp_path / "outside"
+        (outside / "speckit-evillegacy").mkdir(parents=True)
+        (outside / "speckit-evillegacy" / "SKILL.md").write_text("# evil\n")
+
+        project = tmp_path / "project"
+        (project / ".kimi").mkdir(parents=True)
+        # .kimi/skills is a symlink to the outside directory.
+        (project / ".kimi" / "skills").symlink_to(
+            outside, target_is_directory=True
+        )
+
+        i = get_integration("kimi")
+        m = IntegrationManifest("kimi", project)
+        i.setup(project, m, parsed_options={"migrate_legacy": True})
+
+        # Outside content must be untouched (not moved into .kimi-code).
+        assert (outside / "speckit-evillegacy" / "SKILL.md").exists()
+        assert not (
+            project / ".kimi-code" / "skills" / "speckit-evillegacy"
+        ).exists()
+
+    def test_teardown_skips_symlinked_legacy_skills_dir(self, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        keep = outside / "keep.txt"
+        keep.write_text("important\n")
+
+        project = tmp_path / "project"
+        (project / ".kimi").mkdir(parents=True)
+        (project / ".kimi" / "skills").symlink_to(
+            outside, target_is_directory=True
+        )
+
+        i = get_integration("kimi")
+        m = IntegrationManifest("kimi", project)
+        i.teardown(project, m)
+
+        # The symlink target and its contents must survive teardown.
+        assert keep.exists()
+
+
 class TestKimiNextSteps:
     """CLI output tests for kimi next-steps display."""
 

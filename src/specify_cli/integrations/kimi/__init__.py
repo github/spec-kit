@@ -38,6 +38,25 @@ class KimiIntegration(SkillsIntegration):
     context_file = "AGENTS.md"
     multi_install_safe = False
 
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Build Kimi's native skill invocation: ``/skill:speckit-<stem>``.
+
+        Kimi Code CLI invokes installed skills with a ``/skill:<name>``
+        slash command (e.g. ``/skill:speckit-plan``), not the bare
+        ``/speckit-<name>`` form produced by the generic skills base
+        class. Overriding here keeps ``dispatch_command()`` and workflow
+        command steps aligned with the ``/skill:`` guidance shown at init
+        time and in rendered hook invocations.
+        """
+        stem = command_name
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
+
+        invocation = "/skill:speckit-" + stem.replace(".", "-")
+        if args:
+            invocation = f"{invocation} {args}"
+        return invocation
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [
@@ -77,7 +96,7 @@ class KimiIntegration(SkillsIntegration):
         if parsed_options.get("migrate_legacy", False):
             new_skills_dir = self.skills_dest(project_root)
             old_skills_dir = project_root / ".kimi" / "skills"
-            if old_skills_dir.is_dir():
+            if _is_safe_legacy_dir(old_skills_dir, project_root):
                 _migrate_legacy_kimi_skills_dir(old_skills_dir, new_skills_dir)
             _migrate_legacy_kimi_context_file(project_root)
 
@@ -94,12 +113,12 @@ class KimiIntegration(SkillsIntegration):
         removed, skipped = super().teardown(project_root, manifest, force=force)
 
         old_skills_dir = project_root / ".kimi" / "skills"
-        if old_skills_dir.is_dir():
+        if _is_safe_legacy_dir(old_skills_dir, project_root):
             legacy_dirs = sorted(
                 [*old_skills_dir.glob("speckit-*"), *old_skills_dir.glob("speckit.*")]
             )
             for legacy_dir in legacy_dirs:
-                if not legacy_dir.is_dir():
+                if legacy_dir.is_symlink() or not legacy_dir.is_dir():
                     continue
                 if _is_speckit_generated_skill(legacy_dir):
                     try:
@@ -114,6 +133,26 @@ class KimiIntegration(SkillsIntegration):
                 pass
 
         return removed, skipped
+
+
+def _is_safe_legacy_dir(path: Path, project_root: Path) -> bool:
+    """Return ``True`` when *path* is a real directory safely inside *project_root*.
+
+    Legacy migration and cleanup ``shutil.move()`` and ``shutil.rmtree()``
+    directories, so a symlinked ``.kimi``/``.kimi/skills`` (or one reached
+    through a symlinked parent) must never be followed: doing so could
+    relocate or delete content living outside the project tree. We reject
+    the path when it is itself a symlink, when it is not a directory, or
+    when resolving every symlink lands outside *project_root*.
+    """
+    if path.is_symlink() or not path.is_dir():
+        return False
+    try:
+        resolved = path.resolve()
+        root = project_root.resolve()
+    except OSError:
+        return False
+    return resolved == root or root in resolved.parents
 
 
 def _migrate_legacy_kimi_skills_dir(
@@ -140,7 +179,7 @@ def _migrate_legacy_kimi_skills_dir(
     )
 
     for legacy_dir in legacy_dirs:
-        if not legacy_dir.is_dir():
+        if legacy_dir.is_symlink() or not legacy_dir.is_dir():
             continue
         if not (legacy_dir / "SKILL.md").exists():
             continue
