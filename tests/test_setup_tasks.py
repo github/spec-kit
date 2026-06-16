@@ -20,7 +20,7 @@ CHECK_PREREQ_PS = PROJECT_ROOT / "scripts" / "powershell" / "check-prerequisites
 TASKS_TEMPLATE = PROJECT_ROOT / "templates" / "tasks-template.md"
  
 HAS_PWSH = shutil.which("pwsh") is not None
-_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+_WINDOWS_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershell")) if os.name == "nt" else None
  
  
 # ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@ def _run_bash_format_command(repo: Path, command_name: str) -> subprocess.Comple
 
 def _run_powershell_format_command(repo: Path, command_name: str) -> subprocess.CompletedProcess:
     script = repo / ".specify" / "scripts" / "powershell" / "common.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     return subprocess.run(
         [
             exe,
@@ -606,7 +606,7 @@ def test_setup_tasks_bash_errors_without_feature_context(
 # POWERSHELL TESTS
 # ===========================================================================
  
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
     """
     When the core tasks-template.md is present and all prerequisites are met,
@@ -615,7 +615,7 @@ def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
     """
     _minimal_feature(tasks_repo)
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
  
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
@@ -635,7 +635,7 @@ def test_setup_tasks_ps_core_template_resolved(tasks_repo: Path) -> None:
     assert tasks_tmpl.name == "tasks-template.md"
  
  
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_override_wins(tasks_repo: Path) -> None:
     """
     When an override exists at .specify/templates/overrides/tasks-template.md,
@@ -649,7 +649,7 @@ def test_setup_tasks_ps_override_wins(tasks_repo: Path) -> None:
     override_file.write_text("# override tasks template\n", encoding="utf-8")
  
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
  
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
@@ -671,7 +671,7 @@ def test_setup_tasks_ps_override_wins(tasks_repo: Path) -> None:
     )
  
  
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
     """
     When tasks-template.md is absent from all locations, setup-tasks.ps1 must
@@ -683,7 +683,7 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
     core.unlink()
  
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
  
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
@@ -698,7 +698,7 @@ def test_setup_tasks_ps_missing_template_errors(tasks_repo: Path) -> None:
     assert "tasks-template" in result.stderr.lower() or "tasks-template" in result.stdout.lower()
  
  
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_powershell_command_hint_normalizes_mixed_separators(
     tasks_repo: Path,
 ) -> None:
@@ -717,7 +717,7 @@ def test_powershell_command_hint_normalizes_mixed_separators(
     assert result.stdout.strip() == "/speckit-git-commit"
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_powershell_command_hint_preserves_hyphens_inside_segments(
     tasks_repo: Path,
 ) -> None:
@@ -729,7 +729,7 @@ def test_powershell_command_hint_preserves_hyphens_inside_segments(
     assert result.stdout.strip() == "/speckit.jira.sync-status"
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -> None:
     _write_integration_state(tasks_repo, "claude", "-")
     feat = tasks_repo / "specs" / "001-my-feature"
@@ -738,7 +738,7 @@ def test_setup_tasks_ps_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -> 
     _write_feature_json(tasks_repo)
 
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
 
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
@@ -755,7 +755,7 @@ def test_setup_tasks_ps_uses_invoke_separator_in_plan_hint(tasks_repo: Path) -> 
     assert "/speckit.plan" not in output
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_check_prerequisites_ps_uses_invoke_separator_in_tasks_hint(
     tasks_repo: Path,
 ) -> None:
@@ -763,7 +763,7 @@ def test_check_prerequisites_ps_uses_invoke_separator_in_tasks_hint(
     _minimal_feature(tasks_repo)
 
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
 
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-RequireTasks"],
@@ -780,7 +780,7 @@ def test_check_prerequisites_ps_uses_invoke_separator_in_tasks_hint(
     assert "/speckit.tasks" not in output
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
     tasks_repo: Path,
 ) -> None:
@@ -801,7 +801,7 @@ def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
     _write_feature_json(tasks_repo)
  
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
  
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
@@ -815,7 +815,7 @@ def test_setup_tasks_ps_passes_custom_branch_when_feature_json_valid(
     assert result.returncode == 0, result.stderr + result.stdout
  
  
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_tasks_ps_errors_without_feature_context(
     tasks_repo: Path,
 ) -> None:
@@ -826,7 +826,7 @@ def test_setup_tasks_ps_errors_without_feature_context(
     (main_feat / "plan.md").write_text("# plan\n", encoding="utf-8")
 
     script = tasks_repo / ".specify" / "scripts" / "powershell" / "setup-tasks.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
 
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],

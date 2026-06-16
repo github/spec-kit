@@ -935,6 +935,38 @@
       "created_at": "2026-05-03T00:00:00Z",
       "updated_at": "2026-05-05T00:00:00Z"
     },
+    "data-model-diagram": {
+      "name": "Data Model Diagram",
+      "id": "data-model-diagram",
+      "description": "Generates Mermaid ER diagrams from Spec Kit data models after planning.",
+      "author": "Igor Benicio de Mesquita",
+      "version": "0.2.2",
+      "download_url": "https://github.com/benizzio/spec-kit-data-model-diagram/archive/refs/tags/v0.2.2.zip",
+      "repository": "https://github.com/benizzio/spec-kit-data-model-diagram",
+      "homepage": "https://github.com/benizzio/spec-kit-data-model-diagram",
+      "documentation": "https://github.com/benizzio/spec-kit-data-model-diagram#readme",
+      "changelog": "https://github.com/benizzio/spec-kit-data-model-diagram/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "diagram",
+        "documentation",
+        "mermaid"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-16T00:00:00Z",
+      "updated_at": "2026-06-16T00:00:00Z"
+    },
     "diagram": {
       "name": "Spec Diagram",
       "id": "diagram",
@@ -3142,8 +3174,8 @@
       "id": "speckit-superpowers-bridge",
       "description": "Thin orchestrator between Spec Kit (design) and Superpowers (implementation). Cross-agent.",
       "author": "lihan3238",
-      "version": "1.0.3",
-      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.0.3/speckit-superpowers-bridge-v1.0.3.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/lihan3238/speckit-superpowers-bridge/releases/download/v1.1.0/speckit-superpowers-bridge-v1.1.0.zip",
       "repository": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "homepage": "https://github.com/lihan3238/speckit-superpowers-bridge",
       "documentation": "https://github.com/lihan3238/speckit-superpowers-bridge#readme",
@@ -3648,6 +3680,46 @@
       "stars": 0,
       "created_at": "2026-04-25T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
+    },
+    "tldr": {
+      "name": "Spec Kit TLDR",
+      "id": "tldr",
+      "description": "Render a feature's spec.md / plan.md into a review-oriented TLDR (self-contained HTML dashboard + PR-native Markdown) that surfaces risks for faster PR review.",
+      "author": "Qurore",
+      "version": "0.3.0",
+      "download_url": "https://github.com/qurore/speckit-tldr/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/qurore/speckit-tldr",
+      "homepage": "https://github.com/qurore/speckit-tldr",
+      "documentation": "https://github.com/qurore/speckit-tldr/blob/main/README.md",
+      "changelog": "https://github.com/qurore/speckit-tldr/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "review",
+        "pr-review",
+        "sdd",
+        "spec",
+        "visibility"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-16T00:00:00Z",
+      "updated_at": "2026-06-16T00:00:00Z"
     },
     "token-analyzer": {
       "name": "Token Consumption Analyzer",

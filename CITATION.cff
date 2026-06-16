@@ -20,8 +20,8 @@ authors:
 repository-code: "https://github.com/github/spec-kit"
 url: "https://github.github.io/spec-kit/"
 license: MIT
-version: "0.7.3"
-date-released: "2026-04-17"
+version: "0.10.2"
+date-released: "2026-06-11"
 keywords:
   - spec-driven development
   - ai coding agents

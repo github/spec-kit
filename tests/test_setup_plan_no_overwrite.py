@@ -18,7 +18,7 @@ SETUP_PLAN_PS = PROJECT_ROOT / "scripts" / "powershell" / "setup-plan.ps1"
 PLAN_TEMPLATE = PROJECT_ROOT / "templates" / "plan-template.md"
 
 HAS_PWSH = shutil.which("pwsh") is not None
-_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+_WINDOWS_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershell")) if os.name == "nt" else None
 
 
 def _install_bash_scripts(repo: Path) -> None:
@@ -178,11 +178,11 @@ def test_setup_plan_json_parseable_on_first_run(plan_repo: Path) -> None:
 # ── PowerShell tests ──────────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_setup_plan_creates_plan_when_missing(plan_repo: Path) -> None:
     """First run must create plan.md from the template."""
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
         cwd=plan_repo,
@@ -199,7 +199,7 @@ def test_ps_setup_plan_creates_plan_when_missing(plan_repo: Path) -> None:
     assert len(content) > 0
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path) -> None:
     """Rerun must not overwrite an existing plan.md."""
     feat = plan_repo / "specs" / "001-my-feature"
@@ -208,7 +208,7 @@ def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path) -> None:
     (feat / "plan.md").write_text(existing_content, encoding="utf-8")
 
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
         cwd=plan_repo,

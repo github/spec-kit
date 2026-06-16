@@ -27,7 +27,7 @@ ALL_INTEGRATION_KEYS = [
     # Stage 4 — TOML integrations
     "gemini", "tabnine",
     # Stage 5 — skills, generic & option-driven integrations
-    "codex", "kimi", "agy", "generic",
+    "codex", "kimi", "agy", "zed", "generic",
 ]
 
 
