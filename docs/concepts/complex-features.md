@@ -11,14 +11,14 @@ implementation run tries to hold the entire feature in context, the model
 degrades as the window fills. The fix is to scope each run so it stays well
 within context limits.
 
-The `implement` command accepts free-form user input that the agent is required
-to honor before proceeding. This means you can scope each run without any
+The `/speckit.implement` command accepts free-form user input that the agent
+must consider before proceeding. This means you can scope each run without any
 tooling changes.
 
 ## Option 1: Limit How Many Tasks Run Per Invocation
 
-Instead of letting implement run through every task at once, tell it to stop
-early:
+Instead of letting `/speckit.implement` run through every task at once, tell it
+to stop early:
 
 ```text
 /speckit.implement only execute tasks T001-T010, then stop and report progress
@@ -36,8 +36,9 @@ well within context limits.
 
 ## Option 2: Instruct the Agent to Use Sub-Agents
 
-If your coding agent supports sub-agents (for example, Copilot CLI or VS Code
-Copilot), you can instruct implement to delegate individual tasks:
+If your coding agent supports sub-agents (for example, GitHub Copilot CLI or the
+GitHub Copilot extension for VS Code), you can instruct `/speckit.implement` to
+delegate individual tasks:
 
 ```text
 /speckit.implement delegate each parallel [P] task to a sub-agent
