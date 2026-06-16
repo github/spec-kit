@@ -1961,10 +1961,10 @@
     "memorylint": {
       "name": "MemoryLint",
       "id": "memorylint",
-      "description": "Agent memory governance tool: Automatically audits and fixes boundary conflicts between AGENTS.md and the constitution.",
+      "description": "Evidence-driven instruction drift checker: audits agent memory files for boundary, reality, conflict, and redundancy drift.",
       "author": "RbBtSn0w",
-      "version": "1.4.0",
-      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/memorylint-v1.4.0/memorylint.zip",
+      "version": "1.5.1",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/memorylint-v1.5.1/memorylint.zip",
       "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions/tree/main/memorylint",
       "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/memorylint/README.md",
@@ -1976,7 +1976,7 @@
         "speckit_version": ">=0.5.1"
       },
       "provides": {
-        "commands": 2,
+        "commands": 3,
         "hooks": 3
       },
       "tags": [
@@ -1990,7 +1990,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-09T00:00:00Z",
-      "updated_at": "2026-05-24T01:06:49Z"
+      "updated_at": "2026-06-16T00:00:00Z"
     },
     "multi-model-review": {
       "name": "Multi-Model Review",
