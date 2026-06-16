@@ -201,6 +201,41 @@ class TestKimiContextFileMigration:
         assert "<!-- SPECKIT START -->" in content
         assert not kimi_md.exists()
 
+    def test_setup_migrate_legacy_uses_custom_context_markers(self, tmp_path):
+        """Migration respects context_markers from agent-context extension config."""
+        i = get_integration("kimi")
+
+        config_dir = tmp_path / ".specify" / "extensions" / "agent-context"
+        config_dir.mkdir(parents=True)
+        (config_dir / "agent-context-config.yml").write_text(
+            "context_file: AGENTS.md\n"
+            "context_markers:\n"
+            "  start: '<!-- CUSTOM START -->'\n"
+            "  end: '<!-- CUSTOM END -->'\n"
+        )
+
+        kimi_md = tmp_path / "KIMI.md"
+        kimi_md.write_text(
+            "# Project context\n\n"
+            "<!-- CUSTOM START -->\n"
+            "old managed section\n"
+            "<!-- CUSTOM END -->\n\n"
+            "Keep this user note.\n"
+        )
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
+
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md.exists()
+        content = agents_md.read_text(encoding="utf-8")
+        assert "Keep this user note." in content
+        assert "old managed section" not in content
+        assert "<!-- CUSTOM START -->" in content
+        assert "<!-- CUSTOM END -->" in content
+        assert "<!-- SPECKIT START -->" not in content
+        assert not kimi_md.exists()
+
 
 class TestKimiTeardownLegacyCleanup:
     """teardown() removes leftover legacy .kimi/skills/ directories."""

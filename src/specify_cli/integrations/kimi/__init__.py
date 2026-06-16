@@ -98,7 +98,10 @@ class KimiIntegration(SkillsIntegration):
             old_skills_dir = project_root / ".kimi" / "skills"
             if _is_safe_legacy_dir(old_skills_dir, project_root):
                 _migrate_legacy_kimi_skills_dir(old_skills_dir, new_skills_dir)
-            _migrate_legacy_kimi_context_file(project_root)
+            marker_start, marker_end = self._resolve_context_markers(project_root)
+            _migrate_legacy_kimi_context_file(
+                project_root, marker_start=marker_start, marker_end=marker_end
+            )
 
         return created
 
@@ -278,7 +281,12 @@ def _is_speckit_generated_skill(skill_dir: Path) -> bool:
     )
 
 
-def _migrate_legacy_kimi_context_file(project_root: Path) -> bool:
+def _migrate_legacy_kimi_context_file(
+    project_root: Path,
+    *,
+    marker_start: str = IntegrationBase.CONTEXT_MARKER_START,
+    marker_end: str = IntegrationBase.CONTEXT_MARKER_END,
+) -> bool:
     """Migrate user content from legacy ``KIMI.md`` to ``AGENTS.md``.
 
     The Speckit managed section is stripped from ``KIMI.md`` before the
@@ -289,9 +297,6 @@ def _migrate_legacy_kimi_context_file(project_root: Path) -> bool:
     legacy_path = project_root / "KIMI.md"
     if not legacy_path.is_file():
         return False
-
-    marker_start = IntegrationBase.CONTEXT_MARKER_START
-    marker_end = IntegrationBase.CONTEXT_MARKER_END
 
     content = legacy_path.read_text(encoding="utf-8-sig")
     start_idx = content.find(marker_start)
