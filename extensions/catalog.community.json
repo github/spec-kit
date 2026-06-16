@@ -3649,6 +3649,46 @@
       "created_at": "2026-04-25T00:00:00Z",
       "updated_at": "2026-04-25T00:00:00Z"
     },
+    "tldr": {
+      "name": "Spec Kit TLDR",
+      "id": "tldr",
+      "description": "Render a feature's spec.md / plan.md into a review-oriented TLDR (self-contained HTML dashboard + PR-native Markdown) that surfaces risks for faster PR review.",
+      "author": "Qurore",
+      "version": "0.3.0",
+      "download_url": "https://github.com/qurore/speckit-tldr/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/qurore/speckit-tldr",
+      "homepage": "https://github.com/qurore/speckit-tldr",
+      "documentation": "https://github.com/qurore/speckit-tldr/blob/main/README.md",
+      "changelog": "https://github.com/qurore/speckit-tldr/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 0
+      },
+      "tags": [
+        "review",
+        "pr-review",
+        "sdd",
+        "spec",
+        "visibility"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-16T00:00:00Z",
+      "updated_at": "2026-06-16T00:00:00Z"
+    },
     "token-analyzer": {
       "name": "Token Consumption Analyzer",
       "id": "token-analyzer",
