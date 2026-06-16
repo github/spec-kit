@@ -487,6 +487,8 @@ class WorkflowCatalog:
                 raise WorkflowValidationError(
                     f"Catalog config file is unreadable or malformed: {exc}"
                 ) from exc
+            if raw is None:
+                raw = {"catalogs": []}
             if not isinstance(raw, dict):
                 raise WorkflowValidationError(
                     "Catalog config file is corrupted (expected a mapping)."

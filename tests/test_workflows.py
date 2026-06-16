@@ -35,7 +35,7 @@ def temp_dir():
     # On Windows, file handles from dynamic imports or registry access may
     # still be held briefly after the test. Use ignore_errors to avoid
     # flaky teardown failures (WinError 32).
-    shutil.rmtree(tmpdir, ignore_errors=True)
+    shutil.rmtree(tmpdir, ignore_errors=(sys.platform == "win32"))
 
 
 @pytest.fixture
