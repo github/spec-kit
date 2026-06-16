@@ -331,6 +331,10 @@ class TestClaudeIntegration:
 class TestClaudeArgumentHints:
     """Verify that argument-hint frontmatter is injected for Claude skills."""
 
+    def test_converge_has_no_argument_hint(self):
+        """Converge should not advertise unsupported feature-name arguments."""
+        assert "converge" not in ARGUMENT_HINTS
+
     def test_all_skills_have_hints(self, tmp_path):
         """Every generated SKILL.md must contain an argument-hint line."""
         i = get_integration("claude")
