@@ -3300,9 +3300,11 @@ class TestWorkflowRegistry:
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
 
-    def test_default_catalogs(self, project_dir):
+    def test_default_catalogs(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
+        monkeypatch.setattr(Path, "home", lambda: project_dir)
+        monkeypatch.delenv("SPECKIT_WORKFLOW_CATALOG_URL", raising=False)
         catalog = WorkflowCatalog(project_dir)
         entries = catalog.get_active_catalogs()
         assert len(entries) == 2
@@ -3744,9 +3746,11 @@ class TestStepRegistryCustom:
 class TestStepCatalog:
     """Test StepCatalog catalog resolution."""
 
-    def test_default_catalogs(self, project_dir):
+    def test_default_catalogs(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import StepCatalog
 
+        monkeypatch.setattr(Path, "home", lambda: project_dir)
+        monkeypatch.delenv("SPECKIT_STEP_CATALOG_URL", raising=False)
         catalog = StepCatalog(project_dir)
         entries = catalog.get_active_catalogs()
         assert len(entries) == 2
