@@ -324,6 +324,7 @@ class WorkflowCatalog:
                 with open(cache_file, encoding="utf-8") as f:
                     return json.load(f)
             except (json.JSONDecodeError, OSError):
+                # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
         # Fetch from URL — validate scheme before opening and after redirects
@@ -357,6 +358,7 @@ class WorkflowCatalog:
                     with open(cache_file, encoding="utf-8") as f:
                         return json.load(f)
                 except (json.JSONDecodeError, ValueError, OSError):
+                    # Stale-cache read failed; let the original fetch error propagate.
                     pass
             raise WorkflowCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
@@ -940,6 +942,7 @@ class StepCatalog:
                 if isinstance(cached, dict):
                     return cached
             except (json.JSONDecodeError, OSError):
+                # Ignore invalid/unreadable cache and fall back to fetching from source.
                 pass
 
         from urllib.parse import urlparse
@@ -973,6 +976,7 @@ class StepCatalog:
                     if isinstance(cached, dict):
                         return cached
                 except (json.JSONDecodeError, ValueError, OSError):
+                    # Stale-cache read failed; let the original fetch error propagate.
                     pass
             raise StepCatalogError(
                 f"Failed to fetch catalog from {entry.url}: {exc}"
