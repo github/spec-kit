@@ -1295,6 +1295,49 @@
       "created_at": "2026-06-12T00:00:00Z",
       "updated_at": "2026-06-12T00:00:00Z"
     },
+    "improve": {
+      "name": "Improve Extension",
+      "id": "improve",
+      "description": "Audits any codebase as a senior advisor and writes prioritized, self-contained spec prompts under specs/ that the spec-kit lifecycle can process.",
+      "author": "d0whc3r",
+      "version": "1.0.1",
+      "download_url": "https://github.com/d0whc3r/spec-kit-improve/releases/download/v1.0.1/improve-1.0.1.zip",
+      "repository": "https://github.com/d0whc3r/spec-kit-improve",
+      "homepage": "https://d0whc3r.github.io/spec-kit-improve/",
+      "documentation": "https://github.com/d0whc3r/spec-kit-improve/wiki",
+      "changelog": "https://github.com/d0whc3r/spec-kit-improve/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 0
+      },
+      "tags": [
+        "advisor",
+        "audit",
+        "code-quality",
+        "code-review",
+        "improvement",
+        "performance",
+        "planning",
+        "refactoring",
+        "security",
+        "spec-kit",
+        "spec-kit-extension",
+        "specs",
+        "tech-debt",
+        "testing"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-16T00:00:00Z",
+      "updated_at": "2026-06-16T00:00:00Z"
+    },
     "issue": {
       "name": "GitHub Issues Integration 2",
       "id": "issue",
@@ -1493,6 +1536,40 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
+      "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "loop": {
+      "name": "Loop Engineering",
+      "id": "loop",
+      "description": "Engineer safe autonomous agent loops for spec-driven development: a maker/checker split, externalized loop state, and stay-the-engineer guardrails against comprehension debt and cognitive surrender",
+      "author": "formin",
+      "version": "1.0.0",
+      "download_url": "https://github.com/formin/spec-kit-loop/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/formin/spec-kit-loop",
+      "homepage": "https://github.com/formin/spec-kit-loop",
+      "documentation": "https://github.com/formin/spec-kit-loop/blob/main/README.md",
+      "changelog": "https://github.com/formin/spec-kit-loop/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "loop-engineering",
+        "automation",
+        "verification",
+        "maker-checker",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
     },
     "m365": {
@@ -1918,10 +1995,10 @@
     "memorylint": {
       "name": "MemoryLint",
       "id": "memorylint",
-      "description": "Agent memory governance tool: Automatically audits and fixes boundary conflicts between AGENTS.md and the constitution.",
+      "description": "Evidence-driven instruction drift checker: audits agent memory files for boundary, reality, conflict, and redundancy drift.",
       "author": "RbBtSn0w",
-      "version": "1.4.0",
-      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/memorylint-v1.4.0/memorylint.zip",
+      "version": "1.5.1",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/memorylint-v1.5.1/memorylint.zip",
       "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions/tree/main/memorylint",
       "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/memorylint/README.md",
@@ -1933,7 +2010,7 @@
         "speckit_version": ">=0.5.1"
       },
       "provides": {
-        "commands": 2,
+        "commands": 3,
         "hooks": 3
       },
       "tags": [
@@ -1947,7 +2024,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-09T00:00:00Z",
-      "updated_at": "2026-05-24T01:06:49Z"
+      "updated_at": "2026-06-16T00:00:00Z"
     },
     "multi-model-review": {
       "name": "Multi-Model Review",
@@ -2317,13 +2394,13 @@
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
-      "description": "Full product lifecycle from research to release — express/lite/standard/v-model tracks, living spec + traceability, structured journeys → E2E, monorepo, and selectable doc-structure strategies",
-      "author": "VaiYav",
-      "version": "1.6.0",
-      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.6.0.zip",
+      "description": "Full product-lifecycle orchestrator for Spec Kit: research → product-spec → plan → tasks → implement → verify → test → release-readiness, across express/lite/standard/v-model modes with human-in-the-loop gates.",
+      "author": "Valentin Yakovlev",
+      "version": "1.7.0",
+      "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.7.0.zip",
       "repository": "https://github.com/VaiYav/speckit-product-forge",
       "homepage": "https://github.com/VaiYav/speckit-product-forge",
-      "documentation": "https://github.com/VaiYav/speckit-product-forge/blob/main/README.md",
+      "documentation": "https://github.com/VaiYav/speckit-product-forge/blob/main/docs/concept.md",
       "changelog": "https://github.com/VaiYav/speckit-product-forge/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
@@ -2338,15 +2415,15 @@
       "tags": [
         "process",
         "lifecycle",
-        "monorepo",
-        "v-model",
-        "portfolio"
+        "testing",
+        "sync-verify",
+        "release-readiness"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-28T00:00:00Z",
-      "updated_at": "2026-06-02T00:00:00Z"
+      "updated_at": "2026-06-16T00:00:00Z"
     },
     "qa": {
       "name": "QA Testing Extension",
@@ -3322,10 +3399,10 @@
     "superb": {
       "name": "Superpowers Bridge",
       "id": "superb",
-      "description": "Orchestrates obra/superpowers skills within the spec-kit SDD workflow. Thin bridge commands delegate to superpowers' authoritative SKILL.md files at runtime (with graceful fallback), while bridge-original commands provide spec-kit-native value. Eight commands cover the full lifecycle: intent clarification, TDD enforcement, task review, verification, critique, systematic debugging, branch completion, and review response. Hook-bound commands fire automatically; standalone commands are invoked when needed.",
-      "author": "rbbtsn0w",
-      "version": "1.4.0",
-      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.4.0/superpowers-bridge.zip",
+      "description": "Bridges selected Superpowers disciplines into Spec Kit as evidence-first trust gates for agent workflows.",
+      "author": "RbBtSn0w",
+      "version": "1.6.0",
+      "download_url": "https://github.com/RbBtSn0w/spec-kit-extensions/releases/download/superpowers-bridge-v1.6.0/superpowers-bridge.zip",
       "repository": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "homepage": "https://github.com/RbBtSn0w/spec-kit-extensions",
       "documentation": "https://github.com/RbBtSn0w/spec-kit-extensions/blob/main/superpowers-bridge/README.md",
@@ -3344,16 +3421,15 @@
         ]
       },
       "provides": {
-        "commands": 8,
-        "hooks": 3
+        "commands": 10,
+        "hooks": 5
       },
       "tags": [
-        "methodology",
+        "quality-gates",
         "tdd",
         "code-review",
         "workflow",
         "superpowers",
-        "brainstorming",
         "verification",
         "debugging",
         "branch-management"
@@ -3362,7 +3438,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-30T00:00:00Z",
-      "updated_at": "2026-05-24T01:07:34Z"
+      "updated_at": "2026-06-16T00:00:00Z"
     },
     "superspec": {
       "name": "Superspec",
