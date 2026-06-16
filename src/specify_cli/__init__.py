@@ -3531,7 +3531,7 @@ def _validate_step_id_or_exit(step_id: str) -> None:
         or step_id.startswith(".")
         or step_id.endswith(".")
         or step_id.endswith(" ")
-        or step_id in _RESERVED_STEP_IDS
+        or step_id.lower() in _RESERVED_STEP_IDS
         or stem in _WINDOWS_RESERVED_NAMES
         or any(c in _WINDOWS_INVALID_CHARS for c in step_id)
         or any(ord(c) < 32 for c in step_id)
