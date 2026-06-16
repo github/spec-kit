@@ -4,6 +4,21 @@
 
 - feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
 
+## [0.10.3] - 2026-06-16
+
+### Changed
+
+- Update Superpowers Bridge extension to v1.6.0 (#2998)
+- Add Improve Extension to community catalog (#2997)
+- Update Product Forge extension to v1.7.0 (#2996)
+- Update Linear Integration extension to v0.5.0 (#2995)
+- Update Superpowers Implementation Bridge extension to v1.0.3 (#2993)
+- Update Ralph community extension to v1.1.1 (#2861)
+- Update Linear Integration extension to v0.4.0 (#2942)
+- Update DocGuard — CDD Enforcement to v0.26.0 (#2941)
+- Add SpecKit Companion extension to community catalog (#2937)
+- chore: release 0.10.2, begin 0.10.3.dev0 development (#2936)
+
 ## [0.10.2] - 2026-06-11
 
 ### Changed

@@ -396,7 +396,9 @@ def test_ps_precedence_over_cwd_project(tmp_path: Path) -> None:
     # PowerShell Join-Path keeps the embedded "/" of the relative feature dir
     # while pathlib uses the platform separator; compare separator-insensitively
     # so the Windows CI runner (where pwsh runs) matches.
-    assert _feature_dir_line(result.stdout).replace("\\", "/") == (web / "specs" / "001-demo").as_posix()
+    feature_dir = _feature_dir_line(result.stdout)
+    assert feature_dir is not None, result.stdout
+    assert feature_dir.replace("\\", "/") == (web / "specs" / "001-demo").as_posix()
     assert str(cwd_proj) not in result.stdout
 
 
@@ -415,7 +417,9 @@ def test_ps_composes_with_feature_directory_override(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     # Separator-insensitive: PowerShell Join-Path keeps the embedded "/".
-    assert _feature_dir_line(result.stdout).replace("\\", "/") == (web / "specs" / "003-x").as_posix()
+    feature_dir = _feature_dir_line(result.stdout)
+    assert feature_dir is not None, result.stdout
+    assert feature_dir.replace("\\", "/") == (web / "specs" / "003-x").as_posix()
 
 
 @requires_pwsh
