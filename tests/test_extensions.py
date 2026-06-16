@@ -1118,6 +1118,29 @@ class TestExtensionManager:
         assert manifest.id == "test-ext"
         assert manager.registry.is_installed("test-ext")
 
+    def test_install_from_install_dir_is_rejected_without_data_loss(
+        self, extension_dir, project_dir
+    ):
+        """Installing from an extension's own install dir must fail without
+        deleting it (regression for issue #2990)."""
+        manager = ExtensionManager(project_dir)
+
+        # Install once so the extension lives at its install destination.
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        install_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        assert install_dir.exists()
+
+        # Re-installing from that same directory with --force must be rejected.
+        with pytest.raises(ValidationError, match="install destination"):
+            manager.install_from_directory(
+                install_dir, "0.1.0", register_commands=False, force=True
+            )
+
+        # The directory and its contents must be left intact (no data loss).
+        assert install_dir.exists()
+        assert (install_dir / "extension.yml").exists()
+        assert (install_dir / "commands" / "hello.md").exists()
+
     def test_install_zip_force_reinstall(self, extension_dir, project_dir):
         """Test force-reinstalling from ZIP when already installed."""
         import zipfile
