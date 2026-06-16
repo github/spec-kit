@@ -1084,6 +1084,45 @@ class TestExtensionSkillRegistration:
         fail_meta = manager.registry.get("aaa-fail")
         assert "claude" not in fail_meta.get("registered_commands", {})
 
+    def test_skill_registration_failure_preserves_registered_commands(
+        self, project_dir, temp_dir, monkeypatch, capsys
+    ):
+        """Persist successful command registration even if skills fail.
+
+        If command files are written but skill generation raises, the command
+        registry must still be updated so later unregister/cleanup can find the
+        command files.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="skill-fail"), "0.1.0",
+            register_commands=False,
+        )
+
+        def fail_skills(self, manifest, ext_dir, link_outputs=False):
+            raise OSError("simulated skill directory failure")
+
+        monkeypatch.setattr(
+            ExtensionManager, "_register_extension_skills", fail_skills
+        )
+
+        manager.register_enabled_extensions_for_agent("claude")
+
+        metadata = manager.registry.get("skill-fail")
+        assert metadata is not None
+        assert metadata["registered_commands"] == {
+            "claude": [
+                "speckit.skill-fail.hello",
+                "speckit.skill-fail.world",
+            ]
+        }
+        assert metadata["registered_skills"] == []
+
+        captured = capsys.readouterr()
+        assert "register extension skills for extension 'skill-fail'" in captured.out
+        assert "Continuing with command registration" in captured.out
+
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir
     ):

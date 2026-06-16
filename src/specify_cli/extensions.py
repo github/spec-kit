@@ -1742,11 +1742,31 @@ class ExtensionManager:
                     if new_registered != registered_commands:
                         updates["registered_commands"] = new_registered
 
-                registered_skills = self._register_extension_skills(manifest, ext_dir)
-                if registered_skills:
-                    existing_skills = self._valid_name_list(metadata.get("registered_skills", []))
-                    merged_skills = list(dict.fromkeys(existing_skills + registered_skills))
-                    updates["registered_skills"] = merged_skills
+                try:
+                    registered_skills = self._register_extension_skills(manifest, ext_dir)
+                except Exception as skills_err:
+                    # Skills are a companion artifact.  If command registration
+                    # already succeeded, still persist it so later cleanup can
+                    # find those command files.
+                    from . import _print_cli_warning
+
+                    _print_cli_warning(
+                        "register extension skills for",
+                        "extension",
+                        ext_id,
+                        skills_err,
+                        continuing=(
+                            "Continuing with command registration for this "
+                            "extension and the remaining extensions."
+                        ),
+                    )
+                else:
+                    if registered_skills:
+                        existing_skills = self._valid_name_list(
+                            metadata.get("registered_skills", [])
+                        )
+                        merged_skills = list(dict.fromkeys(existing_skills + registered_skills))
+                        updates["registered_skills"] = merged_skills
 
                 if updates:
                     self.registry.update(ext_id, updates)
