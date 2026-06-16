@@ -44,6 +44,10 @@ Stage ownership:
 - `/speckit.analyze`: vertical consistency checks across requirements, behavior drafts, contracts, and tasks only.
 - `/speckit.implement`: implementation handoff execution only.
 
+When a Figma Evidence Packet has already been written into `spec.md`,
+`/speckit.clarify` may clarify those requirement gaps from `spec.md`, but
+external design extraction is not a clarification responsibility.
+
 ## Structured Artifact Rules
 
 Machine-readable JSON artifacts are contracts, not prose examples. Stable

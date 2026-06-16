@@ -1,0 +1,6 @@
+#!/home/runner/work/spec-kit-workflow-preset/spec-kit-workflow-preset/.venv-specify-smoke/bin/python3
+import sys
+from json5.tool import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())

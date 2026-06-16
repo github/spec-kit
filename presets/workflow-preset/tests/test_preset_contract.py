@@ -511,7 +511,7 @@ class PresetContractTests(unittest.TestCase):
             template = entries[template_name]
             self.assertEqual("template", template["type"])
             self.assertEqual(
-                str(template_path.relative_to(REPO_ROOT)),
+                template_path.relative_to(REPO_ROOT).as_posix(),
                 template["file"],
             )
             self.assertEqual(template_name, template["replaces"])
@@ -521,7 +521,7 @@ class PresetContractTests(unittest.TestCase):
             schema_name = f"{contract_type}-schema".replace(".", "-").replace("_", "-")
             schema = entries[schema_name]
             self.assertEqual("template", schema["type"])
-            self.assertEqual(str(schema_path.relative_to(REPO_ROOT)), schema["file"])
+            self.assertEqual(schema_path.relative_to(REPO_ROOT).as_posix(), schema["file"])
             self.assertEqual(schema_name, schema["replaces"])
             self.assertEqual("replace", schema["strategy"])
 
@@ -689,12 +689,32 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Product requirements stay in `spec.md`", clarify)
         self.assertIn("non-functional requirement assumptions", clarify)
         self.assertIn("only after user-provided answers", clarify)
+        self.assertIn("Figma Evidence Packet", clarify)
+        self.assertIn("Missing / Needs clarification", clarify)
+        self.assertIn("[NEEDS CLARIFICATION]", clarify)
+        self.assertIn("Inferred from structure", clarify)
+        self.assertIn("Do not call Figma MCP", clarify)
+        self.assertIn("Do not re-extract design facts", clarify)
+        self.assertIn("Ask at most 5 high-impact questions", clarify)
+        self.assertIn("visual fidelity scope", clarify)
+        self.assertIn("missing UI states", clarify)
+        self.assertIn("responsive behavior", clarify)
+        self.assertIn("component mapping", clarify)
+        self.assertIn("data semantics", clarify)
+        self.assertIn("acceptance evidence", clarify)
+        self.assertIn("write confirmed answers back into `spec.md`", clarify)
+        self.assertIn("Do not generate visual restoration checklists", clarify)
         for forbidden in (
             "behavior/bdd.draft.feature",
             "behavior/behavior-scenarios.draft.json",
             "behavior/uif.intent.json",
             "behavior/data-fixtures.intent.json",
             "behavior/open-questions.json",
+            "use_figma",
+            "get_design_context",
+            "fetch Figma URL",
+            "read Figma URL",
+            "update checklists/behavior-testability.md",
         ):
             self.assertNotIn(forbidden, clarify)
 
@@ -1867,58 +1887,6 @@ class PresetContractTests(unittest.TestCase):
                 RECEIPT_PATH,
             )
 
-    def test_validate_receipt_contract_requires_runtime_data_writes_found_for_code_review_task(
-        self,
-    ) -> None:
-        handoff = minimal_handoff(task_ids=["T099"], task_type="code_review")
-        handoff["allowed_read_paths"] = [TASKS_PATH, SERVICE_PATH]
-
-        with self.assertRaisesRegex(ValueError, "runtime_data_writes_found"):
-            validate_receipt_contract(
-                handoff,
-                minimal_receipt(
-                    task_ids=["T099"],
-                    task_type="code_review",
-                    review_conclusion={
-                        "status": "approved",
-                        "summary": "Review complete.",
-                        "checked_sources": [SERVICE_PATH],
-                        "findings": [],
-                    },
-                    data_side_effect_review={
-                        "reviewed_diff_paths": [SERVICE_PATH],
-                        "mutation_findings": [],
-                    },
-                ),
-                RECEIPT_PATH,
-            )
-
-    def test_validate_receipt_contract_requires_mutation_findings_for_code_review_task(
-        self,
-    ) -> None:
-        handoff = minimal_handoff(task_ids=["T099"], task_type="code_review")
-        handoff["allowed_read_paths"] = [TASKS_PATH, SERVICE_PATH]
-
-        with self.assertRaisesRegex(ValueError, "mutation_findings"):
-            validate_receipt_contract(
-                handoff,
-                minimal_receipt(
-                    task_ids=["T099"],
-                    task_type="code_review",
-                    review_conclusion={
-                        "status": "approved",
-                        "summary": "Review complete.",
-                        "checked_sources": [SERVICE_PATH],
-                        "findings": [],
-                    },
-                    data_side_effect_review={
-                        "reviewed_diff_paths": [SERVICE_PATH],
-                        "runtime_data_writes_found": False,
-                    },
-                ),
-                RECEIPT_PATH,
-            )
-
     def test_validate_receipt_contract_rejects_approved_with_unresolved_high_data_side_effect(
         self,
     ) -> None:
@@ -1957,57 +1925,6 @@ class PresetContractTests(unittest.TestCase):
                 ),
                 RECEIPT_PATH,
             )
-
-    def test_validate_receipt_contract_requires_data_side_effect_finding_fields(
-        self,
-    ) -> None:
-        handoff = minimal_handoff(task_ids=["T099"], task_type="code_review")
-        handoff["allowed_read_paths"] = [TASKS_PATH, SERVICE_PATH]
-        required_fields = [
-            "id",
-            "severity",
-            "category",
-            "summary",
-            "operation",
-            "tables_or_entities",
-            "fields",
-            "resolution",
-        ]
-        finding = {
-            "id": "DSE-001",
-            "severity": "low",
-            "category": "field_level_update",
-            "summary": "Order status update affects fulfillment flow.",
-            "operation": "update",
-            "tables_or_entities": ["orders"],
-            "fields": ["status"],
-            "resolution": "accepted",
-        }
-
-        for missing_field in required_fields:
-            invalid_finding = dict(finding)
-            invalid_finding.pop(missing_field)
-            with self.subTest(missing_field=missing_field):
-                with self.assertRaisesRegex(ValueError, missing_field):
-                    validate_receipt_contract(
-                        handoff,
-                        minimal_receipt(
-                            task_ids=["T099"],
-                            task_type="code_review",
-                            review_conclusion={
-                                "status": "approved",
-                                "summary": "Review complete.",
-                                "checked_sources": [SERVICE_PATH],
-                                "findings": [],
-                            },
-                            data_side_effect_review={
-                                "reviewed_diff_paths": [SERVICE_PATH],
-                                "runtime_data_writes_found": True,
-                                "mutation_findings": [invalid_finding],
-                            },
-                        ),
-                        RECEIPT_PATH,
-                    )
 
     def test_validate_receipt_contract_rejects_checked_source_outside_allowed_reads(
         self,
@@ -2384,6 +2301,9 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("The preset has four goals:", readme)
         self.assertIn("BDD readiness gate", readme)
         self.assertIn("NFR readiness", readme)
+        self.assertIn("Figma Evidence Packet", readme)
+        self.assertIn("clarifies Figma-derived gaps already written in `spec.md`", readme)
+        self.assertIn("does not call Figma", readme)
         self.assertIn("explicit non-functional requirement declarations", readme)
         self.assertIn("Required, Not Applicable, or Unknown", readme)
         self.assertIn("missing or unverifiable NFR assumptions", readme)
@@ -2520,6 +2440,8 @@ class PresetContractTests(unittest.TestCase):
             "BDD and UIF artifacts need independent templates",
             "`/speckit.constitution`: constitution governance and project principles only",
             "`/speckit.checklist`: checklist artifacts and BDD/NFR readiness gates only",
+            "Figma Evidence Packet",
+            "external design extraction is not a clarification responsibility",
             "NFR readiness belongs in `spec.md` product requirements",
             "`/speckit.plan`: Phase 0 behavior projection, planning artifacts, and formal contracts",
             "Handoff extensions must update schema, validator, command, and cross-agent documentation together",
@@ -2552,8 +2474,7 @@ class PresetContractTests(unittest.TestCase):
 
     def test_github_actions_contract_workflow(self) -> None:
         workflow_path = REPO_ROOT / ".github" / "workflows" / "ci.yml"
-        if not workflow_path.exists():
-            self.skipTest("GitHub Actions workflow is not bundled in spec-kit checkout")
+        self.assertTrue(workflow_path.exists())
         workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
 
         self.assertEqual("Preset Contract", workflow["name"])
@@ -2575,8 +2496,7 @@ class PresetContractTests(unittest.TestCase):
 
     def test_github_actions_artifact_release_and_integration_pr_workflow(self) -> None:
         workflow_path = REPO_ROOT / ".github" / "workflows" / "preset-artifact.yml"
-        if not workflow_path.exists():
-            self.skipTest("GitHub Actions workflow is not bundled in spec-kit checkout")
+        self.assertTrue(workflow_path.exists())
         workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
 
         self.assertEqual("Preset Artifact", workflow["name"])

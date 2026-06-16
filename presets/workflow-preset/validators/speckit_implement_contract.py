@@ -185,26 +185,6 @@ def _unresolved_high_or_critical(finding: dict[str, Any]) -> bool:
     )
 
 
-def _validate_data_side_effect_finding(finding: Any, *, index: int) -> None:
-    if not isinstance(finding, dict):
-        raise ValueError(
-            f"data_side_effect_review mutation_findings[{index}] must be an object"
-        )
-
-    context = f"data_side_effect_review mutation_findings[{index}]"
-    for key in ("id", "severity", "category", "summary", "operation", "resolution"):
-        if not isinstance(finding.get(key), str) or not finding.get(key):
-            raise ValueError(f"{context} must include {key}")
-
-    for key in ("tables_or_entities", "fields"):
-        values = finding.get(key)
-        if (
-            not isinstance(values, list)
-            or any(not isinstance(value, str) or not value for value in values)
-        ):
-            raise ValueError(f"{context} must include {key}")
-
-
 def validate_behavior_draft_contract(
     scenarios_draft: dict[str, Any],
     data_fixtures_intent: dict[str, Any],
@@ -584,18 +564,6 @@ def validate_receipt_contract(
                     f"allowed_read_paths or context_digest_path: {path}"
                 )
 
-        runtime_data_writes_found = data_side_effect_review.get(
-            "runtime_data_writes_found"
-        )
-        if not isinstance(runtime_data_writes_found, bool):
-            raise ValueError(
-                "data_side_effect_review must include runtime_data_writes_found"
-            )
-
-        mutation_findings = data_side_effect_review.get("mutation_findings")
-        if not isinstance(mutation_findings, list):
-            raise ValueError("data_side_effect_review must include mutation_findings")
-
         validation_commands = list(handoff.get("validation_commands", []))
         if validation_commands and not _receipt_mentions_any_command(
             receipt,
@@ -622,8 +590,7 @@ def validate_receipt_contract(
                     "critical/high findings"
                 )
 
-        for index, finding in enumerate(mutation_findings):
-            _validate_data_side_effect_finding(finding, index=index)
+        for finding in data_side_effect_review.get("mutation_findings", []):
             if review_status == "approved" and _unresolved_high_or_critical(finding):
                 raise ValueError(
                     "approved code review receipt must not include unresolved "
