@@ -1057,6 +1057,22 @@ class ExtensionManager:
                 description,
                 f"extension:{manifest.id}",
             )
+            # Preserve the command's argument-hint in the generated skill,
+            # mirroring the core template path (ClaudeIntegration.setup injects
+            # it for built-in commands). The value is added to the frontmatter
+            # dict before serialization — rather than via the string-based
+            # inject_argument_hint helper — so that a folded multi-line
+            # description cannot be split by the inserted line. Gated on the
+            # integration exposing inject_argument_hint so only argument-hint
+            # aware agents receive the key, leaving build_skill_frontmatter's
+            # shared shape unchanged for every other agent.
+            argument_hint = frontmatter.get("argument-hint")
+            if (
+                argument_hint
+                and integration is not None
+                and hasattr(integration, "inject_argument_hint")
+            ):
+                frontmatter_data["argument-hint"] = str(argument_hint)
             frontmatter_text = yaml.safe_dump(frontmatter_data, sort_keys=False).strip()
 
             # Derive a human-friendly title from the command name

@@ -303,6 +303,135 @@ class TestExtensionSkillRegistration:
         assert "description" in parsed
         assert parsed["disable-model-invocation"] is False
 
+    def test_argument_hint_preserved_for_extension_command(
+        self, skills_project, temp_dir
+    ):
+        """argument-hint from an extension command must survive into SKILL.md.
+
+        Regression for #2903: the field was dropped for extension-provided
+        commands while being kept for core template commands. The source
+        description is intentionally long so it folds across multiple lines
+        when serialized, guarding against an in-place string injection that
+        would split the folded scalar and produce invalid YAML.
+        """
+        project_dir, skills_dir = skills_project
+
+        long_description = (
+            "Build and maintain a lean, static context/ knowledge folder so "
+            "coding agents load only what is relevant and save tokens"
+        )
+        arg_hint = "<init | update | list | check> [area] [slug] [-- notes]"
+
+        ext_dir = temp_dir / "hint-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "hint-ext",
+                "name": "Hint Extension",
+                "version": "1.0.0",
+                "description": "Extension exercising argument-hint preservation",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.hint-ext.build-context",
+                        "file": "commands/build-context.md",
+                        "description": long_description,
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        commands_dir = ext_dir / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "build-context.md").write_text(
+            "---\n"
+            f'description: "{long_description}"\n'
+            f'argument-hint: "{arg_hint}"\n'
+            "---\n"
+            "\n"
+            "# Build Context\n"
+            "\n"
+            "Do the thing.\n"
+            "$ARGUMENTS\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        skill_file = skills_dir / "speckit-hint-ext-build-context" / "SKILL.md"
+        assert skill_file.exists()
+        content = skill_file.read_text(encoding="utf-8")
+
+        # Frontmatter must parse cleanly even though the description folds.
+        parts = content.split("---", 2)
+        assert len(parts) >= 3
+        parsed = yaml.safe_load(parts[1])
+        assert parsed["argument-hint"] == arg_hint
+        assert parsed["description"] == long_description
+
+    def test_argument_hint_not_added_for_non_claude_agent(self, project_dir, temp_dir):
+        """argument-hint must stay Claude-only — other skills agents are untouched.
+
+        The hint is carried only for integrations that support it (currently
+        Claude, the sole integration defining inject_argument_hint). A non-Claude
+        skills agent such as kimi must keep the shared build_skill_frontmatter
+        shape (name/description/compatibility/metadata) with no argument-hint.
+        """
+        _create_init_options(project_dir, ai="kimi", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="kimi")
+
+        arg_hint = "<init | update | list | check> [area]"
+        ext_dir = temp_dir / "hint-ext-kimi"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "hint-ext-kimi",
+                "name": "Hint Extension Kimi",
+                "version": "1.0.0",
+                "description": "Extension exercising argument-hint gating",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.hint-ext-kimi.build-context",
+                        "file": "commands/build-context.md",
+                        "description": "Build context",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        commands_dir = ext_dir / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "build-context.md").write_text(
+            "---\n"
+            'description: "Build context"\n'
+            f'argument-hint: "{arg_hint}"\n'
+            "---\n"
+            "\n"
+            "# Build Context\n"
+            "\n"
+            "Do the thing.\n"
+            "$ARGUMENTS\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        skill_file = skills_dir / "speckit-hint-ext-kimi-build-context" / "SKILL.md"
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert "argument-hint" not in parsed
+
     def test_no_skills_when_ai_skills_disabled(self, no_skills_project, extension_dir):
         """No skills should be created when ai_skills is false."""
         manager = ExtensionManager(no_skills_project)
