@@ -38,6 +38,8 @@ def is_slash_skills_agent(selected_ai: str | None, ai_skills_enabled: bool) -> b
     """
     if selected_ai is None:
         return False
+    if not isinstance(selected_ai, str):
+        return False
     return selected_ai in ALWAYS_SLASH_AGENTS or (
         selected_ai in CONDITIONAL_SLASH_AGENTS and ai_skills_enabled
     )
