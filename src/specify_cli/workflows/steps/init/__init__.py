@@ -103,6 +103,19 @@ class InitStep(StepBase):
             # No explicit target → initialize the current directory.
             argv.append(".")
 
+        # Build the full argv (except --force, which may be set implicitly
+        # below) so early-return outputs always reflect the complete command.
+        if integration:
+            argv.extend(["--integration", str(integration)])
+        if integration_options:
+            argv.extend(["--integration-options", str(integration_options)])
+        if script:
+            argv.extend(["--script", str(script)])
+        if preset:
+            argv.extend(["--preset", str(preset)])
+        if ignore_agent_tools:
+            argv.append("--ignore-agent-tools")
+
         # When the target is the current directory and ``force`` is not set,
         # ``specify init`` prompts for confirmation if the directory is not
         # empty.  Workflows run unattended (no stdin), so the prompt would
@@ -115,10 +128,9 @@ class InitStep(StepBase):
             base = context.project_root or os.getcwd()
             try:
                 with os.scandir(base) as it:
-                    non_engine_entries = [
-                        entry for entry in it
-                        if entry.name not in _ENGINE_OWNED_DIRS
-                    ]
+                    has_non_engine_content = any(
+                        entry.name not in _ENGINE_OWNED_DIRS for entry in it
+                    )
             except OSError as exc:
                 error_message = (
                     f"Cannot inspect target directory {base!r}: {exc}"
@@ -141,7 +153,7 @@ class InitStep(StepBase):
                     },
                     error=error_message,
                 )
-            if non_engine_entries:
+            if has_non_engine_content:
                 error_message = (
                     f"Target directory {base!r} is not empty. Set "
                     "'force: true' to merge into a non-empty directory."
@@ -169,18 +181,8 @@ class InitStep(StepBase):
                 # init doesn't prompt about the non-empty directory.
                 force = True
 
-        if integration:
-            argv.extend(["--integration", str(integration)])
-        if integration_options:
-            argv.extend(["--integration-options", str(integration_options)])
-        if script:
-            argv.extend(["--script", str(script)])
-        if preset:
-            argv.extend(["--preset", str(preset)])
         if force:
             argv.append("--force")
-        if ignore_agent_tools:
-            argv.append("--ignore-agent-tools")
 
         exit_code, stdout, stderr = self._run_init(argv, context)
 
