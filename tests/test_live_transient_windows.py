@@ -70,14 +70,19 @@ class TestSourceContainsPlatformGuard:
 
     def test_init_has_win32_guard(self):
         """init.py must check platform and pass transient to Live."""
+        import re
+
         init_src = Path(__file__).resolve().parent.parent / "src" / "specify_cli" / "commands" / "init.py"
         content = init_src.read_text(encoding="utf-8")
-        assert 'sys.platform != "win32"' in content
-        assert "transient=_transient" in content
+        assert re.search(r"sys\.platform\s*!=\s*['\"]win32['\"]", content)
+        assert re.search(r"transient\s*=\s*_transient", content)
 
     def test_console_has_win32_guard(self):
         """_console.py must check platform and pass transient to Live."""
+        import re
+
         console_src = Path(__file__).resolve().parent.parent / "src" / "specify_cli" / "_console.py"
         content = console_src.read_text(encoding="utf-8")
-        assert 'sys.platform != "win32"' in content
+        assert re.search(r"sys\.platform\s*!=\s*['\"]win32['\"]", content)
+        assert re.search(r"transient\s*=\s*_transient", content)
         assert "transient=_transient" in content
