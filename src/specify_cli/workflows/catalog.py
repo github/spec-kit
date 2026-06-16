@@ -161,14 +161,14 @@ class WorkflowCatalog:
 
     def _validate_catalog_url(self, url: str) -> None:
         """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
-        if not is_https_or_localhost_http(url):
-            from urllib.parse import urlparse
+        from urllib.parse import urlparse
 
-            parsed = urlparse(url)
-            if not parsed.hostname:
-                raise WorkflowValidationError(
-                    "Catalog URL must be a valid URL with a host."
-                )
+        parsed = urlparse(url)
+        if not parsed.hostname:
+            raise WorkflowValidationError(
+                "Catalog URL must be a valid URL with a host."
+            )
+        if not is_https_or_localhost_http(url):
             raise WorkflowValidationError(
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost, 127.0.0.1, and ::1."
@@ -339,7 +339,11 @@ class WorkflowCatalog:
             raise WorkflowCatalogError(str(exc)) from exc
 
         try:
-            with _open_url(entry.url, timeout=30, strict_redirects=True) as resp:
+            with _open_url(
+                entry.url,
+                timeout=30,
+                strict_redirects=True,
+            ) as resp:
                 try:
                     self._validate_catalog_url(resp.geturl())
                 except WorkflowValidationError as exc:

@@ -3647,6 +3647,13 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="HTTPS"):
             catalog._validate_catalog_url("http://evil.com/catalog.json")
 
+    def test_validate_url_hostless_https_rejected(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="valid URL with a host"):
+            catalog._validate_catalog_url("https:///catalog.json")
+
     def test_validate_url_localhost_http_allowed(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -3860,6 +3867,45 @@ class TestWorkflowCatalog:
         assert recorded["kwargs"]["error_type"] is WorkflowCatalogError
         assert recorded["kwargs"]["label"] == "workflow catalog"
         assert recorded["kwargs"]["max_bytes"] == MAX_JSON_CATALOG_BYTES
+
+    def test_fetch_single_catalog_rejects_hostless_redirect(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+        import specify_cli.authentication.http as _auth_http
+
+        entry = WorkflowCatalogEntry(
+            url="https://example.com/workflow-catalog.json",
+            name="test",
+            priority=0,
+            install_allowed=False,
+        )
+
+        class _FakeResponse:
+            def geturl(self):
+                return "https:///workflow-catalog.json"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                pass
+
+        def _fake_urlopen(req, timeout=30):
+            return _FakeResponse()
+
+        monkeypatch.setattr(_auth_http.urllib.request, "urlopen", _fake_urlopen)
+        monkeypatch.setattr(
+            _auth_http.urllib.request.OpenerDirector,
+            "open",
+            lambda _self, req, data=None, timeout=30: _fake_urlopen(req, timeout),
+        )
+
+        cat = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowCatalogError, match="valid URL with a host"):
+            cat._fetch_single_catalog(entry, force_refresh=True)
 
 
 # ===== Integration Test =====
