@@ -52,6 +52,66 @@ function Test-ConfigObject {
     return $false
 }
 
+function Resolve-ContextPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$RelativePath
+    )
+
+    $rootFull = [System.IO.Path]::GetFullPath($Root)
+    $segments = $RelativePath -split '/'
+    $resolved = $rootFull
+
+    foreach ($segment in $segments) {
+        if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {
+            continue
+        }
+
+        $candidate = [System.IO.Path]::GetFullPath((Join-Path $resolved $segment))
+        if (Test-Path -LiteralPath $candidate) {
+            $item = Get-Item -LiteralPath $candidate -Force
+            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                $target = $item.Target
+                if ($target -is [System.Array]) {
+                    $target = $target[0]
+                }
+                if ($target) {
+                    if ([System.IO.Path]::IsPathRooted($target)) {
+                        $candidate = [System.IO.Path]::GetFullPath($target)
+                    } else {
+                        $candidate = [System.IO.Path]::GetFullPath(
+                            (Join-Path (Split-Path -Parent $candidate) $target)
+                        )
+                    }
+                }
+            }
+        }
+        $resolved = $candidate
+    }
+
+    return $resolved
+}
+
+function Test-IsSubPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $comparison = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
+    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $pathFull = [System.IO.Path]::GetFullPath($Path)
+    return $pathFull.Equals($rootFull, $comparison) -or
+        $pathFull.StartsWith($rootFull + [System.IO.Path]::DirectorySeparatorChar, $comparison)
+}
+
 $ErrorActionPreference = 'Stop'
 $DefaultStart = '<!-- SPECKIT START -->'
 $DefaultEnd   = '<!-- SPECKIT END -->'
@@ -143,8 +203,8 @@ if (-not (Test-ConfigObject -Object $Options)) {
 
 $ConfiguredContextFiles = Get-ConfigValue -Object $Options -Key 'context_files'
 $ContextFiles = @()
-if ($ConfiguredContextFiles -is [System.Array]) {
-    foreach ($item in $ConfiguredContextFiles) {
+if ($null -ne $ConfiguredContextFiles) {
+    foreach ($item in @($ConfiguredContextFiles)) {
         if ($item -is [string] -and -not [string]::IsNullOrWhiteSpace($item)) {
             $ContextFiles += $item.Trim()
         }
@@ -163,14 +223,23 @@ if ($ContextFiles.Count -eq 0) {
 }
 
 foreach ($ContextFile in $ContextFiles) {
-    # Reject absolute paths and '..' path segments in context files
+    # Reject absolute paths, backslash separators, and '..' path segments in context files
     if ([System.IO.Path]::IsPathRooted($ContextFile)) {
         Write-Warning "agent-context: context files must be project-relative paths; got '$ContextFile'."
+        exit 1
+    }
+    if ($ContextFile.Contains('\')) {
+        Write-Warning "agent-context: context files must not contain backslash separators; got '$ContextFile'."
         exit 1
     }
     $cfSegments = $ContextFile -split '[/\\]'
     if ($cfSegments -contains '..') {
         Write-Warning "agent-context: context files must not contain '..' path segments; got '$ContextFile'."
+        exit 1
+    }
+    $resolvedTarget = Resolve-ContextPath -Root $ProjectRoot -RelativePath $ContextFile
+    if (-not (Test-IsSubPath -Root $ProjectRoot -Path $resolvedTarget)) {
+        Write-Warning "agent-context: context file path resolves outside the project root; got '$ContextFile'."
         exit 1
     }
 }

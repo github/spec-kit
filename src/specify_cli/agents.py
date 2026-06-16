@@ -412,14 +412,29 @@ class CommandRegistrar:
             ac_cfg = _load_agent_context_config(project_root)
             context_files = ac_cfg.get("context_files")
             if isinstance(context_files, list):
-                context_file_values = [
-                    value.strip()
-                    for value in context_files
-                    if isinstance(value, str) and value.strip()
-                ]
+                context_file_values = []
+                seen: set[str] = set()
+                for value in context_files:
+                    if not isinstance(value, str):
+                        continue
+                    candidate = value.strip()
+                    if not candidate or candidate in seen:
+                        continue
+                    context_file_values.append(
+                        IntegrationBase._validate_context_file_path(
+                            project_root, candidate
+                        )
+                    )
+                    seen.add(candidate)
                 context_file = ", ".join(dict.fromkeys(context_file_values))
             if not context_file:
-                context_file = ac_cfg.get("context_file") or ""
+                configured_context_file = ac_cfg.get("context_file")
+                if isinstance(configured_context_file, str):
+                    candidate = configured_context_file.strip()
+                    if candidate:
+                        context_file = IntegrationBase._validate_context_file_path(
+                            project_root, candidate
+                        )
         if not context_file:
             context_file = init_opts.get("context_file") or ""
         body = body.replace("__CONTEXT_FILE__", context_file)

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -14,12 +17,17 @@ from specify_cli import (
     load_init_options,
     save_init_options,
 )
+from specify_cli.agents import CommandRegistrar
 from specify_cli.integrations.base import IntegrationBase
 from specify_cli.integrations.claude import ClaudeIntegration
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "agent-context"
+BASH = shutil.which("bash")
+POWERSHELL = (
+    shutil.which("pwsh") or shutil.which("powershell.exe") or shutil.which("powershell")
+)
 
 
 def _write_ext_config(project_root: Path, **overrides: object) -> None:
@@ -107,6 +115,60 @@ class TestCatalogEntry:
 
 class _CtxIntegration(ClaudeIntegration):
     """Use Claude as a concrete integration with a context_file."""
+
+
+class _NoContextIntegration(IntegrationBase):
+    """Minimal integration with no context_file for base-class fallback tests."""
+
+
+def _install_agent_context_config(project_root: Path, **overrides: object) -> None:
+    _write_ext_config(project_root, **overrides)
+
+
+def _run_bash_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
+    script = EXT_DIR / "scripts" / "bash" / "update-agent-context.sh"
+    if os.name == "nt":
+        drive = project_root.drive.rstrip(":").lower()
+        root = project_root.as_posix()
+        root = f"/mnt/{drive}{root[2:]}" if drive else root
+        script_path = script.as_posix()
+        script_path = f"/mnt/{script.drive.rstrip(':').lower()}{script_path[2:]}"
+        command = f"cd {shlex_quote(root)} && {shlex_quote(script_path)}"
+        return subprocess.run(
+            [BASH, "-lc", command],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    return subprocess.run(
+        [BASH, str(script)],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def shlex_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _run_powershell_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
+    script = EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
+    return subprocess.run(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
 
 
 class TestContextMarkerResolution:
@@ -410,6 +472,189 @@ class TestExtensionEnabledGate:
         )
         i = _CtxIntegration()
         assert i._context_file_display(tmp_path) == i.context_file
+
+    def test_context_file_display_disabled_without_context_file_returns_string(
+        self, tmp_path
+    ):
+        _write_registry(tmp_path, enabled=False)
+        i = _NoContextIntegration()
+        assert i._context_file_display(tmp_path) == ""
+
+
+class TestSkillPlaceholderContextValidation:
+    @pytest.mark.parametrize(
+        "bad_path",
+        [
+            "../outside.md",
+            "nested/../../outside.md",
+            "nested\\outside.md",
+            str(Path("/tmp/outside.md")),
+            "C:/tmp/outside.md",
+        ],
+    )
+    def test_context_files_reject_invalid_config_paths(self, tmp_path, bad_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md", bad_path],
+        )
+
+        with pytest.raises(ValueError, match="project-relative|must not contain"):
+            CommandRegistrar.resolve_skill_placeholders(
+                "codex",
+                {},
+                "Read __CONTEXT_FILE__",
+                tmp_path,
+            )
+
+    def test_context_file_rejects_invalid_config_path(self, tmp_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="../outside.md",
+            context_files=[],
+        )
+
+        with pytest.raises(ValueError, match="must not contain"):
+            CommandRegistrar.resolve_skill_placeholders(
+                "codex",
+                {},
+                "Read __CONTEXT_FILE__",
+                tmp_path,
+            )
+
+    def test_disabled_extension_ignores_invalid_context_files(self, tmp_path):
+        _write_registry(tmp_path, enabled=False)
+        _write_ext_config(
+            tmp_path,
+            context_file="AGENTS.md",
+            context_files=["../outside.md"],
+        )
+        save_init_options(tmp_path, {"context_file": "AGENTS.md"})
+
+        content = CommandRegistrar.resolve_skill_placeholders(
+            "codex",
+            {},
+            "Read __CONTEXT_FILE__",
+            tmp_path,
+        )
+
+        assert content == "Read AGENTS.md"
+
+
+class TestBundledUpdaterPathValidation:
+    def test_bash_script_contains_resolved_containment_check(self):
+        text = (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").read_text(
+            encoding="utf-8"
+        )
+        assert "target = (root / sys.argv[2]).resolve(strict=False)" in text
+        assert "target.relative_to(root)" in text
+
+    def test_powershell_script_rejects_backslash_separators(self):
+        text = (
+            EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
+        ).read_text(encoding="utf-8")
+        assert "$ContextFile.Contains('\\')" in text
+        assert "must not contain backslash separators" in text
+
+    @pytest.mark.skipif(BASH is None, reason="bash not available")
+    def test_bash_script_rejects_symlink_escape(self, tmp_path):
+        project = tmp_path / "project"
+        outside = tmp_path / "outside"
+        project.mkdir()
+        outside.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["link/out.md"],
+        )
+
+        if os.name == "nt":
+            drive = tmp_path.drive.rstrip(":").lower()
+            root = tmp_path.as_posix()
+            root = f"/mnt/{drive}{root[2:]}" if drive else root
+            create_link = subprocess.run(
+                [
+                    BASH,
+                    "-lc",
+                    f"ln -s {shlex_quote(root + '/outside')} "
+                    f"{shlex_quote(root + '/project/link')}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if create_link.returncode != 0:
+                pytest.skip(f"symlink unavailable: {create_link.stderr}")
+        else:
+            try:
+                (project / "link").symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                pytest.skip(f"symlink unavailable: {exc}")
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 1
+        assert "resolves outside the project root" in result.stderr
+        assert not (outside / "out.md").exists()
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_rejects_backslash_context_files(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["nested\\AGENTS.md"],
+        )
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 1
+        assert "must not contain backslash separators" in (
+            result.stderr + result.stdout
+        )
+        assert not (project / "nested" / "AGENTS.md").exists()
+
+    @pytest.mark.skipif(
+        POWERSHELL is None or os.name != "nt",
+        reason="Windows PowerShell junction test requires Windows",
+    )
+    def test_powershell_script_rejects_junction_escape(self, tmp_path):
+        project = tmp_path / "project"
+        outside = tmp_path / "outside"
+        project.mkdir()
+        outside.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["link/out.md"],
+        )
+
+        create_link = subprocess.run(
+            [
+                POWERSHELL,
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                (
+                    "New-Item -ItemType Junction "
+                    f"-Path {str(project / 'link')!r} "
+                    f"-Target {str(outside)!r} | Out-Null"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if create_link.returncode != 0:
+            pytest.skip(f"junction unavailable: {create_link.stderr}")
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 1
+        assert "resolves outside the project root" in (result.stderr + result.stdout)
+        assert not (outside / "out.md").exists()
 
 
 # ── Extension config writers ─────────────────────────────────────────────────

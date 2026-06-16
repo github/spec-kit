@@ -150,6 +150,21 @@ for CONTEXT_FILE in "${CONTEXT_FILES[@]}"; do
       exit 1
     fi
   done
+  if ! "$_python" - "$PROJECT_ROOT" "$CONTEXT_FILE" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+target = (root / sys.argv[2]).resolve(strict=False)
+try:
+    target.relative_to(root)
+except ValueError:
+    sys.exit(1)
+PY
+  then
+    echo "agent-context: context file path resolves outside the project root; got '$CONTEXT_FILE'." >&2
+    exit 1
+  fi
 done
 unset _cf_parts _seg
 
