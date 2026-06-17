@@ -5478,22 +5478,34 @@ steps:
         assert _gate_outcome(state)["message"] == "12.5"
 
     def test_gate_block_options_coerced_to_strings(self):
-        # options may be non-string YAML literals in an unvalidated workflow;
-        # the JSON surface normalises them to a list of strings.
+        # options may be non-string / non-list literals in an unvalidated
+        # workflow; the JSON surface always normalises them to list[str] | None
+        # so the emitted schema is stable regardless of the input shape.
         from types import SimpleNamespace
         from specify_cli import _gate_outcome
 
-        state = SimpleNamespace(
-            status=SimpleNamespace(value="paused"),
-            current_step_id="review",
-            step_results={
-                "review": {
-                    "type": "gate",
-                    "output": {"message": "m", "options": [1, 2.5], "choice": None},
-                }
-            },
-        )
-        assert _gate_outcome(state)["options"] == ["1", "2.5"]
+        def _options_payload(options):
+            state = SimpleNamespace(
+                status=SimpleNamespace(value="paused"),
+                current_step_id="review",
+                step_results={
+                    "review": {
+                        "type": "gate",
+                        "output": {
+                            "message": "m",
+                            "options": options,
+                            "choice": None,
+                        },
+                    }
+                },
+            )
+            return _gate_outcome(state)["options"]
+
+        assert _options_payload([1, 2.5]) == ["1", "2.5"]  # list
+        assert _options_payload(("approve", "reject")) == ["approve", "reject"]  # tuple
+        assert _options_payload("approve") == ["approve"]  # bare scalar, not iterated
+        assert _options_payload(7) == ["7"]  # numeric scalar
+        assert _options_payload(None) is None  # absent stays absent
 
     def test_gate_block_detected_without_type_field(self):
         # A run paused by an older version has no persisted step `type`. The

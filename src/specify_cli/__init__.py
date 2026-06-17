@@ -2145,15 +2145,30 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     output = step.get("output") or {}
     # `message` and `options` may be non-string YAML literals in an unvalidated
     # workflow (GateStep coerces neither for the payload), so normalise both
-    # here for a stable JSON schema: message → str, options → list[str].
+    # here for a stable JSON schema: message → str, options → list[str] | None.
     message = output.get("message")
-    options = output.get("options")
     return {
         "step_id": state.current_step_id,
         "message": None if message is None else str(message),
-        "options": [str(o) for o in options] if isinstance(options, list) else options,
+        "options": _normalize_gate_options(output.get("options")),
         "choice": output.get("choice"),
     }
+
+
+def _normalize_gate_options(options: Any) -> list[str] | None:
+    """Normalise a gate's ``options`` to a stable ``list[str]`` (or ``None``).
+
+    A valid gate stores a list, but an unvalidated workflow could leave a
+    scalar or tuple. ``None`` stays ``None`` (no options); a list/tuple maps
+    each element through ``str``; any other scalar becomes a single-element
+    list — so the emitted JSON schema is always ``list[str] | None``. A bare
+    string is treated as one option, never iterated character-by-character.
+    """
+    if options is None:
+        return None
+    if isinstance(options, (list, tuple)):
+        return [str(o) for o in options]
+    return [str(options)]
 
 
 def _run_outcome_exit_code(status_value: str) -> int:
