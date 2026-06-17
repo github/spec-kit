@@ -204,7 +204,7 @@ Append to the **end** of `tasks.md`, per the append contract:
    IDs `M+1, M+2, …`:
 
    ```markdown
-   - [ ] T<NNN>: <imperative description> per <source-ref> (<gap-type>)
+   - [ ] T<NNN> <imperative description> per <source-ref> (<gap-type>)
    ```
 
    `<source-ref>` traces the task to its origin: e.g. `FR-003`, `SC-002`,
