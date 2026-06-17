@@ -138,7 +138,7 @@ Create an internal model (do not echo raw artifacts):
 - **Code-scope map**: from the file paths named in `plan.md` and `tasks.md`, plus a keyword
   search for the concepts each requirement describes, derive the set of source files and
   components in scope for assessment. Bound the assessment to these — do **not** infer
-  scope beyond what the artifacts define (FR-001).
+  scope beyond what the artifacts define.
 
 ### 4. Assess the Codebase and Classify Findings
 
@@ -241,8 +241,8 @@ After producing the result, check if `.specify/extensions.yml` exists in the pro
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- Pass the convergence outcome (`converged` or `tasks_appended`) to the hook context so an
-  extension can branch on it.
+- Report the convergence outcome (`converged` or `tasks_appended`) in-session before listing
+  any hooks, so users can decide whether to run optional follow-up commands.
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
 
