@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import PurePath
 
 import typer
 
@@ -483,8 +484,11 @@ def integration_upgrade(
     new_files = new_manifest.files
     # Exclude integration-declared paths that use conditional manifest tracking
     # (e.g. merge targets like .vscode/settings.json) so they are never deleted
-    # as "stale" while still being actively managed.
-    stale_keys = (set(old_files) - set(new_files)) - integration.stale_cleanup_exclusions()
+    # as "stale" while still being actively managed.  Manifest keys are stored
+    # in POSIX form, so normalize the exclusions the same way before subtracting
+    # (an integration may build paths with os.path.join / backslashes).
+    exclusions = {PurePath(p).as_posix() for p in integration.stale_cleanup_exclusions()}
+    stale_keys = (set(old_files) - set(new_files)) - exclusions
     if stale_keys:
         stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
         stale_manifest._files = {k: old_files[k] for k in stale_keys}

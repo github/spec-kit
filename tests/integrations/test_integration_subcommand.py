@@ -2286,15 +2286,22 @@ class TestIntegrationUpgrade:
         before = json.loads(settings.read_text(encoding="utf-8"))
         assert before, "settings.json should contain managed defaults"
 
+        # Simulate a user editing their settings: add a custom key that the
+        # integration does not manage.  It must survive the upgrade.
+        before["editor.fontSize"] = 17
+        settings.write_text(json.dumps(before), encoding="utf-8")
+
         result = _run_in_project(project, [
             "integration", "upgrade", "copilot",
-            "--script", "sh",
+            "--script", "sh", "--force",
         ])
         assert result.exit_code == 0, result.output
 
         assert settings.is_file(), ".vscode/settings.json must survive upgrade"
         after = json.loads(settings.read_text(encoding="utf-8"))
-        assert after == before, "managed settings must be intact after upgrade"
+        assert after.get("editor.fontSize") == 17, (
+            "user-defined settings must be preserved after upgrade"
+        )
 
     def test_upgrade_restores_executable_bit_on_shared_scripts(self, tmp_path):
         """Regression: scripts refreshed by the managed-refresh step stay +x."""
