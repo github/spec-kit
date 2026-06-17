@@ -208,19 +208,24 @@ def extension_list(
     all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
 ):
     """List installed extensions."""
-    from . import ExtensionManager
+    from . import ExtensionManager, ExtensionCatalog, ExtensionError
 
     project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
     installed = manager.list_installed()
 
-    if not installed and not (available or all_extensions):
+    # Default (no flags) lists installed; --all also lists installed.
+    # --available alone lists only catalog extensions, not installed.
+    show_installed = all_extensions or not available
+    show_available = available or all_extensions
+
+    if not installed and not show_available:
         console.print("[yellow]No extensions installed.[/yellow]")
         console.print("\nInstall an extension with:")
         console.print("  specify extension add <extension-name>")
         return
 
-    if installed:
+    if show_installed and installed:
         console.print("\n[bold cyan]Installed Extensions:[/bold cyan]\n")
 
         for ext in installed:
@@ -233,9 +238,36 @@ def extension_list(
             console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Priority: {ext['priority']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
             console.print()
 
-    if available or all_extensions:
-        console.print("\nInstall an extension:")
-        console.print("  [cyan]specify extension add <name>[/cyan]")
+    if show_available:
+        # Query the catalog and show extensions that are not already installed.
+        catalog = ExtensionCatalog(project_root)
+        installed_ids = {ext["id"] for ext in installed}
+
+        try:
+            results = catalog.search()
+        except ExtensionError as e:
+            console.print(f"\n[red]Error:[/red] Could not query extension catalog: {e}")
+            console.print("[dim]The catalog may be temporarily unavailable. Try again later.[/dim]")
+            raise typer.Exit(1)
+
+        available_exts = [ext for ext in results if ext.get("id") not in installed_ids]
+
+        console.print("\n[bold cyan]Available Extensions:[/bold cyan]\n")
+        if not available_exts:
+            console.print("  [dim]No additional extensions available in the catalog.[/dim]")
+        else:
+            for ext in available_exts:
+                verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
+                console.print(f"  [bold]{ext['name']}[/bold] (v{ext['version']}){verified_badge}")
+                console.print(f"     [dim]{ext['id']}[/dim]")
+                console.print(f"     {ext.get('description', '')}")
+                install_allowed = ext.get("_install_allowed", True)
+                if install_allowed:
+                    console.print(f"     [cyan]Install:[/cyan] specify extension add {ext['id']}")
+                else:
+                    catalog_name = ext.get("_catalog_name", "")
+                    console.print(f"     [yellow]Discovery only — not installable from '{catalog_name}'[/yellow]")
+                console.print()
 
 
 @catalog_app.command("list")
