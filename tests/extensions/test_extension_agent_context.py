@@ -106,6 +106,42 @@ class TestExtensionLayout:
         assert "context_markers" in text
 
 
+# -- Bundled script behavior --------------------------------------------------
+
+
+@requires_bash
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+def test_bash_update_preserves_symlinked_context_file(tmp_path):
+    """Regression: update-agent-context.sh must not replace context symlinks."""
+    target = tmp_path / "AGENTS.md"
+    link = tmp_path / "CLAUDE.md"
+    target.write_text("# Agent notes\n", encoding="utf-8")
+    try:
+        os.symlink("AGENTS.md", link)
+    except OSError as exc:
+        pytest.skip(f"Current platform/user cannot create symlinks: {exc}")
+
+    _write_ext_config(tmp_path, context_file="CLAUDE.md")
+
+    result = subprocess.run(
+        [
+            BASH,
+            str(EXT_DIR / "scripts" / "bash" / "update-agent-context.sh"),
+            "specs/001-demo/plan.md",
+        ],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert link.is_symlink()
+    target_text = target.read_text(encoding="utf-8")
+    assert target_text.startswith("# Agent notes\n")
+    assert "specs/001-demo/plan.md" in target_text
+    assert "agent-context: updated CLAUDE.md" in result.stdout
+
+
 # ── Catalog registration ─────────────────────────────────────────────────────
 
 
