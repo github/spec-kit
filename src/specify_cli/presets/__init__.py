@@ -238,6 +238,7 @@ class PresetManifest:
                     f"Invalid template file path '{file_path}': "
                     "must be a relative path within the preset directory"
                 )
+            tmpl["file"] = normalized
 
             # Validate strategy field (optional, defaults to "replace")
             strategy = tmpl.get("strategy", "replace")

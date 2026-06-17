@@ -72,10 +72,10 @@ def _validate_strict_redirect(_old_url: str, new_url: str) -> None:
 class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     """Redirect handler that guards every redirect it is installed for.
 
-    1. Reject redirects that are not HTTPS with a hostname, except HTTP to
+    1. Run any caller-provided redirect validator.
+    2. Reject redirects that are not HTTPS with a hostname, except HTTP to
        localhost / 127.0.0.1 / ::1 (the exact hosts allowed by
        ``is_https_or_localhost_http``).
-    2. Run any caller-provided redirect validator.
     3. Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades.
     """
 
@@ -89,9 +89,9 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         self._redirect_validator = redirect_validator
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        _validate_strict_redirect(req.full_url, newurl)
         if self._redirect_validator is not None:
             self._redirect_validator(req.full_url, newurl)
+        _validate_strict_redirect(req.full_url, newurl)
 
         original_auth = (
             req.get_header("Authorization")
@@ -164,6 +164,7 @@ def open_url(
     entries = find_entries_for_url(url, _load_config())
 
     effective_redirect_validator = redirect_validator
+    use_redirect_handler = strict_redirects or effective_redirect_validator is not None
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
         merged = {}
@@ -195,7 +196,7 @@ def open_url(
 
     # No entry worked (or none matched) — unauthenticated fallback
     req = _make_req({})
-    if effective_redirect_validator is not None:
+    if use_redirect_handler:
         # No auth is attached on this path, so the handler's host list is empty:
         # here it runs redirect validation only, not auth stripping.
         opener = urllib.request.build_opener(_StripAuthOnRedirect((), effective_redirect_validator))

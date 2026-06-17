@@ -340,7 +340,8 @@ class TestCatalogFetch:
                 pass
 
         def fake_urlopen(url, timeout=10):
-            assert url == entry.url
+            actual_url = url.full_url if hasattr(url, "full_url") else url
+            assert actual_url == entry.url
             assert timeout == 10
             return FakeResponse()
 

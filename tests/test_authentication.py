@@ -799,17 +799,18 @@ class TestRedirectStripping:
         assert new_req.headers.get("Authorization") is None
         assert new_req.unredirected_hdrs.get("Authorization") is None
 
-    def test_https_to_http_same_host_redirect_strips_auth(self):
+    def test_https_to_http_same_host_redirect_rejected(self):
         from specify_cli.authentication.http import _StripAuthOnRedirect
         from urllib.request import Request
         import io
+        import urllib.error
+
         handler = _StripAuthOnRedirect(("github.com",))
         req = Request("https://github.com/org/repo", headers={"Authorization": "Bearer tok"})
-        new_req = handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
-                                           "http://github.com/org/repo")
-        assert new_req is not None
-        assert new_req.headers.get("Authorization") is None
-        assert new_req.unredirected_hdrs.get("Authorization") is None
+
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "http://github.com/org/repo")
 
     def test_redirect_validator_can_reject_before_following_redirect(self):
         import urllib.error

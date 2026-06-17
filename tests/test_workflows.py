@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import io
 import os
 import shutil
 import sys
@@ -4795,6 +4796,8 @@ class TestWorkflowStepAddCLI:
         class _FakeResponse:
             def __init__(self, url: str):
                 self.url = url
+                data = b"step:\n  type_key: my-step\n" if url.endswith("/step.yml") else b""
+                self._stream = io.BytesIO(data)
 
             def __enter__(self):
                 return self
@@ -4802,10 +4805,8 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self.url
@@ -4854,6 +4855,8 @@ class TestWorkflowStepAddCLI:
         class _FakeResponse:
             def __init__(self, url: str):
                 self.url = url
+                data = b"step:\n  type_key: my-step\n" if url.endswith("/step.yml") else b""
+                self._stream = io.BytesIO(data)
 
             def __enter__(self):
                 return self
@@ -4861,10 +4864,8 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self.url
@@ -4902,6 +4903,8 @@ class TestWorkflowStepAddCLI:
         class _FakeResponse:
             def __init__(self, url: str):
                 self.url = url
+                data = b"step:\n  type_key: my-step\n" if url.endswith("/step.yml") else b""
+                self._stream = io.BytesIO(data)
 
             def __enter__(self):
                 return self
@@ -4909,10 +4912,8 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self.url
@@ -5223,11 +5224,11 @@ steps:
 
         class FakeResponse:
             def __init__(self, data, url=None):
-                self._data = data
+                self._stream = io.BytesIO(data)
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self._url
@@ -5238,7 +5239,7 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, strict_redirects=False):
             captured_urls.append((url, extra_headers, timeout))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
@@ -5275,11 +5276,11 @@ steps:
 
         class FakeResponse:
             def __init__(self, data, url=None):
-                self._data = data
+                self._stream = io.BytesIO(data)
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self._url
@@ -5290,7 +5291,7 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, strict_redirects=False):
             captured_urls.append((url, extra_headers))
             return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
 
@@ -5318,11 +5319,11 @@ steps:
 
         class FakeResponse:
             def __init__(self, data, url=None):
-                self._data = data
+                self._stream = io.BytesIO(data)
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/55"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self._url
@@ -5333,7 +5334,7 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, strict_redirects=False):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
