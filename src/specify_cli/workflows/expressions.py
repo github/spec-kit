@@ -1,7 +1,8 @@
 """Sandboxed expression evaluator for workflow templates.
 
 Provides a safe Jinja2 subset for evaluating expressions in workflow YAML.
-No file I/O, no imports, no arbitrary code execution.
+Templates cannot perform file I/O, import modules, or run arbitrary code —
+the evaluator only walks the namespace and applies a fixed set of filters.
 """
 
 from __future__ import annotations
@@ -158,15 +159,19 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         value = _evaluate_simple_expression(parts[0].strip(), namespace)
         filter_expr = parts[1].strip()
 
-        # `from_json` is strict and takes no arguments. Match the filter name
-        # tolerant of whitespace and reject any parenthesized form
-        # (`from_json()`, `from_json('x')`, `from_json ()`) so a mis-wired
-        # template fails loudly instead of silently returning the unparsed
-        # value.
-        if filter_expr.split("(", 1)[0].strip() == "from_json":
-            if "(" in filter_expr:
+        # `from_json` is strict: it takes no arguments and tolerates no
+        # trailing tokens. Match on the leading filter name and require the
+        # whole filter to be exactly `from_json`, so every mis-wired form
+        # (`from_json()`, `from_json('x')`, `from_json)`, `from_json extra`)
+        # fails loudly instead of silently falling through to the
+        # unknown-filter path and returning the unparsed value. (filter_expr
+        # is already stripped above.)
+        leading = re.match(r"\w+", filter_expr)
+        if leading and leading.group(0) == "from_json":
+            if filter_expr != "from_json":
                 raise ValueError(
-                    "from_json: filter takes no arguments (use '| from_json')"
+                    "from_json: expected '| from_json' with no arguments or "
+                    f"trailing tokens, got '| {filter_expr}'"
                 )
             return _filter_from_json(value)
 

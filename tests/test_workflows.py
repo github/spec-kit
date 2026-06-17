@@ -314,17 +314,27 @@ class TestExpressions:
         with pytest.raises(ValueError, match="expected a JSON string"):
             evaluate_expression("{{ steps.emit.output.exit_code | from_json }}", ctx)
 
-    def test_filter_from_json_rejects_arguments(self):
-        # `from_json` is strict and takes no arguments. Both the empty-parens
-        # and accidental-arg forms must raise rather than silently return the
-        # unparsed value, so a mis-wired template is caught immediately.
+    def test_filter_from_json_rejects_malformed_forms(self):
+        # `from_json` is strict: no arguments and no trailing tokens. Every
+        # mis-wired form — parenthesized, accidental arg, or trailing
+        # garbage — must raise rather than silently fall through to the
+        # unknown-filter path and return the unparsed value.
         import pytest
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(steps={"emit": {"output": {"stdout": '{"a": 1}'}}})
-        for bad in ("from_json()", "from_json('x')", "from_json ()", "from_json ('x')"):
-            with pytest.raises(ValueError, match="from_json: filter takes no arguments"):
+        bad_forms = (
+            "from_json()",
+            "from_json('x')",
+            "from_json ()",
+            "from_json ('x')",
+            "from_json)",
+            "from_json extra",
+            "from_json 'x'",
+        )
+        for bad in bad_forms:
+            with pytest.raises(ValueError, match="from_json: expected"):
                 evaluate_expression(
                     "{{ steps.emit.output.stdout | " + bad + " }}", ctx
                 )
