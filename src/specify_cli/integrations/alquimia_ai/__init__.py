@@ -166,27 +166,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
         and inserts the note on the line before it, matching its indentation.
         Skips if the note is already present.
         """
-        if "replace dots" in content:
-            return content
-
-        def repl(m: re.Match[str]) -> str:
-            indent = m.group(1)
-            instruction = m.group(2)
-            eol = m.group(3) or '\n'
-            return (
-                indent
-                + _HOOK_COMMAND_NOTE.rstrip("\n")
-                + eol
-                + indent
-                + instruction
-                + eol
-            )
-
-        return re.sub(
-            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
-            repl,
-            content,
-        )
+        return SkillsIntegration._inject_hook_command_note(content)
 
     def post_process_skill_content(self, content: str) -> str:
         """Inject Alquimia-specific frontmatter flags and hook notes."""
