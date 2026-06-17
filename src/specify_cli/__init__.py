@@ -109,9 +109,10 @@ def callback(
     version: bool = typer.Option(False, "--version", "-V", callback=_version_callback, is_eager=True, help="Show version and exit."),
 ):
     """Show banner when no subcommand is provided."""
-    if ctx.invoked_subcommand != "init":
+    help_requested = "--help" in sys.argv or "-h" in sys.argv
+    if ctx.invoked_subcommand != "init" and not help_requested:
         _self_heal_agent_context_extension(Path.cwd())
-    if ctx.invoked_subcommand is None and "--help" not in sys.argv and "-h" not in sys.argv:
+    if ctx.invoked_subcommand is None and not help_requested:
         show_banner()
         console.print(Align.center("[dim]Run 'specify --help' for usage information[/dim]"))
         console.print()
@@ -350,7 +351,12 @@ def _agent_context_self_heal_enabled(project_root: Path) -> bool:
 
 
 def _self_heal_agent_context_extension(project_root: Path) -> None:
-    if not (project_root / ".specify").is_dir():
+    specify_dir = project_root / ".specify"
+    extensions_dir = specify_dir / "extensions"
+    ext_dir = extensions_dir / "agent-context"
+    if specify_dir.is_symlink() or extensions_dir.is_symlink() or ext_dir.is_symlink():
+        return
+    if not specify_dir.is_dir():
         return
     if not _agent_context_self_heal_enabled(project_root):
         return
@@ -358,7 +364,6 @@ def _self_heal_agent_context_extension(project_root: Path) -> None:
     from .extensions import ExtensionManager
 
     ext_mgr = ExtensionManager(project_root)
-    ext_dir = project_root / ".specify" / "extensions" / "agent-context"
     if (
         ext_mgr.registry.is_installed("agent-context")
         and (ext_dir / "extension.yml").is_file()

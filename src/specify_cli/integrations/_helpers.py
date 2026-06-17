@@ -306,8 +306,11 @@ def _update_init_options_for_integration(
         opts.pop("ai_skills", None)
 
     # Update the agent-context extension config BEFORE init-options.json
-    # so a failure here doesn't leave init-options partially updated.
-    if integration.context_file:
+    # so a failure here doesn't leave init-options partially updated. Only
+    # recreate the config when the extension is actually installed.
+    ext_cfg_path = project_root / _AGENT_CTX_EXT_CONFIG
+    ext_installed = (ext_cfg_path.parent / "extension.yml").is_file()
+    if ext_cfg_path.exists() or ext_installed:
         _update_agent_context_config_file(
             project_root,
             integration.context_file,

@@ -112,6 +112,10 @@ class _CtxIntegration(ClaudeIntegration):
     """Use Claude as a concrete integration with a context_file."""
 
 
+class _NoCtxIntegration(ClaudeIntegration):
+    context_file = None
+
+
 class TestContextMarkerResolution:
     def test_defaults_when_ext_config_missing(self, tmp_path):
         i = _CtxIntegration()
@@ -353,6 +357,42 @@ class TestAgentContextSelfHeal:
         assert cfg["context_file"] == "CLAUDE.md"
         assert cfg["context_markers"] == custom_markers
 
+    def test_cli_help_does_not_self_heal_missing_agent_context_extension(self, tmp_path):
+        project = tmp_path / "proj"
+        project.mkdir()
+        save_init_options(project, {"integration": "claude", "ai": "claude"})
+        (project / ".specify" / "extensions").mkdir(parents=True)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["--help"], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert not (project / ".specify" / "extensions" / "agent-context").exists()
+
+    def test_self_heal_skips_symlinked_agent_context_extension(self, tmp_path):
+        project = tmp_path / "proj"
+        project.mkdir()
+        save_init_options(project, {"integration": "claude", "ai": "claude"})
+        ext_parent = project / ".specify" / "extensions"
+        ext_parent.mkdir(parents=True)
+        target = tmp_path / "outside-agent-context"
+        target.mkdir()
+        (ext_parent / "agent-context").symlink_to(target, target_is_directory=True)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["version"], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert not (target / "extension.yml").exists()
+
 
 # ── Extension config writers ─────────────────────────────────────────────────
 
@@ -418,6 +458,45 @@ class TestExtensionConfigWriters:
         cfg = _load_agent_context_config(tmp_path)
         assert cfg["context_file"] == i.context_file
         assert "context_markers" in cfg
+
+    def test_update_init_options_clears_existing_ext_config_for_no_context_file(
+        self, tmp_path
+    ):
+        from specify_cli import _update_init_options_for_integration
+
+        _write_ext_config(tmp_path, context_file="CLAUDE.md")
+        i = _NoCtxIntegration()
+        _update_init_options_for_integration(tmp_path, i)
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg["context_file"] == ""
+
+    def test_update_init_options_does_not_create_config_when_extension_absent(
+        self, tmp_path
+    ):
+        from specify_cli import _update_init_options_for_integration
+
+        i = _NoCtxIntegration()
+        _update_init_options_for_integration(tmp_path, i)
+        assert not (
+            tmp_path / ".specify" / "extensions" / "agent-context"
+            / "agent-context-config.yml"
+        ).exists()
+
+    def test_update_init_options_recreates_missing_config_for_installed_extension(
+        self, tmp_path
+    ):
+        from specify_cli import _update_init_options_for_integration
+
+        ext_dir = tmp_path / ".specify" / "extensions" / "agent-context"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "extension.yml").write_text(
+            "extension:\n  id: agent-context\n", encoding="utf-8"
+        )
+
+        i = _CtxIntegration()
+        _update_init_options_for_integration(tmp_path, i)
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg["context_file"] == i.context_file
 
     def test_update_init_options_preserves_custom_markers(self, tmp_path):
         from specify_cli import _update_init_options_for_integration
