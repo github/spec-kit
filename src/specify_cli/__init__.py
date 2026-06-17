@@ -968,15 +968,13 @@ def extension_add(
     # Guard with ``not dev`` so that --dev + --from does not show a
     # confusing confirmation for a URL that will be ignored.
     if from_url and not dev:
-        from urllib.parse import urlparse
         from rich.markup import escape as _escape_markup
 
-        parsed = urlparse(from_url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
-            console.print("[red]Error:[/red] URL must use HTTPS for security.")
-            console.print("HTTP is only allowed for localhost (127.0.0.1, ::1) URLs.")
+        if not is_https_or_localhost_http(from_url):
+            console.print(
+                "[red]Error:[/red] URL must be a valid URL with a host and use HTTPS."
+            )
+            console.print("HTTP is only allowed for localhost, 127.0.0.1, and ::1 URLs.")
             raise typer.Exit(1)
 
         safe_url = _escape_markup(from_url)
@@ -2495,8 +2493,8 @@ def workflow_add(
 
         if not is_https_or_localhost_http(source):
             console.print(
-                "[red]Error:[/red] Only HTTPS URLs are allowed, "
-                "except HTTP for localhost (127.0.0.1, ::1)."
+                "[red]Error:[/red] URL must be a valid URL with a host and use HTTPS. "
+                "HTTP is only allowed for localhost, 127.0.0.1, and ::1."
             )
             raise typer.Exit(1)
 
@@ -2581,7 +2579,8 @@ def workflow_add(
     if not is_https_or_localhost_http(workflow_url):
         console.print(
             f"[red]Error:[/red] Workflow '{source}' has an invalid install URL. "
-            "Only HTTPS URLs are allowed, except HTTP for localhost (127.0.0.1, ::1)."
+            "It must be a valid URL with a host and use HTTPS; HTTP is only allowed "
+            "for localhost, 127.0.0.1, and ::1."
         )
         raise typer.Exit(1)
 

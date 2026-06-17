@@ -114,8 +114,9 @@ def preset_add(
 
             if not is_https_or_localhost_http(from_url):
                 console.print(
-                    "[red]Error:[/red] URL must use HTTPS with a hostname, "
-                    "or HTTP for localhost (127.0.0.1, ::1)."
+                    "[red]Error:[/red] URL must use HTTPS with a hostname and be "
+                    "a valid URL with a host. HTTP is only allowed for localhost, "
+                    "127.0.0.1, and ::1."
                 )
                 raise typer.Exit(1)
 

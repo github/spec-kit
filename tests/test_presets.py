@@ -4574,6 +4574,22 @@ class TestBundledPresetLocator:
 class TestPresetAddFromUrlResolution:
     """CLI-level tests for preset add --from <url> GitHub release resolution."""
 
+    def test_preset_add_from_hostless_url_explains_hostname_requirement(self, project_dir):
+        """Hostless HTTPS URLs should fail with actionable CLI guidance."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https:///preset.zip",
+            ])
+
+        assert result.exit_code == 1
+        assert "valid URL with a host" in result.output
+
     def test_preset_add_from_github_release_url_resolves_and_downloads(self, project_dir):
         """'preset add --from <github-release-url>' resolves to API asset URL."""
         from typer.testing import CliRunner
