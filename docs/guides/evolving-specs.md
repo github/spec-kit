@@ -80,9 +80,11 @@ spec is meant to remain trustworthy.
 ## Before Updating Spec Kit Project Files
 
 Before refreshing Spec Kit project files with the terminal command
-`specify init --here --force`, protect any project-specific material that lives
-outside `specs/`, especially `.specify/memory/constitution.md` and customized
-files under `.specify/templates/` or `.specify/scripts/`.
+`specify init --here --force --integration <your-agent>`, protect any
+project-specific material that lives outside `specs/`, especially
+`.specify/memory/constitution.md` and customized files under
+`.specify/templates/` or `.specify/scripts/`. Use `<your-agent>` for the AI
+coding agent integration used by the target project.
 
 Your `specs/` directory is not part of the template package, but shared project
 files can be overwritten by a forced refresh.
