@@ -158,6 +158,18 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         value = _evaluate_simple_expression(parts[0].strip(), namespace)
         filter_expr = parts[1].strip()
 
+        # `from_json` is strict and takes no arguments. Match the filter name
+        # tolerant of whitespace and reject any parenthesized form
+        # (`from_json()`, `from_json('x')`, `from_json ()`) so a mis-wired
+        # template fails loudly instead of silently returning the unparsed
+        # value.
+        if filter_expr.split("(", 1)[0].strip() == "from_json":
+            if "(" in filter_expr:
+                raise ValueError(
+                    "from_json: filter takes no arguments (use '| from_json')"
+                )
+            return _filter_from_json(value)
+
         # Parse filter name and argument
         filter_match = re.match(r"(\w+)\((.+)\)", filter_expr)
         if filter_match:
@@ -175,8 +187,6 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         filter_name = filter_expr.strip()
         if filter_name == "default":
             return _filter_default(value)
-        if filter_name == "from_json":
-            return _filter_from_json(value)
         return value
 
     # Boolean operators — parse 'or' first (lower precedence) so that

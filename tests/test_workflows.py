@@ -286,7 +286,7 @@ class TestExpressions:
         ctx = StepContext(inputs={"text": "hello world"})
         assert evaluate_expression("{{ inputs.text | contains('world') }}", ctx) is True
 
-    def test_filter_from_json_parses_list(self):
+    def test_filter_from_json_parses_object(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
@@ -313,6 +313,21 @@ class TestExpressions:
         ctx = StepContext(steps={"emit": {"output": {"exit_code": 0}}})
         with pytest.raises(ValueError, match="expected a JSON string"):
             evaluate_expression("{{ steps.emit.output.exit_code | from_json }}", ctx)
+
+    def test_filter_from_json_rejects_arguments(self):
+        # `from_json` is strict and takes no arguments. Both the empty-parens
+        # and accidental-arg forms must raise rather than silently return the
+        # unparsed value, so a mis-wired template is caught immediately.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(steps={"emit": {"output": {"stdout": '{"a": 1}'}}})
+        for bad in ("from_json()", "from_json('x')", "from_json ()", "from_json ('x')"):
+            with pytest.raises(ValueError, match="from_json: filter takes no arguments"):
+                evaluate_expression(
+                    "{{ steps.emit.output.stdout | " + bad + " }}", ctx
+                )
 
     def test_condition_evaluation(self):
         from specify_cli.workflows.expressions import evaluate_condition
