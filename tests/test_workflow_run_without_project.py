@@ -204,7 +204,7 @@ class TestWorkflowRunWithoutProject:
             os.chdir(old_cwd)
 
         assert result.exit_code != 0
-        assert "Refusing to use symlinked .specify path in current directory" in result.output
+        assert "Refusing to use symlinked .specify path" in result.output
 
     def test_workflow_run_yaml_rejects_non_directory_specify_path(self, tmp_path):
         """Running local YAML should fail when .specify is not a directory."""

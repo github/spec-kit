@@ -5303,6 +5303,41 @@ class TestWorkflowStepRemoveCLI:
         assert "Refusing to use symlinked step directory" in result.output
 
 
+class TestWorkflowAddSymlinkGuard:
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_refuses_symlinked_specify(self, temp_dir, monkeypatch):
+        """workflow add must refuse a symlinked .specify (writes could escape root)."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        outside = temp_dir.parent / "outside-specify-target"
+        (outside / "workflows").mkdir(parents=True, exist_ok=True)
+        (temp_dir / ".specify").symlink_to(outside, target_is_directory=True)
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", "anything.yml"])
+
+        assert result.exit_code != 0
+        assert "symlinked .specify" in result.output
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_refuses_symlinked_workflows_dir(self, temp_dir, monkeypatch):
+        """workflow add must refuse a symlinked .specify/workflows directory."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify").mkdir()
+        outside = temp_dir.parent / "outside-workflows-target"
+        outside.mkdir(parents=True, exist_ok=True)
+        (temp_dir / ".specify" / "workflows").symlink_to(outside, target_is_directory=True)
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", "anything.yml"])
+
+        assert result.exit_code != 0
+        assert "symlinked .specify/workflows" in result.output
+
+
 class TestWorkflowStepAddCLI:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
@@ -5616,7 +5651,7 @@ steps:
         # at the file-descriptor level, so it sees the subprocess output too.
         import subprocess
         import sys as _sys
-        from specify_cli import _stdout_to_stderr_when
+        from specify_cli.workflows._commands import _stdout_to_stderr_when
 
         print("STDOUT_BEFORE")
         with _stdout_to_stderr_when(True):
@@ -5635,7 +5670,7 @@ steps:
         assert "PY_LEAK" in err and "SUBPROC_LEAK" in err
 
     def test_json_redirect_inactive_is_noop(self, capfd):
-        from specify_cli import _stdout_to_stderr_when
+        from specify_cli.workflows._commands import _stdout_to_stderr_when
 
         with _stdout_to_stderr_when(False):
             print("VISIBLE_ON_STDOUT")
@@ -6256,7 +6291,7 @@ steps:
         # not cleared afterwards, so a `completed`/`failed` run whose last
         # executed step was a gate must NOT surface a stale gate block.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         gate_step = {
             "type": "gate",
@@ -6283,7 +6318,7 @@ steps:
         # message may be a non-string YAML literal (e.g. a number); the JSON
         # surface normalises it so the emitted schema stays stable.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         state = SimpleNamespace(
             status=SimpleNamespace(value="paused"),
@@ -6302,7 +6337,7 @@ steps:
         # workflow; the JSON surface always normalises them to list[str] | None
         # so the emitted schema is stable regardless of the input shape.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         def _options_payload(options):
             state = SimpleNamespace(
@@ -6332,7 +6367,7 @@ steps:
         # surface normalises it to str (and keeps None = no decision yet),
         # consistent with the message/options normalization.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         def _choice_payload(choice):
             state = SimpleNamespace(
@@ -6356,7 +6391,7 @@ steps:
         # gate is still detected by its unique output signature (`on_reject`),
         # so resume surfaces the gate block instead of silently dropping it.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         state = SimpleNamespace(
             status=SimpleNamespace(value="paused"),
@@ -6382,7 +6417,7 @@ steps:
         # A typeless record lacking the gate signature must NOT be mistaken for
         # a gate (the fallback keys off `on_reject`, which only GateStep writes).
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         state = SimpleNamespace(
             status=SimpleNamespace(value="paused"),
