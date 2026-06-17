@@ -2105,6 +2105,24 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
     return payload
 
 
+def _is_gate_step(step: dict[str, Any]) -> bool:
+    """Whether a recorded step result is a gate.
+
+    Prefers the persisted ``type`` field, but when it is absent — a run paused
+    by an older version, whose step record predates ``type`` being stored —
+    falls back to the gate's unique output signature: only ``GateStep`` writes
+    an ``on_reject`` key. A record carrying a *different* known ``type`` is not
+    a gate, so the fallback applies only when ``type`` is missing entirely.
+    """
+    step_type = step.get("type")
+    if step_type == "gate":
+        return True
+    if step_type:
+        return False
+    output = step.get("output")
+    return isinstance(output, dict) and "on_reject" in output
+
+
 def _gate_outcome(state: Any) -> dict[str, Any] | None:
     """Gate detail for the structured outcome, when the run rests at a gate.
 
@@ -2122,16 +2140,18 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     if getattr(state.status, "value", state.status) not in ("paused", "aborted"):
         return None
     step = (getattr(state, "step_results", None) or {}).get(state.current_step_id)
-    if not isinstance(step, dict) or step.get("type") != "gate":
+    if not isinstance(step, dict) or not _is_gate_step(step):
         return None
     output = step.get("output") or {}
-    # `message` may be a non-string YAML literal (GateStep coerces it only for
-    # expression interpolation), so normalise it here for a stable JSON schema.
+    # `message` and `options` may be non-string YAML literals in an unvalidated
+    # workflow (GateStep coerces neither for the payload), so normalise both
+    # here for a stable JSON schema: message → str, options → list[str].
     message = output.get("message")
+    options = output.get("options")
     return {
         "step_id": state.current_step_id,
         "message": None if message is None else str(message),
-        "options": output.get("options"),
+        "options": [str(o) for o in options] if isinstance(options, list) else options,
         "choice": output.get("choice"),
     }
 

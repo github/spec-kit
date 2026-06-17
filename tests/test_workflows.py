@@ -5476,3 +5476,63 @@ steps:
             },
         )
         assert _gate_outcome(state)["message"] == "12.5"
+
+    def test_gate_block_options_coerced_to_strings(self):
+        # options may be non-string YAML literals in an unvalidated workflow;
+        # the JSON surface normalises them to a list of strings.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="review",
+            step_results={
+                "review": {
+                    "type": "gate",
+                    "output": {"message": "m", "options": [1, 2.5], "choice": None},
+                }
+            },
+        )
+        assert _gate_outcome(state)["options"] == ["1", "2.5"]
+
+    def test_gate_block_detected_without_type_field(self):
+        # A run paused by an older version has no persisted step `type`. The
+        # gate is still detected by its unique output signature (`on_reject`),
+        # so resume surfaces the gate block instead of silently dropping it.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="review",
+            step_results={
+                "review": {
+                    # no "type" key — pre-dates the field being persisted
+                    "output": {
+                        "message": "Approve?",
+                        "options": ["approve", "reject"],
+                        "on_reject": "abort",
+                        "choice": None,
+                    },
+                }
+            },
+        )
+        gate = _gate_outcome(state)
+        assert gate is not None
+        assert gate["step_id"] == "review"
+        assert gate["options"] == ["approve", "reject"]
+
+    def test_non_gate_step_without_type_is_not_a_gate(self):
+        # A typeless record lacking the gate signature must NOT be mistaken for
+        # a gate (the fallback keys off `on_reject`, which only GateStep writes).
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="run-tests",
+            step_results={
+                "run-tests": {"output": {"exit_code": 0, "stdout": "ok"}},
+            },
+        )
+        assert _gate_outcome(state) is None
