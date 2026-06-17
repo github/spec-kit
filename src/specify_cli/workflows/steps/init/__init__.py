@@ -75,8 +75,9 @@ class InitStep(StepBase):
         project = self._resolve(config.get("project"), context)
         here = self._resolve_bool(config.get("here"), context)
 
-        integration = config.get("integration") or context.default_integration
-        integration = self._resolve(integration, context)
+        integration = self._resolve(config.get("integration"), context)
+        if not integration:
+            integration = self._resolve(context.default_integration, context)
         # Apply the same default that specify init uses in non-interactive mode
         # so that output.integration reflects the actual integration used.
         if not integration:
@@ -126,15 +127,21 @@ class InitStep(StepBase):
         targets_current_dir = here or not project or str(project) == "."
         if targets_current_dir and not force:
             base = context.project_root or os.getcwd()
+            has_engine_dirs = False
             try:
                 with os.scandir(base) as it:
-                    has_non_engine_content = any(
-                        not (
+                    for entry in it:
+                        if (
                             entry.name in _ENGINE_OWNED_DIRS
                             and entry.is_dir(follow_symlinks=False)
-                        )
-                        for entry in it
-                    )
+                        ):
+                            has_engine_dirs = True
+                        else:
+                            # Non-engine content found — fail fast.
+                            has_non_engine_content = True
+                            break
+                    else:
+                        has_non_engine_content = False
             except OSError as exc:
                 error_message = (
                     f"Cannot inspect target directory {base!r}: {exc}"
@@ -183,7 +190,9 @@ class InitStep(StepBase):
             else:
                 # Only engine-owned dirs exist — implicitly force so specify
                 # init doesn't prompt about the non-empty directory.
-                force = True
+                # (Skip if the directory is completely empty — no force needed.)
+                if has_engine_dirs:
+                    force = True
 
         if force:
             argv.append("--force")
