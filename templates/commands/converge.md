@@ -95,8 +95,8 @@ Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_
 - PLAN = FEATURE_DIR/plan.md
 - TASKS = FEATURE_DIR/tasks.md
 - CONSTITUTION = `/memory/constitution.md` (if present)
-If `plan.md` or `tasks.md` is missing, STOP with a clear, actionable message naming the
-prerequisite command to run (`__SPECKIT_COMMAND_PLAN__` for a missing plan,
+If `spec.md`, `plan.md`, or `tasks.md` is missing, STOP with a clear, actionable message naming the
+prerequisite command to run (`__SPECKIT_COMMAND_SPECIFY__` for a missing spec, `__SPECKIT_COMMAND_PLAN__` for a missing plan,
 `__SPECKIT_COMMAND_TASKS__` for missing tasks). Do not produce partial output.
 For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot").
 
