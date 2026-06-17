@@ -1,206 +1,304 @@
-# Quick Start Guide
+# 快速开始
 
-This guide will help you get started with Spec-Driven Development using Spec Kit.
+这份指南面向本仓库分发版的 Spec Kit。它保留核心 Spec-Driven Development 流程，同时默认带上架构 SSOT、仓库治理、BDD/UIF 行为契约、HTML 预览、实现期 handoff 和最终 code review receipt。
 
 > [!NOTE]
-> All automation scripts now provide both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on OS unless you pass `--script sh|ps`.
+> 自动化脚本同时提供 Bash (`.sh`) 和 PowerShell (`.ps1`) 版本。`specify` CLI 会按系统自动选择，也可以通过 `--script sh|ps` 显式指定。
 
-## Recommended Workflow
+## 推荐流程
 
 > [!TIP]
-> **Context Awareness**: Spec Kit commands automatically detect the active feature based on your current Git branch (e.g., `001-feature-name`). To switch between different specifications, simply switch Git branches.
+> Spec Kit 会根据当前 Git 分支自动识别 active feature，例如 `001-photo-album`。切换规格时通常只需要切换分支。
 
-After installing Spec Kit and defining your project constitution, quick experiments can use the lean feature path: `/speckit.specify` -> `/speckit.plan` -> `/speckit.tasks` -> `/speckit.implement`. For production features or any work with meaningful ambiguity, treat `/speckit.clarify`, `/speckit.checklist`, and `/speckit.analyze` as regular quality gates:
+生产功能建议使用默认增强链路：
 
 ```text
-/speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.checklist -> /speckit.plan -> /speckit.tasks -> /speckit.analyze -> /speckit.implement
-```
-
-Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` to validate requirements quality before planning, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts. You can repeat `/speckit.analyze` after implementation as an extra review, but keep the first analysis before `/speckit.implement` so gaps are caught while the plan and tasks can still be adjusted.
-
-### Step 1: Install Specify
-
-**In your terminal**, run the `specify` CLI command to initialize your project:
-
-```bash
-# Create a new project directory
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
-
-# OR initialize in the current directory
-uvx --from git+https://github.com/github/spec-kit.git specify init .
-```
-
-> [!NOTE]
-> You can also install the CLI persistently with `pipx`:
->
-> ```bash
-> pipx install git+https://github.com/github/spec-kit.git
-> ```
->
-> After installing with `pipx`, run `specify` directly instead of `uvx --from ... specify`, for example:
->
-> ```bash
-> specify init <PROJECT_NAME>
-> specify init .
-> ```
-
-Pick script type explicitly (optional):
-
-```bash
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script ps  # Force PowerShell
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME> --script sh  # Force POSIX shell
-```
-
-### Step 2: Define Your Constitution
-
-**In your coding agent's chat interface**, use the `/speckit.constitution` slash command to establish the core rules and principles for your project. You should provide your project's specific principles as arguments.
-
-```markdown
-/speckit.constitution This project follows a "Library-First" approach. All features must be implemented as standalone libraries first. We use TDD strictly. We prefer functional programming patterns.
-```
-
-### Step 3: Create the Spec
-
-**In the chat**, use the `/speckit.specify` slash command to describe what you want to build. Focus on the **what** and **why**, not the tech stack.
-
-```markdown
-/speckit.specify Build an application that can help me organize my photos in separate photo albums. Albums are grouped by date and can be re-organized by dragging and dropping on the main page. Albums are never in other nested albums. Within each album, photos are previewed in a tile-like interface.
-```
-
-### Step 4: Refine and Validate the Spec
-
-**In the chat**, use the `/speckit.clarify` slash command to identify and resolve ambiguities in your specification. You can provide specific focus areas as arguments.
-
-```bash
-/speckit.clarify Focus on security and performance requirements.
-```
-
-Then validate the requirements with `/speckit.checklist` before creating the technical plan:
-
-```bash
+/speckit.constitution
+/speckit.arch.generate
+/speckit.repository-governance.refresh
+/speckit.specify
+/speckit.clarify
 /speckit.checklist
-```
-
-### Step 5: Create a Technical Implementation Plan
-
-**In the chat**, use the `/speckit.plan` slash command to provide your tech stack and architecture choices.
-
-```markdown
-/speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
-```
-
-### Step 6: Break Down, Analyze, and Implement
-
-**In the chat**, use the `/speckit.tasks` slash command to create an actionable task list.
-
-```markdown
+/speckit.preview.html
+/speckit.plan
 /speckit.tasks
-```
-
-Validate cross-artifact consistency with `/speckit.analyze` before implementation:
-
-```markdown
 /speckit.analyze
-```
-
-Use the `/speckit.implement` slash command to execute the plan.
-
-```markdown
 /speckit.implement
 ```
 
-> [!TIP]
-> **Phased Implementation**: For complex projects, implement in phases to avoid overwhelming the agent's context. Start with core functionality, validate it works, then add features incrementally.
+接手旧仓库时，把 `/speckit.arch.generate` 换成 `/speckit.arch.reverse`，先从仓库事实反向生成架构 SSOT。
 
-## Detailed Example: Building Taskify
+小实验可以安装 `lean` 预设后走轻量路径：
 
-Here's a complete example of building a team productivity platform:
-
-### Step 1: Define Constitution
-
-Initialize the project's constitution to set ground rules:
-
-```markdown
-/speckit.constitution Taskify is a "Security-First" application. All user inputs must be validated. We use a microservices architecture. Code must be fully documented.
+```bash
+specify preset add lean
 ```
-
-### Step 2: Define Requirements with `/speckit.specify`
 
 ```text
-Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
-assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
-let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
-I want five users in two different categories, one product manager and four engineers. Let's create three
-different sample projects. Let's have the standard Kanban columns for the status of each task, such as "To Do,"
-"In Progress," "In Review," and "Done." There will be no login for this application as this is just the very
-first testing thing to ensure that our basic features are set up.
+/speckit.specify -> /speckit.plan -> /speckit.tasks -> /speckit.implement
 ```
 
-### Step 3: Refine the Specification
+## 1. 安装 Specify
 
-Use the `/speckit.clarify` command to interactively resolve any ambiguities in your specification. You can also provide specific details you want to ensure are included.
+推荐使用 [uv](https://docs.astral.sh/uv/) 持久安装：
 
 ```bash
-/speckit.clarify I want to clarify the task card details. For each task in the UI for a task card, you should be able to change the current status of the task between the different columns in the Kanban work board. You should be able to leave an unlimited number of comments for a particular card. You should be able to, from that task card, assign one of the valid users.
+uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git
 ```
 
-You can continue to refine the spec with more details using `/speckit.clarify`:
+从当前仓库本地开发安装：
 
 ```bash
-/speckit.clarify When you first launch Taskify, it's going to give you a list of the five users to pick from. There will be no password required. When you click on a user, you go into the main view, which displays the list of projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns. You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can delete any comments that you made, but you can't delete comments anybody else made.
+uv tool install --force ./
 ```
 
-### Step 4: Validate the Spec
-
-Validate the specification checklist using the `/speckit.checklist` command:
+也可以一次性运行：
 
 ```bash
+uvx --from git+https://github.com/bigsmartben/spec-kit.git specify init my-project
+```
+
+显式选择脚本类型：
+
+```bash
+specify init my-project --script ps  # Force PowerShell
+specify init my-project --script sh  # Force POSIX shell
+```
+
+## 2. 初始化项目
+
+选择你正在使用的 AI 编码助手：
+
+```bash
+specify init my-project --integration codex
+cd my-project
+```
+
+在已有仓库中初始化：
+
+```bash
+specify init . --integration codex --force
+```
+
+如果 agent 工具没有安装，但你只想先生成 Spec Kit 文件：
+
+```bash
+specify init my-project --integration copilot --ignore-agent-tools
+```
+
+Codex 和部分 agent 支持 skills 模式：
+
+```bash
+specify init my-project --integration codex --integration-options="--skills"
+```
+
+查看当前支持的集成：
+
+```bash
+specify integration list
+```
+
+## 3. 建立项目原则与治理
+
+在编码助手中先建立项目原则：
+
+```text
+/speckit.constitution This project uses behavior-first requirements, keeps architecture decisions explicit, and requires validation evidence before tasks are marked complete.
+```
+
+刷新仓库治理规范：
+
+```text
+/speckit.repository-governance.refresh
+```
+
+治理命令会生成或更新当前 integration 对应的 agent 上下文文件中的受管段，并维护内部治理记忆：
+
+```text
+.specify/memory/repository-governance.md
+```
+
+它用于约束 SSOT 读取顺序、目录责任、agent 平台适配和仓库事实证据。
+
+## 4. 生成 ARCH SSOT
+
+新项目或架构正在重塑时：
+
+```text
+/speckit.arch.generate
+```
+
+接手已有仓库时：
+
+```text
+/speckit.arch.reverse
+```
+
+主要产物：
+
+```text
+.specify/memory/architecture.md
+.specify/memory/architecture-scenario-view.md
+.specify/memory/architecture-logical-view.md
+.specify/memory/architecture-process-view.md
+.specify/memory/architecture-development-view.md
+.specify/memory/architecture-physical-view.md
+.specify/memory/architecture-repo-facts.md   # reverse 额外使用
+```
+
+后续 `/speckit.plan` 会基于这些架构边界、约束、反模式和未解缺口进行规划。
+
+## 5. 创建并澄清规格
+
+创建功能规格时只描述用户目标、业务规则和验收语义，不要过早指定技术栈：
+
+```text
+/speckit.specify Build a photo album app. Users can create albums, group photos by date, reorder albums by drag and drop, and preview photos as tiles. The UI must support mobile browsing and desktop bulk organization.
+```
+
+澄清缺口：
+
+```text
+/speckit.clarify Focus on album permissions, empty states, reorder conflict behavior, responsive UI states, and validation boundaries.
+```
+
+运行 BDD/NFR readiness gate：
+
+```text
 /speckit.checklist
 ```
 
-### Step 5: Generate Technical Plan with `/speckit.plan`
+检查生成的 readiness 清单：
 
-Be specific about your tech stack and technical requirements:
-
-```bash
-/speckit.plan We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API, tasks API, and a notifications API.
+```text
+specs/<feature>/checklists/behavior-testability.md
 ```
 
-### Step 6: Define Tasks
+如果清单指出 Given/When/Then、可观察结果、边界状态或 NFR 声明缺失，先回到 `/speckit.clarify` 或 `/speckit.specify` 补齐。
 
-Generate an actionable task list using the `/speckit.tasks` command:
+## 6. 预览 UI/UX 规格
 
-```bash
+对 UI、流程或交互有不确定性时，先生成自包含 HTML 原型：
+
+```text
+/speckit.preview.html mobile album browsing and reorder flow
+```
+
+打开输出文件评审：
+
+```text
+specs/<feature>/preview/index.html
+```
+
+这个文件只用于实现前评审 flow、信息架构、状态和交互假设，不会修改生产代码。
+
+## 7. 生成计划与行为契约
+
+规划阶段再指定技术栈和工程约束：
+
+```text
+/speckit.plan Use Vite, TypeScript, SQLite, and a minimal dependency set. Store photo metadata locally and do not upload images.
+```
+
+默认 `workflow-preset` 会把已通过 readiness gate 的需求投影为 BDD、UIF 和 fixture intent，并在规划中正式化为契约。常见产物包括：
+
+```text
+specs/<feature>/behavior/bdd.draft.feature
+specs/<feature>/behavior/uif.intent.json
+specs/<feature>/behavior/data-fixtures.intent.json
+specs/<feature>/contracts/bdd/
+specs/<feature>/contracts/uif/
+specs/<feature>/contracts/behavior/
+specs/<feature>/quickstart.md
+```
+
+`quickstart.md` 应包含可执行或可复现的验证路径，后续 tasks 和 code review receipt 会引用它。
+
+## 8. 拆任务、分析并实现
+
+生成任务：
+
+```text
 /speckit.tasks
 ```
 
-### Step 7: Validate and Implement
+默认任务生成会从 BDD、UIF、行为契约、接口契约、`research.md` 和 `quickstart.md` 派生测试层级、fixture/mock/sandbox 策略和验证证据要求。
 
-Have your coding agent audit the spec, plan, and tasks with `/speckit.analyze` before implementation:
+实现前做一致性检查：
 
-```bash
+```text
 /speckit.analyze
 ```
 
-Finally, implement the solution:
+开始实现：
 
-```bash
+```text
 /speckit.implement
 ```
 
-> [!TIP]
-> **Phased Implementation**: For large projects like Taskify, consider implementing in phases (e.g., Phase 1: Basic project/task structure, Phase 2: Kanban functionality, Phase 3: Comments and assignments). This prevents context saturation and allows for validation at each stage.
+中大型功能会进入 Core/Vertical Planner/Worker 三层 handoff 编排，常见输出：
 
-## Key Principles
+```text
+specs/<feature>/handoffs/implement/<run-id>/handoff-manifest.json
+specs/<feature>/handoffs/implement/<run-id>/<shard>.json
+specs/<feature>/handoffs/implement/<run-id>/<shard>.context.md
+specs/<feature>/handoffs/implement/<run-id>/results/<shard>.json
+```
 
-- **Be explicit** about what you're building and why
-- **Don't focus on tech stack** during specification phase
-- **Iterate and refine** your specifications before implementation
-- **Validate** requirements and plans before coding begins
-- **Let the coding agent handle** the implementation details
+如果当前 agent runtime 不支持隔离 subagent，按输出的新 worker 指令在干净会话中执行单个 handoff：
 
-## Next Steps
+```text
+/speckit.implement Use handoff JSON specs/<feature>/handoffs/implement/<run-id>/<shard>.json
+```
 
-- Read the [complete methodology](https://github.com/github/spec-kit/blob/main/spec-driven.md) for in-depth guidance
-- Check out [more examples](https://github.com/github/spec-kit/tree/main/templates) in the repository
-- Explore the [source code on GitHub](https://github.com/github/spec-kit)
+Final Code Review 会以 `task_type: code_review` receipt 记录已检查的设计、sequence、contract、quickstart 来源、数据副作用审查、授权范围内的一致性修复和真实 e2e 缺口。
+
+## 9. 可选：运行带 review gate 的 workflow
+
+如果你想体验可恢复的端到端 workflow：
+
+```bash
+specify workflow add speckit
+specify workflow run speckit --input spec="Build a small photo album app with album reorder and tile preview"
+specify workflow status
+specify workflow resume <run_id>
+```
+
+内置 `speckit` workflow 会串联 specify、plan、tasks、implement，并在 spec review 和 plan review 处暂停等待人工确认。
+
+## 常见操作
+
+查看增强能力：
+
+```bash
+specify extension search
+specify preset search
+specify workflow search
+```
+
+重新安装默认增强能力：
+
+```bash
+specify extension add arch
+specify extension add preview
+specify extension add repository-governance
+specify preset add workflow-preset
+```
+
+升级当前项目中的 integration 文件：
+
+```bash
+specify integration upgrade
+```
+
+卸载某个 integration：
+
+```bash
+specify integration uninstall <key>
+```
+
+## 下一步
+
+- 阅读 [完整方法论](../spec-driven.md)。
+- 查看 [扩展系统](../extensions/README.md)、[预设系统](../presets/README.md) 和 [workflow 系统](../workflows/README.md)。
+- 本地开发 CLI 时参考 [local-development](./local-development.md)。
