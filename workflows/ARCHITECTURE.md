@@ -118,6 +118,7 @@ Workflow definitions use Jinja2-like `{{ expression }}` syntax for dynamic value
 | Filter: `join` | `{{ list \| join(', ') }}` | Join list elements |
 | Filter: `contains` | `{{ text \| contains('sub') }}` | Substring/membership check |
 | Filter: `map` | `{{ list \| map('attr') }}` | Extract attribute from each item |
+| Filter: `from_json` | `{{ steps.emit.output.stdout \| from_json }}` | Parse a JSON string into a typed value (raises on invalid JSON) |
 
 **Single expressions** (`{{ expr }}` only) return typed values. **Mixed templates** (`"text {{ expr }} more"`) return interpolated strings.
 

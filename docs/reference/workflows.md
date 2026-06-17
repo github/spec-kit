@@ -280,7 +280,7 @@ Steps can reference inputs and previous step outputs using `{{ expression }}` sy
 | `steps.specify.output.file`    | Output from a previous step          |
 | `item`                         | Current item in a fan-out iteration  |
 
-Available filters: `default`, `join`, `contains`, `map`.
+Available filters: `default`, `join`, `contains`, `map`, `from_json`.
 
 Example:
 

@@ -314,7 +314,7 @@ condition: "{{ steps.run-tests.output.exit_code != 0 }}"
 message: "{{ status | default('pending') }}"
 ```
 
-Supported filters: `default`, `join`, `contains`, `map`.
+Supported filters: `default`, `join`, `contains`, `map`, `from_json`.
 
 ### Runtime Context
 
