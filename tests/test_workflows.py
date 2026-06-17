@@ -5381,8 +5381,10 @@ steps:
         monkeypatch.chdir(tmp_path)
         result = CliRunner().invoke(app, ["workflow", "run", str(path), "--json"])
         # Assert the CLI succeeded before parsing so a real failure surfaces
-        # the actual output instead of an opaque JSON decode error.
-        assert result.exit_code == 0, result.stdout
+        # the actual output instead of an opaque JSON decode error. Use
+        # ``result.output`` for the message: under ``--json`` step output is
+        # redirected off stdout, so the useful diagnostics live there.
+        assert result.exit_code == 0, result.output
         return _json.loads(result.stdout)
 
     def test_gate_pause_carries_gate_block(self, tmp_path, monkeypatch):
