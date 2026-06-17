@@ -3,10 +3,10 @@
 import json
 import os
 
-import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
+from tests.conftest import requires_symlink
 
 
 runner = CliRunner()
@@ -616,7 +616,7 @@ class TestIntegrationUse:
         assert "/speckit.plan" in updated
         assert "custom template" not in updated
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @requires_symlink
     def test_use_does_not_persist_default_when_template_refresh_fails(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         int_json = project / ".specify" / "integration.json"
@@ -1016,17 +1016,13 @@ class TestIntegrationSwitch:
         # Customization is overwritten with the bundled version
         assert shared_script.read_bytes() == bundled_bytes
 
+    @requires_symlink
     def test_switch_skips_symlinked_parent_directory(self, tmp_path):
         """Regression: if .specify/scripts/bash is a symlink, switch must not write through it.
 
         Copilot follow-up on #2375: leaf-only symlink check let writes escape
         when an *ancestor* directory was symlinked outside the project root.
         """
-        import sys
-        if sys.platform.startswith("win"):
-            import pytest as _pytest
-            _pytest.skip("Symlink creation typically requires admin on Windows")
-
         project = _init_project(tmp_path, "claude")
         bash_dir = project / ".specify" / "scripts" / "bash"
         outside = tmp_path / "outside"

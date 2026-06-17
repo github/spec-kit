@@ -41,6 +41,17 @@
 - [ ] Required NFR entries have verifiable product-level criteria without prescribing architecture.
 - [ ] Unknown NFR entries that affect downstream design are listed as blocking items.
 
+## Visual Fidelity Readiness
+- [ ] Figma-derived requirements identify the source Figma URL, frame or node IDs, and required fidelity.
+- [ ] Figma intake ready gate evidence in `spec.md` shows raw metadata completeness, metadata index completeness proof, node inventory parity, and no blocker lint errors.
+- [ ] Layout, spacing, typography, colors, effects, assets, and clipping requirements are explicit.
+- [ ] Required component mappings and variant coverage are explicit or marked as blocking clarification items.
+- [ ] Default, hover, focus, active, disabled, loading, empty, and error states are explicit or marked as missing.
+- [ ] Required breakpoints, reflow rules, scrolling, minimum widths, safe areas, and responsive behavior is explicit.
+- [ ] Copy, icons, images, fonts, numeric formats, and placeholder content are explicit.
+- [ ] Keyboard, focus, semantics, contrast, ARIA, form error behavior, and accessibility requirements are explicit.
+- [ ] Visual differences that may be accepted are defined as traceable exception rules.
+
 ## Gate Status
 Gate Status: PASS|BLOCKED
 Blocking Items:

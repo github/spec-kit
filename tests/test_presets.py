@@ -3490,7 +3490,7 @@ class TestBundledPresetLocator:
         template_count = sum(1 for item in provided if item["type"] == "template")
 
         assert entry["bundled"] is True
-        assert entry["version"] == "1.3.5"
+        assert entry["version"] == "1.3.6"
         assert entry["version"] == manifest["preset"]["version"]
         assert entry["repository"] == manifest["preset"]["repository"]
         assert entry["requires"]["speckit_version"] == manifest["requires"]["speckit_version"]
@@ -3558,8 +3558,8 @@ class TestBundledPresetLocator:
         assert (
             'registry = json.loads(Path(".specify/presets/.registry").read_text(encoding="utf-8"))'
         ) in verify_run
-        assert 'manifest_version == "1.3.5"' in verify_run
-        assert 'registry_version == "1.3.5"' in verify_run
+        assert 'manifest_version == "1.3.' not in verify_run
+        assert 'registry_version == "1.3.' not in verify_run
         assert "registry_version == manifest_version" in verify_run
         assert (
             'for extension_id in arch preview repository-governance; do'

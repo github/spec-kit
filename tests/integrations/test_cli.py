@@ -3,12 +3,13 @@
 import io
 import json
 import os
+from pathlib import Path
 
 import pytest
 import yaml
 from rich.console import Console
 
-from tests.conftest import strip_ansi
+from tests.conftest import requires_symlink, strip_ansi
 
 
 class _NoopConsole:
@@ -375,7 +376,7 @@ class TestInitIntegrationFlag:
         assert "Could not read shared infrastructure manifest" in captured.out
         assert "A new shared manifest will be created" in captured.out
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @requires_symlink
     def test_shared_infra_buckets_symlinked_script_destination(self, tmp_path, capsys):
         """Symlinked script destinations are bucketed with a warning; the symlink target is preserved."""
         from specify_cli import _install_shared_infra
@@ -396,7 +397,7 @@ class TestInitIntegrationFlag:
         assert "symlinked shared infrastructure" in captured.out
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @requires_symlink
     def test_shared_infra_buckets_symlinked_template_destination(self, tmp_path, capsys):
         """Symlinked template destinations are bucketed with a warning; the symlink target is preserved."""
         from specify_cli import _install_shared_infra
@@ -417,7 +418,7 @@ class TestInitIntegrationFlag:
         assert "symlinked shared infrastructure" in captured.out
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @requires_symlink
     def test_shared_template_refresh_refuses_symlinked_destination(self, tmp_path):
         """Template-only refreshes must not follow destination symlinks."""
         from specify_cli import _refresh_shared_templates
@@ -437,7 +438,7 @@ class TestInitIntegrationFlag:
 
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @requires_symlink
     def test_shared_infra_refuses_symlinked_specify_directory_before_mkdir(self, tmp_path):
         """Shared infra installs must not follow a symlinked .specify directory."""
         from specify_cli import _install_shared_infra
@@ -456,7 +457,7 @@ class TestInitIntegrationFlag:
         assert not (outside / "scripts").exists()
         assert not (outside / "templates").exists()
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @requires_symlink
     def test_shared_infra_refuses_symlinked_shared_manifest(self, tmp_path):
         """Shared infra manifest saves must not follow destination symlinks."""
         from specify_cli.shared_infra import install_shared_infra
@@ -488,7 +489,7 @@ class TestInitIntegrationFlag:
 
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @requires_symlink
     def test_shared_template_refresh_preflights_before_writing(self, tmp_path):
         """Template refresh validates all destinations before writing any file."""
         from specify_cli.shared_infra import refresh_shared_templates
@@ -524,7 +525,7 @@ class TestInitIntegrationFlag:
         assert existing.read_text(encoding="utf-8") == "# old a\n"
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @requires_symlink
     def test_shared_infra_install_buckets_unsafe_destinations_and_continues(self, tmp_path):
         """Symlinked destinations are bucketed with a warning; safe destinations in the same install still complete."""
         from specify_cli.shared_infra import install_shared_infra
@@ -992,8 +993,9 @@ class TestGitExtensionAutoInstall:
         preset_registry = json.loads((project / ".specify" / "presets" / ".registry").read_text())
         workflow_entry = preset_registry["presets"]["workflow-preset"]
         installed_manifest = yaml.safe_load((preset_dir / "preset.yml").read_text(encoding="utf-8"))
-        assert installed_manifest["preset"]["version"] == "1.3.5"
-        assert workflow_entry["version"] == "1.3.5"
+        source_manifest_path = Path(__file__).parents[2] / "presets" / "workflow-preset" / "preset.yml"
+        source_manifest = yaml.safe_load(source_manifest_path.read_text(encoding="utf-8"))
+        assert installed_manifest["preset"]["version"] == source_manifest["preset"]["version"]
         assert workflow_entry["version"] == installed_manifest["preset"]["version"]
         expected_preset_commands = {
             "speckit.specify",

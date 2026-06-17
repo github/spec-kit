@@ -157,7 +157,9 @@ class TestSafeRegistration:
                 external_shared, target_is_directory=True
             )
         except OSError as exc:
-            if exc.errno in {errno.EPERM, errno.EACCES}:
+            if exc.errno in {errno.EPERM, errno.EACCES} or getattr(
+                exc, "winerror", None
+            ) == 1314:
                 pytest.skip("symlink creation is not permitted in this environment")
             raise
 

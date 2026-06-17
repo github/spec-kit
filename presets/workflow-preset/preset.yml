@@ -2,7 +2,7 @@ schema_version: '1.0'
 preset:
   id: workflow-preset
   name: Workflow Preset
-  version: 1.3.5
+  version: 1.3.6
   description: Behavior-first specification, design artifacts, and agent-native handoff
     orchestration
   author: bigsmartben
@@ -24,6 +24,18 @@ provides:
     description: Add change scope granularity governance to the constitution template
     replaces: constitution-template
     strategy: wrap
+  - type: template
+    name: figma-evidence-packet-template
+    file: templates/figma-evidence-packet-template.md
+    description: Define the Figma Evidence Packet input format for Figma-derived specifications
+    replaces: figma-evidence-packet-template
+    strategy: replace
+  - type: template
+    name: figma-intake-contract-template
+    file: templates/figma-intake-contract.md
+    description: Define the Figma intake artifact contract for raw metadata readiness
+    replaces: figma-intake-contract-template
+    strategy: replace
   - type: command
     name: speckit.specify
     file: commands/speckit.specify.md

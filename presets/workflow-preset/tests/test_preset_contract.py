@@ -35,6 +35,10 @@ TASKS_COMMAND_PATH = REPO_ROOT / "commands" / "speckit.tasks.md"
 IMPLEMENT_COMMAND_PATH = REPO_ROOT / "commands" / "speckit.implement.md"
 CONSTITUTION_TEMPLATE_PATH = REPO_ROOT / "templates" / "constitution-template.md"
 PLAN_TEMPLATE_PATH = REPO_ROOT / "templates" / "plan-template.md"
+FIGMA_EVIDENCE_PACKET_TEMPLATE_PATH = (
+    REPO_ROOT / "templates" / "figma-evidence-packet-template.md"
+)
+FIGMA_INTAKE_CONTRACT_TEMPLATE_PATH = REPO_ROOT / "templates" / "figma-intake-contract.md"
 REQUIREMENTS_DEV_PATH = REPO_ROOT / "requirements-dev.txt"
 MANIFEST_SCHEMA_PATH = REPO_ROOT / "schemas" / "speckit.implement.manifest.v1.schema.json"
 HANDOFF_SCHEMA_PATH = REPO_ROOT / "schemas" / "speckit.implement.handoff.v2.schema.json"
@@ -401,7 +405,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("1.0", data["schema_version"])
         self.assertEqual("workflow-preset", data["preset"]["id"])
         self.assertEqual("Workflow Preset", data["preset"]["name"])
-        self.assertEqual("1.3.5", data["preset"]["version"])
+        self.assertEqual("1.3.6", data["preset"]["version"])
         self.assertEqual(
             "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
             data["preset"]["description"],
@@ -419,7 +423,7 @@ class PresetContractTests(unittest.TestCase):
         )
 
         provides = data["provides"]["templates"]
-        self.assertEqual(30, len(provides))
+        self.assertEqual(32, len(provides))
         entries = {entry["name"]: entry for entry in provides}
         self.assertNotIn("behavior-open-questions-template", entries)
         self.assertNotIn("speckit-behavior-open-questions-v1-schema", entries)
@@ -435,6 +439,26 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("templates/constitution-template.md", constitution_template["file"])
         self.assertEqual("constitution-template", constitution_template["replaces"])
         self.assertEqual("wrap", constitution_template["strategy"])
+
+        figma_packet_template = entries["figma-evidence-packet-template"]
+        self.assertEqual("template", figma_packet_template["type"])
+        self.assertEqual(
+            "templates/figma-evidence-packet-template.md",
+            figma_packet_template["file"],
+        )
+        self.assertEqual(
+            "figma-evidence-packet-template",
+            figma_packet_template["replaces"],
+        )
+        self.assertEqual("replace", figma_packet_template["strategy"])
+        self.assertIn("Figma Evidence Packet", figma_packet_template["description"])
+
+        figma_intake_contract = entries["figma-intake-contract-template"]
+        self.assertEqual("template", figma_intake_contract["type"])
+        self.assertEqual("templates/figma-intake-contract.md", figma_intake_contract["file"])
+        self.assertEqual("figma-intake-contract-template", figma_intake_contract["replaces"])
+        self.assertEqual("replace", figma_intake_contract["strategy"])
+        self.assertIn("Figma intake artifact contract", figma_intake_contract["description"])
 
         for command_name in ("speckit.plan", "speckit.tasks"):
             command = entries[command_name]
@@ -665,6 +689,27 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Product requirements stay in `spec.md`", specify)
         self.assertIn("non-functional requirements", specify)
         self.assertIn("report the `spec.md` sections created or updated", specify)
+        for term in (
+            "Figma URL Input Policy",
+            "Figma Evidence Packet",
+            "Figma intake contract",
+            "runtime agent has Figma MCP access",
+            "runtime agent or external Figma intake",
+            "preset defines the required Figma intake artifact structure",
+            "does not generate the artifact instances",
+            "ready gate",
+            "not ready",
+            "do not write Figma-derived requirements",
+            "blocker lint errors",
+            "Observed from Figma",
+            "Inferred from Structure",
+            "Missing / Needs Clarification",
+            "Out of Scope",
+            "[NEEDS CLARIFICATION]",
+            "Continue to write only `spec.md`",
+        ):
+            self.assertIn(term, specify)
+        self.assertLessEqual(len(specify.splitlines()), 52)
         for forbidden in (
             "/speckit.plan",
             "/speckit.checklist",
@@ -743,6 +788,18 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Required but missing", checklist)
         self.assertIn("Required but not verifiable", checklist)
         self.assertIn("Unknown and affects downstream design", checklist)
+        for term in (
+            "Visual Fidelity Readiness",
+            "Figma-derived requirements",
+            "source traceability",
+            "ready gate evidence",
+            "state, responsive, accessibility, component mapping, and accepted exception",
+            "raw metadata completeness",
+            "metadata index completeness proof",
+            "node inventory parity",
+            "blocker lint errors",
+        ):
+            self.assertIn(term, checklist)
         self.assertIn("Gate Status", checklist)
         self.assertIn("PASS", checklist)
         self.assertIn("BLOCKED", checklist)
@@ -935,6 +992,15 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Cost and Operational Constraints", behavior_checklist_template)
         self.assertIn("explicitly declared in `spec.md`", behavior_checklist_template)
         self.assertIn("without prescribing architecture", behavior_checklist_template)
+        self.assertIn("Visual Fidelity Readiness", behavior_checklist_template)
+        self.assertIn("Figma-derived requirements", behavior_checklist_template)
+        self.assertIn("raw metadata completeness", behavior_checklist_template)
+        self.assertIn("metadata index completeness proof", behavior_checklist_template)
+        self.assertIn("node inventory parity", behavior_checklist_template)
+        self.assertIn("blocker lint errors", behavior_checklist_template)
+        self.assertIn("component mappings and variant coverage", behavior_checklist_template)
+        self.assertIn("responsive behavior is explicit", behavior_checklist_template)
+        self.assertIn("accessibility requirements are explicit", behavior_checklist_template)
         self.assertIn("Gate Status: PASS|BLOCKED", behavior_checklist_template)
         self.assertIn("Blocking Items:", behavior_checklist_template)
         self.assertIn("none", behavior_checklist_template)
@@ -964,6 +1030,89 @@ class PresetContractTests(unittest.TestCase):
                 "contract_type",
                 BEHAVIOR_TEMPLATE_PATHS[template_name].read_text(encoding="utf-8"),
             )
+
+    def test_figma_evidence_packet_template_contract(self) -> None:
+        self.assertTrue(FIGMA_EVIDENCE_PACKET_TEMPLATE_PATH.exists())
+        document = FIGMA_EVIDENCE_PACKET_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+        required_terms = [
+            "Figma Evidence Packet",
+            "Figma Source",
+            "Extraction Context",
+            "Observed from Figma",
+            "Inferred from Structure",
+            "Missing / Needs Clarification",
+            "Out of Scope",
+            "Figma Intake Readiness",
+            "Visual Facts for Spec",
+            "Component Mapping",
+            "Spec Handoff Notes",
+            "Open Questions",
+            "Frame / Node IDs",
+            "Required fidelity",
+            "[NEEDS CLARIFICATION]",
+        ]
+        for term in required_terms:
+            self.assertIn(term, document)
+
+        forbidden_terms = [
+            "Figma MCP authentication",
+            "run a script",
+            "implementation test",
+            "test-plan.md",
+            "Endpoint / Client Requirements",
+            "Acceptance Criteria",
+        ]
+        for term in forbidden_terms:
+            self.assertNotIn(term, document)
+
+    def test_figma_intake_contract_metadata_lint_rules(self) -> None:
+        self.assertTrue(FIGMA_INTAKE_CONTRACT_TEMPLATE_PATH.exists())
+        document = FIGMA_INTAKE_CONTRACT_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+        required_sections = [
+            "## Raw Metadata Shards",
+            "## Metadata Index Completeness",
+            "## Node Inventory Parity",
+            "## Evidence Readiness Gate",
+            "## Blocker Lint Errors",
+            "## Gap Rules",
+            "## Preset Boundary",
+        ]
+        for section in required_sections:
+            self.assertIn(section, document)
+
+        metadata_fields = [
+            "figma-metadata.part-*.xml",
+            "figma-metadata.index.yaml",
+            "figma-node-inventory.yaml",
+            "raw get_metadata",
+            "byte_size",
+            "sha256",
+            "selected_subtree_complete",
+            "raw_metadata_complete",
+            "expected_root_node_ids",
+            "captured_root_node_ids",
+            "missing_root_node_ids",
+            "inventory_node_count + excluded_node_count + missing_node_count == raw_node_count",
+            "duplicate_node_count == 0",
+            "missing_node_count == 0",
+            "truncated_raw_evidence == false",
+            "node_inventory_coverage: 100%",
+            "parity_passed: true",
+            "FIGMA_RAW_METADATA_MISSING",
+            "FIGMA_RAW_METADATA_SUMMARY_SUBSTITUTION",
+            "FIGMA_RAW_METADATA_TRUNCATED",
+            "FIGMA_SELECTED_SUBTREE_INCOMPLETE",
+            "FIGMA_METADATA_INDEX_MISSING",
+            "FIGMA_METADATA_PARITY_FAILED",
+            "FIGMA_READY_WITHOUT_COMPLETENESS_PROOF",
+            "preset defines the required artifact formats and gates",
+            "does not call Figma MCP",
+            "does not generate artifact instances",
+        ]
+        for field in metadata_fields:
+            self.assertIn(field, document)
 
     def test_implement_command_is_agent_native_handoff_orchestrator(self) -> None:
         command = IMPLEMENT_COMMAND_PATH.read_text(encoding="utf-8")
@@ -2392,6 +2541,15 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("BDD readiness gate", readme)
         self.assertIn("NFR readiness", readme)
         self.assertIn("Figma Evidence Packet", readme)
+        self.assertIn("direct Figma URL input", readme)
+        self.assertIn("runtime agent has Figma MCP access", readme)
+        self.assertIn("Visual Fidelity readiness gate", readme)
+        self.assertIn("preset defines the required Figma intake artifact structure", readme)
+        self.assertIn("runtime agent or external Figma intake", readme)
+        self.assertIn("does not generate the artifact instances", readme)
+        self.assertIn("raw metadata completeness", readme)
+        self.assertIn("node inventory parity", readme)
+        self.assertIn("does not provide Figma MCP connection, authentication, or execution", readme)
         self.assertIn("clarifies Figma-derived gaps already written in `spec.md`", readme)
         self.assertIn("does not call Figma", readme)
         self.assertIn("explicit non-functional requirement declarations", readme)
@@ -2531,6 +2689,8 @@ class PresetContractTests(unittest.TestCase):
             "`/speckit.constitution`: constitution governance and project principles only",
             "`/speckit.checklist`: checklist artifacts and BDD/NFR readiness gates only",
             "Figma Evidence Packet",
+            "packaged evidence templates are allowed preset artifacts",
+            "Figma MCP execution, hooks, adapter scripts, and authentication",
             "external design extraction is not a clarification responsibility",
             "NFR readiness belongs in `spec.md` product requirements",
             "`/speckit.plan`: Phase 0 behavior projection, planning artifacts, and formal contracts",

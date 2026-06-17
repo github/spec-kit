@@ -15,6 +15,7 @@ Include these sections:
 - Given Readiness
 - When Readiness
 - Then Readiness
+- Visual Fidelity Readiness
 - Non-Functional Requirement Readiness
 - Gate Status
 - Blocking Items
@@ -26,6 +27,13 @@ Check Given readiness from `spec.md`: required roles, permissions, starting stat
 Check When readiness from `spec.md`: each trigger is an executable user action, request case, or system trigger.
 
 Check Then readiness from `spec.md`: each outcome can become feedback, business state, error semantics, or assertion intent.
+
+Check Visual Fidelity Readiness when `spec.md` contains Figma-derived requirements.
+Require source traceability, ready gate evidence, and clear visual requirements for
+state, responsive, accessibility, component mapping, and accepted exception
+coverage. Missing raw metadata completeness, metadata index completeness proof,
+node inventory parity, or blocker lint errors are blocking items for
+Figma-derived requirements.
 
 Check Non-Functional Requirement Readiness from `spec.md`: applicable performance, security and privacy, reliability and recovery, accessibility, compliance and auditability, observability, compatibility, data lifecycle, and cost or operational constraints are explicitly declared in `spec.md` as `Required`, `Not Applicable`, or `Unknown`.
 

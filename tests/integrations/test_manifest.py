@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from specify_cli.integrations.manifest import IntegrationManifest, _sha256
+from tests.conftest import requires_symlink
 
 
 class TestManifestRecordFile:
@@ -84,6 +85,7 @@ class TestManifestCheckModified:
         (tmp_path / "f.txt").unlink()
         assert m.check_modified() == []
 
+    @requires_symlink
     def test_symlink_treated_as_modified(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("f.txt", "original")
@@ -157,6 +159,7 @@ class TestManifestUninstall:
         assert not (tmp_path / "a" / "b" / "tracked.txt").exists()
         assert (tmp_path / "a" / "b" / "other.txt").exists()
 
+    @requires_symlink
     def test_symlink_skipped_without_force(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("f.txt", "original")
@@ -169,6 +172,7 @@ class TestManifestUninstall:
         assert removed == []
         assert len(skipped) == 1
 
+    @requires_symlink
     def test_symlink_removed_with_force(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("f.txt", "original")

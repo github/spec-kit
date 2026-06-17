@@ -5,6 +5,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -60,6 +62,26 @@ def _has_working_bash() -> bool:
 
 requires_bash = pytest.mark.skipif(
     not _has_working_bash(), reason="working bash not available"
+)
+
+
+def _has_working_symlink() -> bool:
+    if not hasattr(os, "symlink"):
+        return False
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            target = tmp_path / "target.txt"
+            link = tmp_path / "link.txt"
+            target.write_text("ok", encoding="utf-8")
+            link.symlink_to(target)
+            return link.is_symlink()
+    except OSError:
+        return False
+
+
+requires_symlink = pytest.mark.skipif(
+    not _has_working_symlink(), reason="symlink creation is not permitted"
 )
 
 

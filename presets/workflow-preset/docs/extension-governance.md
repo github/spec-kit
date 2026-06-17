@@ -23,6 +23,12 @@ a new capability outside the existing Spec Kit workflow.
 Do not reintroduce Python orchestration, workflow shell dispatch, integration
 adapter scripts, or worker dispatch from scripts.
 
+Evidence templates: packaged evidence templates are allowed preset artifacts.
+Intake contract templates are also allowed when they define input shape,
+completeness gates, and blocker lint rules without executing an external system.
+Figma MCP execution, hooks, adapter scripts, and authentication are external
+integration concerns and remain outside this preset.
+
 ## Template And Command Ownership
 
 - templates own stable artifact shapes.
