@@ -39,6 +39,7 @@ _CORE_COMMAND_TEMPLATE_ORDER = (
     "clarify",
     "constitution",
     "implement",
+    "converge",
     "plan",
     "checklist",
     "specify",
