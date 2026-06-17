@@ -4,7 +4,7 @@ Defines the user-facing invocation contract for `/speckit.converge`.
 
 ## Invocation
 
-```
+```text
 /speckit.converge [feature-name]
 ```
 
@@ -21,7 +21,7 @@ The command template MUST declare:
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
-```
+```text
 
 - The script MUST be run once; its JSON output provides `FEATURE_DIR` and `AVAILABLE_DOCS`.
 - If `plan.md` or `tasks.md` is missing, the script exits non-zero with a message naming

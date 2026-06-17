@@ -12,7 +12,7 @@ This extension delivers an opinionated, repeatable bug workflow that any AI codi
 
 The three stages communicate through three Markdown files in a single per-bug directory:
 
-```
+```text
 .specify/bugs/<slug>/
 ├── assessment.md   # written by speckit.bug.assess
 ├── fix.md          # written by speckit.bug.fix
@@ -40,7 +40,7 @@ A *slug* is the per-bug directory name under `.specify/bugs/`. It is the only ha
 ```bash
 # Install the bundled bug extension (no network required)
 specify extension add bug
-```
+```text
 
 ## Disabling
 
@@ -66,7 +66,7 @@ specify extension enable bug
 
 # 4. Validate the fix
 /speckit.bug.test slug=callback-token
-```
+```text
 
 ## Guardrails
 

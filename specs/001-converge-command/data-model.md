@@ -20,6 +20,7 @@ task.
 | `evidence` | string (optional) | Where in the code the assessment looked (file/component), to justify the verdict. |
 
 **Validation rules**:
+
 - `source_ref` MUST reference an item that exists in `spec.md`, `plan.md`, `tasks.md`, or
   the constitution. The command MUST NOT invent requirements (FR-001).
 - A constitution violation MUST be `severity = CRITICAL`.
@@ -39,6 +40,7 @@ do (`missing`, `partial`, `contradicts`, and optionally `unrequested`).
 | `gap_type` | enum | Carried from the `Finding`, shown as a parenthetical label. |
 
 **Validation rules**:
+
 - `task_id` MUST be unique and greater than every pre-existing task ID (FR-006).
 - The task MUST be placed under the Convergence phase header at the end of `tasks.md`
   (FR-006, FR-009).
@@ -61,6 +63,7 @@ The outcome of a single command run.
 | `findings` | list[Finding] | The findings rendered in the in-session summary. |
 
 **Validation rules**:
+
 - `status = converged` ⇒ `appended_count = 0` and `tasks.md` is unchanged (FR-011).
 - `status = tasks_appended` ⇒ `appended_count ≥ 1`.
 - The result MUST be surfaced to the post-assessment hook so extensions can branch on it

@@ -2,14 +2,15 @@
 
 - **Slug**: integration-key-cli-check
 - **Created**: 2026-06-09T00:00:00Z
-- **Source**: https://github.com/github/spec-kit/issues/2903
+- **Source**: <https://github.com/github/spec-kit/issues/2903>
 - **Verdict**: valid
 - **Severity**: medium
 
 ## Report (verbatim or summarized)
 
 URL trust policy record:
-- URL: https://github.com/github/spec-kit/issues/2903
+
+- URL: <https://github.com/github/spec-kit/issues/2903>
 - Parsed host: github.com
 - Policy branch: allowlisted
 
@@ -46,22 +47,26 @@ The extension installation path uses a different SKILL frontmatter construction 
 ## Proposed Remediation
 
 **Preferred**: Make extension skill generation preserve a safe allowlist of source frontmatter keys when building SKILL frontmatter, including at minimum `argument-hint` (and optionally `user-invocable` / `disable-model-invocation` for parity). Implement this in one shared place to avoid drift:
+
 - Option A: extend `CommandRegistrar.build_skill_frontmatter()` to accept optional `extra_fields` and merge allowed keys.
 - Option B: in `_register_extension_skills()`, merge allowed keys from parsed source frontmatter into `frontmatter_data` before dump, then let integration post-processing run.
 
 This keeps canonical required keys while preserving explicit author intent from extension command metadata.
 
 **Alternatives** (optional):
+
 - Teach `ClaudeIntegration.post_process_skill_content()` to derive `argument-hint` from skill body or source metadata. Trade-off: brittle and Claude-specific, does not solve cross-agent parity.
 - Expand hardcoded `ARGUMENT_HINTS` dynamically for installed extension commands. Trade-off: operational complexity and still ignores non-Claude metadata.
 
 **Files likely to change**:
+
 - `src/specify_cli/extensions.py`
 - `src/specify_cli/agents.py`
 - `src/specify_cli/integrations/claude/__init__.py` (only if fallback behavior is added)
 - `tests/test_extensions.py`
 
 **Tests to add or update**:
+
 - Add extension install test asserting extension command `argument-hint` is present in generated `.claude/skills/.../SKILL.md` when ai-skills is enabled.
 - Add negative/control test confirming unknown frontmatter keys are still filtered if not in allowlist.
 - Add parity test for `user-invocable` and `disable-model-invocation` behavior for extension skills (if adopted).

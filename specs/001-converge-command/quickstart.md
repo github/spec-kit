@@ -22,7 +22,7 @@ with the local CLI installed (`uv sync --extra test && uv pip install -e .`).
    code.
 2. Run the command in your agent:
 
-   ```
+   ```text
    /speckit.converge
    ```
 
@@ -34,7 +34,7 @@ with the local CLI installed (`uv sync --extra test && uv pip install -e .`).
 
 1. After Scenario 1, run:
 
-   ```
+   ```text
    /speckit.implement
    ```
 

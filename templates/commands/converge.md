@@ -16,6 +16,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Pre-Execution Checks
 
 **Check for extension hooks (before convergence)**:
+
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_converge` key
 - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
@@ -25,7 +26,8 @@ You **MUST** consider the user input before proceeding (if not empty).
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
-    ```
+
+    ```text
     ## Extension Hooks
 
     **Optional Pre-Hook**: {extension}
@@ -35,8 +37,10 @@ You **MUST** consider the user input before proceeding (if not empty).
     Prompt: {prompt}
     To execute: `/{command}`
     ```
+
   - **Mandatory hook** (`optional: false`):
-    ```
+
+    ```text
     ## Extension Hooks
 
     **Automatic Pre-Hook**: {extension}
@@ -45,6 +49,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
     Wait for the result of the hook command before proceeding to the Goal.
     ```
+
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Goal
@@ -85,6 +90,7 @@ skip constitution checks gracefully rather than failing.
 ### 1. Initialize Convergence Context
 
 Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
+
 - SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md
 - TASKS = FEATURE_DIR/tasks.md
@@ -201,10 +207,13 @@ Append to the **end** of `tasks.md`, per the append contract:
    - [ ] T<NNN>: <imperative description> per <source-ref> (<gap-type>)
    ```
 
-   - `<source-ref>` traces the task to its origin: e.g. `FR-003`, `SC-002`, `US1/AC2`,
-     `plan: storage decision`, `Constitution II`.
-   - `<gap-type>` is one of `missing`, `partial`, `contradicts`, `unrequested`.
-   - Constitution-violation tasks MUST be emitted first and described as `CRITICAL`.
+   `<source-ref>` traces the task to its origin: e.g. `FR-003`, `SC-002`,
+   `US1/AC2`, `plan: storage decision`, `Constitution II`.
+
+   `<gap-type>` is one of `missing`, `partial`, `contradicts`, `unrequested`.
+
+   Constitution-violation tasks MUST be emitted first and described as
+   `CRITICAL`.
 4. Never reuse or renumber existing IDs. If a prior Convergence phase exists, add a new,
    separately-numbered one below it — do not touch the old one.
 
@@ -225,6 +234,7 @@ Append to the **end** of `tasks.md`, per the append contract:
 ### 9. Check for extension hooks
 
 After producing the result, check if `.specify/extensions.yml` exists in the project root.
+
 - If it exists, read it and look for entries under the `hooks.after_converge` key
 - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
 - Filter out hooks where `enabled` is explicitly `false`. Treat hooks without an `enabled` field as enabled by default.
@@ -235,7 +245,8 @@ After producing the result, check if `.specify/extensions.yml` exists in the pro
   extension can branch on it.
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
-    ```
+
+    ```text
     ## Extension Hooks
 
     **Optional Hook**: {extension}
@@ -245,12 +256,15 @@ After producing the result, check if `.specify/extensions.yml` exists in the pro
     Prompt: {prompt}
     To execute: `/{command}`
     ```
+
   - **Mandatory hook** (`optional: false`):
-    ```
+
+    ```text
     ## Extension Hooks
 
     **Automatic Hook**: {extension}
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```
+
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
