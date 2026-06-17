@@ -5371,19 +5371,15 @@ steps:
     run: "true"
 """
 
-    def _invoke_json(self, tmp_path, monkeypatch, content):
+    def _run_json(self, tmp_path, monkeypatch, content):
+        import json as _json
         from typer.testing import CliRunner
         from specify_cli import app
 
         path = tmp_path / "wf.yml"
         path.write_text(content, encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        return CliRunner().invoke(app, ["workflow", "run", str(path), "--json"])
-
-    def _run_json(self, tmp_path, monkeypatch, content):
-        import json as _json
-
-        result = self._invoke_json(tmp_path, monkeypatch, content)
+        result = CliRunner().invoke(app, ["workflow", "run", str(path), "--json"])
         # Assert the CLI succeeded before parsing so a real failure surfaces
         # the actual output instead of an opaque JSON decode error.
         assert result.exit_code == 0, result.stdout
@@ -5409,16 +5405,16 @@ steps:
         # An interactive gate the operator rejects ends the run as `aborted`
         # (on_reject defaults to abort), not `paused`. The JSON surface must
         # still carry the gate block with the recorded choice so an
-        # orchestrator can see *why* the run stopped.
-        import json as _json
+        # orchestrator can see *why* the run stopped. The run helper asserts
+        # the CLI exited cleanly before parsing (a gate abort emits the
+        # payload and returns; it does not crash the command).
         from specify_cli.workflows.steps.gate import GateStep
 
         _force_gate_stdin(monkeypatch, tty=True)
         monkeypatch.setattr(
             GateStep, "_prompt", staticmethod(lambda _msg, _opts: "reject")
         )
-        result = self._invoke_json(tmp_path, monkeypatch, self._WF_GATE)
-        payload = _json.loads(result.stdout)
+        payload = self._run_json(tmp_path, monkeypatch, self._WF_GATE)
         assert payload["status"] == "aborted"
         assert payload["gate"] == {
             "step_id": "review",
