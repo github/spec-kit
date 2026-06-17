@@ -62,9 +62,9 @@ git config --get remote.origin.url
 > [!CAUTION]
 > ONLY PROCEED TO NEXT STEPS IF THE REMOTE IS A GITHUB URL
 
-1. **Fetch existing issues for deduplication**: Before creating anything, use the GitHub MCP server's `list_issues` tool to list the repository's issues with state `all`, so both open and closed issues are covered. Build a set of task IDs that already have an issue by extracting the leading task ID (e.g. `T001`) from each issue title. This prevents duplicate issues when the command is re-run after `tasks.md` is regenerated or the skill is re-invoked.
-1. For each task in the list, use the GitHub MCP server to create a new issue in the repository that is representative of the Git remote. Prefix the issue title with the task ID so it can be matched on later runs (for example, `T001: Create project structure`).
-   - **Skip** any task whose ID is already present in the set of existing issues from the previous step, and report it (for example, `T001 already has issue #42 — skipping`).
+1. **Fetch existing issues for deduplication**: Before creating anything, use the GitHub MCP server's `list_issues` tool to list the repository's issues. Do not pass a `state` value — when it is omitted the tool returns both open and closed issues. The tool uses cursor-based pagination, so keep requesting pages with the `after` parameter (using the `endCursor` from the previous response) until all issues have been fetched. Build a set of task IDs that already have an issue by extracting the leading task ID (e.g. `T001`) from the start of each issue title. This prevents duplicate issues when the command is re-run after `tasks.md` is regenerated or the skill is re-invoked.
+1. For each task in the list, use the GitHub MCP server to create a new issue in the repository that is representative of the Git remote. Task lines already begin with their ID, so use the task text itself as the issue title (for example, a task `T001 Create project structure` becomes the issue title `T001 Create project structure`). Do not add a second copy of the ID.
+   - **Skip** any task whose leading ID is already present in the set of existing issues from the previous step, and report it (for example, `T001 already has an issue, skipping`).
    - Only create issues for tasks that do not yet have a matching issue.
 
 > [!CAUTION]
