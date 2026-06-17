@@ -181,7 +181,7 @@ Before appending anything, output a compact, severity-graded summary (no file wr
 
 | ID | Gap Type | Severity | Source | Evidence | Remaining Work |
 |----|----------|----------|--------|----------|----------------|
-| F1 | missing  | HIGH     | FR-008 | converge template has no guardrail text | Add append-only enforcement |
+| F1 | missing  | HIGH     | FR-008 | Required append-only guardrail is not implemented in the assessed command flow | Add append-only enforcement |
 
 **Summary metrics:**
 
