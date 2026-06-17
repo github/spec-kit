@@ -2143,15 +2143,17 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     if not isinstance(step, dict) or not _is_gate_step(step):
         return None
     output = step.get("output") or {}
-    # `message` and `options` may be non-string YAML literals in an unvalidated
-    # workflow (GateStep coerces neither for the payload), so normalise both
-    # here for a stable JSON schema: message → str, options → list[str] | None.
+    # `message`, `options`, and `choice` may be non-string YAML literals in an
+    # unvalidated workflow (GateStep coerces none of them for the payload), so
+    # normalise all three for a stable JSON schema: message → str, options →
+    # list[str] | None, choice → str | None (None means no decision yet).
     message = output.get("message")
+    choice = output.get("choice")
     return {
         "step_id": state.current_step_id,
         "message": None if message is None else str(message),
         "options": _normalize_gate_options(output.get("options")),
-        "choice": output.get("choice"),
+        "choice": None if choice is None else str(choice),
     }
 
 

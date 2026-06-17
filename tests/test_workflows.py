@@ -5368,7 +5368,7 @@ workflow:
 steps:
   - id: fine
     type: shell
-    run: "true"
+    run: "exit 0"
 """
 
     def _run_json(self, tmp_path, monkeypatch, content, *, expected_exit=0):
@@ -5506,6 +5506,30 @@ steps:
         assert _options_payload("approve") == ["approve"]  # bare scalar, not iterated
         assert _options_payload(7) == ["7"]  # numeric scalar
         assert _options_payload(None) is None  # absent stays absent
+
+    def test_gate_block_choice_coerced_to_string(self):
+        # An unvalidated gate can record a non-string choice; the JSON
+        # surface normalises it to str (and keeps None = no decision yet),
+        # consistent with the message/options normalization.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        def _choice_payload(choice):
+            state = SimpleNamespace(
+                status=SimpleNamespace(value="paused"),
+                current_step_id="review",
+                step_results={
+                    "review": {
+                        "type": "gate",
+                        "output": {"message": "m", "options": ["ok"], "choice": choice},
+                    }
+                },
+            )
+            return _gate_outcome(state)["choice"]
+
+        assert _choice_payload(None) is None  # no decision yet
+        assert _choice_payload("reject") == "reject"  # normal string passes through
+        assert _choice_payload(2) == "2"  # non-string coerced
 
     def test_gate_block_detected_without_type_field(self):
         # A run paused by an older version has no persisted step `type`. The
