@@ -282,17 +282,6 @@ class CopilotIntegration(IntegrationBase):
         """Copilot commands use ``.agent.md`` extension."""
         return f"speckit.{template_name}.agent.md"
 
-    def stale_cleanup_exclusions(self) -> set[str]:
-        """Protect ``.vscode/settings.json`` from upgrade stale-deletion.
-
-        ``setup()`` records this file in the manifest only when it creates it;
-        when it already exists the file is merged and intentionally left
-        untracked.  On upgrade the untracked-but-existing file would otherwise
-        be flagged stale and deleted, destroying user settings (and the file
-        the integration still manages).
-        """
-        return {".vscode/settings.json"}
-
     def post_process_skill_content(self, content: str) -> str:
         """Inject shared hook guidance into Copilot skill content.
 
