@@ -21,7 +21,7 @@ Install once and use everywhere:
 > The command below requires **[uv](https://docs.astral.sh/uv/)**. If you see `command not found: uv`, [install uv first](./install/uv.md).
 
 ```bash
-uv tool install specify-cli
+uv tool install specify-cli@latest
 ```
 
 Or install from source using a specific [release](https://github.com/github/spec-kit/releases) tag:

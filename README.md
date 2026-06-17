@@ -48,7 +48,7 @@ Spec-Driven Development **flips the script** on traditional software development
 Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](https://github.com/github/spec-kit/blob/main/docs/install/uv.md)):
 
 ```bash
-uv tool install specify-cli
+uv tool install specify-cli@latest
 ```
 
 Or install from source using a specific [release](https://github.com/github/spec-kit/releases) tag (useful if the PyPI version is not yet available for a new release):
