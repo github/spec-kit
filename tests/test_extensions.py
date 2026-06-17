@@ -4883,6 +4883,38 @@ class TestExtensionAddCLI:
                 f"confirm must precede spinner, got: {call_order}"
         assert result.exit_code == 0  # user declined → clean exit
 
+    def test_add_status_escapes_extension_markup(self, tmp_path):
+        """User-controlled extension names must not be parsed as Rich markup."""
+        from rich.markup import escape as escape_markup
+        from typer.testing import CliRunner
+        from unittest.mock import MagicMock, patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        status_messages: list[str] = []
+
+        def record_status(message, *args, **kwargs):
+            status_messages.append(message)
+            return MagicMock()
+
+        extension_name = "[red]bad[/red]"
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.console.status", side_effect=record_status):
+            result = runner.invoke(
+                app,
+                ["extension", "add", extension_name, "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert status_messages == [
+            f"[cyan]Installing extension: {escape_markup(extension_name)}[/cyan]"
+        ]
+
     def test_add_from_url_cancel_exits_cleanly(self, tmp_path):
         """Declining the --from <url> confirmation should exit with code 0."""
         from typer.testing import CliRunner
@@ -4904,6 +4936,58 @@ class TestExtensionAddCLI:
 
         assert result.exit_code == 0
         assert "Cancelled" in result.output
+
+    def test_add_from_url_uses_cache_tempfile_for_untrusted_extension_name(self, tmp_path):
+        """The extension argument must not control the downloaded ZIP path."""
+        import io
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        downloads_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
+        installed = {}
+
+        def fake_install_from_zip(self_obj, zip_path, speckit_version, priority=10, force=False):
+            captured_path = Path(zip_path)
+            installed["zip_path"] = captured_path
+            installed["zip_bytes"] = captured_path.read_bytes()
+            return SimpleNamespace(
+                id="escape",
+                name="Escape Test",
+                version="1.0.0",
+                description="Test extension",
+                warnings=[],
+                commands=[],
+                hooks=[],
+            )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"zip-bytes")), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "../outside", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0
+        assert installed["zip_bytes"] == b"zip-bytes"
+        assert installed["zip_path"].resolve().is_relative_to(downloads_dir.resolve())
+        assert installed["zip_path"].name.startswith("extension-url-download-")
+        assert not installed["zip_path"].exists()
 
 
 class TestDownloadExtensionBundled:
