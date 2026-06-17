@@ -69,7 +69,7 @@ of the code relative to the feature's artifacts — no git, no branch comparison
 ## Operating Constraints
 
 **APPEND-ONLY, NEVER REWRITE**: The command's **only** write is appending a new
-`## Phase N — Convergence` section to `tasks.md`. It MUST NOT:
+`## Phase N: Convergence` section to `tasks.md`. It MUST NOT:
 
 - modify `spec.md` or `plan.md` in any way;
 - rewrite, renumber, reorder, or delete any existing task (including tasks from a prior
