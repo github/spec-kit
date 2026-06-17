@@ -18,18 +18,18 @@ jobs:
       contents: read
       actions: write
     steps:
-      - name: Checkout release tag
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          ref: ${{ inputs.tag }}
-
-      - name: Verify tag is a release
+      - name: Verify tag format
         run: |
           TAG="${{ inputs.tag }}"
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Error: '$TAG' is not a valid release tag (expected vX.Y.Z)"
             exit 1
           fi
+
+      - name: Checkout release tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
