@@ -624,6 +624,11 @@ class IntegrationBase(ABC):
             return True
         return entry.get("enabled", True) is not False
 
+    @staticmethod
+    def _context_file_dedupe_key(path: str) -> str:
+        """Return the comparison key for context file de-duplication."""
+        return path.casefold() if os.name == "nt" else path
+
     def _resolve_context_markers(self, project_root: Path) -> tuple[str, str]:
         """Return the (start, end) context markers to use for *project_root*.
 
@@ -746,10 +751,11 @@ class IntegrationBase(ABC):
                 if not isinstance(value, str):
                     continue
                 candidate = value.strip()
-                if not candidate or candidate in seen:
+                key = self._context_file_dedupe_key(candidate)
+                if not candidate or key in seen:
                     continue
                 files.append(self._validate_context_file_path(project_root, candidate))
-                seen.add(candidate)
+                seen.add(key)
             if files:
                 return files
         if self.context_file:

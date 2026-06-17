@@ -419,14 +419,15 @@ class CommandRegistrar:
                     if not isinstance(value, str):
                         continue
                     candidate = value.strip()
-                    if not candidate or candidate in seen:
+                    key = IntegrationBase._context_file_dedupe_key(candidate)
+                    if not candidate or key in seen:
                         continue
                     context_file_values.append(
                         IntegrationBase._validate_context_file_path(
                             project_root, candidate
                         )
                     )
-                    seen.add(candidate)
+                    seen.add(key)
                 context_file = ", ".join(dict.fromkeys(context_file_values))
             if not context_file:
                 configured_context_file = ac_cfg.get("context_file")

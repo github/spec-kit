@@ -135,7 +135,12 @@ if (Get-Command ConvertFrom-Yaml -ErrorAction SilentlyContinue) {
 if ($null -eq $Options) {
     # ConvertFrom-Yaml unavailable or failed; fall back to Python+PyYAML.
     $pythonCmd = $null
-    foreach ($candidate in @('python3', 'python')) {
+    $pythonCandidates = @()
+    if ($env:SPECKIT_PYTHON) {
+        $pythonCandidates += $env:SPECKIT_PYTHON
+    }
+    $pythonCandidates += @('python3', 'python')
+    foreach ($candidate in $pythonCandidates) {
         if (Get-Command $candidate -ErrorAction SilentlyContinue) {
             # Verify it is Python 3
             $verOut = & $candidate --version 2>&1

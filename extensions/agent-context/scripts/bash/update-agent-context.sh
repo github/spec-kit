@@ -26,15 +26,17 @@ if [[ ! -f "$EXT_CONFIG" ]]; then
   exit 0
 fi
 
-# Locate a suitable Python interpreter (python3, then python).
+# Locate a suitable Python interpreter (SPECKIT_PYTHON, then python3, then python).
 _python=""
-if command -v python3 >/dev/null 2>&1; then
+if [[ -n "${SPECKIT_PYTHON:-}" ]]; then
+  _python="$SPECKIT_PYTHON"
+elif command -v python3 >/dev/null 2>&1; then
   _python="python3"
 elif command -v python >/dev/null 2>&1 && python --version 2>&1 | grep -q "^Python 3"; then
   _python="python"
 fi
 
-if [[ -z "$_python" ]]; then
+if [[ -z "$_python" ]] || ! "$_python" --version 2>&1 | grep -q "^Python 3"; then
   echo "agent-context: Python 3 not found on PATH; skipping update." >&2
   exit 0
 fi

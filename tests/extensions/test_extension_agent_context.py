@@ -133,20 +133,21 @@ def _bash_posix_path(path: Path) -> str:
     if os.name != "nt":
         return resolved
 
-    converted = subprocess.run(
-        [
-            BASH,
-            "-lc",
-            "command -v cygpath >/dev/null 2>&1 && cygpath -u \"$1\"",
-            "bash",
-            resolved,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if converted.returncode == 0 and converted.stdout.strip():
-        return converted.stdout.strip()
+    if BASH:
+        converted = subprocess.run(
+            [
+                BASH,
+                "-lc",
+                "command -v cygpath >/dev/null 2>&1 && cygpath -u \"$1\"",
+                "bash",
+                resolved,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if converted.returncode == 0 and converted.stdout.strip():
+            return converted.stdout.strip()
 
     drive = path.drive.rstrip(":").lower()
     posix = path.as_posix()
@@ -179,16 +180,19 @@ def _ensure_test_python_on_path(project_root: Path) -> Path:
     return shim_dir
 
 
-def _bundled_script_env(project_root: Path) -> dict[str, str]:
+def _bundled_script_env(project_root: Path, *, for_bash: bool = False) -> dict[str, str]:
     env = os.environ.copy()
     shim_dir = _ensure_test_python_on_path(project_root)
     env["PATH"] = str(shim_dir) + os.pathsep + env.get("PATH", "")
+    env["SPECKIT_PYTHON"] = (
+        _bash_posix_path(Path(sys.executable)) if for_bash else sys.executable
+    )
     return env
 
 
 def _run_bash_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
     script = EXT_DIR / "scripts" / "bash" / "update-agent-context.sh"
-    env = _bundled_script_env(project_root)
+    env = _bundled_script_env(project_root, for_bash=True)
     if os.name == "nt":
         root = _bash_posix_path(project_root)
         script_path = _bash_posix_path(script)
@@ -346,6 +350,18 @@ class TestUpsertWithCustomMarkers:
             text = (tmp_path / name).read_text(encoding="utf-8")
             assert IntegrationBase.CONTEXT_MARKER_START in text
             assert "specs/001-foo/plan.md" in text
+
+    def test_context_files_deduplicate_with_platform_semantics(self, tmp_path):
+        duplicate = "agents.md" if os.name == "nt" else "AGENTS.md"
+        _write_ext_config(
+            tmp_path,
+            context_file="CLAUDE.md",
+            context_files=["AGENTS.md", "CLAUDE.md", duplicate],
+        )
+
+        files = _CtxIntegration()._resolve_context_files(tmp_path)
+
+        assert files == ["AGENTS.md", "CLAUDE.md"]
 
     def test_remove_uses_configured_context_files(self, tmp_path):
         _write_ext_config(
@@ -627,6 +643,23 @@ class TestSkillPlaceholderContextValidation:
 
         assert content == "Read AGENTS.md"
 
+    def test_context_files_deduplicate_with_platform_semantics(self, tmp_path):
+        duplicate = "agents.md" if os.name == "nt" else "AGENTS.md"
+        _write_ext_config(
+            tmp_path,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md", "CLAUDE.md", duplicate],
+        )
+
+        content = CommandRegistrar.resolve_skill_placeholders(
+            "codex",
+            {},
+            "Read __CONTEXT_FILE__",
+            tmp_path,
+        )
+
+        assert content == "Read AGENTS.md, CLAUDE.md"
+
 
 class TestBundledUpdaterPathValidation:
     def test_bash_script_contains_resolved_containment_check(self):
@@ -635,6 +668,7 @@ class TestBundledUpdaterPathValidation:
         )
         assert "target = (root / sys.argv[2]).resolve(strict=False)" in text
         assert "target.relative_to(root)" in text
+        assert "SPECKIT_PYTHON" in text
 
     def test_powershell_script_rejects_backslash_separators(self):
         text = (
@@ -642,6 +676,7 @@ class TestBundledUpdaterPathValidation:
         ).read_text(encoding="utf-8")
         assert "$ContextFile.Contains('\\')" in text
         assert "must not contain backslash separators" in text
+        assert "SPECKIT_PYTHON" in text
 
     @requires_bash
     def test_bash_script_rejects_symlink_escape(self, tmp_path):
