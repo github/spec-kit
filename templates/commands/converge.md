@@ -199,12 +199,12 @@ Append to the **end** of `tasks.md`, per the append contract:
 
 1. Scan all existing task IDs; let `M` be the maximum. Determine the next phase number `N`
    (highest existing phase + 1).
-2. Write a single new section header `## Phase N — Convergence`.
+2. Write a single new section header `## Phase N: Convergence`.
 3. Emit one checklist item per actionable finding, ordered CRITICAL/HIGH first, assigning
-   IDs `M+1, M+2, …`:
+   zero-padded IDs `T{M+1:03d}, T{M+2:03d}, …`:
 
    ```markdown
-   - [ ] T<NNN> <imperative description> per <source-ref> (<gap-type>)
+   - [ ] T042 <imperative description> per <source-ref> (<gap-type>)
    ```
 
    `<source-ref>` traces the task to its origin: e.g. `FR-003`, `SC-002`,
