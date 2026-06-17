@@ -11,7 +11,7 @@
 ## Installation
 
 > [!NOTE]
-> The official `specify-cli` package is published to [PyPI](https://pypi.org/project/specify-cli/) by the [github/spec-kit](https://github.com/github/spec-kit) maintainers. Source installs from the GitHub repository are also supported.
+> The official `specify-cli` package is published to [PyPI](https://pypi.org/project/specify-cli/) by the [github/spec-kit](https://github.com/github/spec-kit) maintainers. PyPI publishing follows each GitHub release and may lag briefly. Source installs from the GitHub repository are always available immediately.
 
 ### Persistent Installation (Recommended)
 

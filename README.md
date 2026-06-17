@@ -51,7 +51,7 @@ Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](https://github.com/g
 uv tool install specify-cli
 ```
 
-Or install from source using a specific [release](https://github.com/github/spec-kit/releases) tag:
+Or install from source using a specific [release](https://github.com/github/spec-kit/releases) tag (useful if the PyPI version is not yet available for a new release):
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
