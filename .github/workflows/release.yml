@@ -65,15 +65,11 @@ jobs:
           cat > release_notes.md << NOTES_EOF
           ## Install
 
-          \`\`\`bash
-          uv tool install specify-cli
-          specify init my-project
-          \`\`\`
-
-          Or pin to this exact release:
+          From [PyPI](https://pypi.org/project/specify-cli/):
 
           \`\`\`bash
           uv tool install specify-cli==${VERSION_NO_V}
+          specify init my-project
           \`\`\`
 
           Or install from source:
@@ -82,7 +78,7 @@ jobs:
           uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@${VERSION}
           \`\`\`
 
-          > **Note:** PyPI publishing is triggered manually after this release. If the PyPI version is not yet available, use the source install command above.
+          > **Note:** The PyPI package is published after this GitHub release. If the version is not yet available on PyPI, use the source install above.
 
           NOTES_EOF
 
