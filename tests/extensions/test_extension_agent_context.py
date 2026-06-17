@@ -669,6 +669,7 @@ class TestBundledUpdaterPathValidation:
         assert "target = (root / sys.argv[2]).resolve(strict=False)" in text
         assert "target.relative_to(root)" in text
         assert "SPECKIT_PYTHON" in text
+        assert "seen_context_files" in text
 
     def test_powershell_script_rejects_backslash_separators(self):
         text = (
@@ -716,6 +717,25 @@ class TestBundledUpdaterPathValidation:
         assert result.returncode == 1
         assert "resolves outside the project root" in result.stderr
         assert not (outside / "out.md").exists()
+
+    @requires_bash
+    def test_bash_script_deduplicates_context_files_in_order(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        duplicate = "agents.md" if os.name == "nt" else "AGENTS.md"
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md", "CLAUDE.md", duplicate],
+        )
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        output = result.stderr + result.stdout
+        assert output.count("agent-context: updated AGENTS.md") == 1
+        assert output.count("agent-context: updated CLAUDE.md") == 1
+        assert "agent-context: updated agents.md" not in output
 
     @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
     def test_powershell_script_rejects_backslash_context_files(self, tmp_path):

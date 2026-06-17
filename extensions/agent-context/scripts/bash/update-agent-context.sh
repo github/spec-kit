@@ -40,9 +40,13 @@ if [[ -z "$_python" ]] || ! "$_python" --version 2>&1 | grep -q "^Python 3"; the
   echo "agent-context: Python 3 not found on PATH; skipping update." >&2
   exit 0
 fi
+_case_insensitive_context_files=0
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*) _case_insensitive_context_files=1 ;;
+esac
 
 # Parse extension config once; emit context files as JSON, followed by marker strings.
-if ! _raw_opts="$("$_python" - "$EXT_CONFIG" <<'PY'
+if ! _raw_opts="$("$_python" - "$EXT_CONFIG" "$_case_insensitive_context_files" <<'PY'
 import json
 import sys
 try:
@@ -76,11 +80,21 @@ def get_str(obj, *keys):
             return ""
     return node if isinstance(node, str) else ""
 context_files = []
+seen_context_files = set()
+case_insensitive = sys.argv[2] == "1" or sys.platform.startswith(("win32", "cygwin"))
 raw_files = data.get("context_files")
 if isinstance(raw_files, list):
     for value in raw_files:
-        if isinstance(value, str) and value.strip() and value.strip() not in context_files:
-            context_files.append(value.strip())
+        if not isinstance(value, str):
+            continue
+        candidate = value.strip()
+        if not candidate:
+            continue
+        key = candidate.casefold() if case_insensitive else candidate
+        if key in seen_context_files:
+            continue
+        context_files.append(candidate)
+        seen_context_files.add(key)
 if not context_files:
     raw_file = get_str(data, "context_file")
     if raw_file:
