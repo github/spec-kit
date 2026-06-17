@@ -2106,26 +2106,31 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
 
 
 def _gate_outcome(state: Any) -> dict[str, Any] | None:
-    """Gate detail for the structured outcome, if the run sits at a gate.
+    """Gate detail for the structured outcome, when the run rests at a gate.
 
-    A paused run is otherwise indistinguishable from any other pause in
-    the machine-readable payload; surfacing the gate's prompt, options,
-    and (after an interactive choice) the decision lets orchestrators
-    drive review gates without parsing the human-facing stream.
+    A paused or gate-aborted run is otherwise indistinguishable from any
+    other pause/abort in the machine-readable payload; surfacing the gate's
+    prompt, options, and (after an interactive choice) the decision lets
+    orchestrators drive review gates without parsing the human-facing stream.
     """
-    # Only a run that is actually *paused* sits at a gate awaiting a
-    # decision. RunState.current_step_id is not cleared on completion, so
-    # without this guard a completed/failed run whose last executed step was
-    # a gate would surface stale gate details (in run/resume/status --json).
-    if getattr(state.status, "value", state.status) != "paused":
+    # Two run states rest *on* a gate: `paused` (awaiting a decision) and
+    # `aborted` (a gate rejected with `on_reject: abort` — the only path that
+    # sets ABORTED, leaving current_step_id on that gate). Any other status —
+    # notably `completed`/`failed` — must be suppressed: current_step_id is
+    # not cleared when a run whose last executed step was a gate moves on, so
+    # without this guard it would surface stale detail (run/resume/status).
+    if getattr(state.status, "value", state.status) not in ("paused", "aborted"):
         return None
     step = (getattr(state, "step_results", None) or {}).get(state.current_step_id)
     if not isinstance(step, dict) or step.get("type") != "gate":
         return None
     output = step.get("output") or {}
+    # `message` may be a non-string YAML literal (GateStep coerces it only for
+    # expression interpolation), so normalise it here for a stable JSON schema.
+    message = output.get("message")
     return {
         "step_id": state.current_step_id,
-        "message": output.get("message"),
+        "message": None if message is None else str(message),
         "options": output.get("options"),
         "choice": output.get("choice"),
     }

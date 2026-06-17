@@ -5371,16 +5371,19 @@ steps:
     run: "true"
 """
 
-    def _run_json(self, tmp_path, monkeypatch, content):
-        import json as _json
+    def _invoke_json(self, tmp_path, monkeypatch, content):
         from typer.testing import CliRunner
         from specify_cli import app
 
         path = tmp_path / "wf.yml"
         path.write_text(content, encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "run", str(path), "--json"])
+        return CliRunner().invoke(app, ["workflow", "run", str(path), "--json"])
+
+    def _run_json(self, tmp_path, monkeypatch, content):
+        import json as _json
+
+        result = self._invoke_json(tmp_path, monkeypatch, content)
         # Assert the CLI succeeded before parsing so a real failure surfaces
         # the actual output instead of an opaque JSON decode error.
         assert result.exit_code == 0, result.stdout
@@ -5402,17 +5405,43 @@ steps:
         assert payload["status"] == "completed"
         assert "gate" not in payload
 
-    def test_gate_block_suppressed_when_run_not_paused(self):
-        # RunState.current_step_id is not cleared on completion, so a
-        # completed/failed run whose last executed step was a gate still
-        # points current_step_id at that gate. The gate block must only be
-        # emitted while the run is actually paused at it.
+    def test_gate_abort_carries_gate_block(self, tmp_path, monkeypatch):
+        # An interactive gate the operator rejects ends the run as `aborted`
+        # (on_reject defaults to abort), not `paused`. The JSON surface must
+        # still carry the gate block with the recorded choice so an
+        # orchestrator can see *why* the run stopped.
+        import json as _json
+        from specify_cli.workflows.steps.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(lambda _msg, _opts: "reject")
+        )
+        result = self._invoke_json(tmp_path, monkeypatch, self._WF_GATE)
+        payload = _json.loads(result.stdout)
+        assert payload["status"] == "aborted"
+        assert payload["gate"] == {
+            "step_id": "review",
+            "message": "Approve the thing?",
+            "options": ["approve", "reject"],
+            "choice": "reject",
+        }
+
+    def test_gate_block_emitted_only_when_run_rests_at_gate(self):
+        # A run rests *on* a gate only while `paused` (awaiting a decision) or
+        # `aborted` (gate rejected with on_reject: abort). current_step_id is
+        # not cleared afterwards, so a `completed`/`failed` run whose last
+        # executed step was a gate must NOT surface a stale gate block.
         from types import SimpleNamespace
         from specify_cli import _gate_outcome
 
         gate_step = {
             "type": "gate",
-            "output": {"message": "m", "options": ["approve"], "choice": "approve"},
+            "output": {
+                "message": "m",
+                "options": ["approve", "reject"],
+                "choice": "reject",
+            },
         }
 
         def _state(status):
@@ -5425,3 +5454,22 @@ steps:
         assert _gate_outcome(_state("completed")) is None
         assert _gate_outcome(_state("failed")) is None
         assert _gate_outcome(_state("paused")) is not None
+        assert _gate_outcome(_state("aborted")) is not None
+
+    def test_gate_block_message_coerced_to_string(self):
+        # message may be a non-string YAML literal (e.g. a number); the JSON
+        # surface normalises it so the emitted schema stays stable.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="review",
+            step_results={
+                "review": {
+                    "type": "gate",
+                    "output": {"message": 12.5, "options": ["ok"], "choice": None},
+                }
+            },
+        )
+        assert _gate_outcome(state)["message"] == "12.5"
