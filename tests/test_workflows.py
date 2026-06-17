@@ -3958,7 +3958,7 @@ workflow:
 steps:
   - id: fine
     type: shell
-    run: "true"
+    run: "exit 0"
 """
 
     _WF_FAIL = """
@@ -3970,7 +3970,7 @@ workflow:
 steps:
   - id: boom
     type: shell
-    run: "false"
+    run: "exit 1"
 """
 
     def _write(self, tmp_path, content):
@@ -4009,6 +4009,30 @@ steps:
             app,
             ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
         )
+        assert result.exit_code == 1, result.stdout
         payload = _json.loads(result.stdout)
         assert payload["status"] == "failed"
-        assert result.exit_code == 1
+
+    def test_resume_failed_run_exits_nonzero(self, tmp_path, monkeypatch):
+        # End-to-end coverage for the `workflow resume` exit-code mapping:
+        # resuming a run whose outcome is still `failed` must exit non-zero,
+        # mirroring `workflow run`. Resume re-executes the failed step, which
+        # fails again, so the resumed outcome stays `failed`.
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".specify").mkdir()  # `workflow resume` requires a project
+        runner = CliRunner()
+        run = runner.invoke(
+            app,
+            ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
+        )
+        assert run.exit_code == 1, run.stdout
+        run_id = _json.loads(run.stdout)["run_id"]
+
+        resumed = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+        assert resumed.exit_code == 1, resumed.stdout
+        payload = _json.loads(resumed.stdout)
+        assert payload["status"] == "failed"
