@@ -26,8 +26,8 @@ that shape the design, with rationale and rejected alternatives.
   (and the `.ps1` equivalent) in the command frontmatter `scripts:` block to resolve
   `FEATURE_DIR` and confirm `plan.md` + `tasks.md` exist.
 - **Rationale**: This is the same mechanism `analyze` and `implement` use. It already
-  resolves the feature directory via `SPECIFY_FEATURE_DIRECTORY` → `.specify/feature.json`
-  → branch-prefix fallback, so it works with or without git (Constitution Principle II).
+  resolves the feature directory via `SPECIFY_FEATURE_DIRECTORY` → `.specify/feature.json`,
+  so it works without introducing any git dependency (Constitution Principle II).
   No new script is introduced, preserving cross-platform parity by construction.
 - **Alternatives considered**:
   - *New `converge`-specific helper script* — rejected: would require Bash + PowerShell

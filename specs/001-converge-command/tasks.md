@@ -39,7 +39,7 @@ in `docs/`.
 
 - [X] T003 [P] Add `"converge"` with a one-line description to `SKILL_DESCRIPTIONS` in `src/specify_cli/__init__.py`.
 - [X] T004 [P] Add `"converge"` to the `_FALLBACK_CORE_COMMAND_NAMES` frozenset in `src/specify_cli/extensions.py` (~L31; it is a frozenset, so simply append the entry — ordering is not significant).
-- [X] T005 [P] Add a `"converge"` argument-hint entry to `ARGUMENT_HINTS` in `src/specify_cli/integrations/claude/__init__.py`.
+- [X] T005 [P] Keep `"converge"` out of `ARGUMENT_HINTS` in `src/specify_cli/integrations/claude/__init__.py` because the command does not accept a feature-name argument.
 - [X] T006 [P] Add `"converge"` to the `COMMAND_STEMS` list in `tests/integrations/test_integration_base_yaml.py`.
 - [X] T007 [P] Add `"converge"` to the `COMMAND_STEMS` list in `tests/integrations/test_integration_base_toml.py`.
 - [X] T008 [P] Add `"converge"` to the expected command-stems list in `tests/integrations/test_integration_base_markdown.py`.
@@ -140,7 +140,7 @@ in `docs/`.
 # These edit different files and can be done together:
 Task: T003 Add "converge" to SKILL_DESCRIPTIONS in src/specify_cli/__init__.py
 Task: T004 Add "converge" to _FALLBACK_CORE_COMMAND_NAMES in src/specify_cli/extensions.py
-Task: T005 Add "converge" hint in src/specify_cli/integrations/claude/__init__.py
+Task: T005 Keep "converge" out of ARGUMENT_HINTS in src/specify_cli/integrations/claude/__init__.py
 Task: T006 Add "converge" to COMMAND_STEMS in tests/integrations/test_integration_base_yaml.py
 Task: T007 Add "converge" to COMMAND_STEMS in tests/integrations/test_integration_base_toml.py
 Task: T008 Add "converge" to tests/integrations/test_integration_base_markdown.py

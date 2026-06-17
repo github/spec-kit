@@ -102,7 +102,7 @@ src/specify_cli/
 ├── commands/
 │   └── init.py                           # EDIT — add "converge" to the post-init "Next Steps" panel (after implement)
 └── integrations/
-    └── claude/__init__.py                # EDIT — add "converge" argument hint
+    └── claude/__init__.py                # EDIT — keep converge out of Claude argument hints
 
 tests/
 ├── test_agent_config_consistency.py      # VERIFY — converge token resolves correctly
