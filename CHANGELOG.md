@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.11.1] - 2026-06-17
+
+### Changed
+
+- chore: ignore Copilot dogfooding scaffolding in .gitignore (#3019)
+- docs: clarify Taskify specify command (#3016)
+- docs: document evolving specs in existing projects (#2902)
+- feat(workflows): opt-in output_format: json exposes parsed shell stdout as output.data (#2963)
+- fix: non-zero exit code when a workflow run ends failed or aborted (#2959)
+- fix(skills): preserve non-ASCII characters in skill frontmatter (#2917)
+- fix: prevent extension self-install from deleting source dir (#2990) (#2991)
+- fix: disable Rich Live transient mode on Windows to prevent PS 5.1 hang (#2938)
+- Update a11y-governance preset to v0.4.0 (#2981)
+- chore: release 0.11.0, begin 0.11.1.dev0 development (#3012)
+
 ## [0.11.0] - 2026-06-16
 
 ### Changed

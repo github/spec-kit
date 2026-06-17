@@ -77,13 +77,14 @@ When a `gate` step pauses execution, the engine persists `current_step_index` an
 
 ## Step Types
 
-The engine ships with 10 built-in step types, each in its own subpackage under `src/specify_cli/workflows/steps/`:
+The engine ships with 11 built-in step types, each in its own subpackage under `src/specify_cli/workflows/steps/`:
 
 | Type Key | Class | Purpose | Returns `next_steps`? |
 |----------|-------|---------|-----------------------|
 | `command` | `CommandStep` | Invoke an installed Spec Kit command via integration CLI | No |
 | `prompt` | `PromptStep` | Send an arbitrary inline prompt to integration CLI | No |
 | `shell` | `ShellStep` | Run a shell command, capture output | No |
+| `init` | `InitStep` | Bootstrap a project (equivalent to `specify init`) | No |
 | `gate` | `GateStep` | Interactive human review/approval | No (pauses in CI) |
 | `if` | `IfThenStep` | Conditional branching (then/else) | Yes |
 | `switch` | `SwitchStep` | Multi-branch dispatch on expression | Yes |
@@ -197,6 +198,7 @@ src/specify_cli/
 │   └── steps/
 │       ├── command/         # Dispatch command to AI integration
 │       ├── shell/           # Run shell command
+│       ├── init/            # Bootstrap a project (specify init)
 │       ├── gate/            # Human review checkpoint
 │       ├── if_then/         # Conditional branching
 │       ├── prompt/          # Arbitrary inline prompts

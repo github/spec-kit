@@ -104,7 +104,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in",
+            "while", "do-while", "fan-out", "fan-in", "init",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -1047,6 +1047,171 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
     from specify_cli.workflows.steps import gate as gate_module
 
     monkeypatch.setattr(gate_module, "sys", _FakeSys(tty=tty))
+
+
+class TestInitStep:
+    """Test the init step type."""
+
+    def test_builds_here_argv_and_bootstraps(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        config = {"id": "bootstrap", "here": True, "script": "sh"}
+        result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["exit_code"] == 0
+        argv = result.output["argv"]
+        assert argv[0] == "init"
+        assert "--here" in argv
+        assert "--integration" in argv and "copilot" in argv
+        assert "--ignore-agent-tools" in argv
+        assert (tmp_path / ".specify").is_dir()
+
+    def test_default_integration_falls_back_to_workflow_default(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"}, ctx
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["integration"] == "copilot"
+
+    def test_project_name_creates_subdirectory(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "project": "demo",
+                "script": "sh",
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert (tmp_path / "demo" / ".specify").is_dir()
+
+    def test_invalid_integration_fails(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "integration": "no-such-agent",
+                "script": "sh",
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert result.output["exit_code"] != 0
+        assert result.error is not None
+
+    def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        (tmp_path / "existing.txt").write_text("data")
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"},
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "force: true" in (result.error or "")
+        assert not (tmp_path / ".specify").exists()
+
+    def test_engine_owned_dirs_do_not_trigger_non_empty_check(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Simulate the engine creating its run-state directory before steps run
+        (tmp_path / ".specify" / "workflows" / "runs" / "abc123").mkdir(
+            parents=True
+        )
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"},
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        # Verify --force was implicitly added
+        assert "--force" in result.output["argv"]
+
+    def test_default_integration_when_none_provided(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        # No default_integration on context either
+        ctx = StepContext(project_root=str(tmp_path))
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"},
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["integration"] == "copilot"
+
+    def test_integration_options_passed_through(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "script": "sh",
+                "integration": "copilot",
+                "integration_options": "--skills",
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert "--integration-options" in result.output["argv"]
+        assert "--skills" in result.output["argv"]
+        assert result.output["integration_options"] == "--skills"
+
+    def test_validate_rejects_bad_script(self):
+        from specify_cli.workflows.steps.init import InitStep
+
+        step = InitStep()
+        errors = step.validate({"id": "bootstrap", "script": "bogus"})
+        assert any("'script' must be 'sh' or 'ps'" in e for e in errors)
+
+    def test_validate_accepts_valid(self):
+        from specify_cli.workflows.steps.init import InitStep
+
+        step = InitStep()
+        assert step.validate({"id": "bootstrap", "script": "sh"}) == []
 
 
 class TestGateStep:
