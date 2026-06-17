@@ -5,10 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
+from ..._utils import dump_frontmatter
 
 # Mapping of command template stem → argument-hint text shown inline
 # when a user invokes the slash command in Claude Code.
@@ -103,7 +102,7 @@ class ClaudeIntegration(SkillsIntegration):
         skill_frontmatter = self._build_skill_fm(
             skill_name, description, f"templates/commands/{template_name}.md"
         )
-        frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
+        frontmatter_text = dump_frontmatter(skill_frontmatter)
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 
     def _build_skill_fm(self, name: str, description: str, source: str) -> dict:

@@ -2100,6 +2100,16 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
     }
 
 
+def _run_outcome_exit_code(status_value: str) -> int:
+    """Exit code for a finished run/resume: non-zero on terminal failure.
+
+    ``failed`` and ``aborted`` map to 1 so scripts and orchestrators can
+    rely on the process exit code; ``completed`` and ``paused`` map to 0
+    (paused is a legitimate waiting state, not a failure).
+    """
+    return 1 if status_value in ("failed", "aborted") else 0
+
+
 def _emit_workflow_json(payload: dict[str, Any]) -> None:
     """Write a workflow payload as machine-readable JSON to stdout.
 
@@ -2214,7 +2224,7 @@ def workflow_run(
 
     if json_output:
         _emit_workflow_json(_workflow_run_payload(state))
-        return
+        raise typer.Exit(_run_outcome_exit_code(state.status.value))
 
     status_colors = {
         "completed": "green",
@@ -2228,6 +2238,8 @@ def workflow_run(
 
     if state.status.value == "paused":
         console.print(f"\nResume with: [cyan]specify workflow resume {state.run_id}[/cyan]")
+
+    raise typer.Exit(_run_outcome_exit_code(state.status.value))
 
 
 @workflow_app.command("resume")
@@ -2269,7 +2281,7 @@ def workflow_resume(
 
     if json_output:
         _emit_workflow_json(_workflow_run_payload(state))
-        return
+        raise typer.Exit(_run_outcome_exit_code(state.status.value))
 
     status_colors = {
         "completed": "green",
@@ -2279,6 +2291,8 @@ def workflow_resume(
     }
     color = status_colors.get(state.status.value, "white")
     console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
+
+    raise typer.Exit(_run_outcome_exit_code(state.status.value))
 
 
 @workflow_app.command("status")

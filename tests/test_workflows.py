@@ -912,6 +912,17 @@ class TestPromptStep:
 class TestShellStep:
     """Test the shell step type."""
 
+    @staticmethod
+    def _python_run(tmp_path, body):
+        """A portable shell ``run`` that executes ``body`` with the current
+        interpreter, avoiding non-portable shell quoting (e.g. Windows
+        ``cmd.exe`` keeping single quotes) in the output_format tests."""
+        import sys
+
+        script = tmp_path / "emit.py"
+        script.write_text(body, encoding="utf-8")
+        return f'"{sys.executable}" "{script}"'
+
     def test_execute_echo(self):
         from specify_cli.workflows.steps.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -943,6 +954,62 @@ class TestShellStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'run'" in e for e in errors)
 
+
+    def test_output_format_json_exposes_data(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {
+            "id": "emit",
+            "run": self._python_run(
+                tmp_path, 'import json; print(json.dumps({"items": [1, 2]}))\n'
+            ),
+            "output_format": "json",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["data"] == {"items": [1, 2]}
+        assert result.output["exit_code"] == 0  # raw keys still present
+
+    def test_output_format_json_invalid_stdout_fails(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {
+            "id": "emit",
+            "run": self._python_run(tmp_path, "print('not-json')\n"),
+            "output_format": "json",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "output_format: json" in (result.error or "")
+
+    def test_no_output_format_keeps_raw_output_only(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {
+            "id": "emit",
+            "run": self._python_run(
+                tmp_path, 'import json; print(json.dumps({"items": []}))\n'
+            ),
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert "data" not in result.output
+
+    def test_validate_rejects_unknown_output_format(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        errors = step.validate({"id": "emit", "run": "exit 0", "output_format": "yaml"})
+        assert any("'output_format' must be 'json'" in e for e in errors)
 
 class _StubStdin:
     """Stdin stub exposing only a fixed ``isatty`` result.
@@ -4964,3 +5031,95 @@ steps:
         asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
         assert len(asset_calls) >= 1
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+
+class TestWorkflowRunExitCodes:
+    """CLI-level tests for the run/resume process exit codes."""
+
+    _WF_OK = """
+schema_version: "1.0"
+workflow:
+  id: "exit-ok"
+  name: "Exit OK"
+  version: "1.0.0"
+steps:
+  - id: fine
+    type: shell
+    run: "exit 0"
+"""
+
+    _WF_FAIL = """
+schema_version: "1.0"
+workflow:
+  id: "exit-fail"
+  name: "Exit Fail"
+  version: "1.0.0"
+steps:
+  - id: boom
+    type: shell
+    run: "exit 1"
+"""
+
+    def _write(self, tmp_path, content):
+        path = tmp_path / "wf.yml"
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_run_completed_exits_zero(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "run", str(self._write(tmp_path, self._WF_OK))])
+        assert result.exit_code == 0
+        assert "Status: completed" in result.stdout
+
+    def test_run_failed_exits_nonzero(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL))])
+        assert "Status: failed" in result.stdout
+        assert result.exit_code == 1
+
+    def test_run_failed_exits_nonzero_with_json(self, tmp_path, monkeypatch):
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
+        )
+        assert result.exit_code == 1, result.stdout
+        payload = _json.loads(result.stdout)
+        assert payload["status"] == "failed"
+
+    def test_resume_failed_run_exits_nonzero(self, tmp_path, monkeypatch):
+        # End-to-end coverage for the `workflow resume` exit-code mapping:
+        # resuming a run whose outcome is still `failed` must exit non-zero,
+        # mirroring `workflow run`. Resume re-executes the failed step, which
+        # fails again, so the resumed outcome stays `failed`.
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".specify").mkdir()  # `workflow resume` requires a project
+        runner = CliRunner()
+        run = runner.invoke(
+            app,
+            ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
+        )
+        assert run.exit_code == 1, run.stdout
+        run_id = _json.loads(run.stdout)["run_id"]
+
+        resumed = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+        assert resumed.exit_code == 1, resumed.stdout
+        payload = _json.loads(resumed.stdout)
+        assert payload["status"] == "failed"
