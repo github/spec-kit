@@ -2113,6 +2113,12 @@ def _gate_outcome(state: Any) -> dict[str, Any] | None:
     and (after an interactive choice) the decision lets orchestrators
     drive review gates without parsing the human-facing stream.
     """
+    # Only a run that is actually *paused* sits at a gate awaiting a
+    # decision. RunState.current_step_id is not cleared on completion, so
+    # without this guard a completed/failed run whose last executed step was
+    # a gate would surface stale gate details (in run/resume/status --json).
+    if getattr(state.status, "value", state.status) != "paused":
+        return None
     step = (getattr(state, "step_results", None) or {}).get(state.current_step_id)
     if not isinstance(step, dict) or step.get("type") != "gate":
         return None

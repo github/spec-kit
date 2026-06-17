@@ -5381,6 +5381,9 @@ steps:
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
         result = runner.invoke(app, ["workflow", "run", str(path), "--json"])
+        # Assert the CLI succeeded before parsing so a real failure surfaces
+        # the actual output instead of an opaque JSON decode error.
+        assert result.exit_code == 0, result.stdout
         return _json.loads(result.stdout)
 
     def test_gate_pause_carries_gate_block(self, tmp_path, monkeypatch):
@@ -5398,3 +5401,27 @@ steps:
         payload = self._run_json(tmp_path, monkeypatch, self._WF_PLAIN)
         assert payload["status"] == "completed"
         assert "gate" not in payload
+
+    def test_gate_block_suppressed_when_run_not_paused(self):
+        # RunState.current_step_id is not cleared on completion, so a
+        # completed/failed run whose last executed step was a gate still
+        # points current_step_id at that gate. The gate block must only be
+        # emitted while the run is actually paused at it.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        gate_step = {
+            "type": "gate",
+            "output": {"message": "m", "options": ["approve"], "choice": "approve"},
+        }
+
+        def _state(status):
+            return SimpleNamespace(
+                status=SimpleNamespace(value=status),
+                current_step_id="review",
+                step_results={"review": gate_step},
+            )
+
+        assert _gate_outcome(_state("completed")) is None
+        assert _gate_outcome(_state("failed")) is None
+        assert _gate_outcome(_state("paused")) is not None
