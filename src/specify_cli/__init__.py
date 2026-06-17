@@ -1086,7 +1086,12 @@ def extension_add(
                         console.print(f"  {REINSTALL_COMMAND}")
                         raise typer.Exit(1)
 
-                    # Enforce install_allowed policy
+                    # If a different approved source exists, use it instead of prompting.
+                    installable_info = catalog.get_installable_extension_info(resolved_id)
+                    if installable_info is not None:
+                        ext_info = installable_info
+
+                    # Enforce install_allowed policy only when no approved source exists.
                     if not ext_info.get("_install_allowed", True):
                         catalog_name = ext_info.get("_catalog_name", "community")
                         console.print()

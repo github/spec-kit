@@ -3623,6 +3623,7 @@ class TestExtensionCatalog:
         }
 
         with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "get_installable_extension_info", return_value=ext_info), \
              patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_extension("test-ext", target_dir=temp_dir)
 
@@ -3669,6 +3670,7 @@ class TestExtensionCatalog:
         }
 
         with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "get_installable_extension_info", return_value=ext_info), \
              patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_extension("test-ext", target_dir=temp_dir)
 
@@ -4190,6 +4192,58 @@ class TestCatalogStack:
         assert parsed["catalogs"][0]["install_allowed"] is True
         assert parsed["catalogs"][1]["name"] == "community"
         assert parsed["catalogs"][1]["install_allowed"] is True
+
+    def test_approve_catalog_install_preserves_user_level_active_catalogs(self, temp_dir):
+        """Approving a catalog should preserve the full active stack when no project config exists."""
+        import yaml as yaml_module
+        from unittest.mock import patch
+
+        project_dir = self._make_project(temp_dir)
+        home_dir = temp_dir / "home"
+        specify_home = home_dir / ".specify"
+        specify_home.mkdir(parents=True)
+        with (specify_home / "extension-catalogs.yml").open("w", encoding="utf-8") as f:
+            yaml_module.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "alpha",
+                            "url": "https://alpha.example.com/catalog.json",
+                            "priority": 1,
+                            "install_allowed": False,
+                        },
+                        {
+                            "name": "community",
+                            "url": ExtensionCatalog.COMMUNITY_CATALOG_URL,
+                            "priority": 2,
+                            "install_allowed": False,
+                        },
+                        {
+                            "name": "beta",
+                            "url": "https://beta.example.com/catalog.json",
+                            "priority": 3,
+                            "install_allowed": True,
+                        },
+                    ]
+                },
+                f,
+                sort_keys=False,
+                allow_unicode=True,
+            )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with patch("specify_cli.extensions.Path.home", return_value=home_dir):
+            approved = catalog.approve_catalog_install("community")
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        parsed = yaml_module.safe_load(config_path.read_text(encoding="utf-8"))
+
+        assert approved.name == "community"
+        assert [entry["name"] for entry in parsed["catalogs"]] == ["alpha", "community", "beta"]
+        assert parsed["catalogs"][0]["install_allowed"] is False
+        assert parsed["catalogs"][1]["install_allowed"] is True
+        assert parsed["catalogs"][2]["install_allowed"] is True
 
     def test_approve_catalog_install_rejects_symlinked_specify_dir(self, temp_dir):
         """Approval writes fail closed when .specify resolves outside the project root."""
@@ -4720,6 +4774,7 @@ class TestExtensionAddCLI:
         # Mock catalog that returns extension by display name
         mock_catalog = MagicMock()
         mock_catalog.get_extension_info.return_value = None  # ID lookup fails
+        mock_catalog.get_installable_extension_info.return_value = None  # Installable lookup fails
         mock_catalog.search.return_value = [
             {
                 "id": "acme-jira-integration",
@@ -4822,14 +4877,20 @@ class TestExtensionAddCLI:
             commands=[],
         )
 
-        with patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+        with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",
             "version": "1.0.0",
             "description": "Security review extension",
             "_catalog_name": "community",
             "_install_allowed": False,
-        }),              patch("specify_cli.extensions.ExtensionCatalog.download_extension", return_value=zip_path),              patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=mock_manifest),              patch("typer.confirm", return_value=True),              patch.object(Path, "cwd", return_value=project_dir):
+        }),
+            patch("specify_cli.extensions.ExtensionCatalog.download_extension", return_value=zip_path),
+            patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=mock_manifest),
+            patch("typer.confirm", return_value=True),
+            patch.object(Path, "cwd", return_value=project_dir),
+        ):
             result = runner.invoke(
                 app,
                 ["extension", "add", "security-review"],
@@ -4864,14 +4925,19 @@ class TestExtensionAddCLI:
             call_order.append("spinner")
             return MagicMock()
 
-        with patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+        with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",
             "version": "1.0.0",
             "description": "Security review extension",
             "_catalog_name": "community",
             "_install_allowed": False,
-        }),              patch("typer.confirm", side_effect=lambda *a, **kw: (call_order.append("confirm"), False)[-1]),              patch("specify_cli.console.status", side_effect=record_status),              patch.object(Path, "cwd", return_value=project_dir):
+        }),
+            patch("typer.confirm", side_effect=lambda *a, **kw: (call_order.append("confirm"), False)[-1]),
+            patch("specify_cli.console.status", side_effect=record_status),
+            patch.object(Path, "cwd", return_value=project_dir),
+        ):
             result = runner.invoke(
                 app,
                 ["extension", "add", "security-review"],
@@ -4894,14 +4960,18 @@ class TestExtensionAddCLI:
         project_dir.mkdir()
         (project_dir / ".specify").mkdir()
 
-        with patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+        with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",
             "version": "1.0.0",
             "description": "Security review extension",
             "_catalog_name": "community",
             "_install_allowed": False,
-        }),              patch("typer.confirm", return_value=False),              patch.object(Path, "cwd", return_value=project_dir):
+        }),
+            patch("typer.confirm", return_value=False),
+            patch.object(Path, "cwd", return_value=project_dir),
+        ):
             result = runner.invoke(
                 app,
                 ["extension", "add", "security-review"],
@@ -4939,14 +5009,80 @@ class TestExtensionAddCLI:
         def unexpected_confirm(*args, **kwargs):
             raise AssertionError("Approval prompt should not run for approved catalogs")
 
-        with patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+        with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",
             "version": "1.0.0",
             "description": "Security review extension",
             "_catalog_name": "default",
             "_install_allowed": True,
-        }),              patch("specify_cli.extensions.ExtensionCatalog.download_extension", return_value=zip_path),              patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=mock_manifest),              patch("typer.confirm", side_effect=unexpected_confirm),              patch("specify_cli.console.status", return_value=contextlib.nullcontext()),              patch.object(Path, "cwd", return_value=project_dir):
+        }),
+            patch("specify_cli.extensions.ExtensionCatalog.download_extension", return_value=zip_path),
+            patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=mock_manifest),
+            patch("typer.confirm", side_effect=unexpected_confirm),
+            patch("specify_cli.console.status", return_value=contextlib.nullcontext()),
+            patch.object(Path, "cwd", return_value=project_dir),
+        ):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "security-review"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Catalog Approval Required" not in result.output
+
+    def test_add_prefers_approved_source_over_blocked_duplicate(self, tmp_path):
+        """If the same extension exists in approved and blocked catalogs, the add flow should skip approval."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from specify_cli import app
+        import contextlib
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        zip_path = tmp_path / "approved-duplicate.zip"
+        zip_path.write_bytes(b"fake-zip")
+        mock_manifest = SimpleNamespace(
+            id="security-review",
+            name="Security Review",
+            version="1.0.0",
+            description="Security review extension",
+            warnings=[],
+            commands=[],
+        )
+
+        def unexpected_confirm(*args, **kwargs):
+            raise AssertionError("Approval prompt should not run when an approved source exists")
+
+        with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+            "id": "security-review",
+            "name": "Security Review",
+            "version": "1.0.0",
+            "description": "Security review extension",
+            "_catalog_name": "community",
+            "_install_allowed": False,
+        }),
+            patch("specify_cli.extensions.ExtensionCatalog.get_installable_extension_info", return_value={
+            "id": "security-review",
+            "name": "Security Review",
+            "version": "1.0.0",
+            "description": "Security review extension",
+            "_catalog_name": "default",
+            "_install_allowed": True,
+        }),
+            patch("specify_cli.extensions.ExtensionCatalog.download_extension", return_value=zip_path),
+            patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=mock_manifest),
+            patch("typer.confirm", side_effect=unexpected_confirm),
+            patch("specify_cli.console.status", return_value=contextlib.nullcontext()),
+            patch.object(Path, "cwd", return_value=project_dir),
+        ):
             result = runner.invoke(
                 app,
                 ["extension", "add", "security-review"],
@@ -4971,7 +5107,10 @@ class TestExtensionAddCLI:
         mock_catalog.get_extension_info.return_value = None
         mock_catalog.search.return_value = []
 
-        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog),              patch.object(Path, "cwd", return_value=project_dir):
+        with (
+            patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog),
+            patch.object(Path, "cwd", return_value=project_dir),
+        ):
             result = runner.invoke(
                 app,
                 ["extension", "add", "does-not-exist"],

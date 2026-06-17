@@ -2112,11 +2112,19 @@ class ExtensionCatalog(CatalogStackBase):
 
     def approve_catalog_install(self, catalog_name: str) -> CatalogEntry:
         """Persist install permission for a catalog while preserving the stack."""
-        active_catalogs = self.get_active_catalogs()
+        config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
+
+        # Base the update on the project-level config if it exists
+        if config_path.exists():
+            base_catalogs = self._load_catalog_config(config_path) or []
+        else:
+            # Otherwise, preserve the currently active stack so user-level catalogs remain available.
+            base_catalogs = self.get_active_catalogs()
+
         updated_catalogs: List[Dict[str, Any]] = []
         approved_entry: Optional[CatalogEntry] = None
 
-        for entry in active_catalogs:
+        for entry in base_catalogs:
             if entry.name == catalog_name:
                 entry = self._entry(
                     url=entry.url,
@@ -2127,6 +2135,22 @@ class ExtensionCatalog(CatalogStackBase):
                 )
                 approved_entry = entry
             updated_catalogs.append(self._catalog_entry_to_dict(entry))
+
+        # If the catalog wasn't found in the base (e.g., a custom user-level catalog),
+        # we pull it from the active catalogs and append it to the project stack.
+        if approved_entry is None:
+            for entry in self.get_active_catalogs():
+                if entry.name == catalog_name:
+                    entry = self._entry(
+                        url=entry.url,
+                        name=entry.name,
+                        priority=entry.priority,
+                        install_allowed=True,
+                        description=entry.description,
+                    )
+                    approved_entry = entry
+                    updated_catalogs.append(self._catalog_entry_to_dict(entry))
+                    break
 
         if approved_entry is None:
             raise ValidationError(
@@ -2542,6 +2566,36 @@ class ExtensionCatalog(CatalogStackBase):
                 return ext_data
         return None
 
+    def get_installable_extension_info(self, extension_id: str) -> Optional[Dict[str, Any]]:
+        """Return the first installable source for an extension, if any.
+
+        This checks the active catalogs in priority order and returns the
+        highest-priority source that is actually allowed to install. It is
+        used by the add flow to avoid prompting for approval when a usable
+        approved source already exists.
+        """
+        for catalog_entry in self.get_active_catalogs():
+            try:
+                catalog_data = self._fetch_single_catalog(catalog_entry, force_refresh=False)
+            except ExtensionError:
+                continue
+
+            ext_data = catalog_data.get("extensions", {}).get(extension_id)
+            if not isinstance(ext_data, dict):
+                continue
+
+            if not catalog_entry.install_allowed:
+                continue
+
+            return {
+                **ext_data,
+                "id": extension_id,
+                "_catalog_name": catalog_entry.name,
+                "_install_allowed": catalog_entry.install_allowed,
+            }
+
+        return None
+
     def download_extension(
         self, extension_id: str, target_dir: Optional[Path] = None
     ) -> Path:
@@ -2559,8 +2613,8 @@ class ExtensionCatalog(CatalogStackBase):
         """
         import urllib.error
 
-        # Get extension info from catalog
-        ext_info = self.get_extension_info(extension_id)
+        # Get the best installable source first, then fall back to the merged view.
+        ext_info = self.get_installable_extension_info(extension_id) or self.get_extension_info(extension_id)
         if not ext_info:
             raise ExtensionError(f"Extension '{extension_id}' not found in catalog")
 
