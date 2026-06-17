@@ -49,6 +49,21 @@ def _write_invalid_manifest(project, key):
     manifest.write_bytes(b"\xff\xfe\x00")
     return manifest
 
+
+def _fail_exists_under(root: Path):
+    original_exists = Path.exists
+    root_resolved = root.resolve()
+
+    def fail_exists(self):
+        try:
+            self.resolve(strict=False).relative_to(root_resolved)
+        except (OSError, RuntimeError, ValueError):
+            return original_exists(self)
+        raise AssertionError(f"Path.exists() should not be used for {self}")
+
+    return fail_exists
+
+
 def _copy_project_template(tmp_path, template):
     project = tmp_path / "proj"
     shutil.copytree(template, project)
@@ -516,10 +531,7 @@ class TestIntegrationStatus:
         manifest = IntegrationManifest("test", project, version="test")
         manifest.record_existing("tracked.md")
 
-        def fail_exists(self):
-            raise AssertionError(f"Path.exists() should not be used for {self}")
-
-        monkeypatch.setattr(Path, "exists", fail_exists)
+        monkeypatch.setattr(Path, "exists", _fail_exists_under(project))
 
         missing, modified, invalid, valid = _manifest_file_status(
             manifest,
@@ -532,10 +544,11 @@ class TestIntegrationStatus:
         assert valid == ["tracked.md"]
 
     def test_status_does_not_use_exists_precheck_for_manifest_load(self, copilot_project, monkeypatch):
-        def fail_exists(self):
-            raise AssertionError(f"Path.exists() should not be used for {self}")
-
-        monkeypatch.setattr(Path, "exists", fail_exists)
+        monkeypatch.setattr(
+            Path,
+            "exists",
+            _fail_exists_under(copilot_project / ".specify" / "integrations"),
+        )
 
         result = _run_in_project(copilot_project, ["integration", "status", "--json"])
 
