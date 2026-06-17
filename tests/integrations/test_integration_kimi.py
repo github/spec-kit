@@ -1,7 +1,10 @@
 """Tests for KimiIntegration — skills integration with legacy migration."""
 
 from specify_cli.integrations import get_integration
-from specify_cli.integrations.kimi import _migrate_legacy_kimi_dotted_skills
+from specify_cli.integrations.kimi import (
+    _migrate_legacy_kimi_context_file,
+    _migrate_legacy_kimi_dotted_skills,
+)
 from specify_cli.integrations.manifest import IntegrationManifest
 
 from .test_integration_base_skills import SkillsIntegrationTests
@@ -343,6 +346,88 @@ class TestKimiLegacySymlinkSafety:
 
         # The symlink target and its contents must survive teardown.
         assert keep.exists()
+
+    def test_migrate_skips_symlinked_legacy_parent_dir(self, tmp_path):
+        # `.kimi` is itself a symlink to the project root, so `.kimi/skills`
+        # resolves to `./skills` — an unrelated in-tree directory. Even though
+        # the resolved path stays inside the project, migration must not
+        # operate on it because a path component is a symlink.
+        project = tmp_path / "project"
+        unrelated = project / "skills" / "speckit-evillegacy"
+        unrelated.mkdir(parents=True)
+        (unrelated / "SKILL.md").write_text("# unrelated\n")
+        # .kimi -> project root, so .kimi/skills == ./skills.
+        (project / ".kimi").symlink_to(project, target_is_directory=True)
+
+        i = get_integration("kimi")
+        m = IntegrationManifest("kimi", project)
+        i.setup(project, m, parsed_options={"migrate_legacy": True})
+
+        # The unrelated ./skills content must be untouched.
+        assert (unrelated / "SKILL.md").exists()
+        assert not (
+            project / ".kimi-code" / "skills" / "speckit-evillegacy"
+        ).exists()
+
+    def test_teardown_skips_symlinked_legacy_parent_dir(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        # Looks Speckit-generated, so only the symlink check protects it.
+        unrelated = project / "skills" / "speckit-evillegacy"
+        unrelated.mkdir(parents=True)
+        (unrelated / "SKILL.md").write_text(
+            "---\nmetadata:\n  author: github-spec-kit\n---\n# x\n"
+        )
+        (project / ".kimi").symlink_to(project, target_is_directory=True)
+
+        i = get_integration("kimi")
+        m = IntegrationManifest("kimi", project)
+        i.teardown(project, m)
+
+        # The unrelated ./skills content must survive teardown.
+        assert (unrelated / "SKILL.md").exists()
+
+    def test_context_migration_does_not_write_through_symlinked_agents_md(
+        self, tmp_path
+    ):
+        # A sensitive file outside the project that a malicious AGENTS.md
+        # symlink points at. Migration must never overwrite it.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        secret = outside / "secret.txt"
+        secret.write_text("original secret\n")
+
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "AGENTS.md").symlink_to(secret)
+        (project / "KIMI.md").write_text("# Notes\n\nKeep this.\n")
+
+        result = _migrate_legacy_kimi_context_file(project)
+
+        # The outside file must not be overwritten through the symlink.
+        assert secret.read_text() == "original secret\n"
+        # KIMI.md is preserved so the user can migrate manually.
+        assert (project / "KIMI.md").is_file()
+        assert result is False
+
+    def test_context_migration_does_not_follow_symlinked_kimi_md(self, tmp_path):
+        # A symlinked KIMI.md (source) must not be followed/consumed.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        external = outside / "external.md"
+        external.write_text("# external\n")
+
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "KIMI.md").symlink_to(external)
+
+        result = _migrate_legacy_kimi_context_file(project)
+
+        assert result is False
+        # The external file and the symlink are left intact.
+        assert external.read_text() == "# external\n"
+        assert (project / "KIMI.md").is_symlink()
+        assert not (project / "AGENTS.md").exists()
 
 
 class TestKimiNextSteps:

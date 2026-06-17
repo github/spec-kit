@@ -144,12 +144,32 @@ def _is_safe_legacy_dir(path: Path, project_root: Path) -> bool:
     Legacy migration and cleanup ``shutil.move()`` and ``shutil.rmtree()``
     directories, so a symlinked ``.kimi``/``.kimi/skills`` (or one reached
     through a symlinked parent) must never be followed: doing so could
-    relocate or delete content living outside the project tree. We reject
-    the path when it is itself a symlink, when it is not a directory, or
-    when resolving every symlink lands outside *project_root*.
+    relocate or delete content living outside the project tree — or operate
+    on an unrelated in-tree directory (e.g. ``.kimi -> .`` makes
+    ``.kimi/skills`` resolve to ``./skills``).
+
+    Checking only the fully-resolved path is insufficient, because a symlink
+    pointing elsewhere *inside* the project still resolves to a location under
+    *project_root*. We therefore reject the path when it is not a directory,
+    when any component between *project_root* and *path* is a symlink
+    (including the final component), or when the resolved path escapes the
+    resolved *project_root*.
     """
-    if path.is_symlink() or not path.is_dir():
+    if not path.is_dir():
         return False
+
+    # Reject if any path component below project_root is a symlink. We trust
+    # project_root itself, so only components strictly under it are checked.
+    try:
+        relative = path.relative_to(project_root)
+    except ValueError:
+        return False
+    current = project_root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return False
+
     try:
         resolved = path.resolve()
         root = project_root.resolve()
@@ -293,9 +313,19 @@ def _migrate_legacy_kimi_context_file(
     remaining content is appended to ``AGENTS.md``. The legacy file is
     deleted if it becomes empty. Returns ``True`` if ``KIMI.md`` existed
     and was processed.
+
+    Both files are checked for symlinks first: a symlinked ``KIMI.md`` is not
+    followed (its target could be read from outside the project), and a
+    symlinked ``AGENTS.md`` is never written through (it could redirect the
+    write to an arbitrary file outside the project root). In either case the
+    migration is skipped and ``KIMI.md`` is left untouched.
     """
     legacy_path = project_root / "KIMI.md"
-    if not legacy_path.is_file():
+    if legacy_path.is_symlink() or not legacy_path.is_file():
+        return False
+
+    target_path = project_root / "AGENTS.md"
+    if target_path.is_symlink():
         return False
 
     content = legacy_path.read_text(encoding="utf-8-sig")
@@ -319,7 +349,6 @@ def _migrate_legacy_kimi_context_file(
         legacy_path.unlink()
         return True
 
-    target_path = project_root / "AGENTS.md"
     if target_path.is_file():
         existing = target_path.read_text(encoding="utf-8-sig")
         existing = existing.replace("\r\n", "\n").replace("\r", "\n")
