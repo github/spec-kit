@@ -129,7 +129,11 @@ class InitStep(StepBase):
             try:
                 with os.scandir(base) as it:
                     has_non_engine_content = any(
-                        entry.name not in _ENGINE_OWNED_DIRS for entry in it
+                        not (
+                            entry.name in _ENGINE_OWNED_DIRS
+                            and entry.is_dir(follow_symlinks=False)
+                        )
+                        for entry in it
                     )
             except OSError as exc:
                 error_message = (
