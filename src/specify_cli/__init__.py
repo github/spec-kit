@@ -879,7 +879,7 @@ def catalog_add(
     })
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     install_label = "install allowed" if install_allowed else "discovery only"
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{name}[/bold]' ({install_label})")
@@ -919,7 +919,7 @@ def catalog_remove(
         raise typer.Exit(1)
 
     config["catalogs"] = catalogs
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
     console.print(f"[green]✓[/green] Removed catalog '{name}'")
     if not catalogs:
@@ -987,8 +987,8 @@ def extension_add(
             raise typer.Exit(0)
 
     try:
-        with console.status(f"[cyan]Installing extension: {extension}[/cyan]"):
-            if dev:
+        if dev:
+            with console.status(f"[cyan]Installing extension: {extension}[/cyan]"):
                 # Install from local directory
                 source_path = Path(extension).expanduser().resolve()
                 if not source_path.exists():
@@ -1010,12 +1010,13 @@ def extension_add(
                     force=force
                 )
 
-            elif from_url:
-                # Install from URL (ZIP file)
-                import urllib.error
+        elif from_url:
+            # Install from URL (ZIP file)
+            import urllib.error
 
-                console.print(f"Downloading from {safe_url}...")
+            console.print(f"Downloading from {safe_url}...")
 
+            with console.status(f"[cyan]Installing extension: {extension}[/cyan]"):
                 # Download ZIP to temp location
                 download_dir = project_root / ".specify" / "extensions" / ".cache" / "downloads"
                 download_dir.mkdir(parents=True, exist_ok=True)
@@ -1038,66 +1039,86 @@ def extension_add(
                     if zip_path.exists():
                         zip_path.unlink()
 
-            else:
-                # Try bundled extensions first (shipped with spec-kit)
-                bundled_path = _locate_bundled_extension(extension)
-                if bundled_path is not None:
+        else:
+            # Try bundled extensions first (shipped with spec-kit)
+            bundled_path = _locate_bundled_extension(extension)
+            if bundled_path is not None:
+                with console.status(f"[cyan]Installing extension: {extension}[/cyan]"):
                     manifest = manager.install_from_directory(
                         bundled_path, speckit_version, priority=priority, force=force
                     )
-                else:
-                    # Install from catalog (also resolves display names to IDs)
-                    catalog = ExtensionCatalog(project_root)
+            else:
+                # Install from catalog (also resolves display names to IDs)
+                catalog = ExtensionCatalog(project_root)
 
-                    # Check if extension exists in catalog (supports both ID and display name)
-                    ext_info, catalog_error = _resolve_catalog_extension(extension, catalog, "add")
-                    if catalog_error:
-                        console.print(f"[red]Error:[/red] Could not query extension catalog: {catalog_error}")
-                        raise typer.Exit(1)
-                    if not ext_info:
-                        console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
-                        console.print("\nSearch available extensions:")
-                        console.print("  specify extension search")
-                        raise typer.Exit(1)
+                # Check if extension exists in catalog (supports both ID and display name)
+                ext_info, catalog_error = _resolve_catalog_extension(extension, catalog, "add")
+                if catalog_error:
+                    console.print(f"[red]Error:[/red] Could not query extension catalog: {catalog_error}")
+                    raise typer.Exit(1)
+                if not ext_info:
+                    console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
+                    console.print("\nSearch available extensions:")
+                    console.print("  specify extension search")
+                    raise typer.Exit(1)
 
-                    # If catalog resolved a display name to an ID, check bundled again
-                    resolved_id = ext_info['id']
-                    if resolved_id != extension:
-                        bundled_path = _locate_bundled_extension(resolved_id)
-                        if bundled_path is not None:
+                # If catalog resolved a display name to an ID, check bundled again
+                resolved_id = ext_info['id']
+                if resolved_id != extension:
+                    bundled_path = _locate_bundled_extension(resolved_id)
+                    if bundled_path is not None:
+                        with console.status(f"[cyan]Installing extension: {extension}[/cyan]"):
                             manifest = manager.install_from_directory(
                                 bundled_path, speckit_version, priority=priority, force=force
                             )
 
-                    if bundled_path is None:
-                        # Bundled extensions without a download URL must come from the local package
-                        if ext_info.get("bundled") and not ext_info.get("download_url"):
-                            console.print(
-                                f"[red]Error:[/red] Extension '{ext_info['id']}' is bundled with spec-kit "
-                                f"but could not be found in the installed package."
-                            )
-                            console.print(
-                                "\nThis usually means the spec-kit installation is incomplete or corrupted."
-                            )
-                            console.print("Try reinstalling spec-kit:")
-                            console.print(f"  {REINSTALL_COMMAND}")
-                            raise typer.Exit(1)
+                if bundled_path is None:
+                    # Bundled extensions without a download URL must come from the local package
+                    if ext_info.get("bundled") and not ext_info.get("download_url"):
+                        console.print(
+                            f"[red]Error:[/red] Extension '{ext_info['id']}' is bundled with spec-kit "
+                            f"but could not be found in the installed package."
+                        )
+                        console.print(
+                            "\nThis usually means the spec-kit installation is incomplete or corrupted."
+                        )
+                        console.print("Try reinstalling spec-kit:")
+                        console.print(f"  {REINSTALL_COMMAND}")
+                        raise typer.Exit(1)
 
-                        # Enforce install_allowed policy
-                        if not ext_info.get("_install_allowed", True):
-                            catalog_name = ext_info.get("_catalog_name", "community")
-                            console.print(
-                                f"[red]Error:[/red] '{extension}' is available in the "
-                                f"'{catalog_name}' catalog but installation is not allowed from that catalog."
+                    # Enforce install_allowed policy
+                    if not ext_info.get("_install_allowed", True):
+                        catalog_name = ext_info.get("_catalog_name", "community")
+                        console.print()
+                        console.print(
+                            Panel(
+                                f"[bold]'{ext_info['name']}' is available in the '{catalog_name}' catalog "
+                                f"but installation is not allowed from that catalog.[/bold]\n\n"
+                                f"Approve installation from '{catalog_name}' for this project?\n"
+                                "This will update .specify/extension-catalogs.yml so future installs "
+                                "from that catalog are allowed.",
+                                title="[bold yellow]Catalog Approval Required[/bold yellow]",
+                                border_style="yellow",
+                                padding=(1, 2),
                             )
-                            console.print(
-                                f"\nTo enable installation, add '{extension}' to an approved catalog "
-                                f"(install_allowed: true) in .specify/extension-catalogs.yml."
-                            )
-                            raise typer.Exit(1)
+                        )
+                        console.print()
+                        try:
+                            confirm = typer.confirm("Approve catalog and continue?", default=False)
+                        except (typer.Abort, KeyboardInterrupt):
+                            console.print("Cancelled")
+                            raise typer.Exit(0)
+                        if not confirm:
+                            console.print("Cancelled")
+                            raise typer.Exit(0)
+                        approved_catalog = catalog.approve_catalog_install(catalog_name)
+                        console.print(
+                            f"[green]✓[/green] Approved catalog '[bold]{approved_catalog.name}[/bold]' for installation"
+                        )
 
-                        # Download extension ZIP (use resolved ID, not original argument which may be display name)
-                        extension_id = ext_info['id']
+                    # Download extension ZIP (use resolved ID, not original argument which may be display name)
+                    extension_id = ext_info['id']
+                    with console.status(f"[cyan]Installing extension: {ext_info['name']}[/cyan]"):
                         console.print(f"Downloading {ext_info['name']} v{ext_info.get('version', 'unknown')}...")
                         zip_path = catalog.download_extension(extension_id)
 
@@ -1286,8 +1307,9 @@ def extension_search(
             else:
                 console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}'.")
                 console.print(
-                    f"  Add to an approved catalog with install_allowed: true, "
-                    f"or install from a ZIP URL: specify extension add {ext['id']} --from <zip-url>"
+                    f"  Run [cyan]specify extension add {ext['id']}[/cyan] to approve "
+                    f"the catalog and install, or use a ZIP URL: "
+                    f"specify extension add {ext['id']} --from <zip-url>"
                 )
             console.print()
 
@@ -1486,8 +1508,13 @@ def _print_extension_info(ext_info: dict, manager):
         console.print("[yellow]Not installed[/yellow]")
         console.print(
             f"\n[yellow]⚠[/yellow]  '{ext_info['id']}' is available in the '{catalog_name}' catalog "
-            f"but not in your approved catalog. Add it to .specify/extension-catalogs.yml "
-            f"with install_allowed: true to enable installation."
+            f"but installation is not currently allowed from that catalog."
+        )
+        console.print(
+            f"\n[cyan]Install:[/cyan] specify extension add {ext_info['id']}"
+        )
+        console.print(
+            "[dim]You will be prompted to approve the catalog before installation proceeds.[/dim]"
         )
 
 

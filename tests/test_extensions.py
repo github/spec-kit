@@ -4171,6 +4171,43 @@ class TestCatalogStack:
         assert results[0]["_catalog_name"] == "org"
         assert results[0]["_install_allowed"] is True
 
+    def test_approve_catalog_install_preserves_active_stack(self, temp_dir):
+        """Approving one catalog should rewrite the active stack without dropping other entries."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        catalog = ExtensionCatalog(project_dir)
+
+        approved = catalog.approve_catalog_install("community")
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        parsed = yaml_module.safe_load(config_path.read_text(encoding="utf-8"))
+
+        assert approved.name == "community"
+        assert approved.install_allowed is True
+        assert len(parsed["catalogs"]) == 2
+        assert parsed["catalogs"][0]["name"] == "default"
+        assert parsed["catalogs"][0]["install_allowed"] is True
+        assert parsed["catalogs"][1]["name"] == "community"
+        assert parsed["catalogs"][1]["install_allowed"] is True
+
+    def test_approve_catalog_install_rejects_symlinked_specify_dir(self, temp_dir):
+        """Approval writes fail closed when .specify resolves outside the project root."""
+        project_dir = self._make_project(temp_dir)
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Symlinks are not available on this platform")
+
+        external_specify = temp_dir / "external-specify"
+        external_specify.mkdir()
+        symlink_path = project_dir / ".specify"
+        shutil.rmtree(symlink_path)
+        os.symlink(external_specify, symlink_path)
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(ValidationError, match="outside the project root"):
+            catalog.approve_catalog_install("community")
+
 
 class TestExtensionIgnore:
     """Test .extensionignore support during extension installation."""
@@ -4759,6 +4796,191 @@ class TestExtensionAddCLI:
         assert result.exit_code != 0
         assert "bundled with spec-kit" in result.output
         assert "reinstall" in result.output.lower()
+
+    def test_add_blocked_extension_approval_updates_project_catalog_config(self, tmp_path):
+        """Approving a blocked catalog extension should update the project catalog config and continue installation."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from specify_cli import app
+        import yaml as yaml_module
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        zip_path = tmp_path / "security-review.zip"
+        zip_path.write_bytes(b"fake-zip")
+
+        mock_manifest = SimpleNamespace(
+            id="security-review",
+            name="Security Review",
+            version="1.0.0",
+            description="Security review extension",
+            warnings=[],
+            commands=[],
+        )
+
+        with patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+            "id": "security-review",
+            "name": "Security Review",
+            "version": "1.0.0",
+            "description": "Security review extension",
+            "_catalog_name": "community",
+            "_install_allowed": False,
+        }),              patch("specify_cli.extensions.ExtensionCatalog.download_extension", return_value=zip_path),              patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=mock_manifest),              patch("typer.confirm", return_value=True),              patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "security-review"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Catalog Approval Required" in result.output
+        assert "Approved catalog" in result.output
+        assert "manually" not in result.output.lower()
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        parsed = yaml_module.safe_load(config_path.read_text(encoding="utf-8"))
+        assert [entry["name"] for entry in parsed["catalogs"]] == ["default", "community"]
+        assert parsed["catalogs"][0]["install_allowed"] is True
+        assert parsed["catalogs"][1]["install_allowed"] is True
+
+    def test_add_blocked_extension_prompt_comes_before_spinner(self, tmp_path):
+        """The approval prompt should appear before any spinner or install work starts."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        call_order: list[str] = []
+
+        def record_status(*args, **kwargs):
+            call_order.append("spinner")
+            return MagicMock()
+
+        with patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+            "id": "security-review",
+            "name": "Security Review",
+            "version": "1.0.0",
+            "description": "Security review extension",
+            "_catalog_name": "community",
+            "_install_allowed": False,
+        }),              patch("typer.confirm", side_effect=lambda *a, **kw: (call_order.append("confirm"), False)[-1]),              patch("specify_cli.console.status", side_effect=record_status),              patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "security-review"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert call_order and call_order[0] == "confirm"
+        assert "spinner" not in call_order
+        assert "Cancelled" in result.output
+
+    def test_add_blocked_extension_cancel_leaves_config_unchanged(self, tmp_path):
+        """Cancelling approval should not create or modify project catalog config."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        with patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+            "id": "security-review",
+            "name": "Security Review",
+            "version": "1.0.0",
+            "description": "Security review extension",
+            "_catalog_name": "community",
+            "_install_allowed": False,
+        }),              patch("typer.confirm", return_value=False),              patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "security-review"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Cancelled" in result.output
+        assert not (project_dir / ".specify" / "extension-catalogs.yml").exists()
+
+    def test_add_approved_catalog_skips_approval_prompt(self, tmp_path):
+        """Already-approved catalogs should install directly without the guided approval prompt."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from specify_cli import app
+        import contextlib
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        zip_path = tmp_path / "approved-extension.zip"
+        zip_path.write_bytes(b"fake-zip")
+        mock_manifest = SimpleNamespace(
+            id="security-review",
+            name="Security Review",
+            version="1.0.0",
+            description="Security review extension",
+            warnings=[],
+            commands=[],
+        )
+
+        def unexpected_confirm(*args, **kwargs):
+            raise AssertionError("Approval prompt should not run for approved catalogs")
+
+        with patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
+            "id": "security-review",
+            "name": "Security Review",
+            "version": "1.0.0",
+            "description": "Security review extension",
+            "_catalog_name": "default",
+            "_install_allowed": True,
+        }),              patch("specify_cli.extensions.ExtensionCatalog.download_extension", return_value=zip_path),              patch("specify_cli.extensions.ExtensionManager.install_from_zip", return_value=mock_manifest),              patch("typer.confirm", side_effect=unexpected_confirm),              patch("specify_cli.console.status", return_value=contextlib.nullcontext()),              patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "security-review"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Catalog Approval Required" not in result.output
+
+    def test_add_not_found_still_reports_missing_extension(self, tmp_path):
+        """Missing catalog entries should still use the existing not-found path."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = None
+        mock_catalog.search.return_value = []
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog),              patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "does-not-exist"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code != 0
+        assert "not found in catalog" in result.output
+        assert "Approve catalog" not in result.output
 
     def test_add_from_url_prompts_before_spinner(self, tmp_path):
         """Confirm prompt for --from <url> must fire before the console.status spinner.

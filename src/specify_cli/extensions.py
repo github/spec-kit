@@ -1275,7 +1275,7 @@ class ExtensionManager:
         # Parse version specifier (e.g., ">=0.1.0,<2.0.0")
         try:
             specifier = SpecifierSet(required)
-            if current not in specifier:
+            if not specifier.contains(current, prereleases=True):
                 raise CompatibilityError(
                     f"Extension requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"
@@ -2099,6 +2099,63 @@ class ExtensionCatalog(CatalogStackBase):
                 description="Community-contributed extensions (discovery only)",
             ),
         ]
+
+    def _catalog_entry_to_dict(self, entry: CatalogEntry) -> Dict[str, Any]:
+        """Serialize a catalog entry back to YAML config shape."""
+        return {
+            "name": entry.name,
+            "url": entry.url,
+            "priority": entry.priority,
+            "install_allowed": entry.install_allowed,
+            "description": entry.description,
+        }
+
+    def approve_catalog_install(self, catalog_name: str) -> CatalogEntry:
+        """Persist install permission for a catalog while preserving the stack."""
+        active_catalogs = self.get_active_catalogs()
+        updated_catalogs: List[Dict[str, Any]] = []
+        approved_entry: Optional[CatalogEntry] = None
+
+        for entry in active_catalogs:
+            if entry.name == catalog_name:
+                entry = self._entry(
+                    url=entry.url,
+                    name=entry.name,
+                    priority=entry.priority,
+                    install_allowed=True,
+                    description=entry.description,
+                )
+                approved_entry = entry
+            updated_catalogs.append(self._catalog_entry_to_dict(entry))
+
+        if approved_entry is None:
+            raise ValidationError(
+                f"Catalog '{catalog_name}' is not active and cannot be approved"
+            )
+
+        project_root = self.project_root.resolve()
+        config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
+        resolved_parent = config_path.parent.resolve()
+        if not resolved_parent.is_relative_to(project_root):
+            raise ValidationError(
+                "Refusing to write catalog config outside the project root"
+            )
+        if config_path.exists() and config_path.is_symlink():
+            raise ValidationError(
+                f"Refusing to write catalog config via symlink: {config_path}"
+            )
+
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            yaml.safe_dump(
+                {"catalogs": updated_catalogs},
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+        return approved_entry
 
     def get_catalog_url(self) -> str:
         """Get the primary catalog URL.
