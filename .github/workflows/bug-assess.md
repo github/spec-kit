@@ -12,6 +12,7 @@ tools:
   bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "uniq", "python3", "jq", "date", "ls", "find"]
   github:
     toolsets: [issues, repos]
+    min-integrity: none
   web-fetch:
 
 permissions:
