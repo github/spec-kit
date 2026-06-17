@@ -43,6 +43,19 @@ class RovodevIntegration(SkillsIntegration):
 
     # -- CLI dispatch ------------------------------------------------------
 
+    @property
+    def cli_executable(self) -> str:
+        """Executable name for CLI availability detection (``acli``).
+
+        RovoDev is invoked as ``acli rovodev …`` — ``acli`` is the
+        host binary; ``rovodev`` is a sub-command.  The integration key
+        is ``"rovodev"``, but the binary to detect on ``PATH`` is
+        ``"acli"``.
+
+        See issue #2597.
+        """
+        return "acli"
+
     def _resolve_executable(self) -> str:
         """Return the binary to invoke (``acli``).
 

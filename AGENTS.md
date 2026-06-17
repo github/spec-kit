@@ -147,12 +147,12 @@ class CodexIntegration(SkillsIntegration):
 
 | Field | Location | Purpose |
 |---|---|---|
-| `key` | Class attribute | Unique identifier; for CLI-based integrations (`requires_cli: True`), must match the CLI executable name |
+| `key` | Class attribute | Unique identifier; for most CLI-based integrations this matches the executable name, but see `cli_executable` below for exceptions |
 | `config` | Class attribute (dict) | Agent metadata: `name`, `folder`, `commands_subdir`, `install_url`, `requires_cli` |
 | `registrar_config` | Class attribute (dict) | Command output config: `dir`, `format`, `args` placeholder, file `extension` |
 | `context_file` | Class attribute (str or None) | Path to agent context/instructions file (e.g., `"CLAUDE.md"`, `".github/copilot-instructions.md"`) |
 
-**Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"windsurf"`, `"copilot"`).
+**Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` should generally match the CLI executable name so that the default `is_cli_available()` check works without any override. When the executable name differs from the key (e.g., RovoDev's key is `"rovodev"` but the binary is `"acli"`), override the `cli_executable` property or `is_cli_available()` method — see [§6 Optional overrides](#6-optional-overrides) below. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"windsurf"`, `"copilot"`).
 
 ### 3. Register it
 
@@ -222,10 +222,36 @@ The base classes handle most work automatically. Override only when the agent de
 
 | Override | When to use | Example |
 |---|---|---|
+| `cli_executable` | Binary name differs from `key` | RovoDev: key `"rovodev"`, binary `"acli"` → override returns `"acli"` |
+| `is_cli_available()` | Multiple binary names or non-PATH installs | Claude checks `~/.claude/local/`; Kiro accepts both `kiro-cli` and `kiro` |
 | `command_filename(template_name)` | Custom file naming or extension | Copilot → `speckit.{name}.agent.md` |
 | `options()` | Integration-specific CLI flags via `--integration-options` | Codex → `--skills` flag, Copilot → `--skills` flag |
 | `setup()` | Custom install logic (companion files, settings merge) | Copilot → `.agent.md` + `.prompt.md` + `.vscode/settings.json` (default) or `speckit-<name>/SKILL.md` (skills mode) |
 | `teardown()` | Custom uninstall logic | Rarely needed; base handles manifest-tracked files |
+
+**`cli_executable` property** — Return the binary name to look up on `PATH` for tool-availability checks. The default implementation returns `self.key`. Override when the executable name differs from the integration key:
+
+```python
+@property
+def cli_executable(self) -> str:
+    return "acli"  # e.g. RovoDev: key="rovodev", binary="acli"
+```
+
+**`is_cli_available()` method** — Return `True` if the integration's CLI tool is installed. The default implementation calls `shutil.which(self.cli_executable)`. Override for more complex detection:
+
+```python
+def is_cli_available(self) -> bool:
+    # Multiple binary names (Kiro):
+    return shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
+
+    # Non-PATH install locations (Claude):
+    import specify_cli._utils as _utils_mod
+    if _utils_mod.CLAUDE_LOCAL_PATH.is_file() or _utils_mod.CLAUDE_NPM_LOCAL_PATH.is_file():
+        return True
+    return shutil.which(self.cli_executable) is not None
+```
+
+`is_cli_available()` is used by `check_tool()` in `_utils.py` and by both `CommandStep` and `PromptStep` workflow steps to gate CLI dispatch. No hardcoded special cases should be added to those callers — encode detection logic in the integration class instead.
 
 **Example — Copilot (fully custom `setup`):**
 
@@ -436,7 +462,7 @@ When an issue exists, include its number immediately after the prefix — this i
 
 ## Common Pitfalls
 
-1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
+1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), `key` should generally match the executable name. When it cannot (e.g., the binary name differs), override `cli_executable` or `is_cli_available()` on the integration class. Do **not** add special-case mappings to `check_tool()`, `CommandStep`, or `PromptStep`.
 2. **Forgetting context configuration**: The bundled `agent-context` extension reads from `.specify/extensions/agent-context/agent-context-config.yml`. New integrations only need to set `context_file` on the class — markers and dispatcher scripts are managed centrally.
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.

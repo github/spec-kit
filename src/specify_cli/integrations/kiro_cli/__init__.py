@@ -1,5 +1,7 @@
 """Kiro CLI integration."""
 
+import shutil
+
 from ..base import MarkdownIntegration
 
 
@@ -27,3 +29,17 @@ class KiroCliIntegration(MarkdownIntegration):
         "extension": ".md",
     }
     context_file = "AGENTS.md"
+
+    def is_cli_available(self) -> bool:
+        """Return ``True`` if the Kiro CLI is installed.
+
+        Kiro ships under two binary names: ``kiro-cli`` (preferred) and
+        the legacy ``kiro`` alias.  Either name satisfies the availability
+        check so existing installations continue to work.
+
+        See issue #2597.
+        """
+        return (
+            shutil.which("kiro-cli") is not None
+            or shutil.which("kiro") is not None
+        )

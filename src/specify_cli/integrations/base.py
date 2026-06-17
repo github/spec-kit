@@ -162,6 +162,45 @@ class IntegrationBase(ABC):
         """
         return None
 
+    @property
+    def cli_executable(self) -> str:
+        """Executable name used for CLI availability detection.
+
+        Defaults to ``self.key``.  Integrations whose CLI binary name
+        differs from the integration key should override this property.
+        For example, RovoDev's key is ``"rovodev"`` but the binary is
+        ``"acli"``, so its override returns ``"acli"``.
+
+        This property is used by :meth:`is_cli_available` and by
+        ``check_tool()`` when checking whether the integration's CLI
+        tool is installed.  It intentionally does **not** honour the
+        ``SPECKIT_INTEGRATION_<KEY>_EXECUTABLE`` env-var override — that
+        variable controls which binary is *executed* at runtime (see
+        :meth:`_resolve_executable`), whereas ``cli_executable`` names
+        the tool to *detect* on ``PATH``.
+
+        See issue #2597.
+        """
+        return self.key
+
+    def is_cli_available(self) -> bool:
+        """Return ``True`` if this integration's CLI tool is installed.
+
+        The default implementation checks ``shutil.which(self.cli_executable)``.
+        Integrations with non-standard install locations or multiple
+        possible binary names should override this method.
+
+        Examples of integrations that override this:
+
+        * **ClaudeIntegration** — also checks ``~/.claude/local/`` paths
+          that are not on ``PATH``.
+        * **KiroCliIntegration** — accepts both ``kiro-cli`` and the
+          legacy ``kiro`` binary name.
+
+        See issue #2597.
+        """
+        return shutil.which(self.cli_executable) is not None
+
     def _resolve_executable(self) -> str:
         """Return the executable for this integration's CLI tool.
 
