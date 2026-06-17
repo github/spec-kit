@@ -68,7 +68,7 @@ jobs:
           From [PyPI](https://pypi.org/project/specify-cli/):
 
           \`\`\`bash
-          uv tool install specify-cli==${VERSION_NO_V}
+          uv tool install 'specify-cli==${VERSION_NO_V}'
           specify init my-project
           \`\`\`
 
