@@ -34,11 +34,14 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
+      - name: Set up Python
+        run: uv python install 3.13
+
       - name: Verify tag matches package version
         run: |
           TAG_VERSION="${{ inputs.tag }}"
           TAG_VERSION="${TAG_VERSION#v}"
-          PROJECT_VERSION="$(uv run python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          PROJECT_VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
           if [[ "$TAG_VERSION" != "$PROJECT_VERSION" ]]; then
             echo "Error: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PROJECT_VERSION)"
             exit 1

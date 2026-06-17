@@ -45,13 +45,13 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify CLI
 
-Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](https://github.com/github/spec-kit/blob/main/docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
 ```
 
-See the [Installation Guide](./docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.
+See the [Installation Guide](https://github.com/github/spec-kit/blob/main/docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.
 
 ### 2. Initialize a project
 
@@ -60,7 +60,7 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
-To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](./docs/upgrade.md) for detailed scenarios and customization options.
+To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](https://github.com/github/spec-kit/blob/main/docs/upgrade.md) for detailed scenarios and customization options.
 
 ```bash
 # Check whether a newer release is available (read-only — does not modify anything)
@@ -120,7 +120,7 @@ Use **`/speckit.implement`** to execute all tasks and build your feature accordi
 /speckit.implement
 ```
 
-For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
+For detailed step-by-step instructions, see our [comprehensive guide](https://github.com/github/spec-kit/blob/main/spec-driven.md).
 
 ## 📽️ Video Overview
 
@@ -351,7 +351,7 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 ## 📖 Learn More
 
-- **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
+- **[Complete Spec-Driven Development Methodology](https://github.com/github/spec-kit/blob/main/spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
