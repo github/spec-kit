@@ -391,7 +391,7 @@ class CopilotIntegration(IntegrationBase):
                 # remove the user's settings file on uninstall.
                 self._merge_vscode_settings(settings_src, dst_settings)
             else:
-                shutil.copy2(settings_src, dst_settings)
+                shutil.copyfile(settings_src, dst_settings)
                 self.record_file_in_manifest(dst_settings, project_root, manifest)
                 created.append(dst_settings)
 

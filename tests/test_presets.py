@@ -13,6 +13,8 @@ Tests cover:
 import pytest
 import io
 import json
+import os
+import stat
 import tempfile
 import shutil
 import warnings
@@ -591,6 +593,62 @@ class TestPresetManager:
         assert installed_dir.exists()
         assert (installed_dir / "preset.yml").exists()
         assert (installed_dir / "templates" / "spec-template.md").exists()
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
+    def test_install_from_directory_readonly_source_produces_writable_dest(
+        self, project_dir, pack_dir
+    ):
+        """Directories copied from a read-only source must be owner-writable."""
+        for dirpath, _, filenames in os.walk(pack_dir):
+            dp = Path(dirpath)
+            for fn in filenames:
+                (dp / fn).chmod(0o444)
+            dp.chmod(0o555)
+
+        try:
+            manager = PresetManager(project_dir)
+            manager.install_from_directory(pack_dir, "0.1.5")
+
+            installed_dir = project_dir / ".specify" / "presets" / "test-pack"
+            for dirpath, _, _ in os.walk(installed_dir):
+                mode = stat.S_IMODE(Path(dirpath).stat().st_mode)
+                assert mode & 0o200, (
+                    f"{dirpath} is not owner-writable: {oct(mode)}"
+                )
+        finally:
+            for dirpath, _, filenames in os.walk(pack_dir):
+                dp = Path(dirpath)
+                dp.chmod(0o755)
+                for fn in filenames:
+                    (dp / fn).chmod(0o644)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
+    def test_install_from_directory_readonly_source_files_are_writable(
+        self, project_dir, pack_dir
+    ):
+        """Files copied via copyfile should inherit default umask, not source perms."""
+        for dirpath, _, filenames in os.walk(pack_dir):
+            dp = Path(dirpath)
+            for fn in filenames:
+                (dp / fn).chmod(0o444)
+            dp.chmod(0o555)
+
+        try:
+            manager = PresetManager(project_dir)
+            manager.install_from_directory(pack_dir, "0.1.5")
+
+            installed_dir = project_dir / ".specify" / "presets" / "test-pack"
+            for dirpath, _, filenames in os.walk(installed_dir):
+                for fn in filenames:
+                    fp = Path(dirpath) / fn
+                    with open(fp, "a") as fh:
+                        fh.write("")
+        finally:
+            for dirpath, _, filenames in os.walk(pack_dir):
+                dp = Path(dirpath)
+                dp.chmod(0o755)
+                for fn in filenames:
+                    (dp / fn).chmod(0o644)
 
     def test_install_already_installed(self, project_dir, pack_dir):
         """Test installing an already-installed pack raises error."""

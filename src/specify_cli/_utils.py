@@ -149,13 +149,13 @@ def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker
             else:
                 log("Skipped merge (preserved existing settings)", "yellow")
         else:
-            shutil.copy2(sub_item, dest_file)
+            shutil.copyfile(sub_item, dest_file)
             log("Copied (no existing settings.json):", "blue")
 
     except Exception as e:
         log(f"Warning: Could not merge settings: {e}", "yellow")
         if not dest_file.exists():
-            shutil.copy2(sub_item, dest_file)
+            shutil.copyfile(sub_item, dest_file)
 
 
 def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = False) -> dict[str, Any] | None:
@@ -236,6 +236,38 @@ def merge_json_files(existing_path: Path, new_content: Any, verbose: bool = Fals
         console.print(f"[cyan]Merged JSON file:[/cyan] {existing_path.name}")
 
     return merged
+
+
+def ensure_writable_tree(path: Path) -> None:
+    """Add owner write+execute to every directory under path.
+
+    shutil.copytree always calls copystat() on directories, propagating
+    read-only bits from any read-only source. Call this after copytree to
+    guarantee destination directories accept writes regardless of source
+    permissions.
+    """
+    if os.name == "nt":
+        return
+    for dirpath, _, _ in os.walk(path):
+        dp = Path(dirpath)
+        try:
+            dp.chmod((dp.stat().st_mode & 0o7777) | 0o300)
+        except OSError:
+            pass
+
+
+def copy_file_preserving_exec(src: str, dst: str) -> None:
+    """Copy file content without propagating source mtime or read-only bits.
+
+    shutil.copyfile transfers only content, leaving destination permissions at
+    the umask default (typically 0o644).  This wrapper additionally re-applies
+    any execute bits present on the source so that installed shell scripts
+    remain executable while still being owner-writable.
+    """
+    shutil.copyfile(src, dst)
+    if os.name != "nt":
+        exec_bits = os.stat(src).st_mode & 0o111
+        os.chmod(dst, 0o644 | exec_bits)
 
 
 def _display_project_path(project_root: Path, path: str | Path) -> str:

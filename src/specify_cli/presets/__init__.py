@@ -29,6 +29,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import is_ai_skills_enabled
+from .._utils import copy_file_preserving_exec, ensure_writable_tree
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter
 
@@ -1535,7 +1536,8 @@ class PresetManager:
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
-        shutil.copytree(source_dir, dest_dir)
+        shutil.copytree(source_dir, dest_dir, copy_function=copy_file_preserving_exec)
+        ensure_writable_tree(dest_dir)
 
         # Pre-register the preset so that composition resolution can see it
         # in the priority stack when resolving composed command content.

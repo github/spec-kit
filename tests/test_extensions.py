@@ -13,6 +13,7 @@ import pytest
 import json
 import os
 import platform
+import stat
 import tempfile
 import shutil
 import tomllib
@@ -983,6 +984,91 @@ class TestExtensionManager:
         assert ext_dir.exists()
         assert (ext_dir / "extension.yml").exists()
         assert (ext_dir / "commands" / "hello.md").exists()
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
+    def test_install_from_directory_readonly_source_produces_writable_dest(
+        self, extension_dir, project_dir
+    ):
+        """Directories copied from a read-only source must be owner-writable."""
+        # Lock the source tree to simulate a Nix store / read-only mount
+        for dirpath, _, filenames in os.walk(extension_dir):
+            dp = Path(dirpath)
+            for fn in filenames:
+                (dp / fn).chmod(0o444)
+            dp.chmod(0o555)
+
+        try:
+            manager = ExtensionManager(project_dir)
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+            ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+            for dirpath, _, _ in os.walk(ext_dir):
+                mode = stat.S_IMODE(Path(dirpath).stat().st_mode)
+                assert mode & 0o200, (
+                    f"{dirpath} is not owner-writable: {oct(mode)}"
+                )
+        finally:
+            # Restore writable perms so the temp_dir fixture can clean up
+            for dirpath, _, filenames in os.walk(extension_dir):
+                dp = Path(dirpath)
+                dp.chmod(0o755)
+                for fn in filenames:
+                    (dp / fn).chmod(0o644)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
+    def test_install_from_directory_readonly_source_files_are_writable(
+        self, extension_dir, project_dir
+    ):
+        """Files copied via copyfile should inherit default umask, not source perms."""
+        for dirpath, _, filenames in os.walk(extension_dir):
+            dp = Path(dirpath)
+            for fn in filenames:
+                (dp / fn).chmod(0o444)
+            dp.chmod(0o555)
+
+        try:
+            manager = ExtensionManager(project_dir)
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+            ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+            for dirpath, _, filenames in os.walk(ext_dir):
+                for fn in filenames:
+                    fp = Path(dirpath) / fn
+                    # Functional check: the file must be openable for writing
+                    with open(fp, "a") as fh:
+                        fh.write("")
+        finally:
+            for dirpath, _, filenames in os.walk(extension_dir):
+                dp = Path(dirpath)
+                dp.chmod(0o755)
+                for fn in filenames:
+                    (dp / fn).chmod(0o644)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
+    def test_install_from_directory_preserves_executable_bits(
+        self, extension_dir, project_dir
+    ):
+        """Shell scripts inside an extension must remain executable after install."""
+        scripts_dir = extension_dir / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        script = scripts_dir / "run.sh"
+        script.write_text("#!/bin/sh\necho ok\n")
+        script.chmod(0o755)
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        installed_script = (
+            project_dir / ".specify" / "extensions" / "test-ext" / "scripts" / "bash" / "run.sh"
+        )
+        assert installed_script.exists()
+        mode = stat.S_IMODE(installed_script.stat().st_mode)
+        assert mode & 0o111, f"Installed script lost execute bits: {oct(mode)}"
+        assert mode & 0o200, f"Installed script is not owner-writable: {oct(mode)}"
 
     def test_install_from_directory_explicitly_recovers_active_skills_dir(
         self, extension_dir, project_dir, monkeypatch
