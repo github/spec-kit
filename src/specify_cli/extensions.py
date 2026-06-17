@@ -2114,6 +2114,18 @@ class ExtensionCatalog(CatalogStackBase):
         """Persist install permission for a catalog while preserving the stack."""
         config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
 
+        # Path safety checks first
+        project_root = self.project_root.resolve()
+        resolved_parent = config_path.parent.resolve()
+        if not resolved_parent.is_relative_to(project_root):
+            raise ValidationError(
+                "Refusing to read or write catalog config outside the project root"
+            )
+        if config_path.is_symlink():
+            raise ValidationError(
+                f"Refusing to read or write catalog config via symlink: {config_path}"
+            )
+
         # Base the update on the project-level config if it exists
         if config_path.exists():
             base_catalogs = self._load_catalog_config(config_path) or []
@@ -2155,18 +2167,6 @@ class ExtensionCatalog(CatalogStackBase):
         if approved_entry is None:
             raise ValidationError(
                 f"Catalog '{catalog_name}' is not active and cannot be approved"
-            )
-
-        project_root = self.project_root.resolve()
-        config_path = self.project_root / ".specify" / self.CONFIG_FILENAME
-        resolved_parent = config_path.parent.resolve()
-        if not resolved_parent.is_relative_to(project_root):
-            raise ValidationError(
-                "Refusing to write catalog config outside the project root"
-            )
-        if config_path.exists() and config_path.is_symlink():
-            raise ValidationError(
-                f"Refusing to write catalog config via symlink: {config_path}"
             )
 
         config_path.parent.mkdir(parents=True, exist_ok=True)

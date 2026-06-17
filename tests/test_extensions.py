@@ -4878,6 +4878,7 @@ class TestExtensionAddCLI:
         )
 
         with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_installable_extension_info", return_value=None),
             patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",
@@ -4926,6 +4927,7 @@ class TestExtensionAddCLI:
             return MagicMock()
 
         with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_installable_extension_info", return_value=None),
             patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",
@@ -4961,6 +4963,7 @@ class TestExtensionAddCLI:
         (project_dir / ".specify").mkdir()
 
         with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_installable_extension_info", return_value=None),
             patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",
@@ -5010,6 +5013,7 @@ class TestExtensionAddCLI:
             raise AssertionError("Approval prompt should not run for approved catalogs")
 
         with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_installable_extension_info", return_value=None),
             patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",
@@ -5061,6 +5065,7 @@ class TestExtensionAddCLI:
             raise AssertionError("Approval prompt should not run when an approved source exists")
 
         with (
+            patch("specify_cli.extensions.ExtensionCatalog.get_installable_extension_info", return_value=None),
             patch("specify_cli.extensions.ExtensionCatalog.get_extension_info", return_value={
             "id": "security-review",
             "name": "Security Review",

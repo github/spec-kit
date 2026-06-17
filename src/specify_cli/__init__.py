@@ -1086,40 +1086,45 @@ def extension_add(
                         console.print(f"  {REINSTALL_COMMAND}")
                         raise typer.Exit(1)
 
-                    # If a different approved source exists, use it instead of prompting.
-                    installable_info = catalog.get_installable_extension_info(resolved_id)
-                    if installable_info is not None:
-                        ext_info = installable_info
-
                     # Enforce install_allowed policy only when no approved source exists.
                     if not ext_info.get("_install_allowed", True):
-                        catalog_name = ext_info.get("_catalog_name", "community")
-                        console.print()
-                        console.print(
-                            Panel(
-                                f"[bold]'{ext_info['name']}' is available in the '{catalog_name}' catalog "
-                                f"but installation is not allowed from that catalog.[/bold]\n\n"
-                                f"Approve installation from '{catalog_name}' for this project?\n"
-                                "This will update .specify/extension-catalogs.yml so future installs "
-                                "from that catalog are allowed.",
-                                title="[bold yellow]Catalog Approval Required[/bold yellow]",
-                                border_style="yellow",
-                                padding=(1, 2),
+                        # If a different approved source exists, use it instead of prompting.
+                        installable_info = catalog.get_installable_extension_info(resolved_id)
+                        if installable_info is not None:
+                            ext_info = installable_info
+                        else:
+                            catalog_name = ext_info.get("_catalog_name", "community")
+                            console.print()
+                            console.print(
+                                Panel(
+                                    f"[bold]'{ext_info['name']}' is available in the '{catalog_name}' catalog "
+                                    f"but installation is not allowed from that catalog.[/bold]\n\n"
+                                    f"Approve installation from '{catalog_name}' for this project?\n"
+                                    "This will update .specify/extension-catalogs.yml so future installs "
+                                    "from that catalog are allowed.",
+                                    title="[bold yellow]Catalog Approval Required[/bold yellow]",
+                                    border_style="yellow",
+                                    padding=(1, 2),
+                                )
                             )
-                        )
-                        console.print()
-                        try:
-                            confirm = typer.confirm("Approve catalog and continue?", default=False)
-                        except (typer.Abort, KeyboardInterrupt):
-                            console.print("Cancelled")
-                            raise typer.Exit(0)
-                        if not confirm:
-                            console.print("Cancelled")
-                            raise typer.Exit(0)
-                        approved_catalog = catalog.approve_catalog_install(catalog_name)
-                        console.print(
-                            f"[green]✓[/green] Approved catalog '[bold]{approved_catalog.name}[/bold]' for installation"
-                        )
+                            console.print()
+                            try:
+                                confirm = typer.confirm("Approve catalog and continue?", default=False)
+                            except (typer.Abort, KeyboardInterrupt):
+                                console.print("Cancelled")
+                                raise typer.Exit(0)
+                            if not confirm:
+                                console.print("Cancelled")
+                                raise typer.Exit(0)
+                            
+                            try:
+                                approved_catalog = catalog.approve_catalog_install(catalog_name)
+                                console.print(
+                                    f"[green]✓[/green] Approved catalog '[bold]{approved_catalog.name}[/bold]' for installation"
+                                )
+                            except ValidationError as e:
+                                console.print(f"[red]Error:[/red] {e}")
+                                raise typer.Exit(1)
 
                     # Download extension ZIP (use resolved ID, not original argument which may be display name)
                     extension_id = ext_info['id']
