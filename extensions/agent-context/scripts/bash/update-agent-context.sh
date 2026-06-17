@@ -39,8 +39,7 @@ if [[ -z "$_python" ]]; then
   exit 0
 fi
 
-# Parse extension config once; emit three JSON lines:
-# context files array, context_markers.start, context_markers.end
+# Parse extension config once; emit context files as JSON, followed by marker strings.
 if ! _raw_opts="$("$_python" - "$EXT_CONFIG" <<'PY'
 import json
 import sys

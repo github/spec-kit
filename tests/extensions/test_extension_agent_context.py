@@ -126,14 +126,37 @@ def _install_agent_context_config(project_root: Path, **overrides: object) -> No
     _write_ext_config(project_root, **overrides)
 
 
+def _bash_posix_path(path: Path) -> str:
+    """Convert a Windows path to the POSIX form used by the available bash."""
+    resolved = str(path.resolve())
+    if os.name != "nt":
+        return resolved
+
+    converted = subprocess.run(
+        [
+            BASH,
+            "-lc",
+            "command -v cygpath >/dev/null 2>&1 && cygpath -u \"$1\"",
+            "bash",
+            resolved,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if converted.returncode == 0 and converted.stdout.strip():
+        return converted.stdout.strip()
+
+    drive = path.drive.rstrip(":").lower()
+    posix = path.as_posix()
+    return f"/mnt/{drive}{posix[2:]}" if drive else posix
+
+
 def _run_bash_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
     script = EXT_DIR / "scripts" / "bash" / "update-agent-context.sh"
     if os.name == "nt":
-        drive = project_root.drive.rstrip(":").lower()
-        root = project_root.as_posix()
-        root = f"/mnt/{drive}{root[2:]}" if drive else root
-        script_path = script.as_posix()
-        script_path = f"/mnt/{script.drive.rstrip(':').lower()}{script_path[2:]}"
+        root = _bash_posix_path(project_root)
+        script_path = _bash_posix_path(script)
         command = f"cd {shlex_quote(root)} && {shlex_quote(script_path)}"
         return subprocess.run(
             [BASH, "-lc", command],
@@ -593,9 +616,7 @@ class TestBundledUpdaterPathValidation:
         )
 
         if os.name == "nt":
-            drive = tmp_path.drive.rstrip(":").lower()
-            root = tmp_path.as_posix()
-            root = f"/mnt/{drive}{root[2:]}" if drive else root
+            root = _bash_posix_path(tmp_path)
             create_link = subprocess.run(
                 [
                     BASH,

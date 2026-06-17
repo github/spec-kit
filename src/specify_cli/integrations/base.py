@@ -1220,12 +1220,13 @@ class MarkdownIntegration(IntegrationBase):
             else "$ARGUMENTS"
         )
         created: list[Path] = []
+        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self._context_file_display(project_root),
+                context_file=context_file_display,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -1425,13 +1426,14 @@ class TomlIntegration(IntegrationBase):
             else "{{args}}"
         )
         created: list[Path] = []
+        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             description = self._extract_description(raw)
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self._context_file_display(project_root),
+                context_file=context_file_display,
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -1620,6 +1622,7 @@ class YamlIntegration(IntegrationBase):
             else "{{args}}"
         )
         created: list[Path] = []
+        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
@@ -1635,7 +1638,7 @@ class YamlIntegration(IntegrationBase):
 
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self._context_file_display(project_root),
+                context_file=context_file_display,
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1810,6 +1813,7 @@ class SkillsIntegration(IntegrationBase):
             else "$ARGUMENTS"
         )
         created: list[Path] = []
+        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
@@ -1833,7 +1837,7 @@ class SkillsIntegration(IntegrationBase):
             # Process body through the standard template pipeline
             processed_body = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self._context_file_display(project_root),
+                context_file=context_file_display,
                 invoke_separator=self.invoke_separator,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
