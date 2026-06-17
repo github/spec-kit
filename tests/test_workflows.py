@@ -909,6 +909,17 @@ class TestPromptStep:
 class TestShellStep:
     """Test the shell step type."""
 
+    @staticmethod
+    def _python_run(tmp_path, body):
+        """A portable shell ``run`` that executes ``body`` with the current
+        interpreter, avoiding non-portable shell quoting (e.g. Windows
+        ``cmd.exe`` keeping single quotes) in the output_format tests."""
+        import sys
+
+        script = tmp_path / "emit.py"
+        script.write_text(body, encoding="utf-8")
+        return f'"{sys.executable}" "{script}"'
+
     def test_execute_echo(self):
         from specify_cli.workflows.steps.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -949,7 +960,9 @@ class TestShellStep:
         ctx = StepContext(project_root=str(tmp_path))
         config = {
             "id": "emit",
-            "run": "echo '{\"items\": [1, 2]}'",
+            "run": self._python_run(
+                tmp_path, 'import json; print(json.dumps({"items": [1, 2]}))\n'
+            ),
             "output_format": "json",
         }
         result = step.execute(config, ctx)
@@ -965,7 +978,7 @@ class TestShellStep:
         ctx = StepContext(project_root=str(tmp_path))
         config = {
             "id": "emit",
-            "run": "echo not-json",
+            "run": self._python_run(tmp_path, "print('not-json')\n"),
             "output_format": "json",
         }
         result = step.execute(config, ctx)
@@ -978,7 +991,12 @@ class TestShellStep:
 
         step = ShellStep()
         ctx = StepContext(project_root=str(tmp_path))
-        config = {"id": "emit", "run": "echo '{\"items\": []}'"}
+        config = {
+            "id": "emit",
+            "run": self._python_run(
+                tmp_path, 'import json; print(json.dumps({"items": []}))\n'
+            ),
+        }
         result = step.execute(config, ctx)
         assert result.status == StepStatus.COMPLETED
         assert "data" not in result.output
@@ -987,7 +1005,7 @@ class TestShellStep:
         from specify_cli.workflows.steps.shell import ShellStep
 
         step = ShellStep()
-        errors = step.validate({"id": "emit", "run": "true", "output_format": "yaml"})
+        errors = step.validate({"id": "emit", "run": "exit 0", "output_format": "yaml"})
         assert any("'output_format' must be 'json'" in e for e in errors)
 
 class _StubStdin:
