@@ -21,6 +21,7 @@ from specify_cli import (
 from specify_cli.agents import CommandRegistrar
 from specify_cli.integrations.base import IntegrationBase
 from specify_cli.integrations.claude import ClaudeIntegration
+from tests.conftest import requires_bash
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -152,14 +153,53 @@ def _bash_posix_path(path: Path) -> str:
     return f"/mnt/{drive}{posix[2:]}" if drive else posix
 
 
+def _ensure_test_python_on_path(project_root: Path) -> Path:
+    """Create python/python3 shims that run the current pytest interpreter."""
+    shim_dir = project_root / ".test-python-bin"
+    shim_dir.mkdir(exist_ok=True)
+    python_exe = Path(sys.executable).resolve()
+    shell_python = _bash_posix_path(python_exe)
+
+    for name in ("python", "python3"):
+        shell_shim = shim_dir / name
+        shell_shim.write_text(
+            f"#!/usr/bin/env sh\nexec {shlex_quote(shell_python)} \"$@\"\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        shell_shim.chmod(0o755)
+
+        if os.name == "nt":
+            cmd_shim = shim_dir / f"{name}.cmd"
+            cmd_shim.write_text(
+                f'@echo off\r\n"{python_exe}" %*\r\n',
+                encoding="utf-8",
+            )
+
+    return shim_dir
+
+
+def _bundled_script_env(project_root: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    shim_dir = _ensure_test_python_on_path(project_root)
+    env["PATH"] = str(shim_dir) + os.pathsep + env.get("PATH", "")
+    return env
+
+
 def _run_bash_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
     script = EXT_DIR / "scripts" / "bash" / "update-agent-context.sh"
+    env = _bundled_script_env(project_root)
     if os.name == "nt":
         root = _bash_posix_path(project_root)
         script_path = _bash_posix_path(script)
-        command = f"cd {shlex_quote(root)} && {shlex_quote(script_path)}"
+        shim_dir = _bash_posix_path(_ensure_test_python_on_path(project_root))
+        command = (
+            f"export PATH={shlex_quote(shim_dir)}:\"$PATH\"; "
+            f"cd {shlex_quote(root)} && {shlex_quote(script_path)}"
+        )
         return subprocess.run(
             [BASH, "-lc", command],
+            env=env,
             capture_output=True,
             text=True,
             timeout=30,
@@ -167,6 +207,7 @@ def _run_bash_agent_context_script(project_root: Path) -> subprocess.CompletedPr
     return subprocess.run(
         [BASH, str(script)],
         cwd=project_root,
+        env=env,
         capture_output=True,
         text=True,
         timeout=30,
@@ -179,8 +220,7 @@ def shlex_quote(value: str) -> str:
 
 def _run_powershell_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
     script = EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
-    env = os.environ.copy()
-    env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
+    env = _bundled_script_env(project_root)
     return subprocess.run(
         [
             POWERSHELL,
@@ -603,7 +643,7 @@ class TestBundledUpdaterPathValidation:
         assert "$ContextFile.Contains('\\')" in text
         assert "must not contain backslash separators" in text
 
-    @pytest.mark.skipif(BASH is None, reason="bash not available")
+    @requires_bash
     def test_bash_script_rejects_symlink_escape(self, tmp_path):
         project = tmp_path / "project"
         outside = tmp_path / "outside"
@@ -659,6 +699,25 @@ class TestBundledUpdaterPathValidation:
             result.stderr + result.stdout
         )
         assert not (project / "nested" / "AGENTS.md").exists()
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_deduplicates_context_files_in_order(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        duplicate = "agents.md" if os.name == "nt" else "AGENTS.md"
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md", "CLAUDE.md", duplicate],
+        )
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        output = result.stderr + result.stdout
+        assert output.count("agent-context: updated AGENTS.md") == 1
+        assert output.count("agent-context: updated CLAUDE.md") == 1
+        assert "agent-context: updated agents.md" not in output
 
     @pytest.mark.skipif(
         POWERSHELL is None or os.name != "nt",

@@ -216,7 +216,19 @@ if ($ContextFiles.Count -eq 0) {
         $ContextFiles += $ContextFile.Trim()
     }
 }
-$ContextFiles = @($ContextFiles | Select-Object -Unique)
+$pathComparison = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+    [System.StringComparer]::OrdinalIgnoreCase
+} else {
+    [System.StringComparer]::Ordinal
+}
+$seenContextFiles = [System.Collections.Generic.HashSet[string]]::new($pathComparison)
+$dedupedContextFiles = @()
+foreach ($ContextFile in $ContextFiles) {
+    if ($seenContextFiles.Add($ContextFile)) {
+        $dedupedContextFiles += $ContextFile
+    }
+}
+$ContextFiles = $dedupedContextFiles
 if ($ContextFiles.Count -eq 0) {
     Write-Warning 'agent-context: context_files/context_file not set in extension config; nothing to do.'
     exit 0
