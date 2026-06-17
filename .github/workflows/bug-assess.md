@@ -43,9 +43,10 @@ the issue.
 
 ## Triggering Conditions
 
-This workflow only runs when the `bug-assess` label is added to an issue — the
-trigger is filtered to that label, so you can assume the report is meant to be
-assessed as a bug.
+This workflow is triggered by any `issues: labeled` event, but a job-level
+condition gates the agent run so it only proceeds when the label that was just
+added is `bug-assess`. By the time you run, that condition has already passed —
+so you can assume the report is meant to be assessed as a bug.
 
 ## Step 1 — Ingest the Bug Report
 
