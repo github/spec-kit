@@ -5371,7 +5371,7 @@ steps:
     run: "true"
 """
 
-    def _run_json(self, tmp_path, monkeypatch, content):
+    def _run_json(self, tmp_path, monkeypatch, content, *, expected_exit=0):
         import json as _json
         from typer.testing import CliRunner
         from specify_cli import app
@@ -5380,11 +5380,14 @@ steps:
         path.write_text(content, encoding="utf-8")
         monkeypatch.chdir(tmp_path)
         result = CliRunner().invoke(app, ["workflow", "run", str(path), "--json"])
-        # Assert the CLI succeeded before parsing so a real failure surfaces
-        # the actual output instead of an opaque JSON decode error. Use
-        # ``result.output`` for the message: under ``--json`` step output is
-        # redirected off stdout, so the useful diagnostics live there.
-        assert result.exit_code == 0, result.output
+        # Assert the expected exit code before parsing so a real failure
+        # surfaces the actual output instead of an opaque JSON decode error.
+        # A terminal run still emits its JSON payload, then exits non-zero on
+        # ``failed``/``aborted`` (see ``_run_outcome_exit_code``), so callers
+        # pass the expected code. Use ``result.output`` for the message:
+        # under ``--json`` step output is redirected off stdout, so the useful
+        # diagnostics live there.
+        assert result.exit_code == expected_exit, result.output
         return _json.loads(result.stdout)
 
     def test_gate_pause_carries_gate_block(self, tmp_path, monkeypatch):
@@ -5407,16 +5410,18 @@ steps:
         # An interactive gate the operator rejects ends the run as `aborted`
         # (on_reject defaults to abort), not `paused`. The JSON surface must
         # still carry the gate block with the recorded choice so an
-        # orchestrator can see *why* the run stopped. The run helper asserts
-        # the CLI exited cleanly before parsing (a gate abort emits the
-        # payload and returns; it does not crash the command).
+        # orchestrator can see *why* the run stopped. A gate abort emits the
+        # payload and then exits non-zero (aborted → exit 1), so the helper
+        # is told to expect exit code 1.
         from specify_cli.workflows.steps.gate import GateStep
 
         _force_gate_stdin(monkeypatch, tty=True)
         monkeypatch.setattr(
             GateStep, "_prompt", staticmethod(lambda _msg, _opts: "reject")
         )
-        payload = self._run_json(tmp_path, monkeypatch, self._WF_GATE)
+        payload = self._run_json(
+            tmp_path, monkeypatch, self._WF_GATE, expected_exit=1
+        )
         assert payload["status"] == "aborted"
         assert payload["gate"] == {
             "step_id": "review",
