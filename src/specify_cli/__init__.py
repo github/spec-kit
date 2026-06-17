@@ -377,13 +377,18 @@ def _self_heal_agent_context_extension(project_root: Path) -> None:
 
     bundled_ac = _locate_bundled_extension("agent-context")
     if bundled_ac is None:
-        raise ValueError("bundled agent-context extension not found")
+        return
 
-    ext_mgr.install_from_directory(
-        bundled_ac,
-        get_speckit_version(),
-        force=ext_mgr.registry.is_installed("agent-context"),
-    )
+    try:
+        ext_mgr.install_from_directory(
+            bundled_ac,
+            get_speckit_version(),
+            force=ext_mgr.registry.is_installed("agent-context"),
+        )
+    except Exception:
+        if existing_cfg is not None:
+            _save_agent_context_config(project_root, existing_cfg)
+        return
 
     if existing_cfg is not None:
         _save_agent_context_config(project_root, existing_cfg)

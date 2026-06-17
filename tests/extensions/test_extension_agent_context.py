@@ -393,6 +393,74 @@ class TestAgentContextSelfHeal:
         assert result.exit_code == 0, result.output
         assert not (target / "extension.yml").exists()
 
+    def test_self_heal_skips_when_bundled_agent_context_extension_missing(
+        self, tmp_path, monkeypatch
+    ):
+        import specify_cli
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        save_init_options(project, {"integration": "claude", "ai": "claude"})
+        (project / ".specify" / "extensions").mkdir(parents=True)
+        monkeypatch.setattr(specify_cli, "_locate_bundled_extension", lambda _id: None)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["version"], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert not (project / ".specify" / "extensions" / "agent-context").exists()
+
+    def test_self_heal_restores_existing_config_when_install_fails(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.extensions import ExtensionManager
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        save_init_options(project, {"integration": "claude", "ai": "claude"})
+        ext_dir = project / ".specify" / "extensions" / "agent-context"
+        ext_dir.mkdir(parents=True)
+        custom_markers = {
+            "start": "<!-- CUSTOM START -->",
+            "end": "<!-- CUSTOM END -->",
+        }
+        _write_ext_config(
+            project,
+            context_file="CLAUDE.md",
+            context_markers=custom_markers,
+        )
+
+        def fail_install(self, *_args, **_kwargs):
+            _save_agent_context_config(
+                self.project_root,
+                {
+                    "context_file": "BROKEN.md",
+                    "context_markers": {
+                        "start": "<!-- BROKEN -->",
+                        "end": "<!-- /BROKEN -->",
+                    },
+                },
+            )
+            raise RuntimeError("install failed")
+
+        monkeypatch.setattr(ExtensionManager, "install_from_directory", fail_install)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = runner.invoke(app, ["version"], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        cfg = _load_agent_context_config(project)
+        assert cfg["context_file"] == "CLAUDE.md"
+        assert cfg["context_markers"] == custom_markers
+
 
 # ── Extension config writers ─────────────────────────────────────────────────
 
