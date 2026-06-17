@@ -545,6 +545,13 @@ class WorkflowEngine:
             state.status = RunStatus.FAILED
             state.append_log({"event": "workflow_failed", "error": str(exc)})
             state.save()
+            # Attach the partially-populated state to the exception so
+            # callers (most notably the CLI's exception handler) can
+            # surface any dry-run previews already resolved by earlier
+            # steps — the most useful debug signal a dry-run failure
+            # can offer. The state has been saved to disk by this point
+            # so consumers can also reload it via ``RunState.load()``.
+            exc.partial_state = state  # type: ignore[attr-defined]
             raise
 
         if state.status == RunStatus.RUNNING:
@@ -622,6 +629,12 @@ class WorkflowEngine:
             state.status = RunStatus.FAILED
             state.append_log({"event": "resume_failed", "error": str(exc)})
             state.save()
+            # Attach the partially-populated state to the exception so
+            # callers (e.g. the CLI's exception handler for ``workflow
+            # resume``) can surface any dry-run previews already
+            # resolved by earlier resumed steps. Mirrors the same
+            # contract used by :meth:`execute`.
+            exc.partial_state = state  # type: ignore[attr-defined]
             raise
 
         if state.status == RunStatus.RUNNING:

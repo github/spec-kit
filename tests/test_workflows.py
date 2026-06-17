@@ -32,10 +32,7 @@ def temp_dir():
     """Create a temporary directory for tests."""
     tmpdir = tempfile.mkdtemp()
     yield Path(tmpdir)
-    # On Windows, file handles from dynamic imports or registry access may
-    # still be held briefly after the test. Use ignore_errors to avoid
-    # flaky teardown failures (WinError 32).
-    shutil.rmtree(tmpdir, ignore_errors=(sys.platform == "win32"))
+    shutil.rmtree(tmpdir)
 
 
 @pytest.fixture
@@ -104,7 +101,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in", "init",
+            "while", "do-while", "fan-out", "fan-in",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -781,47 +778,6 @@ class TestCommandStep:
         # Claude is a SkillsIntegration so uses /speckit-specify
         assert "/speckit-specify login" in call_args[0][0][2]
 
-    def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
-        """Command preflight falls back to build_exec_args() argv[0]."""
-        from unittest.mock import MagicMock, patch
-        from specify_cli.workflows.steps.command import CommandStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
-        seen_which: list[str] = []
-
-        def fake_which(name: str) -> str | None:
-            seen_which.append(name)
-            return name if name == "/opt/claude" else None
-
-        step = CommandStep()
-        ctx = StepContext(
-            inputs={"name": "login"},
-            default_integration="claude",
-            project_root=str(tmp_path),
-        )
-        config = {
-            "id": "test",
-            "command": "speckit.specify",
-            "input": {"args": "{{ inputs.name }}"},
-        }
-
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = '{"result": "done"}'
-        mock_result.stderr = ""
-
-        with patch("specify_cli.workflows.steps.command.shutil.which", side_effect=fake_which), \
-             patch("subprocess.run", return_value=mock_result) as mock_run:
-            result = step.execute(config, ctx)
-
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["dispatched"] is True
-        assert seen_which[:2] == ["claude", "/opt/claude"]
-        call_args = mock_run.call_args
-        assert call_args[0][0][0] == "/opt/claude"
-        assert "/speckit-specify login" in call_args[0][0][2]
-
     def test_dispatch_failure_returns_failed_status(self, tmp_path):
         """When the CLI exits non-zero, the step should fail."""
         from unittest.mock import patch, MagicMock
@@ -853,6 +809,39 @@ class TestCommandStep:
         assert result.status == StepStatus.FAILED
         assert result.output["dispatched"] is True
         assert result.output["exit_code"] == 1
+
+    def test_dry_run_returns_completed_without_dispatch(self, tmp_path):
+        """Dry-run mode: step returns COMPLETED and shows rendered prompt without invoking CLI."""
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(
+            inputs={"name": "login"},
+            default_integration="claude",
+            project_root=str(tmp_path),
+            dry_run=True,
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.specify",
+            "input": {"args": "{{ inputs.name }}"},
+        }
+        result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["dry_run"] is True
+        assert result.output["dispatched"] is False
+        assert result.output["executed"] is False
+        assert result.output["command"] == "speckit.specify"
+        assert result.output["input"]["args"] == "login"
+        # No AI call was made (shutil.which would fail anyway, but dry_run short-circuits before that)
+        assert "invoke_command" in result.output
+        # The DRY RUN preview is published on both ``message`` and
+        # ``dry_run_message`` so the CLI's render loop can prefer the
+        # latter without per-step-type special-casing.
+        assert "DRY RUN" in result.output["message"]
+        assert result.output["dry_run_message"] == result.output["message"]
 
 
 class TestPromptStep:
@@ -973,46 +962,41 @@ class TestPromptStep:
         assert result.status == StepStatus.COMPLETED
         assert result.output["dispatched"] is True
         assert result.output["exit_code"] == 0
+        # Real-run branch must set executed=True so downstream
+        # ``{{ steps.<id>.output.executed }}`` resolves to truthy.
+        assert result.output["executed"] is True
 
-    def test_dispatch_uses_executable_override_for_fallback_preflight(self, tmp_path, monkeypatch):
-        """Prompt preflight falls back to build_exec_args() argv[0]."""
-        from unittest.mock import MagicMock, patch
+    def test_dry_run_prompt_short_circuits(self, tmp_path):
+        """PromptStep must honor ``context.dry_run`` — the same contract
+        as CommandStep / GateStep. Without this, a workflow with
+        ``type: prompt`` makes real AI calls even in dry-run mode."""
         from specify_cli.workflows.steps.prompt import PromptStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
-        monkeypatch.setenv("SPECKIT_INTEGRATION_CLAUDE_EXECUTABLE", "/opt/claude")
-        seen_which: list[str] = []
-
-        def fake_which(name: str) -> str | None:
-            seen_which.append(name)
-            return name if name == "/opt/claude" else None
-
         step = PromptStep()
         ctx = StepContext(
+            inputs={"file": "auth.py"},
             default_integration="claude",
             project_root=str(tmp_path),
+            dry_run=True,
         )
         config = {
-            "id": "ask",
+            "id": "review",
             "type": "prompt",
-            "prompt": "Explain this code",
+            "prompt": "Review {{ inputs.file }} for security issues",
         }
-
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "Here is the explanation"
-        mock_result.stderr = ""
-
-        with patch("specify_cli.workflows.steps.prompt.shutil.which", side_effect=fake_which), \
-             patch("subprocess.run", return_value=mock_result) as mock_run:
-            result = step.execute(config, ctx)
+        result = step.execute(config, ctx)
 
         assert result.status == StepStatus.COMPLETED
-        assert result.output["dispatched"] is True
-        assert seen_which[:2] == ["claude", "/opt/claude"]
-        call_args = mock_run.call_args
-        assert call_args[0][0][0] == "/opt/claude"
-        assert call_args[0][0][2] == "Explain this code"
+        assert result.output["dry_run"] is True
+        assert result.output["executed"] is False
+        assert result.output["dispatched"] is False
+        assert result.output["exit_code"] == 0
+        # The dry-run preview lives on both message and dry_run_message.
+        assert "DRY RUN" in result.output["message"]
+        assert result.output["dry_run_message"] == result.output["message"]
+        # The rendered prompt must surface in the preview.
+        assert "auth.py" in result.output["message"]
 
     def test_validate_missing_prompt(self):
         from specify_cli.workflows.steps.prompt import PromptStep
@@ -1031,17 +1015,6 @@ class TestPromptStep:
 
 class TestShellStep:
     """Test the shell step type."""
-
-    @staticmethod
-    def _python_run(tmp_path, body):
-        """A portable shell ``run`` that executes ``body`` with the current
-        interpreter, avoiding non-portable shell quoting (e.g. Windows
-        ``cmd.exe`` keeping single quotes) in the output_format tests."""
-        import sys
-
-        script = tmp_path / "emit.py"
-        script.write_text(body, encoding="utf-8")
-        return f'"{sys.executable}" "{script}"'
 
     def test_execute_echo(self):
         from specify_cli.workflows.steps.shell import ShellStep
@@ -1074,62 +1047,6 @@ class TestShellStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'run'" in e for e in errors)
 
-
-    def test_output_format_json_exposes_data(self, tmp_path):
-        from specify_cli.workflows.steps.shell import ShellStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = ShellStep()
-        ctx = StepContext(project_root=str(tmp_path))
-        config = {
-            "id": "emit",
-            "run": self._python_run(
-                tmp_path, 'import json; print(json.dumps({"items": [1, 2]}))\n'
-            ),
-            "output_format": "json",
-        }
-        result = step.execute(config, ctx)
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["data"] == {"items": [1, 2]}
-        assert result.output["exit_code"] == 0  # raw keys still present
-
-    def test_output_format_json_invalid_stdout_fails(self, tmp_path):
-        from specify_cli.workflows.steps.shell import ShellStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = ShellStep()
-        ctx = StepContext(project_root=str(tmp_path))
-        config = {
-            "id": "emit",
-            "run": self._python_run(tmp_path, "print('not-json')\n"),
-            "output_format": "json",
-        }
-        result = step.execute(config, ctx)
-        assert result.status == StepStatus.FAILED
-        assert "output_format: json" in (result.error or "")
-
-    def test_no_output_format_keeps_raw_output_only(self, tmp_path):
-        from specify_cli.workflows.steps.shell import ShellStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = ShellStep()
-        ctx = StepContext(project_root=str(tmp_path))
-        config = {
-            "id": "emit",
-            "run": self._python_run(
-                tmp_path, 'import json; print(json.dumps({"items": []}))\n'
-            ),
-        }
-        result = step.execute(config, ctx)
-        assert result.status == StepStatus.COMPLETED
-        assert "data" not in result.output
-
-    def test_validate_rejects_unknown_output_format(self):
-        from specify_cli.workflows.steps.shell import ShellStep
-
-        step = ShellStep()
-        errors = step.validate({"id": "emit", "run": "exit 0", "output_format": "yaml"})
-        assert any("'output_format' must be 'json'" in e for e in errors)
 
 class _StubStdin:
     """Stdin stub exposing only a fixed ``isatty`` result.
@@ -1167,171 +1084,6 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
     from specify_cli.workflows.steps import gate as gate_module
 
     monkeypatch.setattr(gate_module, "sys", _FakeSys(tty=tty))
-
-
-class TestInitStep:
-    """Test the init step type."""
-
-    def test_builds_here_argv_and_bootstraps(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        config = {"id": "bootstrap", "here": True, "script": "sh"}
-        result = step.execute(config, ctx)
-
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["exit_code"] == 0
-        argv = result.output["argv"]
-        assert argv[0] == "init"
-        assert "--here" in argv
-        assert "--integration" in argv and "copilot" in argv
-        assert "--ignore-agent-tools" in argv
-        assert (tmp_path / ".specify").is_dir()
-
-    def test_default_integration_falls_back_to_workflow_default(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"}, ctx
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["integration"] == "copilot"
-
-    def test_project_name_creates_subdirectory(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {
-                "id": "bootstrap",
-                "project": "demo",
-                "script": "sh",
-            },
-            ctx,
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert (tmp_path / "demo" / ".specify").is_dir()
-
-    def test_invalid_integration_fails(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(project_root=str(tmp_path))
-        result = step.execute(
-            {
-                "id": "bootstrap",
-                "here": True,
-                "integration": "no-such-agent",
-                "script": "sh",
-            },
-            ctx,
-        )
-        assert result.status == StepStatus.FAILED
-        assert result.output["exit_code"] != 0
-        assert result.error is not None
-
-    def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        (tmp_path / "existing.txt").write_text("data")
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"},
-            ctx,
-        )
-        assert result.status == StepStatus.FAILED
-        assert "force: true" in (result.error or "")
-        assert not (tmp_path / ".specify").exists()
-
-    def test_engine_owned_dirs_do_not_trigger_non_empty_check(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        # Simulate the engine creating its run-state directory before steps run
-        (tmp_path / ".specify" / "workflows" / "runs" / "abc123").mkdir(
-            parents=True
-        )
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"},
-            ctx,
-        )
-        assert result.status == StepStatus.COMPLETED
-        # Verify --force was implicitly added
-        assert "--force" in result.output["argv"]
-
-    def test_default_integration_when_none_provided(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        # No default_integration on context either
-        ctx = StepContext(project_root=str(tmp_path))
-        result = step.execute(
-            {"id": "bootstrap", "here": True, "script": "sh"},
-            ctx,
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["integration"] == "copilot"
-
-    def test_integration_options_passed_through(self, tmp_path):
-        from specify_cli.workflows.steps.init import InitStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = InitStep()
-        ctx = StepContext(
-            project_root=str(tmp_path), default_integration="copilot"
-        )
-        result = step.execute(
-            {
-                "id": "bootstrap",
-                "here": True,
-                "script": "sh",
-                "integration": "copilot",
-                "integration_options": "--skills",
-            },
-            ctx,
-        )
-        assert result.status == StepStatus.COMPLETED
-        assert "--integration-options" in result.output["argv"]
-        assert "--skills" in result.output["argv"]
-        assert result.output["integration_options"] == "--skills"
-
-    def test_validate_rejects_bad_script(self):
-        from specify_cli.workflows.steps.init import InitStep
-
-        step = InitStep()
-        errors = step.validate({"id": "bootstrap", "script": "bogus"})
-        assert any("'script' must be 'sh' or 'ps'" in e for e in errors)
-
-    def test_validate_accepts_valid(self):
-        from specify_cli.workflows.steps.init import InitStep
-
-        step = InitStep()
-        assert step.validate({"id": "bootstrap", "script": "sh"}) == []
 
 
 class TestGateStep:
@@ -1379,6 +1131,77 @@ class TestGateStep:
             "on_reject": "invalid",
         })
         assert any("on_reject" in e for e in errors)
+
+    def test_dry_run_skips_interactive_gate(self, tmp_path):
+        """Dry-run mode: gate step returns COMPLETED without pausing for user input."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = GateStep()
+        ctx = StepContext(dry_run=True)
+        config = {
+            "id": "review",
+            "message": "Review the spec.",
+            "options": ["approve", "reject"],
+            "on_reject": "abort",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        # Dry-run output must be marked so the CLI prints it (mirrors
+        # CommandStep's output['dry_run'] = True contract).
+        assert result.output["dry_run"] is True
+        # The original ``message`` is preserved so downstream
+        # ``{{ steps.<id>.output.message }}`` references still resolve
+        # to the gate prompt; the DRY RUN preview is published on
+        # ``dry_run_message`` for the CLI rendering loop.
+        assert result.output["message"] == "Review the spec."
+        assert "DRY RUN" in result.output["dry_run_message"]
+        assert result.output["choice"] == "approve"
+
+    def test_dry_run_normalizes_non_list_options(self, tmp_path):
+        """A workflow that bypasses validation may set ``options`` to a
+        non-list (string, dict, scalar).  ``GateStep`` must coerce
+        gracefully instead of indexing into a string or raising."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = GateStep()
+        ctx = StepContext(dry_run=True)
+        for bad_options in (None, "approve,reject", {"approve": True}, 42, ""):
+            config = {
+                "id": "review",
+                "message": "Review the spec.",
+                "options": bad_options,
+            }
+            result = step.execute(config, ctx)
+            assert result.status == StepStatus.COMPLETED
+            assert result.output["options"] == []
+            assert result.output["choice"] is None
+
+    def test_interactive_path_fails_on_empty_options(self, tmp_path, monkeypatch):
+        """A workflow that bypassed validation and produced
+        ``options=[]`` would crash the prompt loop with an IndexError
+        in the non-dry-run interactive path.  GateStep must fail
+        loudly with a clear message instead."""
+        from specify_cli.workflows.steps import gate as gate_mod
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Force the interactive branch (not the non-interactive PAUSED
+        # fallback). Patch on the module's ``sys`` binding so the gate
+        # code resolves the patch even when pytest replaces
+        # ``sys.stdin`` for capture.
+        monkeypatch.setattr(gate_mod.sys.stdin, "isatty", lambda: True)
+        step = GateStep()
+        ctx = StepContext()
+        config = {
+            "id": "review",
+            "message": "Review the spec.",
+            "options": None,  # gets normalized to []
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "no options" in (result.error or "")
 
     def test_interactive_prompt_renders_show_file(self, tmp_path, monkeypatch, capsys):
         from specify_cli.workflows.steps.gate import GateStep
@@ -1547,6 +1370,48 @@ class TestGateStep:
         result = step.execute(config, ctx)  # non-interactive -> PAUSED
         assert result.status == StepStatus.PAUSED
         assert result.output["show_file"] == "123"
+
+    def test_dry_run_accepts_tuple_options(self, tmp_path):
+        """``options`` may be a tuple (Sequence but not list).  GateStep
+        should accept any non-str Sequence, not just list."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = GateStep()
+        ctx = StepContext(dry_run=True)
+        config = {
+            "id": "review",
+            "message": "Review the spec.",
+            "options": ("approve", "reject"),
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["options"] == ["approve", "reject"]
+        assert result.output["choice"] == "approve"
+
+    def test_dry_run_skips_reject_sentinels_for_choice(self, tmp_path):
+        """In dry-run, ``choice`` should not be a reject/abort sentinel
+        that would unintentionally steer downstream branching."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = GateStep()
+        ctx = StepContext(dry_run=True)
+        # First option is the reject sentinel — the dry-run must skip it
+        # and fall through to the first non-sentinel option.
+        config = {
+            "id": "review",
+            "message": "Review the spec.",
+            "options": ["reject", "approve", "skip"],
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["choice"] == "approve"
+
+        # All options are sentinels — leave choice as None (neutral).
+        config["options"] = ["reject", "abort"]
+        result = step.execute(config, ctx)
+        assert result.output["choice"] is None
 
 
 class TestIfThenStep:
@@ -1830,9 +1695,9 @@ class TestFanOutStep:
         assert result.output["item_count"] == 2
         assert result.output["max_concurrency"] == 3
 
-    def test_execute_non_list_items_fails_loudly(self):
+    def test_execute_non_list_items_resolves_empty(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
-        from specify_cli.workflows.base import StepContext, StepStatus
+        from specify_cli.workflows.base import StepContext
 
         step = FanOutStep()
         ctx = StepContext()
@@ -1842,24 +1707,8 @@ class TestFanOutStep:
             "step": {"id": "impl", "command": "speckit.implement"},
         }
         result = step.execute(config, ctx)
-        assert result.status == StepStatus.FAILED
-        assert "'items' must resolve to a list" in (result.error or "")
         assert result.output["item_count"] == 0
-
-    def test_execute_empty_list_items_is_valid(self):
-        from specify_cli.workflows.steps.fan_out import FanOutStep
-        from specify_cli.workflows.base import StepContext, StepStatus
-
-        step = FanOutStep()
-        ctx = StepContext(steps={"tasks": {"output": {"task_list": []}}})
-        config = {
-            "id": "parallel",
-            "items": "{{ steps.tasks.output.task_list }}",
-            "step": {"id": "impl", "command": "speckit.implement"},
-        }
-        result = step.execute(config, ctx)
-        assert result.status == StepStatus.COMPLETED
-        assert result.output["item_count"] == 0
+        assert result.output["items"] == []
 
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
@@ -2204,6 +2053,118 @@ steps:
         assert state.status == RunStatus.PAUSED
         assert "gate" in state.step_results
         assert state.step_results["gate"]["status"] == "paused"
+
+    def test_execute_dry_run(self, project_dir):
+        """Dry-run: engine returns COMPLETED without invoking the AI for command steps."""
+        from unittest.mock import patch
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "dryrun-test"
+  name: "Dry Run Test"
+  version: "1.0.0"
+inputs:
+  spec:
+    type: string
+    default: "test spec"
+steps:
+  - id: specify
+    command: speckit.specify
+    input:
+      args: "{{ inputs.spec }}"
+  - id: plan
+    command: speckit.plan
+    input:
+      args: "{{ inputs.spec }}"
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+
+        # In dry-run mode, even if the CLI tool is installed, no AI calls are made
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value="/usr/local/bin/claude"), \
+             patch("subprocess.run") as mock_run:
+            state = engine.execute(definition, {"spec": "login feature"}, dry_run=True)
+
+        assert state.status == RunStatus.COMPLETED
+        assert "specify" in state.step_results
+        assert state.step_results["specify"]["output"]["dry_run"] is True
+        assert state.step_results["specify"]["output"]["dispatched"] is False
+        assert "plan" in state.step_results
+        assert state.step_results["plan"]["output"]["dry_run"] is True
+        # subprocess.run should NOT have been called in dry-run mode
+        assert mock_run.call_count == 0
+
+    def test_dry_run_persisted_in_run_state(self, project_dir):
+        """Dry-run flag must be saved into RunState so resume() can restore it."""
+        from specify_cli.workflows.engine import RunState, WorkflowEngine, WorkflowDefinition
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "dryrun-persist"
+  name: "Dry Run Persist"
+  version: "1.0.0"
+steps:
+  - id: only
+    type: gate
+    message: "Continue?"
+    options: ["yes", "no"]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition, dry_run=True, run_id="dr-persist")
+
+        assert state.dry_run is True
+
+        reloaded = RunState.load("dr-persist", project_dir)
+        assert reloaded.dry_run is True
+
+    def test_resume_restores_dry_run(self, project_dir, monkeypatch):
+        """resume() must restore the persisted dry_run so an interrupted dry-run
+        does not silently turn into a real run."""
+        from specify_cli.workflows.engine import RunState, WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        yaml_str = """
+schema_version: "1.0"
+workflow:
+  id: "dryrun-resume"
+  name: "Dry Run Resume"
+  version: "1.0.0"
+steps:
+  - id: only
+    type: gate
+    message: "Continue?"
+    options: ["yes", "no"]
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+
+        # Persist a paused dry-run with a known run_id, including a copy of
+        # the workflow YAML so resume() can reload the definition.
+        run_id = "dr-resume"
+        state = RunState(run_id=run_id, workflow_id=definition.id, project_root=project_dir)
+        state.status = RunStatus.PAUSED
+        state.dry_run = True
+        state.save()
+        run_dir = project_dir / ".specify" / "workflows" / "runs" / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "workflow.yml").write_text(yaml_str, encoding="utf-8")
+
+        captured: dict[str, bool] = {}
+
+        def spy_execute_steps(steps, context, state, registry, *, step_offset=0):
+            captured["dry_run"] = context.dry_run
+            # No-op so resume() returns without further work.
+            return None
+
+        monkeypatch.setattr(engine, "_execute_steps", spy_execute_steps)
+        engine.resume(run_id)
+
+        assert captured.get("dry_run") is True
 
     def test_execute_with_shell_step(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
@@ -3668,11 +3629,9 @@ class TestWorkflowRegistry:
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
 
-    def test_default_catalogs(self, project_dir, monkeypatch):
+    def test_default_catalogs(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
-        monkeypatch.setattr(Path, "home", lambda: project_dir)
-        monkeypatch.delenv("SPECKIT_WORKFLOW_CATALOG_URL", raising=False)
         catalog = WorkflowCatalog(project_dir)
         entries = catalog.get_active_catalogs()
         assert len(entries) == 2
@@ -3774,78 +3733,6 @@ class TestWorkflowCatalog:
         assert configs[0]["name"] == "default"
         assert isinstance(configs[0]["install_allowed"], bool)
 
-    def test_load_catalog_config_non_dict_yaml_raises(self, project_dir):
-        """A YAML catalog config that is a list (not a mapping) must raise WorkflowValidationError."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text("- item1\n- item2\n", encoding="utf-8")
-
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
-            catalog.get_active_catalogs()
-
-    def test_add_catalog_malformed_yaml_raises(self, project_dir):
-        """A malformed YAML config file must raise WorkflowValidationError when adding a catalog."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(": invalid: yaml: {\n", encoding="utf-8")
-
-        catalog = WorkflowCatalog(project_dir)
-        with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
-            catalog.add_catalog("https://example.com/new.json")
-
-    def test_remove_catalog_malformed_yaml_raises(self, project_dir):
-        """A malformed YAML config file must raise WorkflowValidationError when removing a catalog."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-
-        catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/c1.json", "first")
-
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        config_path.write_text(": bad: yaml: {\n", encoding="utf-8")
-
-        with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
-            catalog.remove_catalog(0)
-
-    def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        """An OSError on write must be wrapped as WorkflowValidationError."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-        import builtins
-
-        catalog = WorkflowCatalog(project_dir)
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file) == config_path and "w" in mode:
-                raise OSError("simulated write failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
-            catalog.add_catalog("https://example.com/new-catalog.json", "my-catalog")
-
-    def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        """An OSError on write must be wrapped as WorkflowValidationError."""
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
-        import builtins
-
-        catalog = WorkflowCatalog(project_dir)
-        catalog.add_catalog("https://example.com/c1.json", "first")
-        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file) == config_path and "w" in mode:
-                raise OSError("simulated write failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
-            catalog.remove_catalog(0)
-
 
 # ===== Integration Test =====
 
@@ -3942,933 +3829,6 @@ steps:
         assert "do-specify" not in state.step_results
 
 
-# ===== Step Registry Tests =====
-
-class TestStepRegistryCustom:
-    """Test StepRegistry operations for custom step types."""
-
-    def test_add_and_get(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
-
-        registry = StepRegistry(project_dir)
-        registry.add("deploy", {"name": "Deploy", "version": "1.0.0", "type_key": "deploy"})
-
-        entry = registry.get("deploy")
-        assert entry is not None
-        assert entry["name"] == "Deploy"
-        assert "installed_at" in entry
-
-    def test_add_does_not_mutate_input_metadata(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
-
-        registry = StepRegistry(project_dir)
-        metadata = {
-            "name": "Deploy",
-            "type_key": "deploy",
-            "nested": {"key": "original"},
-        }
-
-        registry.add("deploy", metadata)
-
-        assert "installed_at" not in metadata
-        assert "updated_at" not in metadata
-        metadata["nested"]["key"] = "changed-after-add"
-        assert registry.get("deploy")["nested"]["key"] == "original"
-
-    def test_remove(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
-
-        registry = StepRegistry(project_dir)
-        registry.add("deploy", {"name": "Deploy", "type_key": "deploy"})
-        assert registry.is_installed("deploy")
-
-        registry.remove("deploy")
-        assert not registry.is_installed("deploy")
-
-    def test_remove_missing_returns_false(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
-
-        registry = StepRegistry(project_dir)
-        removed = registry.remove("nonexistent")
-        assert removed is False
-
-    def test_list(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
-
-        registry = StepRegistry(project_dir)
-        registry.add("step-a", {"name": "A", "type_key": "step-a"})
-        registry.add("step-b", {"name": "B", "type_key": "step-b"})
-
-        installed = registry.list()
-        assert "step-a" in installed
-        assert "step-b" in installed
-
-    def test_is_installed(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
-
-        registry = StepRegistry(project_dir)
-        assert not registry.is_installed("missing")
-
-        registry.add("exists", {"name": "Exists", "type_key": "exists"})
-        assert registry.is_installed("exists")
-
-    def test_persistence(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
-
-        registry1 = StepRegistry(project_dir)
-        registry1.add("deploy", {"name": "Deploy", "type_key": "deploy"})
-
-        registry2 = StepRegistry(project_dir)
-        assert registry2.is_installed("deploy")
-
-    def test_corrupted_registry_resets(self, project_dir):
-        from specify_cli.workflows.catalog import StepRegistry
-
-        registry = StepRegistry(project_dir)
-        registry.steps_dir.mkdir(parents=True, exist_ok=True)
-        registry.registry_path.write_text("not json", encoding="utf-8")
-
-        # Loading again should reset
-        registry2 = StepRegistry(project_dir)
-        assert registry2.list() == {}
-
-    def test_registry_missing_steps_key_resets(self, project_dir):
-        """Valid JSON but missing 'steps' key should not crash add/get."""
-        from specify_cli.workflows.catalog import StepRegistry
-        import json as _json
-
-        registry = StepRegistry(project_dir)
-        registry.steps_dir.mkdir(parents=True, exist_ok=True)
-        # Valid JSON but 'steps' is not a dict
-        registry.registry_path.write_text(
-            _json.dumps({"schema_version": "1.0", "steps": "bad"}),
-            encoding="utf-8",
-        )
-
-        registry2 = StepRegistry(project_dir)
-        # Should be safe to call add/get without KeyError
-        assert registry2.list() == {}
-        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
-        assert registry2.is_installed("deploy")
-
-    @pytest.mark.skipif(sys.platform == "win32", reason="chmod not reliable on Windows")
-    def test_registry_unreadable_file_resets(self, project_dir):
-        """OSError reading the registry file should fall back to default."""
-        from specify_cli.workflows.catalog import StepRegistry
-        import json as _json
-
-        registry = StepRegistry(project_dir)
-        registry.steps_dir.mkdir(parents=True, exist_ok=True)
-        # Write valid registry first
-        registry.registry_path.write_text(
-            _json.dumps({"schema_version": "1.0", "steps": {"existing": {}}}),
-            encoding="utf-8",
-        )
-        # Make it unreadable
-        registry.registry_path.chmod(0o000)
-        try:
-            registry2 = StepRegistry(project_dir)
-            assert registry2.list() == {}
-        finally:
-            registry.registry_path.chmod(0o644)
-
-        # After restoring permissions the registry is fully functional
-        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
-        assert registry2.is_installed("deploy")
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_registry_load_refuses_symlinked_steps_dir(self, project_dir):
-        """A symlinked steps directory must not be read from (defense-in-depth)."""
-        from specify_cli.workflows.catalog import StepRegistry
-        import json as _json
-
-        outside = project_dir.parent / "outside-steps"
-        outside.mkdir(parents=True, exist_ok=True)
-        (outside / "step-registry.json").write_text(
-            _json.dumps({"schema_version": "1.0", "steps": {"evil": {}}}),
-            encoding="utf-8",
-        )
-        steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
-
-        registry = StepRegistry(project_dir)
-        assert registry.list() == {}
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_registry_save_refuses_symlinked_steps_dir(self, project_dir):
-        """save() must refuse symlinked registry paths (defense-in-depth)."""
-        from specify_cli.workflows.catalog import StepRegistry, StepValidationError
-
-        outside = project_dir.parent / "outside-steps-save"
-        outside.mkdir(parents=True, exist_ok=True)
-        steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
-
-        registry = StepRegistry(project_dir)
-        with pytest.raises(StepValidationError, match="symlinked path"):
-            registry.save()
-
-
-# ===== Step Catalog Tests =====
-
-class TestStepCatalog:
-    """Test StepCatalog catalog resolution."""
-
-    def test_default_catalogs(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.setattr(Path, "home", lambda: project_dir)
-        monkeypatch.delenv("SPECKIT_STEP_CATALOG_URL", raising=False)
-        catalog = StepCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 2
-        assert entries[0].name == "default"
-        assert entries[1].name == "community"
-
-    def test_env_var_override(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.setenv("SPECKIT_STEP_CATALOG_URL", "https://example.com/step-catalog.json")
-        catalog = StepCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 1
-        assert entries[0].name == "env-override"
-        assert entries[0].url == "https://example.com/step-catalog.json"
-
-    def test_project_level_config(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text(yaml.dump({
-            "catalogs": [{
-                "name": "custom",
-                "url": "https://example.com/step-catalog.json",
-                "priority": 1,
-                "install_allowed": True,
-            }]
-        }))
-
-        catalog = StepCatalog(project_dir)
-        entries = catalog.get_active_catalogs()
-        assert len(entries) == 1
-        assert entries[0].name == "custom"
-
-    def test_validate_url_http_rejected(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        with pytest.raises(StepValidationError, match="HTTPS"):
-            catalog._validate_catalog_url("http://evil.com/step-catalog.json")
-
-    def test_validate_url_localhost_http_allowed(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        # Should not raise
-        catalog._validate_catalog_url("http://localhost:8080/step-catalog.json")
-
-    def test_add_catalog(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        assert config_path.exists()
-        data = yaml.safe_load(config_path.read_text())
-        assert len(data["catalogs"]) == 1
-        assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
-
-    def test_add_catalog_empty_yaml_file(self, project_dir):
-        """An empty YAML config file should be treated as empty, not corrupted."""
-        from specify_cli.workflows.catalog import StepCatalog
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        config_path.write_text("", encoding="utf-8")
-
-        catalog = StepCatalog(project_dir)
-        # Should not raise StepValidationError "corrupted"
-        catalog.add_catalog("https://example.com/steps.json", "my-steps")
-
-        data = yaml.safe_load(config_path.read_text())
-        assert len(data["catalogs"]) == 1
-        assert data["catalogs"][0]["url"] == "https://example.com/steps.json"
-
-    def test_add_catalog_duplicate_rejected(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/steps.json")
-
-        with pytest.raises(StepValidationError, match="already configured"):
-            catalog.add_catalog("https://example.com/steps.json")
-
-    def test_remove_catalog(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/s1.json", "first")
-        catalog.add_catalog("https://example.com/s2.json", "second")
-
-        removed = catalog.remove_catalog(0)
-        assert removed == "first"
-
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        data = yaml.safe_load(config_path.read_text())
-        assert len(data["catalogs"]) == 1
-
-    def test_remove_catalog_invalid_index(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/s1.json")
-
-        with pytest.raises(StepValidationError, match="out of range"):
-            catalog.remove_catalog(5)
-
-    def test_remove_catalog_no_config(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
-
-        catalog = StepCatalog(project_dir)
-        with pytest.raises(StepValidationError, match="No step catalog config file found"):
-            catalog.remove_catalog(0)
-
-    def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
-        import builtins
-
-        catalog = StepCatalog(project_dir)
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file) == config_path and "w" in mode:
-                raise OSError("simulated write failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        with pytest.raises(StepValidationError, match="Failed to write catalog config"):
-            catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
-
-    def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
-        import builtins
-
-        catalog = StepCatalog(project_dir)
-        catalog.add_catalog("https://example.com/s1.json", "first")
-        config_path = project_dir / ".specify" / "step-catalogs.yml"
-        real_open = builtins.open
-
-        def _raising_open(file, mode="r", *args, **kwargs):
-            if Path(file) == config_path and "w" in mode:
-                raise OSError("simulated write failure")
-            return real_open(file, mode, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "open", _raising_open)
-        with pytest.raises(StepValidationError, match="Failed to write catalog config"):
-            catalog.remove_catalog(0)
-
-    def test_get_catalog_configs(self, project_dir):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        configs = catalog.get_catalog_configs()
-        assert len(configs) == 2
-        assert configs[0]["name"] == "default"
-        assert isinstance(configs[0]["install_allowed"], bool)
-
-    def test_search_with_mock_catalog(self, project_dir, monkeypatch):
-        from specify_cli.workflows.catalog import StepCatalog
-
-        mock_data = {
-            "schema_version": "1.0",
-            "steps": {
-                "deploy": {
-                    "id": "deploy",
-                    "name": "Deploy Step",
-                    "description": "Deploy to production",
-                    "version": "1.0.0",
-                },
-                "notify": {
-                    "id": "notify",
-                    "name": "Notify Step",
-                    "description": "Send notifications",
-                    "version": "1.0.0",
-                },
-            },
-        }
-
-        catalog = StepCatalog(project_dir)
-        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
-            "deploy": dict(mock_data["steps"]["deploy"], _catalog_name="test", _install_allowed=True),
-            "notify": dict(mock_data["steps"]["notify"], _catalog_name="test", _install_allowed=True),
-        })
-
-        results = catalog.search()
-        assert len(results) == 2
-
-        results = catalog.search(query="deploy")
-        assert len(results) == 1
-        assert results[0]["id"] == "deploy"
-
-    def test_search_with_non_string_fields(self, project_dir, monkeypatch):
-        """Non-string catalog fields (e.g. integer id) must not raise TypeError."""
-        from specify_cli.workflows.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
-            "42": {
-                "id": 42,
-                "name": None,
-                "description": 99,
-                "_catalog_name": "test",
-                "_install_allowed": True,
-            },
-        })
-
-        results = catalog.search()
-        assert len(results) == 1
-
-        results = catalog.search(query="42")
-        assert len(results) == 1
-
-        results = catalog.search(query="missing")
-        assert len(results) == 0
-
-    def test_get_merged_steps_normalizes_list_ids_to_strings(self, project_dir, monkeypatch):
-        """List-based catalog entries with non-string ids must be normalized."""
-        from specify_cli.workflows.catalog import StepCatalog, StepCatalogEntry
-
-        catalog = StepCatalog(project_dir)
-        entry = StepCatalogEntry(
-            name="test",
-            url="https://example.com/steps.json",
-            priority=1,
-            install_allowed=True,
-        )
-        monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [entry])
-        monkeypatch.setattr(
-            catalog,
-            "_fetch_single_catalog",
-            lambda _entry, _force_refresh=False: {
-                "steps": [{"id": 42, "name": "Integer ID"}]
-            },
-        )
-
-        merged = catalog._get_merged_steps()
-        assert "42" in merged
-        assert 42 not in merged
-        assert merged["42"]["id"] == "42"
-
-    def test_get_step_info_returns_entry_or_none(self, project_dir, monkeypatch):
-        """get_step_info returns matching entry or None for missing ids."""
-        from specify_cli.workflows.catalog import StepCatalog
-
-        catalog = StepCatalog(project_dir)
-        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
-            "deploy": {
-                "id": "deploy",
-                "name": "Deploy Step",
-                "version": "1.0.0",
-                "_catalog_name": "test",
-                "_install_allowed": True,
-            },
-        })
-
-        info = catalog.get_step_info("deploy")
-        assert info is not None
-        assert info["name"] == "Deploy Step"
-
-        missing = catalog.get_step_info("nonexistent")
-        assert missing is None
-
-
-# ===== Load Custom Steps Tests =====
-
-class TestLoadCustomSteps:
-    """Test dynamic loading of custom step types from the filesystem."""
-
-    def test_empty_steps_dir(self, project_dir):
-        from specify_cli.workflows import load_custom_steps
-
-        loaded = load_custom_steps(project_dir)
-        assert loaded == []
-
-    def test_no_steps_dir(self, project_dir):
-        from specify_cli.workflows import load_custom_steps
-
-        # .specify/workflows/steps does not exist
-        loaded = load_custom_steps(project_dir)
-        assert loaded == []
-
-    def test_load_valid_custom_step(self, project_dir):
-        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
-
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "test-custom"
-        step_dir.mkdir(parents=True)
-
-        step_yml = """
-schema_version: "1.0"
-step:
-  type_key: "test-custom"
-  name: "Test Custom Step"
-  version: "1.0.0"
-  author: "test"
-  description: "A test custom step"
-"""
-        (step_dir / "step.yml").write_text(step_yml, encoding="utf-8")
-
-        init_py = """
-from specify_cli.workflows.base import StepBase, StepResult
-
-class TestCustomStep(StepBase):
-    type_key = "test-custom"
-
-    def execute(self, config, context):
-        return StepResult()
-"""
-        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
-
-        loaded = load_custom_steps(project_dir)
-        assert "test-custom" in loaded
-        assert "test-custom" in STEP_REGISTRY
-
-    def test_skip_missing_step_yml(self, project_dir):
-        from specify_cli.workflows import load_custom_steps
-
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-step"
-        step_dir.mkdir(parents=True)
-        (step_dir / "__init__.py").write_text("# no step.yml", encoding="utf-8")
-
-        loaded = load_custom_steps(project_dir)
-        assert "bad-step" not in loaded
-
-    def test_skip_missing_init_py(self, project_dir):
-        from specify_cli.workflows import load_custom_steps
-
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-step2"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: bad-step2\n", encoding="utf-8"
-        )
-
-        loaded = load_custom_steps(project_dir)
-        assert "bad-step2" not in loaded
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_skip_symlinked_step_files(self, project_dir):
-        from specify_cli.workflows import load_custom_steps
-
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-symlinked-files"
-        step_dir.mkdir(parents=True)
-
-        outside = project_dir.parent / "outside-step-files"
-        outside.mkdir(parents=True, exist_ok=True)
-        step_yml_target = outside / "step.yml"
-        step_yml_target.write_text("step:\n  type_key: bad-symlinked-files\n", encoding="utf-8")
-        init_target = outside / "__init__.py"
-        init_target.write_text("# external code", encoding="utf-8")
-
-        (step_dir / "step.yml").symlink_to(step_yml_target)
-        (step_dir / "__init__.py").symlink_to(init_target)
-
-        loaded = load_custom_steps(project_dir)
-        assert "bad-symlinked-files" not in loaded
-
-    def test_skip_already_registered(self, project_dir):
-        from specify_cli.workflows import load_custom_steps
-
-        # "command" is already registered as a built-in step
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "command"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: command\n", encoding="utf-8"
-        )
-        (step_dir / "__init__.py").write_text("", encoding="utf-8")
-
-        # Should not raise KeyError; just skip
-        loaded = load_custom_steps(project_dir)
-        assert "command" not in loaded
-
-    def test_skip_broken_init_py(self, project_dir):
-        from specify_cli.workflows import load_custom_steps
-
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "broken-step"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: broken-step\n", encoding="utf-8"
-        )
-        (step_dir / "__init__.py").write_text(
-            "raise RuntimeError('broken')", encoding="utf-8"
-        )
-
-        # Should not propagate exception
-        loaded = load_custom_steps(project_dir)
-        assert "broken-step" not in loaded
-
-    def test_module_name_sanitized_for_hyphenated_type_key(self, project_dir):
-        """type_key values with hyphens produce valid Python module identifiers."""
-        import hashlib
-        import sys
-        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
-
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-hyphen-step"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: my-hyphen-step\n  name: Hyphen Step\n",
-            encoding="utf-8",
-        )
-
-        init_py = """
-from specify_cli.workflows.base import StepBase, StepResult
-
-class HyphenStep(StepBase):
-    type_key = "my-hyphen-step"
-
-    def execute(self, config, context):
-        return StepResult()
-"""
-        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
-
-        loaded = load_custom_steps(project_dir)
-        assert "my-hyphen-step" in loaded
-        assert "my-hyphen-step" in STEP_REGISTRY
-        # Synthetic module name must be a valid identifier (hyphens → underscores)
-        # and include a collision-resistant hash suffix.
-        key_hash = hashlib.sha256(b"my-hyphen-step").hexdigest()[:8]
-        module_name = f"_speckit_custom_step_my_hyphen_step_{key_hash}"
-        assert module_name in sys.modules
-
-    def test_package_relative_import(self, project_dir):
-        """Steps can use relative imports to access sibling modules."""
-        import hashlib
-        import sys
-        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
-
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "pkg-step"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: pkg-step\n  name: Package Step\n",
-            encoding="utf-8",
-        )
-        # Helper module that the step will import relatively
-        (step_dir / "helpers.py").write_text(
-            "HELPER_VALUE = 'hello'\n", encoding="utf-8"
-        )
-        init_py = """
-from specify_cli.workflows.base import StepBase, StepResult
-from .helpers import HELPER_VALUE
-
-class PkgStep(StepBase):
-    type_key = "pkg-step"
-    helper = HELPER_VALUE
-
-    def execute(self, config, context):
-        return StepResult()
-"""
-        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
-
-        loaded = load_custom_steps(project_dir)
-        assert "pkg-step" in loaded
-        assert "pkg-step" in STEP_REGISTRY
-        # Verify the relative import actually resolved; module name includes hash suffix.
-        key_hash = hashlib.sha256(b"pkg-step").hexdigest()[:8]
-        module_name = f"_speckit_custom_step_pkg_step_{key_hash}"
-        assert module_name in sys.modules
-        assert sys.modules[module_name].PkgStep.helper == "hello"
-
-    def test_module_name_collision_resistance(self, project_dir):
-        """'a-b' and 'a_b' produce different module names despite the same sanitized form."""
-        import hashlib
-
-        # Simulate the module name generation for two type_keys that sanitize the same way
-        def make_module_name(type_key: str) -> str:
-            import re
-            safe_key = re.sub(r"[^A-Za-z0-9_]", "_", type_key)
-            key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
-            return f"_speckit_custom_step_{safe_key}_{key_hash}"
-
-        name_a = make_module_name("a-b")
-        name_b = make_module_name("a_b")
-        assert name_a != name_b, "Module names for 'a-b' and 'a_b' must differ"
-
-
-# ===== CLI Step Remove Tests =====
-
-class TestWorkflowStepRemoveCLI:
-    """Test the 'specify workflow step remove' CLI command edge cases."""
-
-    def test_remove_orphaned_directory(self, project_dir, monkeypatch):
-        """step remove works when directory exists but registry entry is missing.
-
-        This covers the case where the registry was reset due to corruption.
-        """
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-
-        # Create an orphaned step directory (no registry entry)
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "orphan-step"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: orphan-step\n", encoding="utf-8"
-        )
-        (step_dir / "__init__.py").write_text("", encoding="utf-8")
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "remove", "orphan-step"])
-
-        assert result.exit_code == 0, result.output
-        assert not step_dir.exists()
-        # Warning should be printed about missing registry entry
-        assert "Warning" in result.output or "warning" in result.output.lower()
-
-    def test_remove_not_installed(self, project_dir, monkeypatch):
-        """step remove fails cleanly when neither directory nor registry entry exist."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "remove", "ghost-step"])
-
-        assert result.exit_code != 0
-        assert "not installed" in result.output
-
-    def test_remove_registered_step(self, project_dir, monkeypatch):
-        """step remove works normally when both directory and registry entry exist."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepRegistry
-
-        monkeypatch.chdir(project_dir)
-
-        # Set up a registered step with a directory
-        registry = StepRegistry(project_dir)
-        registry.add("my-step", {"name": "My Step", "type_key": "my-step", "version": "1.0.0"})
-        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-step"
-        step_dir.mkdir(parents=True)
-        (step_dir / "step.yml").write_text(
-            "step:\n  type_key: my-step\n", encoding="utf-8"
-        )
-        (step_dir / "__init__.py").write_text("", encoding="utf-8")
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
-
-        assert result.exit_code == 0, result.output
-        assert not step_dir.exists()
-        registry2 = StepRegistry(project_dir)
-        assert not registry2.is_installed("my-step")
-
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_remove_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        monkeypatch.chdir(project_dir)
-        outside = project_dir.parent / "outside-steps"
-        outside.mkdir(parents=True, exist_ok=True)
-        steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
-
-        assert result.exit_code != 0
-        assert "Refusing to use symlinked step directory" in result.output
-
-
-class TestWorkflowStepAddCLI:
-    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-
-        monkeypatch.chdir(project_dir)
-        outside = project_dir.parent / "outside-steps"
-        outside.mkdir(parents=True, exist_ok=True)
-        steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
-
-        def _fake_get_step_info(self, step_id):
-            return {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-            }
-
-        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
-
-        assert result.exit_code != 0
-        assert "Refusing to use symlinked step directory" in result.output
-
-    def test_add_rejects_non_string_extra_files_key(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-        from specify_cli.authentication import http as auth_http
-
-        monkeypatch.chdir(project_dir)
-
-        def _fake_get_step_info(self, step_id):
-            return {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {
-                    123: "https://example.com/helper.py",
-                },
-            }
-
-        class _FakeResponse:
-            def __init__(self, url: str):
-                self.url = url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
-
-            def geturl(self):
-                return self.url
-
-        def _fake_open_url(url, timeout=30):
-            return _FakeResponse(url)
-
-        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
-        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
-
-        assert result.exit_code != 0
-        assert "non-string path key" in result.output
-
-    @pytest.mark.parametrize(
-        "rel_path,expected",
-        [
-            ("", "empty or non-string path key"),
-            (".", "not a valid relative file path"),
-            ("..", "not a valid relative file path"),
-            ("sub/../x", "not a valid relative file path"),
-        ],
-    )
-    def test_add_rejects_invalid_extra_files_path(
-        self, project_dir, monkeypatch, rel_path, expected
-    ):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-        from specify_cli.authentication import http as auth_http
-
-        monkeypatch.chdir(project_dir)
-
-        def _fake_get_step_info(self, step_id):
-            return {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {rel_path: "https://example.com/helper.py"},
-            }
-
-        class _FakeResponse:
-            def __init__(self, url: str):
-                self.url = url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
-
-            def geturl(self):
-                return self.url
-
-        def _fake_open_url(url, timeout=30):
-            return _FakeResponse(url)
-
-        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
-        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
-
-        assert result.exit_code != 0
-        assert expected in result.output
-
-    def test_add_rejects_non_string_extra_files_url(self, project_dir, monkeypatch):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        from specify_cli.workflows.catalog import StepCatalog
-        from specify_cli.authentication import http as auth_http
-
-        monkeypatch.chdir(project_dir)
-
-        def _fake_get_step_info(self, step_id):
-            return {
-                "id": step_id,
-                "name": "Test Step",
-                "url": "https://example.com/step.yml",
-                "init_url": "https://example.com/__init__.py",
-                "_install_allowed": True,
-                "extra_files": {"helper.py": None},
-            }
-
-        class _FakeResponse:
-            def __init__(self, url: str):
-                self.url = url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                return False
-
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
-
-            def geturl(self):
-                return self.url
-
-        def _fake_open_url(url, timeout=30):
-            return _FakeResponse(url)
-
-        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
-        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
-
-        runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
-
-        assert result.exit_code != 0
-        assert "empty or non-string URL" in result.output
-
-
 class TestWorkflowJsonOutput:
     """Test the --json machine-readable output for run/resume/status."""
 
@@ -4950,6 +3910,143 @@ steps:
         assert "Running workflow" in result.stdout
         with pytest.raises(json.JSONDecodeError):
             json.loads(result.stdout)
+
+    def test_run_dry_run_flag_wires_through_cli(self, project_dir):
+        """`specify workflow run --dry-run` emits the DRY-RUN banner and
+        per-step previews, and crucially does NOT block on a gate step
+        (the engine short-circuits gates in dry-run mode).
+        Covers the user-facing entrypoint the engine-level tests miss.
+        """
+        # Use the gated workflow ``_WF`` — without --dry-run this would
+        # pause on the gate and require a resume. With --dry-run the
+        # gate is short-circuited, the run completes end-to-end, and
+        # the DRY-RUN banner + per-step preview lines are emitted.
+        wf = self._write_wf(project_dir, self._WF, "dry")
+        result = self._invoke(project_dir, ["workflow", "run", str(wf), "--dry-run"])
+        assert result.exit_code == 0
+        # Banner is printed to stdout in default (non-JSON) mode.
+        assert "DRY RUN" in result.stdout
+        # The preview loop printed the step_id of the gated step and
+        # its rendered dry-run body. GateStep in dry-run mode emits a
+        # ``[DRY RUN] Gate: ...`` body (see workflows/steps/gate).
+        assert "ask" in result.stdout
+        assert "[DRY RUN]" in result.stdout
+        # Status is reported as completed (dry-run short-circuits the
+        # gate to COMPLETED rather than PAUSED).
+        assert "Status: completed" in result.stdout
+        # The "Resume with:" hint that would appear for a paused run
+        # must NOT be present — the dry-run completed end-to-end.
+        assert "Resume with:" not in result.stdout
+
+    def test_run_dry_run_with_json_suppresses_banner_and_previews(self, project_dir):
+        """`--dry-run` together with `--json` must NOT print the banner
+        or the per-step preview lines — stdout stays a single JSON object.
+        Mirrors the help text claim added in commit for review 3391287191.
+        """
+        wf = self._write_wf(project_dir, self._WF, "dry-json")
+        result = self._invoke(
+            project_dir, ["workflow", "run", str(wf), "--dry-run", "--json"]
+        )
+        assert result.exit_code == 0
+        # Stdout is exactly a JSON object — no DRY-RUN banner or preview
+        # lines leaked in.
+        assert "DRY RUN" not in result.stdout
+        assert "[DRY RUN]" not in result.stdout
+        payload = json.loads(result.stdout)
+        # And the run still completed end-to-end (gate short-circuited).
+        assert payload["status"] == "completed"
+
+    def test_run_dry_run_prints_previews_on_engine_exception(self, project_dir):
+        """When the engine raises mid-run, the dry-run previews that
+        earlier steps already resolved into ``state.step_results`` are
+        still the most useful debug signal — they must surface in the
+        terminal, not be silently dropped. Covers review 3423394535.
+        """
+        wf = self._write_wf(project_dir, self._WF, "dry-fail")
+
+        from unittest.mock import patch
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import RunState
+
+        def _raise_with_partial(self, *_args, **_kwargs):
+            state = RunState(run_id="dr-fail-partial", workflow_id="json-wf")
+            state.step_results["ask"] = {
+                "output": {
+                    "dry_run": True,
+                    "dry_run_message": "[DRY RUN] Gate: Review",
+                    "message": "[DRY RUN] Gate: Review",
+                }
+            }
+            state.status = RunStatus.FAILED
+            err = RuntimeError("synthetic engine failure mid-dry-run")
+            err.partial_state = state  # type: ignore[attr-defined]
+            raise err
+
+        with patch.object(
+            __import__(
+                "specify_cli.workflows.engine", fromlist=["WorkflowEngine"]
+            ).WorkflowEngine,
+            "execute",
+            _raise_with_partial,
+        ):
+            result = self._invoke(
+                project_dir, ["workflow", "run", str(wf), "--dry-run"]
+            )
+
+        # The CLI exits non-zero on the engine exception.
+        assert result.exit_code != 0
+        # The error banner is shown.
+        assert "Workflow failed" in result.stdout
+        # The previously-resolved dry-run previews are still printed —
+        # the engine exception path must not silently drop them.
+        assert "DRY RUN" in result.stdout
+        assert "Gate: Review" in result.stdout
+
+    def test_run_dry_run_no_previews_when_json(self, project_dir):
+        """``--json`` mode must not leak dry-run previews even on
+        engine exception — the stdout-stays-JSON contract holds
+        in the failure path too. Mirrors the success-path test
+        ``test_run_dry_run_with_json_suppresses_banner_and_previews``.
+        """
+        wf = self._write_wf(project_dir, self._WF, "dry-fail-json")
+
+        from unittest.mock import patch
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.engine import RunState
+
+        def _raise_with_partial(self, *_args, **_kwargs):
+            state = RunState(run_id="dr-fail-json", workflow_id="json-wf")
+            state.step_results["ask"] = {
+                "output": {
+                    "dry_run": True,
+                    "dry_run_message": "[DRY RUN] Gate: Review",
+                    "message": "[DRY RUN] Gate: Review",
+                }
+            }
+            state.status = RunStatus.FAILED
+            err = RuntimeError("synthetic engine failure mid-dry-run")
+            err.partial_state = state  # type: ignore[attr-defined]
+            raise err
+
+        with patch.object(
+            __import__(
+                "specify_cli.workflows.engine", fromlist=["WorkflowEngine"]
+            ).WorkflowEngine,
+            "execute",
+            _raise_with_partial,
+        ):
+            result = self._invoke(
+                project_dir,
+                ["workflow", "run", str(wf), "--dry-run", "--json"],
+            )
+
+        # CLI exits non-zero on the engine exception.
+        assert result.exit_code != 0
+        # Stdout is empty (or near-empty) — no banner, no preview lines.
+        # Under --json the engine exception short-circuits before any
+        # _emit_workflow_json call so the user sees a clean error path.
+        assert "DRY RUN" not in result.stdout
+        assert "[DRY RUN]" not in result.stdout
 
     def test_status_json_single_and_list(self, project_dir):
         wf = self._write_wf(project_dir, self._WF, "gated2")
