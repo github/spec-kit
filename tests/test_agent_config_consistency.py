@@ -217,6 +217,12 @@ class TestAgentConfigConsistency:
                 "expected '-' (propagated from SkillsIntegration.invoke_separator)"
             )
 
+    def test_codex_dev_no_symlink_policy_in_agent_config(self):
+        """Codex dev installs must expose the no-symlink policy as metadata."""
+        cfg = CommandRegistrar.AGENT_CONFIGS
+
+        assert cfg["codex"].get("dev_no_symlink") is True
+
     def test_skills_agent_command_token_resolves_with_hyphen(self, tmp_path):
         """__SPECKIT_COMMAND_*__ tokens in extension commands resolve to /speckit-<cmd>
         when registered for a skills-based agent (e.g. claude).

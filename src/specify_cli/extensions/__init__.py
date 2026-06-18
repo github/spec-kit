@@ -997,6 +997,7 @@ class ExtensionManager:
         if not isinstance(selected_ai, str) or not selected_ai:
             return []
         registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         integration = get_integration(selected_ai)
 
         for cmd_info in manifest.commands:
@@ -1030,7 +1031,7 @@ class ExtensionManager:
             skill_file = skill_subdir / "SKILL.md"
             cache_root = extension_dir / ".specify-dev" / "extension-skills"
             cache_file = cache_root / skill_name / "SKILL.md"
-            use_dev_symlink = link_outputs and selected_ai != "codex"
+            use_dev_symlink = link_outputs and not agent_config.get("dev_no_symlink")
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if skill_file.exists() or skill_file.is_symlink():
                 # Do not overwrite user-customized skills, but allow dev-mode

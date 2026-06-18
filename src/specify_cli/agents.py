@@ -37,6 +37,8 @@ def _build_agent_configs() -> dict[str, Any]:
             # when register_commands() resolves __SPECKIT_COMMAND_*__ tokens.
             if "invoke_separator" not in config:
                 config["invoke_separator"] = integration.invoke_separator
+            if integration.dev_no_symlink:
+                config["dev_no_symlink"] = True
             configs[key] = config
     return configs
 
@@ -714,6 +716,7 @@ class CommandRegistrar:
                 output_name,
                 agent_config["extension"],
                 link_outputs,
+                agent_config,
             )
 
             if agent_name == "copilot":
@@ -788,6 +791,7 @@ class CommandRegistrar:
                     alias_output_name,
                     agent_config["extension"],
                     link_outputs,
+                    agent_config,
                 )
                 if agent_name == "copilot":
                     self.write_copilot_prompt(project_root, alias)
@@ -804,9 +808,10 @@ class CommandRegistrar:
         output_name: str,
         extension: str,
         link_outputs: bool,
+        agent_config: dict[str, Any] | None = None,
     ) -> None:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
-        if not link_outputs or (agent_name == "codex" and extension == "/SKILL.md"):
+        if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
             dest_file.write_text(content, encoding="utf-8")
             return
 

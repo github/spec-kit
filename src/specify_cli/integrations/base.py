@@ -119,6 +119,9 @@ class IntegrationBase(ABC):
     invoke_separator: str = "."
     """Separator used in slash-command invocations (``"."`` → ``/speckit.plan``)."""
 
+    dev_no_symlink: bool = False
+    """Whether dev-mode registration should write files instead of symlinks."""
+
     multi_install_safe: bool = False
     """Whether this integration is declared safe to install alongside others.
 
