@@ -30,6 +30,13 @@ DEFAULT_BUNDLED_EXTENSIONS = ("arch", "preview", "repository-governance")
 DEFAULT_BUNDLED_PRESETS = ("workflow-preset",)
 
 
+def _refresh_existing_manifest_hashes(manifest: Any, project_path: Path) -> None:
+    """Refresh hashes for tracked files that may be rewritten during init."""
+    for rel_path in list(manifest.files):
+        if (project_path / rel_path).is_file():
+            manifest.record_existing(rel_path)
+
+
 def _stdin_is_interactive() -> bool:
     return sys.stdin.isatty()
 
@@ -747,6 +754,9 @@ def register(app: typer.Typer) -> None:
                             preset_err,
                             continuing="Continuing without the optional preset.",
                         )
+
+                _refresh_existing_manifest_hashes(manifest, project_path)
+                manifest.save()
 
                 tracker.complete("final", "project ready")
             except (typer.Exit, SystemExit):

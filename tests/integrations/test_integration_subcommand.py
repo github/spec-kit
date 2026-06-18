@@ -2276,11 +2276,23 @@ class TestIntegrationUpgrade:
         assert len(new_commands) > 0, "Commands should exist in .opencode/commands/"
 
         # Stale files removed from legacy dir (extension-installed commands
-        # like agent-context.update may still appear — only check the original
-        # core command stems that should have been migrated).
+        # may still appear — only check the original core command stems that
+        # should have been migrated).
+        core_command_names = {
+            "speckit.analyze.md",
+            "speckit.checklist.md",
+            "speckit.clarify.md",
+            "speckit.constitution.md",
+            "speckit.converge.md",
+            "speckit.implement.md",
+            "speckit.plan.md",
+            "speckit.specify.md",
+            "speckit.tasks.md",
+            "speckit.taskstoissues.md",
+        }
         core_remaining = [
             f for f in legacy.glob("speckit.*.md")
-            if "agent-context" not in f.name
+            if f.name in core_command_names
         ]
         assert len(core_remaining) == 0, (
             f"Legacy .opencode/command/ should have no core speckit files after upgrade, "
