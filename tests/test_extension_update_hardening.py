@@ -111,7 +111,7 @@ def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
 
 def test_extension_update_skills_backup_no_collision(project_dir, monkeypatch):
     """Regression: skills agents name every command file SKILL.md (one per
-    per-command subdir). Backup must keep the per-command path so rollback
+    command subdirectory). Backup must keep the per-command path so rollback
     restores each skill's own content instead of overwriting them onto a
     single backup path."""
     monkeypatch.chdir(project_dir)
