@@ -43,12 +43,16 @@
       href: concepts/sdd.md
     - name: Spec Persistence Models
       href: concepts/spec-persistence.md
+    - name: Handling Complex Features
+      href: concepts/complex-features.md
 
 # Development workflows
 - name: Development
   items:
     - name: Local Development
       href: local-development.md
+    - name: Evolving Specs
+      href: guides/evolving-specs.md
 
 # Community
 - name: Community

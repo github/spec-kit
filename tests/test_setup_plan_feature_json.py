@@ -18,7 +18,7 @@ SETUP_PLAN_PS = PROJECT_ROOT / "scripts" / "powershell" / "setup-plan.ps1"
 PLAN_TEMPLATE = PROJECT_ROOT / "templates" / "plan-template.md"
 
 HAS_PWSH = shutil.which("pwsh") is not None
-_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+_WINDOWS_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershell")) if os.name == "nt" else None
 
 
 def _install_bash_scripts(repo: Path) -> None:
@@ -153,7 +153,7 @@ def test_setup_plan_numbered_branch_works_with_feature_json(
     assert (feat / "plan.md").is_file()
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: Path) -> None:
     subprocess.run(
         ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
@@ -165,7 +165,7 @@ def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: P
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
     _write_feature_json(plan_repo, "specs/001-tiny-notes-app")
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script)],
         cwd=plan_repo,
@@ -178,12 +178,12 @@ def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: P
     assert (feat / "plan.md").is_file()
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_plan_ps_errors_without_feature_context(
     plan_repo: Path,
 ) -> None:
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script)],
         cwd=plan_repo,

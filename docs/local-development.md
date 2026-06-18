@@ -98,15 +98,41 @@ ls -l scripts | grep .sh
 
 On Windows you will instead use the `.ps1` scripts (no chmod needed).
 
-## 6. Run Lint / Basic Checks (Add Your Own)
+## 6. Scaffold a Built-In Integration
 
-Currently no enforced lint config is bundled, but you can quickly sanity check importability:
+Use the integration scaffold command to create the initial Python package and
+test skeleton for a new built-in integration:
+
+```bash
+specify integration scaffold my-agent --type markdown
+specify integration scaffold my-agent --type toml
+specify integration scaffold my-agent --type yaml
+specify integration scaffold my-agent --type skills
+```
+
+Hyphenated keys are converted to Python-safe package names, for example
+`my-agent` creates `src/specify_cli/integrations/my_agent/` and
+`tests/integrations/test_integration_my_agent.py`.
+
+The scaffold does not register the integration automatically. Review the
+generated metadata, then add the import and `_register()` call in
+`src/specify_cli/integrations/__init__.py`.
+
+## 7. Run Lint / Basic Checks
+
+CI enforces `ruff check src/` (see `.github/workflows/test.yml`), so run it locally before pushing:
+
+```bash
+uvx ruff check src/
+```
+
+You can also quickly sanity check importability:
 
 ```bash
 python -c "import specify_cli; print('Import OK')"
 ```
 
-## 7. Build a Wheel Locally (Optional)
+## 8. Build a Wheel Locally (Optional)
 
 Validate packaging before publishing:
 
@@ -117,7 +143,7 @@ ls dist/
 
 Install the built artifact into a fresh throwaway environment if needed.
 
-## 8. Using a Temporary Workspace
+## 9. Using a Temporary Workspace
 
 When testing `init --here` in a dirty directory, create a temp workspace:
 
@@ -128,7 +154,7 @@ python -m src.specify_cli init --here --integration claude --ignore-agent-tools 
 
 Or copy only the modified CLI portion if you want a lighter sandbox.
 
-## 9. Debug Network / TLS Issues
+## 10. Debug Network / TLS Issues
 
 > **Deprecated:** The `--skip-tls` flag is a no-op and has no effect.
 > It was previously used to bypass TLS validation during local testing.
@@ -137,7 +163,7 @@ Or copy only the modified CLI portion if you want a lighter sandbox.
 >
 > For example, set `SSL_CERT_FILE` or configure `HTTPS_PROXY` / `HTTP_PROXY`.
 
-## 10. Rapid Edit Loop Summary
+## 11. Rapid Edit Loop Summary
 
 | Action | Command |
 |--------|---------|
@@ -148,7 +174,7 @@ Or copy only the modified CLI portion if you want a lighter sandbox.
 | Git branch uvx | `uvx --from git+URL@branch specify ...` |
 | Build wheel | `uv build` |
 
-## 11. Cleaning Up
+## 12. Cleaning Up
 
 Remove build artifacts / virtual env quickly:
 
@@ -156,7 +182,7 @@ Remove build artifacts / virtual env quickly:
 rm -rf .venv dist build *.egg-info
 ```
 
-## 12. Common Issues
+## 13. Common Issues
 
 | Symptom | Fix |
 |---------|-----|
@@ -166,7 +192,7 @@ rm -rf .venv dist build *.egg-info
 | Wrong script type downloaded | Pass `--script sh` or `--script ps` explicitly |
 | TLS errors on corporate network | Configure your environment's certificate store or proxy. The `--skip-tls` flag is deprecated and has no effect. |
 
-## 13. Next Steps
+## 14. Next Steps
 
 - Update docs and run through Quick Start using your modified CLI
 - Open a PR when satisfied

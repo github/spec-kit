@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import PurePath
 
 import typer
 
@@ -461,6 +462,9 @@ def integration_upgrade(
                 raise _SharedTemplateRefreshError(
                     f"Failed to refresh shared infrastructure for '{key}': {exc}"
                 ) from exc
+            if os.name != "nt":
+                from .. import ensure_executable_scripts
+                ensure_executable_scripts(project_root)
         new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:
@@ -478,7 +482,13 @@ def integration_upgrade(
     # Phase 2: Remove stale files from old manifest that are not in the new one
     old_files = old_manifest.files
     new_files = new_manifest.files
-    stale_keys = set(old_files) - set(new_files)
+    # Exclude integration-declared paths that use conditional manifest tracking
+    # (e.g. merge targets like .vscode/settings.json) so they are never deleted
+    # as "stale" while still being actively managed.  Manifest keys are stored
+    # in POSIX form, so normalize the exclusions the same way before subtracting
+    # (an integration may build paths with os.path.join / backslashes).
+    exclusions = {PurePath(p).as_posix() for p in integration.stale_cleanup_exclusions()}
+    stale_keys = (set(old_files) - set(new_files)) - exclusions
     if stale_keys:
         stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
         stale_manifest._files = {k: old_files[k] for k in stale_keys}

@@ -120,6 +120,7 @@ class TestIntegrationList:
         # Should show multiple integrations
         assert "claude" in result.output
         assert "gemini" in result.output
+        assert "zed" in result.output
 
     def test_list_shows_multi_install_safe_status(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -2269,6 +2270,58 @@ class TestIntegrationUpgrade:
         assert len(core_remaining) == 0, (
             f"Legacy .opencode/command/ should have no core speckit files after upgrade, "
             f"found: {[f.name for f in core_remaining]}"
+        )
+
+    def test_upgrade_preserves_existing_vscode_settings(self, tmp_path):
+        """Regression: copilot upgrade must not stale-delete .vscode/settings.json.
+
+        On init the file is created and recorded in the manifest. On upgrade,
+        setup() merges into the now-existing file and intentionally stops
+        tracking it, so without ``stale_cleanup_exclusions()`` the Phase 2
+        stale cleanup would delete it (destroying the user's settings).
+        """
+        project = _init_project(tmp_path, "copilot")
+        settings = project / ".vscode" / "settings.json"
+        assert settings.is_file(), "init should create .vscode/settings.json"
+        before = json.loads(settings.read_text(encoding="utf-8"))
+        assert before, "settings.json should contain managed defaults"
+
+        # Simulate a user editing their settings: add a custom key that the
+        # integration does not manage.  It must survive the upgrade.
+        before["editor.fontSize"] = 17
+        settings.write_text(json.dumps(before), encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert settings.is_file(), ".vscode/settings.json must survive upgrade"
+        after = json.loads(settings.read_text(encoding="utf-8"))
+        assert after.get("editor.fontSize") == 17, (
+            "user-defined settings must be preserved after upgrade"
+        )
+
+    def test_upgrade_restores_executable_bit_on_shared_scripts(self, tmp_path):
+        """Regression: scripts refreshed by the managed-refresh step stay +x."""
+        if os.name == "nt":
+            pytest.skip("POSIX execute bits are not meaningful on Windows")
+        project = _init_project(tmp_path, "copilot")
+        script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+        assert script.is_file()
+        # Simulate a perms-losing install (e.g. wheel extraction dropping +x).
+        script.chmod(0o644)
+        assert not (script.stat().st_mode & 0o111)
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert script.stat().st_mode & 0o111, (
+            "shared .sh scripts must be executable after upgrade"
         )
 
 

@@ -8,12 +8,23 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import yaml
 from pathlib import Path
 from typing import Any
 from ._console import console
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
+
+
+def dump_frontmatter(data: dict[str, Any]) -> str:
+    """Serialize skill/command frontmatter to a YAML string.
+
+    Centralizes the dump options used for SKILL.md frontmatter: ``allow_unicode``
+    preserves Unicode descriptions and ``sort_keys=False`` keeps key order, so no
+    call site can silently drop either.
+    """
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True).strip()
 
 
 def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> str | None:
