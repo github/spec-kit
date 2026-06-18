@@ -4,7 +4,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -19,7 +18,7 @@ SETUP_PLAN_PS = PROJECT_ROOT / "scripts" / "powershell" / "setup-plan.ps1"
 PLAN_TEMPLATE = PROJECT_ROOT / "templates" / "plan-template.md"
 
 HAS_PWSH = shutil.which("pwsh") is not None
-_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+_WINDOWS_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershell")) if os.name == "nt" else None
 
 
 def _install_bash_scripts(repo: Path) -> None:
@@ -42,6 +41,13 @@ def _minimal_templates(repo: Path) -> None:
     shutil.copy(PLAN_TEMPLATE, tdir / "plan-template.md")
 
 
+def _write_feature_json(repo: Path, feature_directory: str) -> None:
+    (repo / ".specify" / "feature.json").write_text(
+        json.dumps({"feature_directory": feature_directory}),
+        encoding="utf-8",
+    )
+
+
 def _clean_env() -> dict[str, str]:
     """Return a copy of the current environment with any SPECIFY_* vars removed.
 
@@ -55,77 +61,6 @@ def _clean_env() -> dict[str, str]:
         if key.startswith("SPECIFY_"):
             env.pop(key)
     return env
-
-
-def _is_windows_powershell(exe: str) -> bool:
-    return (
-        sys.platform != "win32"
-        and str(exe).endswith("powershell.exe")
-        and shutil.which("wslpath") is not None
-    )
-
-
-def _to_windows_path(path: Path) -> str:
-    result = subprocess.run(
-        ["wslpath", "-w", str(path)],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip()
-
-
-def _quote_ps(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def _run_powershell(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
-    env = _clean_env()
-    env.setdefault("NO_COLOR", "1")
-    run_args = list(args)
-    if args and _is_windows_powershell(args[0]):
-        exe, rest = args[0], args[1:]
-        cwd_command = f"Set-Location -LiteralPath {_quote_ps(_to_windows_path(cwd))}"
-        if "-File" in rest:
-            index = rest.index("-File")
-            script = rest[index + 1]
-            script_args = rest[index + 2 :]
-            command = f"{cwd_command}; & {_quote_ps(script)}"
-            if script_args:
-                command += " " + " ".join(script_args)
-            run_args = [exe, *rest[:index], "-Command", command]
-        elif "-Command" in rest:
-            index = rest.index("-Command")
-            command = f"{cwd_command}; {rest[index + 1]}"
-            run_args = [exe, *rest[:index], "-Command", command, *rest[index + 2 :]]
-
-    result = subprocess.run(
-        run_args,
-        cwd=cwd,
-        capture_output=True,
-        check=False,
-        env=env,
-    )
-    return subprocess.CompletedProcess(
-        result.args,
-        result.returncode,
-        result.stdout.decode("utf-8", errors="replace"),
-        result.stderr.decode("utf-8", errors="replace"),
-    )
-
-
-def _powershell_script_arg(exe: str, script: Path) -> str:
-    if _is_windows_powershell(exe):
-        return _to_windows_path(script)
-    return str(script)
-
-
-def _powershell_has_git(exe: str, cwd: Path) -> bool:
-    result = _run_powershell(
-        [exe, "-NoProfile", "-Command", "git rev-parse --is-inside-work-tree"],
-        cwd=cwd,
-    )
-    return result.returncode == 0 and "true" in result.stdout.lower()
 
 
 def _git_init(repo: Path) -> None:
@@ -161,10 +96,7 @@ def test_setup_plan_passes_custom_branch_when_feature_json_valid(plan_repo: Path
     feat = plan_repo / "specs" / "001-tiny-notes-app"
     feat.mkdir(parents=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
-    (plan_repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": "specs/001-tiny-notes-app"}),
-        encoding="utf-8",
-    )
+    _write_feature_json(plan_repo, "specs/001-tiny-notes-app")
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
     result = subprocess.run(
         ["bash", str(script)],
@@ -179,12 +111,8 @@ def test_setup_plan_passes_custom_branch_when_feature_json_valid(plan_repo: Path
 
 
 @requires_bash
-def test_setup_plan_fails_custom_branch_without_feature_json(plan_repo: Path) -> None:
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
-        cwd=plan_repo,
-        check=True,
-    )
+def test_setup_plan_errors_without_feature_context(plan_repo: Path) -> None:
+    """Without feature.json or SPECIFY_FEATURE_DIRECTORY, setup-plan must error."""
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
     result = subprocess.run(
         ["bash", str(script)],
@@ -195,13 +123,14 @@ def test_setup_plan_fails_custom_branch_without_feature_json(plan_repo: Path) ->
         env=_clean_env(),
     )
     assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    assert "Feature directory not found" in result.stderr
 
 
 @requires_bash
-def test_setup_plan_numbered_branch_unchanged_without_feature_json(
+def test_setup_plan_numbered_branch_works_with_feature_json(
     plan_repo: Path,
 ) -> None:
+    """A numbered branch still works when feature.json explicitly pins the spec dir."""
     subprocess.run(
         ["git", "checkout", "-q", "-b", "001-tiny-notes-app"],
         cwd=plan_repo,
@@ -210,6 +139,7 @@ def test_setup_plan_numbered_branch_unchanged_without_feature_json(
     feat = plan_repo / "specs" / "001-tiny-notes-app"
     feat.mkdir(parents=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    _write_feature_json(plan_repo, "specs/001-tiny-notes-app")
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
     result = subprocess.run(
         ["bash", str(script)],
@@ -223,7 +153,7 @@ def test_setup_plan_numbered_branch_unchanged_without_feature_json(
     assert (feat / "plan.md").is_file()
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: Path) -> None:
     subprocess.run(
         ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
@@ -233,36 +163,35 @@ def test_setup_plan_ps_passes_custom_branch_when_feature_json_valid(plan_repo: P
     feat = plan_repo / "specs" / "001-tiny-notes-app"
     feat.mkdir(parents=True)
     (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
-    (plan_repo / ".specify" / "feature.json").write_text(
-        json.dumps({"feature_directory": "specs/001-tiny-notes-app"}),
-        encoding="utf-8",
-    )
+    _write_feature_json(plan_repo, "specs/001-tiny-notes-app")
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
-    result = _run_powershell(
-        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script)],
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script)],
         cwd=plan_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
     )
     assert result.returncode == 0, result.stderr + result.stdout
     assert (feat / "plan.md").is_file()
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _POWERSHELL), reason="no PowerShell available")
-def test_setup_plan_ps_fails_custom_branch_without_feature_json(
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_setup_plan_ps_errors_without_feature_context(
     plan_repo: Path,
 ) -> None:
-    subprocess.run(
-        ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
-        cwd=plan_repo,
-        check=True,
-    )
     script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
-    exe = "pwsh" if HAS_PWSH else _POWERSHELL
-    if not _powershell_has_git(exe, plan_repo):
-        pytest.skip("PowerShell cannot access git in this environment")
-    result = _run_powershell(
-        [exe, "-NoProfile", "-File", _powershell_script_arg(exe, script)],
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script)],
         cwd=plan_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
     )
+    combined = result.stderr + result.stdout
     assert result.returncode != 0
-    assert "Not on a feature branch" in result.stderr
+    assert "Feature directory not found" in combined

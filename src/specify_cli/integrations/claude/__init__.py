@@ -5,25 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import re
-
-import yaml
-
 from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
-
-# Note injected into hook sections so Claude maps dot-notation command
-# names (from extensions.yml) to the hyphenated skill names it uses.
-_HOOK_COMMAND_NOTE = (
-    "- When constructing slash commands from hook command names, "
-    "replace dots (`.`) with hyphens (`-`). "
-    "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
-)
+from ..._utils import dump_frontmatter
 
 # Mapping of command template stem → argument-hint text shown inline
 # when a user invokes the slash command in Claude Code.
 ARGUMENT_HINTS: dict[str, str] = {
-    "arch": "Optional architecture scenario or 4+1 design focus",
     "specify": "Describe the feature you want to specify",
     "plan": "Optional guidance for the planning phase",
     "tasks": "Optional task generation constraints",
@@ -31,7 +19,6 @@ ARGUMENT_HINTS: dict[str, str] = {
     "analyze": "Optional focus areas for analysis",
     "clarify": "Optional areas to clarify in the spec",
     "constitution": "Principles or values for the project constitution",
-    "governance": "Optional agent governance rules or projection scope",
     "checklist": "Domain or focus area for the checklist",
     "taskstoissues": "Optional filter or label for GitHub issues",
 }
@@ -115,9 +102,7 @@ class ClaudeIntegration(SkillsIntegration):
         skill_frontmatter = self._build_skill_fm(
             skill_name, description, f"templates/commands/{template_name}.md"
         )
-        frontmatter_text = yaml.safe_dump(
-            skill_frontmatter, sort_keys=False, width=1000
-        ).strip()
+        frontmatter_text = dump_frontmatter(skill_frontmatter)
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 
     def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
@@ -163,41 +148,11 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
-    @staticmethod
-    def _inject_hook_command_note(content: str) -> str:
-        """Insert a dot-to-hyphen note before each hook output instruction.
-
-        Targets the line ``- For each executable hook, output the following``
-        and inserts the note on the line before it, matching its indentation.
-        Skips if the note is already present.
-        """
-        if "replace dots" in content:
-            return content
-
-        def repl(m: re.Match[str]) -> str:
-            indent = m.group(1)
-            instruction = m.group(2)
-            eol = m.group(3)
-            return (
-                indent
-                + _HOOK_COMMAND_NOTE.rstrip("\n")
-                + eol
-                + indent
-                + instruction
-                + eol
-            )
-
-        return re.sub(
-            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
-            repl,
-            content,
-        )
-
     def post_process_skill_content(self, content: str) -> str:
         """Inject Claude-specific frontmatter flags and hook notes."""
-        updated = self._inject_frontmatter_flag(content, "user-invocable")
+        updated = super().post_process_skill_content(content)
+        updated = self._inject_frontmatter_flag(updated, "user-invocable")
         updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
-        updated = self._inject_hook_command_note(updated)
         return updated
 
     def setup(
@@ -207,10 +162,9 @@ class ClaudeIntegration(SkillsIntegration):
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        """Install Claude skills, then inject Claude-specific flags and argument-hints."""
+        """Install Claude skills, then inject argument-hints."""
         created = super().setup(project_root, manifest, parsed_options, **opts)
 
-        # Post-process generated skill files
         skills_dir = self.skills_dest(project_root).resolve()
 
         for path in created:
@@ -225,7 +179,7 @@ class ClaudeIntegration(SkillsIntegration):
             content_bytes = path.read_bytes()
             content = content_bytes.decode("utf-8")
 
-            updated = self.post_process_skill_content(content)
+            updated = content
 
             # Inject argument-hint if available for this skill
             skill_dir_name = path.parent.name  # e.g. "speckit-plan"

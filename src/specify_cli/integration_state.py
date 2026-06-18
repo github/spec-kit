@@ -25,17 +25,14 @@ class IntegrationReadError:
     schema: int | None = None
 
 
-def try_read_integration_json(
+def _read_integration_json_data(
     project_root: Path,
 ) -> tuple[dict[str, Any] | None, IntegrationReadError | None]:
-    """Parse ``.specify/integration.json`` without raising.
+    """Read raw integration state without normalizing or raising.
 
-    Returns ``(normalized_state, None)`` on success, ``(None, None)`` when the
-    file does not exist, or ``(None, error)`` for any parse / validation
-    failure. This is the single low-level reader; both the CLI's loud
-    ``_read_integration_json`` and the workflow engine's silent
-    ``_load_project_integration`` consume it so the schema guard and parse
-    logic cannot drift between them.
+    Returns ``(data, None)`` when the JSON object is readable and supported,
+    ``(None, None)`` when the file is absent, and ``(None, error)`` for parse,
+    schema, encoding, or filesystem failures.
     """
     path = project_root / INTEGRATION_JSON
     # Avoid Path.exists() / Path.is_file() as a pre-check: both return False
@@ -70,7 +67,39 @@ def try_read_integration_json(
         and schema > INTEGRATION_STATE_SCHEMA
     ):
         return None, IntegrationReadError(kind="schema_too_new", schema=schema)
+    return data, None
+
+
+def try_read_integration_json(
+    project_root: Path,
+) -> tuple[dict[str, Any] | None, IntegrationReadError | None]:
+    """Parse ``.specify/integration.json`` without raising.
+
+    Returns ``(normalized_state, None)`` on success, ``(None, None)`` when the
+    file does not exist, or ``(None, error)`` for any parse / validation
+    failure. This helper delegates file I/O and raw JSON validation to
+    ``_read_integration_json_data`` so callers that need raw state can share
+    the same low-level reader instead of duplicating parse logic.
+    """
+    data, error = _read_integration_json_data(project_root)
+    if data is None:
+        return None, error
     return normalize_integration_state(data), None
+
+
+def try_read_integration_json_with_raw(
+    project_root: Path,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, IntegrationReadError | None]:
+    """Parse ``integration.json`` and return normalized plus raw state.
+
+    Returns ``(normalized_state, raw_state, None)`` when the file is readable,
+    ``(None, None, None)`` when it is absent, and ``(None, None, error)`` for
+    parse, schema, encoding, or filesystem failures.
+    """
+    data, error = _read_integration_json_data(project_root)
+    if data is None:
+        return None, None, error
+    return normalize_integration_state(data), data, None
 
 
 def clean_integration_key(key: Any) -> str | None:

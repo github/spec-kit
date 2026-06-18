@@ -123,15 +123,15 @@ class TestKiroCliIntegration(MarkdownIntegrationTests):
         )
 
 
-class TestKiroAlias:
-    """--ai kiro alias normalizes to kiro-cli and auto-promotes."""
+class TestKiroIntegration:
+    """--integration kiro-cli creates expected files."""
 
-    def test_kiro_alias_normalized_to_kiro_cli(self, tmp_path):
-        """--ai kiro should normalize to canonical kiro-cli and auto-promote."""
+    def test_integration_kiro_cli_creates_files(self, tmp_path):
+        """--integration kiro-cli should create files in .kiro/prompts."""
         from typer.testing import CliRunner
         from specify_cli import app
 
-        target = tmp_path / "kiro-alias-proj"
+        target = tmp_path / "kiro-proj"
         target.mkdir()
 
         old_cwd = os.getcwd()
@@ -139,8 +139,8 @@ class TestKiroAlias:
             os.chdir(target)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "kiro",
-                "--ignore-agent-tools", "--script", "sh", "--no-git",
+                "init", "--here", "--integration", "kiro-cli",
+                "--ignore-agent-tools", "--script", "sh",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)

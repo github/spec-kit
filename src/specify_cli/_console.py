@@ -7,6 +7,7 @@ layer, not out of it, to avoid circular imports.
 """
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 
 import readchar
@@ -192,7 +193,8 @@ def select_with_arrows(
 
     def run_selection_loop():
         nonlocal selected_key, selected_index
-        with Live(create_selection_panel(), console=console, transient=True, auto_refresh=False) as live:
+        _transient = sys.platform != "win32"
+        with Live(create_selection_panel(), console=console, transient=_transient, auto_refresh=False) as live:
             while True:
                 try:
                     key = get_key()

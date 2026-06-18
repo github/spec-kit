@@ -573,7 +573,9 @@ class TestAuthenticatedHttp:
         mock_opener = MagicMock()
         def fake_open(req, timeout=None):
             captured["req"] = req
-            resp = MagicMock(); resp.__enter__ = lambda s: s; resp.__exit__ = MagicMock(return_value=False)
+            resp = MagicMock()
+            resp.__enter__ = lambda s: s
+            resp.__exit__ = MagicMock(return_value=False)
             return resp
         mock_opener.open.side_effect = fake_open
         with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
@@ -588,7 +590,9 @@ class TestAuthenticatedHttp:
         captured = {}
         def fake_urlopen(req, timeout=None):
             captured["req"] = req
-            resp = MagicMock(); resp.__enter__ = lambda s: s; resp.__exit__ = MagicMock(return_value=False)
+            resp = MagicMock()
+            resp.__enter__ = lambda s: s
+            resp.__exit__ = MagicMock(return_value=False)
             return resp
         with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_urlopen):
             open_url("https://example.com/file.json")
@@ -601,7 +605,9 @@ class TestAuthenticatedHttp:
         captured = {}
         def fake_urlopen(req, timeout=None):
             captured["req"] = req
-            resp = MagicMock(); resp.__enter__ = lambda s: s; resp.__exit__ = MagicMock(return_value=False)
+            resp = MagicMock()
+            resp.__enter__ = lambda s: s
+            resp.__exit__ = MagicMock(return_value=False)
             return resp
         with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_urlopen):
             open_url("https://github.com/org/repo")
@@ -615,12 +621,16 @@ class TestAuthenticatedHttp:
         self._set_config(monkeypatch, [_github_entry()])
         call_count = 0
         def fake_side_effect(req, timeout=None):
-            nonlocal call_count; call_count += 1
+            nonlocal call_count
+            call_count += 1
             if call_count == 1:
                 raise urllib.error.HTTPError("url", 401, "Unauthorized", {}, None)
-            resp = MagicMock(); resp.__enter__ = lambda s: s; resp.__exit__ = MagicMock(return_value=False)
+            resp = MagicMock()
+            resp.__enter__ = lambda s: s
+            resp.__exit__ = MagicMock(return_value=False)
             return resp
-        mock_opener = MagicMock(); mock_opener.open.side_effect = fake_side_effect
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = fake_side_effect
         with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener), \
              patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_side_effect):
             open_url("https://github.com/org/repo")
@@ -692,7 +702,6 @@ class TestLoadConfigCaching:
         """_load_config() should call load_auth_config only once per process."""
         from unittest.mock import patch
         from specify_cli.authentication import http as _mod
-        from specify_cli.authentication.config import AuthConfigEntry
         # Allow the real load path (no override)
         monkeypatch.setattr(_mod, "_config_override", None)
         monkeypatch.setattr(_mod, "_config_cache", None)
@@ -784,6 +793,35 @@ class TestRedirectStripping:
         assert new_req.headers.get("Authorization") is None
         assert new_req.unredirected_hdrs.get("Authorization") is None
 
+    def test_https_to_http_same_host_redirect_strips_auth(self):
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+        handler = _StripAuthOnRedirect(("github.com",))
+        req = Request("https://github.com/org/repo", headers={"Authorization": "Bearer tok"})
+        new_req = handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                           "http://github.com/org/repo")
+        assert new_req is not None
+        assert new_req.headers.get("Authorization") is None
+        assert new_req.unredirected_hdrs.get("Authorization") is None
+
+    def test_redirect_validator_can_reject_before_following_redirect(self):
+        import urllib.error
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        def reject_http(old_url, new_url):
+            if new_url.startswith("http://"):
+                raise urllib.error.URLError("scheme downgrade")
+
+        handler = _StripAuthOnRedirect(("github.com",), reject_http)
+        req = Request("https://github.com/org/repo", headers={"Authorization": "Bearer tok"})
+
+        with pytest.raises(urllib.error.URLError, match="scheme downgrade"):
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "http://github.com/org/repo")
+
     def test_multi_hop_redirect_within_hosts_preserves_auth(self):
         """Auth survives a multi-hop redirect chain within allowed hosts."""
         from specify_cli.authentication.http import _StripAuthOnRedirect
@@ -825,8 +863,11 @@ class TestFetchLatestReleaseTagDelegation:
         def side_effect(req, timeout=None):
             captured["request"] = req
             body = _json.dumps({"tag_name": "v9.9.9"}).encode()
-            resp = MagicMock(); resp.read.return_value = body
-            cm = MagicMock(); cm.__enter__.return_value = resp; cm.__exit__.return_value = False
+            resp = MagicMock()
+            resp.read.return_value = body
+            cm = MagicMock()
+            cm.__enter__.return_value = resp
+            cm.__exit__.return_value = False
             return cm
         return captured, side_effect
 
@@ -836,7 +877,8 @@ class TestFetchLatestReleaseTagDelegation:
         monkeypatch.setenv("GH_TOKEN", "forwarded-sentinel")
         self._set_config(monkeypatch, [_github_entry()])
         captured, side_effect = self._capture_request()
-        mock_opener = MagicMock(); mock_opener.open.side_effect = side_effect
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = side_effect
         with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             _fetch_latest_release_tag()
         assert captured["request"].get_header("Authorization") == "Bearer forwarded-sentinel"

@@ -52,13 +52,19 @@ provides:
       description: string
       required: boolean  # Default: false
 
-hooks:                   # Optional, event hooks
+hooks:                   # Optional, event hooks. Each event accepts either form below.
   event_name:            # e.g., "after_specify", "after_plan", "after_tasks", "after_implement"
     command: string      # Command to execute
+    priority: integer    # Optional, >= 1, default 10 (lower runs first)
     optional: boolean    # Default: true
     prompt: string       # Prompt text for optional hooks
     description: string  # Hook description
     condition: string    # Optional, condition expression
+  another_event:         # Any event may instead use a list of mappings (multiple commands)
+    - command: string    # Same fields as the single mapping, per entry
+      priority: integer
+    - command: string
+      priority: integer
 
 tags:                    # Optional, array of tags (2-10 recommended)
   - string
@@ -109,8 +115,10 @@ defaults:                # Optional, default configuration values
 
 - **Type**: object
 - **Keys**: Event names (e.g., `after_specify`, `after_plan`, `after_tasks`, `after_implement`, `before_analyze`)
+- **Value**: A single hook mapping, or a list of hook mappings to register multiple commands on one event
 - **Description**: Hooks that execute at lifecycle events
 - **Events**: Defined by core spec-kit commands
+- **Ordering**: Within an event, hooks run by ascending `priority` (integer ≥ 1, default 10; lower runs first; equal priorities keep authoring order via a stable sort)
 
 ---
 
@@ -535,7 +543,9 @@ Examples:
 
 ### Hook Definition
 
-**In extension.yml**:
+Each event accepts either a single hook mapping or a list of mappings. A list registers multiple commands on the same event.
+
+**Single mapping (in extension.yml)**:
 
 ```yaml
 hooks:
@@ -546,6 +556,24 @@ hooks:
     description: "Automatically create Jira hierarchy"
     condition: null
 ```
+
+**List of mappings with priority**:
+
+```yaml
+hooks:
+  after_plan:
+    - command: "speckit.my-ext.verify"
+      priority: 5
+      optional: false
+      description: "Verify the plan"
+    - command: "speckit.my-ext.report"
+      priority: 10
+      optional: true
+      prompt: "Generate the report?"
+      description: "Generate a report from the plan"
+```
+
+Within a single manifest list, a repeated `command` is deduped as "last wins" and moved to the end, so it also breaks equal-priority ties in authoring order.
 
 ### Hook Events
 

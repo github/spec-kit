@@ -14,6 +14,7 @@ from __future__ import annotations
 import urllib.error
 import urllib.request
 from fnmatch import fnmatch
+from typing import Callable
 from urllib.parse import urlparse
 
 from . import get_provider
@@ -56,22 +57,36 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
     return any(p == hostname or fnmatch(hostname, p) for p in hosts)
 
 
-class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
-    """Drop ``Authorization`` when a redirect leaves the entry's declared hosts."""
+RedirectValidator = Callable[[str, str], None]
 
-    def __init__(self, hosts: tuple[str, ...]) -> None:
+
+class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+    """Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades."""
+
+    def __init__(
+        self,
+        hosts: tuple[str, ...],
+        redirect_validator: RedirectValidator | None = None,
+    ) -> None:
         super().__init__()
         self._hosts = hosts
+        self._redirect_validator = redirect_validator
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if self._redirect_validator is not None:
+            self._redirect_validator(req.full_url, newurl)
+
         original_auth = (
             req.get_header("Authorization")
             or req.unredirected_hdrs.get("Authorization")
         )
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new_req is not None:
-            hostname = (urlparse(newurl).hostname or "").lower()
-            if _hostname_in_hosts(hostname, self._hosts):
+            old_scheme = urlparse(req.full_url).scheme
+            new_parsed = urlparse(newurl)
+            hostname = (new_parsed.hostname or "").lower()
+            is_https_downgrade = old_scheme == "https" and new_parsed.scheme != "https"
+            if _hostname_in_hosts(hostname, self._hosts) and not is_https_downgrade:
                 if original_auth:
                     new_req.add_unredirected_header("Authorization", original_auth)
             else:
@@ -103,7 +118,12 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
     return urllib.request.Request(url, headers=headers)
 
 
-def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None = None):
+def open_url(
+    url: str,
+    timeout: int = 10,
+    extra_headers: dict[str, str] | None = None,
+    redirect_validator: RedirectValidator | None = None,
+):
     """Open *url* with config-driven auth, redirect stripping, and fallthrough.
 
     1. Find ``auth.json`` entries whose hosts match the URL.
@@ -113,6 +133,8 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
     5. Non-auth errors (404, 500, network) raise immediately.
 
     *extra_headers* (e.g. ``Accept``) are merged into every attempt.
+    *redirect_validator*, when provided, is called with ``(old_url, new_url)``
+    before following each redirect and may raise to reject the redirect.
     """
     entries = find_entries_for_url(url, _load_config())
 
@@ -135,7 +157,7 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
             continue
 
         req = _make_req(provider.auth_headers(token, entry.auth))
-        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts))
+        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, redirect_validator))
         try:
             return opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as exc:
@@ -146,4 +168,7 @@ def open_url(url: str, timeout: int = 10, extra_headers: dict[str, str] | None =
 
     # No entry worked (or none matched) — unauthenticated fallback
     req = _make_req({})
+    if redirect_validator is not None:
+        opener = urllib.request.build_opener(_StripAuthOnRedirect((), redirect_validator))
+        return opener.open(req, timeout=timeout)
     return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310
