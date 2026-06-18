@@ -43,7 +43,7 @@ jobs:
           set -euo pipefail
           project_dir="$(mktemp -d)"
           cd "$project_dir"
-          /tmp/specify-community-smoke-venv/bin/specify init --here --ai claude --script sh --ignore-agent-tools
+          /tmp/specify-community-smoke-venv/bin/specify init --here --integration claude --script sh --ignore-agent-tools
 
           test -f .specify/extensions/arch/extension.yml
           test -f .specify/extensions/preview/extension.yml
