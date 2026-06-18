@@ -1840,7 +1840,7 @@ class PresetCatalog:
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed).
+        """Validate that a catalog URL uses HTTPS (loopback HTTP allowed).
 
         Args:
             url: URL to validate
@@ -1851,17 +1851,17 @@ class PresetCatalog:
         from urllib.parse import urlparse
 
         parsed = urlparse(url)
+        if not parsed.hostname:
+            raise PresetValidationError(
+                "Catalog URL must be a valid URL with a host."
+            )
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
             raise PresetValidationError(
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
-                "HTTP is only allowed for localhost."
-            )
-        if not parsed.netloc:
-            raise PresetValidationError(
-                "Catalog URL must be a valid URL with a host."
+                "HTTP is only allowed for localhost, 127.0.0.1, and ::1."
             )
 
     def _make_request(self, url: str):
@@ -1877,13 +1877,19 @@ class PresetCatalog:
         url: str,
         timeout: int = 10,
         extra_headers: Optional[Dict[str, str]] = None,
+        strict_redirects: bool = True,
     ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
         from specify_cli.authentication.http import open_url
-        return open_url(url, timeout, extra_headers=extra_headers)
+        return open_url(
+            url,
+            timeout,
+            extra_headers=extra_headers,
+            strict_redirects=strict_redirects,
+        )
 
     def _resolve_github_release_asset_api_url(
         self,
@@ -2161,7 +2167,11 @@ class PresetCatalog:
                 pass
 
         try:
-            with self._open_url(entry.url, timeout=10) as response:
+            with self._open_url(
+                entry.url,
+                timeout=10,
+                strict_redirects=True,
+            ) as response:
                 catalog_data = json.loads(
                     read_response_limited(
                         response,
@@ -2319,7 +2329,11 @@ class PresetCatalog:
                 pass
 
         try:
-            with self._open_url(catalog_url, timeout=10) as response:
+            with self._open_url(
+                catalog_url,
+                timeout=10,
+                strict_redirects=True,
+            ) as response:
                 catalog_data = json.loads(
                     read_response_limited(
                         response,
@@ -2492,12 +2506,18 @@ class PresetCatalog:
         from urllib.parse import urlparse
 
         parsed = urlparse(download_url)
+        if not parsed.hostname:
+            raise PresetError(
+                f"Preset download URL must be a valid URL with a host: {download_url}"
+            )
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
             raise PresetError(
-                f"Preset download URL must use HTTPS: {download_url}"
+                "Preset download URL must use HTTPS "
+                "(HTTP is allowed only for localhost, 127.0.0.1, and ::1): "
+                f"{download_url}"
             )
 
         if target_dir is None:
@@ -2515,7 +2535,12 @@ class PresetCatalog:
             extra_headers = {"Accept": "application/octet-stream"}
 
         try:
-            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
+            with self._open_url(
+                download_url,
+                timeout=60,
+                extra_headers=extra_headers,
+                strict_redirects=True,
+            ) as response:
                 zip_data = read_response_limited(
                     response,
                     error_type=PresetError,

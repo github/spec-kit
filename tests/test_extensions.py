@@ -2693,6 +2693,16 @@ class TestExtensionCatalog:
         assert catalog.project_root == project_dir
         assert catalog.cache_dir == project_dir / ".specify" / "extensions" / ".cache"
 
+    def test_validate_catalog_url_hostless_https_rejected(self, temp_dir):
+        """Hostless HTTPS catalog URLs should fail before scheme messaging."""
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+        with pytest.raises(ValidationError, match="valid URL with a host"):
+            catalog._validate_catalog_url("https:///catalog.json")
+
     def test_cache_directory_creation(self, temp_dir):
         """Test catalog cache directory is created when fetching."""
         project_dir = temp_dir / "project"
@@ -3240,6 +3250,59 @@ class TestExtensionCatalog:
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_fetch_single_catalog_uses_strict_redirects(self, temp_dir):
+        """Catalog stack fetches must reject unsafe redirects."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        payload = {"schema_version": "1.0", "extensions": {}}
+        calls = []
+
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return make_response()
+
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert calls[-1]["strict_redirects"] is True
+
+    def test_fetch_catalog_uses_strict_redirects(self, temp_dir):
+        """Legacy catalog fetch uses the same redirect hardening."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        payload = {"schema_version": "1.0", "extensions": {}}
+        calls = []
+
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return mock_response
+
+        with patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            catalog.fetch_catalog(force_refresh=True)
+
+        assert calls[-1]["strict_redirects"] is True
 
     @pytest.mark.parametrize(
         "payload",
@@ -4170,7 +4233,7 @@ class TestCatalogStack:
     @pytest.mark.parametrize(
         ("url", "expected_detail"),
         [
-            ("relative/catalog.json", "HTTPS"),
+            ("relative/catalog.json", "valid URL with a host"),
             ("https:///no-host", "valid URL with a host"),
         ],
     )
@@ -5002,9 +5065,137 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0
         assert "Cancelled" in result.output
 
+    def test_add_from_url_download_uses_strict_redirects(self, tmp_path):
+        """extension add --from must harden the direct ZIP download."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        captured = []
+
+        class FakeResponse:
+            def __init__(self):
+                self._stream = io.BytesIO(b"fake zip")
+
+            def read(self, size=-1):
+                return self._stream.read(size)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_open_url(
+            url,
+            timeout=None,
+            extra_headers=None,
+            redirect_validator=None,
+            strict_redirects=False,
+        ):
+            captured.append(
+                {
+                    "url": url,
+                    "timeout": timeout,
+                    "extra_headers": extra_headers,
+                    "strict_redirects": strict_redirects,
+                }
+            )
+            return FakeResponse()
+
+        fake_manifest = SimpleNamespace(
+            id="my-ext",
+            name="My Extension",
+            version="1.0.0",
+            description="Test extension",
+            warnings=[],
+            commands=[],
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
+             patch(
+                 "specify_cli.extensions.ExtensionManager.install_from_zip",
+                 return_value=fake_manifest,
+             ):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured == [
+            {
+                "url": "https://example.com/ext.zip",
+                "timeout": 60,
+                "extra_headers": None,
+                "strict_redirects": True,
+            }
+        ]
+
 
 class TestDownloadExtensionBundled:
     """Tests for download_extension handling of bundled extensions."""
+
+    def test_download_extension_rejects_hostless_url(self, temp_dir):
+        """Catalog download URLs must include a hostname."""
+        from unittest.mock import patch
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https:///test-ext.zip",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info):
+            with pytest.raises(ExtensionError, match="valid URL with a host"):
+                catalog.download_extension("test-ext")
+
+    def test_download_extension_uses_strict_redirects(self, temp_dir):
+        """Catalog-based extension downloads must reject unsafe redirects."""
+        from unittest.mock import patch, MagicMock
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+        calls = []
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(b"fake zip").read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+        }
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return mock_response
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_resolve_github_release_asset_api_url", return_value=None), \
+             patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            zip_path = catalog.download_extension("test-ext", target_dir=temp_dir / "downloads")
+
+        assert zip_path.read_bytes() == b"fake zip"
+        assert calls[-1]["strict_redirects"] is True
 
     def test_download_extension_raises_for_bundled(self, temp_dir):
         """download_extension should raise a clear error for bundled extensions without a URL."""

@@ -1424,6 +1424,12 @@ class TestPresetCatalog:
         with pytest.raises(PresetValidationError, match="must use HTTPS"):
             catalog._validate_catalog_url("http://example.com/catalog.json")
 
+    def test_validate_catalog_url_hostless_https_rejected(self, project_dir):
+        """Hostless HTTPS catalog URLs should fail before scheme messaging."""
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="valid URL with a host"):
+            catalog._validate_catalog_url("https:///catalog.json")
+
     def test_validate_catalog_url_localhost_http_allowed(self, project_dir):
         """Test that HTTP is allowed for localhost."""
         catalog = PresetCatalog(project_dir)
@@ -1549,6 +1555,59 @@ class TestPresetCatalog:
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_fetch_single_catalog_uses_strict_redirects(self, project_dir):
+        """Catalog stack fetches must reject unsafe redirects."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        payload = {"schema_version": "1.0", "presets": {}}
+        calls = []
+
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return make_response()
+
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert calls[-1]["strict_redirects"] is True
+
+    def test_fetch_catalog_uses_strict_redirects(self, project_dir):
+        """Legacy catalog fetch uses the same redirect hardening."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        payload = {"schema_version": "1.0", "presets": {}}
+        calls = []
+
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return mock_response
+
+        with patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            catalog.fetch_catalog(force_refresh=True)
+
+        assert calls[-1]["strict_redirects"] is True
 
     @pytest.mark.parametrize(
         "payload",
@@ -2077,6 +2136,54 @@ class TestPresetCatalog:
         assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[0].get_header("Accept") == "application/octet-stream"
+
+    def test_download_pack_rejects_hostless_url(self, project_dir):
+        """Catalog download URLs must include a hostname."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https:///test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info):
+            with pytest.raises(PresetError, match="valid URL with a host"):
+                catalog.download_pack("test-pack")
+
+    def test_download_pack_uses_strict_redirects(self, project_dir):
+        """Catalog-based preset downloads must reject unsafe redirects."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes = b"fake zip data"
+        calls = []
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(zip_bytes).read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return mock_response
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_resolve_github_release_asset_api_url", return_value=None), \
+             patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+        assert calls[-1]["strict_redirects"] is True
 
     def test_fetch_single_catalog_uses_bounded_read(self, project_dir):
         """Catalog JSON responses must use the shared bounded-read helper."""

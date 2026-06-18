@@ -1035,7 +1035,11 @@ def extension_add(
                     from specify_cli._download_security import read_response_limited as _read_response_limited
                     from specify_cli.authentication.http import open_url as _open_url
 
-                    with _open_url(from_url, timeout=60) as response:
+                    with _open_url(
+                        from_url,
+                        timeout=60,
+                        strict_redirects=True,
+                    ) as response:
                         zip_data = _read_response_limited(
                             response,
                             error_type=ExtensionError,
@@ -2487,6 +2491,7 @@ def workflow_add(
     # Try as URL (http/https)
     if source.startswith("http://") or source.startswith("https://"):
         from functools import partial
+        from urllib.parse import urlparse as _urlparse
 
         from specify_cli._download_security import read_response_limited as _read_response_limited
         from specify_cli.authentication.http import open_url as _open_url
@@ -2518,7 +2523,17 @@ def workflow_add(
             ) as resp:
                 final_url = resp.geturl()
                 if not is_https_or_localhost_http(final_url):
-                    console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
+                    final_parsed = _urlparse(final_url)
+                    if not final_parsed.hostname:
+                        console.print(
+                            f"[red]Error:[/red] URL redirected to a URL with no hostname: {final_url}"
+                        )
+                    else:
+                        console.print(
+                            "[red]Error:[/red] URL redirected to a URL without HTTPS "
+                            "(HTTP is allowed only for localhost, 127.0.0.1, and ::1): "
+                            f"{final_url}"
+                        )
                     raise typer.Exit(1)
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
                     tmp.write(
@@ -2595,6 +2610,7 @@ def workflow_add(
 
     try:
         from functools import partial
+        from urllib.parse import urlparse as _urlparse
 
         from specify_cli.authentication.http import open_url as _open_url
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
@@ -2621,9 +2637,17 @@ def workflow_add(
                 if workflow_dir.exists():
                     import shutil
                     shutil.rmtree(workflow_dir, ignore_errors=True)
-                console.print(
-                    f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
-                )
+                final_parsed = _urlparse(final_url)
+                if not final_parsed.hostname:
+                    console.print(
+                        f"[red]Error:[/red] Workflow '{source}' redirected to a URL with no hostname: {final_url}"
+                    )
+                else:
+                    console.print(
+                        f"[red]Error:[/red] Workflow '{source}' redirected to a URL without HTTPS "
+                        "(HTTP is allowed only for localhost, 127.0.0.1, and ::1): "
+                        f"{final_url}"
+                    )
                 raise typer.Exit(1)
             workflow_file.write_bytes(
                 _read_response_limited(
@@ -3060,20 +3084,28 @@ def workflow_step_add(
     def _safe_fetch(url: str) -> bytes:
         parsed = urlparse(url)
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
-            raise ValueError(f"Refusing to fetch from non-HTTPS URL: {url}")
         if not parsed.hostname:
             raise ValueError(f"Refusing to fetch from URL with no hostname: {url}")
-        with _open_url(url, timeout=30) as resp:
+        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+            raise ValueError(
+                "Refusing to fetch from URL without HTTPS "
+                "(HTTP is allowed only for localhost, 127.0.0.1, and ::1): "
+                f"{url}"
+            )
+        with _open_url(url, timeout=30, strict_redirects=True) as resp:
             final_url = resp.geturl()
             final_parsed = urlparse(final_url)
             final_is_localhost = final_parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            if not final_parsed.hostname:
+                raise ValueError(f"Redirect to URL with no hostname: {final_url}")
             if final_parsed.scheme != "https" and not (
                 final_parsed.scheme == "http" and final_is_localhost
             ):
-                raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
-            if not final_parsed.hostname:
-                raise ValueError(f"Redirect to URL with no hostname: {final_url}")
+                raise ValueError(
+                    "Redirect to URL without HTTPS "
+                    "(HTTP is allowed only for localhost, 127.0.0.1, and ::1): "
+                    f"{final_url}"
+                )
             return _read_response_limited(resp, label=f"workflow step {url}")
 
     _validate_step_id_or_exit(step_id)

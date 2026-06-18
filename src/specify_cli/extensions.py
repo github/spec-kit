@@ -2032,6 +2032,7 @@ class ExtensionCatalog(CatalogStackBase):
         url: str,
         timeout: int = 10,
         extra_headers: Optional[Dict[str, str]] = None,
+        strict_redirects: bool = True,
     ):
         """Open a URL with provider-based auth, trying each configured provider.
 
@@ -2039,7 +2040,12 @@ class ExtensionCatalog(CatalogStackBase):
         """
         from specify_cli.authentication.http import open_url
 
-        return open_url(url, timeout, extra_headers=extra_headers)
+        return open_url(
+            url,
+            timeout,
+            extra_headers=extra_headers,
+            strict_redirects=strict_redirects,
+        )
 
     def _resolve_github_release_asset_api_url(
         self,
@@ -2257,7 +2263,11 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Fetch from network
         try:
-            with self._open_url(entry.url, timeout=10) as response:
+            with self._open_url(
+                entry.url,
+                timeout=10,
+                strict_redirects=True,
+            ) as response:
                 catalog_data = json.loads(
                     read_response_limited(
                         response,
@@ -2441,7 +2451,11 @@ class ExtensionCatalog(CatalogStackBase):
         try:
             import urllib.error
 
-            with self._open_url(catalog_url, timeout=10) as response:
+            with self._open_url(
+                catalog_url,
+                timeout=10,
+                strict_redirects=True,
+            ) as response:
                 catalog_data = json.loads(
                     read_response_limited(
                         response,
@@ -2599,10 +2613,16 @@ class ExtensionCatalog(CatalogStackBase):
         from urllib.parse import urlparse
 
         parsed = urlparse(download_url)
+        if not parsed.hostname:
+            raise ExtensionError(
+                f"Extension download URL must be a valid URL with a host: {download_url}"
+            )
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             raise ExtensionError(
-                f"Extension download URL must use HTTPS: {download_url}"
+                "Extension download URL must use HTTPS "
+                "(HTTP is allowed only for localhost, 127.0.0.1, and ::1): "
+                f"{download_url}"
             )
 
         # Determine target path
@@ -2623,7 +2643,10 @@ class ExtensionCatalog(CatalogStackBase):
         # Download the ZIP file
         try:
             with self._open_url(
-                download_url, timeout=60, extra_headers=extra_headers
+                download_url,
+                timeout=60,
+                extra_headers=extra_headers,
+                strict_redirects=True,
             ) as response:
                 zip_data = read_response_limited(
                     response,

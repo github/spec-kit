@@ -160,7 +160,7 @@ class WorkflowCatalog:
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
+        """Validate that a catalog URL uses HTTPS (loopback HTTP allowed)."""
         from urllib.parse import urlparse
 
         parsed = urlparse(url)
@@ -776,15 +776,15 @@ class StepCatalog:
     # -- Catalog resolution -----------------------------------------------
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
-        if not is_https_or_localhost_http(url):
-            from urllib.parse import urlparse
+        """Validate that a catalog URL uses HTTPS (loopback HTTP allowed)."""
+        from urllib.parse import urlparse
 
-            parsed = urlparse(url)
-            if not parsed.hostname:
-                raise StepValidationError(
-                    "Catalog URL must be a valid URL with a host."
-                )
+        parsed = urlparse(url)
+        if not parsed.hostname:
+            raise StepValidationError(
+                "Catalog URL must be a valid URL with a host."
+            )
+        if not is_https_or_localhost_http(url):
             raise StepValidationError(
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost, 127.0.0.1, and ::1."
