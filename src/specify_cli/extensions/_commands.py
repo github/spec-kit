@@ -1125,7 +1125,13 @@ def extension_update(
                         output_name = _AgentReg._compute_output_name(agent_name, cmd_name, agent_config)
                         cmd_file = commands_dir / f"{output_name}{agent_config['extension']}"
                         if cmd_file.exists():
-                            backup_cmd_path = backup_commands_dir / agent_name / cmd_file.name
+                            # Mirror the real on-disk layout under the backup dir.
+                            # Skills agents (extension == "/SKILL.md") name every
+                            # command file "SKILL.md", living in a per-command
+                            # subdir (e.g. speckit-plan/SKILL.md). Using cmd_file.name
+                            # alone would collide all of them onto one backup path and
+                            # break rollback; keep the relative path to stay unique.
+                            backup_cmd_path = backup_commands_dir / agent_name / cmd_file.relative_to(commands_dir)
                             backup_cmd_path.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copy2(cmd_file, backup_cmd_path)
                             backed_up_command_files[str(cmd_file)] = str(backup_cmd_path)
