@@ -544,17 +544,17 @@ class TestExtensionEnabledGate:
         assert i.remove_context_section(tmp_path) is False
         assert "body" in outside.read_text(encoding="utf-8")
 
-    def test_context_file_display_disabled_ignores_bad_context_files_config(
+    def test_context_file_display_disabled_uses_config_context_file(
         self, tmp_path
     ):
         _write_registry(tmp_path, enabled=False)
         _write_ext_config(
             tmp_path,
-            context_file="CLAUDE.md",
+            context_file="AGENTS.md",
             context_files=["../outside.md"],
         )
         i = _CtxIntegration()
-        assert i._context_file_display(tmp_path) == i.context_file
+        assert i._context_file_display(tmp_path) == "AGENTS.md"
 
     def test_context_file_display_disabled_without_context_file_returns_string(
         self, tmp_path

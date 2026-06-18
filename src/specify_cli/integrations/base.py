@@ -765,6 +765,15 @@ class IntegrationBase(ABC):
     def _context_file_display(self, project_root: Path) -> str:
         """Return human-readable context file target(s) for templates."""
         if not self._agent_context_extension_enabled(project_root):
+            from .. import _load_agent_context_config
+
+            configured_context_file = _load_agent_context_config(project_root).get(
+                "context_file"
+            )
+            if isinstance(configured_context_file, str):
+                configured_context_file = configured_context_file.strip()
+                if configured_context_file:
+                    return configured_context_file
             return self.context_file or ""
         return ", ".join(self._resolve_context_files(project_root))
 
