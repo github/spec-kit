@@ -3,6 +3,7 @@
 import json
 import os
 
+import pytest
 import yaml
 
 from specify_cli.integrations import get_integration
@@ -67,6 +68,7 @@ class TestCopilotIntegration:
         assert settings in created
         assert any("settings.json" in k for k in m.files)
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
     def test_setup_vscode_settings_readonly_source_is_writable(self, tmp_path, monkeypatch):
         from specify_cli.integrations.copilot import CopilotIntegration
         import json as _json

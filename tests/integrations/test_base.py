@@ -1,6 +1,12 @@
 """Tests for IntegrationOption, IntegrationBase, MarkdownIntegration, and primitives."""
 
+import os
+
 import pytest
+
+_SKIP_WINDOWS = pytest.mark.skipif(
+    os.name == "nt", reason="POSIX mode bits are not stable on Windows"
+)
 
 from specify_cli.integrations.base import (
     IntegrationBase,
@@ -149,6 +155,7 @@ class TestBasePrimitives:
         assert result == dest_dir / "speckit.plan.md"
         assert result.read_text(encoding="utf-8") == "content"
 
+    @_SKIP_WINDOWS
     def test_copy_command_to_directory_readonly_source_is_writable(self, tmp_path):
         src = tmp_path / "source.md"
         src.write_text("content", encoding="utf-8")
@@ -172,6 +179,7 @@ class TestBasePrimitives:
         assert dest.read_text(encoding="utf-8") == "content"
         assert "sub/f.txt" in m.files
 
+    @_SKIP_WINDOWS
     def test_install_scripts_readonly_source_files_are_writable(self, tmp_path, monkeypatch):
         scripts_src = tmp_path / "scripts_src"
         scripts_src.mkdir()

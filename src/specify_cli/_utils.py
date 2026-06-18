@@ -267,7 +267,8 @@ def copy_file_preserving_exec(src: str, dst: str) -> None:
     shutil.copyfile(src, dst)
     if os.name != "nt":
         exec_bits = os.stat(src).st_mode & 0o111
-        os.chmod(dst, 0o644 | exec_bits)
+        dst_mode = os.stat(dst).st_mode & 0o7777
+        os.chmod(dst, dst_mode | 0o200 | exec_bits)
 
 
 def _display_project_path(project_root: Path, path: str | Path) -> str:
