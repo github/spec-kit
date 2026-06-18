@@ -89,6 +89,17 @@ def _write_config(project: Path, content: str) -> Path:
     return config_path
 
 
+def _add_sibling_worktree(project: Path, path: Path, branch: str) -> None:
+    """Add a sibling worktree so `git branch -a` marks it with `+`."""
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", branch, str(path), "HEAD"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 # Git identity env vars for CI runners without global git config
 _GIT_ENV = {
     "GIT_AUTHOR_NAME": "Test User",
@@ -312,6 +323,21 @@ class TestCreateFeatureBash:
         data = json.loads(result.stdout)
         assert data["FEATURE_NUM"] == "003"
 
+    def test_dry_run_counts_branches_checked_out_in_worktrees(self, tmp_path: Path):
+        """Branches checked out in sibling worktrees still reserve their prefix."""
+        project = _setup_project(tmp_path / "project")
+        _add_sibling_worktree(project, tmp_path / "sibling-worktree", "007-worktree-feature")
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "008-next"
+        assert data["FEATURE_NUM"] == "008"
+
     def test_no_git_graceful_degradation(self, tmp_path: Path):
         """create-new-feature-branch.sh works without git (outputs branch name, skips branch creation)."""
         project = _setup_project(tmp_path, git=False)
@@ -350,6 +376,21 @@ class TestCreateFeaturePowerShell:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "001-user-auth"
+
+    def test_dry_run_counts_branches_checked_out_in_worktrees(self, tmp_path: Path):
+        """Branches checked out in sibling worktrees still reserve their prefix."""
+        project = _setup_project(tmp_path / "project")
+        _add_sibling_worktree(project, tmp_path / "sibling-worktree", "007-worktree-feature")
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "008-next"
+        assert data["FEATURE_NUM"] == "008"
 
     def test_creates_branch_timestamp(self, tmp_path: Path):
         """Extension create-new-feature-branch.ps1 creates timestamp branch."""
