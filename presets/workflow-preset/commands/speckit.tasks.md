@@ -9,18 +9,25 @@ Preserve the planned `M + U` scope in task text when deriving implementation, va
 
 ## Additional Design Inputs
 
-When present, treat these files as optional task-generation inputs under FEATURE_DIR:
+If any listed file exists under FEATURE_DIR, task generation must consume it as an input:
 
 - `class-diagram.md`: internal object structure, dependency direction, and design pattern participants.
 - `contracts/sequences.md`: service, command, event, async, retry, rollback, and failure-path flows.
 - `research.md`: selected test level, fixture strategy, mock/external-system strategy, and error-branch validation decisions.
 - `quickstart.md`: executable validation paths and evidence collection guidance.
+- `spec.md` visual acceptance requirements: visual fidelity requirements, screenshot refs, visual proof refs, and Design Requirement trace refs.
+- `spec.md` Client Asset Contract: asset source strategy, required variants, fallback policy, and blocker status.
+- `checklists/behavior-testability.md` Visual Fidelity Readiness: passed visual proof level, blockers, and accepted exceptions.
 - `contracts/bdd/`: formal BDD acceptance contracts.
 - `contracts/uif/`: Expected UIF interaction contracts.
 - `contracts/behavior/`: formal scenario instance, fixture, and assertion contracts.
 - `contracts/`: interface schemas and API/message contracts used by validation tasks.
 
 Use these inputs to derive implementation, integration, orchestration, failure-handling, and validation tasks. For behavior contracts, derive test-first tasks in user-story order: fixture setup, BDD/E2E or contract test, implementation, and verification evidence. Keep task output in the existing checklist format and user-story organization.
+
+For Client Asset Contract entries, derive asset preparation, binding, implementation, and validation tasks in dependency order. Missing required client visual assets become readiness blockers; do not generate handoff fields or `allowed_write_paths`.
+
+Missing Required case scenarios must become blockers, not silently skipped tasks. If `checklists/behavior-testability.md` marks a case type Required but the matching BDD or behavior contract is absent and no `N/A or blocker` exists, report the missing case instead of generating a complete-looking task list.
 
 ## Test Strategy Derivation
 
@@ -38,10 +45,10 @@ Use this data and external-system strategy:
 - Attach fixture IDs and setup strategies from `contracts/behavior/` when they exist.
 - Use fixture intent only when it is recorded in `research.md` or formal `contracts/behavior/` blocker notes for a scenario documented as `N/A or blocker`.
 - Use mock, sandbox, or real-system decisions from `research.md`.
-- Prefer mock or sandbox for external systems unless `research.md` and `quickstart.md` explicitly require a real-system validation path.
-- Add a separate validation task for high-risk, non-functional, external-system, async, retry, rollback, permission, validation, state-conflict, or security-relevant behavior.
+- External-system validation must use mock or sandbox unless `research.md` and `quickstart.md` explicitly require a real-system validation path.
+- Add a separate validation task for high-risk, non-functional, external-system, async, retry, rollback, permission, validation, state_conflict, negative, boundary, or error behavior.
 
-Every generated test or validation task must include an inline evidence requirement. Evidence should name the relevant BDD scenario, behavior assertion, API contract, UIF path, quickstart validation path, or command output.
+Every generated test or validation task must include an inline evidence requirement. Evidence must name at least one relevant BDD scenario, behavior assertion, API contract, UIF path, quickstart validation path, visual proof ref, screenshot ref, or command output.
 
 Example task shape:
 
@@ -53,9 +60,19 @@ Example task shape:
 Behavior task derivation must be explicit:
 
 - For each BehaviorScenarioInstance, create a fixture task, BDD/E2E or contract test task, implementation task, and verification evidence task unless the scenario is documented as `N/A` with a planning blocker.
+- For each non-positive BehaviorScenarioInstance, derive fixture, contract or BDD test, implementation, and verification evidence tasks. The task text must preserve the negative, boundary, permission, validation, state_conflict, or error behavior and name the expected error code, failure feedback, and state invariant, rollback, or compensation assertion when present.
 - For each UIF user_event, create the frontend, CLI, or interaction task that emits or handles the event.
 - For each UIF api_call, create the backend/API or contract task that provides the declared method and path.
 - For each quickstart validation path, create a validation task that can collect evidence for the relevant scenario IDs and assertions.
+
+UI implementation and acceptance tasks must be paired when a user story includes `contracts/uif/`, visual acceptance requirements, Visual Fidelity Readiness rows, or Client Asset Contract entries:
+
+- Create a UI implementation task for the concrete component, view, CLI surface, or interaction path that implements the referenced UIF event, UIF api_call, visual item, state, or asset binding.
+- Create a paired UI acceptance task that verifies the same UIF path, Visual Item ID, scenario ID, asset contract entry, or quickstart validation path before the story is complete.
+- Each UI acceptance task must name the required state coverage from the accepted contracts or readiness matrix, such as default, hover, focus, active, disabled, loading, empty, and error states.
+- Each UI acceptance task must name the required viewport coverage from `research.md`, Visual Fidelity Readiness, or `quickstart.md` when responsive visual behavior is in scope.
+- Each UI acceptance task must include evidence refs: at least one relevant UIF path, BDD or behavior scenario, visual proof ref, screenshot ref, quickstart validation path, API contract, or captured command output.
+- If a required visual proof ref, screenshot ref, viewport/state coverage rule, Client Asset Contract entry, asset variant, or fallback policy is missing, report a readiness blocker instead of generating a complete-looking UI implementation or acceptance task.
 
 ## Final Code Review
 
@@ -63,6 +80,6 @@ When generating `tasks.md`, append the final phase after user-story tasks in the
 
 Code review task text must require review of the actual implementation diff for runtime database writes and other persistent data changes, especially field-level update/delete behavior, bulk writes, soft deletes, ORM whole-object saves, migrations/backfills, retries, rollback/compensation, and external-system writes. Do not generate field-level mutation allowlists or pre-implementation data-write gates in normal tasks.
 
-Code review task evidence must require a `speckit.implement.receipt.v1` review receipt with `task_type: code_review`, `review_conclusion.checked_sources`, `data_side_effect_review`, plus `review_conclusion` and, when applicable, `consistency_repairs` and `deferred_validation_todos`. The task text must require quickstart/contract validation command evidence and state that implementation drift from the plan, sequences, contracts, or data side-effect review is repaired during `/speckit.implement` when the repair path is authorized; real e2e environment gaps are recorded as todos instead of treated as passing evidence.
+Code review task evidence must require a `speckit.implement.receipt.v1` review receipt with `task_type: code_review`, `review_conclusion.checked_sources`, `data_side_effect_review`, `review_conclusion`, `consistency_repairs`, and `deferred_validation_todos`; empty arrays or objects indicate no entries. The task text must require quickstart/contract validation command evidence and state that implementation drift from the plan, sequences, contracts, or data side-effect review is repaired during `/speckit.implement` when the repair path is authorized; real e2e environment gaps are recorded as todos instead of treated as passing evidence.
 
 {CORE_TEMPLATE}

@@ -2,7 +2,7 @@ schema_version: '1.0'
 preset:
   id: workflow-preset
   name: Workflow Preset
-  version: 1.3.6
+  version: 1.3.8
   description: Behavior-first specification, design artifacts, and agent-native handoff
     orchestration
   author: bigsmartben
@@ -33,8 +33,23 @@ provides:
   - type: template
     name: figma-intake-contract-template
     file: templates/figma-intake-contract.md
-    description: Define the Figma intake artifact contract for raw metadata readiness
+    description: Define the Figma provider source readiness contract for raw metadata
+      readiness
     replaces: figma-intake-contract-template
+    strategy: replace
+  - type: template
+    name: design-requirement-intake-template
+    file: templates/design-requirement-intake-template.md
+    description: Define the Design Requirement Intake format for provider-neutral
+      design facts
+    replaces: design-requirement-intake-template
+    strategy: replace
+  - type: template
+    name: requirement-merge-report-template
+    file: templates/requirement-merge-report-template.md
+    description: Define the Requirement Merge report format before baseline spec.md
+      generation
+    replaces: requirement-merge-report-template
     strategy: replace
   - type: command
     name: speckit.specify
@@ -51,7 +66,8 @@ provides:
   - type: command
     name: speckit.checklist
     file: commands/speckit.checklist.md
-    description: Wrap core checklist generation with BDD and NFR readiness gate
+    description: Wrap core checklist generation with BDD, NFR, and Visual Fidelity
+      readiness gate
     replaces: speckit.checklist
     strategy: wrap
   - type: command
@@ -112,7 +128,7 @@ provides:
   - type: template
     name: behavior-testability-checklist-template
     file: templates/behavior/behavior-testability-checklist.md
-    description: Template for BDD and NFR readiness gate output
+    description: Template for BDD, NFR, and Visual Fidelity readiness gate output
     replaces: behavior-testability-checklist-template
     strategy: replace
   - type: template

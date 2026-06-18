@@ -19,7 +19,17 @@
           "id": {"type": "string", "minLength": 1},
           "target": {"type": "string", "minLength": 1},
           "operator": {"enum": ["equals", "not_equals", "contains", "exists", "matches"]},
-          "expected": {}
+          "expected": {},
+          "intent": {
+            "enum": [
+              "business_state",
+              "error_code",
+              "failure_feedback",
+              "state_invariant",
+              "rollback",
+              "compensation"
+            ]
+          }
         }
       }
     }
