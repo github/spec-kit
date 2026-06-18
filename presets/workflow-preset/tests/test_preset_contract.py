@@ -846,6 +846,11 @@ class PresetContractTests(unittest.TestCase):
                 command,
             )
 
+        for path in (SPECIFY_COMMAND_PATH, CLARIFY_COMMAND_PATH):
+            command = path.read_text(encoding="utf-8")
+            for heading in ("## User Input", "## Pre-Execution Checks"):
+                self.assertNotIn(heading, command, f"{path.name} redefines {heading}")
+
         self.assertIn("Spec-Only Requirement Policy", specify)
         self.assertIn("Preset-added requirement output writes only `spec.md`", specify)
         self.assertIn("Product requirements stay in `spec.md`", specify)

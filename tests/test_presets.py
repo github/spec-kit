@@ -3485,10 +3485,12 @@ class TestBundledPresetLocator:
         manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
 
         entry = catalog["presets"]["workflow-preset"]
+        catalog_updated_at = datetime.fromisoformat(catalog["updated_at"].replace("Z", "+00:00"))
         provided = manifest["provides"]["templates"]
         command_count = sum(1 for item in provided if item["type"] == "command")
         template_count = sum(1 for item in provided if item["type"] == "template")
 
+        assert catalog_updated_at >= datetime(2026, 6, 18, tzinfo=timezone.utc)
         assert entry["bundled"] is True
         assert entry["version"] == "1.3.8"
         assert entry["version"] == manifest["preset"]["version"]
