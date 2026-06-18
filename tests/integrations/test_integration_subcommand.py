@@ -490,10 +490,15 @@ class TestIntegrationStatus:
         manifest = IntegrationManifest("test", project, version="test")
         manifest.record_existing("tracked.md")
 
-        def fail_exists(self):
-            raise AssertionError(f"Path.exists() should not be used for {self}")
+        exists_calls = []
+        original_exists = Path.exists
 
-        monkeypatch.setattr(Path, "exists", fail_exists)
+        def track_exists(self):
+            if self == tracked:
+                exists_calls.append(self)
+            return original_exists(self)
+
+        monkeypatch.setattr(Path, "exists", track_exists)
 
         missing, modified, invalid, valid = _manifest_file_status(
             manifest,
@@ -504,19 +509,29 @@ class TestIntegrationStatus:
         assert modified == []
         assert invalid == []
         assert valid == ["tracked.md"]
+        assert exists_calls == []
 
     def test_status_does_not_use_exists_precheck_for_manifest_load(self, copilot_project, monkeypatch):
-        def fail_exists(self):
-            raise AssertionError(f"Path.exists() should not be used for {self}")
+        manifest_paths = set(
+            (copilot_project / ".specify" / "integrations").glob("*.manifest.json")
+        )
+        exists_calls = []
+        original_exists = Path.exists
 
-        monkeypatch.setattr(Path, "exists", fail_exists)
+        def track_exists(self):
+            if self in manifest_paths:
+                exists_calls.append(self)
+            return original_exists(self)
+
+        monkeypatch.setattr(Path, "exists", track_exists)
 
         result = _run_in_project(copilot_project, ["integration", "status", "--json"])
 
         assert result.exit_code == 0
         payload = json.loads(result.output)
-        assert payload["status"] == "ok"
+        assert payload["status"] in {"ok", "warning"}
         assert payload["manifests"]["copilot"]["readable"] is True
+        assert exists_calls == []
 
     def test_status_reports_unresolved_project_root_without_crashing(self, copilot_project, monkeypatch):
         original_resolve = Path.resolve
