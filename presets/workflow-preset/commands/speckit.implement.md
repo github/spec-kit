@@ -58,9 +58,10 @@ Map planned `U` design objects to concrete source, test, fixture, configuration,
 - write only `allowed_write_paths`
 - write `task_status_update.receipt_path` as `speckit.implement.receipt.v1`
 - validation_evidence must reference the relevant BDD scenario, behavior assertion, API contract, or quickstart path when the handoff context includes behavior contracts
-- Code review tasks must echo `task_type: code_review`, write `review_conclusion.checked_sources`, `data_side_effect_review`, `consistency_repairs`, and `deferred_validation_todos` when applicable
+- asset binding must map Client Asset Contract entries to local asset paths or code asset mappings from the handoff context; missing required client visual assets, mappings, variants, or fallbacks become `context_gaps`
+- Code review tasks must echo `task_type: code_review`, write `review_conclusion.checked_sources`, `data_side_effect_review`, `consistency_repairs`, and `deferred_validation_todos`; use empty arrays or objects when there are no entries
 - For data side-effect review, inspect the actual implementation diff for runtime database writes and field-level update/delete behavior, bulk writes, soft deletes, ORM whole-object saves, migrations/backfills, retries, rollback/compensation, and external-system writes
-- repair design, sequence, or contract drift and high-risk data side effects only inside `allowed_write_paths`; real e2e cannot run becomes a todo
+- repair design, sequence, or contract drift and high-risk data side effects only inside `allowed_write_paths`; when real e2e cannot run, Worker receipt must record missing environment and commands in `deferred_validation_todos`
 - Do not edit `tasks.md`, create handoffs, dispatch workers
 ## Lifecycle
 `intake` -> `context_indexing` -> `vertical_planning` -> `manifest_assembly` -> `worker_dispatch` -> `worker_execution` -> `receipt_review` -> `code_review` -> `task_commit` -> `integration_verification` -> `closeout`
@@ -81,9 +82,12 @@ Map planned `U` design objects to concrete source, test, fixture, configuration,
 - include relevant `class-diagram.md` and `contracts/sequences.md` constraints
 - include relevant `research.md` validation decisions and include relevant `quickstart.md` validation paths
 - include relevant `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` behavior contract constraints
+- include relevant visual fidelity requirements, screenshot refs, visual proof refs, and Design Requirement trace refs
+- include relevant Client Asset Contract entries, asset source strategy, required variants, fallback policy, and blocker status
 - omit unrelated full `spec.md`, `plan.md`, `research.md`, `contracts/`, `class-diagram.md`, and `quickstart.md`; record unresolved required context as `context_gaps`
 ## Path Rules
-- derive `allowed_write_paths` from paths referenced by assigned task text
+- derive `allowed_write_paths` from paths referenced by assigned task text, including specific source, test, fixture, or configuration file paths for the planned `U` design object and target component or module
+- If no concrete file path can be derived, record `context_gaps`
 - include receipt path in `allowed_write_paths`
 - derive `allowed_read_paths` from allowed write parents, validation files, context digest, and context index
 - include `tasks.md` in `allowed_read_paths`

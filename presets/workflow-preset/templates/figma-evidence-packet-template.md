@@ -1,8 +1,7 @@
 # Figma Evidence Packet
 
-Use this packet to normalize design evidence before `/speckit.specify` writes
-Figma-derived requirements. Raw intake readiness is governed by
-`templates/figma-intake-contract.md`.
+Purpose: normalize Figma design evidence before Design Requirement Intake and
+`/speckit.specify`. Readiness gate: `templates/figma-intake-contract.md`.
 
 ## Figma Source
 
@@ -20,6 +19,34 @@ Figma-derived requirements. Raw intake readiness is governed by
 - Variables / styles captured:
 - Component metadata captured:
 
+## Screenshot Evidence
+
+Screenshot evidence must declare L0-L3 coverage and coverage gaps. Screenshots are visual proof, not the primary Design Requirement Intake carrier.
+Constraint: screenshot-derived visual facts require screenshot refs and must not replace Design Requirement Intake.
+
+- Screenshot level: L0|L1|L2|L3
+- L0: no screenshot evidence
+- L1: static screenshot reference
+- L2: viewport or state screenshot coverage
+- L3: visual diff baseline or approved visual proof
+- L3 applies to high-fidelity, pixel-perfect, brand-critical, design-system, or visual regression work
+
+## Screenshot Coverage Matrix
+
+- Requirement ID:
+- Screenshot level:
+- Screenshot refs:
+- Frame / node refs:
+- Viewport:
+- State:
+- Capture timestamp:
+- Design version:
+- Redaction required:
+- Baseline usage:
+- Missing coverage:
+- Blocking item:
+- Visual baseline usage: none|manual review|visual diff
+
 ## Figma Intake Readiness
 
 - figma-metadata.part-*.xml:
@@ -33,8 +60,7 @@ Figma-derived requirements. Raw intake readiness is governed by
 
 ## Evidence Record Format
 
-Use this record for extracted facts in observed, inferred, missing, and
-out-of-scope sections.
+Record schema for observed, inferred, missing, and out-of-scope facts.
 
 - Fact ID:
 - Evidence type: Observed|Inferred|Missing|Out of Scope
@@ -90,6 +116,18 @@ out-of-scope sections.
 - Accessibility evidence:
 - Accepted exceptions:
 
+## Client Asset Inventory
+
+- Asset ID:
+- Asset role:
+- Resource type: image|icon|video|lottie|svg|font
+- Figma node/component ref:
+- Asset source strategy: figma_export_required|code_asset|existing_repo_asset|remote_runtime_asset
+- Export/use contract:
+- Required variants:
+- Fallback policy:
+- Blocker status:
+
 ## Component Mapping
 
 - Figma component -> code component:
@@ -98,7 +136,7 @@ out-of-scope sections.
 
 ## Spec Handoff Notes
 
-- Requirement sections this evidence can support:
+- Supported requirement sections:
 - Clarification items that must remain unresolved:
 - Source refs required in `spec.md`:
 

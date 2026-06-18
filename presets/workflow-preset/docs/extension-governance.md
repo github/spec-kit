@@ -26,6 +26,10 @@ adapter scripts, or worker dispatch from scripts.
 Evidence templates: packaged evidence templates are allowed preset artifacts.
 Intake contract templates are also allowed when they define input shape,
 completeness gates, and blocker lint rules without executing an external system.
+Design Requirement Intake and Requirement Merge templates may define
+provider-neutral design facts and merge reports. Figma is a provider-specific design source;
+Screenshot is provider evidence and visual proof.
+Screenshots must not become the primary Design Requirement Intake carrier or a source of product semantics.
 Figma MCP execution, hooks, adapter scripts, and authentication are external
 integration concerns and remain outside this preset.
 
@@ -44,15 +48,18 @@ Stage ownership:
 - `/speckit.constitution`: constitution governance and project principles only.
 - `/speckit.specify`: requirement artifacts only.
 - `/speckit.clarify`: requirement clarification only.
-- `/speckit.checklist`: checklist artifacts and BDD/NFR readiness gates only.
+- `/speckit.checklist`: checklist artifacts and BDD/NFR/Visual Fidelity readiness gates only.
 - `/speckit.plan`: Phase 0 behavior projection, planning artifacts, and formal contracts.
 - `/speckit.tasks`: `tasks.md` only.
 - `/speckit.analyze`: vertical consistency checks across requirements, behavior drafts, contracts, and tasks only.
 - `/speckit.implement`: implementation handoff execution only.
 
-When a Figma Evidence Packet has already been written into `spec.md`,
-`/speckit.clarify` may clarify those requirement gaps from `spec.md`, but
+When Design Requirement Intake or a Figma Evidence Packet has already been
+written into `spec.md`, `/speckit.clarify` may clarify those requirement gaps
+from `spec.md`, but extraction remains outside clarification.
 external design extraction is not a clarification responsibility.
+
+Visual Fidelity readiness applies to design-derived and product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements. The Visual Fidelity Evidence Matrix is the single visual readiness record and uses one row per visual requirement or visual proof obligation with Source `spec.md` section, Fidelity Scope, Screenshot Level, Evidence Refs, Visual Proof Required, Blocking Item ID, and Exception Rule. Responsive visual requirements block PASS only when they are complex, multi-state, or declare L2 or L3 visual proof.
 
 ## Structured Artifact Rules
 
@@ -100,6 +107,7 @@ NFR readiness belongs in `spec.md` product requirements rather than downstream
 planning guesses. Keep domain model details in `data-model.md`, interface
 schemas in `contracts/`, and validation run guidance in `quickstart.md`.
 
+For visual planning, research.md records visual validation decisions only and must not duplicate the Visual Fidelity Evidence Matrix; contracts formalize visual interaction and state constraints by referencing accepted visual items, visual proof refs, and accepted exception refs; contracts/sequences.md records visual state flow only when it affects cross-boundary sequencing, async callbacks, retry, rollback, compensation, or error propagation, and must not define visual style, tokens, layout breakpoints, screenshot matrices, or validation commands.
 ## Handoff Extension Rules
 
 Handoff extensions must update schema, validator, command, and cross-agent documentation together.

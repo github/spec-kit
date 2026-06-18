@@ -5,7 +5,15 @@
       "id": "AST-001",
       "target": "entity.field",
       "operator": "equals",
-      "expected": "value"
+      "expected": "value",
+      "intent": "business_state"
+    },
+    {
+      "id": "AST-ERR-001",
+      "target": "entity.field",
+      "operator": "equals",
+      "expected": "unchanged",
+      "intent": "state_invariant"
     }
   ]
 }

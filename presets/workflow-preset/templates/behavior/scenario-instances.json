@@ -1,5 +1,15 @@
 {
   "contract_type": "speckit.behavior.scenario_instances.v1",
+  "case_coverage_blockers": [
+    {
+      "id": "BLK-001",
+      "case_id": "CASE-VALIDATION-001",
+      "case_type": "validation",
+      "source": "spec.md#...",
+      "reason": "<missing planning input>",
+      "downstream_contract_path": "contracts/behavior/scenario-instances.json"
+    }
+  ],
   "scenarios": [
     {
       "id": "SCN-001",
@@ -17,6 +27,28 @@
         "message": "<expected feedback>"
       },
       "assertion_ids": ["AST-001"]
+    },
+    {
+      "id": "SCN-ERR-001",
+      "title": "<permission rejection behavior title>",
+      "type": "permission",
+      "uif_path_id": "UIF-001",
+      "fixture_ids": ["FIX-001"],
+      "request_case": {
+        "id": "REQ-ERR-001",
+        "case_kind": "permission",
+        "outcome": "failure",
+        "trigger": "<denied request trigger>"
+      },
+      "expected_response": {
+        "status": 403,
+        "error_code": "<ERR_CODE>"
+      },
+      "expected_feedback": {
+        "type": "inline_error",
+        "message": "<failure feedback>"
+      },
+      "assertion_ids": ["AST-ERR-001"]
     }
   ]
 }

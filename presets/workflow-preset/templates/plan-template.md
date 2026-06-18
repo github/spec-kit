@@ -11,3 +11,10 @@
 - Data model: `./data-model.md`
 - Interface contracts: `./contracts/`
 - Validation path: `./quickstart.md`
+
+## Visual fidelity navigation
+
+- Visual validation decisions: `./research.md`
+- Visual interaction contracts: `./contracts/uif/` and `./contracts/behavior/`
+- Visual flow sequences: `./contracts/sequences.md`
+- Visual proof execution: `./quickstart.md`

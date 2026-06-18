@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-24T00:00:00Z",
+  "updated_at": "2026-06-18T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.json",
   "presets": {
     "lean": {
@@ -29,7 +29,7 @@
     "workflow-preset": {
       "name": "Workflow Preset",
       "id": "workflow-preset",
-      "version": "1.3.6",
+      "version": "1.3.8",
       "description": "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
       "author": "bigsmartben",
       "repository": "https://github.com/bigsmartben/spec-kit-workflow-preset",
@@ -40,7 +40,7 @@
       },
       "provides": {
         "commands": 8,
-        "templates": 24
+        "templates": 26
       },
       "tags": [
         "behavior",
