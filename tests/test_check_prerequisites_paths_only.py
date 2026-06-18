@@ -17,7 +17,11 @@ COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
 CHECK_PREREQS_PS = PROJECT_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"
 
 HAS_PWSH = shutil.which("pwsh") is not None
-_WINDOWS_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershell")) if os.name == "nt" else None
+_WINDOWS_POWERSHELL = (
+    (shutil.which("powershell.exe") or shutil.which("powershell"))
+    if os.name == "nt"
+    else None
+)
 
 
 def _install_bash_scripts(repo: Path) -> None:
@@ -142,6 +146,41 @@ def test_paths_only_text_mode_on_non_spec_branch(prereq_repo: Path) -> None:
 
 
 @requires_bash
+def test_paths_only_does_not_overwrite_feature_json(prereq_repo: Path) -> None:
+    """--paths-only must not rewrite .specify/feature.json when env differs."""
+    common = (prereq_repo / ".specify" / "scripts" / "bash" / "common.sh").read_text(
+        encoding="utf-8"
+    )
+    script_text = (
+        prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    ).read_text(encoding="utf-8")
+    assert "SPECIFY_NO_PERSIST_FEATURE_JSON" not in common
+    assert "get_feature_paths --no-persist" in script_text
+
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    _write_feature_json(prereq_repo)
+    before = (prereq_repo / ".specify" / "feature.json").read_text(encoding="utf-8")
+    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    env = _clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = "specs/999-temp"
+    result = subprocess.run(
+        ["bash", str(script), "--json", "--paths-only"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (prereq_repo / ".specify" / "feature.json").read_text(
+        encoding="utf-8"
+    ) == before
+    data = json.loads(result.stdout)
+    assert data["FEATURE_DIR"].endswith("specs/999-temp")
+
+
+@requires_bash
 def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
     """Without --paths-only, feature directory validation must still fail on main."""
     script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
@@ -160,13 +199,17 @@ def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
 # ── PowerShell tests ──────────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
 def test_ps_paths_only_succeeds_on_non_spec_branch(prereq_repo: Path) -> None:
     """-PathsOnly must return paths when feature.json pins the feature dir."""
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
     _write_feature_json(prereq_repo)
-    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    script = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    )
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json", "-PathsOnly"],
@@ -183,7 +226,9 @@ def test_ps_paths_only_succeeds_on_non_spec_branch(prereq_repo: Path) -> None:
     assert "FEATURE_DIR" in data
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
 def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
     """-PathsOnly must also work when feature.json and SPECIFY_FEATURE agree."""
     subprocess.run(
@@ -194,7 +239,9 @@ def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
     _write_feature_json(prereq_repo)
-    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    script = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    )
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     env = _clean_env()
     env["SPECIFY_FEATURE"] = "001-my-feature"
@@ -211,10 +258,54 @@ def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
     assert "FEATURE_DIR" in data
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
+def test_ps_paths_only_does_not_overwrite_feature_json(prereq_repo: Path) -> None:
+    """-PathsOnly must not rewrite .specify/feature.json when env differs."""
+    common = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "common.ps1"
+    ).read_text(encoding="utf-8")
+    script_text = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    ).read_text(encoding="utf-8")
+    assert "SPECIFY_NO_PERSIST_FEATURE_JSON" not in common
+    assert "Get-FeaturePathsEnv -NoPersist" in script_text
+
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    _write_feature_json(prereq_repo)
+    before = (prereq_repo / ".specify" / "feature.json").read_text(encoding="utf-8")
+    script = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    )
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    env = _clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = "specs/999-temp"
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json", "-PathsOnly"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (prereq_repo / ".specify" / "feature.json").read_text(
+        encoding="utf-8"
+    ) == before
+    data = json.loads(result.stdout)
+    assert data["FEATURE_DIR"].replace("\\", "/").endswith("specs/999-temp")
+
+
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
 def test_ps_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
     """Without -PathsOnly, feature directory validation must still fail on main."""
-    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    script = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    )
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
