@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from ..base import SkillsIntegration
-from ..manifest import IntegrationManifest
 from ..._utils import dump_frontmatter
 
 # Mapping of command template stem → argument-hint text shown inline
@@ -201,35 +199,3 @@ class ClaudeIntegration(SkillsIntegration):
                 for key, value in fork_config.items():
                     updated = self._inject_frontmatter_flag(updated, key, value)
         return updated
-
-    def setup(
-        self,
-        project_root: Path,
-        manifest: IntegrationManifest,
-        parsed_options: dict[str, Any] | None = None,
-        **opts: Any,
-    ) -> list[Path]:
-        """Install Claude skills, then inject argument-hints."""
-        created = super().setup(project_root, manifest, parsed_options, **opts)
-
-        skills_dir = self.skills_dest(project_root).resolve()
-
-        for path in created:
-            # Only touch SKILL.md files under the skills directory
-            try:
-                path.resolve().relative_to(skills_dir)
-            except ValueError:
-                continue
-            if path.name != "SKILL.md":
-                continue
-
-            content_bytes = path.read_bytes()
-            content = content_bytes.decode("utf-8")
-
-            updated = self.post_process_skill_content(content)
-
-            if updated != content:
-                path.write_bytes(updated.encode("utf-8"))
-                self.record_file_in_manifest(path, project_root, manifest)
-
-        return created
