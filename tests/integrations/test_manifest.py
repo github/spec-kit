@@ -130,6 +130,12 @@ class TestManifestCheckModified:
         (tmp_path / "f.txt").write_text("changed", encoding="utf-8")
         assert m.check_modified() == ["f.txt"]
 
+    def test_crlf_only_change_is_not_modified(self, tmp_path):
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("f.txt", "line 1\nline 2\n")
+        (tmp_path / "f.txt").write_bytes(b"line 1\r\nline 2\r\n")
+        assert m.check_modified() == []
+
     def test_deleted_file_not_reported(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("f.txt", "original")

@@ -614,7 +614,11 @@ class TestIntegrationUpgrade:
 
         prompt_file = project / ".github" / "prompts" / "speckit.implement.prompt.md"
         assert prompt_file.exists()
-        prompt_file.write_bytes(prompt_file.read_bytes().replace(b"\n", b"\r\n"))
+        prompt_text = prompt_file.read_text(encoding="utf-8")
+        prompt_file.write_text(
+            "\r\n".join(prompt_text.splitlines()) + "\r\n",
+            encoding="utf-8",
+        )
 
         old = os.getcwd()
         try:
