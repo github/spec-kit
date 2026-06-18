@@ -289,6 +289,59 @@ class TestExpressions:
         ctx = StepContext(inputs={"text": "hello world"})
         assert evaluate_expression("{{ inputs.text | contains('world') }}", ctx) is True
 
+    def test_filter_from_json_parses_object(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"emit": {"output": {"stdout": '{"items": [1, 2, 3]}'}}}
+        )
+        result = evaluate_expression("{{ steps.emit.output.stdout | from_json }}", ctx)
+        assert result == {"items": [1, 2, 3]}
+
+    def test_filter_from_json_invalid_json_raises(self):
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(steps={"emit": {"output": {"stdout": "not json"}}})
+        with pytest.raises(ValueError, match="from_json: invalid JSON"):
+            evaluate_expression("{{ steps.emit.output.stdout | from_json }}", ctx)
+
+    def test_filter_from_json_non_string_raises(self):
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(steps={"emit": {"output": {"exit_code": 0}}})
+        with pytest.raises(ValueError, match="expected a JSON string"):
+            evaluate_expression("{{ steps.emit.output.exit_code | from_json }}", ctx)
+
+    def test_filter_from_json_rejects_malformed_forms(self):
+        # `from_json` is strict: no arguments and no trailing tokens. Every
+        # mis-wired form — parenthesized, accidental arg, or trailing
+        # garbage — must raise rather than silently fall through to the
+        # unknown-filter path and return the unparsed value.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(steps={"emit": {"output": {"stdout": '{"a": 1}'}}})
+        bad_forms = (
+            "from_json()",
+            "from_json('x')",
+            "from_json ()",
+            "from_json ('x')",
+            "from_json)",
+            "from_json extra",
+            "from_json 'x'",
+        )
+        for bad in bad_forms:
+            with pytest.raises(ValueError, match="from_json: expected"):
+                evaluate_expression(
+                    "{{ steps.emit.output.stdout | " + bad + " }}", ctx
+                )
+
     def test_condition_evaluation(self):
         from specify_cli.workflows.expressions import evaluate_condition
         from specify_cli.workflows.base import StepContext

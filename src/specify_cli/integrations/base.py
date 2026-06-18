@@ -39,6 +39,7 @@ _CORE_COMMAND_TEMPLATE_ORDER = (
     "clarify",
     "constitution",
     "implement",
+    "converge",
     "plan",
     "checklist",
     "specify",
@@ -392,6 +393,18 @@ class IntegrationBase(ABC):
         to change the extension or naming convention.
         """
         return f"speckit.{template_name}.md"
+
+    def stale_cleanup_exclusions(self) -> set[str]:
+        """Return project-relative paths that upgrade must never stale-delete.
+
+        During ``integration upgrade``, files recorded in a previous manifest
+        but absent from the freshly written one are treated as stale and
+        removed.  Conditionally-tracked files (e.g. a settings file that the
+        integration merges into when it already exists, and therefore stops
+        tracking) would otherwise be deleted even though they are still
+        managed.  Subclasses list such paths here to protect them.
+        """
+        return set()
 
     def commands_dest(self, project_root: Path) -> Path:
         """Return the absolute path to the commands output directory.

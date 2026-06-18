@@ -38,6 +38,7 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
         "checklist",
         "clarify",
         "constitution",
+        "converge",
         "implement",
         "plan",
         "specify",

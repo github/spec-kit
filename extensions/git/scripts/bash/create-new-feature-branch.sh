@@ -127,7 +127,7 @@ get_highest_from_specs() {
 
 # Function to get highest number from git branches
 get_highest_from_branches() {
-    git branch -a 2>/dev/null | sed 's/^[* ]*//; s|^remotes/[^/]*/||' | _extract_highest_number
+    git branch -a 2>/dev/null | sed -E 's/^[+*][[:space:]]+//; s/^[[:space:]]+//; s|^remotes/[^/]*/||' | _extract_highest_number
 }
 
 # Extract the highest sequential feature number from a list of ref names (one per line).

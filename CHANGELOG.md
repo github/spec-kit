@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.11.2] - 2026-06-18
+
+### Changed
+
+- Update Linear Integration extension to v0.6.0 (#3047)
+- fix: align community submission workflows with bug-assess label trigger (#3046)
+- fix(bug-assess): recompile lock so github guard repos is 'all' (#3036)
+- fix(bug-assess): set min-integrity: none to allow reading external user issues (#3030)
+- feat: add bug-assess agentic workflow (#3023)
+- feat: add /speckit.converge command (#3001)
+- fix: preserve .vscode/settings.json and script +x bit on integration upgrade (#3020)
+- feat(workflows): add from_json expression filter (#2961)
+- Add `init` workflow step to bootstrap projects like `specify init` (#2838)
+- chore: release 0.11.1, begin 0.11.2.dev0 development (#3022)
+
 ## [0.11.1] - 2026-06-17
 
 ### Changed

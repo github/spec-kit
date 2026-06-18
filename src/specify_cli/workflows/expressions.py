@@ -1,11 +1,13 @@
 """Sandboxed expression evaluator for workflow templates.
 
 Provides a safe Jinja2 subset for evaluating expressions in workflow YAML.
-No file I/O, no imports, no arbitrary code execution.
+Templates cannot perform file I/O, import modules, or run arbitrary code —
+the evaluator only walks the namespace and applies a fixed set of filters.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -55,6 +57,23 @@ def _filter_contains(value: Any, substring: str) -> bool:
     if isinstance(value, list):
         return substring in value
     return False
+
+
+def _filter_from_json(value: Any) -> Any:
+    """Parse a JSON string into a typed value (list/dict/scalar).
+
+    Raises ``ValueError`` on non-string input or invalid JSON — a parse
+    failure here means the pipeline wiring is wrong, and silently
+    passing the unparsed value through would hide it.
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            f"from_json: expected a JSON string, got {type(value).__name__}"
+        )
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"from_json: invalid JSON: {exc}") from exc
 
 
 # -- Expression resolution ------------------------------------------------
@@ -122,7 +141,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     - Comparisons: ``==``, ``!=``, ``>``, ``<``, ``>=``, ``<=``
     - Boolean operators: ``and``, ``or``, ``not``
     - ``in``, ``not in``
-    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| map('...')``
+    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``
     - String and numeric literals
     """
     expr = expr.strip()
@@ -139,6 +158,22 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         parts = expr.split("|", 1)
         value = _evaluate_simple_expression(parts[0].strip(), namespace)
         filter_expr = parts[1].strip()
+
+        # `from_json` is strict: it takes no arguments and tolerates no
+        # trailing tokens. Match on the leading filter name and require the
+        # whole filter to be exactly `from_json`, so every mis-wired form
+        # (`from_json()`, `from_json('x')`, `from_json)`, `from_json extra`)
+        # fails loudly instead of silently falling through to the
+        # unknown-filter path and returning the unparsed value. (filter_expr
+        # is already stripped above.)
+        leading = re.match(r"\w+", filter_expr)
+        if leading and leading.group(0) == "from_json":
+            if filter_expr != "from_json":
+                raise ValueError(
+                    "from_json: expected '| from_json' with no arguments or "
+                    f"trailing tokens, got '| {filter_expr}'"
+                )
+            return _filter_from_json(value)
 
         # Parse filter name and argument
         filter_match = re.match(r"(\w+)\((.+)\)", filter_expr)

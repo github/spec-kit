@@ -341,18 +341,30 @@ class TestClaudeIntegration:
 class TestClaudeArgumentHints:
     """Verify that argument-hint frontmatter is injected for Claude skills."""
 
+    def test_converge_has_no_argument_hint(self):
+        """Converge should not advertise unsupported feature-name arguments."""
+        assert "converge" not in ARGUMENT_HINTS
+
     def test_all_skills_have_hints(self, tmp_path):
-        """Every generated SKILL.md must contain an argument-hint line."""
+        """Every skill with a configured hint must contain an argument-hint line."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         assert len(skill_files) > 0
         for f in skill_files:
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
             content = f.read_text(encoding="utf-8")
-            assert "argument-hint:" in content, (
-                f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
-            )
+            if stem in ARGUMENT_HINTS:
+                assert "argument-hint:" in content, (
+                    f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
+                )
+            else:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
 
     def test_hints_match_expected_values(self, tmp_path):
         """Each skill's argument-hint must match the expected text."""
@@ -366,13 +378,15 @@ class TestClaudeArgumentHints:
             if stem.startswith("speckit-"):
                 stem = stem[len("speckit-"):]
             expected_hint = ARGUMENT_HINTS.get(stem)
-            assert expected_hint is not None, (
-                f"No expected hint defined for skill '{stem}'"
-            )
             content = f.read_text(encoding="utf-8")
-            assert f'argument-hint: "{expected_hint}"' in content, (
-                f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
-            )
+            if expected_hint is None:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
+            else:
+                assert f'argument-hint: "{expected_hint}"' in content, (
+                    f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
+                )
 
     def test_hint_is_inside_frontmatter(self, tmp_path):
         """argument-hint must appear between the --- delimiters, not in the body."""
@@ -386,12 +400,20 @@ class TestClaudeArgumentHints:
             assert len(parts) >= 3, f"No frontmatter in {f.parent.name}/SKILL.md"
             frontmatter = parts[1]
             body = parts[2]
-            assert "argument-hint:" in frontmatter, (
-                f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
-            )
-            assert "argument-hint:" not in body, (
-                f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
-            )
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem in ARGUMENT_HINTS:
+                assert "argument-hint:" in frontmatter, (
+                    f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
+                )
+                assert "argument-hint:" not in body, (
+                    f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
+                )
+            else:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
 
     def test_hint_appears_after_description(self, tmp_path):
         """argument-hint must immediately follow the description line."""
@@ -402,6 +424,14 @@ class TestClaudeArgumentHints:
         for f in skill_files:
             content = f.read_text(encoding="utf-8")
             lines = content.splitlines()
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem not in ARGUMENT_HINTS:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
+                continue
             found_description = False
             for idx, line in enumerate(lines):
                 if line.startswith("description:"):
