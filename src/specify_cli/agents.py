@@ -325,6 +325,10 @@ class CommandRegistrar:
             body = self.resolve_skill_placeholders(
                 agent_name, frontmatter, body, project_root
             )
+            from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
+
+            _sep = agent_config.get("invoke_separator", ".")
+            body = IntegrationBase.normalize_slash_command_refs(body, _sep)
 
         description = frontmatter.get(
             "description", f"Spec-kit workflow command: {skill_name}"
@@ -335,7 +339,16 @@ class CommandRegistrar:
             description,
             f"{source_id}:{source_file}",
         )
-        return self.render_frontmatter(skill_frontmatter) + "\n" + body
+        content = self.render_frontmatter(skill_frontmatter) + "\n" + body
+        try:
+            from specify_cli.integrations import get_integration  # noqa: PLC0415
+
+            integration = get_integration(agent_name)
+        except Exception:
+            integration = None
+        if hasattr(integration, "post_process_skill_content"):
+            content = integration.post_process_skill_content(content)
+        return content
 
     @staticmethod
     def build_skill_frontmatter(
@@ -592,6 +605,7 @@ class CommandRegistrar:
 
             _sep = agent_config.get("invoke_separator", ".")
             body = IntegrationBase.resolve_command_refs(body, _sep)
+            body = IntegrationBase.normalize_slash_command_refs(body, _sep)
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 

@@ -1155,7 +1155,8 @@ class PresetManager:
         separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
             "invoke_separator", "."
         )
-        return IntegrationBase.resolve_command_refs(body, separator)
+        body = IntegrationBase.resolve_command_refs(body, separator)
+        return IntegrationBase.normalize_slash_command_refs(body, separator)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
         """Index extension-backed skill restore data by skill directory name."""

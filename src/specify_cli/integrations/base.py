@@ -869,6 +869,17 @@ class IntegrationBase(ABC):
         )
 
     @staticmethod
+    def normalize_slash_command_refs(content: str, separator: str = ".") -> str:
+        """Normalize literal ``/speckit.foo`` slash references for an agent."""
+        if separator == ".":
+            return content
+        return re.sub(
+            r"(?<![\w/])/(speckit\.[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]+)*)\b",
+            lambda m: "/" + m.group(1).replace(".", separator),
+            content,
+        )
+
+    @staticmethod
     def process_template(
         content: str,
         agent_name: str,
@@ -959,6 +970,7 @@ class IntegrationBase(ABC):
 
         # 8. Replace __SPECKIT_COMMAND_<NAME>__ with invocation strings
         content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+        content = IntegrationBase.normalize_slash_command_refs(content, invoke_separator)
 
         return content
 

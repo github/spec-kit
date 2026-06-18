@@ -26,6 +26,12 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _sha256_with_lf_newlines(path: Path) -> str:
+    """Return a hash after normalizing CRLF/CR newlines to LF."""
+    content = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(content).hexdigest()
+
+
 def _validate_rel_path(rel: Path, root: Path) -> Path:
     """Resolve *rel* against *root* and verify it stays within *root*.
 
@@ -285,7 +291,10 @@ class IntegrationManifest:
             if abs_path.is_symlink() or not abs_path.is_file():
                 modified.append(rel)
                 continue
-            if _sha256(abs_path) != expected_hash:
+            if (
+                _sha256(abs_path) != expected_hash
+                and _sha256_with_lf_newlines(abs_path) != expected_hash
+            ):
                 modified.append(rel)
         return modified
 

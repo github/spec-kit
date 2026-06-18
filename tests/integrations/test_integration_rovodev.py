@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 import yaml
@@ -261,9 +262,9 @@ class TestRovodevIntegration:
                 assert placeholder not in body, (
                     f"{skill_file} body contains unprocessed placeholder {placeholder!r}"
                 )
-            # Skills agents must use hyphen-style refs in body.
-            assert "/speckit." not in body, (
-                f"{skill_file} body contains dot-notation /speckit. reference"
+            # Skills agents must use hyphen-style slash-command refs in body.
+            assert re.search(r"(?<![\w/])/speckit\.[\w.-]+", body) is None, (
+                f"{skill_file} body contains dot-notation slash command reference"
             )
 
         # The plan skill must reference the agent's context file.

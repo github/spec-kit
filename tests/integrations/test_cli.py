@@ -812,7 +812,7 @@ class TestGitExtensionOptIn:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -826,7 +826,12 @@ class TestGitExtensionOptIn:
 
         extensions_yml = project / ".specify" / "extensions.yml"
         hooks_data = yaml.safe_load(extensions_yml.read_text(encoding="utf-8"))
-        assert hooks_data["installed"] == ["arch", "git", "preview", "repository-governance"]
+        assert hooks_data["installed"] == [
+            "agent-context",
+            "arch",
+            "preview",
+            "repository-governance",
+        ]
 
         preset_dir = project / ".specify" / "presets" / "workflow-preset"
         assert (preset_dir / "preset.yml").exists(), "workflow-preset was not installed"
@@ -845,7 +850,7 @@ class TestGitExtensionOptIn:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -899,7 +904,7 @@ class TestGitExtensionOptIn:
         assert "speckit.implement.handoff.v2" in implement_text
 
     def test_no_git_keeps_community_defaults(self, tmp_path):
-        """--no-git skips only git; bundled community defaults still install."""
+        """Bundled community defaults install without opting into git."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -910,8 +915,8 @@ class TestGitExtensionOptIn:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
-                "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--integration", "claude", "--script", "sh",
+                "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -1314,7 +1319,7 @@ class TestIntegrationCatalogDiscoveryCLI:
         normalized = _normalize_cli_output(result.output)
 
         assert result.exit_code == 0, result.output
-        assert "Failed to clean up extension/preset artifacts for integration 'copilot'" in normalized
+        assert "Failed to clean up extension artifacts for integration 'copilot'" in normalized
         assert "cleanup exploded" in normalized
         assert "Switched to integration" in normalized
 
