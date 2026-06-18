@@ -26,18 +26,31 @@ if [[ ! -f "$EXT_CONFIG" ]]; then
   exit 0
 fi
 
-# Locate a suitable Python interpreter (SPECKIT_PYTHON, then python3, then python).
+# Locate a Python 3 interpreter with PyYAML available.
 _python=""
-if [[ -n "${SPECKIT_PYTHON:-}" ]]; then
-  _python="$SPECKIT_PYTHON"
-elif command -v python3 >/dev/null 2>&1; then
-  _python="python3"
-elif command -v python >/dev/null 2>&1 && python --version 2>&1 | grep -q "^Python 3"; then
-  _python="python"
-fi
+_python_candidates=()
+[[ -n "${SPECKIT_PYTHON:-}" ]] && _python_candidates+=("$SPECKIT_PYTHON")
+_python_candidates+=("python3" "python")
+for _candidate in "${_python_candidates[@]}"; do
+  if command -v "$_candidate" >/dev/null 2>&1 \
+    && "$_candidate" - <<'PY' >/dev/null 2>&1
+import sys
+try:
+    import yaml  # noqa: F401
+except ImportError:
+    sys.exit(1)
+sys.exit(0 if sys.version_info[0] == 3 else 1)
+PY
+  then
+    _python="$_candidate"
+    break
+  fi
+done
+unset _candidate _python_candidates
 
-if [[ -z "$_python" ]] || ! "$_python" --version 2>&1 | grep -q "^Python 3"; then
-  echo "agent-context: Python 3 not found on PATH; skipping update." >&2
+if [[ -z "$_python" ]]; then
+  echo "agent-context: Python 3 with PyYAML not found on PATH; skipping update." >&2
+  echo "  To resolve: pip install pyyaml (or install it into the environment used by python3)." >&2
   exit 0
 fi
 _case_insensitive_context_files=0

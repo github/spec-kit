@@ -180,19 +180,34 @@ def _ensure_test_python_on_path(project_root: Path) -> Path:
     return shim_dir
 
 
-def _bundled_script_env(project_root: Path, *, for_bash: bool = False) -> dict[str, str]:
+def _bundled_script_env(
+    project_root: Path,
+    *,
+    for_bash: bool = False,
+    speckit_python: str | None = None,
+) -> dict[str, str]:
     env = os.environ.copy()
     shim_dir = _ensure_test_python_on_path(project_root)
     env["PATH"] = str(shim_dir) + os.pathsep + env.get("PATH", "")
     env["SPECKIT_PYTHON"] = (
-        _bash_posix_path(Path(sys.executable)) if for_bash else sys.executable
+        speckit_python
+        if speckit_python is not None
+        else (_bash_posix_path(Path(sys.executable)) if for_bash else sys.executable)
     )
     return env
 
 
-def _run_bash_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
+def _run_bash_agent_context_script(
+    project_root: Path,
+    *,
+    speckit_python: str | None = None,
+) -> subprocess.CompletedProcess:
     script = EXT_DIR / "scripts" / "bash" / "update-agent-context.sh"
-    env = _bundled_script_env(project_root, for_bash=True)
+    env = _bundled_script_env(
+        project_root,
+        for_bash=True,
+        speckit_python=speckit_python,
+    )
     if os.name == "nt":
         root = _bash_posix_path(project_root)
         script_path = _bash_posix_path(script)
@@ -225,6 +240,30 @@ def shlex_quote(value: str) -> str:
 def _run_powershell_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
     script = EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
     env = _bundled_script_env(project_root)
+    return subprocess.run(
+        [
+            POWERSHELL,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ],
+        cwd=project_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def _run_powershell_agent_context_script_with_env(
+    project_root: Path,
+    *,
+    speckit_python: str,
+) -> subprocess.CompletedProcess:
+    script = EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
+    env = _bundled_script_env(project_root, speckit_python=speckit_python)
     return subprocess.run(
         [
             POWERSHELL,
@@ -737,6 +776,25 @@ class TestBundledUpdaterPathValidation:
         assert output.count("agent-context: updated CLAUDE.md") == 1
         assert "agent-context: updated agents.md" not in output
 
+    @requires_bash
+    def test_bash_script_falls_back_from_invalid_speckit_python(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md"],
+        )
+
+        result = _run_bash_agent_context_script(
+            project,
+            speckit_python="/definitely/missing/python",
+        )
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert "agent-context: updated AGENTS.md" in (result.stderr + result.stdout)
+        assert (project / "AGENTS.md").exists()
+
     @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
     def test_powershell_script_rejects_backslash_context_files(self, tmp_path):
         project = tmp_path / "project"
@@ -773,6 +831,25 @@ class TestBundledUpdaterPathValidation:
         assert output.count("agent-context: updated AGENTS.md") == 1
         assert output.count("agent-context: updated CLAUDE.md") == 1
         assert "agent-context: updated agents.md" not in output
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_falls_back_from_invalid_speckit_python(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md"],
+        )
+
+        result = _run_powershell_agent_context_script_with_env(
+            project,
+            speckit_python=str(project / "missing-python"),
+        )
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert "agent-context: updated AGENTS.md" in (result.stderr + result.stdout)
+        assert (project / "AGENTS.md").exists()
 
     @pytest.mark.skipif(
         POWERSHELL is None or os.name != "nt",

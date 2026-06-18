@@ -142,9 +142,9 @@ if ($null -eq $Options) {
     $pythonCandidates += @('python3', 'python')
     foreach ($candidate in $pythonCandidates) {
         if (Get-Command $candidate -ErrorAction SilentlyContinue) {
-            # Verify it is Python 3
-            $verOut = & $candidate --version 2>&1
-            if ($verOut -match 'Python 3') {
+            # Verify it is Python 3 with PyYAML available.
+            $null = & $candidate -c "import sys; import yaml; sys.exit(0 if sys.version_info[0] == 3 else 1)" 2>$null
+            if ($LASTEXITCODE -eq 0) {
                 $pythonCmd = $candidate
                 break
             }
