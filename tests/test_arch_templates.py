@@ -114,10 +114,13 @@ def test_architecture_synthesis_references_five_view_files():
 
 
 def test_init_next_steps_do_not_list_arch_as_core_workflow():
-    init_source = (PROJECT_ROOT / "src" / "specify_cli" / "__init__.py").read_text(encoding="utf-8")
+    init_source = (PROJECT_ROOT / "src" / "specify_cli" / "commands" / "init.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "_display_cmd('arch')" not in init_source
-    assert "specify extension add arch" in init_source
+    assert 'DEFAULT_BUNDLED_EXTENSIONS = ("arch", "preview", "repository-governance")' in init_source
+    assert "specify extension add arch" not in init_source
 
 
 def test_view_templates_define_inputs_and_reject_implementation_detail():

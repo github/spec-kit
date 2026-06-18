@@ -5,6 +5,8 @@ import pytest
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.cline import format_cline_command_name
+
+from .community_defaults import bundled_community_default_files
 from .test_integration_base_markdown import MarkdownIntegrationTests
 
 
@@ -219,4 +221,6 @@ class TestClineIntegration(MarkdownIntegrationTests):
         if i.context_file:
             files.append(i.context_file)
 
-        return sorted(files)
+        files.extend(bundled_community_default_files(self.KEY))
+
+        return sorted(set(files))

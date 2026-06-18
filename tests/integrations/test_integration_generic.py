@@ -347,7 +347,7 @@ class TestGenericIntegration:
                 include_registered_commands=False,
             )
         )
-        expected = sorted(expected)
+        expected = sorted(set(expected))
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -420,7 +420,7 @@ class TestGenericIntegration:
                 include_registered_commands=False,
             )
         )
-        expected = sorted(expected)
+        expected = sorted(set(expected))
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"

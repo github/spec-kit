@@ -310,7 +310,7 @@ class MarkdownIntegrationTests:
 
         files.extend(bundled_community_default_files(self.KEY))
 
-        return sorted(files)
+        return sorted(set(files))
 
     def test_complete_file_inventory_sh(self, tmp_path):
         """Every file produced by specify init --integration <key> --script sh."""

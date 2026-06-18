@@ -8,6 +8,8 @@ import yaml
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.manifest import IntegrationManifest
 
+from .community_defaults import bundled_community_default_files
+
 
 class TestCopilotIntegration:
     def test_copilot_key_and_config(self):
@@ -192,7 +194,7 @@ class TestCopilotIntegration:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
-        expected = sorted([
+        expected = [
             ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
@@ -242,7 +244,10 @@ class TestCopilotIntegration:
             ".specify/memory/constitution.md",
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
-        ])
+        ]
+        expected = sorted(
+            set(expected) | set(bundled_community_default_files("copilot"))
+        )
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -264,7 +269,7 @@ class TestCopilotIntegration:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
-        expected = sorted([
+        expected = [
             ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
@@ -314,7 +319,10 @@ class TestCopilotIntegration:
             ".specify/memory/constitution.md",
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
-        ])
+        ]
+        expected = sorted(
+            set(expected) | set(bundled_community_default_files("copilot"))
+        )
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
@@ -658,7 +666,7 @@ class TestCopilotSkillsMode:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
-        expected = sorted([
+        expected = [
             # Skill files (core + extension-installed agent-context command)
             *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in self._SKILL_COMMANDS],
             ".github/skills/speckit-agent-context-update/SKILL.md",
@@ -694,7 +702,11 @@ class TestCopilotSkillsMode:
             # Bundled workflow
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
-        ])
+        ]
+        expected = sorted(
+            set(expected)
+            | set(bundled_community_default_files("copilot", skills_mode=True))
+        )
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
