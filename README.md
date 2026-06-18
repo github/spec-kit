@@ -45,16 +45,16 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify CLI
 
-Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](https://github.com/github/spec-kit/blob/main/docs/install/uv.md)):
-
-```bash
-uv tool install specify-cli@latest
-```
-
-Or install from source using a specific [release](https://github.com/github/spec-kit/releases) tag (useful if the PyPI version is not yet available for a new release):
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](https://github.com/github/spec-kit/blob/main/docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+```
+
+Or install from [PyPI](https://pypi.org/project/specify-cli/) (may lag briefly after a new release):
+
+```bash
+uv tool install specify-cli@latest
 ```
 
 See the [Installation Guide](https://github.com/github/spec-kit/blob/main/docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.

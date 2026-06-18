@@ -11,23 +11,23 @@
 ## Installation
 
 > [!NOTE]
-> The official `specify-cli` package is published to [PyPI](https://pypi.org/project/specify-cli/) by the [github/spec-kit](https://github.com/github/spec-kit) maintainers. PyPI publishing is performed after each GitHub release and may lag briefly. Source installs from the GitHub repository are always available immediately.
+> The `specify-cli` package is also available on [PyPI](https://pypi.org/project/specify-cli/), published by the [github/spec-kit](https://github.com/github/spec-kit) maintainers. PyPI publishing is performed after each GitHub release and may lag briefly. Source installs from the GitHub repository are always available immediately.
 
 ### Persistent Installation (Recommended)
 
-Install once and use everywhere:
+Install once and use everywhere. Replace `vX.Y.Z` with a tag from [Releases](https://github.com/github/spec-kit/releases):
 
 > [!NOTE]
 > The command below requires **[uv](https://docs.astral.sh/uv/)**. If you see `command not found: uv`, [install uv first](./install/uv.md).
 
 ```bash
-uv tool install specify-cli@latest
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
 ```
 
-Or install from source using a specific [release](https://github.com/github/spec-kit/releases) tag:
+Or install from PyPI:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+uv tool install specify-cli@latest
 ```
 
 Then initialize a project:
