@@ -2,14 +2,106 @@
 
 from pathlib import Path
 
+import yaml
+
 from specify_cli import AGENT_CONFIG
 from specify_cli.extensions import CommandRegistrar
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+ISSUE_TEMPLATE_AGENT_KEYS = [
+    "amp",
+    "agy",
+    "auggie",
+    "claude",
+    "cline",
+    "codebuddy",
+    "codex",
+    "cursor-agent",
+    "devin",
+    "forge",
+    "gemini",
+    "copilot",
+    "goose",
+    "hermes",
+    "bob",
+    "iflow",
+    "junie",
+    "kilocode",
+    "kimi",
+    "kiro-cli",
+    "lingma",
+    "vibe",
+    "opencode",
+    "pi",
+    "qodercli",
+    "qwen",
+    "roo",
+    "rovodev",
+    "shai",
+    "tabnine",
+    "trae",
+    "windsurf",
+    "zed",
+]
+
+ISSUE_TEMPLATE_AGENT_NAMES = [
+    AGENT_CONFIG[key]["name"] for key in ISSUE_TEMPLATE_AGENT_KEYS
+]
+
+
+def _issue_template(path: str) -> dict:
+    return yaml.safe_load((REPO_ROOT / path).read_text(encoding="utf-8"))
+
+
+def _body_item_by_id(template: dict, item_id: str) -> dict:
+    for item in template["body"]:
+        if item.get("id") == item_id:
+            return item
+    raise AssertionError(f"Expected issue template body item {item_id!r}")
+
+
+def _dropdown_options(path: str, item_id: str) -> list[str]:
+    item = _body_item_by_id(_issue_template(path), item_id)
+    return item["attributes"]["options"]
+
 
 class TestAgentConfigConsistency:
     """Ensure kiro-cli migration stays synchronized across key surfaces."""
+
+    def test_issue_template_agent_lists_match_runtime_integrations(self):
+        """GitHub issue templates should list all concrete built-in agents."""
+        concrete_agent_keys = set(AGENT_CONFIG) - {"generic"}
+
+        assert set(ISSUE_TEMPLATE_AGENT_KEYS) == concrete_agent_keys
+        assert len(ISSUE_TEMPLATE_AGENT_KEYS) == len(concrete_agent_keys)
+        assert "Generic (bring your own agent)" not in ISSUE_TEMPLATE_AGENT_NAMES
+
+        bug_options = _dropdown_options(
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "ai-agent",
+        )
+        assert bug_options == ISSUE_TEMPLATE_AGENT_NAMES + ["Not applicable"]
+
+        feature_options = _dropdown_options(
+            ".github/ISSUE_TEMPLATE/feature_request.yml",
+            "ai-agent",
+        )
+        assert feature_options == [
+            "All agents",
+            *ISSUE_TEMPLATE_AGENT_NAMES,
+            "Not applicable",
+        ]
+
+        agent_request = _issue_template(
+            ".github/ISSUE_TEMPLATE/agent_request.yml"
+        )
+        supported_agents_text = agent_request["body"][0]["attributes"]["value"]
+        assert (
+            f"**Currently supported agents**: "
+            f"{', '.join(ISSUE_TEMPLATE_AGENT_NAMES)}"
+            in supported_agents_text
+        )
 
     def test_runtime_config_uses_kiro_cli_and_removes_q(self):
         """AGENT_CONFIG should include kiro-cli and exclude legacy q."""
