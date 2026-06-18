@@ -3580,7 +3580,7 @@ class TestPresetSkills:
         skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit.specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3600,7 +3600,7 @@ class TestPresetSkills:
         skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3668,7 +3668,7 @@ class TestPresetSkills:
         self._write_init_options(project_dir, ai="kimi", ai_skills=False, script="sh")
         skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-placeholder-override"
         preset_dir.mkdir()

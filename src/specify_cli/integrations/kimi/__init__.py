@@ -3,9 +3,11 @@
 Kimi uses the ``.kimi-code/skills/speckit-<name>/SKILL.md`` layout with
 ``/skill:speckit-<name>`` invocation syntax.
 
-Includes legacy migration logic for projects initialised before Kimi
-Code CLI adopted the ``.kimi-code/`` directory, as well as for the
-older dotted skill directory naming (``speckit.xxx`` → ``speckit-xxx``).
+Legacy migration covers projects created before Kimi Code CLI moved to
+this layout and handles two distinct changes: the directory move from
+``.kimi/`` to ``.kimi-code/`` (including the ``KIMI.md`` → ``AGENTS.md``
+context file), and the dotted-to-hyphenated skill naming
+(``speckit.xxx`` → ``speckit-xxx``).
 """
 
 from __future__ import annotations
@@ -204,7 +206,10 @@ def _migrate_legacy_kimi_skills_dir(
     for legacy_dir in legacy_dirs:
         if legacy_dir.is_symlink() or not legacy_dir.is_dir():
             continue
-        if not (legacy_dir / "SKILL.md").exists():
+        legacy_skill = legacy_dir / "SKILL.md"
+        # Treat a symlinked SKILL.md as invalid: later read_bytes() would
+        # otherwise follow it and read content from outside the project.
+        if legacy_skill.is_symlink() or not legacy_skill.is_file():
             continue
 
         target_name = _legacy_to_target_name(legacy_dir.name)
@@ -223,9 +228,13 @@ def _migrate_legacy_kimi_skills_dir(
             migrated_count += 1
             continue
 
-        # Target exists — only remove legacy if SKILL.md is identical
+        # Target exists — only remove legacy if SKILL.md is identical.
+        # Skip when the target SKILL.md is a symlink so the byte comparison
+        # never follows it outside the project. (legacy_skill is already
+        # guaranteed to be a real file by the guard above.)
         target_skill = target_dir / "SKILL.md"
-        legacy_skill = legacy_dir / "SKILL.md"
+        if target_skill.is_symlink():
+            continue
         if target_skill.is_file():
             try:
                 if target_skill.read_bytes() == legacy_skill.read_bytes():
@@ -265,7 +274,9 @@ def _is_speckit_generated_skill(skill_dir: Path) -> bool:
     ``SkillsIntegration.setup()`` to avoid deleting user-authored skills.
     """
     skill_file = skill_dir / "SKILL.md"
-    if not skill_file.is_file():
+    # A symlinked SKILL.md is never treated as Speckit-generated, so teardown
+    # cleanup never follows it to read frontmatter from outside the project.
+    if skill_file.is_symlink() or not skill_file.is_file():
         return False
 
     try:
