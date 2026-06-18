@@ -338,6 +338,25 @@ class TestCreateFeatureBash:
         assert data["BRANCH_NAME"] == "008-next"
         assert data["FEATURE_NUM"] == "008"
 
+    def test_dry_run_preserves_literal_plus_branch_prefix(self, tmp_path: Path):
+        """A literal leading plus in a branch name is not a git worktree marker."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "branch", "+007-plus-prefix"],
+            cwd=project,
+            check=True,
+        )
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "001-next"
+        assert data["FEATURE_NUM"] == "001"
+
     def test_no_git_graceful_degradation(self, tmp_path: Path):
         """create-new-feature-branch.sh works without git (outputs branch name, skips branch creation)."""
         project = _setup_project(tmp_path, git=False)
