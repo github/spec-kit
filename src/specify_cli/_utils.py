@@ -48,10 +48,10 @@ def run_command(
 
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
+            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True)
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return, shell=shell)
+            subprocess.run(cmd, check=check_return)
             return None
     except subprocess.CalledProcessError as e:
         if check_return:

@@ -157,9 +157,9 @@ def open_url(
     Redirect scheme safety: every authenticated attempt goes through
     ``_StripAuthOnRedirect``, which always rejects redirects to non-HTTPS
     URLs (except HTTP to localhost / 127.0.0.1 / ::1, the hosts allowed by
-    ``is_https_or_localhost_http``). *strict_redirects* extends that same
-    scheme guard and the optional redirect validator to the unauthenticated
-    fallback; without it, the fallback follows redirects without that handler.
+    ``is_https_or_localhost_http``). The unauthenticated fallback installs the
+    same handler when *strict_redirects* is true or *redirect_validator* is
+    supplied; without either, it follows redirects without that handler.
     """
     entries = find_entries_for_url(url, _load_config())
 

@@ -17,6 +17,7 @@ We drive the scripts as subprocesses against a throwaway git repo so the
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -74,7 +75,7 @@ def _commit_baseline(repo: Path, baseline_path: str, payload: dict, message: str
 
 def _run_script(repo: Path, script: Path, env_overrides: dict[str, str]):
     env = {
-        "PATH": "/usr/bin:/bin",
+        **os.environ,
         "HOME": str(repo),
         **env_overrides,
     }
