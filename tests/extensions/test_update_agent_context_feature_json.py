@@ -210,6 +210,7 @@ def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
     assert "at specs/001-active/plan.md" in ctx
     assert tmp_path.resolve().as_posix() not in ctx
 
+
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_ignores_newer_stale_plan_when_feature_json_present(tmp_path: Path) -> None:
     """PowerShell: stale plan touched more recently must not win over feature.json."""
