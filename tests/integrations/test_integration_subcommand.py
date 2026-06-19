@@ -2517,8 +2517,6 @@ class TestIntegrationUpgrade:
         pass is now gated on the target being the active agent. (Skills parity
         for non-active agents is tracked separately in #2948.)
         """
-        import shutil
-
         # Active agent: copilot in skills mode → git extension renders as skills.
         project = _init_project(tmp_path, "copilot", integration_options="--skills")
         result = _run_in_project(project, ["extension", "add", "git"])
