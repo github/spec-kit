@@ -54,6 +54,19 @@ def _speckit_version() -> str:
     return get_speckit_version()
 
 
+def _trust_level(verified: bool) -> str:
+    """Trust framing for a catalog entry (FR-010): org-curated vs community."""
+    return "verified" if verified else "community"
+
+
+def _trust_badge(verified: bool) -> str:
+    return (
+        "[green]✔ verified[/green]"
+        if verified
+        else "[yellow]community[/yellow]"
+    )
+
+
 def _default_script_type() -> str:
     """OS-appropriate default script flavor (FR-013)."""
     import os
@@ -136,6 +149,8 @@ def bundle_search(
                 "description": r.entry.description,
                 "source": r.source.id,
                 "install_policy": r.source.install_policy.value,
+                "verified": r.entry.verified,
+                "trust": _trust_level(r.entry.verified),
             }
             for r in results
         ]
@@ -155,7 +170,7 @@ def bundle_search(
         )
         console.print(
             f"  [bold]{r.entry.id}[/bold] v{r.entry.version} — {r.entry.name} "
-            f"[dim]({r.entry.role})[/dim] {policy}"
+            f"[dim]({r.entry.role})[/dim] {_trust_badge(r.entry.verified)} {policy}"
         )
         console.print(f"    {r.entry.description}")
         console.print(f"    [dim]source: {r.source.id}[/dim]")
@@ -200,6 +215,7 @@ def bundle_info(
             "provides": entry.provides,
             "requires": {"speckit_version": entry.requires_speckit_version},
             "verified": entry.verified,
+            "trust": _trust_level(entry.verified),
             "integration": (manifest.integration.id if manifest and manifest.integration else None),
             "components": components,
             "overlaps": overlaps,
@@ -212,6 +228,7 @@ def bundle_info(
     console.print(f"  {entry.description}")
     console.print(f"  Author: {entry.author}   License: {entry.license}")
     console.print(f"  Source: {resolved.source.id} ({resolved.source.install_policy.value})")
+    console.print(f"  Trust: {_trust_badge(entry.verified)}")
     if entry.requires_speckit_version:
         console.print(f"  Requires Spec Kit: {entry.requires_speckit_version}")
     if manifest and manifest.integration:

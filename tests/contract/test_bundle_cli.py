@@ -156,9 +156,11 @@ def test_info_expands_full_component_set(project: Path):
     assert preset["version"] == "2.0.0"
     assert preset["priority"] == 10
     assert preset["strategy"] == "append"
+    assert payload["trust"] == "verified"
 
     text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
     assert "preset-a v2.0.0" in text.output
+    assert "Trust" in text.output
 
 
 def test_install_refuses_discovery_only_source(project: Path, monkeypatch):
@@ -197,3 +199,31 @@ def test_search_json_offline(project: Path):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload[0]["id"] == "demo"
+    # Trust indicator is exposed on the discovery surface (FR-010 / FR-027).
+    assert payload[0]["verified"] is True
+    assert payload[0]["trust"] == "verified"
+
+
+def test_search_text_shows_trust(project: Path):
+    catalog = project / "c.json"
+    write_catalog_file(
+        catalog,
+        {
+            "verified-one": catalog_entry_dict("verified-one", verified=True),
+            "community-one": catalog_entry_dict("community-one", verified=False),
+        },
+    )
+    config = {
+        "schema_version": "1.0",
+        "catalogs": [
+            {"id": "c", "url": str(catalog), "priority": 1,
+             "install_policy": "install-allowed"}
+        ],
+    }
+    (project / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(config), encoding="utf-8"
+    )
+    result = runner.invoke(app, ["bundle", "search", "--offline"])
+    assert result.exit_code == 0, result.output
+    assert "verified" in result.output
+    assert "community" in result.output
