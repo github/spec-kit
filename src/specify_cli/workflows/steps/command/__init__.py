@@ -65,11 +65,32 @@ class CommandStep(StepBase):
         # and ``GateStep`` so the CLI never has to special-case step
         # types. See ``test_dry_run_returns_completed_without_dispatch``.
         if context.dry_run:
-            preview = (
-                f"DRY RUN: would invoke {command!r} "
-                f"(integration={integration!r}, model={model!r}, "
-                f"args={args_str!r})"
-            )
+            # Try to build the integration-specific invocation string
+            # (e.g. ``/speckit.specify ...`` for markdown agents,
+            # ``/speckit-specify ...`` for skills agents) so the dry-run
+            # preview matches what a real run would dispatch. Falls back
+            # to the bare ``command`` name when no integration is
+            # configured or the integration is not registered (e.g.,
+            # dry-run on a brand-new project before setup).
+            preview_invocation: str | None = None
+            if isinstance(integration, str) and integration:
+                try:
+                    from specify_cli.integrations import get_integration
+                    impl = get_integration(integration)
+                    if impl is not None:
+                        preview_invocation = impl.build_command_invocation(
+                            command, args_str
+                        )
+                except Exception:
+                    preview_invocation = None
+            if preview_invocation:
+                preview = f"DRY RUN: would invoke {preview_invocation!r}"
+            else:
+                preview = (
+                    f"DRY RUN: would invoke {command!r} "
+                    f"(integration={integration!r}, model={model!r}, "
+                    f"args={args_str!r})"
+                )
             return StepResult(
                 status=StepStatus.COMPLETED,
                 output={

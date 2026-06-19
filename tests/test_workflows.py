@@ -32,7 +32,13 @@ def temp_dir():
     """Create a temporary directory for tests."""
     tmpdir = tempfile.mkdtemp()
     yield Path(tmpdir)
-    shutil.rmtree(tmpdir)
+    # ``ignore_errors=True`` so a file still locked by another process
+    # (most commonly on Windows, where AV scanners briefly hold a
+    # handle on freshly created binaries in ``tmp_path``) doesn't fail
+    # the test's teardown — the OS will reap the directory on the next
+    # reboot. Mirrors the same fixture in ``tests/test_extensions.py``
+    # so the whole suite stays stable on win32.
+    shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 @pytest.fixture
@@ -108,6 +114,7 @@ class TestStepRegistry:
             # against an accidental refactor that drops the import
             # (the registration is a side effect, so a missed import
             # silently shrinks the registry without any test failure).
+            "init",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -848,6 +855,80 @@ class TestCommandStep:
         # latter without per-step-type special-casing.
         assert "DRY RUN" in result.output["message"]
         assert result.output["dry_run_message"] == result.output["message"]
+
+    def test_dry_run_uses_integration_invocation_string(self, tmp_path):
+        """Dry-run preview uses the integration's ``build_command_invocation()``.
+
+        Markdown agents (``claude``, ``gemini``) render
+        ``/speckit.specify <args>``; skills agents (``zed``,
+        ``kiro-cli``) render ``/speckit-specify <args>``. The dry-run
+        preview must match what a real run would dispatch, not the
+        bare ``speckit.specify`` command name.
+        """
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext
+
+        # Markdown agent — invocation keeps the dotted form.
+        step = CommandStep()
+        ctx = StepContext(
+            inputs={"name": "login"},
+            default_integration="claude",
+            project_root=str(tmp_path),
+            dry_run=True,
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.specify",
+            "input": {"args": "{{ inputs.name }}"},
+        }
+        result = step.execute(config, ctx)
+        # The Claude integration renders ``/speckit-specify`` for the
+        # ``speckit.specify`` command. The preview should reference it
+        # (the bare ``speckit.specify`` token is fine too because the
+        # preview is a quoted string). What matters is the integration
+        # invocation string is present.
+        assert "/speckit-specify" in result.output["message"]
+        # And the bare ``speckit.specify`` token should NOT be the
+        # only thing shown — the slash-command form must be there too.
+        assert result.output["message"].count("speckit") >= 1
+
+        # Skills agent — invocation switches to ``/speckit.specify``.
+        ctx_skill = StepContext(
+            inputs={"name": "login"},
+            default_integration="gemini",  # markdown agent — produces /speckit.specify
+            project_root=str(tmp_path),
+            dry_run=True,
+        )
+        result_skill = step.execute(config, ctx_skill)
+        assert "/speckit.specify" in result_skill.output["message"]
+
+    def test_dry_run_falls_back_when_integration_unknown(self, tmp_path):
+        """Dry-run falls back to the bare command string when no integration is set.
+
+        A brand-new project may run ``workflow run --dry-run`` before
+        any integration is configured. The preview must still emit a
+        sensible message rather than crashing inside ``get_integration``.
+        """
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(
+            inputs={"name": "login"},
+            default_integration=None,  # no integration configured
+            project_root=str(tmp_path),
+            dry_run=True,
+        )
+        config = {
+            "id": "test",
+            "command": "speckit.specify",
+            "input": {"args": "{{ inputs.name }}"},
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        # Falls back to the bare ``command`` name in the preview.
+        assert "speckit.specify" in result.output["message"]
+        assert "DRY RUN" in result.output["message"]
 
 
 class TestPromptStep:
