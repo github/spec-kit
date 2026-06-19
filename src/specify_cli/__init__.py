@@ -318,21 +318,21 @@ def _update_agent_context_config_file(
     survive integration changes and reinit.  When False, the default
     markers are written unconditionally.
 
-    When *preserve_context_files* is True (default), an existing non-empty
-    ``context_files`` list is kept unchanged.  This lets projects opt into
-    updating multiple agent context files while still preserving the legacy
-    singular ``context_file`` value for compatibility.
+    When *preserve_context_files* is True (default), an existing
+    ``context_files`` list is kept unchanged, including an empty list.  This
+    lets projects opt into updating multiple agent context files while still
+    preserving the legacy singular ``context_file`` value for compatibility.
     """
     from .integrations.base import IntegrationBase
 
     cfg = _load_agent_context_config(project_root)
     cfg["context_file"] = context_file or ""
     existing_context_files = cfg.get("context_files")
-    has_context_files = (
-        isinstance(existing_context_files, list)
-        and any(isinstance(item, str) and item.strip() for item in existing_context_files)
-    )
-    if not preserve_context_files or not has_context_files:
+    if preserve_context_files:
+        cfg["context_files"] = (
+            existing_context_files if isinstance(existing_context_files, list) else []
+        )
+    else:
         cfg.pop("context_files", None)
     if not preserve_markers or not isinstance(cfg.get("context_markers"), dict):
         cfg["context_markers"] = {

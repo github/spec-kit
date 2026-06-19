@@ -280,9 +280,9 @@ def _update_init_options_for_integration(
     ``context_file``, ``context_files``, and ``context_markers`` are stored in the agent-context
     extension config (``.specify/extensions/agent-context/agent-context-config.yml``),
     not in ``init-options.json``.  Existing user-customised markers are
-    always preserved when the config already exists. Existing non-empty
-    ``context_files`` lists are also preserved so projects can keep multi-agent
-    context anchors during integration switches. Invalid marker values are
+    always preserved when the config already exists. Existing ``context_files``
+    lists are also preserved so projects can keep multi-agent context anchors
+    during integration switches. Invalid marker values are
     silently ignored at runtime by ``_resolve_context_markers()`` which falls
     back to the class-level defaults.
     """

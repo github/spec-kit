@@ -180,6 +180,19 @@ def _ensure_test_python_on_path(project_root: Path) -> Path:
     return shim_dir
 
 
+def _current_pythonpath() -> str:
+    """Return sys.path entries needed by child script interpreters."""
+    entries = [
+        entry
+        for entry in sys.path
+        if isinstance(entry, str) and entry
+    ]
+    existing = os.environ.get("PYTHONPATH")
+    if existing:
+        entries.extend(entry for entry in existing.split(os.pathsep) if entry)
+    return os.pathsep.join(dict.fromkeys(entries))
+
+
 def _bundled_script_env(
     project_root: Path,
     *,
@@ -194,6 +207,9 @@ def _bundled_script_env(
         if speckit_python is not None
         else (_bash_posix_path(Path(sys.executable)) if for_bash else sys.executable)
     )
+    pythonpath = _current_pythonpath()
+    if pythonpath:
+        env["PYTHONPATH"] = pythonpath
     return env
 
 
@@ -701,6 +717,19 @@ class TestSkillPlaceholderContextValidation:
 
 
 class TestBundledUpdaterPathValidation:
+    def test_bundled_script_env_makes_yaml_importable(self, tmp_path):
+        env = _bundled_script_env(tmp_path)
+
+        result = subprocess.run(
+            [env["SPECKIT_PYTHON"], "-c", "import yaml"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert result.returncode == 0, result.stderr + result.stdout
+
     def test_bash_script_contains_resolved_containment_check(self):
         text = (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").read_text(
             encoding="utf-8"
@@ -971,6 +1000,34 @@ class TestExtensionConfigWriters:
         cfg = _load_agent_context_config(tmp_path)
         assert cfg["context_file"] == i.context_file
         assert cfg["context_files"] == ["AGENTS.md", "CLAUDE.md"]
+
+    def test_update_init_options_preserves_empty_context_files(self, tmp_path):
+        from specify_cli import _update_init_options_for_integration
+
+        _write_ext_config(
+            tmp_path,
+            context_file="AGENTS.md",
+            context_files=[],
+        )
+        i = _CtxIntegration()
+        _update_init_options_for_integration(tmp_path, i, script_type="sh")
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg["context_file"] == i.context_file
+        assert cfg["context_files"] == []
+
+    def test_update_init_options_normalizes_invalid_context_files(self, tmp_path):
+        from specify_cli import _update_init_options_for_integration
+
+        _write_ext_config(tmp_path, context_file="AGENTS.md")
+        cfg = _load_agent_context_config(tmp_path)
+        cfg["context_files"] = "AGENTS.md"
+        _save_agent_context_config(tmp_path, cfg)
+
+        i = _CtxIntegration()
+        _update_init_options_for_integration(tmp_path, i, script_type="sh")
+        cfg = _load_agent_context_config(tmp_path)
+        assert cfg["context_file"] == i.context_file
+        assert cfg["context_files"] == []
 
     def test_clear_init_options_clears_context_files(self, tmp_path):
         from specify_cli import _clear_init_options_for_integration
