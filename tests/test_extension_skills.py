@@ -1121,7 +1121,7 @@ class TestExtensionSkillRegistration:
 
         captured = capsys.readouterr()
         assert "register extension skills for extension 'skill-fail'" in captured.out
-        assert "Continuing with command registration" in captured.out
+        assert "Continuing with available registration results" in captured.out
 
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir

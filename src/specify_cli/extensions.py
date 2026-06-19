@@ -1756,7 +1756,7 @@ class ExtensionManager:
                         ext_id,
                         skills_err,
                         continuing=(
-                            "Continuing with command registration for this "
+                            "Continuing with available registration results for this "
                             "extension and the remaining extensions."
                         ),
                     )
