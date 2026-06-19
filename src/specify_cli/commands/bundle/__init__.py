@@ -45,12 +45,20 @@ def _fail(message: str) -> None:
     raise typer.Exit(code=1)
 
 
+def _user_config_dir() -> Path:
+    # User-scope Spec Kit config lives under ~/.specify (same convention as
+    # auth.json, extension/preset catalogs). Passing this through to the source
+    # stack is what makes the documented project > user > built-in precedence
+    # reachable from the CLI.
+    return Path.home() / ".specify"
+
+
 def _build_stack(project_root: Path, *, offline: bool):
     from ...bundler.services.adapters import make_catalog_fetcher
     from ...bundler.services.catalog_stack import CatalogStack
 
     fetcher = make_catalog_fetcher(allow_network=not offline)
-    return CatalogStack.load(project_root, fetcher)
+    return CatalogStack.load(project_root, fetcher, user_config_dir=_user_config_dir())
 
 
 def _speckit_version() -> str:
@@ -404,6 +412,12 @@ def bundle_update(
             if not any(r.bundle_id == target for r in records):
                 raise BundlerError(f"Bundle '{target}' is not installed.")
             resolved = stack.resolve(target)
+            if not resolved.install_allowed:
+                raise BundlerError(
+                    f"Bundle '{target}' resolves only from a discovery-only source "
+                    f"('{resolved.source.id}'); it cannot be updated from there. "
+                    "Update requires an install-allowed source (FR-025)."
+                )
             manifest = _download_manifest(resolved, offline=offline)
             plan = resolve_install_plan(
                 manifest,
@@ -544,7 +558,7 @@ def catalog_list() -> None:
         project_root = require_project_root()
         from ...bundler.models.catalog import Scope, load_source_stack
 
-        sources = load_source_stack(project_root)
+        sources = load_source_stack(project_root, user_config_dir=_user_config_dir())
     except BundlerError as exc:
         _fail(str(exc))
         return

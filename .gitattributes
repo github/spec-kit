@@ -9,4 +9,6 @@
 .github/agents/speckit.*.agent.md -whitespace
 .github/prompts/speckit.*.prompt.md -whitespace
 .github/copilot-instructions.md -whitespace
-specs/** -whitespace
+# Scope the specs exemption to the generated dogfooding feature dir only, so
+# any hand-authored specs elsewhere keep full whitespace validation.
+specs/001-spec-kit-bundler/** -whitespace

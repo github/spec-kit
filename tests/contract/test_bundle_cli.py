@@ -254,6 +254,44 @@ def test_install_refuses_discovery_only_source(project: Path, monkeypatch):
     assert "discovery-only" in result.output
 
 
+def test_update_refuses_discovery_only_source(project: Path):
+    # An installed bundle whose only resolvable source is discovery-only must
+    # not be updatable from there (FR-025), mirroring the install policy gate.
+    from specify_cli.bundler.models.manifest import ComponentRef
+    from specify_cli.bundler.models.records import (
+        InstalledBundleRecord,
+        save_records,
+    )
+
+    save_records(
+        project,
+        [
+            InstalledBundleRecord.create(
+                "demo",
+                "1.0.0",
+                [ComponentRef(kind="extensions", id="ext-a", version=None)],
+            )
+        ],
+    )
+
+    catalog = project / "disc.json"
+    write_catalog_file(catalog, {"demo": catalog_entry_dict("demo")})
+    config = {
+        "schema_version": "1.0",
+        "catalogs": [
+            {"id": "disc", "url": str(catalog), "priority": 1,
+             "install_policy": "discovery-only"}
+        ],
+    }
+    (project / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(config), encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["bundle", "update", "demo", "--offline"])
+    assert result.exit_code == 1
+    assert "discovery-only" in result.output
+
+
 def test_search_json_offline(project: Path):
     catalog = project / "c.json"
     write_catalog_file(catalog, {"demo": catalog_entry_dict("demo")})

@@ -109,3 +109,11 @@ def test_read_returns_empty_for_missing_or_empty_config(tmp_path: Path):
 
     cc._config_path(project).write_text("schema_version: '1.0'\n", encoding="utf-8")
     assert cc._read(project) == []
+
+
+def test_slug_lowercases_for_deterministic_ids():
+    # Mixed-case local filenames must derive the same id regardless of case so
+    # the case-sensitive duplicate check cannot admit logical duplicates.
+    assert cc._slug("Team-A") == "team-a"
+    assert cc._derive_id("./catalogs/Team-A.json") == "team-a"
+    assert cc._derive_id("https://Example.com/Team-A.json") == "example-team-a"

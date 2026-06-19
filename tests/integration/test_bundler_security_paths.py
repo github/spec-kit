@@ -89,3 +89,21 @@ def test_build_skips_symlinks(tmp_path: Path):
         names = archive.namelist()
     assert "leak.txt" not in names
     assert "bundle.yml" in names
+
+
+def test_load_records_refuses_symlinked_specify_escape(tmp_path: Path):
+    # Reading bundle-records.json must honour the same confinement as writes:
+    # a symlinked .specify pointing outside project_root is refused.
+    from specify_cli.bundler.models.records import load_records
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "bundle-records.json").write_text(
+        '{"schema_version": "1.0", "bundles": []}', encoding="utf-8"
+    )
+    (project / ".specify").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(BundlerError, match="escapes the allowed root"):
+        load_records(project)

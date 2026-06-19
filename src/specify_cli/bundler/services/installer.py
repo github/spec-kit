@@ -60,13 +60,19 @@ def install_bundle(
     manifest: BundleManifest | None = None,
     refresh: bool = False,
 ) -> InstallResult:
-    """Execute *plan*, recording provenance. Idempotent and atomic on failure.
+    """Execute *plan*, recording provenance. Idempotent, with bounded rollback.
+
+    Atomicity is scoped, not global: on failure only the components newly
+    installed during *this* call are rolled back, and the provenance record is
+    written solely on full success (a failure records nothing). Components that
+    were already installed beforehand — including those re-applied when *refresh*
+    is True — are never rolled back.
 
     When *refresh* is True (used by ``specify bundle update``), components that
     are already installed are re-applied through the primitive machinery so they
     are brought up to the plan's pinned versions, rather than skipped. Primitive
     config (e.g. preset priority overrides) is preserved by the underlying
-    machinery. Pre-existing components are never rolled back on failure.
+    machinery.
     """
     records = load_records(project_root)
 

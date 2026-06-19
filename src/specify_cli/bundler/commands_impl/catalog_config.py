@@ -68,7 +68,10 @@ def _write(project_root: Path, catalogs: list[dict]) -> None:
 
 
 def _slug(value: str) -> str:
-    return "".join(ch if ch.isalnum() else "-" for ch in value).strip("-")
+    # Lowercase so derived ids are deterministic and case-insensitive across
+    # platforms (e.g. 'Team-A.json' and 'team-a.json' yield the same id),
+    # keeping the case-sensitive duplicate check from admitting logical dupes.
+    return "".join(ch if ch.isalnum() else "-" for ch in value.lower()).strip("-")
 
 
 _REMOTE_SCHEMES = {"http", "https", "file", "builtin"}
@@ -97,9 +100,9 @@ def _derive_id(url: str) -> str:
     parsed = urlparse(url)
     if parsed.netloc:
         host = parsed.netloc.split("@")[-1].split(":")[0]
-        # Hostnames are case-insensitive: normalize so 'Example.com' and
-        # 'example.com' derive the same, deterministic id.
-        host_label = (Path(host).stem or host).lower()
+        # Hostnames are case-insensitive; _slug() lowercases so 'Example.com'
+        # and 'example.com' derive the same, deterministic id.
+        host_label = Path(host).stem or host
         path_stem = Path(parsed.path).stem if parsed.path else ""
         parts = [p for p in (_slug(host_label), _slug(path_stem)) if p]
         return "-".join(parts) or "catalog"

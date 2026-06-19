@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import BundlerError
-from ..lib.yamlio import dump_json, load_json
+from ..lib.yamlio import dump_json, ensure_within, load_json
 from .manifest import ComponentRef
 
 RECORDS_FILENAME = "bundle-records.json"
@@ -71,7 +71,10 @@ def records_path(project_root: Path) -> Path:
 
 
 def load_records(project_root: Path) -> list[InstalledBundleRecord]:
-    path = records_path(project_root)
+    # Defense in depth (mirrors the write path's within= confinement): refuse to
+    # read through a symlinked or traversal-escaping ``.specify`` that resolves
+    # outside project_root.
+    path = ensure_within(project_root, records_path(project_root))
     if not path.exists():
         return []
     data = load_json(path)
