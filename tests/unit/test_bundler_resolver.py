@@ -52,6 +52,27 @@ def test_matching_integration_is_allowed():
     assert plan.effective_integration == "copilot"
 
 
+def test_pinned_integration_with_indeterminate_active_fails():
+    # FR-019 guard: a bundle that pins an integration must not silently adopt it
+    # when the project's active integration cannot be determined.
+    manifest = _manifest(integration={"id": "claude"})
+    with pytest.raises(BundlerError, match="could not be determined"):
+        resolve_install_plan(
+            manifest, speckit_version="0.11.2", active_integration=None
+        )
+
+
+def test_pinned_integration_with_indeterminate_active_allows_explicit_override():
+    manifest = _manifest(integration={"id": "claude"})
+    plan = resolve_install_plan(
+        manifest,
+        speckit_version="0.11.2",
+        active_integration="claude",
+        integration_explicit=True,
+    )
+    assert plan.effective_integration == "claude"
+
+
 def test_tool_requirements_become_warnings():
     manifest = _manifest(requires={"speckit_version": ">=0.1.0", "tools": ["docker"]})
     plan = resolve_install_plan(

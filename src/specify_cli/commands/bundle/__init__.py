@@ -351,6 +351,7 @@ def bundle_install(
             manifest,
             speckit_version=_speckit_version(),
             active_integration=integration or active_integration(project_root),
+            integration_explicit=bool(integration),
         )
         for warning in plan.warnings:
             console.print(f"[yellow]![/yellow] {warning}")

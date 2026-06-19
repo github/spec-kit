@@ -102,7 +102,7 @@ specify bundle validate
 | `--path`     | Bundle directory or `bundle.yml` (default: current directory)       |
 | `--offline`  | Verify references against bundled/installed components only          |
 
-Reports whether a `bundle.yml` is well-formed and whether every declared component reference resolves. References are checked against bundled components, the project's installed components, and — when online — the active catalogs. Online validation fails on any reference that cannot be resolved anywhere; offline validation downgrades unverifiable references to warnings so authoring can continue without network access.
+Reports whether a `bundle.yml` is well-formed and whether every declared component reference resolves. References are checked against bundled components, the project's installed components, and — when online — the active catalogs. Validation fails only when a reference is definitively absent everywhere it could be checked: that is, when an active catalog is reachable and confirms the component is missing. References that cannot be verified — because validation is offline, or because a catalog is unreachable — are downgraded to warnings so authoring can continue, rather than failing the run.
 
 ## Build a Bundle Artifact
 

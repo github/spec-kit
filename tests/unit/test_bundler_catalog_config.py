@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from specify_cli.bundler import BundlerError
 from specify_cli.bundler.commands_impl import catalog_config as cc
 
 
@@ -55,3 +58,14 @@ def test_add_source_persists_absolute_local_path(tmp_path: Path, monkeypatch):
 
     assert Path(source.url).is_absolute()
     assert Path(source.url) == catalog.resolve()
+
+
+def test_add_source_refuses_symlinked_specify_escape(tmp_path: Path):
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (project / ".specify").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(BundlerError, match="escapes the allowed root"):
+        cc.add_source(project, "https://example.com/c.json", policy="install-allowed", priority=50)

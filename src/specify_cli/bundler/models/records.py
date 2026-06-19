@@ -87,7 +87,7 @@ def save_records(project_root: Path, records: list[InstalledBundleRecord]) -> No
         "updated_at": _utc_now(),
         "bundles": [r.to_dict() for r in records],
     }
-    dump_json(records_path(project_root), payload)
+    dump_json(records_path(project_root), payload, within=project_root)
 
 
 def find_record(

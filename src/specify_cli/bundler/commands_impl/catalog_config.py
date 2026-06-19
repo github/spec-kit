@@ -44,7 +44,7 @@ def _read(project_root: Path) -> list[dict]:
 
 def _write(project_root: Path, catalogs: list[dict]) -> None:
     payload = {"schema_version": CONFIG_SCHEMA_VERSION, "catalogs": catalogs}
-    dump_yaml(_config_path(project_root), payload)
+    dump_yaml(_config_path(project_root), payload, within=project_root)
 
 
 def _slug(value: str) -> str:

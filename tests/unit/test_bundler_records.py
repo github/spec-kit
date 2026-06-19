@@ -79,3 +79,16 @@ def test_components_still_needed_excludes_target():
     needed = components_still_needed(recs, exclude_bundle_id="a")
     assert ("presets", "shared") in needed
     assert ("steps", "only-a") not in needed
+
+
+def test_save_records_refuses_symlinked_specify_escape(tmp_path: Path):
+    # Defense-in-depth: a symlinked .specify pointing outside the project must
+    # not let records be written outside project_root.
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (project / ".specify").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(BundlerError, match="escapes the allowed root"):
+        save_records(project, [_record("a", [("presets", "p1")])])
