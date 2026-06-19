@@ -91,7 +91,14 @@ class DefaultPrimitiveInstaller:
     This adapter is intentionally thin: it owns no install logic of its own,
     delegating entirely to the per-primitive managers so the bundler honours
     Principle I (no duplicated primitive logic).
+
+    *allow_network* mirrors the bundle command's ``--offline`` flag: when False,
+    component kinds that can only be sourced from a remote catalog refuse rather
+    than touching the network. Bundled presets/extensions still install offline.
     """
+
+    def __init__(self, *, allow_network: bool = True) -> None:
+        self._allow_network = allow_network
 
     def is_installed(self, project_root: Path, component: ComponentRef) -> bool:
         manager = self._manager_for(component, project_root)
@@ -109,4 +116,6 @@ class DefaultPrimitiveInstaller:
         # Lazy import to avoid import cycles and keep startup cheap (Principle IV).
         from .primitives import primitive_manager
 
-        return primitive_manager(component.kind, project_root)
+        return primitive_manager(
+            component.kind, project_root, allow_network=self._allow_network
+        )

@@ -192,27 +192,41 @@ def bundle_list(
 
 @bundle_app.command("install")
 def bundle_install(
-    bundle_id: str = typer.Argument(..., help="Bundle id (from the catalog stack)"),
+    bundle_id: str = typer.Argument(
+        ...,
+        help="Bundle id (from the catalog stack) or a local path to a .zip "
+        "artifact, bundle directory, or bundle.yml",
+    ),
     integration: str = typer.Option(None, "--integration", help="Override integration"),
     offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
 ) -> None:
-    """Install a bundle's full component set through each primitive's machinery."""
+    """Install a bundle's full component set through each primitive's machinery.
+
+    ``bundle_id`` may be a catalog bundle id, or a local path to a built
+    artifact (``.zip``), a bundle directory, or a ``bundle.yml`` file. Local
+    sources install directly without consulting the catalog stack.
+    """
     try:
         project_root = require_project_root()
-        stack = _build_stack(project_root, offline=offline)
-        resolved = stack.resolve(bundle_id)
-
-        if not resolved.install_allowed:
-            raise BundlerError(
-                f"Bundle '{bundle_id}' resolves only from a discovery-only source "
-                f"('{resolved.source.id}'); it cannot be installed from there."
-            )
 
         from ...bundler.services.adapters import DefaultPrimitiveInstaller
         from ...bundler.services.installer import install_bundle
         from ...bundler.services.resolver import resolve_install_plan
 
-        manifest = _download_manifest(resolved, offline=offline)
+        local_manifest = _local_manifest_source(bundle_id)
+        if local_manifest is not None:
+            manifest = local_manifest
+        else:
+            stack = _build_stack(project_root, offline=offline)
+            resolved = stack.resolve(bundle_id)
+
+            if not resolved.install_allowed:
+                raise BundlerError(
+                    f"Bundle '{bundle_id}' resolves only from a discovery-only source "
+                    f"('{resolved.source.id}'); it cannot be installed from there."
+                )
+            manifest = _download_manifest(resolved, offline=offline)
+
         plan = resolve_install_plan(
             manifest,
             speckit_version=_speckit_version(),
@@ -222,7 +236,10 @@ def bundle_install(
             console.print(f"[yellow]![/yellow] {warning}")
 
         result = install_bundle(
-            project_root, plan, DefaultPrimitiveInstaller(), manifest=manifest
+            project_root,
+            plan,
+            DefaultPrimitiveInstaller(allow_network=not offline),
+            manifest=manifest,
         )
     except BundlerError as exc:
         _fail(str(exc))
@@ -260,7 +277,7 @@ def bundle_update(
         from ...bundler.services.installer import install_bundle
         from ...bundler.services.resolver import resolve_install_plan
 
-        installer = DefaultPrimitiveInstaller()
+        installer = DefaultPrimitiveInstaller(allow_network=not offline)
         for target in targets:
             if not any(r.bundle_id == target for r in records):
                 raise BundlerError(f"Bundle '{target}' is not installed.")
@@ -447,6 +464,50 @@ def catalog_remove(
 
 
 # ===== internal helpers =====
+
+
+def _local_manifest_source(arg: str):
+    """Return a :class:`BundleManifest` if *arg* points at a local bundle.
+
+    Supports a built ``.zip`` artifact, a bundle directory, or a ``bundle.yml``
+    file. Returns ``None`` when *arg* is not an existing path, so callers fall
+    back to catalog-stack resolution by bundle id.
+    """
+    from ...bundler.models.manifest import BundleManifest
+
+    candidate = Path(arg).expanduser()
+    if not candidate.exists():
+        return None
+
+    if candidate.is_dir():
+        manifest_path = candidate / "bundle.yml"
+        if not manifest_path.exists():
+            raise BundlerError(f"No bundle.yml found in '{candidate}'.")
+        return BundleManifest.from_file(manifest_path)
+
+    if candidate.suffix == ".zip":
+        import io
+        import zipfile
+
+        import yaml as _yaml
+
+        with zipfile.ZipFile(candidate) as archive:
+            try:
+                raw = archive.read("bundle.yml")
+            except KeyError as exc:
+                raise BundlerError(
+                    f"Artifact '{candidate}' does not contain a bundle.yml."
+                ) from exc
+        data = _yaml.safe_load(io.BytesIO(raw))
+        return BundleManifest.from_dict(data)
+
+    if candidate.name == "bundle.yml" or candidate.suffix in (".yml", ".yaml"):
+        return BundleManifest.from_file(candidate)
+
+    raise BundlerError(
+        f"'{candidate}' is not a recognised bundle source (.zip artifact, bundle "
+        "directory, or bundle.yml)."
+    )
 
 
 def _resolve_manifest_path(path: Path | None) -> Path:
