@@ -215,6 +215,7 @@ except Exception:
 PY
 )"
     if [[ -n "$_feature_dir" ]]; then
+      _feature_dir="${_feature_dir%/}"
       # feature_directory may be relative or absolute (absolute paths outside PROJECT_ROOT
       # are preserved as-is by _persist_feature_json in common.sh).
       if [[ "$_feature_dir" == /* ]]; then
