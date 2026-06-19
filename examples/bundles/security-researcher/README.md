@@ -7,8 +7,8 @@ threat modeling, security review, and compliance.
 
 - **Extension** `agent-context` — keeps the agent context file in sync.
 - **Preset** `security-compliance` (priority 5, append) — security and
-  compliance command set; the low priority lets it take precedence in the
-  preset stack.
+  compliance command set; presets apply in ascending priority order, so this
+  low number (5) places it ahead of higher-numbered presets in the stack.
 - **Steps** `threat-model`, `security-review`.
 - **Workflow** `secure-sdd` — a security-first SDD workflow.
 

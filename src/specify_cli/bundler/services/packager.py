@@ -74,7 +74,7 @@ def build_bundle(
     # merely start with the bundle id (e.g. <id>-assets.zip) are still packaged.
     artifact_re = re.compile(
         rf"^{re.escape(manifest.bundle.id)}-"
-        r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\.zip$"
+        r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\.zip$"
     )
     files = _collect_files(
         bundle_dir, skip=artifact_path, skip_dir=skip_dir, artifact_re=artifact_re

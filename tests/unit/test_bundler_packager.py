@@ -155,3 +155,15 @@ def test_prior_semver_artifact_is_excluded(tmp_path: Path):
     with zipfile.ZipFile(result.artifact_path) as archive:
         names = set(archive.namelist())
     assert "demo-bundle-0.9.0.zip" not in names
+
+
+def test_prior_artifact_with_prerelease_and_build_is_excluded(tmp_path: Path):
+    # A semver artifact carrying both prerelease and build metadata must still
+    # be recognized as a prior build artifact and excluded.
+    bundle = _make_bundle(
+        tmp_path / "b", extra_files={"demo-bundle-1.0.0-rc1+build5.zip": "old"}
+    )
+    result = build_bundle(bundle, output_dir=bundle)
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = set(archive.namelist())
+    assert "demo-bundle-1.0.0-rc1+build5.zip" not in names

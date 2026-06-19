@@ -43,7 +43,7 @@ specify bundle install <bundle_id | path>
 
 Installs a bundle's full component set through each primitive's machinery. The argument may be a catalog bundle id, or a local path to a built `.zip` artifact, a bundle directory, or a `bundle.yml` file; local sources install directly without consulting the catalog stack.
 
-If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. The integration is chosen by precedence: an explicit `--integration` override wins, otherwise the bundle's declared integration is used, otherwise the default (GitHub Copilot with an OS-appropriate script type). Installation is idempotent — components already present are skipped — and atomic: a failure part-way rolls back everything it added and records nothing.
+If the current directory is not yet a Spec Kit project, `install` initializes one first so a fresh checkout reaches a working state in a single command. `--integration` selects the integration when initializing a new project, and confirms the target when a bundle pins a specific integration but the project's active integration can't be determined (missing or unreadable `.specify/integration.json`). It does **not** override a bundle that targets a specific integration: if the project's active integration differs from the one the bundle declares, install aborts with no changes. Integration-agnostic bundles inherit the project's active integration. Installation is idempotent — components already present are skipped — and atomic: a failure part-way rolls back everything it added and records nothing.
 
 ## Update Bundles
 
