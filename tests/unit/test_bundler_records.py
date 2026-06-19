@@ -109,3 +109,29 @@ def test_load_records_rejects_non_list_contributed_components(tmp_path: Path):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(BundlerError, match="'contributed_components' must be a list"):
         load_records(tmp_path)
+
+
+def test_load_records_rejects_unknown_component_kind(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    path = records_path(tmp_path)
+    payload = {
+        "bundles": [
+            {"bundle_id": "a", "contributed_components": [{"kind": "bogus", "id": "x"}]}
+        ]
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(BundlerError, match="must be one of"):
+        load_records(tmp_path)
+
+
+def test_load_records_rejects_component_missing_id(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    path = records_path(tmp_path)
+    payload = {
+        "bundles": [
+            {"bundle_id": "a", "contributed_components": [{"kind": "presets", "id": ""}]}
+        ]
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(BundlerError, match="missing its 'id'"):
+        load_records(tmp_path)

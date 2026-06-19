@@ -13,7 +13,7 @@ from typing import Any
 
 from .. import BundlerError
 from ..lib.yamlio import dump_json, ensure_within, load_json
-from .manifest import ComponentRef
+from .manifest import COMPONENT_KINDS, ComponentRef
 
 RECORDS_FILENAME = "bundle-records.json"
 RECORDS_SCHEMA_VERSION = "1.0"
@@ -154,9 +154,20 @@ def _component_to_dict(ref: ComponentRef) -> dict[str, Any]:
 def _component_from_dict(data: Any) -> ComponentRef:
     if not isinstance(data, dict):
         raise BundlerError("Each contributed component must be a mapping.")
+    kind = str(data.get("kind", "")).strip()
+    cid = str(data.get("id", "")).strip()
+    if kind not in COMPONENT_KINDS:
+        raise BundlerError(
+            f"Corrupt records file: component 'kind' must be one of "
+            f"{list(COMPONENT_KINDS)}, got {kind or '<missing>'!r}."
+        )
+    if not cid:
+        raise BundlerError(
+            "Corrupt records file: a contributed component is missing its 'id'."
+        )
     return ComponentRef(
-        kind=str(data.get("kind", "")).strip(),
-        id=str(data.get("id", "")).strip(),
+        kind=kind,
+        id=cid,
         version=(str(data["version"]) if data.get("version") else None),
         source=(str(data["source"]) if data.get("source") else None),
         priority=_parse_priority(data.get("priority")),
