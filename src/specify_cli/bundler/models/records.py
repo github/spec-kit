@@ -148,9 +148,22 @@ def _component_from_dict(data: Any) -> ComponentRef:
         id=str(data.get("id", "")).strip(),
         version=(str(data["version"]) if data.get("version") else None),
         source=(str(data["source"]) if data.get("source") else None),
-        priority=(int(data["priority"]) if data.get("priority") is not None else None),
+        priority=_parse_priority(data.get("priority")),
         strategy=(str(data["strategy"]) if data.get("strategy") else None),
     )
+
+
+def _parse_priority(raw: Any) -> int | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        raise BundlerError(f"Component priority must be an integer, got {raw!r}.")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise BundlerError(
+            f"Component priority must be an integer, got {raw!r}."
+        ) from None
 
 
 def _utc_now() -> str:

@@ -14,7 +14,11 @@ import typer
 
 from ..._console import console
 from ...bundler import BundlerError
-from ...bundler.lib.project import active_integration, require_project_root
+from ...bundler.lib.project import (
+    active_integration,
+    find_project_root,
+    require_project_root,
+)
 from ...bundler.models.records import load_records
 
 bundle_app = typer.Typer(
@@ -132,7 +136,7 @@ def bundle_search(
 ) -> None:
     """List matching bundles across the active catalog stack."""
     try:
-        project_root = require_project_root()
+        project_root = find_project_root() or Path.cwd()
         stack = _build_stack(project_root, offline=offline)
         results = stack.search(query)
     except BundlerError as exc:
@@ -184,7 +188,7 @@ def bundle_info(
 ) -> None:
     """Show full metadata and the fully expanded component set (== what install adds)."""
     try:
-        project_root = require_project_root()
+        project_root = find_project_root() or Path.cwd()
         stack = _build_stack(project_root, offline=offline)
         resolved = stack.resolve(bundle_id)
         manifest = None

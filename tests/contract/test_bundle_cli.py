@@ -51,6 +51,23 @@ def test_commands_outside_project_fail_with_guidance(tmp_path: Path, monkeypatch
     assert "Spec Kit project" in result.output
 
 
+def test_search_works_without_a_project(tmp_path: Path, monkeypatch):
+    # Discovery commands fall back to the built-in/user catalog stack and must
+    # not require a Spec Kit project (matches README/quickstart examples).
+    monkeypatch.chdir(tmp_path)  # no .specify/
+    result = runner.invoke(app, ["bundle", "search", "--offline", "--json"])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip().startswith("[")
+
+
+def test_info_unknown_bundle_without_project_reports_not_found(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # no .specify/
+    result = runner.invoke(app, ["bundle", "info", "does-not-exist", "--offline"])
+    # Reaches catalog resolution (not the project gate) and reports a clean miss.
+    assert result.exit_code == 1
+    assert "Spec Kit project" not in result.output
+
+
 def test_catalog_list_shows_builtin_defaults(project: Path):
     result = runner.invoke(app, ["bundle", "catalog", "list"])
     assert result.exit_code == 0

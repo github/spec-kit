@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .. import BundlerError
-from ..models.manifest import ComponentRef
+from ..models.manifest import BundleManifest, ComponentRef
 from ..models.records import (
     InstalledBundleRecord,
     components_still_needed,
@@ -55,7 +55,7 @@ def install_bundle(
     project_root: Path,
     plan: InstallPlan,
     installer: PrimitiveInstaller,
-    manifest=None,
+    manifest: BundleManifest | None = None,
     refresh: bool = False,
 ) -> InstallResult:
     """Execute *plan*, recording provenance. Idempotent and atomic on failure.

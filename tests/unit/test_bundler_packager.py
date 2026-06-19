@@ -83,3 +83,22 @@ def test_output_dir_inside_bundle_excludes_prior_artifacts(tmp_path: Path):
     assert not any(name.startswith("dist/") for name in names)
     assert not any(name.endswith(".zip") for name in names)
     assert first.file_count == second.file_count
+
+
+def test_symlinked_directory_is_not_followed(tmp_path: Path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+    bundle = _make_bundle(tmp_path / "b", extra_files={"a.txt": "a"})
+    link = bundle / "linkdir"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+    # Build must succeed (no ensure_within failure) and must not pull in the
+    # out-of-tree file behind the symlinked directory.
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = archive.namelist()
+    assert "linkdir/secret.txt" not in names
+    assert not any("secret" in name for name in names)

@@ -1,13 +1,18 @@
 """Unit tests for installed-bundle records and collateral-protection logic."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
+
+from specify_cli.bundler import BundlerError
 from specify_cli.bundler.models.manifest import ComponentRef
 from specify_cli.bundler.models.records import (
     InstalledBundleRecord,
     components_still_needed,
     load_records,
+    records_path,
     remove_record,
     save_records,
     upsert_record,
@@ -38,6 +43,18 @@ def test_save_and_load_roundtrip(tmp_path: Path):
 def test_load_missing_file_returns_empty(tmp_path: Path):
     (tmp_path / ".specify").mkdir()
     assert load_records(tmp_path) == []
+
+
+def test_corrupt_priority_raises_actionable_error(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    rec = _record("a", [("presets", "p1")])
+    save_records(tmp_path, [rec])
+    path = records_path(tmp_path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["bundles"][0]["contributed_components"][0]["priority"] = "high"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(BundlerError, match="priority must be an integer"):
+        load_records(tmp_path)
 
 
 def test_upsert_replaces_same_id():

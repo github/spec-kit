@@ -7,6 +7,7 @@ directory (Principle V path confinement).
 """
 from __future__ import annotations
 
+import os
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,17 +82,28 @@ def _is_within(parent: Path, child: Path) -> bool:
 
 def _collect_files(bundle_dir: Path, skip: Path, skip_dir: Path | None = None) -> list[Path]:
     collected: list[Path] = []
-    for path in sorted(bundle_dir.rglob("*")):
-        if path.is_dir():
+    # followlinks=False so a symlinked directory is never descended into,
+    # which would otherwise pull in out-of-tree files and then fail at
+    # ensure_within(). Symlinked dirs are pruned from traversal explicitly.
+    for root, dirnames, filenames in os.walk(bundle_dir, followlinks=False):
+        root_path = Path(root)
+        # Prune directories we must not descend into (in-place edit of dirnames).
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in EXCLUDE_NAMES and not (root_path / d).is_symlink()
+        ]
+        if skip_dir is not None and _is_within(skip_dir, root_path):
+            dirnames[:] = []
             continue
-        if path == skip:
-            continue
-        if skip_dir is not None and _is_within(skip_dir, path):
-            continue
-        if any(part in EXCLUDE_NAMES for part in path.relative_to(bundle_dir).parts):
-            continue
-        if path.is_symlink():
-            # Skip symlinks to avoid escaping the bundle directory.
-            continue
-        collected.append(path)
-    return collected
+        for name in filenames:
+            path = root_path / name
+            if path == skip:
+                continue
+            if name in EXCLUDE_NAMES:
+                continue
+            if path.is_symlink():
+                # Skip symlinked files to avoid escaping the bundle directory.
+                continue
+            collected.append(path)
+    return sorted(collected)
