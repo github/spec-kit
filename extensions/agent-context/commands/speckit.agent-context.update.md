@@ -1,5 +1,5 @@
 ---
-description: "Refresh the managed Spec Kit section in the coding agent context file"
+description: "Refresh the managed Spec Kit section in coding agent context file(s)"
 ---
 
 # Update Coding Agent Context
@@ -17,7 +17,7 @@ The script reads the agent-context extension config at
 
 It then creates, replaces, or appends the managed block so that the section points at the most recent plan path when one can be discovered (`specs/<feature>/plan.md`).
 
-If `context_files` and `context_file` are empty, the command reports nothing to do and exits successfully. Context file paths must stay project-relative; absolute paths and `..` path segments are rejected.
+If `context_files` and `context_file` are empty, the command reports nothing to do and exits successfully. Context file paths must stay project-relative; absolute paths, Windows drive paths, backslash separators, and `..` path segments are rejected.
 
 ## Execution
 

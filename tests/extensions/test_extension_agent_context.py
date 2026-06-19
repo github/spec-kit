@@ -84,6 +84,14 @@ class TestExtensionLayout:
         assert cmd.is_file()
         assert "agent-context-config.yml" in cmd.read_text(encoding="utf-8")
 
+    def test_command_file_documents_context_file_constraints(self):
+        text = (
+            EXT_DIR / "commands" / "speckit.agent-context.update.md"
+        ).read_text(encoding="utf-8")
+        assert "context file(s)" in text
+        assert "Windows drive paths" in text
+        assert "backslash separators" in text
+
     def test_bundled_scripts_exist(self):
         assert (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").is_file()
         assert (EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1").is_file()
@@ -418,6 +426,42 @@ class TestUpsertWithCustomMarkers:
 
         assert files == ["AGENTS.md", "CLAUDE.md"]
 
+    def test_empty_context_files_falls_back_to_config_context_file(self, tmp_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="AGENTS.md",
+            context_files=[],
+        )
+
+        files = _CtxIntegration()._resolve_context_files(tmp_path)
+
+        assert files == ["AGENTS.md"]
+
+    def test_config_context_file_takes_precedence_over_class_default(self, tmp_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="AGENTS.md",
+        )
+
+        i = _CtxIntegration()
+        result = i.upsert_context_section(
+            tmp_path, plan_path="specs/001-foo/plan.md"
+        )
+
+        assert result == tmp_path / "AGENTS.md"
+        assert (tmp_path / "AGENTS.md").exists()
+        assert not (tmp_path / "CLAUDE.md").exists()
+
+    def test_config_context_file_fallback_rejects_invalid_path(self, tmp_path):
+        _write_ext_config(
+            tmp_path,
+            context_file="../outside.md",
+            context_files=[],
+        )
+
+        with pytest.raises(ValueError, match="project-relative|must not contain"):
+            _CtxIntegration()._resolve_context_files(tmp_path)
+
     def test_remove_uses_configured_context_files(self, tmp_path):
         _write_ext_config(
             tmp_path,
@@ -660,6 +704,19 @@ class TestSkillPlaceholderContextValidation:
                 tmp_path,
             )
 
+    def test_enabled_extension_rejects_invalid_legacy_init_options_path(
+        self, tmp_path
+    ):
+        save_init_options(tmp_path, {"context_file": "../outside.md"})
+
+        with pytest.raises(ValueError, match="must not contain"):
+            CommandRegistrar.resolve_skill_placeholders(
+                "codex",
+                {},
+                "Read __CONTEXT_FILE__",
+                tmp_path,
+            )
+
     def test_disabled_extension_ignores_invalid_context_files(self, tmp_path):
         _write_registry(tmp_path, enabled=False)
         _write_ext_config(
@@ -738,6 +795,13 @@ class TestBundledUpdaterPathValidation:
         assert "target.relative_to(root)" in text
         assert "SPECKIT_PYTHON" in text
         assert "seen_context_files" in text
+
+    def test_bash_script_trims_context_file_fallback(self):
+        text = (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").read_text(
+            encoding="utf-8"
+        )
+        assert 'candidate = raw_file.strip()' in text
+        assert 'context_files.append(candidate)' in text
 
     def test_powershell_script_rejects_backslash_separators(self):
         text = (

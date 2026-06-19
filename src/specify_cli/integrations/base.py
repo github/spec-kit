@@ -725,9 +725,9 @@ class IntegrationBase(ABC):
         """Return project-relative context files managed for *project_root*.
 
         ``context_files`` in the agent-context extension config, when present
-        and non-empty, takes precedence over the integration's singular
-        ``context_file``. This preserves existing behavior while allowing
-        projects to update multiple agent anchors from one Spec Kit run.
+        and non-empty, takes precedence over the config's singular
+        ``context_file``. The integration class default is used only when the
+        extension config has no context file target.
         Raises ``ValueError`` when a configured path can escape the project
         root.
         """
@@ -758,6 +758,13 @@ class IntegrationBase(ABC):
                 seen.add(key)
             if files:
                 return files
+        configured_context_file = (
+            cfg.get("context_file") if isinstance(cfg, dict) else None
+        )
+        if isinstance(configured_context_file, str):
+            candidate = configured_context_file.strip()
+            if candidate:
+                return [self._validate_context_file_path(project_root, candidate)]
         if self.context_file:
             return [self._validate_context_file_path(project_root, self.context_file)]
         return []

@@ -442,7 +442,17 @@ class CommandRegistrar:
             if isinstance(configured_context_file, str):
                 context_file = configured_context_file.strip()
         if not context_file:
-            context_file = init_opts.get("context_file") or ""
+            legacy_context_file = init_opts.get("context_file")
+            if isinstance(legacy_context_file, str):
+                legacy_context_file = legacy_context_file.strip()
+                if legacy_context_file:
+                    if IntegrationBase._agent_context_extension_enabled(project_root):
+                        legacy_context_file = (
+                            IntegrationBase._validate_context_file_path(
+                                project_root, legacy_context_file
+                            )
+                        )
+                    context_file = legacy_context_file
         body = body.replace("__CONTEXT_FILE__", context_file)
 
         return CommandRegistrar.rewrite_project_relative_paths(body)

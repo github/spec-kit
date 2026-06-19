@@ -110,8 +110,9 @@ if isinstance(raw_files, list):
         seen_context_files.add(key)
 if not context_files:
     raw_file = get_str(data, "context_file")
-    if raw_file:
-        context_files.append(raw_file)
+    candidate = raw_file.strip()
+    if candidate:
+        context_files.append(candidate)
 print(json.dumps(context_files))
 print(get_str(data, "context_markers", "start"))
 print(get_str(data, "context_markers", "end"))
