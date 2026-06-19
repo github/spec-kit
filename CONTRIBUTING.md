@@ -95,6 +95,24 @@ uv run python -m pytest tests/test_agent_config_consistency.py -q
 
 Run this when you change agent metadata, context update scripts, or integration wiring.
 
+#### Running the full test suite
+
+Install the test dependencies into the project's own virtual environment and run
+`pytest` through that interpreter:
+
+```bash
+uv pip install -e ".[test]"
+.venv/bin/python -m pytest tests -q   # Windows: .venv\Scripts\python -m pytest tests -q
+```
+
+> **Note:** prefer `.venv/bin/python -m pytest` over a bare `uv run pytest`.
+> If another Spec Kit checkout has an editable (`-e`) install registered in a
+> shared/global environment, `uv run pytest` can resolve `specify_cli` to that
+> *other* worktree, turning it into a partial namespace package that fails to
+> import newly added subpackages. Running through the project `.venv` resolves
+> `specify_cli` to this checkout's `src/`. This matches the gotcha documented in
+> `AGENTS.md` (Common Pitfalls).
+
 ### Manual testing
 
 #### Testing setup
