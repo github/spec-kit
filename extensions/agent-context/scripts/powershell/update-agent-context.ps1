@@ -290,8 +290,8 @@ if (-not $PlanPath) {
         try {
             $fj = Get-Content -LiteralPath $FeatureJson -Raw -Encoding UTF8 | ConvertFrom-Json
             $featureDir = $fj.feature_directory
-            if ($featureDir -is [string]) { $featureDir = $featureDir.TrimEnd('\\', '/') }
-            if ($featureDir) {
+            if ($featureDir -isnot [string]) { $featureDir = $null }
+            if ($featureDir) { $featureDir = $featureDir.TrimEnd('\\', '/') }
                 # Join-Path on Unix does not treat absolute ChildPath as "wins"; check explicitly.
                 if ([System.IO.Path]::IsPathRooted($featureDir)) {
                     $candidatePlan = Join-Path $featureDir 'plan.md'
