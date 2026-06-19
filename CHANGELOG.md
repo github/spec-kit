@@ -17,8 +17,6 @@
 - Add Token Economy extension to community catalog (#3049)
 - chore: release 0.11.2, begin 0.11.3.dev0 development (#3059)
 
-- feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
-
 ## [0.11.2] - 2026-06-18
 
 ### Changed
