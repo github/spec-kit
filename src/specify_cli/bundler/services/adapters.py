@@ -10,6 +10,7 @@ These wire the bundler's injectable seams to the real environment:
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -36,6 +37,33 @@ _BUILTIN_CATALOGS: dict[str, dict] = {
 
 HTTP_TIMEOUT_SECONDS = 10
 
+# Windows absolute paths like ``C:\catalog.json`` parse with a single-letter
+# ``scheme`` under urlparse; treat them as local files rather than URLs.
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _is_windows_drive_path(url: str) -> bool:
+    return bool(_WINDOWS_DRIVE_RE.match(url))
+
+
+def _validate_remote_url(source_id: str, url: str) -> None:
+    """Restrict remote catalogs to HTTPS (HTTP only for localhost) with a host.
+
+    Mirrors ``specify_cli.catalogs`` URL validation to avoid MITM/downgrade
+    issues before any network call.
+    """
+    parsed = urlparse(url)
+    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        raise BundlerError(
+            f"Catalog '{source_id}' URL must use HTTPS (got {parsed.scheme}://). "
+            "HTTP is only allowed for localhost."
+        )
+    if not parsed.netloc:
+        raise BundlerError(
+            f"Catalog '{source_id}' URL must be a valid URL with a host: {url}"
+        )
+
 
 def make_catalog_fetcher(*, allow_network: bool = True):
     """Return a fetcher callable suitable for :class:`CatalogStack`.
@@ -55,11 +83,11 @@ def make_catalog_fetcher(*, allow_network: bool = True):
                 raise BundlerError(f"Unknown built-in catalog '{url}'.")
             return payload
 
-        if scheme in ("", "file"):
+        if scheme in ("", "file") or _is_windows_drive_path(url):
             path = Path(parsed.path if scheme == "file" else url)
             if not path.exists():
                 raise BundlerError(f"Catalog file not found: {path}")
-            return loads_json(path.read_text(encoding="utf-8"))
+            return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
 
         if scheme in ("http", "https"):
             if not allow_network:
@@ -67,6 +95,7 @@ def make_catalog_fetcher(*, allow_network: bool = True):
                     f"Network access disabled; cannot fetch catalog '{source.id}' "
                     f"from {url}."
                 )
+            _validate_remote_url(source.id, url)
             return _http_get_json(url)
 
         raise BundlerError(f"Unsupported catalog URL scheme: {url}")
@@ -82,7 +111,7 @@ def _http_get_json(url: str) -> dict:
             raw = response.read().decode("utf-8")
     except Exception as exc:  # noqa: BLE001
         raise BundlerError(f"Failed to fetch catalog from {url}: {exc}") from exc
-    return loads_json(raw)
+    return loads_json(raw, origin=url)
 
 
 class DefaultPrimitiveInstaller:

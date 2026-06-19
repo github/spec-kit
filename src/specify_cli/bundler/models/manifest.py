@@ -202,15 +202,30 @@ def _parse_refs(kind: str, raw: Any) -> list[ComponentRef]:
     for item in raw:
         if not isinstance(item, dict):
             raise BundlerError(f"Each provides.{kind} entry must be a mapping.")
-        priority = item.get("priority")
+        priority = _parse_priority(kind, item.get("priority"))
         refs.append(
             ComponentRef(
                 kind=kind,
                 id=str(item.get("id", "")).strip(),
                 version=(str(item["version"]).strip() if item.get("version") else None),
                 source=(str(item["source"]).strip() if item.get("source") else None),
-                priority=(int(priority) if priority is not None else None),
+                priority=priority,
                 strategy=(str(item["strategy"]).strip() if item.get("strategy") else None),
             )
         )
     return refs
+
+
+def _parse_priority(kind: str, raw: Any) -> int | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        raise BundlerError(
+            f"provides.{kind} priority must be an integer, got {raw!r}."
+        )
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise BundlerError(
+            f"provides.{kind} priority must be an integer, got {raw!r}."
+        ) from None

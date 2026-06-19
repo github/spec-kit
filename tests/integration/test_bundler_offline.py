@@ -52,3 +52,18 @@ def test_missing_file_catalog_errors_offline(tmp_path: Path):
     stack = CatalogStack([_src("local", str(tmp_path / "nope.json"))], fetcher)
     with pytest.raises(BundlerError):
         stack.resolve("anything")
+
+
+def test_plain_http_remote_rejected_before_network():
+    # HTTPS is required for non-localhost catalogs; reject http:// up front.
+    fetcher = make_catalog_fetcher(allow_network=True)
+    stack = CatalogStack([_src("remote", "http://example.com/catalog.json")], fetcher)
+    with pytest.raises(BundlerError, match="must use HTTPS"):
+        stack.resolve("anything")
+
+
+def test_remote_url_without_host_rejected():
+    fetcher = make_catalog_fetcher(allow_network=True)
+    stack = CatalogStack([_src("remote", "https:///catalog.json")], fetcher)
+    with pytest.raises(BundlerError, match="valid URL with a host"):
+        stack.resolve("anything")

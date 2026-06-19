@@ -5,6 +5,9 @@ semver pinning of components, preset priority+strategy, integration optionality.
 """
 from __future__ import annotations
 
+import pytest
+
+from specify_cli.bundler import BundlerError
 from specify_cli.bundler.models.manifest import BundleManifest
 from tests.bundler_helpers import valid_manifest_dict
 
@@ -49,6 +52,13 @@ def test_invalid_preset_strategy_is_rejected():
     data["provides"]["presets"][0]["strategy"] = "merge"
     errors = BundleManifest.from_dict(data).structural_errors()
     assert any("strategy" in e for e in errors)
+
+
+def test_non_integer_priority_raises_actionable_error():
+    data = valid_manifest_dict()
+    data["provides"]["presets"][0]["priority"] = "high"
+    with pytest.raises(BundlerError, match="priority must be an integer"):
+        BundleManifest.from_dict(data)
 
 
 def test_non_step_components_must_be_pinned():

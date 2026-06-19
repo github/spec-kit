@@ -14,7 +14,7 @@ from ..lib.versioning import parse_constraint
 from ..models.manifest import BundleManifest, ComponentRef
 
 # A reference checker returns None when resolvable, or an error string.
-ReferenceChecker = Callable[[ComponentRef], "str | None"]
+ReferenceChecker = Callable[[ComponentRef], str | None]
 
 
 @dataclass

@@ -61,5 +61,11 @@ def test_build_is_deterministic(tmp_path: Path):
     first = build_bundle(bundle, output_dir=tmp_path / "out1")
     second = build_bundle(bundle, output_dir=tmp_path / "out2")
     with zipfile.ZipFile(first.artifact_path) as a, zipfile.ZipFile(second.artifact_path) as b:
-        # Same files, same order (sorted) — stable, reproducible manifests.
+        # Same files, same order (sorted).
         assert a.namelist() == b.namelist()
+        # Fixed timestamps + permissions make each member byte-identical.
+        for left, right in zip(a.infolist(), b.infolist()):
+            assert left.date_time == right.date_time
+            assert left.external_attr == right.external_attr
+    # The whole artifact is byte-for-byte reproducible.
+    assert first.artifact_path.read_bytes() == second.artifact_path.read_bytes()

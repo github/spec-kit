@@ -19,6 +19,9 @@ from .validator import validate_manifest
 # Files/dirs never included in an artifact.
 EXCLUDE_NAMES = {".git", "__pycache__", ".DS_Store"}
 
+# Fixed member timestamp (zip epoch) for reproducible, byte-stable artifacts.
+_FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+
 
 @dataclass
 class BuildResult:
@@ -53,7 +56,13 @@ def build_bundle(
         for file_path in files:
             # Confinement: every packaged file must live under bundle_dir.
             ensure_within(bundle_dir, file_path)
-            archive.write(file_path, file_path.relative_to(bundle_dir).as_posix())
+            arcname = file_path.relative_to(bundle_dir).as_posix()
+            # Fixed timestamp + permissions so identical inputs yield a
+            # byte-for-byte identical artifact (reproducible builds).
+            info = zipfile.ZipInfo(filename=arcname, date_time=_FIXED_TIMESTAMP)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, file_path.read_bytes())
 
     return BuildResult(artifact_path=artifact_path, file_count=len(files))
 
