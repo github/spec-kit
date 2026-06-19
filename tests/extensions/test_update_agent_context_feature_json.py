@@ -181,7 +181,7 @@ def test_bash_absolute_feature_dir_under_project_root(tmp_path: Path) -> None:
     # Must be project-relative, not machine-specific absolute
     assert "specs/001-active/plan.md" in ctx
     assert "specs/000-stale/plan.md" not in ctx
-    assert str(tmp_path) not in ctx
+    assert _to_bash_path(tmp_path) not in ctx
 
 
 @requires_bash
