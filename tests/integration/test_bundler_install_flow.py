@@ -160,3 +160,24 @@ def test_update_preserves_original_installed_at(tmp_path: Path):
     install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest, refresh=True)
 
     assert load_records(tmp_path)[0].installed_at == original
+
+
+def test_pre_existing_component_is_not_attributed_or_removed(tmp_path: Path):
+    # A component installed independently (before any bundle) must not be
+    # attributed to the bundle, so removing the bundle never uninstalls it
+    # (FR-022, no collateral removal).
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    # Pre-install ext-a independently — no bundle record references it yet.
+    installer.installed.add(("extensions", "ext-a"))
+
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    contributed = {
+        (c.kind, c.id) for c in load_records(tmp_path)[0].contributed_components
+    }
+    assert ("extensions", "ext-a") not in contributed
+
+    remove_bundle(tmp_path, "demo-bundle", installer)
+    assert ("extensions", "ext-a") in installer.installed

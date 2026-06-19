@@ -30,6 +30,35 @@ from ..models.manifest import ComponentRef
 DEFAULT_PRIORITY = 10
 
 
+def _assert_pinned_version(
+    kind: str, component_id: str, pinned: str | None, advertised: object
+) -> None:
+    """Refuse to install when the catalog version differs from the manifest pin.
+
+    Bundle manifests pin component versions for reproducibility; installing
+    whatever the active catalog currently serves would silently violate the
+    pin. When the catalog advertises no version we cannot enforce the pin, so
+    installation proceeds (the catalog, not the bundler, owns that gap).
+    """
+    if not pinned or advertised is None:
+        return
+    actual = str(advertised).strip()
+    if not actual:
+        return
+    from ..lib.versioning import parse_version
+
+    try:
+        matches = parse_version(actual) == parse_version(pinned)
+    except BundlerError:
+        matches = actual == str(pinned).strip()
+    if not matches:
+        raise BundlerError(
+            f"{kind} '{component_id}' is pinned to version {pinned} in the bundle "
+            f"manifest, but the active catalog serves {actual}. Update the bundle's "
+            "pinned version or the catalog before installing."
+        )
+
+
 class _KindManager(Protocol):
     def is_installed(self, component: ComponentRef) -> bool: ...
 
@@ -126,6 +155,9 @@ class _PresetKindManager:
                 f"Preset '{component.id}' is from a discovery-only catalog; "
                 "installation is not allowed."
             )
+        _assert_pinned_version(
+            "Preset", component.id, component.version, info.get("version")
+        )
         zip_path = catalog.download_pack(component.id)
         try:
             self._manager.install_from_zip(zip_path, speckit_version, priority)
@@ -191,6 +223,9 @@ class _ExtensionKindManager:
                 f"Extension '{component.id}' is from a discovery-only catalog; "
                 "installation is not allowed."
             )
+        _assert_pinned_version(
+            "Extension", component.id, component.version, info.get("version")
+        )
         zip_path = catalog.download_extension(component.id)
         try:
             self._manager.install_from_zip(
@@ -231,12 +266,27 @@ class _WorkflowKindManager:
                 f"access is disabled; re-run without --offline or install it first "
                 f"with 'specify workflow add {component.id}'."
             )
+        self._assert_pinned_version(component)
         from ... import workflow_add
 
         with _chdir(self._root):
             _delegate_command(
                 "install", f"workflow '{component.id}'",
                 lambda: workflow_add(component.id),
+            )
+
+    def _assert_pinned_version(self, component: ComponentRef) -> None:
+        if not component.version:
+            return
+        try:
+            from ...workflows.catalog import WorkflowCatalog
+
+            info = WorkflowCatalog(self._root).get_workflow_info(component.id)
+        except Exception:  # noqa: BLE001 - catalog unreachable: cannot enforce
+            return
+        if info:
+            _assert_pinned_version(
+                "Workflow", component.id, component.version, info.get("version")
             )
 
     @staticmethod

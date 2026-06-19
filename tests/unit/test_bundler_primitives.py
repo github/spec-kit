@@ -83,3 +83,32 @@ def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
     manager.install(_component("workflows", "bundled-wf"))
 
     assert calls == ["bundled-wf"]
+
+
+def test_assert_pinned_version_matches_passes():
+    from specify_cli.bundler.services.primitives import _assert_pinned_version
+
+    # Equal (including v-prefix/normalization) is accepted; no version pins are no-ops.
+    _assert_pinned_version("Preset", "p", "2.0.0", "2.0.0")
+    _assert_pinned_version("Preset", "p", "2.0.0", "v2.0.0")
+    _assert_pinned_version("Preset", "p", None, "9.9.9")
+    _assert_pinned_version("Preset", "p", "2.0.0", None)
+
+
+def test_assert_pinned_version_mismatch_raises():
+    from specify_cli.bundler.services.primitives import _assert_pinned_version
+
+    with pytest.raises(BundlerError, match="pinned to version 2.0.0"):
+        _assert_pinned_version("Preset", "preset-a", "2.0.0", "3.1.0")
+
+
+def test_workflow_version_mismatch_refuses(tmp_path: Path, monkeypatch):
+    from specify_cli.workflows.catalog import WorkflowCatalog
+
+    monkeypatch.setattr(
+        WorkflowCatalog, "get_workflow_info", lambda self, wid: {"version": "9.9.9"}
+    )
+    manager = primitive_manager("workflows", tmp_path, allow_network=True)
+    component = ComponentRef(kind="workflows", id="wf-a", version="0.3.0")
+    with pytest.raises(BundlerError, match="pinned to version 0.3.0"):
+        manager.install(component)

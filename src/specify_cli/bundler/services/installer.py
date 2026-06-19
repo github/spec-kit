@@ -76,19 +76,42 @@ def install_bundle(
             raise BundlerError(report.integration_clash)
 
     result = InstallResult(bundle_id=plan.bundle_id)
+    existing = find_record(records, plan.bundle_id)
+    prior_ours = {
+        (c.kind, c.id) for c in existing.contributed_components
+    } if existing is not None else set()
+    # Components already attributed to a *different* installed bundle: these are
+    # legitimately shareable (refcounted on removal), so this bundle may also
+    # claim them. A component that is installed on disk but tracked by no bundle
+    # was installed independently and must NOT be attributed here — otherwise
+    # removing this bundle would uninstall it (collateral removal, FR-022).
+    other_tracked = {
+        (c.kind, c.id)
+        for r in records
+        if r.bundle_id != plan.bundle_id
+        for c in r.contributed_components
+    }
+
+    contributed: list[ComponentRef] = []
     done: list[ComponentRef] = []
     try:
         for component in plan.components:
+            key = (component.kind, component.id)
             if installer.is_installed(project_root, component):
                 if refresh:
                     _refresh_component(project_root, installer, component)
                     result.refreshed.append(component)
                 else:
                     result.skipped.append(component)
+                # Only attribute a pre-existing component when this bundle (or a
+                # sibling) already owns it; skip independently-installed ones.
+                if key in prior_ours or key in other_tracked:
+                    contributed.append(component)
                 continue
             installer.install(project_root, component)
             done.append(component)
             result.installed.append(component)
+            contributed.append(component)
     except BundlerError:
         _rollback(project_root, installer, done)
         raise
@@ -99,11 +122,10 @@ def install_bundle(
             "No changes were recorded."
         ) from exc
 
-    existing = find_record(records, plan.bundle_id)
     record = InstalledBundleRecord.create(
         bundle_id=plan.bundle_id,
         version=plan.version,
-        components=list(plan.components),
+        components=contributed,
         # Preserve the original install time across refresh/update so
         # ``bundle list`` keeps reporting when the bundle was first installed.
         installed_at=existing.installed_at if existing is not None else None,
