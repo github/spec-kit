@@ -73,6 +73,14 @@ def install_bundle(
     are brought up to the plan's pinned versions, rather than skipped. Primitive
     config (e.g. preset priority overrides) is preserved by the underlying
     machinery.
+
+    Version-pin enforcement is install-time only. The primitive ``is_installed``
+    checks are id-based (they do not compare versions), so when a component is
+    already present and *refresh* is False it is skipped without verifying that
+    the on-disk version matches the manifest pin. Pins are therefore only
+    guaranteed to be applied when the bundler actually performs an install or a
+    refresh; running ``specify bundle update`` re-applies every owned component
+    at its pinned version.
     """
     records = load_records(project_root)
 

@@ -84,11 +84,17 @@ def build_bundle(
             # Confinement: every packaged file must live under bundle_dir.
             ensure_within(bundle_dir, file_path)
             arcname = file_path.relative_to(bundle_dir).as_posix()
-            # Fixed timestamp + permissions so identical inputs yield a
-            # byte-for-byte identical artifact (reproducible builds).
+            # Fixed timestamp so identical inputs yield a byte-for-byte
+            # identical artifact (reproducible builds).
             info = zipfile.ZipInfo(filename=arcname, date_time=_FIXED_TIMESTAMP)
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
+            # Reproducible, normalized permissions: preserve executability so
+            # bundled scripts (e.g. extension hook scripts) stay runnable after
+            # extraction, but collapse to two canonical modes (0755 when any
+            # execute bit is set on the source, otherwise 0644) so identical
+            # inputs yield a byte-for-byte identical artifact.
+            mode = 0o755 if file_path.stat().st_mode & 0o111 else 0o644
+            info.external_attr = mode << 16
             archive.writestr(info, file_path.read_bytes())
 
     return BuildResult(artifact_path=artifact_path, file_count=len(files))

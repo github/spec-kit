@@ -167,3 +167,21 @@ def test_prior_artifact_with_prerelease_and_build_is_excluded(tmp_path: Path):
     with zipfile.ZipFile(result.artifact_path) as archive:
         names = set(archive.namelist())
     assert "demo-bundle-1.0.0-rc1+build5.zip" not in names
+
+
+def test_executable_bit_preserved_in_artifact(tmp_path: Path):
+    bundle = _make_bundle(tmp_path / "bundle")
+    script = bundle / "scripts" / "hook.sh"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    script.chmod(0o755)
+
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        modes = {
+            info.filename: (info.external_attr >> 16) & 0o777
+            for info in archive.infolist()
+        }
+    # Executable source -> 0755; plain text files -> 0644.
+    assert modes["scripts/hook.sh"] == 0o755
+    assert modes["README.md"] == 0o644
