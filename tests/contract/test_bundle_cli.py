@@ -14,6 +14,7 @@ import yaml
 from typer.testing import CliRunner
 
 from specify_cli import app
+from specify_cli.bundler.services.packager import build_bundle
 from tests.bundler_helpers import (
     catalog_entry_dict,
     valid_manifest_dict,
@@ -178,6 +179,60 @@ def test_info_expands_full_component_set(project: Path):
     text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
     assert "preset-a v2.0.0" in text.output
     assert "Trust" in text.output
+
+
+def test_info_expands_discovery_only_bundle(project: Path):
+    # Discovery-only bundles must still be fully inspectable via `info`;
+    # only `install` is refused for them.
+    bundle_dir = project / "disc-bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    catalog = project / "disc-catalog.json"
+    entry = catalog_entry_dict(
+        "demo-bundle", download_url=str(bundle_dir / "bundle.yml")
+    )
+    write_catalog_file(catalog, {"demo-bundle": entry})
+    config = {
+        "schema_version": "1.0",
+        "catalogs": [
+            {"id": "disc", "url": str(catalog), "priority": 1,
+             "install_policy": "discovery-only"}
+        ],
+    }
+    (project / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(config), encoding="utf-8"
+    )
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    components = {(c["kind"], c["id"]) for c in payload["components"]}
+    assert ("extensions", "ext-a") in components
+
+
+def test_info_resolves_local_zip_download_url(project: Path):
+    # A local .zip artifact as download_url is extracted to read bundle.yml.
+    bundle_dir = project / "zip-src"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    artifact = build_bundle(bundle_dir, output_dir=project / "dist").artifact_path
+    catalog = project / "zip-catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=str(artifact))},
+    )
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "local"]
+    )
+    assert added.exit_code == 0, added.output
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    components = {(c["kind"], c["id"]) for c in payload["components"]}
+    assert ("extensions", "ext-a") in components
 
 
 def test_install_refuses_discovery_only_source(project: Path, monkeypatch):

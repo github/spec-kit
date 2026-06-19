@@ -73,10 +73,20 @@ class CatalogSource:
         priority = data.get("priority")
         if priority is None:
             raise BundlerError(f"Catalog source '{source_id}' is missing its 'priority'.")
+        if isinstance(priority, bool) or not isinstance(priority, (int, str)):
+            raise BundlerError(
+                f"Catalog source '{source_id}' has a non-integer priority: {priority!r}."
+            )
+        try:
+            priority_int = int(priority)
+        except (TypeError, ValueError):
+            raise BundlerError(
+                f"Catalog source '{source_id}' has a non-integer priority: {priority!r}."
+            ) from None
         return cls(
             id=source_id,
             url=url,
-            priority=int(priority),
+            priority=priority_int,
             install_policy=InstallPolicy.parse(data.get("install_policy")),
             scope=scope,
         )

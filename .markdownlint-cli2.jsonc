@@ -24,6 +24,12 @@
     "MD060": false
   },
   "ignores": [
-    ".genreleases/"
+    ".genreleases/",
+    ".specify/",
+    ".specify/**",
+    ".github/",
+    ".github/**",
+    "specs/",
+    "specs/**"
   ]
 }

@@ -11,12 +11,23 @@ import yaml
 
 from specify_cli.bundler.models.catalog import (
     BUILTIN_DEFAULT_STACK,
+    CatalogSource,
     InstallPolicy,
     Scope,
     load_catalog_payload,
     load_source_stack,
 )
+from specify_cli.bundler import BundlerError
+import pytest
 from tests.bundler_helpers import catalog_entry_dict, catalog_payload, make_project
+
+
+def test_non_integer_source_priority_raises_actionable_error():
+    with pytest.raises(BundlerError, match="non-integer priority"):
+        CatalogSource.from_dict(
+            {"id": "corp", "url": "https://corp/catalog.json", "priority": "high"},
+            Scope.PROJECT,
+        )
 
 
 def test_builtin_default_stack_when_no_config(tmp_path: Path):

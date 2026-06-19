@@ -8,7 +8,7 @@ overlaps.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..models.manifest import BundleManifest
 from ..models.records import InstalledBundleRecord
@@ -17,11 +17,7 @@ from ..models.records import InstalledBundleRecord
 @dataclass
 class ConflictReport:
     integration_clash: str | None = None  # message when a hard clash exists
-    overlaps: list[str] = None  # informational: components already provided
-
-    def __post_init__(self) -> None:
-        if self.overlaps is None:
-            self.overlaps = []
+    overlaps: list[str] = field(default_factory=list)  # components already provided
 
     @property
     def has_blocking_conflict(self) -> bool:

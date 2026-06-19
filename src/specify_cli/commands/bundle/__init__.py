@@ -78,7 +78,7 @@ def _default_script_type() -> str:
     return "ps" if os.name == "nt" else "sh"
 
 
-def _run_init(integration: str, *, script_type: str) -> None:
+def _run_init(integration: str, *, script_type: str, offline: bool = False) -> None:
     """Idempotently scaffold a Spec Kit project here via the existing ``init`` machinery.
 
     Reuses the real ``specify init`` command callback in-process (Principle I)
@@ -102,7 +102,7 @@ def _run_init(integration: str, *, script_type: str) -> None:
             skip_tls=False,
             debug=False,
             github_token=None,
-            offline=False,
+            offline=offline,
             preset=None,
             integration=integration,
             integration_options=None,
@@ -191,12 +191,13 @@ def bundle_info(
         project_root = find_project_root() or Path.cwd()
         stack = _build_stack(project_root, offline=offline)
         resolved = stack.resolve(bundle_id)
+        # Expand the manifest regardless of install policy: discovery-only
+        # bundles must still be inspectable; only `install` is refused.
         manifest = None
-        if resolved.install_allowed:
-            try:
-                manifest = _download_manifest(resolved, offline=offline)
-            except BundlerError:
-                manifest = None  # remote/undownloadable: fall back to provides counts
+        try:
+            manifest = _download_manifest(resolved, offline=offline)
+        except BundlerError:
+            manifest = None  # remote/undownloadable: fall back to provides counts
     except BundlerError as exc:
         _fail(str(exc))
         return
@@ -340,7 +341,7 @@ def bundle_install(
                 f"[cyan]No Spec Kit project here; initializing with integration "
                 f"'{init_integration}'…[/cyan]"
             )
-            _run_init(init_integration, script_type=_default_script_type())
+            _run_init(init_integration, script_type=_default_script_type(), offline=offline)
             project_root = require_project_root()
 
         for overlap in _bundle_overlaps(project_root, manifest, offline=offline):
@@ -520,7 +521,7 @@ def bundle_init(
                 f"[cyan]Initializing a Spec Kit project with integration "
                 f"'{init_integration}'…[/cyan]"
             )
-            _run_init(init_integration, script_type=_default_script_type())
+            _run_init(init_integration, script_type=_default_script_type(), offline=offline)
             project_root = require_project_root()
     except BundlerError as exc:
         _fail(str(exc))
@@ -705,14 +706,15 @@ def _resolve_manifest_path(path: Path | None) -> Path:
 
 
 def _download_manifest(resolved, *, offline: bool):
-    """Resolve a bundle's manifest from a local/pinned download_url.
+    """Resolve a bundle's manifest from its catalog ``download_url``.
 
-    Network downloads are intentionally minimal and only attempted when not
-    offline. Local/file URLs always work offline.
+    Local/``file://`` URLs always work offline and may point at a ``.zip``
+    artifact, a bundle directory, or a ``bundle.yml`` (handled by
+    :func:`_local_manifest_source`). Remote ``https://`` URLs are fetched with
+    the shared authenticated, redirect-validated HTTP client, and only when not
+    ``--offline``.
     """
     from urllib.parse import urlparse
-
-    from ...bundler.models.manifest import BundleManifest
 
     url = resolved.entry.download_url
     if not url:
@@ -722,17 +724,79 @@ def _download_manifest(resolved, *, offline: bool):
         )
     parsed = urlparse(url)
     scheme = parsed.scheme.lower()
+
     if scheme in ("", "file"):
         local = Path(parsed.path if scheme == "file" else url)
-        if local.is_dir():
-            local = local / "bundle.yml"
-        if not local.exists():
+        manifest = _local_manifest_source(str(local))
+        if manifest is None:
             raise BundlerError(f"Bundle manifest not found: {local}")
-        return BundleManifest.from_file(local)
+        return manifest
+
+    if scheme in ("http", "https"):
+        if offline:
+            raise BundlerError(
+                f"Network access disabled; cannot download bundle '{resolved.entry.id}' "
+                f"from {url}."
+            )
+        return _download_remote_manifest(resolved.entry.id, url)
+
     raise BundlerError(
-        f"Remote bundle download from '{url}' is not supported in this build; "
-        "use a local or pinned file:// download_url."
+        f"Unsupported download_url scheme for bundle '{resolved.entry.id}': {url}"
     )
+
+
+def _require_https(label: str, url: str) -> None:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        raise BundlerError(
+            f"Refusing to download {label} over non-HTTPS URL: {url}"
+        )
+    if not parsed.hostname:
+        raise BundlerError(f"Refusing to download {label} from URL with no host: {url}")
+
+
+def _download_remote_manifest(entry_id: str, url: str):
+    """Fetch a remote bundle artifact over HTTPS and extract its manifest."""
+    import io
+    import tempfile
+
+    from ...authentication.http import open_url
+
+    def _validate_redirect(old_url: str, new_url: str) -> None:
+        _require_https(f"bundle '{entry_id}'", new_url)
+
+    _require_https(f"bundle '{entry_id}'", url)
+    try:
+        with open_url(url, timeout=30, redirect_validator=_validate_redirect) as resp:
+            _require_https(f"bundle '{entry_id}'", resp.geturl())
+            raw = resp.read()
+    except BundlerError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise BundlerError(f"Failed to download bundle '{entry_id}' from {url}: {exc}") from exc
+
+    # A .zip artifact is written to a temp file and parsed via the local-source
+    # path (which extracts bundle.yml); any other payload is treated as YAML.
+    if url.lower().endswith(".zip"):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = Path(tmp) / "bundle.zip"
+            artifact.write_bytes(raw)
+            manifest = _local_manifest_source(str(artifact))
+            if manifest is None:
+                raise BundlerError(
+                    f"Downloaded artifact for bundle '{entry_id}' is not a valid bundle."
+                )
+            return manifest
+
+    import yaml as _yaml
+
+    from ...bundler.models.manifest import BundleManifest
+
+    data = _yaml.safe_load(io.BytesIO(raw))
+    return BundleManifest.from_dict(data)
 
 
 def register(app: typer.Typer) -> None:
