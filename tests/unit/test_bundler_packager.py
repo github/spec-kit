@@ -1,6 +1,7 @@
 """Unit tests for the artifact packager (T023): contents, versioning, determinism."""
 from __future__ import annotations
 
+import os
 import zipfile
 from pathlib import Path
 
@@ -169,6 +170,11 @@ def test_prior_artifact_with_prerelease_and_build_is_excluded(tmp_path: Path):
     assert "demo-bundle-1.0.0-rc1+build5.zip" not in names
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows filesystems do not carry Unix execute bits, so chmod(0o755) "
+    "is a no-op and there is no executability to preserve.",
+)
 def test_executable_bit_preserved_in_artifact(tmp_path: Path):
     bundle = _make_bundle(tmp_path / "bundle")
     script = bundle / "scripts" / "hook.sh"
