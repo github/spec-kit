@@ -107,3 +107,36 @@ def test_load_records_refuses_symlinked_specify_escape(tmp_path: Path):
 
     with pytest.raises(BundlerError, match="escapes the allowed root"):
         load_records(project)
+
+
+def test_active_integration_refuses_symlinked_specify_escape(tmp_path: Path):
+    # Reading the integration marker must not follow a .specify symlink that
+    # resolves outside project_root; an escape is treated as "not determinable".
+    from specify_cli.bundler.lib.project import active_integration
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "integration.json").write_text(
+        '{"integration": "leaked"}', encoding="utf-8"
+    )
+    (project / ".specify").symlink_to(outside, target_is_directory=True)
+
+    assert active_integration(project) is None
+
+
+def test_read_catalog_config_refuses_symlinked_specify_escape(tmp_path: Path):
+    from specify_cli.bundler.commands_impl import catalog_config as cc
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "bundle-catalogs.yml").write_text(
+        "schema_version: '1.0'\ncatalogs: []\n", encoding="utf-8"
+    )
+    (project / ".specify").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(BundlerError, match="escapes the allowed root"):
+        cc._read(project)

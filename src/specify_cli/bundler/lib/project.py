@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .. import BundlerError
-from .yamlio import load_json
+from .yamlio import ensure_within, load_json
 
 DEFAULT_INTEGRATION = "copilot"
 
@@ -36,6 +36,13 @@ def active_integration(project_root: Path) -> str | None:
     during init. Returns None when it cannot be determined (e.g. agnostic).
     """
     marker = Path(project_root) / ".specify" / "integration.json"
+    # Confine the read (mirrors records/catalog IO): refuse to follow a
+    # symlinked or traversal-escaping .specify that resolves outside
+    # project_root. An escape is treated as "not determinable".
+    try:
+        marker = ensure_within(project_root, marker)
+    except BundlerError:
+        return None
     if not marker.exists():
         return None
     try:

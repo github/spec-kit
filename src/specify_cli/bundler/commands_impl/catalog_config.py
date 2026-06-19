@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import re
 
 from .. import BundlerError
-from ..lib.yamlio import dump_yaml, load_yaml
+from ..lib.yamlio import dump_yaml, ensure_within, load_yaml
 from ..models.catalog import (
     CONFIG_FILENAME,
     BUILTIN_DEFAULT_STACK,
@@ -34,7 +34,10 @@ def _config_path(project_root: Path) -> Path:
 
 
 def _read(project_root: Path) -> list[dict]:
-    path = _config_path(project_root)
+    # Confine the read (parity with the write path's within= guard): refuse to
+    # follow a symlinked or traversal-escaping .specify that resolves outside
+    # project_root.
+    path = ensure_within(project_root, _config_path(project_root))
     if not path.exists():
         return []
     data = load_yaml(path)
