@@ -10,9 +10,9 @@
 #
 # Usage: update-agent-context.sh [plan_path]
 #
-# When `plan_path` is omitted, the script picks the most recently modified
-# `specs/*/plan.md` if any exist, otherwise emits the section without a
-# concrete plan path.
+# When `plan_path` is omitted, the script derives it from `.specify/feature.json`
+# (written by /speckit-specify). Falls back to the most recently modified
+# `specs/*/plan.md` only when feature.json is absent or its plan does not exist yet.
 
 set -euo pipefail
 
@@ -202,11 +202,41 @@ unset _cf_parts _seg
 
 PLAN_PATH="${1:-}"
 if [[ -z "$PLAN_PATH" ]]; then
-  # Pick the most recently modified plan.md one level deep (specs/<feature>/plan.md).
-  # Use find + sort by modification time to avoid ls/head fragility with
-  # spaces in paths or SIGPIPE from pipefail.
-  _plan_abs="$("$_python" - "$PROJECT_ROOT" <<'PY'
-import sys, os
+  # Prefer .specify/feature.json (written by /speckit-specify) over mtime heuristic.
+  _feature_json="$PROJECT_ROOT/.specify/feature.json"
+  if [[ -f "$_feature_json" ]]; then
+    _feature_dir="$("$_python" - "$_feature_json" <<'PY'
+import sys, json
+try:
+    d = json.load(open(sys.argv[1]))
+    print(d.get("feature_directory", ""))
+except Exception:
+    print("")
+PY
+)"
+    if [[ -n "$_feature_dir" ]]; then
+      # feature_directory may be relative or absolute (absolute paths outside PROJECT_ROOT
+      # are preserved as-is by _persist_feature_json in common.sh).
+      if [[ "$_feature_dir" == /* ]]; then
+        _candidate="$_feature_dir/plan.md"
+      else
+        _candidate="$PROJECT_ROOT/$_feature_dir/plan.md"
+      fi
+      if [[ -f "$_candidate" ]]; then
+        # Emit a PROJECT_ROOT-relative path when possible, otherwise use the absolute path.
+        if [[ "$_candidate" == "$PROJECT_ROOT/"* ]]; then
+          PLAN_PATH="${_candidate#"$PROJECT_ROOT/"}"
+        else
+          PLAN_PATH="$_candidate"
+        fi
+      fi
+    fi
+  fi
+
+  # Fall back to mtime only when feature.json is absent or its plan does not exist yet.
+  if [[ -z "$PLAN_PATH" ]]; then
+    _plan_abs="$("$_python" - "$PROJECT_ROOT" <<'PY'
+import sys
 from pathlib import Path
 specs = Path(sys.argv[1]) / "specs"
 plans = sorted(
@@ -217,8 +247,9 @@ plans = sorted(
 print(plans[0] if plans else "")
 PY
 )"
-  if [[ -n "$_plan_abs" ]]; then
-    PLAN_PATH="${_plan_abs#"$PROJECT_ROOT/"}"
+    if [[ -n "$_plan_abs" ]]; then
+      PLAN_PATH="${_plan_abs#"$PROJECT_ROOT/"}"
+    fi
   fi
 fi
 

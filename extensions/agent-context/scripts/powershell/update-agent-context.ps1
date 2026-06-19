@@ -9,6 +9,10 @@
 #   .specify/extensions/agent-context/agent-context-config.yml
 #
 # Usage: update-agent-context.ps1 [plan_path]
+#
+# When `plan_path` is omitted, the script derives it from `.specify/feature.json`
+# (written by /speckit-specify). Falls back to the most recently modified
+# `specs/*/plan.md` only when feature.json is absent or its plan does not exist yet.
 
 [CmdletBinding()]
 param(
@@ -280,21 +284,52 @@ if ($cm) {
 }
 
 if (-not $PlanPath) {
-    # Discover plan.md exactly one level deep (specs/<feature>/plan.md),
-    # matching the bash glob specs/*/plan.md. Wrap in try/catch so access errors under
-    # $ErrorActionPreference = 'Stop' don't abort the script.
-    try {
-        $specsDir = Join-Path $ProjectRoot 'specs'
-        $candidate = Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |
-            ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'plan.md') -ErrorAction SilentlyContinue } |
-            Where-Object { $_ } |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-        if ($candidate) {
-            $PlanPath = [System.IO.Path]::GetRelativePath($ProjectRoot, $candidate.FullName).Replace('\','/')
+    # Prefer .specify/feature.json (written by /speckit-specify) over mtime heuristic.
+    $FeatureJson = Join-Path $ProjectRoot '.specify/feature.json'
+    if (Test-Path -LiteralPath $FeatureJson) {
+        try {
+            $fj = Get-Content -LiteralPath $FeatureJson -Raw -Encoding UTF8 | ConvertFrom-Json
+            $featureDir = $fj.feature_directory
+            if ($featureDir) {
+                # Join-Path on Unix does not treat absolute ChildPath as "wins"; check explicitly.
+                if ([System.IO.Path]::IsPathRooted($featureDir)) {
+                    $candidatePlan = Join-Path $featureDir 'plan.md'
+                } else {
+                    $candidatePlan = Join-Path (Join-Path $ProjectRoot $featureDir) 'plan.md'
+                }
+                if (Test-Path -LiteralPath $candidatePlan) {
+                    # Normalize absolute feature paths to project-relative (mirrors bash behavior).
+                    $relDir = $featureDir
+                    if ([System.IO.Path]::IsPathRooted($featureDir)) {
+                        $normRoot = $ProjectRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+                        $normDir  = $featureDir.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+                        if ($normDir.StartsWith($normRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $relDir = $normDir.Substring($normRoot.Length)
+                        }
+                    }
+                    $PlanPath = $relDir.Replace('\', '/') + '/plan.md'
+                }
+            }
+        } catch {
+            # Non-fatal: fall through to mtime heuristic.
         }
-    } catch {
-        # Non-fatal: continue without a plan path.
+    }
+
+    # Fall back to mtime only when feature.json is absent or its plan does not exist yet.
+    if (-not $PlanPath) {
+        try {
+            $specsDir = Join-Path $ProjectRoot 'specs'
+            $candidate = Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |
+                ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'plan.md') -ErrorAction SilentlyContinue } |
+                Where-Object { $_ } |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 1
+            if ($candidate) {
+                $PlanPath = [System.IO.Path]::GetRelativePath($ProjectRoot, $candidate.FullName).Replace('\','/')
+            }
+        } catch {
+            # Non-fatal: continue without a plan path.
+        }
     }
 }
 
