@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -101,8 +102,18 @@ def dump_json(path: Path, data: Any, *, within: Path | None = None) -> Path:
 
 
 def is_safe_relpath(rel: str) -> bool:
-    """Return True if *rel* is a project-relative path with no traversal/absolute parts."""
-    if not rel or os.path.isabs(rel):
+    """Return True if *rel* is a project-relative path with no traversal/absolute parts.
+
+    Platform-independent: a POSIX-absolute path (``/abs``) or a Windows
+    drive-absolute path (``C:\\x``) is rejected on every OS, since these strings
+    can appear in untrusted catalog/manifest data regardless of the host.
+    """
+    if not rel:
         return False
-    parts = Path(rel.replace("\\", "/")).parts
-    return ".." not in parts and not any(p.startswith("/") for p in parts)
+    normalized = rel.replace("\\", "/")
+    if os.path.isabs(rel) or normalized.startswith("/"):
+        return False
+    if re.match(r"^[A-Za-z]:", normalized):  # Windows drive-absolute (C:/...)
+        return False
+    parts = PurePosixPath(normalized).parts
+    return ".." not in parts

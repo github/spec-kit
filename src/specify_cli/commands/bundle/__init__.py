@@ -8,6 +8,7 @@ stdout; human logs go to stderr/console.
 from __future__ import annotations
 
 import json as _json
+import re
 from pathlib import Path
 
 import typer
@@ -726,7 +727,9 @@ def _download_manifest(resolved, *, offline: bool):
     parsed = urlparse(url)
     scheme = parsed.scheme.lower()
 
-    if scheme in ("", "file"):
+    # On Windows an absolute path like ``C:\bundle.yml`` parses with a
+    # single-letter ``scheme``; treat it as a local file, not a URL scheme.
+    if scheme in ("", "file") or re.match(r"^[A-Za-z]:[\\/]", url):
         local = Path(parsed.path if scheme == "file" else url)
         manifest = _local_manifest_source(str(local))
         if manifest is None:

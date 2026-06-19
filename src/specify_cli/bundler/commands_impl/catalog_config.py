@@ -77,7 +77,9 @@ def _derive_id(url: str) -> str:
     parsed = urlparse(url)
     if parsed.netloc:
         host = parsed.netloc.split("@")[-1].split(":")[0]
-        host_label = Path(host).stem or host
+        # Hostnames are case-insensitive: normalize so 'Example.com' and
+        # 'example.com' derive the same, deterministic id.
+        host_label = (Path(host).stem or host).lower()
         path_stem = Path(parsed.path).stem if parsed.path else ""
         parts = [p for p in (_slug(host_label), _slug(path_stem)) if p]
         return "-".join(parts) or "catalog"

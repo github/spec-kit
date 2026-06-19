@@ -66,3 +66,20 @@ def test_default_installer_threads_allow_network(tmp_path: Path):
     installer = DefaultPrimitiveInstaller(allow_network=False)
     with pytest.raises(BundlerError, match="network access is disabled"):
         installer.install(tmp_path, _component("workflows"))
+
+
+def test_offline_workflow_allows_bundled(tmp_path: Path, monkeypatch):
+    # A workflow that ships with Spec Kit must install even with --offline.
+    import specify_cli
+    import specify_cli._assets as assets
+
+    monkeypatch.setattr(
+        assets, "_locate_bundled_workflow", lambda wid: tmp_path / "wf"
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(specify_cli, "workflow_add", lambda wid: calls.append(wid))
+
+    manager = primitive_manager("workflows", tmp_path, allow_network=False)
+    manager.install(_component("workflows", "bundled-wf"))
+
+    assert calls == ["bundled-wf"]

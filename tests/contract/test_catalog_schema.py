@@ -93,3 +93,21 @@ def test_load_payload_parses_entries():
 def test_builtin_default_stack_constant_shape():
     ids = {raw["id"] for raw in BUILTIN_DEFAULT_STACK}
     assert ids == {"default", "community"}
+
+
+def test_catalog_entry_rejects_string_tags():
+    from specify_cli.bundler.models.catalog import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["tags"] = "not-a-list"
+    with pytest.raises(BundlerError, match="'tags' must be a list"):
+        CatalogEntry.from_dict(data)
+
+
+def test_catalog_entry_rejects_non_boolean_verified():
+    from specify_cli.bundler.models.catalog import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["verified"] = "false"  # truthy string must not mark the entry verified
+    with pytest.raises(BundlerError, match="'verified' must be a boolean"):
+        CatalogEntry.from_dict(data)

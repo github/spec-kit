@@ -100,6 +100,34 @@ class CatalogSource:
         }
 
 
+def _parse_tags(value: Any, entry_id: str) -> tuple[str, ...]:
+    """Coerce a catalog entry's ``tags`` into a tuple of strings.
+
+    Catalogs are untrusted input: a bare string would otherwise be iterated
+    character-by-character, so reject anything that is not a list/tuple.
+    """
+    if value is None:
+        return ()
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        raise BundlerError(
+            f"Catalog entry '{entry_id}': 'tags' must be a list of strings."
+        )
+    return tuple(str(t) for t in value)
+
+
+def _parse_verified(value: Any, entry_id: str) -> bool:
+    """Validate a catalog entry's ``verified`` flag is a real boolean.
+
+    ``bool("false")`` is truthy, so coercing arbitrary strings would silently
+    mark untrusted entries as verified; require an actual boolean instead.
+    """
+    if isinstance(value, bool):
+        return value
+    raise BundlerError(
+        f"Catalog entry '{entry_id}': 'verified' must be a boolean (true/false)."
+    )
+
+
 @dataclass(frozen=True)
 class CatalogEntry:
     id: str
@@ -124,8 +152,9 @@ class CatalogEntry:
         if not isinstance(data, dict):
             raise BundlerError("Each catalog entry must be a mapping.")
         requires = data.get("requires") or {}
+        entry_id = str(data.get("id", "")).strip()
         return cls(
-            id=str(data.get("id", "")).strip(),
+            id=entry_id,
             name=str(data.get("name", "")).strip(),
             version=str(data.get("version", "")).strip(),
             role=str(data.get("role", "")).strip(),
@@ -136,8 +165,8 @@ class CatalogEntry:
             requires_speckit_version=str(requires.get("speckit_version", "")).strip(),
             provides=dict(data.get("provides") or {}),
             repository=(str(data["repository"]) if data.get("repository") else None),
-            tags=tuple(str(t) for t in (data.get("tags") or [])),
-            verified=bool(data.get("verified", False)),
+            tags=_parse_tags(data.get("tags"), entry_id),
+            verified=_parse_verified(data.get("verified", False), entry_id),
         )
 
     def with_provenance(self, source: CatalogSource) -> "CatalogEntry":

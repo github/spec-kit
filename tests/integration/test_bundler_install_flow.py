@@ -146,3 +146,17 @@ def test_refresh_falls_back_to_install_without_hook(tmp_path: Path):
     # No refresh hook → re-install path keeps components current.
     assert len(result.refreshed) == 4
     assert len(installer.install_calls) == before + 4
+
+
+def test_update_preserves_original_installed_at(tmp_path: Path):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    original = load_records(tmp_path)[0].installed_at
+
+    # A refresh (bundle update) must not rewrite the original install timestamp.
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest, refresh=True)
+
+    assert load_records(tmp_path)[0].installed_at == original

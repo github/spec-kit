@@ -20,6 +20,7 @@ from ..models.manifest import BundleManifest, ComponentRef
 from ..models.records import (
     InstalledBundleRecord,
     components_still_needed,
+    find_record,
     load_records,
     remove_record,
     save_records,
@@ -98,10 +99,14 @@ def install_bundle(
             "No changes were recorded."
         ) from exc
 
+    existing = find_record(records, plan.bundle_id)
     record = InstalledBundleRecord.create(
         bundle_id=plan.bundle_id,
         version=plan.version,
         components=list(plan.components),
+        # Preserve the original install time across refresh/update so
+        # ``bundle list`` keeps reporting when the bundle was first installed.
+        installed_at=existing.installed_at if existing is not None else None,
     )
     save_records(project_root, upsert_record(records, record))
     return result

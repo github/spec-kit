@@ -54,6 +54,9 @@ def test_ensure_within_rejects_symlink_escape(tmp_path: Path):
     ("../escape", False),
     ("a/../../escape", False),
     ("/abs", False),
+    ("C:/abs", False),
+    ("C:\\abs", False),
+    ("\\\\server\\share", False),
     ("", False),
 ])
 def test_is_safe_relpath(rel, safe):

@@ -225,7 +225,7 @@ class _WorkflowKindManager:
             return False
 
     def install(self, component: ComponentRef) -> None:
-        if not self._allow_network:
+        if not self._allow_network and not self._is_bundled(component.id):
             raise BundlerError(
                 f"Workflow '{component.id}' installs from a catalog and network "
                 f"access is disabled; re-run without --offline or install it first "
@@ -238,6 +238,13 @@ class _WorkflowKindManager:
                 "install", f"workflow '{component.id}'",
                 lambda: workflow_add(component.id),
             )
+
+    @staticmethod
+    def _is_bundled(workflow_id: str) -> bool:
+        # A workflow that ships with Spec Kit installs fully offline.
+        from ..._assets import _locate_bundled_workflow
+
+        return _locate_bundled_workflow(workflow_id) is not None
 
     def remove(self, component: ComponentRef) -> None:
         from ... import workflow_remove
