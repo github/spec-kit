@@ -146,8 +146,12 @@ def test_bash_falls_back_to_mtime_when_plan_not_yet_created(tmp_path: Path) -> N
 def test_bash_absolute_feature_dir_under_project_root(tmp_path: Path) -> None:
     """Absolute feature_directory under PROJECT_ROOT → project-relative path in context."""
     _setup_project(tmp_path)
-    _make_plan(tmp_path, "specs/001-active")
-    # Write absolute path to feature.json
+    active = _make_plan(tmp_path, "specs/001-active")
+    stale = _make_plan(tmp_path, "specs/000-stale")
+    now = time.time()
+    os.utime(active, (now - 10, now - 10))
+    os.utime(stale, (now, now))
+    # Write absolute path to feature.json — mtime would pick 000-stale without it
     _write_feature_json(tmp_path, str(tmp_path / "specs" / "001-active"))
 
     result = subprocess.run(
@@ -161,6 +165,7 @@ def test_bash_absolute_feature_dir_under_project_root(tmp_path: Path) -> None:
     ctx = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
     # Must be project-relative, not machine-specific absolute
     assert "specs/001-active/plan.md" in ctx
+    assert "specs/000-stale/plan.md" not in ctx
     assert str(tmp_path) not in ctx
 
 
@@ -192,8 +197,12 @@ def test_bash_absolute_feature_dir_outside_project_root(tmp_path: Path) -> None:
 def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
     """PowerShell: absolute feature_directory under project root is normalized to relative path."""
     _setup_project(tmp_path)
-    _make_plan(tmp_path, "specs/001-active")
-    # Use absolute path to exercise the normalization code path
+    active = _make_plan(tmp_path, "specs/001-active")
+    stale = _make_plan(tmp_path, "specs/000-stale")
+    now = time.time()
+    os.utime(active, (now - 10, now - 10))
+    os.utime(stale, (now, now))
+    # Write absolute path to feature.json — mtime would pick 000-stale without it
     _write_feature_json(tmp_path, str(tmp_path / "specs" / "001-active"))
 
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
@@ -208,6 +217,7 @@ def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
     ctx = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
     # Must be project-relative, not machine-specific absolute
     assert "at specs/001-active/plan.md" in ctx
+    assert "specs/000-stale/plan.md" not in ctx
     assert tmp_path.resolve().as_posix() not in ctx
 
 
