@@ -185,7 +185,7 @@ def test_bash_absolute_feature_dir_outside_project_root(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr + result.stdout
     ctx = (project / "CLAUDE.md").read_text(encoding="utf-8")
-    assert str(external) + "/plan.md" in ctx
+    assert (external / "plan.md").resolve().as_posix() in ctx
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
@@ -208,8 +208,7 @@ def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
     ctx = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
     # Must be project-relative, not machine-specific absolute
     assert "at specs/001-active/plan.md" in ctx
-    assert str(tmp_path) not in ctx
-
+    assert tmp_path.resolve().as_posix() not in ctx
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_ignores_newer_stale_plan_when_feature_json_present(tmp_path: Path) -> None:
