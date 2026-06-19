@@ -54,6 +54,15 @@ def test_missing_file_catalog_errors_offline(tmp_path: Path):
         stack.resolve("anything")
 
 
+def test_file_url_catalog_resolves_offline(tmp_path: Path):
+    catalog_path = tmp_path / "catalog.json"
+    write_catalog_file(catalog_path, {"demo": catalog_entry_dict("demo")})
+    fetcher = make_catalog_fetcher(allow_network=False)
+    stack = CatalogStack([_src("local", catalog_path.as_uri())], fetcher)
+    resolved = stack.resolve("demo")
+    assert resolved.entry.id == "demo"
+
+
 def test_plain_http_remote_rejected_before_network():
     # HTTPS is required for non-localhost catalogs; reject http:// up front.
     fetcher = make_catalog_fetcher(allow_network=True)

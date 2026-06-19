@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
+from urllib.request import url2pathname
 
 from .. import BundlerError
 from ..lib.yamlio import loads_json
@@ -44,6 +45,21 @@ _WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 def _is_windows_drive_path(url: str) -> bool:
     return bool(_WINDOWS_DRIVE_RE.match(url))
+
+
+def _file_url_to_path(parsed: ParseResult) -> Path:
+    """Convert a ``file://`` URL to a local path.
+
+    Uses ``url2pathname`` for percent-decoding and OS-correct separators, and
+    preserves ``netloc`` so UNC paths (``file://server/share``) and Windows
+    drive URLs (``file:///C:/x``) resolve correctly instead of dropping host
+    or producing ``/C:/x``.
+    """
+    netloc = parsed.netloc
+    if netloc and netloc.lower() != "localhost":
+        # UNC share: file://server/share/... -> \\server\share\...
+        return Path(url2pathname(f"//{netloc}{parsed.path}"))
+    return Path(url2pathname(parsed.path))
 
 
 def _validate_remote_url(source_id: str, url: str) -> None:
@@ -83,8 +99,14 @@ def make_catalog_fetcher(*, allow_network: bool = True):
                 raise BundlerError(f"Unknown built-in catalog '{url}'.")
             return payload
 
-        if scheme in ("", "file") or _is_windows_drive_path(url):
-            path = Path(parsed.path if scheme == "file" else url)
+        if scheme == "file":
+            path = _file_url_to_path(parsed)
+            if not path.exists():
+                raise BundlerError(f"Catalog file not found: {path}")
+            return loads_json(path.read_text(encoding="utf-8"), origin=str(path))
+
+        if scheme == "" or _is_windows_drive_path(url):
+            path = Path(url)
             if not path.exists():
                 raise BundlerError(f"Catalog file not found: {path}")
             return loads_json(path.read_text(encoding="utf-8"), origin=str(path))

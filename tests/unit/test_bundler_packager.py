@@ -69,3 +69,17 @@ def test_build_is_deterministic(tmp_path: Path):
             assert left.external_attr == right.external_attr
     # The whole artifact is byte-for-byte reproducible.
     assert first.artifact_path.read_bytes() == second.artifact_path.read_bytes()
+
+
+def test_output_dir_inside_bundle_excludes_prior_artifacts(tmp_path: Path):
+    bundle = _make_bundle(tmp_path / "b", extra_files={"a.txt": "a"})
+    out_dir = bundle / "dist"
+    # Build twice into a dir nested in the bundle; the second build must not
+    # re-package the first artifact, so contents stay identical and bounded.
+    first = build_bundle(bundle, output_dir=out_dir)
+    second = build_bundle(bundle, output_dir=out_dir)
+    with zipfile.ZipFile(second.artifact_path) as archive:
+        names = archive.namelist()
+    assert not any(name.startswith("dist/") for name in names)
+    assert not any(name.endswith(".zip") for name in names)
+    assert first.file_count == second.file_count

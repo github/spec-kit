@@ -51,7 +51,11 @@ def build_bundle(
     artifact_name = f"{manifest.bundle.id}-{manifest.bundle.version}.zip"
     artifact_path = out_dir / artifact_name
 
-    files = _collect_files(bundle_dir, skip=artifact_path)
+    # If the output dir lives inside the bundle, skip its whole subtree so
+    # previously-built artifacts are never re-packaged (keeps builds
+    # reproducible and bounded).
+    skip_dir = out_dir if out_dir != bundle_dir and _is_within(bundle_dir, out_dir) else None
+    files = _collect_files(bundle_dir, skip=artifact_path, skip_dir=skip_dir)
     with zipfile.ZipFile(artifact_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for file_path in files:
             # Confinement: every packaged file must live under bundle_dir.
@@ -67,12 +71,22 @@ def build_bundle(
     return BuildResult(artifact_path=artifact_path, file_count=len(files))
 
 
-def _collect_files(bundle_dir: Path, skip: Path) -> list[Path]:
+def _is_within(parent: Path, child: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _collect_files(bundle_dir: Path, skip: Path, skip_dir: Path | None = None) -> list[Path]:
     collected: list[Path] = []
     for path in sorted(bundle_dir.rglob("*")):
         if path.is_dir():
             continue
         if path == skip:
+            continue
+        if skip_dir is not None and _is_within(skip_dir, path):
             continue
         if any(part in EXCLUDE_NAMES for part in path.relative_to(bundle_dir).parts):
             continue
