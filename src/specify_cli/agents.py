@@ -812,6 +812,8 @@ class CommandRegistrar:
     ) -> None:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
         if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
+            if dest_file.is_symlink():
+                dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
             return
 

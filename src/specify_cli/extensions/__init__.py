@@ -1034,13 +1034,13 @@ class ExtensionManager:
             use_dev_symlink = link_outputs and not agent_config.get("dev_no_symlink")
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if skill_file.exists() or skill_file.is_symlink():
+                is_expected_dev_symlink = self._is_expected_dev_symlink(
+                    skill_file, cache_file
+                )
                 # Do not overwrite user-customized skills, but allow dev-mode
                 # symlinks that point back to this extension's generated cache
                 # to be refreshed on a subsequent dev install.
-                if not (
-                    use_dev_symlink
-                    and self._is_expected_dev_symlink(skill_file, cache_file)
-                ):
+                if not is_expected_dev_symlink:
                     continue
 
             # Create skill directory; track whether we created it so we can clean
@@ -1108,6 +1108,8 @@ class ExtensionManager:
                         skill_file.unlink()
                     skill_file.write_text(skill_content, encoding="utf-8")
             else:
+                if skill_file.is_symlink():
+                    skill_file.unlink()
                 skill_file.write_text(skill_content, encoding="utf-8")
             written.append(skill_name)
 
