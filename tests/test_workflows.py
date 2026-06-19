@@ -342,6 +342,49 @@ class TestExpressions:
                     "{{ steps.emit.output.stdout | " + bad + " }}", ctx
                 )
 
+    def test_filter_unknown_name_raises(self):
+        # An unregistered filter name must fail loudly rather than silently
+        # returning the unfiltered value (which hides a typo / unsupported
+        # filter as a wrong result).
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": [1, 2, 3]})
+        with pytest.raises(ValueError, match="unknown filter 'length'"):
+            evaluate_expression("{{ inputs.items | length }}", ctx)
+
+    def test_filter_unknown_name_with_args_raises(self):
+        # The unknown-filter path must also catch the `name(arg)` form, which
+        # otherwise falls through the recognized-args branch silently.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"text": "hello"})
+        with pytest.raises(ValueError, match="unknown filter 'upper'"):
+            evaluate_expression("{{ inputs.text | upper('x') }}", ctx)
+
+    def test_registered_filters_unaffected(self):
+        # Regression: the five registered filters keep working unchanged.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={"tags": ["a", "b", "c"], "text": "hello world", "missing": ""},
+            steps={"emit": {"output": {"stdout": '{"n": 1}'}}},
+        )
+        assert (
+            evaluate_expression("{{ inputs.missing | default('fb') }}", ctx) == "fb"
+        )
+        assert evaluate_expression("{{ inputs.tags | join(', ') }}", ctx) == "a, b, c"
+        assert (
+            evaluate_expression("{{ inputs.text | contains('world') }}", ctx) is True
+        )
+        assert evaluate_expression(
+            "{{ steps.emit.output.stdout | from_json }}", ctx
+        ) == {"n": 1}
+
     def test_condition_evaluation(self):
         from specify_cli.workflows.expressions import evaluate_condition
         from specify_cli.workflows.base import StepContext

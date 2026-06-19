@@ -192,7 +192,18 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         filter_name = filter_expr.strip()
         if filter_name == "default":
             return _filter_default(value)
-        return value
+        # No recognized filter matched — an unknown filter name, or a known
+        # filter used in an unsupported form. Fail loudly rather than silently
+        # returning the unfiltered value: a passthrough turns a mis-typed or
+        # unsupported filter into a wrong result with no signal. Mirrors the
+        # strict `from_json` handling above.
+        leading_name = re.match(r"\w+", filter_expr)
+        name = leading_name.group(0) if leading_name else filter_expr
+        raise ValueError(
+            f"unknown filter '{name}': expected one of default('x'), "
+            "join('sep'), map('attr'), contains('s'), or from_json "
+            f"(got '| {filter_expr}')"
+        )
 
     # Boolean operators — parse 'or' first (lower precedence) so that
     # 'a or b and c' is evaluated as 'a or (b and c)'.
