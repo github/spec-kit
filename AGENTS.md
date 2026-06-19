@@ -14,7 +14,7 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 Each AI agent is a self-contained **integration subpackage** under `src/specify_cli/integrations/<key>/`. The subpackage exposes a single class that declares all metadata and inherits setup/teardown logic from a base class. Built-in integrations are then instantiated and added to the global `INTEGRATION_REGISTRY` by `src/specify_cli/integrations/__init__.py` via `_register_builtins()`.
 
-```
+```text
 src/specify_cli/integrations/
 ├── __init__.py            # INTEGRATION_REGISTRY + _register_builtins()
 ├── base.py                # IntegrationBase, MarkdownIntegration, TomlIntegration, YamlIntegration, SkillsIntegration
@@ -340,18 +340,21 @@ Some agents require custom processing beyond the standard template transformatio
 ### Copilot Integration
 
 GitHub Copilot has unique requirements:
+
 - Commands use `.agent.md` extension (not `.md`)
 - Each command gets a companion `.prompt.md` file in `.github/prompts/`
 - Installs `.vscode/settings.json` with prompt file recommendations
 - Context file lives at `.github/copilot-instructions.md`
 
 Implementation: Extends `IntegrationBase` with custom `setup()` method that:
+
 1. Processes templates with `process_template()`
 2. Generates companion `.prompt.md` files
 3. Merges VS Code settings
 
 **Skills mode (`--skills`):** Copilot also supports an alternative skills-based layout
 via `--integration-options="--skills"`. When enabled:
+
 - Commands are scaffolded as `speckit-<name>/SKILL.md` under `.github/skills/`
 - No companion `.prompt.md` files are generated
 - No `.vscode/settings.json` merge
@@ -371,11 +374,13 @@ specify init my-project --integration copilot --integration-options="--skills"
 ### Forge Integration
 
 Forge has special frontmatter and argument requirements:
+
 - Uses `{{parameters}}` instead of `$ARGUMENTS`
 - Strips `handoffs` frontmatter key (Forge-specific collaboration feature)
 - Injects `name` field into frontmatter when missing
 
 Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
+
 1. Inherits standard template processing from `MarkdownIntegration`
 2. Adds extra `$ARGUMENTS` → `{{parameters}}` replacement after template processing
 3. Applies Forge-specific transformations via `_apply_forge_transformations()`
@@ -385,11 +390,13 @@ Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
 ### Goose Integration
 
 Goose is a YAML-format agent using Block's recipe system:
+
 - Uses `.goose/recipes/` directory for YAML recipe files
 - Uses `{{args}}` argument placeholder
 - Produces YAML with `prompt: |` block scalar for command content
 
 Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
+
 1. Processes templates through the standard placeholder pipeline
 2. Extracts title and description from frontmatter
 3. Renders output as Goose recipe YAML (version, title, description, author, extensions, activities, prompt)
@@ -400,7 +407,7 @@ Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
 
 Branches follow one of two patterns depending on whether an issue exists:
 
-```
+```text
 <type>/<number>-<short-slug>   # when an issue is created first
 <type>/<short-slug>            # when no issue exists (PR-only changes)
 ```
@@ -441,6 +448,7 @@ When an issue exists, include its number immediately after the prefix — this i
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.
 5. **Skipping registration**: The import and `_register()` call in `_register_builtins()` must both be added.
+6. **Running tests against the wrong environment**: Always run the suite inside this working tree's own virtualenv (`uv sync --extra test` then `.venv/bin/python -m pytest`, or activate the venv first). A bare `uv run pytest` can resolve to an ambient/global interpreter whose editable `.pth` points at a *different* worktree. The failure is sneaky: test collection still imports `specify_cli` successfully, but newly-added subpackages (e.g. a fresh `specify_cli/bundler/`) resolve as a stale namespace package and raise `ModuleNotFoundError`. If a brand-new subpackage imports under `python -c` but not under pytest, suspect environment contamination, not your code.
 
 ---
 

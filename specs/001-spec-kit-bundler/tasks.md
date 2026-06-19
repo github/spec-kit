@@ -28,9 +28,9 @@ The bundler lives **inside the `specify_cli` package** as a `bundle` Typer sub-a
 
 **Purpose**: Create the bundler package skeleton inside `specify_cli` and wire the empty `bundle` sub-app onto the root `specify` CLI.
 
-- [ ] T001 Create the bundler package skeleton: `src/specify_cli/commands/bundle/__init__.py`, `src/specify_cli/bundler/__init__.py`, `src/specify_cli/bundler/models/__init__.py`, `src/specify_cli/bundler/services/__init__.py`, `src/specify_cli/bundler/lib/__init__.py` (empty modules, no logic yet)
-- [ ] T002 Register an empty `bundle` Typer sub-app in `src/specify_cli/commands/bundle/__init__.py` and mount it on the root `specify` app alongside the existing `extension`/`preset`/`workflow` groups so `specify bundle --help` resolves
-- [ ] T003 [P] Create the test package layout: `tests/contract/`, `tests/integration/`, `tests/unit/` with `__init__.py` files and shared fixtures (temp project factory, sample manifest/catalog files) in `tests/conftest.py`
+- [x] T001 Create the bundler package skeleton: `src/specify_cli/commands/bundle/__init__.py`, `src/specify_cli/bundler/__init__.py`, `src/specify_cli/bundler/models/__init__.py`, `src/specify_cli/bundler/services/__init__.py`, `src/specify_cli/bundler/lib/__init__.py` (empty modules, no logic yet)
+- [x] T002 Register an empty `bundle` Typer sub-app in `src/specify_cli/commands/bundle/__init__.py` and mount it on the root `specify` app alongside the existing `extension`/`preset`/`workflow` groups so `specify bundle --help` resolves
+- [x] T003 [P] Create the test package layout: `tests/contract/`, `tests/integration/`, `tests/unit/` with `__init__.py` files and shared fixtures (temp project factory, sample manifest/catalog files) in `tests/conftest.py`
 
 ---
 
@@ -40,12 +40,12 @@ The bundler lives **inside the `specify_cli` package** as a `bundle` Typer sub-a
 
 **⚠️ CRITICAL**: User-story phases (3–6) must not begin until Phase 2 is done.
 
-- [ ] T004 [P] Implement shared helpers in `src/specify_cli/bundler/lib/` (`yamlio.py` for YAML/JSON load+dump, `versioning.py` for SemVer compare/range checks via `packaging`, `project.py` for Spec Kit project + active-integration detection)
-- [ ] T005 [P] Implement the bundle manifest model in `src/specify_cli/bundler/models/manifest.py` (Bundle, Bundle Manifest, Component/Primitive Reference, Role from data-model.md), including parse-from-`bundle.yml` and structural normalization
-- [ ] T006 [P] Implement catalog models in `src/specify_cli/bundler/models/catalog.py` (Catalog Source with install-policy `install-allowed`/`discovery-only`, Catalog Entry, priority ordering per data-model.md)
-- [ ] T007 [P] Implement the installed-bundle record model in `src/specify_cli/bundler/models/records.py` (Installed Bundle Record: id, version, installed components, source, timestamp) plus project-state read/write
-- [ ] T008 Contract test for the manifest schema in `tests/contract/test_manifest_schema.py` asserting a valid `bundle.yml` parses and known-bad manifests (missing required fields, malformed component refs) are rejected — per `contracts/bundle-manifest.schema.md`
-- [ ] T009 [P] Contract test for the catalog schema in `tests/contract/test_catalog_schema.py` asserting source/entry shape, install-policy values, and priority ordering — per `contracts/bundle-catalog.schema.md`
+- [x] T004 [P] Implement shared helpers in `src/specify_cli/bundler/lib/` (`yamlio.py` for YAML/JSON load+dump, `versioning.py` for SemVer compare/range checks via `packaging`, `project.py` for Spec Kit project + active-integration detection)
+- [x] T005 [P] Implement the bundle manifest model in `src/specify_cli/bundler/models/manifest.py` (Bundle, Bundle Manifest, Component/Primitive Reference, Role from data-model.md), including parse-from-`bundle.yml` and structural normalization
+- [x] T006 [P] Implement catalog models in `src/specify_cli/bundler/models/catalog.py` (Catalog Source with install-policy `install-allowed`/`discovery-only`, Catalog Entry, priority ordering per data-model.md)
+- [x] T007 [P] Implement the installed-bundle record model in `src/specify_cli/bundler/models/records.py` (Installed Bundle Record: id, version, installed components, source, timestamp) plus project-state read/write
+- [x] T008 Contract test for the manifest schema in `tests/contract/test_manifest_schema.py` asserting a valid `bundle.yml` parses and known-bad manifests (missing required fields, malformed component refs) are rejected — per `contracts/bundle-manifest.schema.md`
+- [x] T009 [P] Contract test for the catalog schema in `tests/contract/test_catalog_schema.py` asserting source/entry shape, install-policy values, and priority ordering — per `contracts/bundle-catalog.schema.md`
 
 **Checkpoint**: Models + helpers exist and are schema-validated — user story implementation can begin.
 
@@ -59,14 +59,14 @@ The bundler lives **inside the `specify_cli` package** as a `bundle` Typer sub-a
 
 ### Implementation for User Story 1
 
-- [ ] T010 [P] [US1] Implement the manifest→component resolver in `src/specify_cli/bundler/services/resolver.py` (expand a manifest into the concrete ordered set of integration + extensions + presets + workflows to install)
-- [ ] T011 [P] [US1] Implement the catalog stack service in `src/specify_cli/bundler/services/catalog_stack.py` (priority-ordered source stack, resolve a bundle-id to an artifact, enforce per-source install policy, built-in default stack)
-- [ ] T012 [US1] Implement the in-process installer in `src/specify_cli/bundler/services/installer.py` that dispatches resolved components to the existing `extension`/`preset`/`workflow`/`integration` machinery (no re-implementation), preserving preset priorities and workflow step order, and **confining every resolved/written path to the project root and refusing symlink escapes** (Constitution Principle V) (depends on T010, T011)
-- [ ] T013 [US1] Record the install outcome (Installed Bundle Record) via `models/records.py` after a successful install in `installer.py`, making the bundle idempotent/re-runnable (depends on T012)
-- [ ] T014 [US1] Implement `specify bundle install <bundle-id>` in `src/specify_cli/commands/bundle/install.py` (resolve via catalog stack, enforce the FR-016 minimum-Spec-Kit-version gate before installing — refuse with a clear, actionable unmet-requirement message when the bundle's declared minimum exceeds the installed version, using `lib/versioning.py` — then run the installer and report installed components and failures with actionable errors)
-- [ ] T015 [US1] Implement `specify bundle init [<bundle>]` in `src/specify_cli/commands/bundle/init.py` (initialize a Spec Kit project if needed, then delegate to the install flow)
-- [ ] T016 [P] [US1] Integration test in `tests/integration/test_install_flow.py` covering the Independent Test: install a known bundle into a temp project and assert integration, extensions, presets (priorities), workflow steps, and workflows are all present after one command — **and assert idempotency: re-running install does not overwrite user-modified files** (Constitution Principle IV)
-- [ ] T017 [P] [US1] Unit tests for resolver and catalog stack in `tests/unit/test_resolver.py` and `tests/unit/test_catalog_stack.py` (expansion correctness, priority ordering, install-policy enforcement)
+- [x] T010 [P] [US1] Implement the manifest→component resolver in `src/specify_cli/bundler/services/resolver.py` (expand a manifest into the concrete ordered set of integration + extensions + presets + workflows to install)
+- [x] T011 [P] [US1] Implement the catalog stack service in `src/specify_cli/bundler/services/catalog_stack.py` (priority-ordered source stack, resolve a bundle-id to an artifact, enforce per-source install policy, built-in default stack)
+- [x] T012 [US1] Implement the in-process installer in `src/specify_cli/bundler/services/installer.py` that dispatches resolved components to the existing `extension`/`preset`/`workflow`/`integration` machinery (no re-implementation), preserving preset priorities and workflow step order, and **confining every resolved/written path to the project root and refusing symlink escapes** (Constitution Principle V) (depends on T010, T011)
+- [x] T013 [US1] Record the install outcome (Installed Bundle Record) via `models/records.py` after a successful install in `installer.py`, making the bundle idempotent/re-runnable (depends on T012)
+- [x] T014 [US1] Implement `specify bundle install <bundle-id>` in `src/specify_cli/commands/bundle/install.py` (resolve via catalog stack, enforce the FR-016 minimum-Spec-Kit-version gate before installing — refuse with a clear, actionable unmet-requirement message when the bundle's declared minimum exceeds the installed version, using `lib/versioning.py` — then run the installer and report installed components and failures with actionable errors)
+- [x] T015 [US1] Implement `specify bundle init [<bundle>]` in `src/specify_cli/commands/bundle/init.py` (initialize a Spec Kit project if needed, then delegate to the install flow)
+- [x] T016 [P] [US1] Integration test in `tests/integration/test_install_flow.py` covering the Independent Test: install a known bundle into a temp project and assert integration, extensions, presets (priorities), workflow steps, and workflows are all present after one command — **and assert idempotency: re-running install does not overwrite user-modified files** (Constitution Principle IV)
+- [x] T017 [P] [US1] Unit tests for resolver and catalog stack in `tests/unit/test_resolver.py` and `tests/unit/test_catalog_stack.py` (expansion correctness, priority ordering, install-policy enforcement)
 
 **Checkpoint**: A consumer can go from zero to a fully role-configured project with one command — MVP is functional and independently testable.
 
@@ -80,12 +80,12 @@ The bundler lives **inside the `specify_cli` package** as a `bundle` Typer sub-a
 
 ### Implementation for User Story 2
 
-- [ ] T018 [P] [US2] Implement manifest validation in `src/specify_cli/bundler/services/resolver.py` (extend with a `validate()` path) or a dedicated `validator.py`: structural checks plus reference resolution that flags unknown/broken component references
-- [ ] T019 [US2] Implement the artifact packager in `src/specify_cli/bundler/services/packager.py` (build a versioned, self-contained Bundle Artifact from a validated manifest per the Bundle Artifact entity), **confining all artifact input/output paths to safe roots and refusing symlink escapes** (Constitution Principle V)
-- [ ] T020 [US2] Implement `specify bundle validate` in `src/specify_cli/commands/bundle/validate.py` (run validation against the local `bundle.yml`, exit non-zero with a clear list of broken references on failure)
-- [ ] T021 [US2] Implement `specify bundle build` in `src/specify_cli/commands/bundle/build.py` (validate, then emit a versioned artifact; no first-class publish — print the artifact path and the catalog-entry guidance)
-- [ ] T022 [P] [US2] Integration test in `tests/integration/test_author_flow.py` covering the Independent Test: validate a manifest with a deliberately broken reference (expect failure), fix it, build, and assert the artifact is self-contained
-- [ ] T023 [P] [US2] Unit tests for the packager in `tests/unit/test_packager.py` (artifact contents, versioning, determinism)
+- [x] T018 [P] [US2] Implement manifest validation in `src/specify_cli/bundler/services/resolver.py` (extend with a `validate()` path) or a dedicated `validator.py`: structural checks plus reference resolution that flags unknown/broken component references
+- [x] T019 [US2] Implement the artifact packager in `src/specify_cli/bundler/services/packager.py` (build a versioned, self-contained Bundle Artifact from a validated manifest per the Bundle Artifact entity), **confining all artifact input/output paths to safe roots and refusing symlink escapes** (Constitution Principle V)
+- [x] T020 [US2] Implement `specify bundle validate` in `src/specify_cli/commands/bundle/validate.py` (run validation against the local `bundle.yml`, exit non-zero with a clear list of broken references on failure)
+- [x] T021 [US2] Implement `specify bundle build` in `src/specify_cli/commands/bundle/build.py` (validate, then emit a versioned artifact; no first-class publish — print the artifact path and the catalog-entry guidance)
+- [x] T022 [P] [US2] Integration test in `tests/integration/test_author_flow.py` covering the Independent Test: validate a manifest with a deliberately broken reference (expect failure), fix it, build, and assert the artifact is self-contained
+- [x] T023 [P] [US2] Unit tests for the packager in `tests/unit/test_packager.py` (artifact contents, versioning, determinism)
 
 **Checkpoint**: Authors can produce valid, distributable bundles; combined with US1 the supply→consume loop works end to end.
 
@@ -99,10 +99,10 @@ The bundler lives **inside the `specify_cli` package** as a `bundle` Typer sub-a
 
 ### Implementation for User Story 3
 
-- [ ] T024 [P] [US3] Implement search over the catalog stack in `src/specify_cli/bundler/services/catalog_stack.py` (query across sources honoring priority + discovery-only visibility, dedupe by precedence)
-- [ ] T025 [US3] Implement `specify bundle search [<query>]` in `src/specify_cli/commands/bundle/search.py` (list matching bundles with source, install-policy, and trust annotations — distinguishing org-curated from community-sourced entries via the catalog source and the entry's verification indicator, per FR-010/FR-027)
-- [ ] T026 [US3] Implement `specify bundle info <bundle-id>` in `src/specify_cli/commands/bundle/info.py` (resolve the manifest and render the full component plan: integration, extensions, presets w/ priorities, workflow steps, workflows, versions — plus the entry's source catalog, install policy, and verification/trust indicator per FR-010/FR-027) reusing the resolver
-- [ ] T027 [P] [US3] Integration test in `tests/integration/test_discovery_flow.py` covering the Independent Test: search surfaces the target bundle and info enumerates the exact component set with versions/priorities
+- [x] T024 [P] [US3] Implement search over the catalog stack in `src/specify_cli/bundler/services/catalog_stack.py` (query across sources honoring priority + discovery-only visibility, dedupe by precedence)
+- [x] T025 [US3] Implement `specify bundle search [<query>]` in `src/specify_cli/commands/bundle/search.py` (list matching bundles with source, install-policy, and trust annotations — distinguishing org-curated from community-sourced entries via the catalog source and the entry's verification indicator, per FR-010/FR-027)
+- [x] T026 [US3] Implement `specify bundle info <bundle-id>` in `src/specify_cli/commands/bundle/info.py` (resolve the manifest and render the full component plan: integration, extensions, presets w/ priorities, workflow steps, workflows, versions — plus the entry's source catalog, install policy, and verification/trust indicator per FR-010/FR-027) reusing the resolver
+- [x] T027 [P] [US3] Integration test in `tests/integration/test_discovery_flow.py` covering the Independent Test: search surfaces the target bundle and info enumerates the exact component set with versions/priorities
 
 **Checkpoint**: Consumers can discover and transparently inspect bundles before install; US1–US3 each work independently.
 
@@ -116,13 +116,13 @@ The bundler lives **inside the `specify_cli` package** as a `bundle` Typer sub-a
 
 ### Implementation for User Story 4
 
-- [ ] T028 [P] [US4] Implement conflict detection in `src/specify_cli/bundler/services/conflict.py` (integration clash vs active integration, preset/workflow overlap), returning structured, actionable findings
-- [ ] T029 [US4] Wire conflict detection into the install path in `installer.py`/`install.py` so unsafe installs abort with a clear message before any change is made (depends on T028, T012)
-- [ ] T030 [P] [US4] Implement `specify bundle list` in `src/specify_cli/commands/bundle/list.py` (read Installed Bundle Records and show installed bundles, versions, and sources)
-- [ ] T031 [US4] Implement `specify bundle remove <bundle-id>` in `src/specify_cli/commands/bundle/remove.py` (remove only the named bundle's recorded components, leaving co-installed bundles intact)
-- [ ] T032 [US4] Implement `specify bundle update [<bundle-id>|--all]` in `src/specify_cli/commands/bundle/update.py` (re-resolve from the catalog stack and refresh components via primitive paths, preserving primitive-level overrides, no bundle-level merge)
-- [ ] T033 [P] [US4] Integration test in `tests/integration/test_lifecycle_flow.py` covering the Independent Test: install two bundles, list both, remove one (assert only its components gone), and assert an integration-clash install fails with a clear error
-- [ ] T034 [P] [US4] Unit tests for conflict detection in `tests/unit/test_conflict.py` (integration clash, overlap precedence, message content)
+- [x] T028 [P] [US4] Implement conflict detection in `src/specify_cli/bundler/services/conflict.py` (integration clash vs active integration, preset/workflow overlap), returning structured, actionable findings
+- [x] T029 [US4] Wire conflict detection into the install path in `installer.py`/`install.py` so unsafe installs abort with a clear message before any change is made (depends on T028, T012)
+- [x] T030 [P] [US4] Implement `specify bundle list` in `src/specify_cli/commands/bundle/list.py` (read Installed Bundle Records and show installed bundles, versions, and sources)
+- [x] T031 [US4] Implement `specify bundle remove <bundle-id>` in `src/specify_cli/commands/bundle/remove.py` (remove only the named bundle's recorded components, leaving co-installed bundles intact)
+- [x] T032 [US4] Implement `specify bundle update [<bundle-id>|--all]` in `src/specify_cli/commands/bundle/update.py` (re-resolve from the catalog stack and refresh components via primitive paths, preserving primitive-level overrides, no bundle-level merge)
+- [x] T033 [P] [US4] Integration test in `tests/integration/test_lifecycle_flow.py` covering the Independent Test: install two bundles, list both, remove one (assert only its components gone), and assert an integration-clash install fails with a clear error
+- [x] T034 [P] [US4] Unit tests for conflict detection in `tests/unit/test_conflict.py` (integration clash, overlap precedence, message content)
 
 **Checkpoint**: All four user stories are independently functional; lifecycle and safety are covered.
 
@@ -132,15 +132,15 @@ The bundler lives **inside the `specify_cli` package** as a `bundle` Typer sub-a
 
 **Purpose**: Cross-cutting catalog configuration commands and final hardening. Catalog management underpins US1/US3/US4 but is exposed as its own command surface.
 
-- [ ] T035 [P] Implement `specify bundle catalog list` in `src/specify_cli/commands/bundle/catalog.py` (show the priority-ordered source stack with policy + priority, mirroring `specify extension catalog list`)
-- [ ] T036 [US4] Implement `specify bundle catalog add <url> [--policy ...] [--priority N]` and `specify bundle catalog remove <id|url>` in `catalog.py`, persisting to the bundler catalog config file with a built-in default fallback
-- [ ] T037 [P] Contract test for the CLI surface in `tests/contract/test_cli_commands.py` asserting every command in `contracts/cli-commands.md` exists, accepts its documented args, and returns exit code 0 on success / non-zero with a stderr message on failure
-- [ ] T038 [P] Validate the full feature against `quickstart.md` (scenarios A–G) and capture any gaps as follow-up tasks
-- [ ] T039 [P] Update user-facing docs (README / `docs/`) to document the `specify bundle` command group, manifest schema, and catalog model
-- [ ] T040 Final review against spec.md FR-001–FR-031: confirm each functional requirement is covered by an implemented command or service, and that no first-class publish command was introduced (FR-030)
-- [ ] T041 [P] Author, validate, and build the four representative role bundles (product manager, business analyst, security researcher, developer) as hand-written manifests under `examples/bundles/` (e.g. `examples/bundles/product-manager/bundle.yml`), each passing `specify bundle validate` and `specify bundle build`, and demonstrably installable per SC-005
-- [ ] T042 [P] Security tests in `tests/unit/test_bundler_path_safety.py` asserting the resolver, installer, and packager reject path-traversal and symlink-escape payloads in manifest/catalog-declared paths and confine all writes to the project root (Constitution Principles II & V), mirroring the existing `tests/test_registrar_path_traversal.py` patterns
-- [ ] T043 [P] Offline-first integration test in `tests/integration/test_offline_install.py` asserting `specify bundle install` resolves a bundled/local-or-pinned artifact + catalog and completes successfully with network access disabled (Constitution Principle IV), with no real outbound calls (network mocked/blocked)
+- [x] T035 [P] Implement `specify bundle catalog list` in `src/specify_cli/commands/bundle/catalog.py` (show the priority-ordered source stack with policy + priority, mirroring `specify extension catalog list`)
+- [x] T036 [US4] Implement `specify bundle catalog add <url> [--policy ...] [--priority N]` and `specify bundle catalog remove <id|url>` in `catalog.py`, persisting to the bundler catalog config file with a built-in default fallback
+- [x] T037 [P] Contract test for the CLI surface in `tests/contract/test_cli_commands.py` asserting every command in `contracts/cli-commands.md` exists, accepts its documented args, and returns exit code 0 on success / non-zero with a stderr message on failure
+- [x] T038 [P] Validate the full feature against `quickstart.md` (scenarios A–G) and capture any gaps as follow-up tasks
+- [x] T039 [P] Update user-facing docs (README / `docs/`) to document the `specify bundle` command group, manifest schema, and catalog model
+- [x] T040 Final review against spec.md FR-001–FR-031: confirm each functional requirement is covered by an implemented command or service, and that no first-class publish command was introduced (FR-030)
+- [x] T041 [P] Author, validate, and build the four representative role bundles (product manager, business analyst, security researcher, developer) as hand-written manifests under `examples/bundles/` (e.g. `examples/bundles/product-manager/bundle.yml`), each passing `specify bundle validate` and `specify bundle build`, and demonstrably installable per SC-005
+- [x] T042 [P] Security tests in `tests/unit/test_bundler_path_safety.py` asserting the resolver, installer, and packager reject path-traversal and symlink-escape payloads in manifest/catalog-declared paths and confine all writes to the project root (Constitution Principles II & V), mirroring the existing `tests/test_registrar_path_traversal.py` patterns
+- [x] T043 [P] Offline-first integration test in `tests/integration/test_offline_install.py` asserting `specify bundle install` resolves a bundled/local-or-pinned artifact + catalog and completes successfully with network access disabled (Constitution Principle IV), with no real outbound calls (network mocked/blocked)
 
 ---
 
@@ -223,3 +223,52 @@ Task: "Unit tests in tests/unit/test_resolver.py and tests/unit/test_catalog_sta
 - The bundler calls existing `specify` primitive machinery in-process — do not re-implement extension/preset/workflow/integration installation.
 - There is no `specify bundle create` scaffold and no first-class publish command (FR-030) — keep both out of scope.
 - Commit after each task or logical group; stop at any checkpoint to validate a story independently.
+
+---
+
+## Implementation Status & Deviations
+
+All tasks T001–T043 are implemented and verified by an 82-test bundler suite
+(`tests/{contract,unit,integration}/`), green on the project venv. Notable
+deviations from the original task text:
+
+- **T003**: shared test fixtures live in `tests/bundler_helpers.py` (a plain
+  helper module), not `tests/conftest.py`, to avoid clobbering the repo's
+  existing root `conftest.py`. Test directories intentionally have no
+  `__init__.py`; collection works via `testpaths`/`python_files`.
+- **File layout**: consume/author command handlers live together in
+  `src/specify_cli/commands/bundle/__init__.py` (one Typer group) rather than
+  one file per command (`install.py`, `init.py`, …). Behaviour and CLI surface
+  match the contract.
+- **Catalog config persistence** lives in
+  `src/specify_cli/bundler/commands_impl/catalog_config.py`; the
+  primitive-dispatch bridge lives in `src/specify_cli/bundler/services/{adapters,primitives}.py`.
+
+## Validation (T038) — captured gaps → follow-ups
+
+Quickstart scenarios A–G were exercised end-to-end (offline) via the Typer
+CLI. `search`, `info`, `list`, `validate`, `build`, and `catalog list|add|remove`
+pass. Two gaps were found and are tracked below:
+
+- [ ] T044 Wire real in-process primitive installation in
+  `services/primitives.py` so `DefaultPrimitiveInstaller.install` actually adds
+  extensions/presets/steps/workflows through the existing machinery. Today the
+  orchestration, version/conflict gating, idempotency, and **atomic rollback**
+  are implemented and the installer records nothing on failure, but each
+  primitive `install` currently raises an actionable "install it with `specify
+  <primitive> add …`" error instead of performing the install. (Scenario A real
+  install.)
+- [ ] T045 Support `specify bundle install <path-to-artifact|bundle-dir>` so the
+  offline/air-gapped path can install directly from a local `.zip`/bundle
+  directory, not only by resolving a bundle-id from the catalog stack.
+  (Quickstart "Offline / air-gapped check".)
+
+## FR coverage (T040)
+
+Confirmed: every consume/author/catalog command in `contracts/cli-commands.md`
+exists with the documented exit-code behaviour; the FR-016 version gate,
+FR-019 integration clash, FR-025 discovery-only refusal, FR-022/SC-004
+non-collateral removal, FR-026 catalog precedence, and offline-first behaviour
+are implemented and tested. **No first-class publish command was introduced
+(FR-030).** The remaining functional shortfall is the live primitive dispatch
+tracked by T044.

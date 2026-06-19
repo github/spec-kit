@@ -26,6 +26,7 @@
 - [🤖 Supported AI Coding Agent Integrations](#-supported-ai-coding-agent-integrations)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
+- [📦 Bundles: Role-Based Setups](#-bundles-role-based-setups)
 - [📚 Core Philosophy](#-core-philosophy)
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
@@ -228,6 +229,56 @@ For example, presets could restructure spec templates to require regulatory trac
 
 See the [Presets reference](https://github.github.io/spec-kit/reference/presets.html) for the full command guide, including resolution order and priority stacking.
 
+## 📦 Bundles: Role-Based Setups
+
+Extensions and presets are individual building blocks. A **bundle** packages a
+curated set of them — extensions, presets, steps, and workflows — into a single,
+versioned, role-oriented setup so a whole team persona (product manager, business
+analyst, security researcher, developer, …) can be provisioned with one command.
+
+A bundle is described by a hand-written `bundle.yml` manifest. It pins each
+component to a version and, optionally, targets a specific integration; a bundle
+with no `integration` is **agnostic** and inherits whatever integration the
+project already uses.
+
+```bash
+# Discover bundles in the active catalog stack
+specify bundle search [<query>]
+
+# Inspect the exact component set a bundle will add (equals what install does)
+specify bundle info <bundle-id>
+
+# Install a bundle's full component set in one operation
+specify bundle install <bundle-id>
+
+# See what's installed, then update or remove non-destructively
+specify bundle list
+specify bundle update <bundle-id>     # or --all
+specify bundle remove <bundle-id>     # removes only this bundle's components
+```
+
+Bundles resolve from a **priority-ordered catalog stack** (project > user >
+built-in). Each source carries an install policy: `install-allowed` sources can
+be installed from, while `discovery-only` sources are visible in `search`/`info`
+but refuse installation. Manage the stack with `specify bundle catalog list|add|remove`.
+
+Authors validate and package bundles locally — there is no first-class publish;
+distribution is hosting the built artifact and adding a catalog entry:
+
+```bash
+specify bundle validate --path ./my-bundle      # structural + reference checks
+specify bundle build --path ./my-bundle         # produce a versioned .zip artifact
+```
+
+Four ready-to-read example manifests live under
+[`examples/bundles/`](examples/bundles/) (product manager, business analyst,
+security researcher, developer).
+
+Key guarantees: `info` shows exactly what `install` adds (transparency);
+installs are idempotent and confined to the project root; `remove` never touches
+components another installed bundle still needs; and all consume/author commands
+work **offline** against local or pinned sources.
+
 ### When to Use Which
 
 | Goal | Use |
@@ -237,6 +288,7 @@ See the [Presets reference](https://github.github.io/spec-kit/reference/presets.
 | Integrate an external tool or service | Extension |
 | Enforce organizational or regulatory standards | Preset |
 | Ship reusable domain-specific templates | Either — presets for template overrides, extensions for templates bundled with new commands |
+| Provision a complete role-based setup in one command | Bundle |
 
 ## 📚 Core Philosophy
 

@@ -1,0 +1,78 @@
+"""Contract tests for the bundle manifest schema (bundle.yml).
+
+Mirrors contracts/bundle-manifest.schema.md: required identity/metadata fields,
+semver pinning of components, preset priority+strategy, integration optionality.
+"""
+from __future__ import annotations
+
+from specify_cli.bundler.models.manifest import BundleManifest
+from tests.bundler_helpers import valid_manifest_dict
+
+
+def test_valid_manifest_has_no_structural_errors():
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    assert manifest.structural_errors() == []
+    assert manifest.bundle.id == "demo-bundle"
+    assert manifest.is_agnostic() is True
+
+
+def test_missing_required_field_is_reported_by_name():
+    data = valid_manifest_dict()
+    del data["bundle"]["license"]
+    errors = BundleManifest.from_dict(data).structural_errors()
+    assert any("bundle.license" in e for e in errors)
+
+
+def test_unsupported_schema_version_is_rejected():
+    data = valid_manifest_dict(schema_version="9.9")
+    errors = BundleManifest.from_dict(data).structural_errors()
+    assert any("schema_version" in e for e in errors)
+
+
+def test_non_semver_bundle_version_is_rejected():
+    data = valid_manifest_dict()
+    data["bundle"]["version"] = "not-a-version"
+    errors = BundleManifest.from_dict(data).structural_errors()
+    assert any("semver" in e for e in errors)
+
+
+def test_preset_requires_priority_and_strategy():
+    data = valid_manifest_dict()
+    data["provides"]["presets"] = [{"id": "p", "version": "1.0.0"}]
+    errors = BundleManifest.from_dict(data).structural_errors()
+    assert any("priority" in e for e in errors)
+    assert any("strategy" in e for e in errors)
+
+
+def test_invalid_preset_strategy_is_rejected():
+    data = valid_manifest_dict()
+    data["provides"]["presets"][0]["strategy"] = "merge"
+    errors = BundleManifest.from_dict(data).structural_errors()
+    assert any("strategy" in e for e in errors)
+
+
+def test_non_step_components_must_be_pinned():
+    data = valid_manifest_dict()
+    data["provides"]["extensions"] = [{"id": "ext-unpinned"}]
+    errors = BundleManifest.from_dict(data).structural_errors()
+    assert any("must be pinned" in e for e in errors)
+
+
+def test_steps_may_be_unpinned():
+    data = valid_manifest_dict()
+    data["provides"]["steps"] = [{"id": "step-x"}]
+    manifest = BundleManifest.from_dict(data)
+    assert manifest.structural_errors() == []
+
+
+def test_integration_makes_bundle_non_agnostic():
+    data = valid_manifest_dict(integration={"id": "copilot"})
+    manifest = BundleManifest.from_dict(data)
+    assert manifest.is_agnostic() is False
+    assert manifest.integration.id == "copilot"
+
+
+def test_components_property_orders_by_kind():
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    kinds = [c.kind for c in manifest.components]
+    assert kinds == ["extensions", "presets", "steps", "workflows"]

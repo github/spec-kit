@@ -1,0 +1,74 @@
+"""Packager: produce a single versioned distributable artifact from a bundle dir.
+
+``specify bundle build`` zips the manifest, README, and any local assets into
+``<id>-<version>.zip``. Build refuses on an invalid manifest, pointing the
+author to ``validate``. All file reads are confined within the bundle source
+directory (Principle V path confinement).
+"""
+from __future__ import annotations
+
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+
+from .. import BundlerError
+from ..lib.yamlio import ensure_within
+from ..models.manifest import BundleManifest
+from .validator import validate_manifest
+
+# Files/dirs never included in an artifact.
+EXCLUDE_NAMES = {".git", "__pycache__", ".DS_Store"}
+
+
+@dataclass
+class BuildResult:
+    artifact_path: Path
+    file_count: int
+
+
+def build_bundle(
+    bundle_dir: Path,
+    output_dir: Path | None = None,
+) -> BuildResult:
+    bundle_dir = Path(bundle_dir).resolve()
+    manifest_path = bundle_dir / "bundle.yml"
+    if not manifest_path.exists():
+        raise BundlerError(f"No bundle.yml found in '{bundle_dir}'.")
+
+    manifest = BundleManifest.from_file(manifest_path)
+    report = validate_manifest(manifest)
+    if not report.ok:
+        raise BundlerError(
+            "Refusing to build an invalid manifest. Run 'specify bundle validate' "
+            "and fix:\n  - " + "\n  - ".join(report.errors)
+        )
+
+    out_dir = Path(output_dir).resolve() if output_dir else bundle_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    artifact_name = f"{manifest.bundle.id}-{manifest.bundle.version}.zip"
+    artifact_path = out_dir / artifact_name
+
+    files = _collect_files(bundle_dir, skip=artifact_path)
+    with zipfile.ZipFile(artifact_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for file_path in files:
+            # Confinement: every packaged file must live under bundle_dir.
+            ensure_within(bundle_dir, file_path)
+            archive.write(file_path, file_path.relative_to(bundle_dir).as_posix())
+
+    return BuildResult(artifact_path=artifact_path, file_count=len(files))
+
+
+def _collect_files(bundle_dir: Path, skip: Path) -> list[Path]:
+    collected: list[Path] = []
+    for path in sorted(bundle_dir.rglob("*")):
+        if path.is_dir():
+            continue
+        if path == skip:
+            continue
+        if any(part in EXCLUDE_NAMES for part in path.relative_to(bundle_dir).parts):
+            continue
+        if path.is_symlink():
+            # Skip symlinks to avoid escaping the bundle directory.
+            continue
+        collected.append(path)
+    return collected
