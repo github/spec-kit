@@ -205,7 +205,7 @@ def test_bash_absolute_feature_dir_outside_project_root(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr + result.stdout
     ctx = (project / "CLAUDE.md").read_text(encoding="utf-8")
-    assert (external / "plan.md").resolve().as_posix() in ctx
+    assert _to_bash_path(external) + "/plan.md" in ctx
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
@@ -218,7 +218,8 @@ def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
     os.utime(active, (now - 10, now - 10))
     os.utime(stale, (now, now))
     # Write absolute path to feature.json — mtime would pick 000-stale without it
-    _write_feature_json(tmp_path, _to_bash_path(tmp_path / "specs" / "001-active"))
+    # Use native str() here: PowerShell expects Windows-native paths, not MSYS2 /c/... form
+    _write_feature_json(tmp_path, str(tmp_path / "specs" / "001-active"))
 
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
