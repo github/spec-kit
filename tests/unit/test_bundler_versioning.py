@@ -42,3 +42,9 @@ def test_satisfies(installed, constraint, ok):
 def test_invalid_constraint_raises():
     with pytest.raises(BundlerError):
         satisfies("1.0.0", ">>bad")
+
+
+def test_uppercase_v_prefix_tolerated():
+    # Mirrors specify_cli._version tag normalization (V -> v).
+    assert is_semver("V1.2.3") is True
+    assert satisfies("V1.2.3", ">=1.2.0") is True

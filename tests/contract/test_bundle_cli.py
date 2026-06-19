@@ -39,6 +39,14 @@ def test_bundle_help_lists_all_commands():
         assert cmd in result.output
 
 
+def test_update_accepts_integration_override():
+    # Update must expose --integration so integration-pinned bundles can be
+    # updated in projects where the active integration can't be auto-detected.
+    result = runner.invoke(app, ["bundle", "update", "--help"])
+    assert result.exit_code == 0
+    assert "--integration" in result.output
+
+
 def test_list_empty_project(project: Path):
     result = runner.invoke(app, ["bundle", "list"])
     assert result.exit_code == 0

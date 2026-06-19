@@ -393,6 +393,7 @@ def bundle_install(
 def bundle_update(
     bundle_id: str = typer.Argument(None, help="Bundle id, or omit with --all"),
     all_bundles: bool = typer.Option(False, "--all", help="Update every installed bundle"),
+    integration: str = typer.Option(None, "--integration", help="Override integration"),
     offline: bool = typer.Option(False, "--offline", help="Do not access the network"),
 ) -> None:
     """Re-resolve and refresh a bundle's components via each primitive's update path."""
@@ -427,10 +428,12 @@ def bundle_update(
                     "Update requires an install-allowed source (FR-025)."
                 )
             manifest = _download_manifest(resolved, offline=offline)
+            detected = active_integration(project_root)
             plan = resolve_install_plan(
                 manifest,
                 speckit_version=_speckit_version(),
-                active_integration=active_integration(project_root),
+                active_integration=detected if detected is not None else integration,
+                integration_explicit=bool(integration) and detected is None,
             )
             install_bundle(project_root, plan, installer, manifest=manifest, refresh=True)
             console.print(f"[green]✓[/green] Updated '{target}' to v{plan.version}.")
@@ -489,11 +492,12 @@ def bundle_validate(
             ref_root, allow_network=not offline, warnings=ref_warnings
         )
         report = validate_manifest(manifest, reference_checker=checker)
+        report.warnings.extend(ref_warnings)
     except BundlerError as exc:
         _fail(str(exc))
         return
 
-    for warning in [*report.warnings, *ref_warnings]:
+    for warning in report.warnings:
         console.print(f"[yellow]![/yellow] {warning}")
     if not report.ok:
         console.print("[red]Manifest is invalid:[/red]")

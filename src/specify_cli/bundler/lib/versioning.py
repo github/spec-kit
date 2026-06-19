@@ -21,7 +21,7 @@ _PRERELEASE_PATTERN = re.compile(
 def _normalize_semver(value: str) -> str:
     """Normalize common SemVer prerelease spellings into PEP 440 text."""
     text = str(value)
-    normalized = text[1:] if text.startswith("v") else text
+    normalized = text[1:] if text[:1] in ("v", "V") else text
     match = _PRERELEASE_PATTERN.match(normalized)
     if match is None:
         return normalized
@@ -70,9 +70,9 @@ def is_semver(value: str) -> bool:
     """Return True only for a full ``MAJOR.MINOR.PATCH`` SemVer string.
 
     Stricter than ``packaging.version.Version``, which also accepts partial
-    versions like ``"1"`` or ``"1.0"``. An optional leading ``v`` is tolerated
-    (mirrors ``_normalize_semver``).
+    versions like ``"1"`` or ``"1.0"``. An optional leading ``v`` or ``V`` is
+    tolerated (mirrors ``_normalize_semver``).
     """
     text = str(value)
-    core = text[1:] if text.startswith("v") else text
+    core = text[1:] if text[:1] in ("v", "V") else text
     return bool(_SEMVER_RE.match(core))

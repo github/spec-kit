@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
+from .. import BundlerError
 from ..lib.versioning import parse_constraint
 from ..models.manifest import BundleManifest, ComponentRef
 
@@ -42,7 +43,7 @@ def validate_manifest(
     if manifest.requires.speckit_version:
         try:
             parse_constraint(manifest.requires.speckit_version)
-        except Exception as exc:  # noqa: BLE001
+        except BundlerError as exc:
             report.errors.append(
                 f"requires.speckit_version '{manifest.requires.speckit_version}' "
                 f"is not a valid constraint: {exc}"
