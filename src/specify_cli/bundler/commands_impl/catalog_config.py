@@ -38,8 +38,28 @@ def _read(project_root: Path) -> list[dict]:
     if not path.exists():
         return []
     data = load_yaml(path)
-    catalogs = data.get("catalogs") if isinstance(data, dict) else None
-    return list(catalogs) if catalogs else []
+    if data is None:
+        return []
+    if not isinstance(data, dict):
+        raise BundlerError(
+            f"Malformed catalog config at {path}: expected a mapping at the top "
+            f"level, got {type(data).__name__}."
+        )
+    catalogs = data.get("catalogs")
+    if catalogs is None:
+        return []
+    if not isinstance(catalogs, list):
+        raise BundlerError(
+            f"Malformed catalog config at {path}: 'catalogs' must be a list, "
+            f"got {type(catalogs).__name__}."
+        )
+    for entry in catalogs:
+        if not isinstance(entry, dict):
+            raise BundlerError(
+                f"Malformed catalog config at {path}: each catalog entry must be "
+                f"a mapping, got {type(entry).__name__}."
+            )
+    return list(catalogs)
 
 
 def _write(project_root: Path, catalogs: list[dict]) -> None:

@@ -118,22 +118,43 @@ def make_catalog_fetcher(*, allow_network: bool = True):
                     f"from {url}."
                 )
             _validate_remote_url(source.id, url)
-            return _http_get_json(url)
+            return _http_get_json(source.id, url)
 
         raise BundlerError(f"Unsupported catalog URL scheme: {url}")
 
     return fetch
 
 
-def _http_get_json(url: str) -> dict:
-    import urllib.request
+def _http_get_json(source_id: str, url: str) -> dict:
+    """Fetch catalog JSON over HTTP(S) via the shared authenticated client.
+
+    Routing through :func:`specify_cli.authentication.http.open_url` gives
+    ``auth.json`` token support and strips the ``Authorization`` header when a
+    redirect leaves the entry's trusted hosts or downgrades the scheme. We also
+    reject any redirect that leaves HTTPS (the ``redirect_validator`` runs
+    *before* each hop) and re-validate the final URL after redirects, so the
+    HTTPS/host guarantee from ``_validate_remote_url`` is preserved end to end
+    rather than only on the initial URL.
+    """
+    from ...authentication.http import open_url
+
+    def _validate_redirect(_old_url: str, new_url: str) -> None:
+        _validate_remote_url(source_id, new_url)
 
     try:
-        with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:  # noqa: S310
+        with open_url(
+            url,
+            timeout=HTTP_TIMEOUT_SECONDS,
+            redirect_validator=_validate_redirect,
+        ) as response:
+            final_url = response.geturl()
+            _validate_remote_url(source_id, final_url)
             raw = response.read().decode("utf-8")
+    except BundlerError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise BundlerError(f"Failed to fetch catalog from {url}: {exc}") from exc
-    return loads_json(raw, origin=url)
+    return loads_json(raw, origin=final_url)
 
 
 class DefaultPrimitiveInstaller:

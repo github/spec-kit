@@ -69,3 +69,43 @@ def test_add_source_refuses_symlinked_specify_escape(tmp_path: Path):
 
     with pytest.raises(BundlerError, match="escapes the allowed root"):
         cc.add_source(project, "https://example.com/c.json", policy="install-allowed", priority=50)
+
+
+def test_read_rejects_non_list_catalogs(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text(
+        "schema_version: '1.0'\ncatalogs: not-a-list\n", encoding="utf-8"
+    )
+
+    with pytest.raises(BundlerError, match="'catalogs' must be a list"):
+        cc._read(project)
+
+
+def test_read_rejects_non_mapping_catalog_entry(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text(
+        "schema_version: '1.0'\ncatalogs:\n  - just-a-string\n", encoding="utf-8"
+    )
+
+    with pytest.raises(BundlerError, match="each catalog entry must be a mapping"):
+        cc._read(project)
+
+
+def test_read_rejects_non_mapping_top_level(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text("- a\n- b\n", encoding="utf-8")
+
+    with pytest.raises(BundlerError, match="expected a mapping at the top level"):
+        cc._read(project)
+
+
+def test_read_returns_empty_for_missing_or_empty_config(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    assert cc._read(project) == []
+
+    cc._config_path(project).write_text("schema_version: '1.0'\n", encoding="utf-8")
+    assert cc._read(project) == []
