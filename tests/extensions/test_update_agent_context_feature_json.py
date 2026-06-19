@@ -104,9 +104,11 @@ def test_bash_ignores_newer_stale_plan_when_feature_json_present(tmp_path: Path)
 def test_bash_falls_back_to_mtime_when_feature_json_absent(tmp_path: Path) -> None:
     """No feature.json → mtime fallback selects the most recently modified plan."""
     _setup_project(tmp_path)
-    _make_plan(tmp_path, "specs/000-old")
-    time.sleep(0.05)
-    _make_plan(tmp_path, "specs/001-newer")
+    old = _make_plan(tmp_path, "specs/000-old")
+    newer = _make_plan(tmp_path, "specs/001-newer")
+    now = time.time()
+    os.utime(old, (now - 10, now - 10))
+    os.utime(newer, (now, now))
 
     result = subprocess.run(
         ["bash", str(UPDATE_AGENT_CTX_SH)],
@@ -188,10 +190,11 @@ def test_bash_absolute_feature_dir_outside_project_root(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
-    """PowerShell: feature.json points to the active feature; that plan is injected."""
+    """PowerShell: absolute feature_directory under project root is normalized to relative path."""
     _setup_project(tmp_path)
     _make_plan(tmp_path, "specs/001-active")
-    _write_feature_json(tmp_path, "specs/001-active")
+    # Use absolute path to exercise the normalization code path
+    _write_feature_json(tmp_path, str(tmp_path / "specs" / "001-active"))
 
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
@@ -203,16 +206,20 @@ def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stderr + result.stdout
     ctx = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
-    assert "specs/001-active/plan.md" in ctx
+    # Must be project-relative, not machine-specific absolute
+    assert "at specs/001-active/plan.md" in ctx
+    assert str(tmp_path) not in ctx
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_ignores_newer_stale_plan_when_feature_json_present(tmp_path: Path) -> None:
     """PowerShell: stale plan touched more recently must not win over feature.json."""
     _setup_project(tmp_path)
-    _make_plan(tmp_path, "specs/001-active")
-    time.sleep(0.05)
-    _make_plan(tmp_path, "specs/000-stale")
+    active = _make_plan(tmp_path, "specs/001-active")
+    stale = _make_plan(tmp_path, "specs/000-stale")
+    now = time.time()
+    os.utime(active, (now - 10, now - 10))
+    os.utime(stale, (now, now))
     _write_feature_json(tmp_path, "specs/001-active")
 
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
