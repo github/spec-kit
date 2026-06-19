@@ -292,6 +292,25 @@ def test_update_refuses_discovery_only_source(project: Path):
     assert "discovery-only" in result.output
 
 
+def test_info_fails_loudly_when_manifest_unresolvable_offline(project: Path):
+    # `info` must expand the real component set; if the manifest can't be
+    # resolved (here: --offline against an https download_url), it should error
+    # and exit non-zero rather than silently degrading to `provides` counts.
+    catalog = project / "remote-catalog.json"
+    entry = catalog_entry_dict(
+        "demo-bundle", download_url="https://example.com/demo-bundle.zip"
+    )
+    write_catalog_file(catalog, {"demo-bundle": entry})
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "remote"]
+    )
+    assert added.exit_code == 0, added.output
+
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert result.exit_code == 1
+    assert "Network access disabled" in result.output
+
+
 def test_search_json_offline(project: Path):
     catalog = project / "c.json"
     write_catalog_file(catalog, {"demo": catalog_entry_dict("demo")})

@@ -104,14 +104,18 @@ def install_bundle(
         for component in plan.components:
             key = (component.kind, component.id)
             if installer.is_installed(project_root, component):
-                if refresh:
+                # A component is "ours" only when this bundle (or a sibling
+                # bundle) already owns it. Independently-installed components
+                # are never attributed and — crucially — never refreshed, so
+                # ``bundle update`` cannot make collateral changes to things it
+                # does not own (FR-022).
+                owned = key in prior_ours or key in other_tracked
+                if refresh and owned:
                     _refresh_component(project_root, installer, component)
                     result.refreshed.append(component)
                 else:
                     result.skipped.append(component)
-                # Only attribute a pre-existing component when this bundle (or a
-                # sibling) already owns it; skip independently-installed ones.
-                if key in prior_ours or key in other_tracked:
+                if owned:
                     contributed.append(component)
                 continue
             installer.install(project_root, component)

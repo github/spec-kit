@@ -190,8 +190,22 @@ def load_catalog_payload(data: Any) -> dict[str, CatalogEntry]:
         raise BundlerError("Catalog payload is missing a 'bundles' object.")
     entries: dict[str, CatalogEntry] = {}
     for bundle_id, entry_raw in bundles_raw.items():
+        key = str(bundle_id)
         entry = CatalogEntry.from_dict(entry_raw)
-        entries[str(bundle_id)] = entry
+        # The enclosing key is the authoritative bundle id used by
+        # search/resolve/install. Reject entries whose own ``id`` is missing or
+        # disagrees with the key, so a malformed or malicious catalog can't list
+        # an id that resolves to a different (or no) bundle.
+        if not entry.id:
+            raise BundlerError(
+                f"Catalog entry for '{key}' is missing its 'id' field."
+            )
+        if entry.id != key:
+            raise BundlerError(
+                f"Catalog entry id mismatch: key '{key}' != entry id "
+                f"'{entry.id}'."
+            )
+        entries[key] = entry
     return entries
 
 

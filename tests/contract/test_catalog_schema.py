@@ -111,3 +111,19 @@ def test_catalog_entry_rejects_non_boolean_verified():
     data["verified"] = "false"  # truthy string must not mark the entry verified
     with pytest.raises(BundlerError, match="'verified' must be a boolean"):
         CatalogEntry.from_dict(data)
+
+
+def test_load_payload_rejects_id_key_mismatch():
+    # The enclosing key is authoritative; an entry whose own id disagrees with
+    # the key must be rejected so a catalog can't list a spoofed/unresolvable id.
+    payload = catalog_payload({"demo-bundle": catalog_entry_dict("other-id")})
+    with pytest.raises(BundlerError, match="id mismatch"):
+        load_catalog_payload(payload)
+
+
+def test_load_payload_rejects_missing_entry_id():
+    entry = catalog_entry_dict("demo-bundle")
+    entry["id"] = ""
+    payload = catalog_payload({"demo-bundle": entry})
+    with pytest.raises(BundlerError, match="missing its 'id'"):
+        load_catalog_payload(payload)

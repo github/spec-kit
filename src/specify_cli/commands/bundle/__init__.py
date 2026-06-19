@@ -200,13 +200,15 @@ def bundle_info(
         project_root = find_project_root() or Path.cwd()
         stack = _build_stack(project_root, offline=offline)
         resolved = stack.resolve(bundle_id)
-        # Expand the manifest regardless of install policy: discovery-only
-        # bundles must still be inspectable; only `install` is refused.
-        manifest = None
-        try:
-            manifest = _download_manifest(resolved, offline=offline)
-        except BundlerError:
-            manifest = None  # remote/undownloadable: fall back to provides counts
+        # `info` must show the fully expanded component set that `install` would
+        # apply (contracts/cli-commands.md). Expansion happens regardless of
+        # install policy — discovery-only bundles stay inspectable; only
+        # `install` is refused. But if the manifest itself can't be resolved
+        # (e.g. --offline against an https:// download_url, or a download
+        # failure), fail loudly and exit non-zero rather than silently
+        # degrading to catalog `provides` counts, so users never mistake an
+        # unverifiable bundle for a known/installable one.
+        manifest = _download_manifest(resolved, offline=offline)
     except BundlerError as exc:
         _fail(str(exc))
         return

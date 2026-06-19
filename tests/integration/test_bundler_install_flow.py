@@ -162,6 +162,29 @@ def test_update_preserves_original_installed_at(tmp_path: Path):
     assert load_records(tmp_path)[0].installed_at == original
 
 
+def test_refresh_does_not_touch_independently_installed_component(tmp_path: Path):
+    # bundle update (refresh) must not re-apply a component installed
+    # independently and tracked by no bundle — refreshing it would be a
+    # collateral change to something the bundle does not own (FR-022).
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    installer.installed.add(("extensions", "ext-a"))
+
+    result = install_bundle(
+        tmp_path, _plan(manifest), installer, manifest=manifest, refresh=True
+    )
+
+    # ext-a is skipped (not refreshed) and never attributed to the bundle.
+    assert ("extensions", "ext-a") not in installer.refresh_calls
+    assert ("extensions", "ext-a") in {(c.kind, c.id) for c in result.skipped}
+    assert ("extensions", "ext-a") not in {(c.kind, c.id) for c in result.refreshed}
+    contributed = {
+        (c.kind, c.id) for c in load_records(tmp_path)[0].contributed_components
+    }
+    assert ("extensions", "ext-a") not in contributed
+
+
 def test_pre_existing_component_is_not_attributed_or_removed(tmp_path: Path):
     # A component installed independently (before any bundle) must not be
     # attributed to the bundle, so removing the bundle never uninstalls it
