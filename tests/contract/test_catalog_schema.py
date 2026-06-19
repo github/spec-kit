@@ -127,3 +127,21 @@ def test_load_payload_rejects_missing_entry_id():
     payload = catalog_payload({"demo-bundle": entry})
     with pytest.raises(BundlerError, match="missing its 'id'"):
         load_catalog_payload(payload)
+
+
+def test_catalog_entry_rejects_non_mapping_requires():
+    from specify_cli.bundler.models.catalog import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["requires"] = "speckit>=0.1"
+    with pytest.raises(BundlerError, match="'requires' must be a mapping"):
+        CatalogEntry.from_dict(data)
+
+
+def test_catalog_entry_rejects_non_mapping_provides():
+    from specify_cli.bundler.models.catalog import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data["provides"] = "extensions"
+    with pytest.raises(BundlerError, match="'provides' must be a mapping"):
+        CatalogEntry.from_dict(data)

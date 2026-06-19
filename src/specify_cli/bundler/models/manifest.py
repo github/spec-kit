@@ -116,8 +116,8 @@ class BundleManifest:
             raise BundlerError("'requires' must be a mapping when present.")
         requires = Requires(
             speckit_version=str(requires_raw.get("speckit_version", "")).strip(),
-            tools=tuple(str(t) for t in (requires_raw.get("tools") or [])),
-            mcp=tuple(str(m) for m in (requires_raw.get("mcp") or [])),
+            tools=_parse_str_list(requires_raw.get("tools"), "requires.tools"),
+            mcp=_parse_str_list(requires_raw.get("mcp"), "requires.mcp"),
         )
 
         integration = None
@@ -132,12 +132,8 @@ class BundleManifest:
         tags_raw = data.get("tags")
         if tags_raw is None:
             tags_raw = []
-        elif isinstance(tags_raw, (str, bytes)) or not isinstance(
-            tags_raw, (list, tuple)
-        ):
-            # A bare string would otherwise be iterated character-by-character;
-            # the schema requires a list of strings.
-            raise BundlerError("'tags' must be a list of strings when present.")
+        else:
+            tags_raw = _parse_str_list(tags_raw, "tags")
 
         manifest = cls(
             schema_version=schema_version,
@@ -213,6 +209,20 @@ class BundleManifest:
     def is_agnostic(self) -> bool:
         """True when the bundle declares no integration (inherits the active one)."""
         return self.integration is None
+
+
+def _parse_str_list(raw: Any, field_name: str) -> tuple[str, ...]:
+    """Coerce a manifest list-of-strings field into a tuple of strings.
+
+    Rejects a bare string/bytes (which would otherwise be iterated
+    character-by-character) and any non-list/tuple, matching the manifest
+    contract (``string[]``).
+    """
+    if raw is None:
+        return ()
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
+        raise BundlerError(f"'{field_name}' must be a list of strings when present.")
+    return tuple(str(item) for item in raw)
 
 
 def _parse_refs(kind: str, raw: Any) -> list[ComponentRef]:

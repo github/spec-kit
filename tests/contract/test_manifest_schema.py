@@ -110,3 +110,17 @@ def test_valid_slug_bundle_id_passes():
     data["bundle"]["id"] = "team-a.bundle_1"
     manifest = BundleManifest.from_dict(data)
     assert not any("bundle.id" in e for e in manifest.structural_errors())
+
+
+def test_string_tools_rejected_not_split_per_character():
+    data = valid_manifest_dict()
+    data["requires"]["tools"] = "docker"
+    with pytest.raises(BundlerError, match="'requires.tools' must be a list of strings"):
+        BundleManifest.from_dict(data)
+
+
+def test_string_mcp_rejected_not_split_per_character():
+    data = valid_manifest_dict()
+    data["requires"]["mcp"] = "github"
+    with pytest.raises(BundlerError, match="'requires.mcp' must be a list of strings"):
+        BundleManifest.from_dict(data)

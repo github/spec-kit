@@ -151,8 +151,19 @@ class CatalogEntry:
     def from_dict(cls, data: Any) -> "CatalogEntry":
         if not isinstance(data, dict):
             raise BundlerError("Each catalog entry must be a mapping.")
-        requires = data.get("requires") or {}
         entry_id = str(data.get("id", "")).strip()
+        requires = data.get("requires") or {}
+        if not isinstance(requires, dict):
+            raise BundlerError(
+                f"Catalog entry '{entry_id or '<unknown>'}': 'requires' must be a "
+                "mapping when present."
+            )
+        provides_raw = data.get("provides") or {}
+        if not isinstance(provides_raw, dict):
+            raise BundlerError(
+                f"Catalog entry '{entry_id or '<unknown>'}': 'provides' must be a "
+                "mapping when present."
+            )
         return cls(
             id=entry_id,
             name=str(data.get("name", "")).strip(),
@@ -163,7 +174,7 @@ class CatalogEntry:
             license=str(data.get("license", "")).strip(),
             download_url=str(data.get("download_url", "")).strip(),
             requires_speckit_version=str(requires.get("speckit_version", "")).strip(),
-            provides=dict(data.get("provides") or {}),
+            provides=dict(provides_raw),
             repository=(str(data["repository"]) if data.get("repository") else None),
             tags=_parse_tags(data.get("tags"), entry_id),
             verified=_parse_verified(data.get("verified", False), entry_id),
