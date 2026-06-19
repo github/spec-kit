@@ -423,14 +423,36 @@ When an issue exists, include its number immediately after the prefix — this i
 
 ---
 
-## Responding to PR Review Comments
+## Agent Disclosure for PRs, Comments, and Commits
+
+Disclosure is **continuous**, not a one-time event. A single AI-disclosure paragraph in the PR body does **not** cover the commits and replies you add during review rounds. Each of the following must independently attest to agent authorship.
+
+### Commits
+
+- **Every commit you author must carry an `Assisted-by:` trailer** identifying the agent and whether it acted autonomously or under direct human supervision, for example:
+
+  ```
+  Assisted-by: GitHub Copilot (model: <name-if-known>, autonomous)
+  ```
+
+  Use `supervised` instead of `autonomous` only when a human actually authored or line-by-line reviewed the change before it was committed.
+- **Never push solo-authored commits that hide agent authorship behind the operator's git identity.** If an agent generated the change, the trailer must say so even when the commit is attributed to a human account.
+- Preserve any tool-generated `Co-authored-by:` trailers (e.g. Copilot Autofix) — do not strip them to make a commit look hand-written.
+
+### Comments
 
 - If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent (and model, if applicable) and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (model: &lt;name-if-known&gt;)").
+- **Re-state agent identity in each review-round summary comment.** A prior PR-body disclosure does not cover later comments or commits.
 - Post **one** top-level summary comment per review round listing what changed and the commit SHA. Do not reply on every individual comment.
 - Reply inline only when context is needed (disagreement, deferral, non-obvious fix). Keep it to a sentence or two.
 - **Never click "Resolve conversation"** — that belongs to the reviewer or PR author.
 - No emoji, no celebratory framing, no checklist mirroring the reviewer's items, no restating what the reviewer wrote.
 - Re-request review once per round (when all feedback is addressed), not after every intermediate push.
+
+### Anti-patterns (do not do these)
+
+- **Do not** reply "Done" or push a "fix" within seconds/minutes of a review event without disclosing that the response or commit was agent-generated. Speed of turnaround is not a substitute for attestation — a near-instant tested code change is itself a signal of automation and must be disclosed as such.
+- **Do not** claim "reviewed, tested, and understood by me" for commits that were authored and pushed automatically in response to a review trigger. If the loop is automated, disclose it as automated.
 
 ---
 
