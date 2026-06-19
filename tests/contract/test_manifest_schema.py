@@ -95,3 +95,18 @@ def test_string_tags_rejected_not_split_per_character():
     data["tags"] = "security"
     with pytest.raises(BundlerError, match="'tags' must be a list of strings"):
         BundleManifest.from_dict(data)
+
+
+def test_unsafe_bundle_id_flagged_by_structural_validation():
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = "../evil"
+    manifest = BundleManifest.from_dict(data)
+    errors = manifest.structural_errors()
+    assert any("bundle.id" in e and "slug" in e for e in errors)
+
+
+def test_valid_slug_bundle_id_passes():
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = "team-a.bundle_1"
+    manifest = BundleManifest.from_dict(data)
+    assert not any("bundle.id" in e for e in manifest.structural_errors())

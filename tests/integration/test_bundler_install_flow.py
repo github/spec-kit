@@ -112,7 +112,23 @@ def test_remove_reports_uninstalled_not_installed(tmp_path: Path):
     assert installer.installed == set()
 
 
-def test_refresh_reapplies_installed_components(tmp_path: Path):
+def test_remove_counts_only_components_actually_removed(tmp_path: Path):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    # Simulate one contributed component already gone from disk (e.g. removed
+    # out of band). It must not be reported as uninstalled and remove() must
+    # not be called for it.
+    gone = manifest.components[0]
+    installer.installed.discard((gone.kind, gone.id))
+
+    result = remove_bundle(tmp_path, "demo-bundle", installer)
+
+    assert len(result.uninstalled) == 3
+    assert (gone.kind, gone.id) not in installer.remove_calls
+    assert gone in result.skipped
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     installer = FakeInstaller()

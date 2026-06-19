@@ -52,6 +52,9 @@ def build_bundle(
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact_name = f"{manifest.bundle.id}-{manifest.bundle.version}.zip"
     artifact_path = out_dir / artifact_name
+    # Defense in depth: even though validate_manifest() rejects unsafe ids, make
+    # sure a crafted id cannot push the artifact outside the output directory.
+    ensure_within(out_dir, artifact_path)
 
     # If the output dir lives inside the bundle, skip its whole subtree so
     # previously-built artifacts are never re-packaged (keeps builds

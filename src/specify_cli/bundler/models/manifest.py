@@ -6,6 +6,7 @@ catalog stack lives in the validator/resolver services.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,11 @@ SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
 PRESET_STRATEGIES = {"replace", "prepend", "append", "wrap"}
 
 COMPONENT_KINDS = ("extensions", "presets", "steps", "workflows")
+
+# A bundle id must be a filesystem-safe slug: it is interpolated into artifact
+# filenames (e.g. ``<id>-<version>.zip``), so path separators or traversal
+# segments must never appear.
+_SAFE_BUNDLE_ID = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
 
 
 @dataclass(frozen=True)
@@ -174,6 +180,12 @@ class BundleManifest:
 
         if self.bundle.version and not is_semver(self.bundle.version):
             errors.append(f"bundle.version '{self.bundle.version}' is not valid semver.")
+
+        if self.bundle.id and not _SAFE_BUNDLE_ID.match(self.bundle.id):
+            errors.append(
+                f"bundle.id '{self.bundle.id}' must be a slug "
+                "(lowercase letters, digits, '.', '_', '-'; no path separators)."
+            )
 
         for ref in self.components:
             if not ref.id:

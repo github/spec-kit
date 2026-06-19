@@ -140,3 +140,19 @@ def test_read_catalog_config_refuses_symlinked_specify_escape(tmp_path: Path):
 
     with pytest.raises(BundlerError, match="escapes the allowed root"):
         cc._read(project)
+
+
+def test_load_source_stack_refuses_symlinked_specify_dir(tmp_path: Path):
+    from specify_cli.bundler.models.catalog import load_source_stack
+
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "bundle-catalogs.yml").write_text("catalogs: []\n", encoding="utf-8")
+    try:
+        (project / ".specify").symlink_to(outside, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+    with pytest.raises(BundlerError, match="escapes the allowed root"):
+        load_source_stack(project)

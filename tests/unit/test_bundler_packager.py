@@ -113,3 +113,16 @@ def test_symlinked_directory_is_not_followed(tmp_path: Path):
         names = archive.namelist()
     assert "linkdir/secret.txt" not in names
     assert not any("secret" in name for name in names)
+
+
+def test_unsafe_bundle_id_is_rejected_before_build(tmp_path: Path):
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = "../evil"
+    bundle = tmp_path / "b"
+    bundle.mkdir(parents=True)
+    (bundle / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    (bundle / "README.md").write_text("# x", encoding="utf-8")
+    with pytest.raises(BundlerError):
+        build_bundle(bundle, output_dir=tmp_path / "out")
+    # The traversal target must not have been written outside out_dir.
+    assert not (tmp_path / "evil-1.2.0.zip").exists()
