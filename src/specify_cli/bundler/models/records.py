@@ -55,13 +55,17 @@ class InstalledBundleRecord:
     def from_dict(cls, data: Any) -> "InstalledBundleRecord":
         if not isinstance(data, dict):
             raise BundlerError("Each installed-bundle record must be a mapping.")
+        components_raw = data.get("contributed_components") or []
+        if not isinstance(components_raw, list):
+            raise BundlerError(
+                "Corrupt record: 'contributed_components' must be a list."
+            )
         return cls(
             bundle_id=str(data.get("bundle_id", "")).strip(),
             version=str(data.get("version", "")).strip(),
             installed_at=str(data.get("installed_at", "")).strip(),
             contributed_components=tuple(
-                _component_from_dict(c)
-                for c in (data.get("contributed_components") or [])
+                _component_from_dict(c) for c in components_raw
             ),
         )
 
@@ -81,6 +85,10 @@ def load_records(project_root: Path) -> list[InstalledBundleRecord]:
     if not isinstance(data, dict):
         raise BundlerError(f"Corrupt records file: {path}")
     bundles = data.get("bundles") or []
+    if not isinstance(bundles, list):
+        raise BundlerError(
+            f"Corrupt records file: {path} — 'bundles' must be a list."
+        )
     return [InstalledBundleRecord.from_dict(item) for item in bundles]
 
 

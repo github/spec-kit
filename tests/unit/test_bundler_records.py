@@ -92,3 +92,20 @@ def test_save_records_refuses_symlinked_specify_escape(tmp_path: Path):
 
     with pytest.raises(BundlerError, match="escapes the allowed root"):
         save_records(project, [_record("a", [("presets", "p1")])])
+
+
+def test_load_records_rejects_non_list_bundles(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    path = records_path(tmp_path)
+    path.write_text(json.dumps({"bundles": "oops"}), encoding="utf-8")
+    with pytest.raises(BundlerError, match="'bundles' must be a list"):
+        load_records(tmp_path)
+
+
+def test_load_records_rejects_non_list_contributed_components(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    path = records_path(tmp_path)
+    payload = {"bundles": [{"bundle_id": "a", "contributed_components": "oops"}]}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(BundlerError, match="'contributed_components' must be a list"):
+        load_records(tmp_path)
