@@ -48,3 +48,21 @@ def test_uppercase_v_prefix_tolerated():
     # Mirrors specify_cli._version tag normalization (V -> v).
     assert is_semver("V1.2.3") is True
     assert satisfies("V1.2.3", ">=1.2.0") is True
+
+
+@pytest.mark.parametrize("installed,constraint,ok", [
+    # Prerelease spellings are now normalized inside constraints too, so a
+    # constraint like ">=1.2.3-rc1" parses (previously raised InvalidSpecifier).
+    ("1.2.3-rc2", ">=1.2.3-rc1", True),
+    ("1.2.2", ">=1.2.3-rc1", False),
+    ("1.5.0", ">=1.2.3-rc1,<2.0.0", True),
+    ("1.2.3-beta.1", ">=1.2.3-alpha1", True),
+])
+def test_satisfies_prerelease_in_constraint(installed, constraint, ok):
+    assert satisfies(installed, constraint) is ok
+
+
+def test_parse_constraint_empty_is_permissive():
+    from specify_cli.bundler.lib.versioning import parse_constraint
+
+    assert str(parse_constraint("")) == ""
