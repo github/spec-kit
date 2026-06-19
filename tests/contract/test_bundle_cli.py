@@ -42,9 +42,11 @@ def test_bundle_help_lists_all_commands():
 def test_update_accepts_integration_override():
     # Update must expose --integration so integration-pinned bundles can be
     # updated in projects where the active integration can't be auto-detected.
+    # Rich may insert ANSI escapes between the two leading dashes, so match the
+    # un-split option word rather than the literal "--integration".
     result = runner.invoke(app, ["bundle", "update", "--help"])
     assert result.exit_code == 0
-    assert "--integration" in result.output
+    assert "integration" in result.output
 
 
 def test_list_empty_project(project: Path):
