@@ -248,20 +248,25 @@ deviations from the original task text:
 
 Quickstart scenarios A–G were exercised end-to-end (offline) via the Typer
 CLI. `search`, `info`, `list`, `validate`, `build`, and `catalog list|add|remove`
-pass. Two gaps were found and are tracked below:
+pass. Two gaps were found and have since been closed:
 
-- [ ] T044 Wire real in-process primitive installation in
+- [x] T044 Wire real in-process primitive installation in
   `services/primitives.py` so `DefaultPrimitiveInstaller.install` actually adds
-  extensions/presets/steps/workflows through the existing machinery. Today the
-  orchestration, version/conflict gating, idempotency, and **atomic rollback**
-  are implemented and the installer records nothing on failure, but each
-  primitive `install` currently raises an actionable "install it with `specify
-  <primitive> add …`" error instead of performing the install. (Scenario A real
-  install.)
-- [ ] T045 Support `specify bundle install <path-to-artifact|bundle-dir>` so the
-  offline/air-gapped path can install directly from a local `.zip`/bundle
-  directory, not only by resolving a bundle-id from the catalog stack.
-  (Quickstart "Offline / air-gapped check".)
+  components through the existing machinery. **Done:** presets and extensions
+  install via their reusable managers (`install_from_directory` /
+  `install_from_zip`) — bundled assets install fully offline, catalog assets are
+  fetched only when the network is permitted; workflows and steps delegate to the
+  existing `workflow add` / `workflow step add` command callables in-process
+  (no duplicated download/validation logic, honouring Principle I).
+  `--offline` is threaded through `DefaultPrimitiveInstaller(allow_network=…)`
+  so network-only kinds refuse with an actionable message instead of silently
+  reaching out. Verified end-to-end by installing the bundled `agent-context`
+  extension offline from a local `.zip`.
+- [x] T045 Support `specify bundle install <path-to-artifact|bundle-dir>`.
+  **Done:** the install argument now accepts a `.zip` artifact, a bundle
+  directory, or a `bundle.yml` file (`_local_manifest_source`), installing
+  directly without consulting the catalog stack; bundle-ids still resolve via
+  the stack as before.
 
 ## FR coverage (T040)
 
@@ -270,5 +275,5 @@ exists with the documented exit-code behaviour; the FR-016 version gate,
 FR-019 integration clash, FR-025 discovery-only refusal, FR-022/SC-004
 non-collateral removal, FR-026 catalog precedence, and offline-first behaviour
 are implemented and tested. **No first-class publish command was introduced
-(FR-030).** The remaining functional shortfall is the live primitive dispatch
-tracked by T044.
+(FR-030).** Live in-process primitive dispatch is now wired for all four
+component kinds (T044), with bundled presets/extensions installing offline.
