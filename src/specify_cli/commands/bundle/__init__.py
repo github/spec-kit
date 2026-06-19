@@ -358,11 +358,17 @@ def bundle_install(
         for overlap in _bundle_overlaps(project_root, manifest, offline=offline):
             console.print(f"[yellow]![/yellow] {overlap}")
 
+        # For an already-initialized project, the project's recorded active
+        # integration is authoritative — an explicit --integration must not be
+        # able to bypass the FR-019 integration-clash guard. The override only
+        # selects the integration at init time (handled above) or confirms the
+        # target when the active integration cannot be determined.
+        detected = active_integration(project_root)
         plan = resolve_install_plan(
             manifest,
             speckit_version=_speckit_version(),
-            active_integration=integration or active_integration(project_root),
-            integration_explicit=bool(integration),
+            active_integration=detected if detected is not None else integration,
+            integration_explicit=bool(integration) and detected is None,
         )
         for warning in plan.warnings:
             console.print(f"[yellow]![/yellow] {warning}")

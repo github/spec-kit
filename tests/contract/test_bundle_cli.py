@@ -357,3 +357,25 @@ def test_search_text_shows_trust(project: Path):
     assert result.exit_code == 0, result.output
     assert "verified" in result.output
     assert "community" in result.output
+
+
+def test_install_integration_override_cannot_bypass_clash_guard(project: Path):
+    # An initialized project's recorded active integration is authoritative:
+    # passing --integration must not let a differently-pinned bundle install.
+    import json
+
+    (project / ".specify" / "integration.json").write_text(
+        json.dumps({"integration": "copilot"}), encoding="utf-8"
+    )
+    bundle_dir = project / "claude-bundle"
+    bundle_dir.mkdir()
+    data = valid_manifest_dict(integration={"id": "claude"})
+    (bundle_dir / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    (bundle_dir / "README.md").write_text("# Claude bundle", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["bundle", "install", str(bundle_dir), "--integration", "claude", "--offline"],
+    )
+    assert result.exit_code == 1
+    assert "claude" in result.output and "copilot" in result.output
