@@ -103,11 +103,12 @@ def _derive_id(url: str) -> str:
     parsed = urlparse(url)
     if parsed.netloc:
         host = parsed.netloc.split("@")[-1].split(":")[0]
-        # Hostnames are case-insensitive; _slug() lowercases so 'Example.com'
-        # and 'example.com' derive the same, deterministic id.
-        host_label = Path(host).stem or host
+        # Use the full host (TLD included) so different domains sharing a
+        # second-level label (example.com vs example.net) don't collide on the
+        # derived id. Hostnames are case-insensitive; _slug() lowercases and
+        # turns dots into dashes, so 'Example.com' -> 'example-com'.
         path_stem = Path(parsed.path).stem if parsed.path else ""
-        parts = [p for p in (_slug(host_label), _slug(path_stem)) if p]
+        parts = [p for p in (_slug(host), _slug(path_stem)) if p]
         return "-".join(parts) or "catalog"
     stem = Path(parsed.path or url).stem
     return _slug(stem) or "catalog"

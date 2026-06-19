@@ -123,6 +123,16 @@ class BundleManifest:
         if not isinstance(provides, dict):
             raise BundlerError("'provides' must be a mapping when present.")
 
+        tags_raw = data.get("tags")
+        if tags_raw is None:
+            tags_raw = []
+        elif isinstance(tags_raw, (str, bytes)) or not isinstance(
+            tags_raw, (list, tuple)
+        ):
+            # A bare string would otherwise be iterated character-by-character;
+            # the schema requires a list of strings.
+            raise BundlerError("'tags' must be a list of strings when present.")
+
         manifest = cls(
             schema_version=schema_version,
             bundle=meta,
@@ -132,7 +142,7 @@ class BundleManifest:
             presets=_parse_refs("presets", provides.get("presets")),
             steps=_parse_refs("steps", provides.get("steps")),
             workflows=_parse_refs("workflows", provides.get("workflows")),
-            tags=tuple(str(t) for t in (data.get("tags") or [])),
+            tags=tuple(str(t) for t in tags_raw),
         )
         return manifest
 

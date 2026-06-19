@@ -2,6 +2,7 @@
 
 <!-- insert new changelog below this comment -->
 
+- feat: add `specify bundle` command group for role-based project setup — compose extensions, presets, workflows, and steps into versioned, installable bundles with catalog discovery and a verified/community trust indicator (#3070)
 - feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
 
 ## [0.11.2] - 2026-06-18

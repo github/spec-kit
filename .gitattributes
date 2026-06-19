@@ -10,5 +10,7 @@
 .github/prompts/speckit.*.prompt.md -whitespace
 .github/copilot-instructions.md -whitespace
 # Scope the specs exemption to the generated dogfooding feature dir only, so
-# any hand-authored specs elsewhere keep full whitespace validation.
+# any hand-authored specs elsewhere keep full whitespace validation. This
+# directory is part of the dogfooding scaffolding and is scrubbed before merge
+# (not retained), so exempting it does not weaken checks for kept docs.
 specs/001-spec-kit-bundler/** -whitespace

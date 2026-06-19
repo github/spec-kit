@@ -13,13 +13,22 @@ def test_derive_id_incorporates_path_stem_for_same_host():
     # Two catalogs on the same host must not collide on the derived id.
     a = cc._derive_id("https://example.com/team-a.json")
     b = cc._derive_id("https://example.com/team-b.json")
-    assert a == "example-team-a"
-    assert b == "example-team-b"
+    assert a == "example-com-team-a"
+    assert b == "example-com-team-b"
     assert a != b
 
 
+def test_derive_id_distinguishes_tlds():
+    # Different TLDs sharing a second-level label must not collide.
+    com = cc._derive_id("https://example.com/team-a.json")
+    net = cc._derive_id("https://example.net/team-a.json")
+    assert com == "example-com-team-a"
+    assert net == "example-net-team-a"
+    assert com != net
+
+
 def test_derive_id_falls_back_to_host_when_no_path():
-    assert cc._derive_id("https://example.com/") == "example"
+    assert cc._derive_id("https://example.com/") == "example-com"
 
 
 def test_derive_id_for_local_path_uses_stem():
@@ -116,4 +125,4 @@ def test_slug_lowercases_for_deterministic_ids():
     # the case-sensitive duplicate check cannot admit logical duplicates.
     assert cc._slug("Team-A") == "team-a"
     assert cc._derive_id("./catalogs/Team-A.json") == "team-a"
-    assert cc._derive_id("https://Example.com/Team-A.json") == "example-team-a"
+    assert cc._derive_id("https://Example.com/Team-A.json") == "example-com-team-a"

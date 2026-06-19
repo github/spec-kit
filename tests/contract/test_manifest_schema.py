@@ -86,3 +86,12 @@ def test_components_property_orders_by_kind():
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     kinds = [c.kind for c in manifest.components]
     assert kinds == ["extensions", "presets", "steps", "workflows"]
+
+
+def test_string_tags_rejected_not_split_per_character():
+    # A bare string would otherwise be iterated character-by-character; the
+    # schema requires a list of strings.
+    data = valid_manifest_dict()
+    data["tags"] = "security"
+    with pytest.raises(BundlerError, match="'tags' must be a list of strings"):
+        BundleManifest.from_dict(data)
