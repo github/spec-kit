@@ -156,3 +156,18 @@ def test_load_source_stack_refuses_symlinked_specify_dir(tmp_path: Path):
         pytest.skip("symlinks not supported on this platform")
     with pytest.raises(BundlerError, match="escapes the allowed root"):
         load_source_stack(project)
+
+
+def test_find_project_root_ignores_symlinked_specify(tmp_path: Path):
+    from specify_cli.bundler.lib.project import find_project_root
+
+    real = tmp_path / "real-specify"
+    real.mkdir()
+    project = tmp_path / "project"
+    project.mkdir()
+    try:
+        (project / ".specify").symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+    # A symlinked .specify must not be accepted as a project root.
+    assert find_project_root(project) is None

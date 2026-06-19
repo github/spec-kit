@@ -102,11 +102,12 @@ def _canonicalize_url(url: str) -> str:
 def _derive_id(url: str) -> str:
     parsed = urlparse(url)
     if parsed.netloc:
-        host = parsed.netloc.split("@")[-1].split(":")[0]
-        # Use the full host (TLD included) so different domains sharing a
-        # second-level label (example.com vs example.net) don't collide on the
-        # derived id. Hostnames are case-insensitive; _slug() lowercases and
-        # turns dots into dashes, so 'Example.com' -> 'example-com'.
+        # Use .hostname (not netloc.split(':')) so credentials, ports, and IPv6
+        # literals (e.g. https://[2001:db8::1]/x) are handled correctly. Use the
+        # full host (TLD included) so different domains sharing a second-level
+        # label (example.com vs example.net) don't collide. _slug() lowercases
+        # and turns separators into dashes, so 'Example.com' -> 'example-com'.
+        host = parsed.hostname or ""
         path_stem = Path(parsed.path).stem if parsed.path else ""
         parts = [p for p in (_slug(host), _slug(path_stem)) if p]
         return "-".join(parts) or "catalog"
@@ -128,6 +129,14 @@ def add_source(
     parsed = urlparse(url)
     if not (parsed.scheme or parsed.path):
         raise BundlerError(f"Invalid catalog url: '{url}'.")
+    # Reject unsupported URL schemes (e.g. ssh://, ftp://) up front so they are
+    # never silently canonicalized as local filesystem paths. Local paths that
+    # merely contain a ':' but no '://' (e.g. Windows drives) are still allowed.
+    if "://" in url and parsed.scheme.lower() not in _REMOTE_SCHEMES:
+        raise BundlerError(
+            f"Unsupported catalog url scheme '{parsed.scheme}://' in '{url}'. "
+            "Use http(s)://, file://, builtin://, or a local path."
+        )
 
     url = _canonicalize_url(url)
     install_policy = InstallPolicy.parse(policy)

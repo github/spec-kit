@@ -10,10 +10,16 @@ DEFAULT_INTEGRATION = "copilot"
 
 
 def find_project_root(start: Path | None = None) -> Path | None:
-    """Return the nearest ancestor (incl. *start*) containing a ``.specify/`` dir, or None."""
+    """Return the nearest ancestor (incl. *start*) containing a ``.specify/`` dir, or None.
+
+    A symlinked ``.specify`` is not accepted as a project root: following it
+    could read/write outside the intended tree, and other CLI surfaces refuse
+    it for the same reason.
+    """
     current = Path(start or Path.cwd()).resolve()
     for candidate in (current, *current.parents):
-        if (candidate / ".specify").is_dir():
+        marker = candidate / ".specify"
+        if marker.is_dir() and not marker.is_symlink():
             return candidate
     return None
 

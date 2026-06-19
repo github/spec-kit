@@ -126,3 +126,29 @@ def test_slug_lowercases_for_deterministic_ids():
     assert cc._slug("Team-A") == "team-a"
     assert cc._derive_id("./catalogs/Team-A.json") == "team-a"
     assert cc._derive_id("https://Example.com/Team-A.json") == "example-com-team-a"
+
+
+def test_derive_id_handles_ipv6_literal():
+    # An IPv6 host must not be truncated at the first colon.
+    derived = cc._derive_id("https://[2001:db8::1]/catalog.json")
+    assert derived == "2001-db8--1-catalog"
+
+
+def test_derive_id_ignores_credentials_and_port():
+    assert cc._derive_id("https://user:pw@example.com:8443/c.json") == "example-com-c"
+
+
+def test_add_source_rejects_unsupported_scheme(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    with pytest.raises(BundlerError, match="Unsupported catalog url scheme"):
+        cc.add_source(project, "ssh://host/catalog.json", policy="install-allowed", priority=50)
+
+
+def test_add_source_allows_local_path_with_colon(tmp_path: Path, monkeypatch):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    monkeypatch.chdir(project)
+    # A relative path containing ':' but no '://' is still a local path.
+    source = cc.add_source(project, "weird:name.json", policy="install-allowed", priority=50)
+    assert source.url.endswith("weird:name.json") or "weird" in source.url
