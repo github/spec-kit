@@ -9,6 +9,11 @@
 .github/agents/speckit.*.agent.md -whitespace
 .github/prompts/speckit.*.prompt.md -whitespace
 .github/copilot-instructions.md -whitespace
+# Retained (not scrubbed): the project constitution is the one dogfooding
+# artifact carried forward. Keep it exempt from whitespace checks so its
+# generated formatting does not trip git diff --check / CI.
+.specify/memory/constitution.md -whitespace
+
 # Scope the specs exemption to the generated dogfooding feature dir only, so
 # any hand-authored specs elsewhere keep full whitespace validation. This
 # directory is part of the dogfooding scaffolding and is scrubbed before merge
