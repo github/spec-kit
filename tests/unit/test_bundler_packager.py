@@ -85,6 +85,17 @@ def test_output_dir_inside_bundle_excludes_prior_artifacts(tmp_path: Path):
     assert first.file_count == second.file_count
 
 
+def test_prior_version_artifact_not_repackaged(tmp_path: Path):
+    # An older artifact sitting next to bundle.yml must not be packaged.
+    bundle = _make_bundle(tmp_path / "b", extra_files={"a.txt": "a"})
+    (bundle / "demo-bundle-0.9.0.zip").write_bytes(b"PK\x03\x04 old artifact")
+    result = build_bundle(bundle, output_dir=bundle)
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = archive.namelist()
+    assert not any(name.endswith(".zip") for name in names)
+    assert "demo-bundle-0.9.0.zip" not in names
+
+
 def test_symlinked_directory_is_not_followed(tmp_path: Path):
     outside = tmp_path / "outside"
     outside.mkdir()

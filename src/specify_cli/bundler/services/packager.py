@@ -8,6 +8,7 @@ directory (Principle V path confinement).
 from __future__ import annotations
 
 import os
+import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,7 +57,12 @@ def build_bundle(
     # previously-built artifacts are never re-packaged (keeps builds
     # reproducible and bounded).
     skip_dir = out_dir if out_dir != bundle_dir and _is_within(bundle_dir, out_dir) else None
-    files = _collect_files(bundle_dir, skip=artifact_path, skip_dir=skip_dir)
+    # Also skip any prior build artifact for this bundle (e.g. an older
+    # <id>-<version>.zip sitting next to bundle.yml), not just the current one.
+    artifact_re = re.compile(rf"^{re.escape(manifest.bundle.id)}-.*\.zip$")
+    files = _collect_files(
+        bundle_dir, skip=artifact_path, skip_dir=skip_dir, artifact_re=artifact_re
+    )
     with zipfile.ZipFile(artifact_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for file_path in files:
             # Confinement: every packaged file must live under bundle_dir.
@@ -80,7 +86,12 @@ def _is_within(parent: Path, child: Path) -> bool:
         return False
 
 
-def _collect_files(bundle_dir: Path, skip: Path, skip_dir: Path | None = None) -> list[Path]:
+def _collect_files(
+    bundle_dir: Path,
+    skip: Path,
+    skip_dir: Path | None = None,
+    artifact_re: re.Pattern[str] | None = None,
+) -> list[Path]:
     collected: list[Path] = []
     # followlinks=False so a symlinked directory is never descended into,
     # which would otherwise pull in out-of-tree files and then fail at
@@ -101,6 +112,9 @@ def _collect_files(bundle_dir: Path, skip: Path, skip_dir: Path | None = None) -
             if path == skip:
                 continue
             if name in EXCLUDE_NAMES:
+                continue
+            if artifact_re is not None and artifact_re.match(name):
+                # A prior build artifact for this bundle — never re-package it.
                 continue
             if path.is_symlink():
                 # Skip symlinked files to avoid escaping the bundle directory.

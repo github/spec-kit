@@ -151,4 +151,4 @@ specify bundle catalog remove <id_or_url>
 
 Removes a project-scoped catalog source. Built-in default sources cannot be deleted.
 
-> **Note:** All bundle commands except `install`, `init`, `validate`, and `build` require a project already initialized with `specify init`. `install` and `init` will initialize a project on demand when run in an uninitialized directory.
+> **Note:** `search` and `info` work anywhere — with no project they fall back to the built-in/user catalog stack. The remaining state-changing commands (`list`, `update`, `remove`, `catalog`) require a project already initialized with `specify init`. `install` and `init` will initialize a project on demand when run in an uninitialized directory.
