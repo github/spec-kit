@@ -111,6 +111,33 @@ def test_read_rejects_non_mapping_top_level(tmp_path: Path):
         cc._read(project)
 
 
+def test_read_rejects_unknown_schema_version(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text(
+        "schema_version: '2.0'\ncatalogs: []\n", encoding="utf-8"
+    )
+
+    with pytest.raises(BundlerError, match="Unsupported catalog config schema version"):
+        cc._read(project)
+
+
+def test_read_accepts_forward_compatible_minor_schema(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text(
+        "schema_version: '1.5'\ncatalogs: []\n", encoding="utf-8"
+    )
+    assert cc._read(project) == []
+
+
+def test_read_tolerates_missing_schema_version(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text("catalogs: []\n", encoding="utf-8")
+    assert cc._read(project) == []
+
+
 def test_read_returns_empty_for_missing_or_empty_config(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)

@@ -48,6 +48,17 @@ def _read(project_root: Path) -> list[dict]:
             f"Malformed catalog config at {path}: expected a mapping at the top "
             f"level, got {type(data).__name__}."
         )
+    schema_version = data.get("schema_version")
+    if schema_version is not None and (
+        str(schema_version).strip().split(".")[0]
+        != CONFIG_SCHEMA_VERSION.split(".")[0]
+    ):
+        raise BundlerError(
+            f"Unsupported catalog config schema version "
+            f"'{str(schema_version).strip()}' at {path}; this Spec Kit "
+            f"understands version {CONFIG_SCHEMA_VERSION}. The file may have been "
+            "written by a newer version or is corrupt."
+        )
     catalogs = data.get("catalogs")
     if catalogs is None:
         return []

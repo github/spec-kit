@@ -60,9 +60,21 @@ class InstalledBundleRecord:
             raise BundlerError(
                 "Corrupt record: 'contributed_components' must be a list."
             )
+        bundle_id = str(data.get("bundle_id", "")).strip()
+        version = str(data.get("version", "")).strip()
+        if not bundle_id:
+            raise BundlerError(
+                "Corrupt records file: an installed-bundle record is missing "
+                "its 'bundle_id'."
+            )
+        if not version:
+            raise BundlerError(
+                f"Corrupt records file: record for bundle '{bundle_id}' is "
+                "missing its 'version'."
+            )
         return cls(
-            bundle_id=str(data.get("bundle_id", "")).strip(),
-            version=str(data.get("version", "")).strip(),
+            bundle_id=bundle_id,
+            version=version,
             installed_at=str(data.get("installed_at", "")).strip(),
             contributed_components=tuple(
                 _component_from_dict(c) for c in components_raw
@@ -72,6 +84,30 @@ class InstalledBundleRecord:
 
 def records_path(project_root: Path) -> Path:
     return Path(project_root) / ".specify" / RECORDS_FILENAME
+
+
+def _check_schema_version(value: Any, *, path: Path, required: bool) -> None:
+    """Reject a records file whose schema version we cannot safely parse.
+
+    A future incompatible format (or a corrupted file) must fail fast with an
+    actionable error rather than being silently mis-parsed, which could lead to
+    incorrect bundle attribution or removal. Forward-compatible minor bumps that
+    keep the same major version are accepted.
+    """
+    if value is None:
+        if required:
+            raise BundlerError(
+                f"Corrupt records file: {path} — missing 'schema_version'. "
+                f"Expected version {RECORDS_SCHEMA_VERSION}."
+            )
+        return
+    seen = str(value).strip()
+    if seen.split(".")[0] != RECORDS_SCHEMA_VERSION.split(".")[0]:
+        raise BundlerError(
+            f"Unsupported records schema version '{seen}' at {path}; this "
+            f"Spec Kit understands version {RECORDS_SCHEMA_VERSION}. The file may "
+            "have been written by a newer version or is corrupt."
+        )
 
 
 def load_records(project_root: Path) -> list[InstalledBundleRecord]:
@@ -84,6 +120,7 @@ def load_records(project_root: Path) -> list[InstalledBundleRecord]:
     data = load_json(path)
     if not isinstance(data, dict):
         raise BundlerError(f"Corrupt records file: {path}")
+    _check_schema_version(data.get("schema_version"), path=path, required=True)
     bundles = data.get("bundles") or []
     if not isinstance(bundles, list):
         raise BundlerError(

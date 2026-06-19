@@ -97,7 +97,7 @@ def test_save_records_refuses_symlinked_specify_escape(tmp_path: Path):
 def test_load_records_rejects_non_list_bundles(tmp_path: Path):
     (tmp_path / ".specify").mkdir()
     path = records_path(tmp_path)
-    path.write_text(json.dumps({"bundles": "oops"}), encoding="utf-8")
+    path.write_text(json.dumps({"schema_version": "1.0", "bundles": "oops"}), encoding="utf-8")
     with pytest.raises(BundlerError, match="'bundles' must be a list"):
         load_records(tmp_path)
 
@@ -105,7 +105,12 @@ def test_load_records_rejects_non_list_bundles(tmp_path: Path):
 def test_load_records_rejects_non_list_contributed_components(tmp_path: Path):
     (tmp_path / ".specify").mkdir()
     path = records_path(tmp_path)
-    payload = {"bundles": [{"bundle_id": "a", "contributed_components": "oops"}]}
+    payload = {
+        "schema_version": "1.0",
+        "bundles": [
+            {"bundle_id": "a", "version": "1.0.0", "contributed_components": "oops"}
+        ],
+    }
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(BundlerError, match="'contributed_components' must be a list"):
         load_records(tmp_path)
@@ -115,9 +120,14 @@ def test_load_records_rejects_unknown_component_kind(tmp_path: Path):
     (tmp_path / ".specify").mkdir()
     path = records_path(tmp_path)
     payload = {
+        "schema_version": "1.0",
         "bundles": [
-            {"bundle_id": "a", "contributed_components": [{"kind": "bogus", "id": "x"}]}
-        ]
+            {
+                "bundle_id": "a",
+                "version": "1.0.0",
+                "contributed_components": [{"kind": "bogus", "id": "x"}],
+            }
+        ],
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(BundlerError, match="must be one of"):
@@ -128,10 +138,53 @@ def test_load_records_rejects_component_missing_id(tmp_path: Path):
     (tmp_path / ".specify").mkdir()
     path = records_path(tmp_path)
     payload = {
+        "schema_version": "1.0",
         "bundles": [
-            {"bundle_id": "a", "contributed_components": [{"kind": "presets", "id": ""}]}
-        ]
+            {
+                "bundle_id": "a",
+                "version": "1.0.0",
+                "contributed_components": [{"kind": "presets", "id": ""}],
+            }
+        ],
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(BundlerError, match="missing its 'id'"):
         load_records(tmp_path)
+
+
+def test_load_records_rejects_missing_schema_version(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    records_path(tmp_path).write_text(json.dumps({"bundles": []}), encoding="utf-8")
+    with pytest.raises(BundlerError, match="missing 'schema_version'"):
+        load_records(tmp_path)
+
+
+def test_load_records_rejects_unknown_schema_version(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    payload = {"schema_version": "2.0", "bundles": []}
+    records_path(tmp_path).write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(BundlerError, match="Unsupported records schema version"):
+        load_records(tmp_path)
+
+
+def test_load_records_rejects_record_missing_bundle_id(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    payload = {"schema_version": "1.0", "bundles": [{"version": "1.0.0"}]}
+    records_path(tmp_path).write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(BundlerError, match="missing its 'bundle_id'"):
+        load_records(tmp_path)
+
+
+def test_load_records_rejects_record_missing_version(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    payload = {"schema_version": "1.0", "bundles": [{"bundle_id": "a"}]}
+    records_path(tmp_path).write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(BundlerError, match="missing its 'version'"):
+        load_records(tmp_path)
+
+
+def test_load_records_accepts_forward_compatible_minor_schema(tmp_path: Path):
+    (tmp_path / ".specify").mkdir()
+    payload = {"schema_version": "1.5", "bundles": []}
+    records_path(tmp_path).write_text(json.dumps(payload), encoding="utf-8")
+    assert load_records(tmp_path) == []
