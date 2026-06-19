@@ -233,3 +233,28 @@ def test_ps_ignores_newer_stale_plan_when_feature_json_present(tmp_path: Path) -
     ctx = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
     assert "specs/001-active/plan.md" in ctx
     assert "specs/000-stale/plan.md" not in ctx
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_ps_absolute_feature_dir_outside_project_root(tmp_path: Path) -> None:
+    """PowerShell: absolute feature_directory outside project root → absolute path preserved."""
+    project = tmp_path / "project"
+    external = tmp_path / "external" / "001-feature"
+    project.mkdir()
+    external.mkdir(parents=True)
+    (external / "plan.md").write_text("# plan\n", encoding="utf-8")
+
+    _setup_project(project)
+    _write_feature_json(project, str(external))
+
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(UPDATE_AGENT_CTX_PS)],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    ctx = (project / "CLAUDE.md").read_text(encoding="utf-8")
+    assert external.resolve().as_posix() + "/plan.md" in ctx
