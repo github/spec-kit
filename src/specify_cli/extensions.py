@@ -1716,37 +1716,73 @@ class ExtensionManager:
                 continue
 
             ext_dir = self.extensions_dir / ext_id
-            updates: Dict[str, Any] = {}
 
-            if agent_config and not skills_mode_active:
-                registered = registrar.register_commands_for_agent(
-                    agent_name, manifest, ext_dir, self.project_root
-                )
-                registered_commands = metadata.get("registered_commands", {})
-                if not isinstance(registered_commands, dict):
-                    registered_commands = {}
-                new_registered = copy.deepcopy(registered_commands)
-                if registered:
-                    new_registered[agent_name] = registered
+            # Isolate per-extension failures: one extension that fails to
+            # register (e.g. an OSError writing a command file) must not abort
+            # registration of the remaining enabled extensions for this agent.
+            try:
+                updates: Dict[str, Any] = {}
+
+                if agent_config and not skills_mode_active:
+                    registered = registrar.register_commands_for_agent(
+                        agent_name, manifest, ext_dir, self.project_root
+                    )
+                    registered_commands = metadata.get("registered_commands", {})
+                    if not isinstance(registered_commands, dict):
+                        registered_commands = {}
+                    new_registered = copy.deepcopy(registered_commands)
+                    if registered:
+                        new_registered[agent_name] = registered
+                    else:
+                        # Registration returned empty list (e.g., corrupted
+                        # manifest pointing at missing command files).  Clear
+                        # stale entry so later cleanup doesn't try to remove
+                        # files that were never written.
+                        new_registered.pop(agent_name, None)
+                    if new_registered != registered_commands:
+                        updates["registered_commands"] = new_registered
+
+                try:
+                    registered_skills = self._register_extension_skills(manifest, ext_dir)
+                except Exception as skills_err:
+                    # Skills are a companion artifact.  If command registration
+                    # already succeeded, still persist it so later cleanup can
+                    # find those command files.
+                    from . import _print_cli_warning
+
+                    _print_cli_warning(
+                        "register extension skills for",
+                        "extension",
+                        ext_id,
+                        skills_err,
+                        continuing=(
+                            "Continuing with available registration results for this "
+                            "extension and the remaining extensions."
+                        ),
+                    )
                 else:
-                    # Registration returned empty list (e.g., corrupted
-                    # manifest pointing at missing command files).  Clear
-                    # stale entry so later cleanup doesn't try to remove
-                    # files that were never written.
-                    new_registered.pop(agent_name, None)
-                if new_registered != registered_commands:
-                    updates["registered_commands"] = new_registered
+                    if registered_skills:
+                        existing_skills = self._valid_name_list(
+                            metadata.get("registered_skills", [])
+                        )
+                        merged_skills = list(dict.fromkeys(existing_skills + registered_skills))
+                        updates["registered_skills"] = merged_skills
 
-            registered_skills = self._register_extension_skills(manifest, ext_dir)
-            if registered_skills:
-                existing_skills = self._valid_name_list(
-                    metadata.get("registered_skills", [])
+                if updates:
+                    self.registry.update(ext_id, updates)
+            except Exception as ext_err:
+                # Best-effort per extension: warn and move on so a single bad
+                # extension cannot silently drop the others. See #2950.
+                from . import _print_cli_warning
+
+                _print_cli_warning(
+                    "register extension artifacts for",
+                    "extension",
+                    ext_id,
+                    ext_err,
+                    continuing="Continuing with the remaining extensions.",
                 )
-                merged_skills = list(dict.fromkeys(existing_skills + registered_skills))
-                updates["registered_skills"] = merged_skills
-
-            if updates:
-                self.registry.update(ext_id, updates)
+                continue
 
     def list_installed(self) -> List[Dict[str, Any]]:
         """List all installed extensions with metadata.
