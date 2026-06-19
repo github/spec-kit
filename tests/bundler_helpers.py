@@ -99,6 +99,7 @@ class FakeInstaller:
         self.installed: set[tuple[str, str]] = set()
         self.install_calls: list[tuple[str, str]] = []
         self.remove_calls: list[tuple[str, str]] = []
+        self.refresh_calls: list[tuple[str, str]] = []
         self._fail_on = fail_on
 
     def _key(self, component: ComponentRef) -> tuple[str, str]:
@@ -118,3 +119,7 @@ class FakeInstaller:
     def remove(self, project_root: Path, component: ComponentRef) -> None:
         self.remove_calls.append(self._key(component))
         self.installed.discard(self._key(component))
+
+    def refresh(self, project_root: Path, component: ComponentRef) -> None:
+        self.refresh_calls.append(self._key(component))
+        self.installed.add(self._key(component))

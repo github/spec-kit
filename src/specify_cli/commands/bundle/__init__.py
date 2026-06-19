@@ -54,6 +54,60 @@ def _speckit_version() -> str:
     return get_speckit_version()
 
 
+def _default_script_type() -> str:
+    """OS-appropriate default script flavor (FR-013)."""
+    import os
+
+    return "ps" if os.name == "nt" else "sh"
+
+
+def _run_init(integration: str, *, script_type: str) -> None:
+    """Idempotently scaffold a Spec Kit project here via the existing ``init`` machinery.
+
+    Reuses the real ``specify init`` command callback in-process (Principle I)
+    with ``--here --force`` so it is non-interactive and merges into the current
+    directory.
+    """
+    from ... import app
+
+    init_cb = next(
+        c.callback
+        for c in app.registered_commands
+        if c.callback and c.callback.__name__ == "init"
+    )
+    try:
+        init_cb(
+            project_name=None,
+            script_type=script_type,
+            ignore_agent_tools=True,
+            here=True,
+            force=True,
+            skip_tls=False,
+            debug=False,
+            github_token=None,
+            offline=False,
+            preset=None,
+            integration=integration,
+            integration_options=None,
+        )
+    except typer.Exit as exc:
+        if exc.exit_code:
+            raise BundlerError(
+                f"Failed to initialize a Spec Kit project (integration '{integration}')."
+            ) from exc
+
+
+def _resolve_init_integration(override: str | None, manifest) -> str:
+    """Precedence (FR-013): explicit override → bundle-declared → default."""
+    from ..._agent_config import DEFAULT_INIT_INTEGRATION
+
+    if override:
+        return override
+    if manifest is not None and manifest.integration is not None:
+        return manifest.integration.id
+    return DEFAULT_INIT_INTEGRATION
+
+
 # ===== Consume =====
 
 
@@ -118,9 +172,18 @@ def bundle_info(
         project_root = require_project_root()
         stack = _build_stack(project_root, offline=offline)
         resolved = stack.resolve(bundle_id)
+        manifest = None
+        if resolved.install_allowed:
+            try:
+                manifest = _download_manifest(resolved, offline=offline)
+            except BundlerError:
+                manifest = None  # remote/undownloadable: fall back to provides counts
     except BundlerError as exc:
         _fail(str(exc))
         return
+
+    overlaps = _bundle_overlaps(project_root, manifest, offline=offline)
+    components = _manifest_component_view(manifest)
 
     entry = resolved.entry
     if as_json:
@@ -137,6 +200,9 @@ def bundle_info(
             "provides": entry.provides,
             "requires": {"speckit_version": entry.requires_speckit_version},
             "verified": entry.verified,
+            "integration": (manifest.integration.id if manifest and manifest.integration else None),
+            "components": components,
+            "overlaps": overlaps,
         }
         print(_json.dumps(payload, indent=2))
         return
@@ -148,11 +214,30 @@ def bundle_info(
     console.print(f"  Source: {resolved.source.id} ({resolved.source.install_policy.value})")
     if entry.requires_speckit_version:
         console.print(f"  Requires Spec Kit: {entry.requires_speckit_version}")
-    console.print("\n  [bold]Provides:[/bold]")
-    for kind in ("extensions", "presets", "steps", "workflows"):
-        count = entry.provides.get(kind, 0)
-        if count:
-            console.print(f"    {kind}: {count}")
+    if manifest and manifest.integration:
+        console.print(f"  Integration: {manifest.integration.id}")
+
+    if components:
+        console.print("\n  [bold]Components[/bold] (added on install):")
+        for kind in ("extensions", "presets", "steps", "workflows"):
+            items = [c for c in components if c["kind"] == kind]
+            if not items:
+                continue
+            console.print(f"    [bold]{kind}:[/bold]")
+            for item in items:
+                console.print(f"      - {_format_component(item)}")
+    else:
+        console.print("\n  [bold]Provides:[/bold]")
+        for kind in ("extensions", "presets", "steps", "workflows"):
+            count = entry.provides.get(kind, 0)
+            if count:
+                console.print(f"    {kind}: {count}")
+
+    if overlaps:
+        console.print("\n  [yellow]Overlaps with already-installed bundles:[/yellow]")
+        for overlap in overlaps:
+            console.print(f"    [yellow]-[/yellow] {overlap}")
+
     if not resolved.install_allowed:
         console.print(
             "\n  [yellow]This source is discovery-only; the bundle cannot be "
@@ -207,17 +292,18 @@ def bundle_install(
     sources install directly without consulting the catalog stack.
     """
     try:
-        project_root = require_project_root()
-
+        from ...bundler.lib.project import find_project_root
         from ...bundler.services.adapters import DefaultPrimitiveInstaller
         from ...bundler.services.installer import install_bundle
         from ...bundler.services.resolver import resolve_install_plan
+
+        project_root = find_project_root()
 
         local_manifest = _local_manifest_source(bundle_id)
         if local_manifest is not None:
             manifest = local_manifest
         else:
-            stack = _build_stack(project_root, offline=offline)
+            stack = _build_stack(project_root or Path.cwd(), offline=offline)
             resolved = stack.resolve(bundle_id)
 
             if not resolved.install_allowed:
@@ -226,6 +312,18 @@ def bundle_install(
                     f"('{resolved.source.id}'); it cannot be installed from there."
                 )
             manifest = _download_manifest(resolved, offline=offline)
+
+        if project_root is None:
+            init_integration = _resolve_init_integration(integration, manifest)
+            console.print(
+                f"[cyan]No Spec Kit project here; initializing with integration "
+                f"'{init_integration}'…[/cyan]"
+            )
+            _run_init(init_integration, script_type=_default_script_type())
+            project_root = require_project_root()
+
+        for overlap in _bundle_overlaps(project_root, manifest, offline=offline):
+            console.print(f"[yellow]![/yellow] {overlap}")
 
         plan = resolve_install_plan(
             manifest,
@@ -288,7 +386,7 @@ def bundle_update(
                 speckit_version=_speckit_version(),
                 active_integration=active_integration(project_root),
             )
-            install_bundle(project_root, plan, installer, manifest=manifest)
+            install_bundle(project_root, plan, installer, manifest=manifest, refresh=True)
             console.print(f"[green]✓[/green] Updated '{target}' to v{plan.version}.")
     except BundlerError as exc:
         _fail(str(exc))
@@ -324,20 +422,32 @@ def bundle_validate(
     path: Path = typer.Option(
         None, "--path", help="Bundle directory or bundle.yml (default: cwd)"
     ),
+    offline: bool = typer.Option(
+        False,
+        "--offline",
+        help="Do not access catalogs; verify references against bundled/installed only",
+    ),
 ) -> None:
     """Report whether the manifest is well-formed and references resolve."""
     try:
         manifest_path = _resolve_manifest_path(path)
+        from ...bundler.lib.project import find_project_root
         from ...bundler.models.manifest import BundleManifest
+        from ...bundler.services.references import make_reference_checker
         from ...bundler.services.validator import validate_manifest
 
         manifest = BundleManifest.from_file(manifest_path)
-        report = validate_manifest(manifest)
+        ref_root = find_project_root(manifest_path.parent) or Path.cwd()
+        ref_warnings: list[str] = []
+        checker = make_reference_checker(
+            ref_root, allow_network=not offline, warnings=ref_warnings
+        )
+        report = validate_manifest(manifest, reference_checker=checker)
     except BundlerError as exc:
         _fail(str(exc))
         return
 
-    for warning in report.warnings:
+    for warning in [*report.warnings, *ref_warnings]:
         console.print(f"[yellow]![/yellow] {warning}")
     if not report.ok:
         console.print("[red]Manifest is invalid:[/red]")
@@ -381,15 +491,21 @@ def bundle_init(
     """Ensure the project is initialized (idempotent), then optionally install a bundle."""
     from ...bundler.lib.project import find_project_root
 
-    project_root = find_project_root()
-    if project_root is None:
-        _fail(
-            "This directory is not a Spec Kit project. Run "
-            "'specify init --here' first, then 'specify bundle install <id>'."
-        )
+    try:
+        project_root = find_project_root()
+        if project_root is None:
+            init_integration = _resolve_init_integration(integration, None)
+            console.print(
+                f"[cyan]Initializing a Spec Kit project with integration "
+                f"'{init_integration}'…[/cyan]"
+            )
+            _run_init(init_integration, script_type=_default_script_type())
+            project_root = require_project_root()
+    except BundlerError as exc:
+        _fail(str(exc))
         return
 
-    console.print(f"[green]✓[/green] Spec Kit project detected at {project_root}.")
+    console.print(f"[green]✓[/green] Spec Kit project ready at {project_root}.")
     if bundle:
         bundle_install(bundle, integration=integration, offline=offline)
 
@@ -464,6 +580,54 @@ def catalog_remove(
 
 
 # ===== internal helpers =====
+
+
+def _manifest_component_view(manifest) -> list[dict]:
+    """Flatten a manifest's components to JSON-friendly dicts (id, version, ...)."""
+    if manifest is None:
+        return []
+    view: list[dict] = []
+    for component in manifest.components:
+        item = {
+            "kind": component.kind,
+            "id": component.id,
+            "version": component.version,
+        }
+        if component.priority is not None:
+            item["priority"] = component.priority
+        if component.strategy is not None:
+            item["strategy"] = component.strategy
+        view.append(item)
+    return view
+
+
+def _format_component(item: dict) -> str:
+    label = f"{item['id']} v{item['version']}" if item.get("version") else item["id"]
+    extras = []
+    if item.get("priority") is not None:
+        extras.append(f"priority={item['priority']}")
+    if item.get("strategy") is not None:
+        extras.append(f"strategy={item['strategy']}")
+    if extras:
+        label += f" ({', '.join(extras)})"
+    return label
+
+
+def _bundle_overlaps(project_root: Path, manifest, *, offline: bool) -> list[str]:
+    """Return informational overlaps between *manifest* and installed bundles."""
+    if manifest is None:
+        return []
+    try:
+        from ...bundler.services.conflict import detect_conflicts
+
+        report = detect_conflicts(
+            manifest,
+            active_integration(project_root),
+            load_records(project_root),
+        )
+        return list(report.overlaps)
+    except BundlerError:
+        return []
 
 
 def _local_manifest_source(arg: str):
