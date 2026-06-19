@@ -2970,30 +2970,44 @@ def workflow_run(
         # ``--json`` consumer actually wants.
         console.print("[bold yellow]DRY RUN — no AI invocation will occur[/bold yellow]\n")
 
-    try:
-        with _stdout_to_stderr_when(json_output):
+    # The redirect must enclose *both* the engine call and the
+    # exception handlers below: the previous shape raised out of
+    # ``_stdout_to_stderr_when``'s ``with`` block before the
+    # redirect's ``finally`` ran, then printed ``[red]Workflow
+    # failed:[/red] ...`` to stdout — corrupting the JSON contract
+    # under ``--json``. Wrapping both halves keeps any Rich-formatted
+    # error message on stderr in JSON mode (and on the terminal in
+    # non-JSON mode, where ``_stdout_to_stderr_when`` is a no-op).
+    # ``typer.Exit(1)`` is a regular exception that propagates after
+    # the redirect's ``finally`` restores stdout, so we never reach
+    # the post-with code on the failure path.
+    with _stdout_to_stderr_when(json_output):
+        try:
             state = engine.execute(definition, inputs, dry_run=dry_run)
-    except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        # When a step throws during template resolution in --dry-run mode,
-        # any previews already resolved by earlier steps are still the
-        # most useful debug signal we can offer — surface them before
-        # exiting instead of silently dropping them. The engine attaches
-        # the partial state to the exception as ``exc.partial_state``.
-        # Skipped under --json so the contract of "stdout is a single
-        # JSON object" holds; in the JSON branch the partial state will
-        # still be on disk and ``workflow status <run_id>`` will show it.
-        partial = getattr(exc, "partial_state", None)
-        if partial is not None and dry_run and not json_output:
-            _print_dry_run_previews(partial)
-        raise typer.Exit(1)
-    except Exception as exc:
-        console.print(f"[red]Workflow failed:[/red] {exc}")
-        # See ValueError branch above — keep partial previews on failure.
-        partial = getattr(exc, "partial_state", None)
-        if partial is not None and dry_run and not json_output:
-            _print_dry_run_previews(partial)
-        raise typer.Exit(1)
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            # When a step throws during template resolution in
+            # --dry-run mode, any previews already resolved by
+            # earlier steps are still the most useful debug signal
+            # we can offer — surface them before exiting instead
+            # of silently dropping them. The engine attaches the
+            # partial state to the exception as
+            # ``exc.partial_state``. Skipped under --json so the
+            # contract of "stdout is a single JSON object" holds;
+            # in the JSON branch the partial state will still be
+            # on disk and ``workflow status <run_id>`` will show it.
+            partial = getattr(exc, "partial_state", None)
+            if partial is not None and dry_run and not json_output:
+                _print_dry_run_previews(partial)
+            raise typer.Exit(1)
+        except Exception as exc:
+            console.print(f"[red]Workflow failed:[/red] {exc}")
+            # See ValueError branch above — keep partial previews
+            # on failure.
+            partial = getattr(exc, "partial_state", None)
+            if partial is not None and dry_run and not json_output:
+                _print_dry_run_previews(partial)
+            raise typer.Exit(1)
 
     if json_output:
         _emit_workflow_json(_workflow_run_payload(state))

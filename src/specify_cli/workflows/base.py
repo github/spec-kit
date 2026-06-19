@@ -74,6 +74,18 @@ class StepContext:
     #: Current run ID.
     run_id: str | None = None
 
+    #: When ``True``, every step implementation must short-circuit and
+    #: return a synthetic ``StepResult`` carrying a preview of what would
+    #: have been dispatched — no subprocess, no CLI call, no network I/O.
+    #: Step implementations publish the preview on ``output["message"]``
+    #: (the original, so ``{{ steps.<id>.output.message }}`` keeps
+    #: resolving) and ``output["dry_run_message"]`` (the rendered
+    #: ``[DRY RUN] ...`` body, consumed by the CLI's preview loop).
+    #: Persisted on the ``RunState`` so :meth:`WorkflowEngine.resume` can
+    #: restore it after a process restart — an interrupted dry-run must
+    #: not silently turn into a real run.
+    dry_run: bool = False
+
 
 @dataclass
 class StepResult:

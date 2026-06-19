@@ -58,7 +58,12 @@ def temp_dir():
     """Create a temporary directory for tests."""
     tmpdir = tempfile.mkdtemp()
     yield Path(tmpdir)
-    shutil.rmtree(tmpdir)
+    # ``ignore_errors=True`` so a file still locked by another process
+    # (most commonly on Windows, where AV scanners briefly hold a
+    # handle on freshly created binaries in ``tmp_path``) doesn't fail
+    # the test's teardown — the OS will reap the directory on the next
+    # reboot. Without this, a benign race becomes a flaky CI failure.
+    shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 @pytest.fixture

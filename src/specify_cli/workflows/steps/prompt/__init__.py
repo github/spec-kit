@@ -52,6 +52,34 @@ class PromptStep(StepBase):
         if model and isinstance(model, str) and "{{" in model:
             model = evaluate_expression(model, context)
 
+        # Dry-run: never invoke the integration CLI. Same contract as
+        # ``CommandStep`` — render the would-be prompt on both
+        # ``message`` (for downstream expression resolution) and
+        # ``dry_run_message`` (for the CLI preview loop). Without this
+        # short-circuit, a workflow with ``type: prompt`` would still
+        # invoke the AI in dry-run mode, defeating the entire
+        # ``--dry-run`` promise. See
+        # ``test_dry_run_prompt_short_circuits``.
+        if context.dry_run:
+            preview = f"DRY RUN: would send prompt to {integration!r}\n\n{prompt}"
+            return StepResult(
+                status=StepStatus.COMPLETED,
+                output={
+                    "prompt": prompt,
+                    "integration": integration,
+                    "model": model,
+                    # Real-run contract: dispatch and execute are both
+                    # ``True`` on a successful invocation. In dry-run
+                    # neither happened, so both are ``False``.
+                    "dispatched": False,
+                    "executed": False,
+                    "exit_code": 0,
+                    "dry_run": True,
+                    "message": preview,
+                    "dry_run_message": preview,
+                },
+            )
+
         # Attempt CLI dispatch
         dispatch_result = self._try_dispatch(
             prompt, integration, model, context
@@ -68,6 +96,7 @@ class PromptStep(StepBase):
             output["stdout"] = dispatch_result["stdout"]
             output["stderr"] = dispatch_result["stderr"]
             output["dispatched"] = True
+            output["executed"] = True
             if dispatch_result["exit_code"] != 0:
                 return StepResult(
                     status=StepStatus.FAILED,

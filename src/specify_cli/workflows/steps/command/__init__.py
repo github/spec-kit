@@ -53,8 +53,48 @@ class CommandStep(StepBase):
         if step_options:
             options.update(step_options)
 
-        # Attempt CLI dispatch
         args_str = str(resolved_input.get("args", ""))
+
+        # Dry-run: never invoke the integration CLI. Synthesize a
+        # ``COMPLETED`` result carrying the rendered dispatch preview so
+        # ``specify workflow run --dry-run`` can show what would have
+        # been sent. ``message`` stays user-facing (``DRY RUN: ...``) so
+        # downstream ``{{ steps.<id>.output.message }}`` resolves; the
+        # same body is duplicated on ``dry_run_message`` for the CLI's
+        # preview loop. Mirrors the same contract used by ``PromptStep``
+        # and ``GateStep`` so the CLI never has to special-case step
+        # types. See ``test_dry_run_returns_completed_without_dispatch``.
+        if context.dry_run:
+            preview = (
+                f"DRY RUN: would invoke {command!r} "
+                f"(integration={integration!r}, model={model!r}, "
+                f"args={args_str!r})"
+            )
+            return StepResult(
+                status=StepStatus.COMPLETED,
+                output={
+                    "command": command,
+                    "integration": integration,
+                    "model": model,
+                    "options": options,
+                    "input": resolved_input,
+                    # Dispatch contract: a real run would have invoked
+                    # the CLI; in dry-run mode we did not, so both
+                    # ``dispatched`` and ``executed`` are ``False``.
+                    # ``invoke_command`` preserves the command name so
+                    # the CLI's preview loop can label the preview
+                    # block even when the integration is unknown.
+                    "dispatched": False,
+                    "executed": False,
+                    "exit_code": 0,
+                    "invoke_command": command,
+                    "dry_run": True,
+                    "message": preview,
+                    "dry_run_message": preview,
+                },
+            )
+
+        # Attempt CLI dispatch
         dispatch_result = self._try_dispatch(
             command, integration, model, args_str, context
         )
@@ -72,6 +112,12 @@ class CommandStep(StepBase):
             output["stdout"] = dispatch_result["stdout"]
             output["stderr"] = dispatch_result["stderr"]
             output["dispatched"] = True
+            # Real runs must set ``executed=True`` so downstream
+            # ``{{ steps.<id>.output.executed }}`` resolves to truthy —
+            # the boolean is the documented signal that a real
+            # invocation occurred. The dry-run branch above is the only
+            # path that sets ``executed=False`` for this step type.
+            output["executed"] = True
             if dispatch_result["exit_code"] != 0:
                 return StepResult(
                     status=StepStatus.FAILED,

@@ -102,6 +102,12 @@ class TestStepRegistry:
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
             "while", "do-while", "fan-out", "fan-in",
+            # ``init`` is a built-in step type registered by
+            # ``_register_builtin_steps`` for bootstrapping a project
+            # like ``specify init`` does. Asserting it here guards
+            # against an accidental refactor that drops the import
+            # (the registration is a side effect, so a missed import
+            # silently shrinks the registry without any test failure).
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 

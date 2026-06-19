@@ -16,6 +16,57 @@ from specify_cli.workflows.expressions import evaluate_expression
 #: contents and the path itself — so neither can inject ANSI/terminal escapes.
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")
 
+#: Choices that, if returned by the gate, abort or skip the run. The
+#: dry-run branch must not pre-select one of these (see
+#: ``_first_non_sentinel``) so a downstream ``if`` doesn't accidentally
+#: follow a sentinel that was chosen on the user's behalf.
+_REJECT_SENTINELS = frozenset({"reject", "abort"})
+
+
+def _coerce_options(raw: object) -> list[str]:
+    """Strictly normalize ``options`` to a ``list[str]`` of valid choices.
+
+    Only a list/tuple of strings is treated as valid input — every other
+    shape (``None``, string, dict, scalar, sequence of non-strings) is
+    coerced to an empty list so the gate can fail loudly instead of
+    silently inheriting an author's typo. ``list[bool]`` and
+    ``list[int]`` are rejected on purpose: a workflow that bypassed
+    validation must not pass through with ``['True', 'False']`` as
+    option labels, since the rendered prompt would expose Python's
+    ``repr`` strings instead of author intent.
+
+    An empty list is the documented signal that the gate has no
+    choices — the dry-run path leaves ``choice`` as ``None`` and the
+    non-dry-run interactive path emits a clear ``FAILURE`` instead of
+    indexing into ``[]`` and crashing with a confusing
+    ``Choose [1-0]`` prompt.
+    """
+    if isinstance(raw, (list, tuple)):
+        coerced: list[str] = []
+        for item in raw:
+            if isinstance(item, str) and item:
+                coerced.append(item)
+        return coerced
+    # Anything else — ``None``, ``str``, ``dict``, ``int``, ``bool`` —
+    # is invalid. The validation layer already rejects these shapes
+    # for the real-run path; this defensive coercion ensures a workflow
+    # that bypassed validation does not crash the prompt loop.
+    return []
+
+
+def _first_non_sentinel(options: list[str]) -> str | None:
+    """Return the first ``options`` entry that is not a reject/abort sentinel.
+
+    Used by the dry-run branch so a synthetic ``choice`` doesn't
+    unintentionally steer downstream branching into a reject path. If
+    every option is a sentinel — an authoring mistake, but one the gate
+    must not crash on — return ``None`` (neutral default).
+    """
+    for option in options:
+        if isinstance(option, str) and option.lower() not in _REJECT_SENTINELS:
+            return option
+    return None
+
 
 class GateStep(StepBase):
     """Interactive review gate.
@@ -40,7 +91,13 @@ class GateStep(StepBase):
         if isinstance(message, str) and "{{" in message:
             message = evaluate_expression(message, context)
 
-        options = config.get("options", ["approve", "reject"])
+        # ``options`` is normalized defensively even on the non-dry-run
+        # path: a workflow that bypassed validation can pass strings,
+        # dicts, scalars, or non-string Sequences. Coercing here keeps
+        # the interactive branch honest (no IndexError on a string)
+        # without changing the validated happy path. Mirrors the same
+        # normalization used by the dry-run branch below.
+        options = _coerce_options(config.get("options", ["approve", "reject"]))
         on_reject = config.get("on_reject", "abort")
 
         show_file = config.get("show_file")
@@ -61,9 +118,54 @@ class GateStep(StepBase):
             "choice": None,
         }
 
+        # Dry-run: never pause for interactive input. The original
+        # ``message`` is preserved verbatim on ``output["message"]`` so
+        # downstream ``{{ steps.<id>.output.message }}`` references
+        # resolve to the gate prompt unchanged; the ``[DRY RUN]`` body
+        # is duplicated on ``output["dry_run_message"]`` for the CLI's
+        # preview loop. ``choice`` is the first non-reject/abort option
+        # so a downstream ``if`` doesn't accidentally follow a reject
+        # sentinel; if every option is a sentinel we leave ``choice``
+        # ``None`` so a downstream gate defaults to neutral.
+        # See ``test_dry_run_skips_interactive_gate``,
+        # ``test_dry_run_accepts_tuple_options``, and
+        # ``test_dry_run_skips_reject_sentinels_for_choice``.
+        if context.dry_run:
+            choice = _first_non_sentinel(options)
+            preview = f"[DRY RUN] Gate: {message}"
+            return StepResult(
+                status=StepStatus.COMPLETED,
+                output={
+                    "message": message,
+                    "options": options,
+                    "on_reject": on_reject,
+                    "show_file": show_file,
+                    "choice": choice,
+                    "dry_run": True,
+                    "dry_run_message": preview,
+                },
+            )
+
         # Non-interactive: pause for later resume (the file is not read here)
         if not sys.stdin.isatty():
             return StepResult(status=StepStatus.PAUSED, output=output)
+
+        # Interactive with no options: a workflow that bypassed validation
+        # can hand us ``options=None`` (normalized to ``[]``). Indexing
+        # into an empty list would emit ``Choose [1-0]:`` and crash the
+        # gate on the first ``int(raw)``. Fail loudly instead so the
+        # operator sees the authoring mistake on stdout, not a stack
+        # trace. ``output`` carries the empty ``options`` so the engine
+        # can still record what the gate saw.
+        if not options:
+            return StepResult(
+                status=StepStatus.FAILED,
+                output=output,
+                error=(
+                    f"Gate {config.get('id', '?')!r} has no options — "
+                    "interactive review requires at least one choice."
+                ),
+            )
 
         # Interactive: prompt the user. ``show_file`` contents are folded
         # into the displayed message so the operator can review the

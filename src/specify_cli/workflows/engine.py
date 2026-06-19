@@ -313,6 +313,7 @@ class RunState:
         run_id: str | None = None,
         workflow_id: str = "",
         project_root: Path | None = None,
+        dry_run: bool = False,
     ) -> None:
         # ``run_id is None`` (omitted) → auto-generate. An explicit empty
         # string is *not* the same as "omitted" and must be validated like
@@ -334,6 +335,13 @@ class RunState:
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
         self.log_entries: list[dict[str, Any]] = []
+        # Persisted into ``state.json`` (and restored by :meth:`load`) so
+        # :meth:`WorkflowEngine.resume` can rebuild the ``StepContext``
+        # with the same ``dry_run`` flag. Without persistence, an
+        # interrupted dry-run would silently turn into a real run after
+        # a process restart, which is the exact bug the CLI's
+        # ``--dry-run`` promise is meant to prevent.
+        self.dry_run = dry_run
 
     @property
     def runs_dir(self) -> Path:
@@ -354,6 +362,12 @@ class RunState:
             "step_results": self.step_results,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            # Persisted with a default of ``False`` so state files written
+            # by older releases (before ``dry_run`` was added) still load
+            # — ``get(..., False)`` makes the older format behave
+            # identically to a fresh non-dry-run run. Older runs were
+            # never dry-runs, so the default is safe.
+            "dry_run": self.dry_run,
         }
         with open(runs_dir / "state.json", "w", encoding="utf-8") as f:
             json.dump(state_data, f, indent=2)
@@ -398,6 +412,11 @@ class RunState:
         state.step_results = state_data.get("step_results", {})
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
+        # ``dry_run`` is the load-bearing field for ``resume()``'s
+        # ``StepContext`` rebuild — without restoring it, a resumed
+        # dry-run would step right past every short-circuit and invoke
+        # the real CLI. See ``test_resume_restores_dry_run``.
+        state.dry_run = state_data.get("dry_run", False)
 
         inputs_path = runs_dir / "inputs.json"
         if inputs_path.exists():
@@ -478,6 +497,7 @@ class WorkflowEngine:
         definition: WorkflowDefinition,
         inputs: dict[str, Any] | None = None,
         run_id: str | None = None,
+        dry_run: bool = False,
     ) -> RunState:
         """Execute a workflow definition.
 
@@ -506,6 +526,7 @@ class WorkflowEngine:
             run_id=effective_run_id,
             workflow_id=definition.id,
             project_root=self.project_root,
+            dry_run=dry_run,
         )
 
         # Persist a copy of the workflow definition so resume can
@@ -531,6 +552,15 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            # The ``dry_run`` flag travels into ``StepContext`` so each
+            # step implementation can short-circuit independently — see
+            # ``CommandStep.execute`` / ``PromptStep.execute`` /
+            # ``GateStep.execute``. Keeping it on the per-call context
+            # (rather than reading it off ``RunState`` inside each
+            # step) means library consumers that build a ``StepContext``
+            # directly (e.g. tests, custom runners) get the same
+            # contract without needing a ``RunState``.
+            dry_run=dry_run,
         )
 
         # Execute steps
@@ -594,7 +624,11 @@ class WorkflowEngine:
             merged = {**state.inputs, **inputs}
             state.inputs = self._resolve_inputs(definition, merged)
 
-        # Restore context
+        # Restore context — ``dry_run`` is read from the persisted
+        # ``RunState`` (not from the caller's flag, since ``resume`` has
+        # no caller-supplied dry-run flag) so a paused dry-run stays a
+        # dry-run after a process restart. Mirrors the same plumbing in
+        # :meth:`execute`.
         context = StepContext(
             inputs=state.inputs,
             steps=state.step_results,
@@ -603,6 +637,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            dry_run=state.dry_run,
         )
 
         from . import STEP_REGISTRY
