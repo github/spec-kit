@@ -47,6 +47,21 @@ def _write_feature_json(root: Path, feature_directory: str) -> None:
     )
 
 
+def _to_bash_path(p: Path) -> str:
+    """Return a path string usable inside Git-for-Windows bash.
+
+    On Windows, Python paths use drive letters (C:\\...) but Git bash (MSYS2)
+    expects POSIX-style paths (/c/...). On all other platforms the path is
+    returned unchanged.
+    """
+    if os.name != "nt":
+        return str(p.resolve())
+    posix = p.resolve().as_posix()  # C:/foo/bar
+    if len(posix) >= 2 and posix[1] == ":":
+        return "/" + posix[0].lower() + posix[2:]
+    return posix
+
+
 def _make_plan(root: Path, feature_dir: str, content: str = "# plan\n") -> Path:
     p = root / feature_dir / "plan.md"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +167,7 @@ def test_bash_absolute_feature_dir_under_project_root(tmp_path: Path) -> None:
     os.utime(active, (now - 10, now - 10))
     os.utime(stale, (now, now))
     # Write absolute path to feature.json — mtime would pick 000-stale without it
-    _write_feature_json(tmp_path, str(tmp_path / "specs" / "001-active"))
+    _write_feature_json(tmp_path, _to_bash_path(tmp_path / "specs" / "001-active"))
 
     result = subprocess.run(
         ["bash", str(UPDATE_AGENT_CTX_SH)],
@@ -179,7 +194,7 @@ def test_bash_absolute_feature_dir_outside_project_root(tmp_path: Path) -> None:
     (external / "plan.md").write_text("# plan\n", encoding="utf-8")
 
     _setup_project(project)
-    _write_feature_json(project, str(external))
+    _write_feature_json(project, _to_bash_path(external))
 
     result = subprocess.run(
         ["bash", str(UPDATE_AGENT_CTX_SH)],
@@ -203,7 +218,7 @@ def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
     os.utime(active, (now - 10, now - 10))
     os.utime(stale, (now, now))
     # Write absolute path to feature.json — mtime would pick 000-stale without it
-    _write_feature_json(tmp_path, str(tmp_path / "specs" / "001-active"))
+    _write_feature_json(tmp_path, _to_bash_path(tmp_path / "specs" / "001-active"))
 
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
