@@ -1,21 +1,7 @@
 * text=auto eol=lf
 
 .github/workflows/*.lock.yml linguist-generated=true merge=ours -whitespace
-
-# Generated Spec Kit dogfooding scaffolding (scrubbed before merge): exclude
-# from git's whitespace checks (git diff --check / CI) since these are emitted
-# by `specify init` and not hand-edited.
-.specify/** -whitespace
-.github/agents/speckit.*.agent.md -whitespace
-.github/prompts/speckit.*.prompt.md -whitespace
-.github/copilot-instructions.md -whitespace
-# Retained (not scrubbed): the project constitution is the one dogfooding
-# artifact carried forward. Keep it exempt from whitespace checks so its
-# generated formatting does not trip git diff --check / CI.
+# The project constitution is the one dogfooding artifact carried forward.
+# Keep it exempt from git's whitespace checks (git diff --check / CI) since its
+# generated formatting is not hand-edited.
 .specify/memory/constitution.md -whitespace
-
-# Scope the specs exemption to the generated dogfooding feature dir only, so
-# any hand-authored specs elsewhere keep full whitespace validation. This
-# directory is part of the dogfooding scaffolding and is scrubbed before merge
-# (not retained), so exempting it does not weaken checks for kept docs.
-specs/001-spec-kit-bundler/** -whitespace
