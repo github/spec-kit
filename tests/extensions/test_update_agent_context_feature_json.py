@@ -138,6 +138,52 @@ def test_bash_falls_back_to_mtime_when_plan_not_yet_created(tmp_path: Path) -> N
     assert "specs/000-old/plan.md" in ctx
 
 
+@requires_bash
+def test_bash_absolute_feature_dir_under_project_root(tmp_path: Path) -> None:
+    """Absolute feature_directory under PROJECT_ROOT → project-relative path in context."""
+    _setup_project(tmp_path)
+    _make_plan(tmp_path, "specs/001-active")
+    # Write absolute path to feature.json
+    _write_feature_json(tmp_path, str(tmp_path / "specs" / "001-active"))
+
+    result = subprocess.run(
+        ["bash", str(UPDATE_AGENT_CTX_SH)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    ctx = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+    # Must be project-relative, not machine-specific absolute
+    assert "specs/001-active/plan.md" in ctx
+    assert str(tmp_path) not in ctx
+
+
+@requires_bash
+def test_bash_absolute_feature_dir_outside_project_root(tmp_path: Path) -> None:
+    """Absolute feature_directory outside PROJECT_ROOT → absolute path preserved in context."""
+    project = tmp_path / "project"
+    external = tmp_path / "external" / "001-feature"
+    project.mkdir()
+    external.mkdir(parents=True)
+    (external / "plan.md").write_text("# plan\n", encoding="utf-8")
+
+    _setup_project(project)
+    _write_feature_json(project, str(external))
+
+    result = subprocess.run(
+        ["bash", str(UPDATE_AGENT_CTX_SH)],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    ctx = (project / "CLAUDE.md").read_text(encoding="utf-8")
+    assert str(external) + "/plan.md" in ctx
+
+
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_uses_feature_json_when_plan_exists(tmp_path: Path) -> None:
     """PowerShell: feature.json points to the active feature; that plan is injected."""

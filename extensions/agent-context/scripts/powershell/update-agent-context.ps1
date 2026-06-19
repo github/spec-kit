@@ -325,7 +325,14 @@ if (-not $PlanPath) {
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1
             if ($candidate) {
-                $PlanPath = [System.IO.Path]::GetRelativePath($ProjectRoot, $candidate.FullName).Replace('\','/')
+                # GetRelativePath is .NET 5+ only; strip prefix manually for PS 5.1 compat.
+                $fullPath = $candidate.FullName.Replace('\', '/')
+                $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
+                if ($fullPath.StartsWith($normRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $PlanPath = $fullPath.Substring($normRoot.Length)
+                } else {
+                    $PlanPath = $fullPath
+                }
             }
         } catch {
             # Non-fatal: continue without a plan path.

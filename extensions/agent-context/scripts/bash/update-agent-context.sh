@@ -208,7 +208,7 @@ if [[ -z "$PLAN_PATH" ]]; then
     _feature_dir="$("$_python" - "$_feature_json" <<'PY'
 import sys, json
 try:
-    d = json.load(open(sys.argv[1]))
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
     print(d.get("feature_directory", ""))
 except Exception:
     print("")
