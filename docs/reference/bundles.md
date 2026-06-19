@@ -15,7 +15,7 @@ specify bundle search [query]
 | `--offline` | Do not access the network    |
 | `--json`    | Emit machine-readable JSON   |
 
-Searches all active catalogs for bundles matching the query. Without a query, lists every available bundle with its version, role, and source.
+Searches all active catalogs for bundles matching the query. Without a query, lists every available bundle with its version, role, source, and a trust indicator (`verified` for org-curated catalog entries, `community` otherwise) so you can judge trust before installing.
 
 ## Bundle Info
 
@@ -28,7 +28,7 @@ specify bundle info <bundle_id>
 | `--offline`  | Do not access the network         |
 | `--json`     | Emit machine-readable JSON        |
 
-Shows full metadata for a bundle along with the **fully expanded component set** it installs — every extension, preset, step, and workflow with its pinned version, plus preset priority and strategy. This preview is the same plan `install` applies, so you can see exactly what will be added before committing. Foreseeable overlaps with components already provided by installed bundles are surfaced here as well.
+Shows full metadata for a bundle along with the **fully expanded component set** it installs — every extension, preset, step, and workflow with its pinned version, plus preset priority and strategy. The output also includes a trust indicator (`verified` vs `community`) so you can judge trust before installing. This preview is the same plan `install` applies, so you can see exactly what will be added before committing. Foreseeable overlaps with components already provided by installed bundles are surfaced here as well.
 
 ## Install a Bundle
 
