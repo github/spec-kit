@@ -137,3 +137,21 @@ def test_build_refuses_missing_readme(tmp_path: Path):
     )
     with pytest.raises(BundlerError, match="README.md"):
         build_bundle(bundle, output_dir=tmp_path / "out")
+
+
+def test_asset_zip_starting_with_bundle_id_is_packaged(tmp_path: Path):
+    # A non-artifact asset whose name merely starts with the bundle id (but is
+    # not a semver-named build artifact) must still be included.
+    bundle = _make_bundle(tmp_path / "b", extra_files={"demo-bundle-assets.zip": "data"})
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = set(archive.namelist())
+    assert "demo-bundle-assets.zip" in names
+
+
+def test_prior_semver_artifact_is_excluded(tmp_path: Path):
+    bundle = _make_bundle(tmp_path / "b", extra_files={"demo-bundle-0.9.0.zip": "old"})
+    result = build_bundle(bundle, output_dir=bundle)
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = set(archive.namelist())
+    assert "demo-bundle-0.9.0.zip" not in names

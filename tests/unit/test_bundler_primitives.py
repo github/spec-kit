@@ -112,3 +112,22 @@ def test_workflow_version_mismatch_refuses(tmp_path: Path, monkeypatch):
     component = ComponentRef(kind="workflows", id="wf-a", version="0.3.0")
     with pytest.raises(BundlerError, match="pinned to version 0.3.0"):
         manager.install(component)
+
+
+def test_preset_install_preserves_explicit_zero_priority(tmp_path: Path, monkeypatch):
+    import specify_cli._assets as assets
+
+    calls = {}
+
+    class _FakeManager:
+        def install_from_directory(self, directory, speckit_version, priority):
+            calls["priority"] = priority
+
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda cid: tmp_path)
+
+    manager = primitive_manager("presets", tmp_path, allow_network=False)
+    manager._manager = _FakeManager()
+    manager.install(ComponentRef(kind="presets", id="p", priority=0))
+
+    # An explicit priority of 0 must be passed through, not replaced by default.
+    assert calls["priority"] == 0

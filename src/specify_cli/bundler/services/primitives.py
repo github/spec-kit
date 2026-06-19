@@ -130,7 +130,7 @@ class _PresetKindManager:
         from ..._assets import _locate_bundled_preset
 
         speckit_version = get_speckit_version()
-        priority = component.priority or DEFAULT_PRIORITY
+        priority = DEFAULT_PRIORITY if component.priority is None else component.priority
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None:
@@ -194,7 +194,7 @@ class _ExtensionKindManager:
         from ..._assets import _locate_bundled_extension
 
         speckit_version = get_speckit_version()
-        priority = component.priority or DEFAULT_PRIORITY
+        priority = DEFAULT_PRIORITY if component.priority is None else component.priority
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None:

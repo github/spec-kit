@@ -70,7 +70,12 @@ def build_bundle(
     skip_dir = out_dir if out_dir != bundle_dir and _is_within(bundle_dir, out_dir) else None
     # Also skip any prior build artifact for this bundle (e.g. an older
     # <id>-<version>.zip sitting next to bundle.yml), not just the current one.
-    artifact_re = re.compile(rf"^{re.escape(manifest.bundle.id)}-.*\.zip$")
+    # Match only a semver-looking version segment so legitimate assets that
+    # merely start with the bundle id (e.g. <id>-assets.zip) are still packaged.
+    artifact_re = re.compile(
+        rf"^{re.escape(manifest.bundle.id)}-"
+        r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\.zip$"
+    )
     files = _collect_files(
         bundle_dir, skip=artifact_path, skip_dir=skip_dir, artifact_re=artifact_re
     )

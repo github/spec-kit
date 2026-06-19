@@ -16,6 +16,10 @@ from specify_cli.bundler.lib.versioning import is_semver, satisfies
     ("v1.2.3", True),
     ("not-a-version", False),
     ("", False),
+    # packaging.version.Version accepts these partial versions; SemVer must not.
+    ("1", False),
+    ("1.0", False),
+    ("1.2.3.4", False),
 ])
 def test_is_semver(value, expected):
     assert is_semver(value) is expected

@@ -58,10 +58,21 @@ def satisfies(installed: str, constraint: str) -> bool:
     return spec.contains(version, prereleases=True)
 
 
+_SEMVER_RE = re.compile(
+    r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+    r"(?:-(?:(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
+    r"(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
+    r"(?:\+(?:[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
+)
+
+
 def is_semver(value: str) -> bool:
-    """Return True if *value* parses as a valid version."""
-    try:
-        Version(_normalize_semver(value))
-        return True
-    except (InvalidVersion, TypeError):
-        return False
+    """Return True only for a full ``MAJOR.MINOR.PATCH`` SemVer string.
+
+    Stricter than ``packaging.version.Version``, which also accepts partial
+    versions like ``"1"`` or ``"1.0"``. An optional leading ``v`` is tolerated
+    (mirrors ``_normalize_semver``).
+    """
+    text = str(value)
+    core = text[1:] if text.startswith("v") else text
+    return bool(_SEMVER_RE.match(core))
