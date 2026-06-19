@@ -79,9 +79,11 @@ def test_bash_ignores_newer_stale_plan_when_feature_json_present(tmp_path: Path)
     _setup_project(tmp_path)
 
     # Create active feature plan first, then touch the stale one to make it newer.
-    _make_plan(tmp_path, "specs/001-active")
-    time.sleep(0.05)
-    _make_plan(tmp_path, "specs/000-stale")
+    active = _make_plan(tmp_path, "specs/001-active")
+    stale = _make_plan(tmp_path, "specs/000-stale")
+    now = time.time()
+    os.utime(active, (now - 10, now - 10))
+    os.utime(stale, (now, now))
 
     _write_feature_json(tmp_path, "specs/001-active")
 
