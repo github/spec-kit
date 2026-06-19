@@ -218,6 +218,7 @@ def test_info_resolves_local_zip_download_url(project: Path):
     (bundle_dir / "bundle.yml").write_text(
         yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
     )
+    (bundle_dir / "README.md").write_text("# Demo", encoding="utf-8")
     artifact = build_bundle(bundle_dir, output_dir=project / "dist").artifact_path
     catalog = project / "zip-catalog.json"
     write_catalog_file(

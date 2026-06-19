@@ -47,6 +47,7 @@ def test_build_refuses_invalid_manifest(tmp_path: Path):
     data = valid_manifest_dict()
     del data["bundle"]["license"]
     (bundle / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    (bundle / "README.md").write_text("# x", encoding="utf-8")
     with pytest.raises(BundlerError, match="validate"):
         build_bundle(bundle, output_dir=tmp_path / "out")
 
@@ -126,3 +127,13 @@ def test_unsafe_bundle_id_is_rejected_before_build(tmp_path: Path):
         build_bundle(bundle, output_dir=tmp_path / "out")
     # The traversal target must not have been written outside out_dir.
     assert not (tmp_path / "evil-1.2.0.zip").exists()
+
+
+def test_build_refuses_missing_readme(tmp_path: Path):
+    bundle = tmp_path / "b"
+    bundle.mkdir()
+    (bundle / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    with pytest.raises(BundlerError, match="README.md"):
+        build_bundle(bundle, output_dir=tmp_path / "out")

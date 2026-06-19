@@ -40,6 +40,14 @@ def build_bundle(
     if not manifest_path.exists():
         raise BundlerError(f"No bundle.yml found in '{bundle_dir}'.")
 
+    # The artifact contract requires a human-facing README.md alongside the
+    # manifest; refuse early rather than publish a bundle with no description.
+    if not (bundle_dir / "README.md").exists():
+        raise BundlerError(
+            f"No README.md found in '{bundle_dir}'. Every bundle must ship a "
+            "README.md describing it."
+        )
+
     manifest = BundleManifest.from_file(manifest_path)
     report = validate_manifest(manifest)
     if not report.ok:
