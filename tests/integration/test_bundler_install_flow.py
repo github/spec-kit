@@ -97,6 +97,21 @@ def test_remove_unknown_bundle_errors(tmp_path: Path):
         remove_bundle(tmp_path, "ghost", FakeInstaller())
 
 
+def test_remove_reports_uninstalled_not_installed(tmp_path: Path):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    result = remove_bundle(tmp_path, "demo-bundle", installer)
+
+    # Removal flows populate the dedicated ``uninstalled`` list; ``installed``
+    # stays empty so the result type is never ambiguous for callers.
+    assert result.installed == []
+    assert len(result.uninstalled) == 4
+    assert installer.installed == set()
+
+
 def test_refresh_reapplies_installed_components(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())

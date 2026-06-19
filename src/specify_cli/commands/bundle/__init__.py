@@ -432,7 +432,7 @@ def bundle_remove(
 
     console.print(
         f"[green]✓[/green] Removed '{result.bundle_id}' "
-        f"({len(result.installed)} uninstalled, {len(result.skipped)} kept for other bundles)."
+        f"({len(result.uninstalled)} uninstalled, {len(result.skipped)} kept for other bundles)."
     )
 
 

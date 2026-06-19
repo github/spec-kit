@@ -45,6 +45,7 @@ class InstallResult:
     installed: list[ComponentRef] = field(default_factory=list)
     skipped: list[ComponentRef] = field(default_factory=list)
     refreshed: list[ComponentRef] = field(default_factory=list)
+    uninstalled: list[ComponentRef] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
@@ -127,7 +128,7 @@ def remove_bundle(
             continue
         if installer.is_installed(project_root, component):
             installer.remove(project_root, component)
-        result.installed.append(component)
+        result.uninstalled.append(component)
 
     save_records(project_root, remove_record(records, bundle_id))
     return result
