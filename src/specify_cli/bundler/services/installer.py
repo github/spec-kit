@@ -44,10 +44,11 @@ class InstallResult:
     bundle_id: str
     installed: list[ComponentRef] = field(default_factory=list)
     skipped: list[ComponentRef] = field(default_factory=list)
+    refreshed: list[ComponentRef] = field(default_factory=list)
 
     @property
     def changed(self) -> bool:
-        return bool(self.installed)
+        return bool(self.installed or self.refreshed)
 
 
 def install_bundle(
@@ -55,8 +56,16 @@ def install_bundle(
     plan: InstallPlan,
     installer: PrimitiveInstaller,
     manifest=None,
+    refresh: bool = False,
 ) -> InstallResult:
-    """Execute *plan*, recording provenance. Idempotent and atomic on failure."""
+    """Execute *plan*, recording provenance. Idempotent and atomic on failure.
+
+    When *refresh* is True (used by ``specify bundle update``), components that
+    are already installed are re-applied through the primitive machinery so they
+    are brought up to the plan's pinned versions, rather than skipped. Primitive
+    config (e.g. preset priority overrides) is preserved by the underlying
+    machinery. Pre-existing components are never rolled back on failure.
+    """
     records = load_records(project_root)
 
     if manifest is not None:
@@ -69,7 +78,11 @@ def install_bundle(
     try:
         for component in plan.components:
             if installer.is_installed(project_root, component):
-                result.skipped.append(component)
+                if refresh:
+                    _refresh_component(project_root, installer, component)
+                    result.refreshed.append(component)
+                else:
+                    result.skipped.append(component)
                 continue
             installer.install(project_root, component)
             done.append(component)
@@ -118,6 +131,23 @@ def remove_bundle(
 
     save_records(project_root, remove_record(records, bundle_id))
     return result
+
+
+def _refresh_component(
+    project_root: Path,
+    installer: PrimitiveInstaller,
+    component: ComponentRef,
+) -> None:
+    """Re-apply an already-installed component to bring it up to its pinned version.
+
+    Prefers a primitive-provided ``refresh`` hook when available; otherwise falls
+    back to a re-install through the existing idempotent install path.
+    """
+    op = getattr(installer, "refresh", None)
+    if callable(op):
+        op(project_root, component)
+    else:
+        installer.install(project_root, component)
 
 
 def _rollback(

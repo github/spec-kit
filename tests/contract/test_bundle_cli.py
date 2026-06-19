@@ -94,8 +94,29 @@ def test_validate_accepts_valid_manifest(project: Path):
     (project / "bundle.yml").write_text(
         yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
     )
+    # Offline mode does not fail on references it cannot verify (synthetic ids
+    # here); they surface as warnings while structure is confirmed valid.
+    result = runner.invoke(app, ["bundle", "validate", "--offline"])
+    assert result.exit_code == 0, result.output
+    assert "valid" in result.output
+
+
+def test_validate_rejects_broken_reference(project: Path):
+    # Synthetic component ids resolve to nothing in any catalog → hard failure.
+    (project / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
     result = runner.invoke(app, ["bundle", "validate"])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
+    assert "preset-a" in result.output or "ext-a" in result.output
+
+
+def test_validate_accepts_bundled_reference(project: Path):
+    data = valid_manifest_dict()
+    data["provides"] = {"extensions": [{"id": "agent-context", "version": "1.0.0"}]}
+    (project / "bundle.yml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    result = runner.invoke(app, ["bundle", "validate"])
+    assert result.exit_code == 0, result.output
     assert "valid" in result.output
 
 
@@ -108,6 +129,36 @@ def test_build_produces_artifact(project: Path):
     assert result.exit_code == 0, result.output
     artifacts = list((project / "dist").glob("*.zip"))
     assert len(artifacts) == 1
+
+
+def test_info_expands_full_component_set(project: Path):
+    bundle_dir = project / "src-bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    catalog = project / "local-catalog.json"
+    entry = catalog_entry_dict(
+        "demo-bundle", download_url=str(bundle_dir / "bundle.yml")
+    )
+    write_catalog_file(catalog, {"demo-bundle": entry})
+    added = runner.invoke(
+        app, ["bundle", "catalog", "add", str(catalog), "--id", "local"]
+    )
+    assert added.exit_code == 0, added.output
+
+    result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    components = {(c["kind"], c["id"]): c for c in payload["components"]}
+    assert ("extensions", "ext-a") in components
+    preset = components[("presets", "preset-a")]
+    assert preset["version"] == "2.0.0"
+    assert preset["priority"] == 10
+    assert preset["strategy"] == "append"
+
+    text = runner.invoke(app, ["bundle", "info", "demo-bundle", "--offline"])
+    assert "preset-a v2.0.0" in text.output
 
 
 def test_install_refuses_discovery_only_source(project: Path, monkeypatch):

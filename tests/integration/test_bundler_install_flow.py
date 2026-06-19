@@ -95,3 +95,39 @@ def test_remove_unknown_bundle_errors(tmp_path: Path):
     make_project(tmp_path)
     with pytest.raises(BundlerError, match="not installed"):
         remove_bundle(tmp_path, "ghost", FakeInstaller())
+
+
+def test_refresh_reapplies_installed_components(tmp_path: Path):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    result = install_bundle(
+        tmp_path, _plan(manifest), installer, manifest=manifest, refresh=True
+    )
+
+    # With refresh, already-installed components are re-applied, not skipped.
+    assert result.skipped == []
+    assert len(result.refreshed) == 4
+    assert len(installer.refresh_calls) == 4
+    assert result.changed is True
+
+
+def test_refresh_falls_back_to_install_without_hook(tmp_path: Path):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+
+    class NoRefreshInstaller(FakeInstaller):
+        refresh = None  # type: ignore[assignment]
+
+    installer = NoRefreshInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    before = len(installer.install_calls)
+    result = install_bundle(
+        tmp_path, _plan(manifest), installer, manifest=manifest, refresh=True
+    )
+
+    # No refresh hook → re-install path keeps components current.
+    assert len(result.refreshed) == 4
+    assert len(installer.install_calls) == before + 4

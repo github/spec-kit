@@ -287,39 +287,39 @@ current code, appended as new tasks for `implement` to complete. Ordered
 CRITICAL → HIGH → MEDIUM. No existing task was modified and no code was changed
 by convergence itself.
 
-- [ ] T046 [CRITICAL] Add `docs/reference/bundles.md` documenting the `specify bundle`
+- [x] T046 [CRITICAL] Add `docs/reference/bundles.md` documenting the `specify bundle`
   command group (search, info, list, install, update, remove, validate, build,
   init, catalog list/add/remove), mirroring the sibling `presets.md` /
   `extensions.md` / `workflows.md` reference docs, and link it from
   `docs/reference/overview.md` per Constitution III (contradicts — a user-facing
   command group MUST be documented under `docs/reference/`).
-- [ ] T047 Wire a reference checker into `specify bundle validate` so every
+- [x] T047 Wire a reference checker into `specify bundle validate` so every
   declared component reference is resolved against bundled assets + the catalog
   stack; validation MUST fail and name the offending reference when one does not
   resolve, per FR-005 / SC-007 / US2 AC1 (partial — `bundle_validate` currently
   calls `validate_manifest` with no `reference_checker`, so broken references
   pass).
-- [ ] T048 Expand `specify bundle info` to download the resolved manifest and
+- [x] T048 Expand `specify bundle info` to download the resolved manifest and
   enumerate the full component set (each extension/preset/step/workflow with its
   pinned version, and preset priority + strategy) so inspection equals what
   install adds, per FR-009 / SC-002 / US3 AC2 (partial — `bundle_info` prints
   only `provides` counts from the catalog entry).
-- [ ] T049 Make `specify bundle install` ensure the project is initialized first,
+- [x] T049 Make `specify bundle install` ensure the project is initialized first,
   initializing it idempotently via the existing `specify init` machinery when the
   target is not yet a Spec Kit project, so a bundle install is a single operation
   from an uninitialized directory, per FR-012 / US1 AC1 (missing — install/init
   currently error via `require_project_root()` instead of initializing).
-- [ ] T050 Implement the integration/script-type precedence chain (explicit
+- [x] T050 Implement the integration/script-type precedence chain (explicit
   `--integration` override → the bundle's declared integration → default of
   Copilot + OS-appropriate script type) when driving init/install, per FR-013
   (partial — the bundle's declared integration is only used for clash detection,
   and no default is applied). Depends on T049.
-- [ ] T051 Surface foreseeable component overlaps to the user during `info` and
+- [x] T051 Surface foreseeable component overlaps to the user during `info` and
   `install` (e.g. two presets overriding the same template / a component already
   provided by an installed bundle), examining the fully expanded component set
   before installing, per FR-020 / US4 AC5 (partial — `detect_conflicts` computes
   `overlaps` but they are never printed).
-- [ ] T052 Make `specify bundle update` actually refresh each declared component
+- [x] T052 Make `specify bundle update` actually refresh each declared component
   through that component's normal update path instead of skipping already-installed
   components, while preserving primitive-level overrides, per FR-028 / FR-029 /
   US4 AC6 (partial — update re-runs `install_bundle`, which skips components whose
