@@ -1,0 +1,157 @@
+"""Installed-bundle records — provenance for precise list/remove/update.
+
+Records are stored as JSON at ``.specify/bundle-records.json``. Each record
+captures exactly which components a bundle contributed so removal touches only
+that bundle's components and never collateral (FR-022, SC-004).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from .. import BundlerError
+from ..lib.yamlio import dump_json, load_json
+from .manifest import ComponentRef
+
+RECORDS_FILENAME = "bundle-records.json"
+RECORDS_SCHEMA_VERSION = "1.0"
+
+
+@dataclass(frozen=True)
+class InstalledBundleRecord:
+    bundle_id: str
+    version: str
+    contributed_components: tuple[ComponentRef, ...]
+    installed_at: str
+
+    @classmethod
+    def create(
+        cls,
+        bundle_id: str,
+        version: str,
+        components: list[ComponentRef],
+        installed_at: str | None = None,
+    ) -> "InstalledBundleRecord":
+        return cls(
+            bundle_id=bundle_id,
+            version=version,
+            contributed_components=tuple(components),
+            installed_at=installed_at or _utc_now(),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bundle_id": self.bundle_id,
+            "version": self.version,
+            "installed_at": self.installed_at,
+            "contributed_components": [
+                _component_to_dict(c) for c in self.contributed_components
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "InstalledBundleRecord":
+        if not isinstance(data, dict):
+            raise BundlerError("Each installed-bundle record must be a mapping.")
+        return cls(
+            bundle_id=str(data.get("bundle_id", "")).strip(),
+            version=str(data.get("version", "")).strip(),
+            installed_at=str(data.get("installed_at", "")).strip(),
+            contributed_components=tuple(
+                _component_from_dict(c)
+                for c in (data.get("contributed_components") or [])
+            ),
+        )
+
+
+def records_path(project_root: Path) -> Path:
+    return Path(project_root) / ".specify" / RECORDS_FILENAME
+
+
+def load_records(project_root: Path) -> list[InstalledBundleRecord]:
+    path = records_path(project_root)
+    if not path.exists():
+        return []
+    data = load_json(path)
+    if not isinstance(data, dict):
+        raise BundlerError(f"Corrupt records file: {path}")
+    bundles = data.get("bundles") or []
+    return [InstalledBundleRecord.from_dict(item) for item in bundles]
+
+
+def save_records(project_root: Path, records: list[InstalledBundleRecord]) -> None:
+    payload = {
+        "schema_version": RECORDS_SCHEMA_VERSION,
+        "updated_at": _utc_now(),
+        "bundles": [r.to_dict() for r in records],
+    }
+    dump_json(records_path(project_root), payload)
+
+
+def find_record(
+    records: list[InstalledBundleRecord], bundle_id: str
+) -> InstalledBundleRecord | None:
+    for record in records:
+        if record.bundle_id == bundle_id:
+            return record
+    return None
+
+
+def upsert_record(
+    records: list[InstalledBundleRecord], record: InstalledBundleRecord
+) -> list[InstalledBundleRecord]:
+    """Return a new list with *record* replacing any same-id record (append otherwise)."""
+    updated = [r for r in records if r.bundle_id != record.bundle_id]
+    updated.append(record)
+    return updated
+
+
+def remove_record(
+    records: list[InstalledBundleRecord], bundle_id: str
+) -> list[InstalledBundleRecord]:
+    return [r for r in records if r.bundle_id != bundle_id]
+
+
+def components_still_needed(
+    records: list[InstalledBundleRecord], exclude_bundle_id: str
+) -> set[tuple[str, str]]:
+    """Set of ``(kind, id)`` component keys required by bundles other than the excluded one."""
+    needed: set[tuple[str, str]] = set()
+    for record in records:
+        if record.bundle_id == exclude_bundle_id:
+            continue
+        for component in record.contributed_components:
+            needed.add((component.kind, component.id))
+    return needed
+
+
+def _component_to_dict(ref: ComponentRef) -> dict[str, Any]:
+    data: dict[str, Any] = {"kind": ref.kind, "id": ref.id}
+    if ref.version is not None:
+        data["version"] = ref.version
+    if ref.source is not None:
+        data["source"] = ref.source
+    if ref.priority is not None:
+        data["priority"] = ref.priority
+    if ref.strategy is not None:
+        data["strategy"] = ref.strategy
+    return data
+
+
+def _component_from_dict(data: Any) -> ComponentRef:
+    if not isinstance(data, dict):
+        raise BundlerError("Each contributed component must be a mapping.")
+    return ComponentRef(
+        kind=str(data.get("kind", "")).strip(),
+        id=str(data.get("id", "")).strip(),
+        version=(str(data["version"]) if data.get("version") else None),
+        source=(str(data["source"]) if data.get("source") else None),
+        priority=(int(data["priority"]) if data.get("priority") is not None else None),
+        strategy=(str(data["strategy"]) if data.get("strategy") else None),
+    )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

@@ -29,6 +29,7 @@ Built-in default stack (used when no project/user config overrides it):
 | `community` | 2 | discovery-only |
 
 **Source rules**:
+
 - `install` is permitted **only** from `install-allowed` sources. Bundles resolvable only from `discovery-only` sources appear in `search`/`info` but installing them is refused with a clear "discovery-only" message.
 - A misconfigured/unreachable source causes discovery/install to fail **naming that source** (never a silent empty result).
 - `specify bundle catalog add/remove` edits the project-scoped config; built-in defaults cannot be deleted, only overridden.

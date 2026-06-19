@@ -609,6 +609,13 @@ from .presets._commands import register as _register_preset_cmds  # noqa: E402
 _register_preset_cmds(app)
 
 
+# ===== Bundle Commands =====
+
+# Bundler subcommand group (specify bundle ...) — see commands/bundle/.
+from .commands.bundle import register as _register_bundle_cmds  # noqa: E402
+_register_bundle_cmds(app)
+
+
 # ===== Extension Commands =====
 
 

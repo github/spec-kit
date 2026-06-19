@@ -24,6 +24,7 @@ specify bundle list                       # confirm the bundle is installed
 ```
 
 **Expected**:
+
 - `info` lists every component (integration, extensions, presets w/ priority+strategy, steps, workflows) with versions, plus source catalog + install policy.
 - `install` initializes the project (idempotent `specify init`) and adds **exactly** the components `info` showed — no follow-up installs needed.
 - The set present in the project equals the inspected set (transparency, SC-002).
@@ -80,6 +81,7 @@ specify bundle build                      # produce the versioned artifact (e.g.
 ```
 
 **Expected**:
+
 - `validate` fails clearly on a missing field or unresolved reference (naming it), passes on a correct manifest.
 - `build` emits a single versioned artifact containing the manifest + README + local assets.
 - Distribution: host the artifact and add a catalog entry (`specify bundle catalog add ...`) — there is no first-class publish command.

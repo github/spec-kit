@@ -1,0 +1,88 @@
+"""Security tests: path-traversal / symlink confinement (Constitution Principle V).
+
+These assert the bundler refuses to read or write outside an allowed root, so a
+malicious manifest or artifact path cannot escape the project/bundle directory.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+
+from specify_cli.bundler import BundlerError
+from specify_cli.bundler.lib.yamlio import ensure_within, is_safe_relpath
+
+
+def test_ensure_within_allows_child(tmp_path: Path):
+    root = tmp_path / "bundle"
+    root.mkdir()
+    child = root / "sub" / "file.txt"
+    assert ensure_within(root, child) == child.resolve()
+
+
+def test_ensure_within_rejects_parent_traversal(tmp_path: Path):
+    root = tmp_path / "bundle"
+    root.mkdir()
+    escape = root / ".." / "secret.txt"
+    with pytest.raises(BundlerError, match="escapes"):
+        ensure_within(root, escape)
+
+
+def test_ensure_within_rejects_absolute_outside(tmp_path: Path):
+    root = tmp_path / "bundle"
+    root.mkdir()
+    with pytest.raises(BundlerError):
+        ensure_within(root, Path("/etc/passwd"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlink semantics differ on Windows")
+def test_ensure_within_rejects_symlink_escape(tmp_path: Path):
+    root = tmp_path / "bundle"
+    root.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    link = root / "link.txt"
+    link.symlink_to(outside)
+    with pytest.raises(BundlerError, match="escapes"):
+        ensure_within(root, link)
+
+
+@pytest.mark.parametrize("rel,safe", [
+    ("a/b.txt", True),
+    ("./a.txt", True),
+    ("../escape", False),
+    ("a/../../escape", False),
+    ("/abs", False),
+    ("", False),
+])
+def test_is_safe_relpath(rel, safe):
+    assert is_safe_relpath(rel) is safe
+
+
+def test_build_skips_symlinks(tmp_path: Path):
+    """Packager must not follow symlinks out of the bundle dir."""
+    import yaml
+
+    from specify_cli.bundler.services.packager import build_bundle
+    from tests.bundler_helpers import valid_manifest_dict
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "bundle.yml").write_text(
+        yaml.safe_dump(valid_manifest_dict()), encoding="utf-8"
+    )
+    (bundle / "README.md").write_text("# Demo", encoding="utf-8")
+
+    if os.name != "nt":
+        secret = tmp_path / "secret.txt"
+        secret.write_text("top secret", encoding="utf-8")
+        (bundle / "leak.txt").symlink_to(secret)
+
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    import zipfile
+
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = archive.namelist()
+    assert "leak.txt" not in names
+    assert "bundle.yml" in names

@@ -38,6 +38,7 @@ The hand-written description of a bundle. Source of truth for authoring. No scaf
 | provides.workflows[] | Component ref | no | Pinned references |
 
 **Validation rules** (enforced by `specify bundle validate`, FR-005):
+
 - Manifest is well-formed YAML and matches the schema.
 - All identity/metadata required fields present.
 - Every `provides.*` reference resolves to a real component in the active catalog stack (or pinned URL/path).
@@ -84,6 +85,7 @@ A single entry in the priority-ordered catalog stack.
 | scope | enum | derived | project / user / built-in (precedence: project > user > built-in) |
 
 **Validation/behavior**:
+
 - Install permitted only from `install-allowed` sources; `discovery-only` entries appear in `search`/`info` but installing them is refused with a clear message (FR-025, edge cases).
 - Unreachable/misconfigured source ⇒ discovery/install fails naming the offending source (edge case).
 - Managed via `specify bundle catalog list/add/remove`, persisted to the project-scoped config file with user-scoped and built-in fallbacks (FR-026, R10).

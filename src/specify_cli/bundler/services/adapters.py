@@ -1,0 +1,112 @@
+"""Concrete adapters: catalog fetching and primitive installation.
+
+These wire the bundler's injectable seams to the real environment:
+
+* :func:`make_catalog_fetcher` returns an offline-first fetcher that reads
+  built-in catalogs and local/pinned file URLs without network, and falls back
+  to a timeout-bounded HTTP GET only for ``http(s)://`` sources.
+* :class:`DefaultPrimitiveInstaller` dispatches component install/remove to the
+  existing Spec Kit primitive machinery in-process.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from urllib.parse import urlparse
+
+from .. import BundlerError
+from ..lib.yamlio import loads_json
+from ..models.catalog import CatalogSource
+from ..models.manifest import ComponentRef
+
+# Built-in catalog payloads ship empty by default; a host distribution can
+# replace these with curated content. Keeping them here makes ``search``/``info``
+# work fully offline against the default stack.
+_BUILTIN_CATALOGS: dict[str, dict] = {
+    "builtin://default": {
+        "schema_version": "1.0",
+        "catalog_url": "builtin://default",
+        "bundles": {},
+    },
+    "builtin://community": {
+        "schema_version": "1.0",
+        "catalog_url": "builtin://community",
+        "bundles": {},
+    },
+}
+
+HTTP_TIMEOUT_SECONDS = 10
+
+
+def make_catalog_fetcher(*, allow_network: bool = True):
+    """Return a fetcher callable suitable for :class:`CatalogStack`.
+
+    When *allow_network* is False, ``http(s)://`` sources raise instead of
+    touching the network (used by offline tests and ``--offline`` flows).
+    """
+
+    def fetch(source: CatalogSource) -> dict:
+        url = source.url
+        parsed = urlparse(url)
+        scheme = parsed.scheme.lower()
+
+        if scheme == "builtin":
+            payload = _BUILTIN_CATALOGS.get(url)
+            if payload is None:
+                raise BundlerError(f"Unknown built-in catalog '{url}'.")
+            return payload
+
+        if scheme in ("", "file"):
+            path = Path(parsed.path if scheme == "file" else url)
+            if not path.exists():
+                raise BundlerError(f"Catalog file not found: {path}")
+            return loads_json(path.read_text(encoding="utf-8"))
+
+        if scheme in ("http", "https"):
+            if not allow_network:
+                raise BundlerError(
+                    f"Network access disabled; cannot fetch catalog '{source.id}' "
+                    f"from {url}."
+                )
+            return _http_get_json(url)
+
+        raise BundlerError(f"Unsupported catalog URL scheme: {url}")
+
+    return fetch
+
+
+def _http_get_json(url: str) -> dict:
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:  # noqa: S310
+            raw = response.read().decode("utf-8")
+    except Exception as exc:  # noqa: BLE001
+        raise BundlerError(f"Failed to fetch catalog from {url}: {exc}") from exc
+    return loads_json(raw)
+
+
+class DefaultPrimitiveInstaller:
+    """Dispatch component install/remove to existing primitive machinery.
+
+    This adapter is intentionally thin: it owns no install logic of its own,
+    delegating entirely to the per-primitive managers so the bundler honours
+    Principle I (no duplicated primitive logic).
+    """
+
+    def is_installed(self, project_root: Path, component: ComponentRef) -> bool:
+        manager = self._manager_for(component, project_root)
+        return manager.is_installed(component)
+
+    def install(self, project_root: Path, component: ComponentRef) -> None:
+        manager = self._manager_for(component, project_root)
+        manager.install(component)
+
+    def remove(self, project_root: Path, component: ComponentRef) -> None:
+        manager = self._manager_for(component, project_root)
+        manager.remove(component)
+
+    def _manager_for(self, component: ComponentRef, project_root: Path):
+        # Lazy import to avoid import cycles and keep startup cheap (Principle IV).
+        from .primitives import primitive_manager
+
+        return primitive_manager(component.kind, project_root)
