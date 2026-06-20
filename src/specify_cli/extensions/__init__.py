@@ -1037,10 +1037,15 @@ class ExtensionManager:
                 is_expected_dev_symlink = self._is_expected_dev_symlink(
                     skill_file, cache_file
                 )
+                is_existing_dev_symlink = (
+                    link_outputs
+                    and agent_config.get("dev_no_symlink")
+                    and self._is_extension_skill_dev_symlink(skill_file, skill_name)
+                )
                 # Do not overwrite user-customized skills, but allow dev-mode
                 # symlinks that point back to this extension's generated cache
                 # to be refreshed on a subsequent dev install.
-                if not is_expected_dev_symlink:
+                if not (is_expected_dev_symlink or is_existing_dev_symlink):
                     continue
 
             # Create skill directory; track whether we created it so we can clean
@@ -1125,6 +1130,24 @@ class ExtensionManager:
             return skill_file.resolve(strict=False) == cache_file.resolve(strict=False)
         except OSError:
             return False
+
+    @staticmethod
+    def _is_extension_skill_dev_symlink(skill_file: Path, skill_name: str) -> bool:
+        """Return True for legacy dev-cache links for the same skill."""
+        if not skill_file.is_symlink():
+            return False
+
+        try:
+            resolved_parts = skill_file.resolve(strict=False).parts
+        except OSError:
+            return False
+
+        return resolved_parts[-4:] == (
+            ".specify-dev",
+            "extension-skills",
+            skill_name,
+            "SKILL.md",
+        )
 
     def _unregister_extension_skills(
         self,
