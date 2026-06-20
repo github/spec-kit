@@ -21,7 +21,7 @@ def mock_urlopen_response(payload: dict) -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def route_opener_open_through_urlopen(monkeypatch):
-    """Route OpenerDirector.open through urllib.request.urlopen.
+    """Route build_opener().open through urllib.request.urlopen.
 
     ``open_url(..., strict_redirects=True)`` fetches via
     ``build_opener(...).open()``, which bypasses ``urllib.request.urlopen``
@@ -32,10 +32,15 @@ def route_opener_open_through_urlopen(monkeypatch):
 
     Import this fixture into a test module to activate it there.
     """
+
+    class _UrlopenDelegatingOpener:
+        def open(self, req, data=None, timeout=None):
+            if data is None:
+                return urllib.request.urlopen(req, timeout=timeout)
+            return urllib.request.urlopen(req, data=data, timeout=timeout)
+
     monkeypatch.setattr(
-        urllib.request.OpenerDirector,
-        "open",
-        lambda self, req, data=None, timeout=None: urllib.request.urlopen(
-            req, timeout=timeout
-        ),
+        urllib.request,
+        "build_opener",
+        lambda *handlers: _UrlopenDelegatingOpener(),
     )

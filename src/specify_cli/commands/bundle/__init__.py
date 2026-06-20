@@ -14,6 +14,7 @@ from pathlib import Path
 import typer
 
 from ..._console import console
+from ..._download_security import read_response_limited
 from ...bundler import BundlerError
 from ...bundler.lib.project import (
     active_integration,
@@ -802,7 +803,11 @@ def _download_remote_manifest(entry_id: str, url: str):
     try:
         with open_url(url, timeout=30, redirect_validator=_validate_redirect) as resp:
             _require_https(f"bundle '{entry_id}'", resp.geturl())
-            raw = resp.read()
+            raw = read_response_limited(
+                resp,
+                error_type=BundlerError,
+                label=f"bundle '{entry_id}'",
+            )
     except BundlerError:
         raise
     except Exception as exc:  # noqa: BLE001

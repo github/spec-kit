@@ -20,6 +20,7 @@ def _source(url: str) -> CatalogSource:
 class _FakeResponse:
     def __init__(self, body: bytes, final_url: str) -> None:
         self._body = body
+        self._pos = 0
         self._final_url = final_url
 
     def __enter__(self) -> "_FakeResponse":
@@ -31,8 +32,12 @@ class _FakeResponse:
     def geturl(self) -> str:
         return self._final_url
 
-    def read(self) -> bytes:
-        return self._body
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            size = len(self._body) - self._pos
+        chunk = self._body[self._pos : self._pos + size]
+        self._pos += len(chunk)
+        return chunk
 
 
 def test_http_fetch_uses_shared_client_and_rejects_redirect_downgrade(monkeypatch):
