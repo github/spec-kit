@@ -509,6 +509,16 @@ class WorkflowEngine:
             User-provided input values.
         run_id:
             Optional run ID (uses SPECKIT_WORKFLOW_RUN_ID when set, otherwise auto-generated).
+        dry_run:
+            Preview-only mode. When ``True``, step implementations skip
+            side-effecting work (AI invocations, file writes) and emit a
+            synthetic ``dry_run_message`` instead. ``dry_run`` propagates
+            into each step's ``StepContext`` and is persisted on the
+            resulting ``RunState`` so ``resume()`` keeps the run in
+            preview mode across restarts. Step ``output`` shape is
+            unchanged; downstream ``switch``/``do-while`` gates coerce
+            any dry-run-only fields (e.g. ``output.choice``) so the
+            preview branch is deterministic.
 
         Returns
         -------
