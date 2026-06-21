@@ -358,9 +358,9 @@ class CommandRegistrar:
 
     @staticmethod
     def apply_argument_hint(
-        source_frontmatter: dict,
-        skill_frontmatter: dict,
-        integration: object,
+        source_frontmatter: Dict[str, Any],
+        skill_frontmatter: Dict[str, Any],
+        integration: Optional[object] = None,
     ) -> None:
         """Carry a command's ``argument-hint`` into its generated skill frontmatter.
 
@@ -373,7 +373,7 @@ class CommandRegistrar:
         agent. Built-in templates carry no ``argument-hint``, so this is a no-op
         for the core path.
         """
-        if not isinstance(source_frontmatter, dict):
+        if not isinstance(source_frontmatter, dict) or not isinstance(skill_frontmatter, dict):
             return
         argument_hint = source_frontmatter.get("argument-hint")
         if (
