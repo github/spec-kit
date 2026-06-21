@@ -268,6 +268,7 @@ When releasing a new version:
 
 ### Shell Steps
 
+- **Shell runs with the user's privileges** — a `shell` step executes a local command directly; there is no capability sandbox. `requires` is an advisory pre-condition block (recognised keys: `speckit_version`, `integrations`, `tools`, `mcp`), **not** a runtime permission gate — there is no `requires.permissions`. Gate sensitive commands explicitly with a `gate` step.
 - **Avoid destructive commands** — don't delete files or directories without explicit confirmation via a gate
 - **Quote variables** — use proper quoting in shell commands to handle spaces
 - **Check exit codes** — shell step failures stop the workflow; make sure commands are robust

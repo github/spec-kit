@@ -270,6 +270,8 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `fan-out`    | Dispatch a step for each item in a list          |
 | `fan-in`     | Aggregate results from a fan-out step            |
 
+> **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` (e.g. `requires.permissions`) is an advisory pre-condition block, not a runtime gate, so it does **not** restrict what a step can do. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
+
 ## Expressions
 
 Steps can reference inputs and previous step outputs using `{{ expression }}` syntax:

@@ -2048,6 +2048,83 @@ steps:
         errors = validate_workflow(definition)
         assert any("invalid type" in e.lower() for e in errors)
 
+    def test_requires_with_recognized_keys_is_valid(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  speckit_version: ">=0.7.2"
+  integrations:
+    any: ["claude", "gemini"]
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert errors == []
+
+    def test_requires_must_be_mapping(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires: "claude"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_unknown_key_is_rejected(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  speckit_version: ">=0.7.2"
+  typo_key: true
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("typo_key" in e and "requires" in e for e in errors)
+
+    def test_requires_permissions_is_rejected_as_not_enforced(self):
+        """A `requires.permissions` block looks like a runtime capability gate
+        but no such gate exists — shell steps always run with the user's
+        privileges. Reject it explicitly so authors are not misled into
+        believing the declaration sandboxes execution.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  permissions:
+    shell: true
+steps:
+  - id: run
+    type: shell
+    run: "echo hi"
+""")
+        errors = validate_workflow(definition)
+        assert any("permissions" in e and "not" in e.lower() for e in errors)
+
 
 # ===== Workflow Engine Tests =====
 
