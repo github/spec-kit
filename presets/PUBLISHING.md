@@ -185,6 +185,7 @@ Edit `presets/catalog.community.json` and add your preset.
       "author": "Your Name",
       "version": "1.0.0",
       "download_url": "https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0.zip",
+      "sha256": "OPTIONAL: SHA-256 hex digest of the archive above; verified before install",
       "repository": "https://github.com/your-org/spec-kit-preset-your-preset",
       "license": "MIT",
       "requires": {

@@ -2019,6 +2019,64 @@ class TestPresetCatalog:
         assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[1].get_header("Accept") == "application/octet-stream"
 
+    def _pack_zip_and_response(self):
+        """Build a minimal preset ZIP and a context-manager mock response."""
+        from unittest.mock import MagicMock
+        import io
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        resp = MagicMock()
+        resp.read.return_value = zip_bytes
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        return zip_bytes, resp
+
+    def test_download_pack_accepts_matching_sha256(self, project_dir):
+        """A catalog ``sha256`` that matches the preset archive is accepted."""
+        import hashlib
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_pack_rejects_sha256_mismatch(self, project_dir):
+        """A catalog ``sha256`` that does not match the archive aborts install."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        _zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": "0" * 64,  # deliberately wrong
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            with pytest.raises(PresetError, match="[Ii]ntegrity"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
+
     def test_download_pack_accepts_direct_github_rest_asset_url(self, project_dir, monkeypatch):
         """download_pack can use a GitHub REST release asset URL directly."""
         from unittest.mock import patch, MagicMock

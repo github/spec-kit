@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
 import re
 import tempfile
@@ -10,6 +12,48 @@ from typing import Any
 
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
+
+logger = logging.getLogger(__name__)
+
+
+def verify_archive_sha256(
+    data: bytes,
+    expected: str | None,
+    name: str,
+    error_cls: type[Exception],
+) -> None:
+    """Verify downloaded archive bytes against a catalog-declared SHA-256.
+
+    Catalog entries may pin the expected digest of their release archive in a
+    ``sha256`` field (optionally prefixed with ``"sha256:"``). When present, the
+    downloaded bytes must match before they are written to disk and installed,
+    so a corrupted or tampered archive is rejected even though the transport was
+    HTTPS. Entries without a declared digest are accepted unchanged, keeping the
+    check backwards compatible.
+
+    Args:
+        data: The raw downloaded archive bytes.
+        expected: The catalog-declared SHA-256 hex digest, or ``None``.
+        name: The extension/preset id, used in the error message.
+        error_cls: Exception type to raise on mismatch (e.g. ``ExtensionError``).
+
+    Raises:
+        error_cls: If ``expected`` is provided and does not match ``data``.
+    """
+    if not expected:
+        logger.debug(
+            "No sha256 declared for %r; archive integrity was not verified.",
+            name,
+        )
+        return
+    expected_hex = str(expected).split(":", 1)[-1].strip().lower()
+    actual_hex = hashlib.sha256(data).hexdigest()
+    if actual_hex != expected_hex:
+        raise error_cls(
+            f"Integrity check failed for {name!r}: the catalog declares "
+            f"sha256 {expected_hex}, but the downloaded archive is "
+            f"{actual_hex}. The archive may be corrupted or tampered with."
+        )
 
 
 class SymlinkedSharedPathError(ValueError):
