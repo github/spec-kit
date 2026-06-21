@@ -74,7 +74,8 @@ class KimiIntegration(SkillsIntegration):
                 default=False,
                 help=(
                     "Migrate legacy Kimi installations: "
-                    ".kimi/skills/ → .kimi-code/skills/ and speckit.xxx → speckit-xxx"
+                    ".kimi/skills/ → .kimi-code/skills/, speckit.xxx → speckit-xxx, "
+                    "and KIMI.md user content → AGENTS.md"
                 ),
             ),
         ]
