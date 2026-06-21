@@ -27,7 +27,7 @@ from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from ._init_options import is_ai_skills_enabled
-from ._invocation_style import is_slash_skills_agent
+from ._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from ._utils import dump_frontmatter
 from .catalogs import CatalogEntry as BaseCatalogEntry
 from .catalogs import CatalogStackBase
@@ -2848,12 +2848,12 @@ class HookExecutor:
         selected_ai = init_options.get("ai")
         ai_skills_enabled = is_ai_skills_enabled(init_options)
 
-        codex_skill_mode = selected_ai == "codex" and ai_skills_enabled
+        dollar_skill_mode = is_dollar_skills_agent(selected_ai, ai_skills_enabled)
         kimi_skill_mode = selected_ai == "kimi"
         cline_mode = selected_ai == "cline"
 
         skill_name = self._skill_name_from_command(command_id)
-        if codex_skill_mode and skill_name:
+        if dollar_skill_mode and skill_name:
             return f"${skill_name}"
         if kimi_skill_mode and skill_name:
             return f"/skill:{skill_name}"

@@ -6018,6 +6018,24 @@ class TestHookInvocationRendering:
         assert execution["command"] == "speckit.tasks"
         assert execution["invocation"] == "$speckit-tasks"
 
+    def test_zcode_hooks_render_dollar_skill_invocation(self, project_dir):
+        """ZCode projects with skills mode should render $speckit-* invocations."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "zcode", "ai_skills": True}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "$speckit-tasks"
+
     def test_non_boolean_ai_skills_keeps_default_hook_invocation(self, project_dir):
         """Corrupted truthy ai_skills values should not enable skill invocation."""
         init_options = project_dir / ".specify" / "init-options.json"
