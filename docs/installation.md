@@ -11,7 +11,7 @@
 ## Installation
 
 > [!NOTE]
-> The `specify-cli` package is also available on [PyPI](https://pypi.org/project/specify-cli/). PyPI publishing is performed after each GitHub release and may lag briefly. Source installs from the GitHub repository are always available immediately.
+> The `specify-cli` package will also be available on [PyPI](https://pypi.org/project/specify-cli/) once official publishing is enabled. Source installs from the GitHub repository are always available immediately.
 
 ### Persistent Installation (Recommended)
 
@@ -24,7 +24,7 @@ Install once and use everywhere. Replace `vX.Y.Z` with a tag from [Releases](htt
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
 ```
 
-Or install from PyPI:
+Or, once official PyPI publishing is enabled, install from PyPI:
 
 ```bash
 uv tool install specify-cli@latest
