@@ -721,6 +721,60 @@ class IntegrationBase(ABC):
 
         return candidate
 
+    @classmethod
+    def _resolve_context_file_values(
+        cls,
+        project_root: Path,
+        cfg: dict[str, Any] | None,
+        *,
+        fallback_context_file: Any = None,
+        legacy_context_file: Any = None,
+        include_context_files: bool = True,
+        validate: bool = True,
+    ) -> list[str]:
+        """Resolve context file config with shared precedence and de-duplication."""
+        files: list[str] = []
+        seen: set[str] = set()
+
+        def add_context_file(value: Any) -> None:
+            if not isinstance(value, str):
+                return
+            candidate = value.strip()
+            if not candidate:
+                return
+            if validate:
+                candidate = cls._validate_context_file_path(project_root, candidate)
+            key = cls._context_file_dedupe_key(candidate)
+            if key in seen:
+                return
+            files.append(candidate)
+            seen.add(key)
+
+        if isinstance(cfg, dict) and include_context_files:
+            configured = cfg.get("context_files")
+            if isinstance(configured, list):
+                for value in configured:
+                    add_context_file(value)
+                if files:
+                    return files
+
+        if isinstance(cfg, dict):
+            add_context_file(cfg.get("context_file"))
+            if files:
+                return files
+
+        add_context_file(fallback_context_file)
+        if files:
+            return files
+
+        add_context_file(legacy_context_file)
+        return files
+
+    @staticmethod
+    def _format_context_file_values(context_files: list[str]) -> str:
+        """Return context file targets as the template display string."""
+        return ", ".join(context_files)
+
     def _resolve_context_files(self, project_root: Path) -> list[str]:
         """Return project-relative context files managed for *project_root*.
 
@@ -743,46 +797,28 @@ class IntegrationBase(ABC):
             cfg = yaml.safe_load(raw)
         except (OSError, UnicodeError, ValueError, yaml.YAMLError):
             cfg = None
-        configured = cfg.get("context_files") if isinstance(cfg, dict) else None
-        if isinstance(configured, list):
-            files: list[str] = []
-            seen: set[str] = set()
-            for value in configured:
-                if not isinstance(value, str):
-                    continue
-                candidate = value.strip()
-                key = self._context_file_dedupe_key(candidate)
-                if not candidate or key in seen:
-                    continue
-                files.append(self._validate_context_file_path(project_root, candidate))
-                seen.add(key)
-            if files:
-                return files
-        configured_context_file = (
-            cfg.get("context_file") if isinstance(cfg, dict) else None
+        return self._resolve_context_file_values(
+            project_root,
+            cfg,
+            fallback_context_file=self.context_file,
         )
-        if isinstance(configured_context_file, str):
-            candidate = configured_context_file.strip()
-            if candidate:
-                return [self._validate_context_file_path(project_root, candidate)]
-        if self.context_file:
-            return [self._validate_context_file_path(project_root, self.context_file)]
-        return []
 
     def _context_file_display(self, project_root: Path) -> str:
         """Return human-readable context file target(s) for templates."""
         if not self._agent_context_extension_enabled(project_root):
             from .. import _load_agent_context_config
 
-            configured_context_file = _load_agent_context_config(project_root).get(
-                "context_file"
+            context_files = self._resolve_context_file_values(
+                project_root,
+                _load_agent_context_config(project_root),
+                fallback_context_file=self.context_file,
+                include_context_files=False,
+                validate=False,
             )
-            if isinstance(configured_context_file, str):
-                configured_context_file = configured_context_file.strip()
-                if configured_context_file:
-                    return configured_context_file
-            return self.context_file or ""
-        return ", ".join(self._resolve_context_files(project_root))
+            return context_files[0] if context_files else ""
+        return self._format_context_file_values(
+            self._resolve_context_files(project_root)
+        )
 
     @staticmethod
     def _upsert_context_file(

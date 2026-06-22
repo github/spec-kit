@@ -240,7 +240,11 @@ if ($ContextFiles.Count -eq 0) {
 }
 
 foreach ($ContextFile in $ContextFiles) {
-    # Reject absolute paths, backslash separators, and '..' path segments in context files
+    # Reject absolute paths, drive-qualified paths, backslash separators, and '..' path segments in context files
+    if ($ContextFile -match '^[A-Za-z]:') {
+        Write-Warning "agent-context: context files must be project-relative paths; got '$ContextFile'."
+        exit 1
+    }
     if ([System.IO.Path]::IsPathRooted($ContextFile)) {
         Write-Warning "agent-context: context files must be project-relative paths; got '$ContextFile'."
         exit 1

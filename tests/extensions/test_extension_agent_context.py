@@ -490,6 +490,7 @@ class TestUpsertWithCustomMarkers:
             "nested\\outside.md",
             str(Path("/tmp/outside.md")),
             "C:/tmp/outside.md",
+            "C:tmp/outside.md",
         ],
     )
     def test_upsert_rejects_context_files_outside_project(self, tmp_path, bad_path):
@@ -512,6 +513,7 @@ class TestUpsertWithCustomMarkers:
             "nested\\outside.md",
             str(Path("/tmp/outside.md")),
             "C:/tmp/outside.md",
+            "C:tmp/outside.md",
         ],
     )
     def test_remove_rejects_context_files_outside_project(self, tmp_path, bad_path):
@@ -672,6 +674,7 @@ class TestSkillPlaceholderContextValidation:
             "nested\\outside.md",
             str(Path("/tmp/outside.md")),
             "C:/tmp/outside.md",
+            "C:tmp/outside.md",
         ],
     )
     def test_context_files_reject_invalid_config_paths(self, tmp_path, bad_path):
@@ -689,14 +692,21 @@ class TestSkillPlaceholderContextValidation:
                 tmp_path,
             )
 
-    def test_context_file_rejects_invalid_config_path(self, tmp_path):
+    @pytest.mark.parametrize(
+        "bad_path",
+        [
+            "../outside.md",
+            "C:tmp/outside.md",
+        ],
+    )
+    def test_context_file_rejects_invalid_config_path(self, tmp_path, bad_path):
         _write_ext_config(
             tmp_path,
-            context_file="../outside.md",
+            context_file=bad_path,
             context_files=[],
         )
 
-        with pytest.raises(ValueError, match="must not contain"):
+        with pytest.raises(ValueError, match="project-relative|must not contain"):
             CommandRegistrar.resolve_skill_placeholders(
                 "codex",
                 {},
@@ -787,29 +797,22 @@ class TestBundledUpdaterPathValidation:
 
         assert result.returncode == 0, result.stderr + result.stdout
 
-    def test_bash_script_contains_resolved_containment_check(self):
-        text = (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").read_text(
-            encoding="utf-8"
+    @requires_bash
+    def test_bash_script_trims_context_file_fallback(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="  AGENTS.md  ",
+            context_files=[],
         )
-        assert "target = (root / sys.argv[2]).resolve(strict=False)" in text
-        assert "target.relative_to(root)" in text
-        assert "SPECKIT_PYTHON" in text
-        assert "seen_context_files" in text
 
-    def test_bash_script_trims_context_file_fallback(self):
-        text = (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").read_text(
-            encoding="utf-8"
-        )
-        assert 'candidate = raw_file.strip()' in text
-        assert 'context_files.append(candidate)' in text
+        result = _run_bash_agent_context_script(project)
 
-    def test_powershell_script_rejects_backslash_separators(self):
-        text = (
-            EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
-        ).read_text(encoding="utf-8")
-        assert "$ContextFile.Contains('\\')" in text
-        assert "must not contain backslash separators" in text
-        assert "SPECKIT_PYTHON" in text
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert "agent-context: updated AGENTS.md" in (result.stderr + result.stdout)
+        assert (project / "AGENTS.md").exists()
+        assert not (project / "  AGENTS.md  ").exists()
 
     @requires_bash
     def test_bash_script_rejects_symlink_escape(self, tmp_path):
@@ -905,6 +908,22 @@ class TestBundledUpdaterPathValidation:
             result.stderr + result.stdout
         )
         assert not (project / "nested" / "AGENTS.md").exists()
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_rejects_drive_qualified_context_files(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["C:tmp/outside.md"],
+        )
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 1
+        assert "must be project-relative paths" in (result.stderr + result.stdout)
+        assert not (project / "tmp" / "outside.md").exists()
 
     @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
     def test_powershell_script_deduplicates_context_files_in_order(self, tmp_path):

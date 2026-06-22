@@ -402,7 +402,6 @@ class CommandRegistrar:
         # When disabled, ignore stale context_files but keep the singular
         # context_file value so generated commands still point at the agent
         # context file managed before the extension was disabled.
-        context_file = ""
         from .integrations.base import IntegrationBase
 
         # Local import: _load_agent_context_config lives in __init__.py which
@@ -410,49 +409,24 @@ class CommandRegistrar:
         from . import _load_agent_context_config
 
         ac_cfg = _load_agent_context_config(project_root)
-        if IntegrationBase._agent_context_extension_enabled(project_root):
-            context_files = ac_cfg.get("context_files")
-            if isinstance(context_files, list):
-                context_file_values = []
-                seen: set[str] = set()
-                for value in context_files:
-                    if not isinstance(value, str):
-                        continue
-                    candidate = value.strip()
-                    key = IntegrationBase._context_file_dedupe_key(candidate)
-                    if not candidate or key in seen:
-                        continue
-                    context_file_values.append(
-                        IntegrationBase._validate_context_file_path(
-                            project_root, candidate
-                        )
-                    )
-                    seen.add(key)
-                context_file = ", ".join(dict.fromkeys(context_file_values))
-            if not context_file:
-                configured_context_file = ac_cfg.get("context_file")
-                if isinstance(configured_context_file, str):
-                    candidate = configured_context_file.strip()
-                    if candidate:
-                        context_file = IntegrationBase._validate_context_file_path(
-                            project_root, candidate
-                        )
+        extension_enabled = IntegrationBase._agent_context_extension_enabled(
+            project_root
+        )
+        if extension_enabled:
+            context_files = IntegrationBase._resolve_context_file_values(
+                project_root,
+                ac_cfg,
+                legacy_context_file=init_opts.get("context_file"),
+            )
         else:
-            configured_context_file = ac_cfg.get("context_file")
-            if isinstance(configured_context_file, str):
-                context_file = configured_context_file.strip()
-        if not context_file:
-            legacy_context_file = init_opts.get("context_file")
-            if isinstance(legacy_context_file, str):
-                legacy_context_file = legacy_context_file.strip()
-                if legacy_context_file:
-                    if IntegrationBase._agent_context_extension_enabled(project_root):
-                        legacy_context_file = (
-                            IntegrationBase._validate_context_file_path(
-                                project_root, legacy_context_file
-                            )
-                        )
-                    context_file = legacy_context_file
+            context_files = IntegrationBase._resolve_context_file_values(
+                project_root,
+                ac_cfg,
+                legacy_context_file=init_opts.get("context_file"),
+                include_context_files=False,
+                validate=False,
+            )
+        context_file = IntegrationBase._format_context_file_values(context_files)
         body = body.replace("__CONTEXT_FILE__", context_file)
 
         return CommandRegistrar.rewrite_project_relative_paths(body)
