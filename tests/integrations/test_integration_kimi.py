@@ -402,9 +402,14 @@ class TestKimiLegacySymlinkSafety:
 
         project = tmp_path / "project"
         (project / ".kimi").mkdir(parents=True)
-        (project / ".kimi" / "skills").symlink_to(
-            outside, target_is_directory=True
-        )
+        try:
+            (project / ".kimi" / "skills").symlink_to(
+                outside, target_is_directory=True
+            )
+        except (OSError, NotImplementedError) as exc:
+            import pytest
+
+            pytest.skip(f"symlinks unavailable: {exc}")
 
         i = get_integration("kimi")
         m = IntegrationManifest("kimi", project)
