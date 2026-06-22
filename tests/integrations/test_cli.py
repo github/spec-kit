@@ -377,6 +377,45 @@ class TestInitIntegrationFlag:
         refreshed = IntegrationManifest.load("speckit", project)
         assert tracked_rel in refreshed.files
 
+    def test_shared_infra_stale_cleanup_ignores_unsafe_manifest_keys(self, tmp_path):
+        """A corrupted/hand-edited manifest key with a ``..`` segment is skipped
+        before any filesystem access — its traversal target is never deleted
+        (#3076 review, containment guard)."""
+        import hashlib
+        import json
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "unsafe-key"
+        project.mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        manifest_dir = project / ".specify" / "integrations"
+        manifest_dir.mkdir(parents=True)
+
+        # A file the traversal key would resolve to (outside scripts/bash/).
+        victim = project / ".specify" / "scripts" / "keep-me.sh"
+        victim_bytes = b"# do not touch\n"
+        victim.write_bytes(victim_bytes)
+
+        # Hand-crafted manifest: a key under the script prefix but with a ``..``
+        # segment, with the *matching* hash so that — absent the containment guard
+        # — stale-cleanup would consider it managed and unlink the target.
+        traversal_key = ".specify/scripts/bash/../keep-me.sh"
+        (manifest_dir / "speckit.manifest.json").write_text(
+            json.dumps({
+                "integration": "speckit",
+                "version": "test",
+                "files": {traversal_key: hashlib.sha256(victim_bytes).hexdigest()},
+            }),
+            encoding="utf-8",
+        )
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # The unsafe key was skipped; its target file is untouched.
+        assert victim.exists()
+        assert victim.read_bytes() == victim_bytes
+
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
         from specify_cli import _install_shared_infra

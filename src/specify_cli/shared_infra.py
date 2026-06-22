@@ -392,9 +392,11 @@ def install_shared_infra(
                         if not src_path.is_file():
                             continue
                         # Mark scanned only once a real source file is seen. An
-                        # empty (or symlink-skipped) variant leaves ``seen_rels``
-                        # empty, so stale-cleanup must NOT run — otherwise it would
-                        # treat every tracked script as obsolete and delete it.
+                        # empty (or symlink-skipped) variant keeps this False, so
+                        # stale-cleanup is skipped — otherwise it would treat every
+                        # tracked script as obsolete and delete it. (The safety
+                        # hinge is this flag, not ``seen_rels``, which also holds
+                        # template paths populated later.)
                         scripts_scanned = True
 
                         rel_path = src_path.relative_to(variant_src)
@@ -547,7 +549,14 @@ def install_shared_infra(
         for rel in list(prior_hashes):
             if rel in seen_rels or not rel.startswith(script_prefix):
                 continue
-            dst = project_path / rel
+            # Guard corrupted/hand-edited manifest keys BEFORE any filesystem
+            # access: an absolute path or a ``..`` segment could point outside
+            # the project root. Mirrors the containment checks in
+            # IntegrationManifest.check_modified / uninstall.
+            rel_path = Path(rel)
+            if rel_path.is_absolute() or ".." in rel_path.parts:
+                continue
+            dst = project_path / rel_path
             # Already gone from disk but still tracked: drop the orphaned manifest
             # entry so the manifest stays consistent (nothing to unlink).
             if not dst.exists() and not dst.is_symlink():
