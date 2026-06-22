@@ -321,6 +321,62 @@ class TestInitIntegrationFlag:
         assert stale.exists()
         assert stale.read_text(encoding="utf-8") == "# user customization\n"
 
+    def test_shared_infra_prunes_orphan_manifest_entry_when_file_absent(self, tmp_path):
+        """A stale manifest entry whose file is already gone from disk is pruned
+        so the manifest stays consistent, not left tracked forever (#3076 review)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "orphan-entry"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+        # File removed out of band, but the manifest still tracks it.
+        stale.unlink()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert stale_rel not in refreshed.files
+
+    def test_shared_infra_empty_script_source_keeps_tracked_scripts(self, tmp_path, monkeypatch):
+        """If the bundle's script source dir exists but is empty, stale-cleanup
+        must NOT run (no source files seen → can't tell what's obsolete): a
+        previously-tracked script is preserved, never mass-deleted (#3076 review)."""
+        from specify_cli import _install_shared_infra, shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        # Point the script source at an empty ``bash/`` directory.
+        empty_src = tmp_path / "empty-bundle" / "scripts"
+        (empty_src / "bash").mkdir(parents=True)
+        monkeypatch.setattr(shared_infra, "shared_scripts_source", lambda **kw: empty_src)
+
+        project = tmp_path / "empty-source"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        tracked_rel = ".specify/scripts/bash/common.sh"
+        (scripts_dir / "common.sh").write_text("# tracked\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(tracked_rel)
+        manifest.save()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # Empty source → scripts_scanned stays False → nothing deleted.
+        assert (scripts_dir / "common.sh").exists()
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert tracked_rel in refreshed.files
+
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
         from specify_cli import _install_shared_infra

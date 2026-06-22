@@ -388,13 +388,14 @@ def install_shared_infra(
             if variant_src.is_dir():
                 dest_variant = dest_scripts / variant_dir
                 if _ensure_or_bucket_dir(dest_variant):
-                    # Only now is it safe to treat the variant as fully scanned:
-                    # a symlinked/unwritable dest_variant skips the loop below, so
-                    # ``seen_rels`` would be empty and stale-cleanup must NOT run.
-                    scripts_scanned = True
                     for src_path in variant_src.rglob("*"):
                         if not src_path.is_file():
                             continue
+                        # Mark scanned only once a real source file is seen. An
+                        # empty (or symlink-skipped) variant leaves ``seen_rels``
+                        # empty, so stale-cleanup must NOT run — otherwise it would
+                        # treat every tracked script as obsolete and delete it.
+                        scripts_scanned = True
 
                         rel_path = src_path.relative_to(variant_src)
                         dst_path = dest_variant / rel_path
@@ -547,8 +548,13 @@ def install_shared_infra(
             if rel in seen_rels or not rel.startswith(script_prefix):
                 continue
             dst = project_path / rel
-            if not _is_managed(rel, dst):
+            # Already gone from disk but still tracked: drop the orphaned manifest
+            # entry so the manifest stays consistent (nothing to unlink).
+            if not dst.exists() and not dst.is_symlink():
+                manifest.remove(rel)
                 continue
+            if not _is_managed(rel, dst):
+                continue  # user-modified / symlink / recovered → preserve
             # Never unlink through a symlinked ancestor (writes/deletes could
             # escape the project root). The safe-destination check buckets such
             # paths under ``symlinked_files`` and we leave them in place.
