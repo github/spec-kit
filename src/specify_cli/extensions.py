@@ -18,7 +18,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
 import pathspec
@@ -28,7 +28,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from ._init_options import is_ai_skills_enabled
 from ._invocation_style import is_slash_skills_agent
-from ._utils import dump_frontmatter
+from ._utils import dump_frontmatter, relative_extension_path_violation
 from .catalogs import CatalogEntry as BaseCatalogEntry
 from .catalogs import CatalogStackBase
 
@@ -290,41 +290,17 @@ class ExtensionManifest:
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
-            # Validate the 'file' field for path traversal at manifest-load
-            # time. This is defense-in-depth: the command/skill/preset readers
-            # also contain the resolved path, but rejecting a traversal here
-            # surfaces a clear error instead of silently skipping the command.
+            # Validate the 'file' field at manifest-load time using the single
+            # shared policy in relative_extension_path_violation(), so manifest
+            # validation cannot drift from the runtime registrar guard. This is
+            # defense-in-depth: the command/skill/preset readers also contain
+            # the resolved path, but rejecting an unsafe value here surfaces a
+            # clear error instead of silently skipping the command.
             cmd_file = cmd["file"]
-            if not isinstance(cmd_file, str) or not cmd_file:
-                raise ValidationError(
-                    f"Command 'file' for '{cmd.get('name')}' must be a non-empty string"
-                )
-            if cmd_file.strip() != cmd_file:
-                raise ValidationError(
-                    f"Invalid command 'file' '{cmd_file}': must not have leading or "
-                    "trailing whitespace"
-                )
-            # Evaluate the value under both POSIX and Windows path semantics so
-            # the check is platform-independent. A native ``Path`` is OS-
-            # dependent — a ``PurePosixPath`` on POSIX won't interpret Windows
-            # drive/UNC forms, and ``C:foo`` is anchored but not
-            # ``is_absolute()``. Reject any non-empty anchor — which covers
-            # POSIX-absolute (``/abs``), Windows drive-relative (``C:foo``),
-            # Windows absolute (``C:\foo``), and UNC/rooted forms — plus ``..``
-            # segments written with either separator.
-            posix_path = PurePosixPath(cmd_file)
-            win_path = PureWindowsPath(cmd_file)
-            if (
-                posix_path.anchor
-                or win_path.anchor
-                or ".." in posix_path.parts
-                or ".." in win_path.parts
-            ):
-                raise ValidationError(
-                    f"Invalid command 'file' '{cmd_file}': must be a relative path "
-                    "within the extension directory (no absolute paths, drive "
-                    "letters, or '..' segments)"
-                )
+            reason = relative_extension_path_violation(cmd_file)
+            if reason:
+                label = repr(cmd_file) if isinstance(cmd_file, str) else f"for command '{cmd.get('name')}'"
+                raise ValidationError(f"Invalid command 'file' {label}: {reason}")
 
             # Validate command name format
             if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):

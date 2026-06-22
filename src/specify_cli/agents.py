@@ -10,12 +10,13 @@ import os
 import platform
 import re
 from copy import deepcopy
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
 
 from ._init_options import is_ai_skills_enabled, load_init_options
+from ._utils import relative_extension_path_violation
 
 
 def _build_agent_configs() -> dict[str, Any]:
@@ -547,32 +548,14 @@ class CommandRegistrar:
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
 
-            # Skip malformed entries: a non-string/empty ``file`` cannot be a
-            # valid command body and would otherwise raise when used as a path.
-            if not isinstance(cmd_file, str) or not cmd_file:
-                continue
-
-            # Guard against path traversal, keeping runtime policy aligned with
-            # ExtensionManifest._validate() and the skill/preset/restore readers.
-            # Evaluate the value under both POSIX and Windows path flavors
-            # because a native ``Path`` is OS-dependent (a ``PurePosixPath`` on
-            # POSIX does not interpret Windows drive/UNC forms). Reject any
-            # non-empty anchor — which covers POSIX-absolute (``/abs``), Windows
-            # drive-relative (``C:foo``, anchored but not ``is_absolute()`` yet
-            # resolved against the CWD on its drive), Windows absolute
-            # (``C:\foo``), and UNC roots — and any ``..`` segment in either
-            # separator style, so a malicious manifest ``file`` field
-            # (e.g. ``../../../outside.txt``) cannot read arbitrary host files
-            # into a generated command. The resolve()/relative_to() check below
-            # is the final containment backstop.
-            posix_path = PurePosixPath(cmd_file)
-            win_path = PureWindowsPath(cmd_file)
-            if (
-                posix_path.anchor
-                or win_path.anchor
-                or ".." in posix_path.parts
-                or ".." in win_path.parts
-            ):
+            # Guard against path traversal using the single shared policy in
+            # relative_extension_path_violation(), so the runtime guard stays
+            # aligned with ExtensionManifest._validate() and the skill/preset
+            # readers. Skip a malformed/unsafe ``file`` (non-string, empty,
+            # whitespace, absolute/anchored, or ``..`` traversal); the
+            # resolve()/relative_to() check below is the final containment
+            # backstop.
+            if relative_extension_path_violation(cmd_file):
                 continue
             try:
                 source_file = (source_root / cmd_file).resolve()
@@ -585,7 +568,14 @@ class CommandRegistrar:
 
             try:
                 content = source_file.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            except (OSError, UnicodeDecodeError) as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Skipping command '{cmd_name}': could not read source file "
+                    f"'{cmd_file}' ({exc.__class__.__name__}: {exc}).",
+                    stacklevel=2,
+                )
                 continue
             frontmatter, body = self.parse_frontmatter(content)
 

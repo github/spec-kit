@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from specify_cli.agents import CommandRegistrar
+from specify_cli._utils import relative_extension_path_violation
 
 
 TRAVERSAL_PAYLOADS = [
@@ -141,7 +142,6 @@ FILE_FIELD_PAYLOADS = [
     "../outside.txt",
     "../../outside.txt",
     "commands/../../outside.txt",
-    "commands/../cmd.md",  # in-bounds after resolve; only the '..' check rejects it
     "C:outside.txt",
     ABS_OUTSIDE,
 ]
@@ -233,9 +233,88 @@ class TestCommandFileTraversal:
 
         assert registered == []
 
+    def test_dotdot_rejected_even_when_target_is_in_bounds(self, tmp_path):
+        """An in-bounds ``..`` payload is rejected by the ``..`` check itself.
 
-class TestSafeRegistration:
-    """Positive regression — well-formed names continue to register."""
+        ``commands/../cmd.md`` resolves to ``ext_dir/cmd.md`` — inside
+        source_dir — so the resolve()/relative_to() containment backstop would
+        allow it. Creating that target file ensures the command is skipped
+        because of the ``..`` rejection, not merely because the file is absent.
+        """
+        project, ext_dir = _project_and_source(tmp_path)
+        (project / ".gemini" / "commands").mkdir(parents=True)
+        (ext_dir / "cmd.md").write_text(
+            "---\ndescription: test\n---\n\nbody\n", encoding="utf-8"
+        )
+
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands(
+            "gemini",
+            [{"name": "speckit.myext.hello", "file": "commands/../cmd.md", "aliases": []}],
+            "myext",
+            ext_dir,
+            project,
+        )
+
+        assert registered == []
+
+
+class TestRelativeExtensionPathPolicy:
+    """Unit tests for the shared ``relative_extension_path_violation`` policy."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "commands/hello.md",
+            "hello.md",
+            "a/b/c/hello.md",
+        ],
+    )
+    def test_safe_relative_paths_have_no_violation(self, value):
+        assert relative_extension_path_violation(value) is None
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            None,
+            123,
+            ["x"],
+            "",
+            "   ",
+            " hello.md",
+            "hello.md ",
+            "/abs/outside.md",
+            "/etc/passwd",
+            "C:foo.md",
+            "C:\\Windows\\system32",
+            "\\\\server\\share\\x.md",
+            "../escape.md",
+            "commands/../../escape.md",
+        ],
+    )
+    def test_unsafe_values_report_violation(self, value):
+        assert relative_extension_path_violation(value) is not None
+
+
+class TestReadSkipWarning:
+    """Unregisterable but in-bounds files warn instead of failing silently."""
+
+    def test_unreadable_target_warns_and_skips(self, tmp_path):
+        project, ext_dir = _project_and_source(tmp_path)
+        (project / ".gemini" / "commands").mkdir(parents=True)
+        (ext_dir / "cmd.md").write_bytes(b"\xff\xfe\x00\x80bad")
+
+        registrar = CommandRegistrar()
+        with pytest.warns(UserWarning):
+            registered = registrar.register_commands(
+                "gemini",
+                [{"name": "speckit.myext.hello", "file": "cmd.md", "aliases": []}],
+                "myext",
+                ext_dir,
+                project,
+            )
+
+        assert registered == []
 
     def test_symlinked_subdir_under_commands_dir_is_preserved(self, tmp_path):
         """Lexical check must not block legitimately symlinked sub-directories.
