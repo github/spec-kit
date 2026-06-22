@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit.design.visual-item-matrix.v1.schema.json",
+  "title": "Spec Kit Design Visual Item Matrix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_type", "source", "readiness", "visual_items"],
+  "properties": {
+    "contract_type": {
+      "const": "speckit.design.visual_item_matrix.v1"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "source_refs"],
+      "properties": {
+        "provider": {"enum": ["figma", "screenshot", "design_doc", "other"]},
+        "source_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "capture_timestamp": {"type": "string", "minLength": 1}
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "raw_metadata_complete",
+        "node_inventory_coverage",
+        "parity_passed",
+        "blocker_lint_errors"
+      ],
+      "properties": {
+        "status": {"enum": ["PASS", "BLOCKED"]},
+        "raw_metadata_complete": {"type": "boolean"},
+        "node_inventory_coverage": {"type": "number", "minimum": 0, "maximum": 100},
+        "parity_passed": {"type": "boolean"},
+        "blocker_lint_errors": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "visual_items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source_refs",
+          "requirement_target",
+          "ui_surface",
+          "fidelity_scope",
+          "variant_state_evidence",
+          "component_requirement_role",
+          "component_use_constraint",
+          "constraint_source_refs",
+          "copy_content_constraint",
+          "drawing_asset_constraint",
+          "required_states",
+          "required_viewport_coverage",
+          "screenshot_refs",
+          "visual_proof_level",
+          "allowed_deviations",
+          "blockers",
+          "spec_requirement_target"
+        ],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "source_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "requirement_target": {"type": "string", "minLength": 1},
+          "ui_surface": {"type": "string", "minLength": 1},
+          "fidelity_scope": {
+            "enum": [
+              "functional-equivalent",
+              "design-system-faithful",
+              "pixel-perfect",
+              "brand-critical",
+              "responsive-visual"
+            ]
+          },
+          "layout_facts": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "typography_facts": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "color_token_facts": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "effect_facts": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "asset_refs": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "variant_state_evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source_refs", "observed_state_or_role", "confidence"],
+              "properties": {
+                "variant_ref": {"type": "string", "minLength": 1},
+                "source_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                },
+                "observed_state_or_role": {"type": "string", "minLength": 1},
+                "confidence": {"enum": ["high", "medium", "low"]}
+              }
+            }
+          },
+          "component_requirement_role": {"type": "string", "minLength": 1},
+          "component_use_constraint": {
+            "enum": [
+              "visual-reference-only",
+              "must-reuse-existing",
+              "figma-export-required",
+              "unspecified"
+            ]
+          },
+          "constraint_source_refs": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "copy_content_constraint": {
+            "enum": [
+              "no-new-copy",
+              "figma-copy-required",
+              "product-copy-required",
+              "unspecified"
+            ]
+          },
+          "drawing_asset_constraint": {
+            "enum": [
+              "no-self-draw",
+              "figma-export-required",
+              "existing-asset-required",
+              "unspecified"
+            ]
+          },
+          "required_states": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "required_viewport_coverage": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "screenshot_refs": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "visual_proof_level": {"enum": ["L0", "L1", "L2", "L3"]},
+          "allowed_deviations": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "blockers": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "spec_requirement_target": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

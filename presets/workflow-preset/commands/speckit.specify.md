@@ -26,7 +26,7 @@ Design Requirement Input Policy: run specification as staged intake and merge wo
 Product intake input: PRD, user prompt, product notes, and explicit product constraints. Product intake output: product-owned requirement facts in `spec.md`, including stories, functional requirements, non-functional requirements, assumptions, and product `[NEEDS CLARIFICATION]` markers.
 
 ### Stage 1: Design Requirement Intake
-Design intake input: provider-neutral design evidence, provider source packets, screenshots, visual proof, and source refs. Design intake output: evidence-backed design facts recorded only in `spec.md`, including Client Asset Contract facts: source refs, asset source strategy, required variants, fallback policy, and blocker status.
+Design intake input: provider-neutral design evidence, provider source packets, screenshots, visual proof, and source refs. Design intake output: evidence-backed design facts recorded only in `spec.md`, including stable Visual Item ID trace refs, observed variant/state facts, and Client Asset Contract facts: source refs, asset source strategy, required variants, fallback policy, and blocker status.
 
 If the design source is a Figma URL and a ready packet is supplied by a runtime agent or external Figma intake that has Figma MCP access:
 
@@ -37,11 +37,12 @@ If the design source is a Figma URL and a ready packet is supplied by a runtime 
 
 Use `Observed from Figma` as design evidence. Treat `Inferred from Structure`, `Missing / Needs Clarification`, and `Out of Scope` as interpretation, unresolved requirements, and excluded evidence respectively.
 Screenshots support visual facts only; screenshots must not create product semantics. Screenshot-implied business rules stay `[NEEDS CLARIFICATION]`.
+Do not invent code props, code state names, component reuse decisions, self-drawing bans, or copy restrictions from Figma structure. Record component use, no-self-draw, and no-new-copy constraints only when product input or qualified provider evidence states them explicitly.
 
 If Figma MCP access is unavailable, Continue to write only `spec.md` and record `[BLOCKED: PROVIDER_EVIDENCE]` for the missing Figma Evidence Packet, screenshots, or design facts.
 
 ### Stage 2: Requirement Merge
-Merge input: product facts from Stage 0 plus qualified design facts from Stage 1. Merge output: confirmed baseline requirements, conflicts, assumptions, clarification markers, and provider blockers recorded in `spec.md`. Apply Design Requirement Promotion Rules: promote only evidence-backed visual, layout, state, interaction, responsive, accessibility, and acceptance facts; product semantics implied only by provider evidence stay `[NEEDS CLARIFICATION]`.
+Merge input: product facts from Stage 0 plus qualified design facts from Stage 1. Merge output: confirmed baseline requirements, conflicts, assumptions, clarification markers, and provider blockers recorded in `spec.md`. Apply Design Requirement Promotion Rules: promote only evidence-backed visual, layout, state, interaction, responsive, accessibility, and acceptance facts with source refs; preserve Visual Item ID trace refs for visual requirements. Product semantics implied only by provider evidence stay `[NEEDS CLARIFICATION]`.
 
 ### Stage 3: Generate baseline spec.md
 Baseline spec output: one implementation-agnostic `spec.md` contract containing confirmed product requirements, qualified design-derived requirements, source refs, `[NEEDS CLARIFICATION]`, and `[BLOCKED: PROVIDER_EVIDENCE]` items.

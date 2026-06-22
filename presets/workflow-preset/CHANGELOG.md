@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Added Final Code Review visual consistency checks for implemented UI states, viewport behavior, visual proof evidence, and Client Asset Contract bindings.
+- Clarified that `/speckit.tasks` defines validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation, and scope-aware code review tasks, while `/speckit.implement` only executes those tasks and records receipt evidence without inventing validation strategy or widening scope.
+- Added Visual Item Matrix and Visual Restoration Trace fields so Figma/provider evidence can carry stable UI/UX restoration refs into `spec.md` and Visual Fidelity readiness.
+- Added a normalized Visual Item Matrix JSON schema and validator checks for deterministic UI/UX restoration intake.
+- Clarified that provider evidence artifacts may record screenshot/proof refs and provider blockers, while only the checklist Visual Fidelity Evidence Matrix decides visual planning readiness, proof sufficiency, Gate Status, Blocking Items, and accepted exception rules.
+
 ## 1.3.8
 
 - Aligned code review receipt validation with the receipt schema for data side-effect review required fields.

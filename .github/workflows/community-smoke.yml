@@ -79,6 +79,7 @@ jobs:
           test -f .specify/presets/workflow-preset/schemas/speckit.behavior.scenario-instances.v1.schema.json
           test -f .specify/presets/workflow-preset/schemas/speckit.behavior.data-fixtures.v1.schema.json
           test -f .specify/presets/workflow-preset/schemas/speckit.behavior.assertions.v1.schema.json
+          test -f .specify/presets/workflow-preset/schemas/speckit.design.visual-item-matrix.v1.schema.json
           test -f .specify/presets/workflow-preset/schemas/speckit.implement.manifest.v1.schema.json
           test -f .specify/presets/workflow-preset/schemas/speckit.implement.handoff.v2.schema.json
           test -f .specify/presets/workflow-preset/schemas/speckit.implement.receipt.v1.schema.json

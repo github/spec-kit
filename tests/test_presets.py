@@ -4459,6 +4459,10 @@ class TestBundledPresetLocator:
         assert "specify preset resolve tasks-template" in workflow_text
         assert 'grep -F "(top layer from: core)" preset-resolve-tasks-template.txt' in workflow_text
         assert "test -f .specify/templates/tasks-template.md" in workflow_text
+        assert (
+            "test -f .specify/presets/workflow-preset/schemas/"
+            "speckit.design.visual-item-matrix.v1.schema.json"
+        ) in workflow_text
 
     def test_community_smoke_checks_wheel_assets_and_extension_dev_reinstall(self):
         """Community smoke validates wheel assets and extension dev reinstall skills."""
@@ -4497,6 +4501,10 @@ class TestBundledPresetLocator:
         assert 'manifest_version == "1.3.' not in verify_run
         assert 'registry_version == "1.3.' not in verify_run
         assert "registry_version == manifest_version" in verify_run
+        assert (
+            "test -f .specify/presets/workflow-preset/schemas/"
+            "speckit.design.visual-item-matrix.v1.schema.json"
+        ) in verify_run
         assert (
             'for extension_id in arch preview repository-governance; do'
             in verify_run

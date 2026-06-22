@@ -40,7 +40,7 @@
       },
       "provides": {
         "commands": 8,
-        "templates": 26
+        "templates": 27
       },
       "tags": [
         "behavior",

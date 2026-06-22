@@ -57,7 +57,7 @@ Map planned `U` design objects to concrete source, test, fixture, configuration,
 - read only `allowed_read_paths`
 - write only `allowed_write_paths`
 - write `task_status_update.receipt_path` as `speckit.implement.receipt.v1`
-- validation_evidence must reference the relevant BDD scenario, behavior assertion, API contract, or quickstart path when the handoff context includes behavior contracts
+- execute validation and code review only when those tasks are already present in `tasks.md`; do not invent validation strategy, add lifecycle roles, change requirements, update contracts, or widen scope during implementation; validation_evidence must reference the relevant BDD scenario, behavior assertion, API contract, or quickstart path when the handoff context includes behavior contracts
 - asset binding must map Client Asset Contract entries to local asset paths or code asset mappings from the handoff context; missing required client visual assets, mappings, variants, or fallbacks become `context_gaps`
 - Code review tasks must echo `task_type: code_review`, write `review_conclusion.checked_sources`, `data_side_effect_review`, `consistency_repairs`, and `deferred_validation_todos`; use empty arrays or objects when there are no entries
 - For data side-effect review, inspect the actual implementation diff for runtime database writes and field-level update/delete behavior, bulk writes, soft deletes, ORM whole-object saves, migrations/backfills, retries, rollback/compensation, and external-system writes

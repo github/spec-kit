@@ -48,7 +48,9 @@ Check Visual Fidelity Readiness when `spec.md` contains design-derived requireme
 Use the behavior-testability checklist template as the visual gate authority.
 Require source traceability, provider readiness status, evidence refs, and blockers, and clear visual requirements for state, responsive, accessibility, component mapping, and accepted exception coverage.
 Build a Visual Fidelity Evidence Matrix with one row per visual requirement or visual proof obligation. Record Screenshot evidence level, declared visual proof required, provider evidence refs or screenshot refs, and any Gate Status: BLOCKED item in Blocking Items.
+The Visual Fidelity Evidence Matrix alone decides visual planning readiness, proof level sufficiency, screenshot sufficiency, accepted exception rules, Gate Status, and Blocking Items.
 Use one Visual Fidelity Evidence Matrix as the single visual readiness record; do not duplicate visual evidence decisions outside the matrix and Blocking Items.
+Read visual facts from `spec.md` and evidence refs; do not call Figma, re-extract Figma evidence, rebuild provider matrices, or create another visual readiness path.
 Do not add historical visual rules or alternate visual decision paths.
 Responsive visual requirements block PASS only when they are complex, multi-state, or declare L2 or L3 visual proof; missing viewport-specific evidence then sets Gate Status: BLOCKED and lists the item in Blocking Items.
 Screenshots support visual facts but do not create product semantics.

@@ -30,8 +30,8 @@ Design Requirement Intake and Requirement Merge templates may define
 provider-neutral design facts and merge reports. Figma is a provider-specific design source;
 Screenshot is provider evidence and visual proof.
 Screenshots must not become the primary Design Requirement Intake carrier or a source of product semantics.
-Figma MCP execution, hooks, adapter scripts, and authentication are external
-integration concerns and remain outside this preset.
+Provider evidence artifacts may record screenshot refs, visual proof refs, coverage gaps, and provider evidence blockers as source facts. They must not decide visual planning readiness, proof sufficiency, accepted exception rules, checklist Gate Status, or checklist Blocking Items.
+Figma MCP execution, hooks, adapter scripts, and authentication are external integration concerns and remain outside this preset.
 
 ## Template And Command Ownership
 
@@ -54,12 +54,12 @@ Stage ownership:
 - `/speckit.analyze`: vertical consistency checks across requirements, behavior drafts, contracts, and tasks only.
 - `/speckit.implement`: implementation handoff execution only.
 
-When Design Requirement Intake or a Figma Evidence Packet has already been
-written into `spec.md`, `/speckit.clarify` may clarify those requirement gaps
-from `spec.md`, but extraction remains outside clarification.
+`/speckit.tasks` owns implementation, validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation, and code review task definition in `tasks.md`. `/speckit.implement` may execute those tasks and record receipt evidence, but it must not invent validation strategy, add lifecycle roles, change requirements, update contracts, or widen scope during execution.
+
+When Design Requirement Intake or a Figma Evidence Packet has already been written into `spec.md`, `/speckit.clarify` may clarify those requirement gaps from `spec.md`, but extraction remains outside clarification.
 external design extraction is not a clarification responsibility.
 
-Visual Fidelity readiness applies to design-derived and product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements. The Visual Fidelity Evidence Matrix is the single visual readiness record and uses one row per visual requirement or visual proof obligation with Source `spec.md` section, Fidelity Scope, Screenshot Level, Evidence Refs, Visual Proof Required, Blocking Item ID, and Exception Rule. Responsive visual requirements block PASS only when they are complex, multi-state, or declare L2 or L3 visual proof.
+Visual Fidelity readiness applies to design-derived and product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements. The Visual Fidelity Evidence Matrix is the single visual readiness record and uses one row per visual requirement or visual proof obligation with Source `spec.md` section, Fidelity Scope, Screenshot Level, Evidence Refs, Visual Proof Required, Blocking Item ID, and Exception Rule. It is the only artifact that decides visual planning readiness, visual proof level sufficiency, screenshot sufficiency, accepted exception rules, checklist Gate Status, and checklist Blocking Items. Provider source readiness remains separate: provider intake may prove raw metadata completeness, metadata index completeness proof, node inventory parity, and blocker lint errors, but that proof is not the Visual Fidelity readiness gate. Responsive visual requirements block PASS only when they are complex, multi-state, or declare L2 or L3 visual proof.
 
 ## Structured Artifact Rules
 
