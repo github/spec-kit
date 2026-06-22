@@ -2703,7 +2703,7 @@ class PresetResolver:
         # (source-checkout / editable install).  This is the canonical home for
         # speckit's built-in command/template files and must always be checked
         # so that strategy:wrap presets can locate {CORE_TEMPLATE}.
-        from specify_cli import _locate_core_pack  # local import to avoid cycles
+        from specify_cli import _locate_core_pack, _repo_root  # local import to avoid cycles
         _core_pack = _locate_core_pack()
         if _core_pack is not None:
             # Wheel install path
@@ -2723,7 +2723,7 @@ class PresetResolver:
                 return candidate
         else:
             # Source-checkout / editable install: templates live at repo root
-            repo_root = Path(__file__).parent.parent.parent
+            repo_root = _repo_root()
             if template_type == "template":
                 candidate = repo_root / "templates" / f"{template_name}.md"
             elif template_type == "command":
@@ -3075,7 +3075,7 @@ class PresetResolver:
         ``.specify/templates/`` doesn't contain the core file.
         """
         try:
-            from specify_cli import _locate_core_pack
+            from specify_cli import _locate_core_pack, _repo_root
         except ImportError:
             return None
 
@@ -3098,7 +3098,7 @@ class PresetResolver:
                 if c.exists():
                     return c
         else:
-            repo_root = Path(__file__).parent.parent.parent
+            repo_root = _repo_root()
             for name in names:
                 if template_type == "template":
                     c = repo_root / "templates" / f"{name}.md"

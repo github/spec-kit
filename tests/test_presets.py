@@ -1094,7 +1094,33 @@ class TestResolveCore:
         result = resolver.resolve_core("nonexistent", "command")
         assert result is None
 
-    def test_resolve_extension_command_via_manifest_skips_oserror_manifests(self, project_dir):
+    def test_collect_all_layers_finds_bundled_core_without_specify_commands(
+        self, project_dir
+    ):
+        """Tier-5 fallback locates the bundled core command when
+        .specify/templates/commands/ has no matching file.
+
+        Regression test for #3086: a stale ``.parent`` chain made the
+        source-checkout fallback resolve to ``src/templates/...`` (which does
+        not exist), so ``wrap`` presets found no base layer. The fallback must
+        resolve against the real repo-root ``templates/commands`` tree.
+        """
+        # project_dir's commands dir is empty, so tier-4 cannot satisfy this.
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.implement", "command")
+        assert layers, "expected a bundled core base layer to be found"
+        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
+
+    def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
+        """resolve() tier-5 returns the bundled core command when
+        .specify/templates/commands/ lacks it (regression for #3086)."""
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("speckit.implement", "command")
+        assert result is not None
+        assert result.parts[-2:] == ("commands", "implement.md")
+
+
         """resolve_extension_command_via_manifest skips extensions whose manifest raises OSError."""
         import unittest.mock as mock
 
