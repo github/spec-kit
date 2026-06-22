@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-16T00:00:00Z",
+  "updated_at": "2026-06-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -571,6 +571,34 @@
       ],
       "created_at": "2026-04-27T00:00:00Z",
       "updated_at": "2026-06-14T00:00:00Z"
+    },
+    "sicario-core": {
+      "name": "SicarioSpec Core",
+      "id": "sicario-core",
+      "version": "0.4.0",
+      "description": "Evidence-first security operations governance that maps feature risk to controls, gates, evidence, owners, approval, and accepted-risk decisions.",
+      "author": "SicarioSpec Contributors",
+      "repository": "https://github.com/dfirs1car1o/sicario-spec",
+      "download_url": "https://github.com/dfirs1car1o/sicario-spec/releases/download/v0.4.0/sicario-core-0.4.0.zip",
+      "homepage": "https://dfirs1car1o.github.io/sicario-spec/",
+      "documentation": "https://github.com/dfirs1car1o/sicario-spec/blob/main/presets/sicario-core/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "templates": 5,
+        "commands": 0
+      },
+      "tags": [
+        "security",
+        "governance",
+        "security-ops",
+        "secure-by-default",
+        "evidence"
+      ],
+      "created_at": "2026-06-22T00:00:00Z",
+      "updated_at": "2026-06-22T00:00:00Z"
     },
     "spec2cloud": {
       "name": "Spec2Cloud",
