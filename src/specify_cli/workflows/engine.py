@@ -94,7 +94,7 @@ def _get_valid_step_types() -> set[str]:
     if STEP_REGISTRY:
         return set(STEP_REGISTRY.keys())
     return {
-        "command", "shell", "prompt", "gate", "if",
+        "command", "shell", "prompt", "gate", "if", "init",
         "switch", "while", "do-while", "fan-out", "fan-in",
     }
 
@@ -281,16 +281,49 @@ def _validate_steps(
 class RunState:
     """Manages workflow run state for persistence and resume."""
 
+    # ``run_id`` is interpolated into a filesystem path (``runs/<run_id>``)
+    # by both ``save()`` and ``load()``. Constrain it to a charset that
+    # cannot contain path separators (``/`` ``\``), parent-directory
+    # segments (``..``), or NULs — anything that could escape the
+    # ``.specify/workflows/runs/`` directory or be mis-interpreted by the
+    # filesystem. The first-character anchor blocks IDs that start with
+    # ``-`` (which would be mistaken for a CLI flag in error messages
+    # and shell completions).
+    _RUN_ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+    @classmethod
+    def _validate_run_id(cls, run_id: str) -> None:
+        """Raise ``ValueError`` if ``run_id`` is not a safe path component.
+
+        This is the single source of truth for what counts as a valid
+        ``run_id``. ``__init__`` calls it to reject malformed IDs at
+        construction time; ``load`` calls it *before* interpolating the
+        ID into a path so a malicious value cannot probe or read files
+        outside ``.specify/workflows/runs/<run_id>/``.
+        """
+        if not isinstance(run_id, str) or not cls._RUN_ID_PATTERN.match(run_id):
+            raise ValueError(
+                f"Invalid run_id {run_id!r}: must be alphanumeric with "
+                "hyphens/underscores only (and must start with an "
+                "alphanumeric character)."
+            )
+
     def __init__(
         self,
         run_id: str | None = None,
         workflow_id: str = "",
         project_root: Path | None = None,
     ) -> None:
-        self.run_id = run_id or str(uuid.uuid4())[:8]
-        if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*$', self.run_id):
-            msg = f"Invalid run_id {self.run_id!r}: must be alphanumeric with hyphens/underscores only."
-            raise ValueError(msg)
+        # ``run_id is None`` (omitted) → auto-generate. An explicit empty
+        # string is *not* the same as "omitted" and must be validated like
+        # any other caller-provided value — otherwise ``__init__("")``
+        # would silently substitute a UUID while ``load("")`` rejects, and
+        # the two entry points would diverge on the empty-string vector.
+        if run_id is None:
+            self.run_id = str(uuid.uuid4())[:8]
+        else:
+            self.run_id = run_id
+        self._validate_run_id(self.run_id)
         self.workflow_id = workflow_id
         self.project_root = project_root or Path(".")
         self.status = RunStatus.CREATED
@@ -331,7 +364,20 @@ class RunState:
 
     @classmethod
     def load(cls, run_id: str, project_root: Path) -> RunState:
-        """Load a run state from disk."""
+        """Load a run state from disk.
+
+        Validates ``run_id`` against ``_RUN_ID_PATTERN`` *before* building
+        the lookup path. Without this guard, a caller passing a value like
+        ``../escape`` (e.g. via ``specify workflow resume`` CLI argument)
+        would interpolate path-traversal segments into
+        ``runs_dir`` below, letting ``state_path.exists()`` probe arbitrary
+        paths and ``json.load`` read attacker-planted JSON from outside
+        the project's ``runs/`` directory. ``__init__`` already runs this
+        check on the stored ``state_data["run_id"]``, but that fires
+        *after* the file lookup — too late to prevent the disclosure.
+        Mirrors the precedent in ``agents._ensure_within_directory``.
+        """
+        cls._validate_run_id(run_id)
         runs_dir = project_root / ".specify" / "workflows" / "runs" / run_id
         state_path = runs_dir / "state.json"
         if not state_path.exists():
@@ -403,10 +449,10 @@ class WorkflowEngine:
         ValueError:
             If the workflow YAML is invalid.
         """
-        path = Path(source)
+        path = Path(source).expanduser()
 
         # Try as a direct file path first
-        if path.suffix in (".yml", ".yaml") and path.exists():
+        if path.suffix.lower() in (".yml", ".yaml") and path.is_file():
             return WorkflowDefinition.from_yaml(path)
 
         # Try as an installed workflow ID
@@ -507,8 +553,19 @@ class WorkflowEngine:
         state.save()
         return state
 
-    def resume(self, run_id: str) -> RunState:
-        """Resume a paused or failed workflow run."""
+    def resume(
+        self,
+        run_id: str,
+        inputs: dict[str, Any] | None = None,
+    ) -> RunState:
+        """Resume a paused or failed workflow run.
+
+        When ``inputs`` is provided, the values are merged over the run's
+        persisted inputs and re-resolved through the same typed validation
+        path used by :meth:`execute`, so the resumed step sees updated
+        workflow inputs. Keys not supplied keep their persisted values; an
+        empty/``None`` ``inputs`` leaves the run's inputs unchanged.
+        """
         state = RunState.load(run_id, self.project_root)
         if state.status not in (RunStatus.PAUSED, RunStatus.FAILED):
             msg = f"Cannot resume run {run_id!r} with status {state.status.value!r}."
@@ -523,6 +580,12 @@ class WorkflowEngine:
             definition = WorkflowDefinition.from_yaml(run_copy)
         else:
             definition = self.load_workflow(state.workflow_id)
+
+        # Merge any newly-supplied inputs over the persisted ones and
+        # re-validate through the same typing path as the initial run.
+        if inputs:
+            merged = {**state.inputs, **inputs}
+            state.inputs = self._resolve_inputs(definition, merged)
 
         # Restore context
         context = StepContext(
@@ -613,6 +676,7 @@ class WorkflowEngine:
 
             # Record step results — prefer resolved values from step output
             step_data = {
+                "type": step_type,
                 "integration": result.output.get("integration")
                 or step_config.get("integration")
                 or context.default_integration,

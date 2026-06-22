@@ -1,0 +1,35 @@
+schema_version: "1.0"
+
+bundle:
+  id: "product-manager"
+  name: "Product Manager"
+  version: "1.0.0"
+  role: "product-manager"
+  description: "Spec-Driven Development setup for product managers: discovery, specification, and roadmap workflows."
+  author: "spec-kit-examples"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.9.0"
+  tools: []
+  mcp: []
+
+# Agnostic bundle: inherits the project's active integration.
+
+provides:
+  extensions:
+    - id: "agent-context"
+      version: "1.0.0"
+  presets:
+    - id: "product-discovery"
+      version: "1.0.0"
+      priority: 10
+      strategy: "append"
+  steps:
+    - id: "draft-spec"
+    - id: "review-spec"
+  workflows:
+    - id: "spec-to-roadmap"
+      version: "1.0.0"
+
+tags: ["product", "discovery", "roadmap"]

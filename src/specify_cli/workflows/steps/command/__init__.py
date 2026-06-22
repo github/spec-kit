@@ -126,12 +126,15 @@ class CommandStep(StepBase):
         if impl is None:
             return None
 
-        # Check if the integration supports CLI dispatch
-        if impl.build_exec_args("test") is None:
-            return None
+        # Build sample args for fallback executable detection when impl.key is not executable.
+        exec_args = impl.build_exec_args("test")
 
-        # Check if the CLI tool is actually installed
-        if not shutil.which(impl.key):
+        # Check if the CLI tool is actually installed.
+        # Try the integration key first (covers most agents), then fall back
+        # to exec_args[0] for agents whose executable differs.
+        cli_path = shutil.which(impl.key)
+        fallback_cli_path = shutil.which(exec_args[0]) if exec_args else None
+        if cli_path is None and fallback_cli_path is None:
             return None
 
         project_root = Path(context.project_root) if context.project_root else None

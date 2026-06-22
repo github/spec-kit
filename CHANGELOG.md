@@ -2,6 +2,211 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.11.4] - 2026-06-22
+
+### Changed
+
+- [extension] Add Tasks to GitHub Project extension to community catalog (#3090)
+- Update Linear Integration extension to v0.7.0 (#3089)
+- fix: fail loudly on an unknown workflow expression filter (#3074)
+- fix: anchor lib/ and lib64/ patterns to repo root in .gitignore (#3083)
+- fix(build): include specify_cli.bundler.lib in built distribution (#3085)
+- Harden command registration path handling (#3088)
+- fix(presets): preserve argument-hint in preset SKILL.md generation (#2978)
+- feat: surface gate detail in the workflow run/resume --json payload (#2965)
+- feat: add `specify bundle` command (#3070)
+- chore: release 0.11.3, begin 0.11.4.dev0 development (#3072)
+
+## [0.11.3] - 2026-06-19
+
+### Changed
+
+- docs: strengthen agent disclosure to cover commits and per-round comments (#3071)
+- fix: isolate per-extension failures so one bad extension can't drop the rest (#2951)
+- fix(taskstoissues): skip tasks that already have a GitHub issue (#2992)
+- feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
+- Update Multi-Model Review extension to v0.1.2 (#3066)
+- chore(deps): bump actions/checkout from 6.0.3 to 7.0.0 (#3064)
+- feat(claude): run /analyze in a forked subagent (#2511)
+- fix: count worktree branches in git extension numbering (#3054)
+- Add Token Economy extension to community catalog (#3049)
+- chore: release 0.11.2, begin 0.11.3.dev0 development (#3059)
+
+## [0.11.2] - 2026-06-18
+
+### Changed
+
+- Update Linear Integration extension to v0.6.0 (#3047)
+- fix: align community submission workflows with bug-assess label trigger (#3046)
+- fix(bug-assess): recompile lock so github guard repos is 'all' (#3036)
+- fix(bug-assess): set min-integrity: none to allow reading external user issues (#3030)
+- feat: add bug-assess agentic workflow (#3023)
+- feat: add /speckit.converge command (#3001)
+- fix: preserve .vscode/settings.json and script +x bit on integration upgrade (#3020)
+- feat(workflows): add from_json expression filter (#2961)
+- Add `init` workflow step to bootstrap projects like `specify init` (#2838)
+- chore: release 0.11.1, begin 0.11.2.dev0 development (#3022)
+
+## [0.11.1] - 2026-06-17
+
+### Changed
+
+- chore: ignore Copilot dogfooding scaffolding in .gitignore (#3019)
+- docs: clarify Taskify specify command (#3016)
+- docs: document evolving specs in existing projects (#2902)
+- feat(workflows): opt-in output_format: json exposes parsed shell stdout as output.data (#2963)
+- fix: non-zero exit code when a workflow run ends failed or aborted (#2959)
+- fix(skills): preserve non-ASCII characters in skill frontmatter (#2917)
+- fix: prevent extension self-install from deleting source dir (#2990) (#2991)
+- fix: disable Rich Live transient mode on Windows to prevent PS 5.1 hang (#2938)
+- Update a11y-governance preset to v0.4.0 (#2981)
+- chore: release 0.11.0, begin 0.11.1.dev0 development (#3012)
+
+## [0.11.0] - 2026-06-16
+
+### Changed
+
+- Add workflow step catalog — community-installable step types (#2394)
+- feat(dev): add integration scaffolder (#2685)
+- Add Command Density preset to community catalog (#3006)
+- fix(tests): don't run PowerShell tests via WSL-interop powershell.exe (#2971)
+- Add Zed integration (#2780)
+- Update architecture-governance preset to v0.5.0 (#2929)
+- Update Superpowers Implementation Bridge extension to v1.1.0 (#3011)
+- Update isaqb-architecture-governance preset to v0.2.0 (#2984)
+- Update security-governance preset to v0.6.0 (#2932)
+- chore: update CITATION.cff to v0.10.2 (2026-06-11) (#2966)
+- chore: release 0.10.4, begin 0.10.5.dev0 development (#3010)
+
+## [0.10.4] - 2026-06-16
+
+### Changed
+
+- fix: fail loudly when a fan-out 'items' expression does not resolve to a list (#2957)
+- refactor: move preset command handlers to presets/_commands.py (PR-6/8) (#2826)
+- Update agent-parity-governance preset to v0.3.0 (#2982)
+- Update cross-platform-governance preset to v0.2.0 (#2983)
+- Add Data Model Diagram extension to community catalog (#2922)
+- Add Spec Kit TLDR extension to community catalog (#3007)
+- docs: add guide for handling complex features (#3004)
+- Add Loop Engineering extension to community catalog (#3002)
+- Update MemoryLint extension to v1.5.1 (#3000)
+- chore: release 0.10.3, begin 0.10.4.dev0 development (#2999)
+
+## [0.10.3] - 2026-06-16
+
+### Changed
+
+- Update Superpowers Bridge extension to v1.6.0 (#2998)
+- Add Improve Extension to community catalog (#2997)
+- Update Product Forge extension to v1.7.0 (#2996)
+- Update Linear Integration extension to v0.5.0 (#2995)
+- Update Superpowers Implementation Bridge extension to v1.0.3 (#2993)
+- Update Ralph community extension to v1.1.1 (#2861)
+- Update Linear Integration extension to v0.4.0 (#2942)
+- Update DocGuard — CDD Enforcement to v0.26.0 (#2941)
+- Add SpecKit Companion extension to community catalog (#2937)
+- chore: release 0.10.2, begin 0.10.3.dev0 development (#2936)
+
+## [0.10.2] - 2026-06-11
+
+### Changed
+
+- Add Research Harness extension to community catalog (#2935)
+- Add Coding Standards Drift Control extension to community catalog (#2934)
+- Add Spec Trace extension to community catalog (#2527)
+- fix(extensions): preserve argument-hint in extension Claude SKILL.md (#2916)
+- fix(presets): harden preset URL installs against unsafe redirects (#2911)
+- fix: skip recovered files during refresh_managed overwrite check (#2918) (#2919)
+- Update multi-model-review extension to v0.1.1 (#2900)
+- feat: add category and effect as first-class fields in extension schema (#2899)
+- chore(catalog): add Jira Integration (Sync Engine) extension (#2895)
+- chore: release 0.10.1, begin 0.10.2.dev0 development (#2910)
+
+## [0.10.1] - 2026-06-09
+
+### Changed
+
+- Update DocGuard — CDD Enforcement extension to v0.25.1 (#2909)
+- Update a11y-governance preset to v0.3.0 (#2867)
+- docs: document spec persistence models (#2856)
+- chore(catalog): bump Linear Integration to v0.3.0 (repo renamed to spec-kit-linear-sync) (#2893)
+- chore: update DocGuard extension to v0.25.0 (#2707)
+- chore: remove unused open_github_url/_StripAuthOnRedirect from _github_http.py (#2883)
+- fix(catalogs): validate extension and preset catalog payload shape (#2621)
+- feat(integration): add status reporting (#2674)
+- chore: release 0.10.0, begin 0.10.1.dev0 development (#2904)
+
+## [0.10.0] - 2026-06-09
+
+### Changed
+
+- feat: make git extension opt-in and remove --no-git at v0.10.0 (#2873)
+- [Preset] UpdateFiction book writing v1.9.0 - Illustration support (#2821)
+- test(workflows): cover executable override fallback preflight (#2843)
+- Add GitHub Copilot CLI guidance to readme (#2891)
+- Update Security Review extension to v1.5.3 (#2898)
+- Update Architecture Guard extension to v1.8.17 (#2897)
+- feat(extensions): per-event hook lists with priority ordering (#2798)
+- feat!: remove legacy --ai, --ai-commands-dir, and --ai-skills flags (0.10.0) (#2872)
+- chore: release 0.9.5, begin 0.9.6.dev0 development (#2875)
+
+## [0.9.5] - 2026-06-05
+
+### Changed
+
+- feat(extensions): add bundled bug triage workflow extension (#2871)
+- fix: resolve GitHub release asset API URL for private repo preset and workflow downloads (#2855)
+- chore(deps): bump github/gh-aw-actions from 0.77.0 to 0.78.1 (#2860)
+- chore(deps): bump actions/checkout from 6.0.2 to 6.0.3 (#2859)
+- chore(deps): bump astral-sh/setup-uv from 8.1.0 to 8.2.0 (#2858)
+- chore(deps): bump github/codeql-action from 4.36.0 to 4.36.2 (#2857)
+- fix(workflows): render gate show_file contents in the interactive prompt (#2810)
+- feat: add support for rovodev (#2539)
+- chore: release 0.9.4, begin 0.9.5.dev0 development (#2853)
+
+## [0.9.4] - 2026-06-04
+
+### Changed
+
+- feat(workflows): add JSON output for workflow run resume and status (#2814)
+- Update workflow-preset community catalog to v1.3.2 (#2841)
+- fix: recover active skills registration for extensions (#2803)
+- fix(cursor-agent): enable headless CLI dispatch end-to-end (-p --trust --approve-mcps --force + Windows .cmd shim resolution) (#2631)
+- Update Superpowers Implementation Bridge extension to v1.0.2 (#2852)
+- docs(agents): add PR review response guidance to AGENTS.md (#2850)
+- Allow `specify workflow run` to execute YAML files without a project (#2825)
+- feat(extensions): add --force flag to extension add for overwrite reinstall (#2530)
+- chore: release 0.9.3, begin 0.9.4.dev0 development (#2836)
+
+## [0.9.3] - 2026-06-03
+
+### Changed
+
+- fix: render script command hints with active agent separator (#2649)
+- chore(tests): fix ruff lint violations in tests/ (#2827)
+- fix(workflows): validate run_id in RunState.load before touching the … (#2813)
+- feat(cli): implement specify self upgrade (#2475)
+- feat(workflows): allow resume to accept updated workflow inputs (#2815)
+- catalog: rename "superpowers-bridge" to "superspec" (v1.0.1) (#2772)
+- fix(cli): force UTF-8 stdout/stderr on Windows to prevent UnicodeEncodeError (#2817)
+- fix(plan): clarify quickstart validation guide scope (#2805)
+- chore: release 0.9.2, begin 0.9.3.dev0 development (#2823)
+
+## [0.9.2] - 2026-06-02
+
+### Changed
+
+- Update agent parity governance preset catalog entry (#2777)
+- fix: resolve GitHub release asset API URL for private repo extension downloads (#2792)
+- fix: remove unsupported mode: frontmatter from Copilot skills mode (fixes #2799) (#2819)
+- refactor(integrations): co-locate integration commands in integrations/ domain dir (PR-5/8) (#2720)
+- Update Product Forge extension to v1.6.0 (#2820)
+- feat(workflows): add continue_on_error step field for non-halting failures (#2663)
+- chore: add .editorconfig for consistent code formatting (#2366)
+- fix(shared-infra): record skipped files in speckit.manifest.json (#2483)
+- chore: release 0.9.1, begin 0.9.2.dev0 development (#2818)
+
 ## [0.9.1] - 2026-06-02
 
 ### Changed
@@ -1648,4 +1853,3 @@
 ### Changed
 
 - Update release.yml
-

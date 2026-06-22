@@ -7,7 +7,7 @@ AI agent framework by Nous Research.  It stores skills in
 Usage::
 
     specify init my-project --integration hermes
-    specify init --here --ai hermes
+    specify init --here --integration hermes
 """
 
 from __future__ import annotations

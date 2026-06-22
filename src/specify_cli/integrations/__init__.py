@@ -74,11 +74,13 @@ def _register_builtins() -> None:
     from .qodercli import QodercliIntegration
     from .qwen import QwenIntegration
     from .roo import RooIntegration
+    from .rovodev import RovodevIntegration
     from .shai import ShaiIntegration
     from .tabnine import TabnineIntegration
     from .trae import TraeIntegration
     from .vibe import VibeIntegration
     from .windsurf import WindsurfIntegration
+    from .zed import ZedIntegration
 
     # -- Registration (alphabetical) --------------------------------------
     _register(AgyIntegration())
@@ -108,11 +110,13 @@ def _register_builtins() -> None:
     _register(QodercliIntegration())
     _register(QwenIntegration())
     _register(RooIntegration())
+    _register(RovodevIntegration())
     _register(ShaiIntegration())
     _register(TabnineIntegration())
     _register(TraeIntegration())
     _register(VibeIntegration())
     _register(WindsurfIntegration())
+    _register(ZedIntegration())
 
 
 _register_builtins()

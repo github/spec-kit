@@ -127,7 +127,7 @@ Initialize the project's constitution to set ground rules:
 ### Step 2: Define Requirements with `/speckit.specify`
 
 ```text
-Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
+/speckit.specify Develop Taskify, a team productivity platform. It should allow users to create projects, add team members,
 assign tasks, comment and move tasks between boards in Kanban style. In this initial phase for this feature,
 let's call it "Create Taskify," let's have multiple users but the users will be declared ahead of time, predefined.
 I want five users in two different categories, one product manager and four engineers. Let's create three

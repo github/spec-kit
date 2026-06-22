@@ -282,59 +282,25 @@ class CopilotIntegration(IntegrationBase):
         """Copilot commands use ``.agent.md`` extension."""
         return f"speckit.{template_name}.agent.md"
 
-    def post_process_skill_content(self, content: str) -> str:
-        """Inject shared hook guidance and Copilot ``mode:`` frontmatter.
+    def stale_cleanup_exclusions(self) -> set[str]:
+        """Protect ``.vscode/settings.json`` from upgrade stale-deletion.
 
-        Inserts ``mode: speckit.<stem>`` before the closing ``---`` so
-        Copilot can associate the skill with its agent mode.
+        ``setup()`` records this file in the manifest only when it creates it;
+        when it already exists the file is merged and intentionally left
+        untracked.  On upgrade the untracked-but-existing file would otherwise
+        be flagged stale and deleted, destroying user settings (and the file
+        the integration still manages).
         """
-        updated = _CopilotSkillsHelper().post_process_skill_content(content)
-        lines = updated.splitlines(keepends=True)
+        return {".vscode/settings.json"}
 
-        # Extract skill name from frontmatter to derive the mode value
-        dash_count = 0
-        skill_name = ""
-        for line in lines:
-            stripped = line.rstrip("\n\r")
-            if stripped == "---":
-                dash_count += 1
-                if dash_count == 2:
-                    break
-                continue
-            if dash_count == 1:
-                if stripped.startswith("mode:"):
-                    return updated  # already present
-                if stripped.startswith("name:"):
-                    # Parse: name: "speckit-plan" → speckit.plan
-                    val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
-                    # Convert speckit-plan → speckit.plan
-                    if val.startswith("speckit-"):
-                        skill_name = "speckit." + val[len("speckit-"):]
-                    else:
-                        skill_name = val
+    def post_process_skill_content(self, content: str) -> str:
+        """Inject shared hook guidance into Copilot skill content.
 
-        if not skill_name:
-            return updated
-
-        # Inject mode: before the closing --- of frontmatter
-        out: list[str] = []
-        dash_count = 0
-        injected = False
-        for line in lines:
-            stripped = line.rstrip("\n\r")
-            if stripped == "---":
-                dash_count += 1
-                if dash_count == 2 and not injected:
-                    if line.endswith("\r\n"):
-                        eol = "\r\n"
-                    elif line.endswith("\n"):
-                        eol = "\n"
-                    else:
-                        eol = ""
-                    out.append(f"mode: {skill_name}{eol}")
-                    injected = True
-            out.append(line)
-        return "".join(out)
+        Delegates to :class:`_CopilotSkillsHelper` for shared post-processing.
+        The ``mode:`` frontmatter field is intentionally omitted: VS Code
+        Copilot Agent Skills do not support it (see issue #2799).
+        """
+        return _CopilotSkillsHelper().post_process_skill_content(content)
 
     def setup(
         self,

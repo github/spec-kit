@@ -23,13 +23,6 @@ if ($Help) {
 # Get all paths and variables from common functions
 $paths = Get-FeaturePathsEnv
 
-# If feature.json pins an existing feature directory, branch naming is not required.
-if (-not (Test-FeatureJsonMatchesFeatureDir -RepoRoot $paths.REPO_ROOT -ActiveFeatureDir $paths.FEATURE_DIR)) {
-    if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit $paths.HAS_GIT)) {
-        exit 1
-    }
-}
-
 # Ensure the feature directory exists
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
@@ -61,7 +54,6 @@ if ($Json) {
         IMPL_PLAN = $paths.IMPL_PLAN
         SPECS_DIR = $paths.FEATURE_DIR
         BRANCH = $paths.CURRENT_BRANCH
-        HAS_GIT = $paths.HAS_GIT
     }
     $result | ConvertTo-Json -Compress
 } else {
@@ -69,5 +61,4 @@ if ($Json) {
     Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
     Write-Output "SPECS_DIR: $($paths.FEATURE_DIR)"
     Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
-    Write-Output "HAS_GIT: $($paths.HAS_GIT)"
 }
