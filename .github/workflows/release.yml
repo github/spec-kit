@@ -70,12 +70,6 @@ jobs:
           specify init my-project
           \`\`\`
 
-          Or from [PyPI](https://pypi.org/project/specify-cli/) (once published for this release):
-
-          \`\`\`bash
-          uv tool install specify-cli@${VERSION_NO_V}
-          \`\`\`
-
           NOTES_EOF
 
           echo "## What's Changed" >> release_notes.md
