@@ -8,25 +8,26 @@ This feature is a removal/refactor inside a known codebase, so "research" here r
 
 **Current state**: All ~40 integration subclasses declare `context_file = "..."` (e.g. `claude → CLAUDE.md`). The base layer uses it to (a) drive `upsert_context_section()`/`remove_context_section()` and (b) substitute `__CONTEXT_FILE__` in templates via `process_template(..., context_file=...)`.
 
-**Decision**: Keep `context_file` as **inert metadata**. Remove its use as a trigger for context-section writes, but retain it as the declared value the extension/templates consume (e.g. it still feeds `__CONTEXT_FILE__` substitution and is the value the extension config is seeded from at install time — by the extension, not the CLI).
+**Decision**: **Remove `context_file` entirely** from all integration classes. The CLI keeps no per-agent context-file knowledge of any kind. The per-agent default mapping (key → context file) is relocated to the extension, which ships it as `agent-context-defaults.json` and self-seeds from it. The `__CONTEXT_FILE__` substitution and its supporting `process_template(..., context_file=...)` path are deleted, and the placeholder is removed from the core templates that used it (`templates/commands/plan.md`).
 
-**Rationale**: FR-007 explicitly permits keeping the declaration as informational metadata. Templates already reference `__CONTEXT_FILE__`; removing the attribute would force a larger, riskier change across every integration and its tests for no functional gain. The spec's requirement is that the declaration "MUST NOT cause the CLI to manage the context section" — satisfied by removing the call sites, not the attribute.
+**Rationale**: The hardened requirement (FR-007, revised) is that the CLI carry *no* context-file state — not even inert metadata the CLI can "see, handle, or migrate." Leaving the attribute or the `__CONTEXT_FILE__` resolver in place would keep agent-context concerns coupled to the CLI. Moving the default mapping into the extension makes the extension fully self-contained: it no longer depends on the CLI registry to discover an agent's context file.
 
 **Alternatives considered**:
-- *Delete `context_file` entirely from all integrations*: rejected — large blast radius, breaks `__CONTEXT_FILE__` template substitution and many per-integration tests, no requirement demands it.
-- *Move `context_file` into the extension only*: rejected — the CLI's template processing still needs the value to render `__CONTEXT_FILE__`; relocating ownership now couples template rendering to extension presence.
+- *Keep `context_file` as inert metadata (earlier Phase 1 decision)*: rejected on review — the goal is zero agent-context state in the CLI, so even unused metadata and placeholder resolution must go.
+- *Keep the mapping in the CLI but stop using it*: rejected — the extension must own the mapping so it works regardless of CLI internals.
 
 ## R2: How `__CONTEXT_FILE__` is resolved in `agents.py`
 
-**Current state** (post-sync with upstream/main): `agents.py` (~lines 429–458) resolves `__CONTEXT_FILE__` by importing `_load_agent_context_config`, reading the extension's `agent-context-config.yml`, and passing it through `IntegrationBase._resolve_context_file_values(...)` / `_format_context_file_values(...)`. Upstream has generalized the single `context_file` into a **plural `context_files`** concept (config key `context_files`, resolver helpers in `base.py` ~lines 738–833), with an `include_context_files` flag that ignores the extension's configured list when the extension is disabled while still honoring the integration's own declared value.
+**Current state** (post-sync with upstream/main): `agents.py` resolves `__CONTEXT_FILE__` by importing `_load_agent_context_config`, reading the extension's `agent-context-config.yml`, and passing it through `IntegrationBase._resolve_context_file_values(...)` / `_format_context_file_values(...)`. Upstream generalized the single `context_file` into a **plural `context_files`** concept with extension-config-driven resolution.
 
-**Decision**: Resolve `__CONTEXT_FILE__` directly from the integration's declared `context_file` metadata (R1), removing the dependency on `_load_agent_context_config` and the extension-config-driven `context_files` list. A small, self-contained formatting helper for one-or-more declared values may remain in the integration layer, but it MUST NOT read the extension config.
+**Decision**: **Remove `__CONTEXT_FILE__` resolution from the CLI entirely.** Delete the resolution block in `agents.py` and the `_resolve_context_file_values` / `_format_context_file_values` / `_resolve_context_files` helpers in `base.py`. The CLI no longer substitutes the placeholder; the core templates that referenced it are updated to drop it. Any stray `__CONTEXT_FILE__` that might appear in a template is passed through literally rather than resolved.
 
-**Rationale**: FR-002 forbids the CLI reading the extension config. The integration already knows its own context file path(s), so the CLI can substitute the placeholder without touching extension-owned files. The plural `context_files` config key (read from `agent-context-config.yml`) is exactly the kind of extension-owned configuration the CLI must stop consuming.
+**Rationale**: FR-002 forbids the CLI reading the extension config, and the hardened FR-007 forbids the CLI resolving context files at all. With the placeholder removed from the templates the CLI renders, no substitution is needed, so the entire resolver path is dead and is deleted.
 
 **Alternatives considered**:
-- *Stop substituting `__CONTEXT_FILE__` and leave the placeholder for the extension to fill*: rejected — placeholder appears in command templates the CLI renders at install time; leaving it unresolved would ship literal `__CONTEXT_FILE__` strings to users.
-- *Keep the plural `context_files` resolver but only drop the config read*: viable; the resolver can stay as pure metadata formatting as long as every branch that reads `agent-context-config.yml` is removed. Decision defers the keep-vs-delete split for these helpers to `/speckit.tasks`, bound by the rule that no remaining branch reads the extension config.
+- *Resolve from integration metadata instead of extension config (earlier Phase 1 decision)*: rejected — that still keeps the `context_file` attribute and a CLI-side resolver, which the hardened requirement disallows.
+- *Leave the placeholder unresolved in templates*: avoided by removing the placeholder from the core templates outright, so no literal `__CONTEXT_FILE__` ships to users.
+
 
 ## R3: Auto-install of the `agent-context` extension during `specify init`
 
@@ -45,7 +46,7 @@ This feature is a removal/refactor inside a known codebase, so "research" here r
 
 **Current state** (post-sync): `base.py` has `_agent_context_extension_enabled()` (~line 605, reads `.specify/extensions/.registry`) and `_resolve_context_markers()` (~line 645, reads `agent-context-config.yml`), used by `upsert_context_section()` (~line 895) and `remove_context_section()` (~line 948). Upstream additionally added `_resolve_context_file_values()` (~line 738), `_format_context_file_values()` (~line 787), and `_resolve_context_files()` (~line 791); upsert/remove now **iterate over a list of context files** (`for context_file in context_files:`) read from the extension config's plural `context_files` key.
 
-**Decision**: Remove the gating helper, the marker resolver, and the `upsert_context_section()` / `remove_context_section()` methods (and their per-file loops) along with all their call sites in `setup()`/`teardown()` across the base classes (call sites at ~lines 1181, 1200, 1309, 1518, 1725, 1959). Remove `_resolve_context_files()` and the config-reading branches of `_resolve_context_file_values()`; retain only a pure metadata formatter if `__CONTEXT_FILE__` substitution still needs one (R2).
+**Decision**: Remove the gating helper, the marker resolver, and the `upsert_context_section()` / `remove_context_section()` methods (and their per-file loops) along with all their call sites in `setup()`/`teardown()` across the base classes (call sites at ~lines 1181, 1200, 1309, 1518, 1725, 1959). Also remove `_resolve_context_files()`, `_resolve_context_file_values()`, and `_format_context_file_values()` outright — with `__CONTEXT_FILE__` resolution gone (R2), no metadata formatter survives.
 
 **Rationale**: FR-001/FR-003 — the base layer must not manage the section, gate on the extension, resolve markers, or read the extension's `context_files` list. With the upsert/remove methods gone, the gating, marker, and config-reading helpers are dead code.
 
@@ -80,8 +81,8 @@ This feature is a removal/refactor inside a known codebase, so "research" here r
 
 | ID | Decision |
 |----|----------|
-| R1 | Keep `context_file` as inert metadata (used for `__CONTEXT_FILE__` only) |
-| R2 | Resolve `__CONTEXT_FILE__` from integration metadata, not extension config |
+| R1 | Remove `context_file` from integrations; extension owns the defaults map |
+| R2 | Remove `__CONTEXT_FILE__` resolution from the CLI; drop placeholder from templates |
 | R3 | Extension install becomes opt-in; CLI stops writing its config |
 | R4 | Remove gating + marker-resolution + upsert/remove from base layer |
 | R5 | Remove the deprecation warning and its test |

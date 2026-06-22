@@ -26,12 +26,12 @@ This is a CLI tool, so the externally observable "contract" is the behavior of `
 
 *Maps to*: FR-004, FR-005 · SC-005
 
-## C3: Integration setup never writes the context section
+## C3: Integration setup never writes the context section or resolves a context file
 
 **Given** any integration's `setup()` runs (regardless of extension state)
 **When** command files are installed
 **Then**:
-- `__CONTEXT_FILE__` placeholders in rendered templates are substituted from the integration's declared `context_file` metadata.
+- The CLI performs no `__CONTEXT_FILE__` substitution; the placeholder is no longer present in any core template and integration classes declare no `context_file`. Should a literal `__CONTEXT_FILE__` appear in a template, the CLI leaves it untouched.
 - No call creates, updates, or removes a managed section in the agent context file.
 
 *Maps to*: FR-001, FR-003, FR-007
@@ -53,7 +53,8 @@ This is a CLI tool, so the externally observable "contract" is the behavior of `
 **Then** there are zero references to:
 - `upsert_context_section`, `remove_context_section`
 - `_agent_context_extension_enabled`, `_resolve_context_markers`
-- `_resolve_context_files`, and any extension-config-reading branch of `_resolve_context_file_values` / `_format_context_file_values`
+- `_resolve_context_files`, `_resolve_context_file_values`, `_format_context_file_values`
+- the `context_file` class attribute, the `__CONTEXT_FILE__` placeholder, and `_context_file_display`
 - the plural `context_files` config-key consumption
 - `_AGENT_CTX_EXT_CONFIG`, `_load_agent_context_config`, `_save_agent_context_config`, `_update_agent_context_config_file`
 - the v0.12.0 deprecation string

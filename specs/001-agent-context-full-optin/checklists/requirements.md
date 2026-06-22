@@ -32,4 +32,4 @@
 ## Notes
 
 - Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`.
-- The spec intentionally keeps file/symbol-level removals out of the requirements; those belong to the planning phase. FR-007 and the Assumptions section bound the one genuine design choice (keep `context_file` as inert metadata vs. remove it entirely) so planning can decide without reopening scope.
+- The spec intentionally keeps file/symbol-level removals out of the requirements; those belong to the planning phase. FR-007 and the Assumptions section settle the one genuine design choice — `context_file` is removed entirely from the CLI and the per-agent defaults map is relocated to the extension.

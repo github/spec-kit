@@ -31,13 +31,13 @@ Single project: Specify CLI source under `src/specify_cli/`, tests under `tests/
 
 ## Phase 2: Foundational (Blocking Prerequisites)
 
-**Purpose**: Make `__CONTEXT_FILE__` substitution independent of the extension config so the config helpers can later be removed without breaking template rendering.
+**Purpose**: Remove `__CONTEXT_FILE__` resolution from the CLI and drop the placeholder from the core templates, so the config helpers can be deleted without leaving unresolved placeholders.
 
 **⚠️ CRITICAL**: T003–T004 MUST complete before US2 (config-helper deletion).
 
-- [ ] T003 In `src/specify_cli/agents.py` (~lines 429–458), rewrite the `__CONTEXT_FILE__` resolution to derive solely from the active integration's declared `context_file` metadata. Remove the local `from . import _load_agent_context_config` import and the call that reads `agent-context-config.yml`; keep using a pure formatter for one-or-more declared values (no file I/O).
-- [ ] T004 In `src/specify_cli/integrations/base.py`, ensure a pure metadata formatter exists for the integration's declared context file value(s) that does NOT read `agent-context-config.yml` (retain/trim `_format_context_file_values`; drop the config-reading branches of `_resolve_context_file_values`). This is the only context-file helper allowed to survive, and only as inert metadata formatting (R1/R2).
-- [ ] T005 [P] Add/extend a unit test in `tests/integrations/test_integration_base_markdown.py` asserting that `__CONTEXT_FILE__` is substituted from integration metadata with no read of `agent-context-config.yml` (use a `tmp_path` project with no extension config present).
+- [ ] T003 In `src/specify_cli/agents.py`, delete the `__CONTEXT_FILE__` resolution block entirely (including the local `from . import _load_agent_context_config` import). The CLI no longer substitutes the placeholder.
+- [ ] T004 In `src/specify_cli/integrations/base.py`, delete `_resolve_context_file_values`, `_format_context_file_values`, and `_resolve_context_files` outright — no context-file helper survives (R1/R2). Remove the `__CONTEXT_FILE__` placeholder from `templates/commands/plan.md`.
+- [ ] T005 [P] Add/extend a unit test in `tests/integrations/test_integration_base_markdown.py` asserting that no `__CONTEXT_FILE__` placeholder survives in rendered command files and that the CLI never reads `agent-context-config.yml`.
 
 **Checkpoint**: Template rendering no longer depends on the extension config.
 
@@ -115,7 +115,7 @@ Single project: Specify CLI source under `src/specify_cli/`, tests under `tests/
 
 - [ ] T024 [P] Update `AGENTS.md` "Context file behavior" section to state the `agent-context` extension fully owns context-file creation/update/removal; remove the "`context_file` is written automatically … when `specify init` or `specify integration use` is run" language and the references to `upsert_context_section()` / `remove_context_section()` as Python-layer gates (FR-010).
 - [ ] T025 [P] Update user-facing docs under `docs/` and `extensions/agent-context/README.md` to describe the extension as opt-in and the sole owner; add a `CHANGELOG.md` entry noting the behavior change (SemVer / Principle V).
-- [ ] T026 [P] Review `src/specify_cli/integration_scaffold.py` (and `tests/` for it): keep `context_file = "AGENTS.md"` as declared metadata (Principle I) but remove any comment/assertion implying the CLI manages the context section.
+- [ ] T026 [P] Update `src/specify_cli/integration_scaffold.py` (and `tests/` for it): remove the `context_file = "AGENTS.md"` line from the scaffold template and any comment/assertion referencing it, so newly scaffolded integrations declare no context file.
 - [ ] T027 Add a backward-compatibility test: a `tmp_path` project pre-seeded with a legacy managed section and an `agent-context-config.yml` survives `init` / integration switch / uninstall unchanged by the CLI (contract C6, SC-006).
 - [ ] T028 [P] Run `ruff check src/` and `markdownlint-cli2` on changed docs; fix violations (Security & Cross-Platform Constraints gate).
 - [ ] T029 Run the full `pytest -q` suite and confirm green, including the T002 guard and the new extension-driven test (SC-004). Cross-platform note: bash-script test (T011) auto-skips on Windows via `@requires_bash`.
@@ -191,6 +191,6 @@ Task: "Update tests/integrations/test_registry.py (T009)"
 ## Notes
 
 - `[P]` = different files, no dependencies.
-- Keep `context_file` class attributes on integrations — Principle I mandates them as declared metadata; only their use as a *trigger* for context writes is removed.
+- Remove `context_file` class attributes from all integrations — the CLI holds no context-file state; the per-agent defaults map lives in the extension (`agent-context-defaults.json`).
 - Commit after each task or logical group; keep the suite green at every checkpoint.
 - The bundled extension scripts are the new single owner — T015 is the one place extension behavior changes (self-seeding); all other extension files stay intact.

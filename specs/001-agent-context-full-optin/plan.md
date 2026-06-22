@@ -36,7 +36,7 @@ Evaluated against **Spec Kit Constitution v1.0.0** (`.specify/memory/constitutio
 
 | Principle | Verdict | Notes |
 |-----------|---------|-------|
-| **I. Code Quality & Architectural Discipline** | ✅ PASS | Preserves the registry + base-class pattern. Principle I lists `context_file` as a required class attribute "where applicable" — so R1 (keep `context_file` as inert metadata) is *mandated*, not optional. We reinforce the single-source-of-truth rule by making the `agent-context` extension the sole owner of context management. No new cross-boundary `_`-private imports. |
+| **I. Code Quality & Architectural Discipline** | ✅ PASS | Preserves the registry + base-class pattern. R1 removes the `context_file` class attribute entirely and relocates the per-agent defaults map into the `agent-context` extension, which becomes the sole owner of all context-file knowledge. This strengthens the single-source-of-truth rule: the CLI carries no agent-context state. No new cross-boundary `_`-private imports. |
 | **II. Test-Backed Change (NON-NEGOTIABLE)** | ✅ PASS | Behavioral change ships with tests (FR-009, contracts C1–C7, quickstart). **Parity invariant guard**: every integration MUST keep its registry entry + `tests/integrations/test_integration_<key>.py`; removing upsert/remove from the base layer MUST NOT delete or weaken those parity tests — only the agent-context-specific assertions are pruned/relocated. Security/idempotency suites (path-traversal, manifest, no-clobber) are untouched. Network stays mocked. Must pass the ubuntu+windows × py3.11/3.12/3.13 matrix. |
 | **III. CLI & UX Consistency** | ✅ PASS | Making `agent-context` opt-in routes it through the standard extension verbs (`add`/`install`, `enable`/`disable`) instead of a bespoke auto-install — *more* consistent, not less. `init` stays idempotent ("already present" → exit 0). Removing the deprecation line keeps output grammar clean. User-facing behavior change → update `docs/` (FR-010). |
 | **IV. Offline-First Performance & Resource Discipline** | ✅ PASS | No network paths involved. Removing config-file I/O during setup/teardown *reduces* filesystem writes; remaining writes stay idempotent and hash-tracked. No import-time cost added. |
@@ -73,12 +73,12 @@ src/specify_cli/
 │   └── init.py                     # CHANGE: stop auto-installing agent-context + stop writing its config
 └── integrations/
     ├── base.py                     # REMOVE: upsert/remove_context_section, _agent_context_extension_enabled,
-    │                               #          _resolve_context_markers, marker constants usage, deprecation msg,
-    │                               #          and all setup()/teardown() call sites
+    │                               #          _resolve_context_markers, _resolve_context_file(s)/_format_context_file_values,
+    │                               #          marker constants usage, deprecation msg, and all setup()/teardown() call sites
     ├── _helpers.py                 # REMOVE: agent-context config clear/update on switch + uninstall
-    └── <agent>/__init__.py         # KEEP context_file as inert metadata (decision in research.md)
+    └── <agent>/__init__.py         # REMOVE context_file attribute (defaults map now lives in the extension)
 
-extensions/agent-context/           # UNCHANGED — already self-contained (scripts + config + commands + hooks)
+extensions/agent-context/           # ADD agent-context-defaults.json (key→context_file); scripts self-seed from it
 
 tests/
 ├── extensions/test_extension_agent_context.py   # RELOCATE/PRUNE: drop CLI-side gating + deprecation tests;
