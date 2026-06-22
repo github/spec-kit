@@ -1750,7 +1750,7 @@ class ExtensionManager:
                     # Skills are a companion artifact.  If command registration
                     # already succeeded, still persist it so later cleanup can
                     # find those command files.
-                    from . import _print_cli_warning
+                    from .. import _print_cli_warning
 
                     _print_cli_warning(
                         "register extension skills for",
@@ -1775,7 +1775,7 @@ class ExtensionManager:
             except Exception as ext_err:
                 # Best-effort per extension: warn and move on so a single bad
                 # extension cannot silently drop the others. See #2950.
-                from . import _print_cli_warning
+                from .. import _print_cli_warning
 
                 _print_cli_warning(
                     "register extension artifacts for",
