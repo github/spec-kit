@@ -239,6 +239,72 @@ class TestKimiContextFileMigration:
         assert "<!-- SPECKIT START -->" not in content
         assert not kimi_md.exists()
 
+    def test_setup_migrate_legacy_skipped_when_agent_context_disabled(
+        self, tmp_path
+    ):
+        """A disabled agent-context extension opts out of KIMI.md migration."""
+        i = get_integration("kimi")
+
+        registry = tmp_path / ".specify" / "extensions" / ".registry"
+        registry.parent.mkdir(parents=True)
+        registry.write_text('{"extensions": {"agent-context": {"enabled": false}}}')
+
+        kimi_md = tmp_path / "KIMI.md"
+        kimi_md.write_text("# Kimi context\n\nKeep this user note.\n")
+
+        m = IntegrationManifest("kimi", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
+
+        # Opted-out project: KIMI.md is left untouched and AGENTS.md is not
+        # created/modified by the migration.
+        assert kimi_md.is_file()
+        assert kimi_md.read_text() == "# Kimi context\n\nKeep this user note.\n"
+        assert not (tmp_path / "AGENTS.md").exists()
+
+    def test_context_migration_skips_corrupted_single_marker(self, tmp_path):
+        """A KIMI.md with only a start marker is left untouched (no leak)."""
+        project = tmp_path
+        kimi_md = project / "KIMI.md"
+        kimi_md.write_text(
+            "# Notes\n\n"
+            "<!-- SPECKIT START -->\n"
+            "dangling managed content\n"
+        )
+
+        result = _migrate_legacy_kimi_context_file(project)
+
+        assert result is False
+        # KIMI.md untouched; managed block never copied into AGENTS.md.
+        assert kimi_md.is_file()
+        assert "dangling managed content" in kimi_md.read_text()
+        assert not (project / "AGENTS.md").exists()
+
+    def test_context_migration_skips_unreadable_kimi_md(self, tmp_path):
+        """Non-UTF-8 KIMI.md is skipped instead of raising during setup."""
+        project = tmp_path
+        kimi_md = project / "KIMI.md"
+        kimi_md.write_bytes(b"\xff\xfe invalid utf-8 \xa6\n")
+
+        result = _migrate_legacy_kimi_context_file(project)
+
+        assert result is False
+        assert kimi_md.is_file()
+        assert not (project / "AGENTS.md").exists()
+
+    def test_context_migration_skips_when_agents_md_is_directory(self, tmp_path):
+        """An AGENTS.md that exists as a directory is skipped, not written to."""
+        project = tmp_path
+        (project / "AGENTS.md").mkdir()
+        kimi_md = project / "KIMI.md"
+        kimi_md.write_text("# Notes\n\nKeep this.\n")
+
+        result = _migrate_legacy_kimi_context_file(project)
+
+        assert result is False
+        # KIMI.md is preserved and the directory is untouched.
+        assert kimi_md.is_file()
+        assert (project / "AGENTS.md").is_dir()
+
 
 class TestKimiTeardownLegacyCleanup:
     """teardown() removes leftover legacy .kimi/skills/ directories."""

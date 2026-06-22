@@ -109,10 +109,14 @@ class KimiIntegration(SkillsIntegration):
                 _is_safe_legacy_dir(new_skills_dir, project_root)
             ):
                 _migrate_legacy_kimi_skills_dir(old_skills_dir, new_skills_dir)
-            marker_start, marker_end = self._resolve_context_markers(project_root)
-            _migrate_legacy_kimi_context_file(
-                project_root, marker_start=marker_start, marker_end=marker_end
-            )
+            # Mirror upsert/remove_context_section: a disabled agent-context
+            # extension is a full opt-out, so skip the KIMI.md → AGENTS.md
+            # migration entirely and leave both files untouched.
+            if self._agent_context_extension_enabled(project_root):
+                marker_start, marker_end = self._resolve_context_markers(project_root)
+                _migrate_legacy_kimi_context_file(
+                    project_root, marker_start=marker_start, marker_end=marker_end
+                )
 
         return created
 
@@ -331,28 +335,53 @@ def _migrate_legacy_kimi_context_file(
 
     The Speckit managed section is stripped from ``KIMI.md`` before the
     remaining content is appended to ``AGENTS.md``. The legacy file is
-    deleted if it becomes empty. Returns ``True`` if ``KIMI.md`` existed
-    and was processed.
+    deleted if it becomes empty. Returns ``True`` if ``KIMI.md`` was
+    migrated, ``False`` when the migration is skipped.
 
-    Both files are checked for symlinks first: a symlinked ``KIMI.md`` is not
-    followed (its target could be read from outside the project), and a
-    symlinked ``AGENTS.md`` is never written through (it could redirect the
-    write to an arbitrary file outside the project root). In either case the
-    migration is skipped and ``KIMI.md`` is left untouched.
+    The migration is skipped (leaving ``KIMI.md`` untouched) in any of these
+    cases, so a best-effort legacy cleanup never aborts ``setup()`` or
+    corrupts ``AGENTS.md``:
+
+    - ``KIMI.md`` is a symlink, missing, or unreadable (its target could be
+      read from outside the project, or it may not be valid UTF-8).
+    - ``AGENTS.md`` is a symlink (it could redirect the write to a file
+      outside the project root), exists as a non-file (e.g. a directory),
+      or is unreadable/unwritable.
+    - ``KIMI.md`` has a corrupted managed section — only one marker is
+      present, or the end marker precedes the start. Stripping is only done
+      when both markers are present and well-ordered, so a partial managed
+      block is never copied into ``AGENTS.md``; the user repairs it manually.
     """
     legacy_path = project_root / "KIMI.md"
     if legacy_path.is_symlink() or not legacy_path.is_file():
         return False
 
     target_path = project_root / "AGENTS.md"
-    if target_path.is_symlink():
+    # Never follow a symlinked target, and never treat an existing non-file
+    # (e.g. a directory) as a writable context file.
+    if target_path.is_symlink() or (
+        target_path.exists() and not target_path.is_file()
+    ):
         return False
 
-    content = legacy_path.read_text(encoding="utf-8-sig")
+    try:
+        content = legacy_path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return False
+
     start_idx = content.find(marker_start)
     end_idx = content.find(marker_end, start_idx if start_idx != -1 else 0)
+    has_start = start_idx != -1
+    has_end = end_idx != -1
 
-    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+    # Refuse to migrate a corrupted managed section: exactly one marker, or
+    # an end marker that does not follow the start. Otherwise the unstripped
+    # managed block would leak into AGENTS.md (duplicating the section base
+    # setup just wrote). Leaving KIMI.md in place lets the user fix it.
+    if has_start != has_end or (has_start and end_idx <= start_idx):
+        return False
+
+    if has_start and has_end:
         removal_start = start_idx
         removal_end = end_idx + len(marker_end)
         if removal_end < len(content) and content[removal_end] == "\r":
@@ -369,17 +398,21 @@ def _migrate_legacy_kimi_context_file(
         legacy_path.unlink()
         return True
 
-    if target_path.is_file():
-        existing = target_path.read_text(encoding="utf-8-sig")
-        existing = existing.replace("\r\n", "\n").replace("\r", "\n")
-        if not existing.endswith("\n"):
-            existing += "\n"
-        new_content = existing + "\n" + user_content + "\n"
-    else:
-        new_content = user_content + "\n"
+    try:
+        if target_path.is_file():
+            existing = target_path.read_text(encoding="utf-8-sig")
+            existing = existing.replace("\r\n", "\n").replace("\r", "\n")
+            if not existing.endswith("\n"):
+                existing += "\n"
+            new_content = existing + "\n" + user_content + "\n"
+        else:
+            new_content = user_content + "\n"
 
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_bytes(new_content.encode("utf-8"))
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(new_content.encode("utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return False
+
     legacy_path.unlink()
     return True
 
