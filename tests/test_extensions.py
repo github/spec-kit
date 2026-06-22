@@ -3732,8 +3732,10 @@ class TestExtensionCatalog:
 
         resp = MagicMock()
         resp.read.return_value = data
-        resp.__enter__ = lambda s: s
-        resp.__exit__ = MagicMock(return_value=False)
+        # Configure the context-manager protocol explicitly so `with resp`
+        # yields `resp` itself, independent of how the protocol is invoked.
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
         return resp
 
     def test_download_extension_accepts_matching_sha256(self, temp_dir):

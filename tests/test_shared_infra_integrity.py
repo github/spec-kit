@@ -47,6 +47,31 @@ def test_comparison_is_case_insensitive():
     verify_archive_sha256(data, digest, "thing", _BoomError)
 
 
+def test_malformed_digest_is_rejected():
+    """A declared digest that is not 64 hex chars is rejected up front.
+
+    A too-short, too-long, or non-hex value is an authoring/catalog error and
+    must surface clearly instead of being treated as a digest that simply does
+    not match the archive.
+    """
+    for bad in ("deadbeef", "z" * 64, "0" * 63, "0" * 65):
+        with pytest.raises(_BoomError, match="[Ii]nvalid sha256"):
+            verify_archive_sha256(b"data", bad, "thing", _BoomError)
+
+
+def test_non_sha256_prefix_is_not_silently_stripped():
+    """Only a literal ``sha256:`` prefix is stripped.
+
+    A different algorithm prefix (e.g. ``md5:``) must not be silently dropped
+    and accepted as if the remaining characters were a valid SHA-256 digest;
+    the value is rejected as malformed.
+    """
+    data = b"prefixed"
+    digest = hashlib.sha256(data).hexdigest()
+    with pytest.raises(_BoomError, match="[Ii]nvalid sha256"):
+        verify_archive_sha256(data, f"md5:{digest}", "thing", _BoomError)
+
+
 def test_absent_digest_skips_and_logs_debug(caplog):
     """When no digest is declared the helper returns and logs at DEBUG.
 

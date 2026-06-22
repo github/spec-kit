@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import os
 import re
@@ -14,6 +15,9 @@ from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
 
 logger = logging.getLogger(__name__)
+
+# A SHA-256 digest is exactly 64 lowercase hexadecimal characters.
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def verify_archive_sha256(
@@ -38,7 +42,8 @@ def verify_archive_sha256(
         error_cls: Exception type to raise on mismatch (e.g. ``ExtensionError``).
 
     Raises:
-        error_cls: If ``expected`` is provided and does not match ``data``.
+        error_cls: If ``expected`` is provided and is not a well-formed
+            SHA-256 hex digest, or does not match ``data``.
     """
     if not expected:
         logger.debug(
@@ -46,9 +51,24 @@ def verify_archive_sha256(
             name,
         )
         return
-    expected_hex = str(expected).split(":", 1)[-1].strip().lower()
+    # Strip *only* a literal ``sha256:`` algorithm prefix (case-insensitive).
+    # Any other prefix is part of the value and must not be silently dropped,
+    # otherwise a malformed or wrong-algorithm digest (e.g. ``md5:...``) would
+    # be quietly accepted as if it were a valid SHA-256.
+    raw = str(expected).strip()
+    if raw[:7].lower() == "sha256:":
+        raw = raw[7:].strip()
+    expected_hex = raw.lower()
+    if not _SHA256_HEX_RE.match(expected_hex):
+        raise error_cls(
+            f"Invalid sha256 declared for {name!r}: expected 64 hexadecimal "
+            f"characters (optionally prefixed with 'sha256:'), got "
+            f"{expected!r}."
+        )
     actual_hex = hashlib.sha256(data).hexdigest()
-    if actual_hex != expected_hex:
+    # Constant-time comparison: both sides are fixed-length hex digests, so use
+    # ``hmac.compare_digest`` to avoid leaking information through timing.
+    if not hmac.compare_digest(actual_hex, expected_hex):
         raise error_cls(
             f"Integrity check failed for {name!r}: the catalog declares "
             f"sha256 {expected_hex}, but the downloaded archive is "
