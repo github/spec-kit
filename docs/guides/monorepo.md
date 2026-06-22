@@ -58,8 +58,8 @@ export SPECIFY_INIT_DIR=apps/web
 ```
 
 The path must exist and contain `.specify/`. If it does not, the command
-**errors and does not fall back** to the current directory or the Git toplevel —
-this is deliberate, so a typo never writes specs into the wrong project:
+**errors and does not fall back** to the current directory or the Git toplevel.
+This is deliberate: a typo never writes specs into the wrong project:
 
 ```text
 ERROR: SPECIFY_INIT_DIR does not point to an existing directory: apps/wbe
@@ -67,7 +67,7 @@ ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): apps
 ```
 
 `SPECIFY_INIT_DIR` selects the **project**; `SPECIFY_FEATURE_DIRECTORY` selects
-the **feature** within it. They compose — set both to pick a project and a
+the **feature** within it. They compose: set both to pick a project and a
 feature non-interactively. See the
 [`SPECIFY_INIT_DIR` reference](../reference/core.md#environment-variables) for
 the full contract and the two-axes model.
@@ -78,8 +78,8 @@ the full contract and the two-axes model.
 (`get_repo_root` in Bash, `Get-RepoRoot` in PowerShell). It takes effect only
 when it is present in the environment of the shell that runs those scripts.
 
-- **Scripted / CI runs:** export it in the same shell that drives the commands —
-  reliable.
+- **Scripted / CI runs:** export it in the same shell that drives the commands;
+  it is reliable there.
 - **Interactive agents:** whether an exported variable reaches the shell tool an
   agent uses is agent-specific. Export `SPECIFY_INIT_DIR` *before* launching the
   agent, and verify once (e.g. run `/speckit.specify` and confirm the new feature
@@ -95,13 +95,11 @@ when it is present in the environment of the shell that runs those scripts.
 > Spec directories still live under the selected member project, while the Git
 > branch namespace is shared by the whole monorepo. Manage branches and commits
 > at the repository root, or initialize Git per member project if you want
-> isolated per-project branch namespaces. Tighter Git scoping for monorepos is a
-> known limitation tracked in
-> [#3081](https://github.com/github/spec-kit/issues/3081).
+> isolated per-project branch namespaces.
 
 ## Constitutions
 
 Each member project has its own `.specify/memory/constitution.md` and
 `/speckit.constitution` edits the local project's file. There is no base/inherit
-mechanism today — shared engineering rules must be duplicated per project or kept
+mechanism today, so shared engineering rules must be duplicated per project or kept
 out of the constitution.
