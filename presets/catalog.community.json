@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-16T00:00:00Z",
+  "updated_at": "2026-06-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -308,11 +308,11 @@
     "game-narrative-writing": {
       "name": "Game Narrative Writing",
       "id": "game-narrative-writing",
-      "version": "1.0.0",
-      "description": "Spec-Driven Development for interactive game-narrative pre-production in video games. Authors write in a portable generic format, Twine/Sugarcube (.twee) or Ink (.ink). Covers choice-IF, visual novels, and branching dialogue. Supports Tier 1 mechanic hooks (flag, counter, inventory, timer, trust, currency, npc_state, ending_condition), multi-ending design, series carry-over variable registry, and NPC-focused character architecture.",
+      "version": "1.1.0",
+      "description": "Preset for game narrative design and interactive storytelling. It adapts the Spec-Driven Development workflow for game narratives: features become story mechanics, specs become narrative briefs, plans become story maps, and tasks become dialogue and scene-writing tasks. Supports branching narratives, player agency systems, state machines, and interactive dialogue trees.",
       "author": "Andreas Daumann",
       "repository": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
-      "download_url": "https://github.com/adaumann/speckit-preset-game-narrative-writing/archive/refs/tags/v1.0.0.zip",
+      "download_url": "https://github.com/adaumann/speckit-preset-game-narrative-writing/releases/download/v1.1.0/v1.1.0-import.zip",
       "homepage": "https://github.com/adaumann/speckit-preset-game-narrative-writing",
       "documentation": "https://github.com/adaumann/speckit-preset-game-narrative-writing/blob/main/game-narrative-writing/README.md",
       "license": "MIT",
@@ -320,27 +320,19 @@
         "speckit_version": ">=0.5.0"
       },
       "provides": {
-        "templates": 22,
-        "commands": 36,
-        "scripts": 2
+        "templates": 37,
+        "commands": 34,
+        "scripts": 5
       },
       "tags": [
-        "game-writing",
         "interactive-fiction",
-        "twine",
-        "ink",
-        "renpy",
-        "point-and-click",
-        "branching-narrative",
-        "choice-if",
-        "visual-novel",
-        "mechanic-hooks",
         "game-narrative",
-        "export",
-        "series"
+        "branching",
+        "twine",
+        "ink"
       ],
       "created_at": "2026-05-05T08:00:00Z",
-      "updated_at": "2026-05-05T08:00:00Z"
+      "updated_at": "2026-06-22T00:00:00Z"
     },
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
