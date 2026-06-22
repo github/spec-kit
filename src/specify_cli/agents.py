@@ -562,10 +562,13 @@ class CommandRegistrar:
             except (OSError, ValueError):
                 continue
 
-            if not source_file.exists():
+            if not source_file.is_file():
                 continue
 
-            content = source_file.read_text(encoding="utf-8")
+            try:
+                content = source_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
             frontmatter, body = self.parse_frontmatter(content)
 
             if frontmatter.get("strategy") == "wrap":

@@ -135,12 +135,25 @@ class TestCopilotPromptTraversal:
         _assert_no_stray_files(tmp_path, Path(bad_name).name.replace("/", ""))
 
 
+ABS_SECRET = "__ABS_SECRET__"
+
 FILE_FIELD_PAYLOADS = [
     "../secret.txt",
     "../../secret.txt",
     "commands/../../secret.txt",
-    "/etc/passwd",
+    ABS_SECRET,
 ]
+
+
+def _resolve_payload(bad_file: str, secret: Path) -> str:
+    """Map the absolute-path sentinel to the real, existing secret file.
+
+    Using the temp secret's own absolute path (instead of ``/etc/passwd``)
+    guarantees the file exists on every platform — so the test fails if the
+    absolute-path guard regresses, rather than passing because the target
+    happens not to exist (e.g. on Windows runners).
+    """
+    return str(secret) if bad_file == ABS_SECRET else bad_file
 
 
 class TestCommandFileTraversal:
@@ -163,7 +176,7 @@ class TestCommandFileTraversal:
         registrar = CommandRegistrar()
         registered = registrar.register_commands(
             "claude",
-            [{"name": "speckit.myext.hello", "file": bad_file, "aliases": []}],
+            [{"name": "speckit.myext.hello", "file": _resolve_payload(bad_file, secret), "aliases": []}],
             "myext",
             ext_dir,
             project,
@@ -187,7 +200,7 @@ class TestCommandFileTraversal:
         registrar = CommandRegistrar()
         registered = registrar.register_commands(
             "gemini",
-            [{"name": "speckit.myext.hello", "file": bad_file, "aliases": []}],
+            [{"name": "speckit.myext.hello", "file": _resolve_payload(bad_file, secret), "aliases": []}],
             "myext",
             ext_dir,
             project,
