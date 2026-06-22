@@ -4670,6 +4670,36 @@ class TestExtensionIgnore:
 class TestExtensionAddCLI:
     """CLI integration tests for extension add command."""
 
+    def test_catalog_add_escapes_url_markup(self, tmp_path):
+        """Catalog add should render user-supplied URLs literally."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        url = "https://example.com/[red]catalog[/red].json"
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    url,
+                    "--name",
+                    "community",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert f"URL: {url}" in result.output
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):
@@ -4914,6 +4944,53 @@ class TestExtensionAddCLI:
         assert status_messages == [
             f"[cyan]Installing extension: {escape_markup(extension_name)}[/cyan]"
         ]
+
+    def test_add_post_install_hint_escapes_manifest_id_markup(self, tmp_path):
+        """Extension IDs printed in Rich-rendered hints must stay literal."""
+        import io
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        manifest_id = "[red]bad[/red]"
+
+        def fake_install_from_zip(self_obj, zip_path, speckit_version, priority=10, force=False):
+            return SimpleNamespace(
+                id=manifest_id,
+                name="Bad Extension",
+                version="1.0.0",
+                description="Test extension",
+                warnings=[],
+                commands=[],
+                hooks=[],
+            )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"zip-bytes")), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
+             patch.object(ExtensionRegistry, "get", return_value={}):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "bad", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert ".specify/extensions/[red]bad[/red]/" in result.output
 
     def test_add_from_url_cancel_exits_cleanly(self, tmp_path):
         """Declining the --from <url> confirmation should exit with code 0."""
@@ -6346,6 +6423,118 @@ class TestExtensionRemoveCLI:
             )
 
         assert "2 commands" in result.output
+
+    def test_remove_output_escapes_extension_id_markup(self, tmp_path):
+        """Removal paths and reinstall hints must not parse extension IDs as markup."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        extension_id = "[red]bad[/red]"
+        installed = [
+            {
+                "id": extension_id,
+                "name": "Bad Extension",
+                "version": "1.0.0",
+                "description": "Test extension",
+                "enabled": True,
+            }
+        ]
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionManager, "list_installed", return_value=installed), \
+             patch.object(ExtensionManager, "get_extension", return_value=SimpleNamespace(commands=[])), \
+             patch.object(ExtensionRegistry, "get", return_value={"registered_commands": {}, "registered_skills": []}), \
+             patch.object(ExtensionManager, "remove", return_value=True):
+            result = runner.invoke(
+                app,
+                ["extension", "remove", extension_id, "--force"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert ".specify/extensions/.backup/[red]bad[/red]/" in result.output
+        assert "specify extension add [red]bad[/red]" in result.output
+
+
+class TestExtensionStateCLI:
+    """CLI tests for installed extension state commands."""
+
+    def test_enable_registry_error_escapes_extension_id_markup(self, tmp_path):
+        """Registry-corruption errors should render extension IDs literally."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        extension_id = "[red]bad[/red]"
+        installed = [
+            {
+                "id": extension_id,
+                "name": "Bad Extension",
+                "version": "1.0.0",
+                "description": "Test extension",
+                "enabled": False,
+            }
+        ]
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionManager, "list_installed", return_value=installed), \
+             patch.object(ExtensionRegistry, "get", return_value=None):
+            result = runner.invoke(
+                app,
+                ["extension", "enable", extension_id],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "Extension '[red]bad[/red]' not found in registry" in result.output
+
+    def test_disable_reenable_hint_escapes_extension_id_markup(self, tmp_path):
+        """Disable success hints should not parse extension IDs as markup."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        extension_id = "[red]bad[/red]"
+        installed = [
+            {
+                "id": extension_id,
+                "name": "Bad Extension",
+                "version": "1.0.0",
+                "description": "Test extension",
+                "enabled": True,
+            }
+        ]
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionManager, "list_installed", return_value=installed), \
+             patch.object(ExtensionRegistry, "get", return_value={"enabled": True}), \
+             patch.object(ExtensionRegistry, "update", return_value=None), \
+             patch.object(HookExecutor, "get_project_config", return_value={}):
+            result = runner.invoke(
+                app,
+                ["extension", "disable", extension_id],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "specify extension enable [red]bad[/red]" in result.output
 
 
 class TestClineExtensionHyphenation:

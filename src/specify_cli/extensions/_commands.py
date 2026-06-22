@@ -330,6 +330,7 @@ def catalog_add(
         raise typer.Exit(1)
 
     safe_name = _escape_markup(name)
+    safe_url = _escape_markup(url)
 
     # Check for duplicate name
     for existing in catalogs:
@@ -351,7 +352,7 @@ def catalog_add(
 
     install_label = "install allowed" if install_allowed else "discovery only"
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{safe_name}[/bold]' ({install_label})")
-    console.print(f"  URL: {url}")
+    console.print(f"  URL: {safe_url}")
     console.print(f"  Priority: {priority}")
     console.print(f"\nConfig saved to {_display_project_path(project_root, config_path)}")
 
@@ -611,7 +612,7 @@ def extension_add(
             console.print(f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered")
 
         console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
-        console.print(f"   Check: .specify/extensions/{manifest.id}/")
+        console.print(f"   Check: .specify/extensions/{_escape_markup(str(manifest.id))}/")
 
     except ValidationError as e:
         console.print(f"\n[red]Validation Error:[/red] {e}")
@@ -639,6 +640,7 @@ def extension_remove(
     # Resolve extension ID from argument (handles ambiguous names)
     installed = manager.list_installed()
     extension_id, display_name = _resolve_installed_extension(extension, installed, "remove")
+    safe_extension_id = _escape_markup(str(extension_id))
 
     # Get extension info for command and skill counts
     ext_manifest = manager.get_extension(extension_id)
@@ -666,7 +668,7 @@ def extension_remove(
         console.print(f"   • {cmd_count} command{'s' if cmd_count != 1 else ''} per agent")
         if skill_count:
             console.print(f"   • {skill_count} agent skill(s)")
-        console.print(f"   • Extension directory: .specify/extensions/{extension_id}/")
+        console.print(f"   • Extension directory: .specify/extensions/{safe_extension_id}/")
         if not keep_config:
             console.print("   • Config files (will be backed up)")
         console.print()
@@ -682,10 +684,10 @@ def extension_remove(
     if success:
         console.print(f"\n[green]✓[/green] Extension '{_escape_markup(str(display_name))}' removed successfully")
         if keep_config:
-            console.print(f"\nConfig files preserved in .specify/extensions/{extension_id}/")
+            console.print(f"\nConfig files preserved in .specify/extensions/{safe_extension_id}/")
         else:
-            console.print(f"\nConfig files backed up to .specify/extensions/.backup/{extension_id}/")
-        console.print(f"\nTo reinstall: specify extension add {extension_id}")
+            console.print(f"\nConfig files backed up to .specify/extensions/.backup/{safe_extension_id}/")
+        console.print(f"\nTo reinstall: specify extension add {safe_extension_id}")
     else:
         console.print("[red]Error:[/red] Failed to remove extension")
         raise typer.Exit(1)
@@ -1419,7 +1421,10 @@ def extension_enable(
     # Update registry
     metadata = manager.registry.get(extension_id)
     if metadata is None or not isinstance(metadata, dict):
-        console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
+        console.print(
+            f"[red]Error:[/red] Extension '{_escape_markup(str(extension_id))}' "
+            "not found in registry (corrupted state)"
+        )
         raise typer.Exit(1)
 
     if metadata.get("enabled", True):
@@ -1458,7 +1463,10 @@ def extension_disable(
     # Update registry
     metadata = manager.registry.get(extension_id)
     if metadata is None or not isinstance(metadata, dict):
-        console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
+        console.print(
+            f"[red]Error:[/red] Extension '{_escape_markup(str(extension_id))}' "
+            "not found in registry (corrupted state)"
+        )
         raise typer.Exit(1)
 
     if not metadata.get("enabled", True):
@@ -1478,7 +1486,7 @@ def extension_disable(
 
     console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled")
     console.print("\nCommands will no longer be available. Hooks will not execute.")
-    console.print(f"To re-enable: specify extension enable {extension_id}")
+    console.print(f"To re-enable: specify extension enable {_escape_markup(str(extension_id))}")
 
 
 @extension_app.command("set-priority")
@@ -1504,7 +1512,10 @@ def extension_set_priority(
     # Get current metadata
     metadata = manager.registry.get(extension_id)
     if metadata is None or not isinstance(metadata, dict):
-        console.print(f"[red]Error:[/red] Extension '{extension_id}' not found in registry (corrupted state)")
+        console.print(
+            f"[red]Error:[/red] Extension '{_escape_markup(str(extension_id))}' "
+            "not found in registry (corrupted state)"
+        )
         raise typer.Exit(1)
 
     from . import normalize_priority
