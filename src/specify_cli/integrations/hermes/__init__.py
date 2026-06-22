@@ -7,7 +7,7 @@ AI agent framework by Nous Research.  It stores skills in
 Usage::
 
     specify init my-project --integration hermes
-    specify init --here --ai hermes
+    specify init --here --integration hermes
 """
 
 from __future__ import annotations
@@ -257,7 +257,7 @@ class HermesIntegration(SkillsIntegration):
         mapping slash-command invocations to the appropriate skill-based
         dispatch.
         """
-        args = [self.key, "chat", "-Q"]
+        args = [self._resolve_executable(), "chat", "-Q"]
 
         if model:
             args.extend(["-m", model])

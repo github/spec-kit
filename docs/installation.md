@@ -6,7 +6,7 @@
 - AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [Pi Coding Agent](https://pi.dev)
 - [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pipx.pypa.io/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
-- [Git](https://git-scm.com/downloads)
+- [Git](https://git-scm.com/downloads) _(optional — required only when the git extension is enabled)_
 
 ## Installation
 
@@ -87,6 +87,8 @@ specify version
 ```
 
 This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
+
+**Stay current:** Run `specify self check` periodically to learn whether a newer release is available — it is read-only and never modifies your installation. When you are ready to upgrade, follow the [Upgrade Guide](./upgrade.md).
 
 After initialization, you should see the following commands available in your coding agent:
 

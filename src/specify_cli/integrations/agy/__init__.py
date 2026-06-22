@@ -90,7 +90,7 @@ class AgyIntegration(SkillsIntegration):
         output_json: bool = True,
     ) -> list[str] | None:
         # agy does not support --model or JSON output; both params are ignored
-        return ["agy", "--print", prompt]
+        return [self._resolve_executable(), "--print", prompt]
 
     def setup(
         self,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -194,6 +195,37 @@ def _write_shared_bytes(
             temp_path.unlink()
 
 
+_BASH_FORMAT_COMMAND_RE = re.compile(
+    r"\$\(\s*format_speckit_command\s+(['\"]?)([A-Za-z0-9_.-]+)\1(?:\s+[^)]*)?\)"
+)
+_POWERSHELL_FORMAT_COMMAND_RE = re.compile(
+    r"Format-SpecKitCommand\s+-CommandName\s+(['\"])([A-Za-z0-9_.-]+)\1(?:\s+-RepoRoot\s+[^\r\n]+)?"
+)
+
+
+def _format_speckit_command(command_name: str, separator: str) -> str:
+    name = command_name.strip().lstrip("/")
+    if name.startswith("speckit."):
+        name = name[len("speckit.") :]
+    elif name.startswith("speckit-"):
+        name = name[len("speckit-") :]
+    name = name.replace(".", separator)
+    return f"/speckit{separator}{name}"
+
+
+def _resolve_dynamic_command_refs(content: str, separator: str) -> str:
+    """Render script runtime command helpers for managed shared infra copies."""
+
+    content = _BASH_FORMAT_COMMAND_RE.sub(
+        lambda match: _format_speckit_command(match.group(2), separator),
+        content,
+    )
+    return _POWERSHELL_FORMAT_COMMAND_RE.sub(
+        lambda match: f"'{_format_speckit_command(match.group(2), separator)}'",
+        content,
+    )
+
+
 def refresh_shared_templates(
     project_path: Path,
     *,
@@ -281,6 +313,8 @@ def install_shared_infra(
         expected = prior_hashes.get(rel)
         if not expected or not dst.is_file() or dst.is_symlink():
             return False
+        if manifest.is_recovered(rel):
+            return False
         try:
             return _sha256(dst) == expected
         except OSError:
@@ -365,12 +399,30 @@ def install_shared_infra(
                                 preserved_user_files.append(rel)
                             else:
                                 skipped_files.append(rel)
+                                # Record the existing-on-disk file in the manifest so a
+                                # fresh manifest run against an already-populated
+                                # ``.specify/`` tree does not silently drop it (#2107).
+                                # ``prior_hashes`` is the function-scope snapshot taken
+                                # at entry, so this membership check is O(1) and avoids
+                                # the repeated ``dict(self._files)`` copy that
+                                # ``manifest.files`` performs on every access.
+                                if dst_path.is_file() and rel not in prior_hashes:
+                                    try:
+                                        manifest.record_existing(rel, recovered=True)
+                                    except (OSError, ValueError) as exc:
+                                        # Tolerate races / permission issues / non-file
+                                        # collisions so one weird path does not abort
+                                        # the whole install.
+                                        console.print(
+                                            f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                        )
                             continue
 
                         if not _ensure_or_bucket_dir(dst_path.parent):
                             continue
                         content = src_path.read_text(encoding="utf-8")
                         content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                        content = _resolve_dynamic_command_refs(content, invoke_separator)
                         planned_copies.append(
                             (
                                 dst_path,
@@ -398,6 +450,23 @@ def install_shared_infra(
                         preserved_user_files.append(rel)
                     else:
                         skipped_files.append(rel)
+                        # Record the existing-on-disk template in the manifest so a
+                        # fresh manifest run against an already-populated
+                        # ``.specify/`` tree does not silently drop it (#2107).
+                        # ``prior_hashes`` is the function-scope snapshot taken at
+                        # entry, so this membership check is O(1) and avoids the
+                        # repeated ``dict(self._files)`` copy that ``manifest.files``
+                        # performs on every access.
+                        if dst.is_file() and rel not in prior_hashes:
+                            try:
+                                manifest.record_existing(rel, recovered=True)
+                            except (OSError, ValueError) as exc:
+                                # Tolerate races / permission issues / non-file
+                                # collisions so one weird path does not abort
+                                # the whole install.
+                                console.print(
+                                    f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                )
                     continue
 
                 content = src.read_text(encoding="utf-8")
@@ -416,7 +485,7 @@ def install_shared_infra(
 
     if skipped_files:
         console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure file(s) already exist and were not updated:"
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure path(s) already exist and were not updated:"
         )
         for path in skipped_files:
             console.print(f"    {path}")

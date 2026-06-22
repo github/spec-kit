@@ -1,14 +1,14 @@
 """Tests for the `specify self` sub-app (`self check` and `self upgrade`).
 
 Network isolation contract (SC-004 / FR-014): every test that exercises
-`specify self check` or `_fetch_latest_release_tag()` MUST mock
-`urllib.request.urlopen` so no real outbound call ever reaches
-api.github.com. The `self upgrade` stub tests do not need that patch because
-the stub is contractually network-free. Run this module under `pytest-socket`
-(if installed) with `--disable-socket` as an extra safety net.
+`specify self check` or `_fetch_latest_release_tag()` MUST mock the outbound
+urllib path it expects (`urlopen` for unauthenticated requests, `build_opener`
+for authenticated requests) so no real outbound call ever reaches api.github.com.
+Tests for non-network `self upgrade` behavior should keep that contract explicit
+with local mocks. Run this module under `pytest-socket` (if installed) with
+`--disable-socket` as an extra safety net.
 """
 
-import json
 import urllib.error
 import importlib.metadata
 from unittest.mock import MagicMock, patch
@@ -24,6 +24,7 @@ from specify_cli._version import (
     _normalize_tag,
 )
 from tests.conftest import strip_ansi
+from tests.http_helpers import mock_urlopen_response
 
 runner = CliRunner()
 
@@ -35,16 +36,6 @@ _RATE_LIMITED_REASON = (
 )
 
 
-def _mock_urlopen_response(payload: dict) -> MagicMock:
-    body = json.dumps(payload).encode("utf-8")
-    resp = MagicMock()
-    resp.read.return_value = body
-    cm = MagicMock()
-    cm.__enter__.return_value = resp
-    cm.__exit__.return_value = False
-    return cm
-
-
 def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:
     return urllib.error.HTTPError(
         url="https://api.github.com/repos/github/spec-kit/releases/latest",
@@ -53,39 +44,6 @@ def _http_error(code: int, message: str = "error") -> urllib.error.HTTPError:
         hdrs={},  # type: ignore[arg-type]
         fp=None,
     )
-
-
-class TestSelfUpgradeStub:
-    """Pins the `specify self upgrade` stub output + exit code (contract §3.5, FR-016)."""
-
-    def test_prints_exactly_three_lines_and_exits_zero(self):
-        result = runner.invoke(app, ["self", "upgrade"])
-        assert result.exit_code == 0
-        lines = strip_ansi(result.output).strip().splitlines()
-        assert lines == [
-            "specify self upgrade is not implemented yet.",
-            "Run 'specify self check' to see whether a newer release is available.",
-            "Actual self-upgrade is planned as follow-up work.",
-        ]
-
-    def test_stub_makes_no_network_call(self):
-        # The stub must not hit the network via either urllib path:
-        # unauthenticated requests use urlopen() directly; authenticated ones
-        # go through build_opener(...).open().  Both are patched so that any
-        # accidental network call raises immediately.
-        network_error = AssertionError("stub must not hit the network")
-        with (
-            patch(
-                "specify_cli.authentication.http.urllib.request.urlopen",
-                side_effect=network_error,
-            ),
-            patch(
-                "specify_cli.authentication.http.urllib.request.build_opener",
-                side_effect=network_error,
-            ),
-        ):
-            result = runner.invoke(app, ["self", "upgrade"])
-        assert result.exit_code == 0
 
 
 class TestIsNewer:
@@ -151,7 +109,7 @@ class TestUserStory1:
     def test_newer_available_prints_update_and_install_command(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.4"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.9.0"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.9.0"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -164,7 +122,7 @@ class TestUserStory1:
     def test_up_to_date_prints_current_only(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.9.0"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.9.0"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.9.0"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -176,7 +134,7 @@ class TestUserStory1:
     def test_dev_build_ahead_of_release_is_up_to_date(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.5.dev0"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.7.4"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.7.4"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
@@ -187,26 +145,46 @@ class TestUserStory1:
     def test_unknown_installed_still_prints_latest_and_reinstall(self):
         with patch("specify_cli._version._get_installed_version", return_value="unknown"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "v0.7.4"}),
+            return_value=mock_urlopen_response({"tag_name": "v0.7.4"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
         assert result.exit_code == 0
         assert "Current version could not be determined" in output
+        assert "Latest release: v0.7.4" in output
         assert "0.7.4" in output
         assert "git+https://github.com/github/spec-kit.git@v0.7.4" in output
+        assert "specify self upgrade" in output
+        assert "pipx install --force git+https://github.com/github/spec-kit.git@v0.7.4" in output
 
-    def test_unparseable_tag_routes_to_indeterminate(self):
+    def test_unknown_installed_uses_placeholder_when_latest_tag_is_invalid(self):
+        with patch("specify_cli._version._get_installed_version", return_value="unknown"), patch(
+            "specify_cli.authentication.http.urllib.request.urlopen",
+            return_value=mock_urlopen_response({"tag_name": "v0.9.0;echo unsafe"}),
+        ):
+            result = runner.invoke(app, ["self", "check"])
+        output = strip_ansi(result.output)
+        assert result.exit_code == 0
+        assert "Latest release: vX.Y.Z" in output
+        assert "Could not validate latest release tag from GitHub." in output
+        assert "git+https://github.com/github/spec-kit.git@vX.Y.Z" in output
+        assert "v0.9.0;echo unsafe" not in output
+
+    def test_unparseable_tag_reports_validation_failure_without_raw_tag(self):
         with patch("specify_cli._version._get_installed_version", return_value="0.7.4"), patch(
             "specify_cli.authentication.http.urllib.request.urlopen",
-            return_value=_mock_urlopen_response({"tag_name": "not-a-version"}),
+            return_value=mock_urlopen_response({"tag_name": "not-a-version"}),
         ):
             result = runner.invoke(app, ["self", "check"])
         output = strip_ansi(result.output)
         assert result.exit_code == 0
         assert "Update available" not in output
-        assert "Up to date" in output
+        assert "Up to date" not in output
+        assert "Could not validate latest release tag from GitHub." in output
+        assert "Latest release: vX.Y.Z" in output
         assert "0.7.4" in output
+        assert "not-a-version" not in output
+        assert "git+https://github.com/github/spec-kit.git@vX.Y.Z" in output
 
 
 class TestFailureCategorization:
@@ -306,11 +284,23 @@ class TestUserStory2:
 def _capture_request_via_urlopen():
     captured = {}
 
-    def _side_effect(req, timeout=None):
+    def _side_effect(req, *args, **kwargs):
         captured["request"] = req
-        return _mock_urlopen_response({"tag_name": "v0.7.4"})
+        return mock_urlopen_response({"tag_name": "v0.7.4"})
 
     return captured, _side_effect
+
+
+def _capture_request_via_auth_opener():
+    captured = {}
+
+    def _side_effect(req, *args, **kwargs):
+        captured["request"] = req
+        return mock_urlopen_response({"tag_name": "v0.7.4"})
+
+    opener = MagicMock()
+    opener.open.side_effect = _side_effect
+    return captured, opener
 
 
 def _inject_github_config(monkeypatch, token_env="GH_TOKEN"):
@@ -323,10 +313,11 @@ class TestUserStory3:
         monkeypatch.setenv("GH_TOKEN", SENTINEL_GH_TOKEN)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         _inject_github_config(monkeypatch, token_env="GH_TOKEN")
-        captured, side_effect = _capture_request_via_urlopen()
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+        captured, opener = _capture_request_via_auth_opener()
+        with patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+            return_value=opener,
+        ):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GH_TOKEN}"
@@ -335,10 +326,11 @@ class TestUserStory3:
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
         _inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
-        captured, side_effect = _capture_request_via_urlopen()
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+        captured, opener = _capture_request_via_auth_opener()
+        with patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+            return_value=opener,
+        ):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"
@@ -376,10 +368,11 @@ class TestUserStory3:
         monkeypatch.setenv("GH_TOKEN", "   ")
         monkeypatch.setenv("GITHUB_TOKEN", SENTINEL_GITHUB_TOKEN)
         _inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
-        captured, side_effect = _capture_request_via_urlopen()
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+        captured, opener = _capture_request_via_auth_opener()
+        with patch(
+            "specify_cli.authentication.http.urllib.request.build_opener",
+            return_value=opener,
+        ):
             _fetch_latest_release_tag()
         req = captured["request"]
         assert req.get_header("Authorization") == f"Bearer {SENTINEL_GITHUB_TOKEN}"

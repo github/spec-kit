@@ -57,9 +57,9 @@ while [ $i -le $# ]; do
             echo ""
             echo "Options:"
             echo "  --json              Output in JSON format"
-            echo "  --dry-run           Compute branch name and paths without creating branches, directories, or files"
-            echo "  --allow-existing-branch  Switch to branch if it already exists instead of failing"
-            echo "  --short-name <name> Provide a custom short name (2-4 words) for the branch"
+            echo "  --dry-run           Compute feature name and paths without creating directories or files"
+            echo "  --allow-existing-branch  Reuse an existing feature directory if it already exists"
+            echo "  --short-name <name> Provide a custom short name (2-4 words) for the feature"
             echo "  --number N          Specify branch number manually (overrides auto-detection)"
             echo "  --timestamp         Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
             echo "  --help, -h          Show this help message"
@@ -113,93 +113,17 @@ get_highest_from_specs() {
     echo "$highest"
 }
 
-# Function to get highest number from git branches
-get_highest_from_branches() {
-    git branch -a 2>/dev/null | sed 's/^[* ]*//; s|^remotes/[^/]*/||' | _extract_highest_number
-}
-
-# Extract the highest sequential feature number from a list of ref names (one per line).
-# Shared by get_highest_from_branches and get_highest_from_remote_refs.
-_extract_highest_number() {
-    local highest=0
-    while IFS= read -r name; do
-        [ -z "$name" ] && continue
-        if echo "$name" | grep -Eq '^[0-9]{3,}-' && ! echo "$name" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
-            number=$(echo "$name" | grep -Eo '^[0-9]+' || echo "0")
-            number=$((10#$number))
-            if [ "$number" -gt "$highest" ]; then
-                highest=$number
-            fi
-        fi
-    done
-    echo "$highest"
-}
-
-# Function to get highest number from remote branches without fetching (side-effect-free)
-get_highest_from_remote_refs() {
-    local highest=0
-
-    for remote in $(git remote 2>/dev/null); do
-        local remote_highest
-        remote_highest=$(GIT_TERMINAL_PROMPT=0 git ls-remote --heads "$remote" 2>/dev/null | sed 's|.*refs/heads/||' | _extract_highest_number)
-        if [ "$remote_highest" -gt "$highest" ]; then
-            highest=$remote_highest
-        fi
-    done
-
-    echo "$highest"
-}
-
-# Function to check existing branches (local and remote) and return next available number.
-# When skip_fetch is true, queries remotes via ls-remote (read-only) instead of fetching.
-check_existing_branches() {
-    local specs_dir="$1"
-    local skip_fetch="${2:-false}"
-
-    if [ "$skip_fetch" = true ]; then
-        # Side-effect-free: query remotes via ls-remote
-        local highest_remote=$(get_highest_from_remote_refs)
-        local highest_branch=$(get_highest_from_branches)
-        if [ "$highest_remote" -gt "$highest_branch" ]; then
-            highest_branch=$highest_remote
-        fi
-    else
-        # Fetch all remotes to get latest branch info (suppress errors if no remotes)
-        git fetch --all --prune >/dev/null 2>&1 || true
-        local highest_branch=$(get_highest_from_branches)
-    fi
-
-    # Get highest number from ALL specs (not just matching short name)
-    local highest_spec=$(get_highest_from_specs "$specs_dir")
-
-    # Take the maximum of both
-    local max_num=$highest_branch
-    if [ "$highest_spec" -gt "$max_num" ]; then
-        max_num=$highest_spec
-    fi
-
-    # Return next number
-    echo $((max_num + 1))
-}
-
 # Function to clean and format a branch name
 clean_branch_name() {
     local name="$1"
     echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//'
 }
 
-# Resolve repository root using common.sh functions which prioritize .specify over git
+# Resolve repository root using common.sh functions which prioritize .specify
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-REPO_ROOT=$(get_repo_root)
-
-# Check if git is available at this repo root (not a parent)
-if has_git; then
-    HAS_GIT=true
-else
-    HAS_GIT=false
-fi
+REPO_ROOT=$(get_repo_root) || exit 1
 
 cd "$REPO_ROOT"
 
@@ -276,23 +200,10 @@ if [ "$USE_TIMESTAMP" = true ]; then
     FEATURE_NUM=$(date +%Y%m%d-%H%M%S)
     BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 else
-    # Determine branch number
+    # Determine branch number from existing feature directories
     if [ -z "$BRANCH_NUMBER" ]; then
-        if [ "$DRY_RUN" = true ] && [ "$HAS_GIT" = true ]; then
-            # Dry-run: query remotes via ls-remote (side-effect-free, no fetch)
-            BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR" true)
-        elif [ "$DRY_RUN" = true ]; then
-            # Dry-run without git: local spec dirs only
-            HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
-            BRANCH_NUMBER=$((HIGHEST + 1))
-        elif [ "$HAS_GIT" = true ]; then
-            # Check existing branches on remotes
-            BRANCH_NUMBER=$(check_existing_branches "$SPECS_DIR")
-        else
-            # Fall back to local directory check
-            HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
-            BRANCH_NUMBER=$((HIGHEST + 1))
-        fi
+        HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+        BRANCH_NUMBER=$((HIGHEST + 1))
     fi
 
     # Force base-10 interpretation to prevent octal conversion (e.g., 010 → 8 in octal, but should be 10 in decimal)
@@ -326,43 +237,13 @@ FEATURE_DIR="$SPECS_DIR/$BRANCH_NAME"
 SPEC_FILE="$FEATURE_DIR/spec.md"
 
 if [ "$DRY_RUN" != true ]; then
-    if [ "$HAS_GIT" = true ]; then
-        branch_create_error=""
-        if ! branch_create_error=$(git checkout -q -b "$BRANCH_NAME" 2>&1); then
-            current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-            # Check if branch already exists
-            if git branch --list "$BRANCH_NAME" | grep -q .; then
-                if [ "$ALLOW_EXISTING" = true ]; then
-                    # If we're already on the branch, continue without another checkout.
-                    if [ "$current_branch" = "$BRANCH_NAME" ]; then
-                        :
-                    # Otherwise switch to the existing branch instead of failing.
-                    elif ! switch_branch_error=$(git checkout -q "$BRANCH_NAME" 2>&1); then
-                        >&2 echo "Error: Failed to switch to existing branch '$BRANCH_NAME'. Please resolve any local changes or conflicts and try again."
-                        if [ -n "$switch_branch_error" ]; then
-                            >&2 printf '%s\n' "$switch_branch_error"
-                        fi
-                        exit 1
-                    fi
-                elif [ "$USE_TIMESTAMP" = true ]; then
-                    >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Rerun to get a new timestamp or use a different --short-name."
-                    exit 1
-                else
-                    >&2 echo "Error: Branch '$BRANCH_NAME' already exists. Please use a different feature name or specify a different number with --number."
-                    exit 1
-                fi
-            else
-                >&2 echo "Error: Failed to create git branch '$BRANCH_NAME'."
-                if [ -n "$branch_create_error" ]; then
-                    >&2 printf '%s\n' "$branch_create_error"
-                else
-                    >&2 echo "Please check your git configuration and try again."
-                fi
-                exit 1
-            fi
+    if [ -d "$FEATURE_DIR" ] && [ "$ALLOW_EXISTING" != true ]; then
+        if [ "$USE_TIMESTAMP" = true ]; then
+            >&2 echo "Error: Feature directory '$FEATURE_DIR' already exists. Rerun to get a new timestamp or use a different --short-name."
+        else
+            >&2 echo "Error: Feature directory '$FEATURE_DIR' already exists. Please use a different feature name or specify a different number with --number."
         fi
-    else
-        >&2 echo "[specify] Warning: Git repository not detected; skipped branch creation for $BRANCH_NAME"
+        exit 1
     fi
 
     mkdir -p "$FEATURE_DIR"
@@ -377,8 +258,12 @@ if [ "$DRY_RUN" != true ]; then
         fi
     fi
 
-    # Inform the user how to persist the feature variable in their own shell
+    # Persist to .specify/feature.json so downstream commands can find the feature
+    _persist_feature_json "$REPO_ROOT" "$FEATURE_DIR"
+
+    # Inform the user how to set feature state in their own shell
     printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
+    printf '#              export SPECIFY_FEATURE_DIRECTORY=%q\n' "$FEATURE_DIR" >&2
 fi
 
 if $JSON_MODE; then
@@ -409,5 +294,6 @@ else
     echo "FEATURE_NUM: $FEATURE_NUM"
     if [ "$DRY_RUN" != true ]; then
         printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
+        printf '#                           export SPECIFY_FEATURE_DIRECTORY=%q\n' "$FEATURE_DIR"
     fi
 fi

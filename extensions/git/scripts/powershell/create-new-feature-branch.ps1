@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
-# Git extension: create-new-feature.ps1
-# Adapted from core scripts/powershell/create-new-feature.ps1 for extension layout.
+# Git extension: create-new-feature-branch.ps1
+# Creates a git feature branch only. The feature directory and spec file
+# are created by the core create-new-feature.ps1 script.
 # Sources common.ps1 from the project's installed scripts, falling back to
 # git-common.ps1 for minimal git helpers.
 [CmdletBinding()]
@@ -19,7 +20,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($Help) {
-    Write-Host "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Host "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
     Write-Host ""
     Write-Host "Options:"
     Write-Host "  -Json               Output in JSON format"
@@ -37,7 +38,7 @@ if ($Help) {
 }
 
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
-    Write-Error "Usage: ./create-new-feature.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
+    Write-Error "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
     exit 1
 }
 
@@ -87,7 +88,7 @@ function Get-HighestNumberFromBranches {
         $branches = git branch -a 2>$null
         if ($LASTEXITCODE -eq 0 -and $branches) {
             $cleanNames = $branches | ForEach-Object {
-                $_.Trim() -replace '^\*?\s+', '' -replace '^remotes/[^/]+/', ''
+                $_.Trim() -replace '^[+*]?\s+', '' -replace '^remotes/[^/]+/', ''
             }
             return Get-HighestNumberFromNames -Names $cleanNames
         }
@@ -196,7 +197,16 @@ if (-not $commonLoaded) {
     throw "Unable to locate common script file. Please ensure the Specify core scripts are installed."
 }
 
-# Resolve repository root
+# SPECIFY_INIT_DIR is resolved (and validated) by the core resolver. If only the
+# minimal git-common.ps1 was loaded, or an older core common.ps1 without the
+# resolver was loaded, refuse rather than silently falling back to the wrong root.
+if ($env:SPECIFY_INIT_DIR -and -not (Get-Command Resolve-SpecifyInitDir -CommandType Function -ErrorAction SilentlyContinue)) {
+    throw "SPECIFY_INIT_DIR requires updated Spec Kit core scripts (common.ps1 with Resolve-SpecifyInitDir), which were not found."
+}
+
+# Resolve repository root. When the core scripts are present, Get-RepoRoot
+# honors SPECIFY_INIT_DIR (the explicit project override for non-interactive /
+# CI use) and hard-fails on an invalid value with no silent fallback.
 if (Get-Command Get-RepoRoot -ErrorAction SilentlyContinue) {
     $repoRoot = Get-RepoRoot
 } elseif ($projectRoot) {

@@ -1,0 +1,33 @@
+schema_version: "1.0"
+
+bundle:
+  id: "developer"
+  name: "Developer"
+  version: "1.0.0"
+  role: "developer"
+  description: "Spec-Driven Development setup for developers: implementation planning, task breakdown, and code review."
+  author: "spec-kit-examples"
+  license: "MIT"
+
+requires:
+  speckit_version: ">=0.9.0"
+  tools: []
+  mcp: []
+
+provides:
+  extensions:
+    - id: "agent-context"
+      version: "1.0.0"
+  presets:
+    - id: "implementation-planning"
+      version: "1.0.0"
+      priority: 10
+      strategy: "append"
+  steps:
+    - id: "plan-implementation"
+    - id: "break-down-tasks"
+  workflows:
+    - id: "spec-to-implementation"
+      version: "1.0.0"
+
+tags: ["development", "implementation", "code-review"]

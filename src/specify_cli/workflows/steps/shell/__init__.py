@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from typing import Any
 
@@ -49,6 +50,23 @@ class ShellStep(StepBase):
                     error=f"Shell command exited with code {proc.returncode}.",
                     output=output,
                 )
+            if config.get("output_format") == "json":
+                # Opt-in structured output: expose the parsed stdout under
+                # ``output.data`` so later steps can consume typed values
+                # (e.g. a fan-out's ``items:``). A parse failure fails the
+                # step — declaring ``output_format: json`` is a contract.
+                try:
+                    output["data"] = json.loads(proc.stdout)
+                except json.JSONDecodeError as exc:
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        error=(
+                            f"Shell step {config.get('id', '?')!r} declared "
+                            f"output_format: json but stdout is not valid "
+                            f"JSON: {exc}"
+                        ),
+                        output=output,
+                    )
             return StepResult(
                 status=StepStatus.COMPLETED,
                 output=output,
@@ -71,5 +89,11 @@ class ShellStep(StepBase):
         if "run" not in config:
             errors.append(
                 f"Shell step {config.get('id', '?')!r} is missing 'run' field."
+            )
+        output_format = config.get("output_format")
+        if output_format is not None and output_format != "json":
+            errors.append(
+                f"Shell step {config.get('id', '?')!r}: 'output_format' must "
+                f"be 'json' when present, got {output_format!r}."
             )
         return errors
