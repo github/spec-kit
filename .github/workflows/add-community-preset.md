@@ -73,6 +73,7 @@ fields):
 | Author | `author` | Yes |
 | Repository URL | `repository` | Yes |
 | Download URL | `download-url` | Yes |
+| Documentation URL | `documentation` | Yes |
 | License | `license` | Yes |
 | Required Spec Kit Version | `speckit-version` | Yes |
 | Required Extensions | `required-extensions` | No |
@@ -103,14 +104,40 @@ deciding pass/fail:
 - Confirm the repository contains a `README.md` file
 - Confirm the repository contains a `LICENSE` file
 
-### 2d. Release and download URL validation
+### 2d. Documentation README validation
+
+The `documentation` field must point to the README that explains **how to use this
+preset** — not just any file named `README.md`, and not a product/framework pitch.
+
+- Fetch the **exact URL** in the `documentation` field (convert GitHub `blob` URLs to
+  their `raw.githubusercontent.com` equivalent before fetching) and confirm it resolves
+  to a readable Markdown file.
+- **Validate that the README contains a valid Spec Kit CLI install command.** The fetched
+  README must contain at least one `specify preset add ...` invocation. The strongest
+  signal is the catalog-install form whose URL matches the submitted **Download URL**:
+  - `specify preset add --from <download-url>` (preferred — the URL must match exactly), or
+  - `specify preset add <preset-id>`, or
+  - `specify preset add --dev <path>`
+
+  If **no** `specify preset add ...` command is present, the README is treated as a generic
+  description/pitch rather than preset-usage documentation — **fail this check** and tell the
+  submitter to add a valid install command (ideally `specify preset add --from <download-url>`).
+- **Prefer a preset-scoped README in monorepos.** If `documentation` resolves to a generic
+  repository-root README in a monorepo (the preset lives in a subdirectory such as
+  `presets/<id>/` and a preset-scoped README exists there), **flag it** in your comment and
+  recommend the submitter point `documentation` at the preset-scoped README
+  (e.g. `presets/<id>/README.md`) so the catalog surfaces usage instead of marketing. Treat
+  this as a flag rather than a hard failure **only if** the root README still contains a valid
+  `specify preset add ...` command for this preset; otherwise it fails check 2d above.
+
+### 2e. Release and download URL validation
 - The download URL should follow the pattern
   `https://github.com/<owner>/<repo>/archive/refs/tags/v<version>.zip`
   or
   `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>.zip`
 - Verify a GitHub release exists matching the submitted version
 
-### 2e. Submission checklists
+### 2f. Submission checklists
 - Confirm that all required checkboxes in the Testing Checklist and Submission
   Requirements sections are checked (`[x]`)
 
@@ -154,7 +181,7 @@ Insert the entry in **alphabetical order by preset ID** within the
     "repository": "<repository>",
     "download_url": "<download_url>",
     "homepage": "<homepage or repository>",
-    "documentation": "<documentation or repository README>",
+    "documentation": "<documentation URL — the validated preset-usage README>",
     "license": "<license>",
     "requires": {
       "speckit_version": "<speckit_version>"

@@ -78,6 +78,18 @@ body:
       required: true
 
   - type: input
+    id: documentation
+    attributes:
+      label: Documentation URL
+      description: |
+        Link to the README that explains how to use **this preset** (not a general product/framework pitch).
+        Prefer the preset-scoped README (e.g. `presets/<id>/README.md` in a monorepo) over the repository root README.
+        It must contain at least one valid `specify preset ...` install command matching the Download URL above.
+      placeholder: "https://github.com/your-org/spec-kit-presets/blob/main/your-preset/README.md"
+    validations:
+      required: true
+
+  - type: input
     id: license
     attributes:
       label: License
@@ -176,6 +188,8 @@ body:
         - label: Valid `preset.yml` manifest included
           required: true
         - label: README.md with description and usage instructions
+          required: true
+        - label: Linked README explains how to use this preset and includes a valid `specify preset add ...` command matching the download URL
           required: true
         - label: LICENSE file included
           required: true

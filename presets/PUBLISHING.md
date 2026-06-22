@@ -19,7 +19,7 @@ Before publishing a preset, ensure you have:
 
 1. **Valid Preset**: A working preset with a valid `preset.yml` manifest
 2. **Git Repository**: Preset hosted on GitHub (or other public git hosting)
-3. **Documentation**: README.md with description and usage instructions
+3. **Documentation**: A preset-scoped README.md that explains how to use **this preset**, including a valid `specify preset add ...` install command (see [Usage README requirements](#6-usage-readme-requirements))
 4. **License**: Open source license file (MIT, Apache 2.0, etc.)
 5. **Versioning**: Semantic versioning (e.g., 1.0.0)
 6. **Testing**: Preset tested on real projects with `specify preset add --dev`
@@ -147,6 +147,38 @@ https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0
 specify preset add --from https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0.zip
 ```
 
+### 6. Usage README Requirements
+
+The catalog `documentation` field must point at a README that explains how to use
+**this preset** — not a product pitch for a broader framework or a separate CLI. The
+submission workflow validates the linked README and **fails** submissions that don't
+meet these requirements:
+
+- **Point `documentation` at the preset-scoped README.** In a monorepo where the preset
+  lives in a subdirectory (e.g. `presets/<id>/`), link the README inside that directory
+  (`presets/<id>/README.md`) rather than the repository-root README. The root README is
+  often a marketing/overview page; the catalog should surface preset usage instead. (Keep
+  this usage README **outside** the release ZIP — it should be discoverable *before* a user
+  downloads the artifact.)
+- **Include a valid Spec Kit CLI install command.** The linked README must contain at least
+  one `specify preset add ...` invocation. Preferably use the catalog-install form whose URL
+  matches your Download URL:
+
+  ```bash
+  specify preset add --from https://github.com/<org>/<repo>/releases/download/vX.Y.Z/<id>-X.Y.Z.zip
+  ```
+
+  `specify preset add <id>` and `specify preset add --dev <path>` are also accepted, but the
+  `--from <download-url>` form is the clearest signal that the README documents this exact
+  preset release.
+- **Cover the minimum structure** so a reader can decide whether the preset fits:
+  - What the preset does / what it provides
+  - The install command using Spec Kit CLI syntax (above)
+  - When to use it / when not to use it
+
+A submission whose linked README lacks a valid `specify preset add ...` command is treated
+as a generic description rather than usage documentation and will be flagged for changes.
+
 ---
 
 ## Submit to Catalog
@@ -186,6 +218,7 @@ Edit `presets/catalog.community.json` and add your preset.
       "version": "1.0.0",
       "download_url": "https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0.zip",
       "repository": "https://github.com/your-org/spec-kit-preset-your-preset",
+      "documentation": "https://github.com/your-org/spec-kit-preset-your-preset/blob/main/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.1.0"
@@ -242,7 +275,7 @@ git push origin add-your-preset
 
 ### Checklist
 - [ ] Valid preset.yml manifest
-- [ ] README.md with description and usage
+- [ ] Preset-scoped README with a valid `specify preset add ...` command, linked from `documentation`
 - [ ] LICENSE file included
 - [ ] GitHub release created
 - [ ] Preset tested with `specify preset add --dev`
@@ -263,7 +296,13 @@ After submission, maintainers will review:
 2. **Template quality** — templates are useful and well-structured
 3. **Command coherence** — commands reference sections that exist in templates
 4. **Security** — no malicious content, safe file operations
-5. **Documentation** — clear README explaining what the preset does
+5. **Documentation** — the README linked from `documentation` explains how to use *this* preset and contains a valid `specify preset add ...` command
+
+> **Reviewer note:** the workflow can mechanically check *structure* (the linked README
+> resolves, contains a valid `specify preset add ...` snippet, and the download URL matches),
+> but whether the README genuinely documents *this* preset is partly a content judgment. A
+> human reviewer should still confirm the linked doc isn't just a funnel to a separate
+> product or CLI before approving.
 
 Once verified, `verified: true` is set and the preset appears in `specify preset search`.
 
