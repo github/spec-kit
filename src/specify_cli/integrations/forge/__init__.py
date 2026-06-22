@@ -128,7 +128,7 @@ class ForgeIntegration(MarkdownIntegration):
         script_type = opts.get("script_type", "sh")
         arg_placeholder = self.registrar_config.get("args", "{{parameters}}")
         created: list[Path] = []
-        context_file_display = self._context_file_display(project_root)
+        context_file_display = self._context_file_display()
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
@@ -152,8 +152,6 @@ class ForgeIntegration(MarkdownIntegration):
             )
             created.append(dst_file)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created
 

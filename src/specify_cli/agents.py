@@ -426,35 +426,22 @@ class CommandRegistrar:
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
-        # Resolve __CONTEXT_FILE__ from the agent-context extension config.
-        # When disabled, ignore stale context_files but keep the singular
-        # context_file value so generated commands still point at the agent
-        # context file managed before the extension was disabled.
-        from .integrations.base import IntegrationBase
+        # Resolve __CONTEXT_FILE__ from the integration's declared context file
+        # metadata. Agent context/instruction files are owned entirely by the
+        # opt-in agent-context extension, so the CLI never reads the extension
+        # config here — it only substitutes the integration's own declared path
+        # so generated commands point at the right file.
+        #
+        # Local import to avoid a circular import (the integrations package is
+        # imported by the CLI entrypoint which also imports agents.py).
+        from .integrations import INTEGRATION_REGISTRY
 
-        # Local import: _load_agent_context_config lives in __init__.py which
-        # imports agents.py, so a top-level import would be circular.
-        from . import _load_agent_context_config
-
-        ac_cfg = _load_agent_context_config(project_root)
-        extension_enabled = IntegrationBase._agent_context_extension_enabled(
-            project_root
+        integration = INTEGRATION_REGISTRY.get(agent_name)
+        context_file = (
+            getattr(integration, "context_file", None)
+            or init_opts.get("context_file")
+            or ""
         )
-        if extension_enabled:
-            context_files = IntegrationBase._resolve_context_file_values(
-                project_root,
-                ac_cfg,
-                legacy_context_file=init_opts.get("context_file"),
-            )
-        else:
-            context_files = IntegrationBase._resolve_context_file_values(
-                project_root,
-                ac_cfg,
-                legacy_context_file=init_opts.get("context_file"),
-                include_context_files=False,
-                validate=False,
-            )
-        context_file = IntegrationBase._format_context_file_values(context_files)
         body = body.replace("__CONTEXT_FILE__", context_file)
 
         return CommandRegistrar.rewrite_project_relative_paths(body)

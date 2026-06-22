@@ -354,7 +354,7 @@ class CopilotIntegration(IntegrationBase):
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS")
-        context_file_display = self._context_file_display(project_root)
+        context_file_display = self._context_file_display()
 
         # 1. Process and write command files as .agent.md
         for src_file in templates:
@@ -396,8 +396,6 @@ class CopilotIntegration(IntegrationBase):
                 self.record_file_in_manifest(dst_settings, project_root, manifest)
                 created.append(dst_settings)
 
-        # 4. Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created
 
