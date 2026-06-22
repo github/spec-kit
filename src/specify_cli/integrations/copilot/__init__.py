@@ -4,7 +4,6 @@ Copilot has several unique behaviors compared to standard markdown agents:
 - Commands use ``.agent.md`` extension (not ``.md``)
 - Each command gets a companion ``.prompt.md`` file in ``.github/prompts/``
 - Installs ``.vscode/settings.json`` with prompt file recommendations
-- Context file lives at ``.github/copilot-instructions.md``
 
 When ``--skills`` is passed via ``--integration-options``, Copilot scaffolds
 commands as ``speckit-<name>/SKILL.md`` directories under ``.github/skills/``

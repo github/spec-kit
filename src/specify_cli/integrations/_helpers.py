@@ -256,8 +256,8 @@ def _update_init_options_for_integration(
     """Update init-options.json to reflect *integration* as the active one.
 
     Agent context/instruction files are owned entirely by the opt-in
-    agent-context extension, so this function does not touch the extension
-    config or any context-file metadata.
+    agent-context extension, so this function never touches the extension
+    or its config.
     """
     from .. import (
         load_init_options,
