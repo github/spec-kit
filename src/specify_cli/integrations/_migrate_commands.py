@@ -122,6 +122,14 @@ def integration_switch(
             parsed_options=parsed_options,
             refresh_templates_force=force,
         )
+        _register_extensions_for_agent(
+            project_root,
+            target,
+            continuing=(
+                "The integration switch succeeded, but installed extensions may "
+                "need re-registration."
+            ),
+        )
         console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 

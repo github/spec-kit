@@ -1858,6 +1858,40 @@ class TestIntegrationSwitch:
         assert "claude" in registered_commands
         assert "opencode" not in registered_commands
 
+    def test_switch_installed_target_backfills_extension_commands(self, tmp_path):
+        """Switching to an already-installed agent should register extensions."""
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered
+        assert "codex" not in registered, "precondition: codex not yet installed"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        codex_git_feature = (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        )
+        assert not codex_git_feature.exists()
+
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered
+        assert codex_git_feature.exists()
+
     def test_switch_migrates_copilot_skills_extension_commands(self, tmp_path):
         """Copilot --skills should receive extension skills, not .agent.md files."""
         project = _init_project(tmp_path, "opencode")
