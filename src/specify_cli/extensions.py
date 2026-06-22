@@ -18,7 +18,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Callable, Dict, List, Optional, Set
 
 import pathspec
@@ -300,16 +300,17 @@ class ExtensionManifest:
                     f"Command 'file' for '{cmd.get('name')}' must be a non-empty string"
                 )
             # Evaluate the value under both POSIX and Windows path semantics so
-            # the check is platform-independent: reject absolute paths, Windows
-            # drive-relative paths (e.g. ``C:foo``, which are not is_absolute()
-            # but resolve against the CWD on their drive), and ``..`` segments
-            # written with either separator.
-            posix_path = Path(cmd_file)
+            # the check is platform-independent. Reject any non-empty anchor —
+            # which covers POSIX-absolute (``/abs``), Windows drive-relative
+            # (``C:foo``), Windows absolute (``C:\foo``), and rooted-without-
+            # drive (``\foo``) — plus ``..`` segments written with either
+            # separator. Native ``Path`` alone is insufficient: on Windows
+            # ``WindowsPath('/abs').is_absolute()`` is False (no drive).
+            posix_path = PurePosixPath(cmd_file)
             win_path = PureWindowsPath(cmd_file)
             if (
-                posix_path.is_absolute()
-                or win_path.is_absolute()
-                or win_path.drive
+                posix_path.anchor
+                or win_path.anchor
                 or ".." in posix_path.parts
                 or ".." in win_path.parts
             ):
