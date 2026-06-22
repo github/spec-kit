@@ -11,7 +11,7 @@
 # Usage: update-agent-context.sh [plan_path]
 #
 # When `plan_path` is omitted, the script picks the most recently modified
-# `specs/*/plan.md` if any exist, otherwise emits the section without a
+# `specs/**/plan.md` if any exist, otherwise emits the section without a
 # concrete plan path.
 
 set -euo pipefail
@@ -122,15 +122,15 @@ unset _cf_parts _seg
 
 PLAN_PATH="${1:-}"
 if [[ -z "$PLAN_PATH" ]]; then
-  # Pick the most recently modified plan.md one level deep (specs/<feature>/plan.md).
-  # Use find + sort by modification time to avoid ls/head fragility with
-  # spaces in paths or SIGPIPE from pipefail.
+  # Pick the most recently modified plan.md anywhere under specs/.
+  # Use Python pathlib + stat sorting to avoid shell glob portability issues,
+  # ls/head fragility with spaces, and SIGPIPE from pipefail.
   _plan_abs="$("$_python" - "$PROJECT_ROOT" <<'PY'
 import sys, os
 from pathlib import Path
 specs = Path(sys.argv[1]) / "specs"
 plans = sorted(
-    specs.glob("*/plan.md"),
+    specs.glob("**/plan.md"),
     key=lambda p: p.stat().st_mtime,
     reverse=True,
 )

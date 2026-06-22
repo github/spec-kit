@@ -166,13 +166,12 @@ if ($cm) {
 }
 
 if (-not $PlanPath) {
-    # Discover plan.md exactly one level deep (specs/<feature>/plan.md),
-    # matching the bash glob specs/*/plan.md. Wrap in try/catch so access errors under
-    # $ErrorActionPreference = 'Stop' don't abort the script.
+    # Discover plan.md anywhere under specs/, picking the most recently modified file.
+    # Wrap in try/catch so access errors under $ErrorActionPreference = 'Stop' don't
+    # abort the script.
     try {
         $specsDir = Join-Path $ProjectRoot 'specs'
-        $candidate = Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |
-            ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'plan.md') -ErrorAction SilentlyContinue } |
+        $candidate = Get-ChildItem -Path $specsDir -Recurse -Filter 'plan.md' -File -ErrorAction SilentlyContinue |
             Where-Object { $_ } |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
