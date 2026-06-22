@@ -149,35 +149,34 @@ class MarkdownIntegrationTests:
         assert modified_file.exists()
         assert modified_file in skipped
 
-    # -- Context section ---------------------------------------------------
+    # -- Context file ownership (extension-owned, opt-in) -----------------
 
-    def test_setup_upserts_context_section(self, tmp_path):
+    def test_setup_does_not_write_context_section(self, tmp_path):
+        """Setup must not create or manage the agent context file — that is
+        owned entirely by the opt-in agent-context extension."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
         if i.context_file:
             ctx_path = tmp_path / i.context_file
-            assert ctx_path.exists(), f"Context file {i.context_file} not created for {self.KEY}"
-            content = ctx_path.read_text(encoding="utf-8")
-            assert "<!-- SPECKIT START -->" in content
-            assert "<!-- SPECKIT END -->" in content
-            assert "read the current plan" in content
+            assert not ctx_path.exists(), (
+                f"Context file {i.context_file} should not be created for {self.KEY}"
+            )
 
-    def test_teardown_removes_context_section(self, tmp_path):
+    def test_teardown_leaves_existing_context_file_intact(self, tmp_path):
+        """A user-authored context file must survive teardown untouched."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
+        if not i.context_file:
+            return
+        ctx_path = tmp_path / i.context_file
+        ctx_path.parent.mkdir(parents=True, exist_ok=True)
+        original = "# My Rules\n\nUser content.\n"
+        ctx_path.write_text(original, encoding="utf-8")
         i.setup(tmp_path, m)
         m.save()
-        if i.context_file:
-            ctx_path = tmp_path / i.context_file
-            # Add user content around the section
-            content = ctx_path.read_text(encoding="utf-8")
-            ctx_path.write_text("# My Rules\n\n" + content + "\n# Footer\n", encoding="utf-8")
-            i.teardown(tmp_path, m)
-            remaining = ctx_path.read_text(encoding="utf-8")
-            assert "<!-- SPECKIT START -->" not in remaining
-            assert "<!-- SPECKIT END -->" not in remaining
-            assert "# My Rules" in remaining
+        i.teardown(tmp_path, m)
+        assert ctx_path.read_text(encoding="utf-8") == original
 
     # -- CLI integration flag -------------------------------------------------
 
@@ -225,35 +224,10 @@ class MarkdownIntegrationTests:
         commands = sorted(cmd_dir.glob("speckit.*"))
         assert len(commands) > 0, f"No command files in {cmd_dir}"
 
-    def test_init_options_includes_context_file(self, tmp_path):
-        """agent-context extension config must include context_file for the active integration."""
-        import yaml
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        project = tmp_path / f"opts-{self.KEY}"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            result = CliRunner().invoke(app, [
-                "init", "--here", "--integration", self.KEY, "--script", "sh",
-                "--ignore-agent-tools",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-        assert result.exit_code == 0
-        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
-        ext_cfg = yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8")) if ext_cfg_path.exists() else {}
-        i = get_integration(self.KEY)
-        assert ext_cfg.get("context_file") == i.context_file, (
-            f"Expected context_file={i.context_file!r}, got {ext_cfg.get('context_file')!r}"
-        )
 
     # -- Complete file inventory ------------------------------------------
 
     COMMAND_STEMS = [
-        "agent-context.update",
         "analyze", "clarify", "constitution", "converge", "implement",
         "plan", "checklist", "specify", "tasks", "taskstoissues",
     ]
@@ -293,19 +267,7 @@ class MarkdownIntegrationTests:
         files.append(".specify/workflows/speckit/workflow.yml")
         files.append(".specify/workflows/workflow-registry.json")
 
-        # Bundled agent-context extension
-        files.append(".specify/extensions.yml")
-        files.append(".specify/extensions/.registry")
-        files.append(".specify/extensions/agent-context/README.md")
-        files.append(".specify/extensions/agent-context/agent-context-config.yml")
-        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
-        files.append(".specify/extensions/agent-context/extension.yml")
-        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
-        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
 
-        # Agent context file (if set)
-        if i.context_file:
-            files.append(i.context_file)
 
         return sorted(files)
 

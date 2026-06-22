@@ -218,12 +218,8 @@ class TestRovodevIntegration:
         # Prompts: exactly the core template set.
         assert prompt_stems == core_skill_names
 
-        # Skills: core ∪ extension-installed.
-        assert core_skill_names.issubset(skill_names)
-        extension_skills = skill_names - core_skill_names
-        assert extension_skills, (
-            "Expected at least one extension-installed skill (e.g. agent-context)"
-        )
+        # Skills: exactly the core template set (no extension auto-install).
+        assert skill_names == core_skill_names
 
         # prompts.yml mirrors the prompt files exactly.
         prompts_manifest = project / ".rovodev" / "prompts.yml"

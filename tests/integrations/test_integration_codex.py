@@ -29,23 +29,11 @@ class TestCodexInitFlow:
         assert result.exit_code == 0, f"init --integration codex failed: {result.output}"
         assert (target / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
-    def test_plan_skill_references_configured_context_files(self, tmp_path):
-        """Plan skill should render all configured agent context files."""
-        from specify_cli import _save_agent_context_config
-
+    def test_plan_skill_references_integration_context_file(self, tmp_path):
+        """Plan skill renders the integration's declared context file, sourced
+        from integration metadata (not the extension config)."""
         target = tmp_path / "test-proj"
         target.mkdir()
-        _save_agent_context_config(
-            target,
-            {
-                "context_file": "AGENTS.md",
-                "context_files": ["AGENTS.md", "CLAUDE.md"],
-                "context_markers": {
-                    "start": "<!-- SPECKIT START -->",
-                    "end": "<!-- SPECKIT END -->",
-                },
-            },
-        )
 
         integration = get_integration("codex")
         manifest = IntegrationManifest("codex", target)
@@ -53,43 +41,32 @@ class TestCodexInitFlow:
 
         plan_skill = target / ".agents" / "skills" / "speckit-plan" / "SKILL.md"
         content = plan_skill.read_text(encoding="utf-8")
-        assert "AGENTS.md, CLAUDE.md" in content
+        assert "AGENTS.md" in content
         assert "__CONTEXT_FILE__" not in content
 
-    def test_plan_skill_ignores_context_files_when_agent_context_disabled(
-        self, tmp_path
-    ):
-        """Disabled agent-context must not leak stale context_files into commands."""
-        from specify_cli import _save_agent_context_config
+    def test_plan_skill_ignores_extension_config(self, tmp_path):
+        """The extension config must not influence rendered commands: context
+        file resolution is metadata-only now."""
+        import yaml
 
         target = tmp_path / "test-proj"
         target.mkdir()
-        registry = target / ".specify" / "extensions" / ".registry"
-        registry.parent.mkdir(parents=True, exist_ok=True)
-        registry.write_text(
-            """
-{
-  "schema_version": "1.0",
-  "extensions": {
-    "agent-context": {
-      "version": "1.0.0",
-      "enabled": false
-    }
-  }
-}
-""".strip(),
-            encoding="utf-8",
+        ext_cfg = (
+            target
+            / ".specify"
+            / "extensions"
+            / "agent-context"
+            / "agent-context-config.yml"
         )
-        _save_agent_context_config(
-            target,
-            {
-                "context_file": "AGENTS.md",
-                "context_files": ["../outside.md", "CLAUDE.md"],
-                "context_markers": {
-                    "start": "<!-- SPECKIT START -->",
-                    "end": "<!-- SPECKIT END -->",
-                },
-            },
+        ext_cfg.parent.mkdir(parents=True, exist_ok=True)
+        ext_cfg.write_text(
+            yaml.safe_dump(
+                {
+                    "context_file": "FROM_CONFIG.md",
+                    "context_files": ["FROM_CONFIG.md", "ALSO_CONFIG.md"],
+                }
+            ),
+            encoding="utf-8",
         )
 
         integration = get_integration("codex")
@@ -98,8 +75,8 @@ class TestCodexInitFlow:
 
         plan_skill = target / ".agents" / "skills" / "speckit-plan" / "SKILL.md"
         content = plan_skill.read_text(encoding="utf-8")
-        assert "AGENTS.md, CLAUDE.md" not in content
-        assert "../outside.md" not in content
+        assert "FROM_CONFIG.md" not in content
+        assert "ALSO_CONFIG.md" not in content
         assert "AGENTS.md" in content
         assert "__CONTEXT_FILE__" not in content
 

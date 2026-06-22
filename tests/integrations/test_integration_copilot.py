@@ -193,7 +193,6 @@ class TestCopilotIntegration:
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
-            ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
@@ -204,7 +203,6 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
-            ".github/prompts/speckit.agent-context.update.prompt.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -216,15 +214,6 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
-            ".github/copilot-instructions.md",
-            ".specify/extensions.yml",
-            ".specify/extensions/.registry",
-            ".specify/extensions/agent-context/README.md",
-            ".specify/extensions/agent-context/agent-context-config.yml",
-            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
-            ".specify/extensions/agent-context/extension.yml",
-            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
-            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -265,7 +254,6 @@ class TestCopilotIntegration:
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
-            ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
@@ -276,7 +264,6 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
-            ".github/prompts/speckit.agent-context.update.prompt.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -288,15 +275,6 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
-            ".github/copilot-instructions.md",
-            ".specify/extensions.yml",
-            ".specify/extensions/.registry",
-            ".specify/extensions/agent-context/README.md",
-            ".specify/extensions/agent-context/agent-context-config.yml",
-            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
-            ".specify/extensions/agent-context/extension.yml",
-            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
-            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -603,14 +581,11 @@ class TestCopilotSkillsMode:
 
     # -- Context section ---------------------------------------------------
 
-    def test_skills_setup_upserts_context_section(self, tmp_path):
+    def test_skills_setup_does_not_write_context_section(self, tmp_path):
         copilot = self._make_copilot()
         self._setup_skills(copilot, tmp_path)
         ctx_path = tmp_path / copilot.context_file
-        assert ctx_path.exists()
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "<!-- SPECKIT END -->" in content
+        assert not ctx_path.exists()
 
     # -- CLI integration test ---------------------------------------------
 
@@ -659,20 +634,8 @@ class TestCopilotSkillsMode:
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
-            # Skill files (core + extension-installed agent-context command)
+            # Skill files (core commands)
             *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in self._SKILL_COMMANDS],
-            ".github/skills/speckit-agent-context-update/SKILL.md",
-            # Context file
-            ".github/copilot-instructions.md",
-            # Bundled agent-context extension
-            ".specify/extensions.yml",
-            ".specify/extensions/.registry",
-            ".specify/extensions/agent-context/README.md",
-            ".specify/extensions/agent-context/agent-context-config.yml",
-            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
-            ".specify/extensions/agent-context/extension.yml",
-            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
-            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             # Integration metadata
             ".specify/init-options.json",
             ".specify/integration.json",

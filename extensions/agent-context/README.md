@@ -6,10 +6,10 @@ It owns the lifecycle of the managed section delimited by the configurable start
 
 ## Why an extension?
 
-Not every Spec Kit user wants Spec Kit to write into the coding agent's context file. Extracting this behavior into a dedicated extension lets users:
+Not every Spec Kit user wants Spec Kit to write into the coding agent's context file. Keeping this behavior in a dedicated, **opt-in** extension lets users:
 
-- **Opt out** entirely with `specify extension disable agent-context` — Spec Kit will then never create or modify the agent context file.
-- **Customize the markers** by editing `.specify/extensions/agent-context/agent-context-config.yml` — both the Python layer and the bundled scripts honor the same `context_markers` value.
+- **Choose whether to install it at all** — `specify init` does not install it. Add it explicitly when you want Spec Kit to manage the agent context file; if it is absent or disabled, Spec Kit never creates or modifies that file.
+- **Customize the markers** by editing `.specify/extensions/agent-context/agent-context-config.yml` — the bundled scripts honor the `context_markers` value.
 - **Synchronize multiple agent anchors** by setting `context_files` when a project intentionally uses more than one coding agent context file, such as `AGENTS.md` and `CLAUDE.md`.
 - **Refresh on demand** with `/speckit.agent-context.update`, or automatically through the hooks declared in `extension.yml` (`after_specify`, `after_plan`).
 
@@ -40,7 +40,7 @@ context_markers:
   end: "<!-- SPECKIT END -->"
 ```
 
-- `context_file` — the project-relative path to the coding agent context file, written by `specify init` and `specify integration install`.
+- `context_file` — the project-relative path to the coding agent context file. When empty, the bundled update scripts self-seed it by resolving the active integration's declared context file from the registry.
 - `context_files` — optional project-relative paths to multiple coding agent context files. When non-empty, the list takes precedence over `context_file`. Absolute paths, backslash separators, and `..` path segments are rejected.
 - `context_markers.start` / `.end` — the delimiters around the managed section. Edit these to use custom markers.
 
@@ -62,5 +62,5 @@ pip install pyyaml
 specify extension disable agent-context
 ```
 
-When disabled, Spec Kit skips context file creation, updates, and removal (the gates are inside `upsert_context_section()` and `remove_context_section()`).
+When disabled (or never installed), Spec Kit performs no agent context file creation, updates, or removal — the extension's bundled scripts are the only code that ever touches the managed section.
 Disabled projects also ignore stale `context_files` values during command rendering so disabling the extension remains a complete opt-out.
