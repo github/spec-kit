@@ -382,6 +382,36 @@ class TestCreateFeatureBash:
         assert data.get("DRY_RUN") is True
         assert not (project / "specs" / data["BRANCH_NAME"]).exists()
 
+    def test_specify_init_dir_without_core_errors(self, tmp_path: Path):
+        """With no core scripts (only git-common.sh loaded), a set SPECIFY_INIT_DIR
+        hard-errors instead of silently falling back to the walk-up project root."""
+        project = _setup_project(tmp_path, git=False)
+        # Simulate a no-core install: drop core common.sh so only git-common.sh loads.
+        (project / "scripts" / "bash" / "common.sh").unlink()
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "x", "X feature",
+            env_extra={"SPECIFY_INIT_DIR": str(project)},
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_specify_init_dir_with_stale_core_errors(self, tmp_path: Path):
+        """With an older core common.sh, a set SPECIFY_INIT_DIR must hard-error
+        instead of calling the stale get_repo_root that ignores the override."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "bash" / "common.sh").write_text(
+            "#!/usr/bin/env bash\nget_repo_root() { pwd; }\n",
+            encoding="utf-8",
+        )
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "x", "X feature",
+            env_extra={"SPECIFY_INIT_DIR": str(tmp_path / "missing")},
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestCreateFeaturePowerShell:
@@ -436,6 +466,43 @@ class TestCreateFeaturePowerShell:
         data = json.loads(json_line[-1])
         assert "BRANCH_NAME" in data
         assert "FEATURE_NUM" in data
+
+    def test_specify_init_dir_without_core_errors(self, tmp_path: Path):
+        """With no core scripts (only git-common.ps1 loaded), a set SPECIFY_INIT_DIR
+        hard-errors instead of silently falling back to the walk-up project root."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "powershell" / "common.ps1").unlink()
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+        env = {**os.environ, **_GIT_ENV, "SPECIFY_INIT_DIR": str(project)}
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-ShortName", "x", "X feature"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_specify_init_dir_with_stale_core_errors(self, tmp_path: Path):
+        """With an older core common.ps1, a set SPECIFY_INIT_DIR must hard-error
+        instead of calling the stale Get-RepoRoot that ignores the override."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "powershell" / "common.ps1").write_text(
+            "function Get-RepoRoot { return (Get-Location).Path }\n",
+            encoding="utf-8",
+        )
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+        env = {**os.environ, **_GIT_ENV, "SPECIFY_INIT_DIR": str(tmp_path / "missing")}
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-ShortName", "x", "X feature"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
 
 
 # ── auto-commit.sh Tests ─────────────────────────────────────────────────────

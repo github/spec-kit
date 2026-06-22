@@ -28,7 +28,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from ._init_options import is_ai_skills_enabled
 from ._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
-from ._utils import dump_frontmatter
+from ._utils import dump_frontmatter, relative_extension_path_violation
 from .catalogs import CatalogEntry as BaseCatalogEntry
 from .catalogs import CatalogStackBase
 
@@ -289,6 +289,18 @@ class ExtensionManifest:
                 )
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
+
+            # Validate the 'file' field at manifest-load time using the single
+            # shared policy in relative_extension_path_violation(), so manifest
+            # validation cannot drift from the runtime registrar guard. This is
+            # defense-in-depth: the command/skill/preset readers also contain
+            # the resolved path, but rejecting an unsafe value here surfaces a
+            # clear error instead of silently skipping the command.
+            cmd_file = cmd["file"]
+            reason = relative_extension_path_violation(cmd_file)
+            if reason:
+                label = repr(cmd_file) if isinstance(cmd_file, str) else f"for command '{cmd.get('name')}'"
+                raise ValidationError(f"Invalid command 'file' {label}: {reason}")
 
             # Validate command name format
             if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):
@@ -1061,20 +1073,10 @@ class ExtensionManager:
             )
             # Preserve the command's argument-hint in the generated skill,
             # mirroring the core template path (ClaudeIntegration.setup injects
-            # it for built-in commands). The value is added to the frontmatter
-            # dict before serialization — rather than via the string-based
-            # inject_argument_hint helper — so that a folded multi-line
-            # description cannot be split by the inserted line. Gated on the
-            # integration exposing inject_argument_hint so only argument-hint
-            # aware agents receive the key, leaving build_skill_frontmatter's
-            # shared shape unchanged for every other agent.
-            argument_hint = frontmatter.get("argument-hint")
-            if (
-                argument_hint
-                and integration is not None
-                and hasattr(integration, "inject_argument_hint")
-            ):
-                frontmatter_data["argument-hint"] = str(argument_hint)
+            # it for built-in commands). See CommandRegistrar.apply_argument_hint
+            # for why the value is added to the dict before serialization rather
+            # than via the string-based inject_argument_hint helper.
+            registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
             frontmatter_text = dump_frontmatter(frontmatter_data)
 
             # Derive a human-friendly title from the command name
@@ -1716,37 +1718,73 @@ class ExtensionManager:
                 continue
 
             ext_dir = self.extensions_dir / ext_id
-            updates: Dict[str, Any] = {}
 
-            if agent_config and not skills_mode_active:
-                registered = registrar.register_commands_for_agent(
-                    agent_name, manifest, ext_dir, self.project_root
-                )
-                registered_commands = metadata.get("registered_commands", {})
-                if not isinstance(registered_commands, dict):
-                    registered_commands = {}
-                new_registered = copy.deepcopy(registered_commands)
-                if registered:
-                    new_registered[agent_name] = registered
+            # Isolate per-extension failures: one extension that fails to
+            # register (e.g. an OSError writing a command file) must not abort
+            # registration of the remaining enabled extensions for this agent.
+            try:
+                updates: Dict[str, Any] = {}
+
+                if agent_config and not skills_mode_active:
+                    registered = registrar.register_commands_for_agent(
+                        agent_name, manifest, ext_dir, self.project_root
+                    )
+                    registered_commands = metadata.get("registered_commands", {})
+                    if not isinstance(registered_commands, dict):
+                        registered_commands = {}
+                    new_registered = copy.deepcopy(registered_commands)
+                    if registered:
+                        new_registered[agent_name] = registered
+                    else:
+                        # Registration returned empty list (e.g., corrupted
+                        # manifest pointing at missing command files).  Clear
+                        # stale entry so later cleanup doesn't try to remove
+                        # files that were never written.
+                        new_registered.pop(agent_name, None)
+                    if new_registered != registered_commands:
+                        updates["registered_commands"] = new_registered
+
+                try:
+                    registered_skills = self._register_extension_skills(manifest, ext_dir)
+                except Exception as skills_err:
+                    # Skills are a companion artifact.  If command registration
+                    # already succeeded, still persist it so later cleanup can
+                    # find those command files.
+                    from . import _print_cli_warning
+
+                    _print_cli_warning(
+                        "register extension skills for",
+                        "extension",
+                        ext_id,
+                        skills_err,
+                        continuing=(
+                            "Continuing with available registration results for this "
+                            "extension and the remaining extensions."
+                        ),
+                    )
                 else:
-                    # Registration returned empty list (e.g., corrupted
-                    # manifest pointing at missing command files).  Clear
-                    # stale entry so later cleanup doesn't try to remove
-                    # files that were never written.
-                    new_registered.pop(agent_name, None)
-                if new_registered != registered_commands:
-                    updates["registered_commands"] = new_registered
+                    if registered_skills:
+                        existing_skills = self._valid_name_list(
+                            metadata.get("registered_skills", [])
+                        )
+                        merged_skills = list(dict.fromkeys(existing_skills + registered_skills))
+                        updates["registered_skills"] = merged_skills
 
-            registered_skills = self._register_extension_skills(manifest, ext_dir)
-            if registered_skills:
-                existing_skills = self._valid_name_list(
-                    metadata.get("registered_skills", [])
+                if updates:
+                    self.registry.update(ext_id, updates)
+            except Exception as ext_err:
+                # Best-effort per extension: warn and move on so a single bad
+                # extension cannot silently drop the others. See #2950.
+                from . import _print_cli_warning
+
+                _print_cli_warning(
+                    "register extension artifacts for",
+                    "extension",
+                    ext_id,
+                    ext_err,
+                    continuing="Continuing with the remaining extensions.",
                 )
-                merged_skills = list(dict.fromkeys(existing_skills + registered_skills))
-                updates["registered_skills"] = merged_skills
-
-            if updates:
-                self.registry.update(ext_id, updates)
+                continue
 
     def list_installed(self) -> List[Dict[str, Any]]:
         """List all installed extensions with metadata.

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-17T00:00:00Z",
+  "updated_at": "2026-06-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1006,8 +1006,8 @@
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise.",
       "author": "raccioly",
-      "version": "0.26.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.26.0/spec-kit-docguard-v0.26.0.zip",
+      "version": "0.27.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.27.0/spec-kit-docguard-v0.27.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1043,7 +1043,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-06-11T00:00:00Z"
+      "updated_at": "2026-06-22T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1540,8 +1540,8 @@
       "id": "linear",
       "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
       "author": "Ash Brener",
-      "version": "0.6.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.6.0.zip",
+      "version": "0.7.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.7.0.zip",
       "repository": "https://github.com/ashbrener/spec-kit-linear-sync",
       "homepage": "https://github.com/ashbrener/spec-kit-linear-sync",
       "documentation": "https://github.com/ashbrener/spec-kit-linear-sync/blob/main/README.md",
@@ -1568,7 +1568,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
-      "updated_at": "2026-06-17T00:00:00Z"
+      "updated_at": "2026-06-22T00:00:00Z"
     },
     "loop": {
       "name": "Loop Engineering",
@@ -2063,8 +2063,8 @@
       "id": "multi-model-review",
       "description": "Cross-model Spec Kit handoffs for spec authoring, implementation routing, and review.",
       "author": "formin",
-      "version": "0.1.1",
-      "download_url": "https://github.com/formin/multi-model-review/archive/refs/tags/v0.1.1.zip",
+      "version": "0.1.2",
+      "download_url": "https://github.com/formin/multi-model-review/archive/refs/tags/v0.1.2.zip",
       "repository": "https://github.com/formin/multi-model-review",
       "homepage": "https://github.com/formin/multi-model-review",
       "documentation": "https://github.com/formin/multi-model-review/blob/main/README.md",
@@ -2108,7 +2108,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-04T02:51:52Z",
-      "updated_at": "2026-06-09T00:00:00Z"
+      "updated_at": "2026-06-18T00:00:00Z"
     },
     "multi-sites": {
       "name": "Multi-Sites Spec Kit",
@@ -3540,6 +3540,44 @@
       "stars": 0,
       "created_at": "2026-03-02T00:00:00Z",
       "updated_at": "2026-03-02T00:00:00Z"
+    },
+    "tasks-to-project": {
+      "name": "Tasks to GitHub Project",
+      "id": "tasks-to-project",
+      "description": "Publish and synchronize Spec Kit tasks as cards on a GitHub Project (v2) kanban board, with priority and status sync between spec.md/tasks.md and the board.",
+      "author": "Alessandro Mancini",
+      "version": "0.2.0",
+      "download_url": "https://github.com/mancioshell/spec-kit-tasks-to-project/archive/refs/tags/v0.2.0.zip",
+      "repository": "https://github.com/mancioshell/spec-kit-tasks-to-project",
+      "homepage": "https://github.com/mancioshell/spec-kit-tasks-to-project",
+      "documentation": "https://github.com/mancioshell/spec-kit-tasks-to-project/blob/main/README.md",
+      "changelog": "https://github.com/mancioshell/spec-kit-tasks-to-project/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          { "name": "gh", "required": true },
+          { "name": "python3", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "github",
+        "project",
+        "kanban",
+        "automation",
+        "tasks"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-22T00:00:00Z",
+      "updated_at": "2026-06-22T00:00:00Z"
     },
     "team-assign": {
       "name": "Team Assign",
