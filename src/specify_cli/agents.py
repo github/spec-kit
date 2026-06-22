@@ -10,7 +10,7 @@ import os
 import platform
 import re
 from copy import deepcopy
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Dict, List, Optional
 
 import yaml
@@ -546,22 +546,21 @@ class CommandRegistrar:
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
 
-            # Guard against path traversal: reject absolute paths (including
-            # Windows drive-relative paths like ``C:foo``, which are not
-            # ``is_absolute()`` but resolve against the CWD on their drive) and
-            # ensure the resolved file stays within the source directory.
-            # Mirrors the containment checks already applied on the skill,
-            # preset, and restore paths (see extensions.py and
-            # presets/__init__.py) so a malicious manifest ``file`` field
-            # (e.g. ``../../../outside.txt``) cannot read arbitrary host files
-            # into a generated command.
-            cmd_path = Path(cmd_file)
-            win_path = PureWindowsPath(cmd_file)
-            if cmd_path.is_absolute() or win_path.is_absolute() or win_path.drive:
+            # Guard against path traversal: reject any anchored value under
+            # either POSIX or Windows semantics — POSIX-absolute (``/abs``),
+            # Windows drive-relative (``C:foo``, not ``is_absolute()`` but
+            # resolved against the CWD on its drive), Windows absolute
+            # (``C:\foo``), and rooted-without-drive (``\foo``) — then ensure
+            # the resolved file stays within the source directory. Mirrors the
+            # containment checks already applied on the skill, preset, and
+            # restore paths (see extensions.py and presets/__init__.py) so a
+            # malicious manifest ``file`` field (e.g. ``../../../outside.txt``)
+            # cannot read arbitrary host files into a generated command.
+            if PurePosixPath(cmd_file).anchor or PureWindowsPath(cmd_file).anchor:
                 continue
             try:
                 source_root = source_dir.resolve()
-                source_file = (source_root / cmd_path).resolve()
+                source_file = (source_root / cmd_file).resolve()
                 source_file.relative_to(source_root)  # raises ValueError if outside
             except (OSError, ValueError):
                 continue
