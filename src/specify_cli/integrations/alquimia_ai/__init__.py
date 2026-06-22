@@ -102,7 +102,9 @@ class AlquimiaAIIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
-    def _render_skill(self, template_name: str, frontmatter: dict[str, Any], body: str) -> str:
+    def _render_skill(
+        self, template_name: str, frontmatter: dict[str, Any], body: str
+    ) -> str:
         """Render a processed command template as an Alquimia skill."""
         skill_name = f"speckit-{template_name.replace('.', '-')}"
         description = frontmatter.get(
@@ -117,6 +119,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
 
     def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
         from specify_cli.agents import CommandRegistrar
+
         return CommandRegistrar.build_skill_frontmatter(
             self.key, name, description, source
         )
@@ -166,12 +169,34 @@ class AlquimiaAIIntegration(SkillsIntegration):
         and inserts the note on the line before it, matching its indentation.
         Skips if the note is already present.
         """
-        return SkillsIntegration._inject_hook_command_note(content)
+        if "replace dots" in content:
+            return content
+
+        def repl(m: re.Match[str]) -> str:
+            indent = m.group(1)
+            instruction = m.group(2)
+            eol = m.group(3) or "\n"
+            return (
+                indent
+                + _HOOK_COMMAND_NOTE.rstrip("\n")
+                + eol
+                + indent
+                + instruction
+                + eol
+            )
+
+        return re.sub(
+            r"(?m)^(\s*)(- For each executable hook, output the following[^\r\n]*)(\r\n|\n|$)",
+            repl,
+            content,
+        )
 
     def post_process_skill_content(self, content: str) -> str:
         """Inject Alquimia-specific frontmatter flags and hook notes."""
         updated = self._inject_frontmatter_flag(content, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        updated = self._inject_frontmatter_flag(
+            updated, "disable-model-invocation", "false"
+        )
         updated = self._inject_hook_command_note(updated)
         return updated
 
@@ -206,7 +231,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
             skill_dir_name = path.parent.name  # e.g. "speckit-plan"
             stem = skill_dir_name
             if stem.startswith("speckit-"):
-                stem = stem[len("speckit-"):]
+                stem = stem[len("speckit-") :]
             hint = ARGUMENT_HINTS.get(stem, "")
             if hint:
                 updated = self.inject_argument_hint(updated, hint)

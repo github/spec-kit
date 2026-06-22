@@ -55,7 +55,9 @@ class TestAlquimiaAIIntegration:
         assert "{ARGS}" not in content
         assert "__AGENT__" not in content
         assert "__SPECKIT_COMMAND_" not in content, "unprocessed __SPECKIT_COMMAND_*__"
-        assert "/speckit." not in content, "skills agent must use /speckit-<name> not /speckit.<name>"
+        assert "/speckit." not in content, (
+            "skills agent must use /speckit-<name> not /speckit.<name>"
+        )
 
         parts = content.split("---", 2)
         parsed = yaml.safe_load(parts[1])
@@ -112,7 +114,9 @@ class TestAlquimiaAIIntegration:
         assert result is True
         assert ctx_path.exists(), "File should exist (non-empty content remains)"
         remaining = ctx_path.read_bytes()
-        assert not remaining.startswith(codecs.BOM_UTF8), "BOM must be stripped after remove"
+        assert not remaining.startswith(codecs.BOM_UTF8), (
+            "BOM must be stripped after remove"
+        )
         assert b"<!-- SPECKIT" not in remaining
         assert b"# ALQUIMIA.md" in remaining
 
@@ -131,11 +135,10 @@ class TestAlquimiaAIIntegration:
                 [
                     "init",
                     "--here",
-                    "--ai",
+                    "--integration",
                     "alquimia",
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -173,7 +176,6 @@ class TestAlquimiaAIIntegration:
                     "alquimia",
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -182,8 +184,12 @@ class TestAlquimiaAIIntegration:
             os.chdir(old_cwd)
 
         assert result.exit_code == 0, result.output
-        assert (project / ".alquimia" / "skills" / "speckit-specify" / "SKILL.md").exists()
-        assert (project / ".specify" / "integrations" / "alquimia.manifest.json").exists()
+        assert (
+            project / ".alquimia" / "skills" / "speckit-specify" / "SKILL.md"
+        ).exists()
+        assert (
+            project / ".specify" / "integrations" / "alquimia.manifest.json"
+        ).exists()
 
     def test_interactive_alquimia_selection_uses_integration_path(self, tmp_path):
         from specify_cli import app
@@ -196,8 +202,13 @@ class TestAlquimiaAIIntegration:
             os.chdir(project)
             runner = CliRunner()
             with (
-                patch("specify_cli.commands.init._stdin_is_interactive", return_value=True),
-                patch("specify_cli.commands.init.select_with_arrows", return_value="alquimia"),
+                patch(
+                    "specify_cli.commands.init._stdin_is_interactive", return_value=True
+                ),
+                patch(
+                    "specify_cli.commands.init.select_with_arrows",
+                    return_value="alquimia",
+                ),
             ):
                 result = runner.invoke(
                     app,
@@ -206,7 +217,6 @@ class TestAlquimiaAIIntegration:
                         "--here",
                         "--script",
                         "sh",
-                        "--no-git",
                         "--ignore-agent-tools",
                     ],
                     catch_exceptions=False,
@@ -216,7 +226,9 @@ class TestAlquimiaAIIntegration:
 
         assert result.exit_code == 0, result.output
         assert (project / ".specify" / "integration.json").exists()
-        assert (project / ".specify" / "integrations" / "alquimia.manifest.json").exists()
+        assert (
+            project / ".specify" / "integrations" / "alquimia.manifest.json"
+        ).exists()
 
         skill_file = project / ".alquimia" / "skills" / "speckit-plan" / "SKILL.md"
         assert skill_file.exists()
@@ -232,7 +244,7 @@ class TestAlquimiaAIIntegration:
         assert init_options["integration"] == "alquimia"
 
     def test_alquimia_init_creates_skill_files(self, tmp_path):
-        """Init with --ai alquimia should create Alquimia skills and succeed."""
+        """Init with --integration alquimia should create Alquimia skills and succeed."""
         from specify_cli import app
         from typer.testing import CliRunner
 
@@ -241,11 +253,21 @@ class TestAlquimiaAIIntegration:
 
         result = runner.invoke(
             app,
-            ["init", str(target), "--ai", "alquimia", "--script", "sh", "--no-git", "--ignore-agent-tools"],
+            [
+                "init",
+                str(target),
+                "--integration",
+                "alquimia",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+            ],
         )
 
         assert result.exit_code == 0
-        assert (target / ".alquimia" / "skills" / "speckit-specify" / "SKILL.md").exists()
+        assert (
+            target / ".alquimia" / "skills" / "speckit-specify" / "SKILL.md"
+        ).exists()
 
     def test_alquimia_hooks_render_skill_invocation(self, tmp_path):
         from specify_cli.extensions import HookExecutor
@@ -278,7 +300,9 @@ class TestAlquimiaAIIntegration:
 
         project = tmp_path / "alquimia-preset-skill"
         project.mkdir()
-        save_init_options(project, {"ai": "alquimia", "ai_skills": True, "script": "sh"})
+        save_init_options(
+            project, {"ai": "alquimia", "ai_skills": True, "script": "sh"}
+        )
 
         skills_dir = project / ".alquimia" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
@@ -355,7 +379,7 @@ class TestAlquimiaArgumentHints:
             # Extract stem: speckit-plan -> plan
             stem = f.parent.name
             if stem.startswith("speckit-"):
-                stem = stem[len("speckit-"):]
+                stem = stem[len("speckit-") :]
             expected_hint = ARGUMENT_HINTS.get(stem)
             assert expected_hint is not None, (
                 f"No expected hint defined for skill '{stem}'"
@@ -413,11 +437,7 @@ class TestAlquimiaArgumentHints:
         from specify_cli.integrations.alquimia_ai import AlquimiaAIIntegration
 
         content = (
-            "---\n"
-            "description: My command\n"
-            "---\n"
-            "\n"
-            "description: this is body text\n"
+            "---\ndescription: My command\n---\n\ndescription: this is body text\n"
         )
         result = AlquimiaAIIntegration.inject_argument_hint(content, "Test hint")
         lines = result.splitlines()
