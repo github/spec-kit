@@ -59,7 +59,7 @@ case "$(uname -s 2>/dev/null || true)" in
 esac
 
 # Parse extension config once; emit context files as JSON, followed by marker strings.
-if ! _raw_opts="$("$_python" - "$EXT_CONFIG" "$_case_insensitive_context_files" <<'PY'
+if ! _raw_opts="$("$_python" - "$EXT_CONFIG" "$_case_insensitive_context_files" "$PROJECT_ROOT" <<'PY'
 import json
 import sys
 try:
@@ -95,24 +95,53 @@ def get_str(obj, *keys):
 context_files = []
 seen_context_files = set()
 case_insensitive = sys.argv[2] == "1" or sys.platform.startswith(("win32", "cygwin"))
+def add_context_file(value):
+    if not isinstance(value, str):
+        return
+    candidate = value.strip()
+    if not candidate:
+        return
+    key = candidate.casefold() if case_insensitive else candidate
+    if key in seen_context_files:
+        return
+    context_files.append(candidate)
+    seen_context_files.add(key)
 raw_files = data.get("context_files")
 if isinstance(raw_files, list):
     for value in raw_files:
-        if not isinstance(value, str):
-            continue
-        candidate = value.strip()
-        if not candidate:
-            continue
-        key = candidate.casefold() if case_insensitive else candidate
-        if key in seen_context_files:
-            continue
-        context_files.append(candidate)
-        seen_context_files.add(key)
+        add_context_file(value)
 if not context_files:
-    raw_file = get_str(data, "context_file")
-    candidate = raw_file.strip()
-    if candidate:
-        context_files.append(candidate)
+    add_context_file(get_str(data, "context_file"))
+if not context_files:
+    # Self-seed: the agent-context extension owns its lifecycle, so when its
+    # own config declares no target it derives one from the active integration
+    # recorded in init-options.json via the Spec Kit integration registry.
+    # This is best-effort — when the registry is unavailable the script simply
+    # reports nothing to do.
+    project_root = sys.argv[3] if len(sys.argv) > 3 else "."
+    integration_key = ""
+    for candidate_path in (
+        f"{project_root}/.specify/init-options.json",
+    ):
+        try:
+            with open(candidate_path, "r", encoding="utf-8") as fh:
+                opts = json.load(fh)
+        except Exception:
+            continue
+        if isinstance(opts, dict):
+            integration_key = (
+                opts.get("integration") or opts.get("ai") or ""
+            )
+            if integration_key:
+                break
+    if integration_key:
+        try:
+            from specify_cli.integrations import INTEGRATION_REGISTRY
+
+            integration = INTEGRATION_REGISTRY.get(integration_key)
+            add_context_file(getattr(integration, "context_file", "") or "")
+        except Exception:
+            pass
 print(json.dumps(context_files))
 print(get_str(data, "context_markers", "start"))
 print(get_str(data, "context_markers", "end"))

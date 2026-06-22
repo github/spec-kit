@@ -235,6 +235,49 @@ foreach ($ContextFile in $ContextFiles) {
 }
 $ContextFiles = $dedupedContextFiles
 if ($ContextFiles.Count -eq 0) {
+    # Self-seed: the agent-context extension owns its lifecycle, so when its
+    # own config declares no target it derives one from the active integration
+    # recorded in init-options.json via the Spec Kit integration registry.
+    # Best-effort — when the registry is unavailable the script reports nothing
+    # to do below.
+    $initOptionsPath = Join-Path $ProjectRoot '.specify/init-options.json'
+    if (Test-Path -LiteralPath $initOptionsPath) {
+        try {
+            $initOpts = Get-Content -LiteralPath $initOptionsPath -Raw | ConvertFrom-Json -ErrorAction Stop
+            $integrationKey = $null
+            if ($initOpts.PSObject.Properties['integration'] -and $initOpts.integration) {
+                $integrationKey = [string]$initOpts.integration
+            } elseif ($initOpts.PSObject.Properties['ai'] -and $initOpts.ai) {
+                $integrationKey = [string]$initOpts.ai
+            }
+            if ($integrationKey) {
+                $pythonForRegistry = $null
+                foreach ($candidate in @($env:SPECKIT_PYTHON, 'python3', 'python')) {
+                    if ($candidate -and (Get-Command $candidate -ErrorAction SilentlyContinue)) {
+                        $pythonForRegistry = $candidate
+                        break
+                    }
+                }
+                if ($pythonForRegistry) {
+                    $registryScript = 'import sys' + "`n" +
+                        'try:' + "`n" +
+                        '    from specify_cli.integrations import INTEGRATION_REGISTRY' + "`n" +
+                        '    integration = INTEGRATION_REGISTRY.get(sys.argv[1])' + "`n" +
+                        '    sys.stdout.write(getattr(integration, "context_file", "") or "")' + "`n" +
+                        'except Exception:' + "`n" +
+                        '    pass'
+                    $derived = & $pythonForRegistry -c $registryScript $integrationKey 2>$null
+                    if ($LASTEXITCODE -eq 0 -and $derived -and -not [string]::IsNullOrWhiteSpace($derived)) {
+                        $ContextFiles += $derived.Trim()
+                    }
+                }
+            }
+        } catch {
+            # Non-fatal: fall through to the nothing-to-do guard below.
+        }
+    }
+}
+if ($ContextFiles.Count -eq 0) {
     Write-Warning 'agent-context: context_files/context_file not set in extension config; nothing to do.'
     exit 0
 }
