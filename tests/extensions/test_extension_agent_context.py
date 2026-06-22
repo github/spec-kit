@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 from specify_cli import (
@@ -15,10 +19,17 @@ from specify_cli import (
 )
 from specify_cli.integrations.base import IntegrationBase
 from specify_cli.integrations.claude import ClaudeIntegration
+from tests.conftest import requires_bash
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "agent-context"
+HAS_PWSH = shutil.which("pwsh") is not None
+_WINDOWS_POWERSHELL = (
+    (shutil.which("powershell.exe") or shutil.which("powershell"))
+    if os.name == "nt"
+    else None
+)
 
 
 def _write_ext_config(project_root: Path, **overrides: object) -> None:
@@ -34,6 +45,22 @@ def _write_ext_config(project_root: Path, **overrides: object) -> None:
         ),
     }
     _save_agent_context_config(project_root, cfg)
+
+
+def _prepare_agent_context_project(project_root: Path) -> None:
+    (project_root / ".specify" / "extensions" / "agent-context").mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    _write_ext_config(project_root, context_file="CLAUDE.md")
+
+
+def _clean_env() -> dict[str, str]:
+    env = os.environ.copy()
+    for key in list(env):
+        if key.startswith("SPECIFY_"):
+            env.pop(key)
+    return env
 
 
 # ── Bundled extension layout ─────────────────────────────────────────────────
@@ -74,7 +101,9 @@ class TestExtensionLayout:
 
     def test_bundled_scripts_exist(self):
         assert (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").is_file()
-        assert (EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1").is_file()
+        assert (
+            EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
+        ).is_file()
 
     def test_bash_script_reads_extension_config(self):
         text = (EXT_DIR / "scripts" / "bash" / "update-agent-context.sh").read_text(
@@ -117,7 +146,10 @@ class TestContextMarkerResolution:
     def test_defaults_when_markers_field_missing(self, tmp_path):
         """Config file exists with context_file but no context_markers key."""
         cfg_path = (
-            tmp_path / ".specify" / "extensions" / "agent-context"
+            tmp_path
+            / ".specify"
+            / "extensions"
+            / "agent-context"
             / "agent-context-config.yml"
         )
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -173,9 +205,7 @@ class TestUpsertWithCustomMarkers:
         assert IntegrationBase.CONTEXT_MARKER_END in text
 
     def test_upsert_uses_custom_markers(self, tmp_path):
-        i = self._setup(
-            tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"}
-        )
+        i = self._setup(tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"})
         i.upsert_context_section(tmp_path)
         text = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
         assert "<!-- BEGIN -->" in text
@@ -185,9 +215,7 @@ class TestUpsertWithCustomMarkers:
         assert IntegrationBase.CONTEXT_MARKER_END not in text
 
     def test_upsert_replaces_existing_custom_section(self, tmp_path):
-        i = self._setup(
-            tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"}
-        )
+        i = self._setup(tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"})
         ctx = tmp_path / "CLAUDE.md"
         ctx.write_text(
             "# header\n\n<!-- BEGIN -->\nold body\n<!-- END -->\n\nfooter\n",
@@ -201,9 +229,7 @@ class TestUpsertWithCustomMarkers:
         assert "footer" in text
 
     def test_remove_uses_custom_markers(self, tmp_path):
-        i = self._setup(
-            tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"}
-        )
+        i = self._setup(tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"})
         ctx = tmp_path / "CLAUDE.md"
         ctx.write_text(
             "preamble\n\n<!-- BEGIN -->\nbody\n<!-- END -->\nepilogue\n",
@@ -373,9 +399,7 @@ class TestExtensionConfigWriters:
             context_markers={"start": "<!-- CUSTOM -->", "end": "<!-- /CUSTOM -->"},
         )
         # Re-running init updates context_file but must preserve markers
-        _update_agent_context_config_file(
-            tmp_path, "CLAUDE.md", preserve_markers=True
-        )
+        _update_agent_context_config_file(tmp_path, "CLAUDE.md", preserve_markers=True)
         cfg = _load_agent_context_config(tmp_path)
         assert cfg["context_markers"] == {
             "start": "<!-- CUSTOM -->",
@@ -416,7 +440,10 @@ class TestCorruptExtensionConfig:
     def test_marker_resolution_with_corrupt_yaml(self, tmp_path):
         """Corrupt YAML in agent-context-config.yml falls back to defaults."""
         cfg_path = (
-            tmp_path / ".specify" / "extensions" / "agent-context"
+            tmp_path
+            / ".specify"
+            / "extensions"
+            / "agent-context"
             / "agent-context-config.yml"
         )
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -426,10 +453,60 @@ class TestCorruptExtensionConfig:
         assert start == IntegrationBase.CONTEXT_MARKER_START
         assert end == IntegrationBase.CONTEXT_MARKER_END
 
+
+# ── Script discovery for nested plan paths ──────────────────────────────────
+
+
+class TestNestedPlanDiscovery:
+    @requires_bash
+    def test_bash_script_resolves_nested_plan(self, tmp_path):
+        _prepare_agent_context_project(tmp_path)
+        nested_plan = tmp_path / "specs" / "scope" / "feature" / "plan.md"
+        nested_plan.parent.mkdir(parents=True, exist_ok=True)
+        nested_plan.write_text("# plan\n", encoding="utf-8")
+        script = EXT_DIR / "scripts" / "bash" / "update-agent-context.sh"
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_clean_env(),
+        )
+        assert result.returncode == 0, result.stderr
+        text = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "specs/scope/feature/plan.md" in text
+
+    @pytest.mark.skipif(
+        not (HAS_PWSH or _WINDOWS_POWERSHELL),
+        reason="no PowerShell available",
+    )
+    def test_powershell_script_resolves_nested_plan(self, tmp_path):
+        _prepare_agent_context_project(tmp_path)
+        nested_plan = tmp_path / "specs" / "scope" / "feature" / "plan.md"
+        nested_plan.parent.mkdir(parents=True, exist_ok=True)
+        nested_plan.write_text("# plan\n", encoding="utf-8")
+        script = EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
+        exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+        result = subprocess.run(
+            [exe, "-NoProfile", "-File", str(script)],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=_clean_env(),
+        )
+        assert result.returncode == 0, result.stderr
+        text = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+        assert "specs/scope/feature/plan.md" in text
+
     def test_upsert_with_corrupt_config_uses_defaults(self, tmp_path):
         """upsert_context_section still works when config YAML is corrupt."""
         cfg_path = (
-            tmp_path / ".specify" / "extensions" / "agent-context"
+            tmp_path
+            / ".specify"
+            / "extensions"
+            / "agent-context"
             / "agent-context-config.yml"
         )
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
@@ -444,7 +521,10 @@ class TestCorruptExtensionConfig:
     def test_marker_resolution_with_non_dict_yaml(self, tmp_path):
         """Config file containing a scalar (not a dict) falls back to defaults."""
         cfg_path = (
-            tmp_path / ".specify" / "extensions" / "agent-context"
+            tmp_path
+            / ".specify"
+            / "extensions"
+            / "agent-context"
             / "agent-context-config.yml"
         )
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
