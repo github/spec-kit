@@ -18,7 +18,7 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Callable, Dict, List, Optional, Set
 
 import pathspec
@@ -299,11 +299,24 @@ class ExtensionManifest:
                 raise ValidationError(
                     f"Command 'file' for '{cmd.get('name')}' must be a non-empty string"
                 )
-            cmd_file_path = Path(cmd_file)
-            if cmd_file_path.is_absolute() or ".." in cmd_file_path.parts:
+            # Evaluate the value under both POSIX and Windows path semantics so
+            # the check is platform-independent: reject absolute paths, Windows
+            # drive-relative paths (e.g. ``C:foo``, which are not is_absolute()
+            # but resolve against the CWD on their drive), and ``..`` segments
+            # written with either separator.
+            posix_path = Path(cmd_file)
+            win_path = PureWindowsPath(cmd_file)
+            if (
+                posix_path.is_absolute()
+                or win_path.is_absolute()
+                or win_path.drive
+                or ".." in posix_path.parts
+                or ".." in win_path.parts
+            ):
                 raise ValidationError(
                     f"Invalid command 'file' '{cmd_file}': must be a relative path "
-                    "within the extension directory (no absolute paths or '..' segments)"
+                    "within the extension directory (no absolute paths, drive "
+                    "letters, or '..' segments)"
                 )
 
             # Validate command name format
