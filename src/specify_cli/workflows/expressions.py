@@ -215,8 +215,8 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         leading_name = re.match(r"\w+", filter_expr)
         name = leading_name.group(0) if leading_name else filter_expr
         expected = (
-            "expected one of default('x'), join('sep'), map('attr'), "
-            "contains('s'), or from_json"
+            "expected one of default or default('x'), join('sep'), "
+            "map('attr'), contains('s'), or from_json"
         )
         if name in _REGISTERED_FILTERS:
             raise ValueError(
