@@ -64,15 +64,14 @@ The per-agent instruction file that may contain a delimited managed section.
 | Field | Description |
 |-------|-------------|
 | `key` | Integration identifier |
-| `context_file` | Declared context file path — **inert metadata** after this feature |
 | `registrar_config`, `config` | Unchanged command/output metadata |
 
 **Ownership transition**:
-- *Before*: `context_file` triggered CLI context-section management via inherited `setup()`/`teardown()`.
-- *After*: `context_file` is informational only — consumed for `__CONTEXT_FILE__` template substitution (R2) and as the value the extension may seed from. It never triggers CLI section writes.
+- *Before*: `context_file` was a class attribute that triggered CLI context-section management via inherited `setup()`/`teardown()`.
+- *After*: `context_file` is removed from integration classes entirely. The CLI holds no per-agent context-file knowledge. The extension ships its own `agent-context-defaults.json` (key→context_file) and self-seeds from it.
 
 **Validation rules**:
-- Reading/declaring `context_file` must not cause the CLI to modify any agent context file (FR-007).
+- No `context_file` field exists on any integration class; the CLI never reads, declares, resolves, or migrates a context file (FR-007).
 
 ## State Transition: Section Ownership
 
@@ -99,8 +98,9 @@ These cease to exist (or cease to be referenced) after the feature:
 
 - `IntegrationBase.upsert_context_section`, `remove_context_section` (and their per-file loops over `context_files`)
 - `IntegrationBase._agent_context_extension_enabled`, `_resolve_context_markers`
-- `IntegrationBase._resolve_context_files`, and the extension-config-reading branches of `_resolve_context_file_values` / `_format_context_file_values` (retain at most a pure metadata formatter for `__CONTEXT_FILE__`)
+- `IntegrationBase._resolve_context_files`, `_resolve_context_file_values`, `_format_context_file_values`, and the `__CONTEXT_FILE__` substitution — removed entirely; the CLI no longer resolves or formats any context file
 - The plural `context_files` config key consumption in the CLI
+- The `context_file` class attribute on every integration; the per-agent default mapping now lives in `extensions/agent-context/agent-context-defaults.json`
 - `_AGENT_CTX_EXT_CONFIG`, `_load_agent_context_config`, `_save_agent_context_config`, `_update_agent_context_config_file`
 - Auto-install + config-write of `agent-context` in `commands/init.py`
 - The v0.12.0 deprecation warning

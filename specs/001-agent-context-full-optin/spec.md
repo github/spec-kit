@@ -75,7 +75,7 @@ A user running `specify init` or switching integrations currently sees a depreca
 - **FR-004**: The `agent-context` extension MUST remain the sole owner of agent context file management, performing all reads, writes, marker resolution, and enable/disable behavior through its own bundled scripts and configuration.
 - **FR-005**: The `agent-context` extension MUST be opt-in: when it is not installed or is disabled, no agent context section management occurs anywhere in Spec Kit.
 - **FR-006**: The deprecation warning related to inline agent-context updates MUST be removed from the CLI so it is never emitted.
-- **FR-007**: Integration definitions MAY continue to declare which context file a given agent uses, but that declaration MUST NOT cause the CLI to manage the context section; if retained, it MUST serve only as informational metadata consumed by the extension or templates.
+- **FR-007**: Integration definitions MUST NOT declare a context file. All agent→context-file knowledge (including the per-agent default mapping) MUST live within the `agent-context` extension. The CLI MUST contain no `context_file` field, plumbing, or default mapping in any form.
 - **FR-008**: The change MUST NOT break existing projects: projects with previously-created managed sections or extension config files MUST continue to function, with the extension responsible for any further updates.
 - **FR-009**: The automated test suite MUST be updated so that tests covering removed CLI behavior (context-section upsert/remove, config read/write, enabled gating, deprecation warning) are removed or relocated to the extension, and the suite passes.
 - **FR-010**: Project documentation describing CLI-owned agent-context behavior MUST be updated to state that the `agent-context` extension fully owns this lifecycle.
@@ -92,7 +92,7 @@ A user running `specify init` or switching integrations currently sees a depreca
 ### Measurable Outcomes
 
 - **SC-001**: After integration setup with the extension absent or disabled, 0 changes are made to any agent context file by the Specify CLI.
-- **SC-002**: 0 references to agent-context configuration read/write, context-section management, or extension-enabled gating remain in the Specify CLI source (outside the extension itself).
+- **SC-002**: 0 references to agent-context configuration read/write, context-section management, extension-enabled gating, or any `context_file` declaration/plumbing remain in the Specify CLI source (outside the extension itself).
 - **SC-003**: The agent-context deprecation message is emitted 0 times across all CLI flows.
 - **SC-004**: 100% of the existing automated test suite passes after the relevant tests are removed or relocated to the extension.
 - **SC-005**: With the extension installed and enabled, running its update command still produces a correct managed section, demonstrating no loss of end-user functionality.
@@ -102,6 +102,6 @@ A user running `specify init` or switching integrations currently sees a depreca
 
 - The `agent-context` extension's bundled scripts (bash and PowerShell) are already self-contained — they read their own configuration and update the context file independently — and therefore require no changes to keep functioning after CLI-side logic is removed.
 - The extension is "bundled" with Spec Kit but treated as opt-in: its presence/enabled state governs whether agent context management happens at all.
-- Integration classes may keep a lightweight context-file declaration as metadata (for templates or the extension to consume), but it will no longer drive CLI-side context-section writes. If the project prefers, this declaration can be removed entirely; either approach satisfies the requirement that the CLI performs no context management.
+- Integration classes MUST NOT declare a context file. The per-agent default mapping is removed from the CLI entirely and ships with the extension as `agent-context-defaults.json`; the extension self-seeds from its own map with no dependency on the CLI registry.
 - "No configuration in the Python codebase" refers to logic and configuration handling that drives agent-context behavior (config file I/O, marker resolution, enabled gating, section upsert/remove, and the related calls), not to incidental string constants that may remain only if unused by any active code path.
 - Backward compatibility means existing files are left intact and unmanaged by the CLI; it does not require the CLI to migrate or clean up previously written artifacts.

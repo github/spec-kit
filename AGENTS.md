@@ -75,7 +75,6 @@ class WindsurfIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = ".windsurf/rules/specify-rules.md"
 ```
 
 **TOML agent (Gemini):**
@@ -101,7 +100,6 @@ class GeminiIntegration(TomlIntegration):
         "args": "{{args}}",
         "extension": ".toml",
     }
-    context_file = "GEMINI.md"
 ```
 
 **Skills agent (Codex):**
@@ -129,7 +127,6 @@ class CodexIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -150,7 +147,6 @@ class CodexIntegration(SkillsIntegration):
 | `key` | Class attribute | Unique identifier; for CLI-based integrations (`requires_cli: True`), must match the CLI executable name |
 | `config` | Class attribute (dict) | Agent metadata: `name`, `folder`, `commands_subdir`, `install_url`, `requires_cli` |
 | `registrar_config` | Class attribute (dict) | Command output config: `dir`, `format`, `args` placeholder, file `extension` |
-| `context_file` | Class attribute (str or None) | Path to agent context/instructions file (e.g., `"CLAUDE.md"`, `".github/copilot-instructions.md"`) |
 
 **Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"windsurf"`, `"copilot"`).
 
@@ -175,7 +171,7 @@ def _register_builtins() -> None:
 
 ### 4. Context file behavior
 
-Set `context_file` on the integration class. This is **inert metadata only**: it declares which context/instruction file a given agent uses (for example `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`) so templates and the extension can consume it. The Specify CLI itself never creates, updates, or removes a managed section in that file.
+The Specify CLI carries **no agent-context state whatsoever**. Integration classes do **not** declare a `context_file`, and the CLI never creates, updates, removes, resolves, or migrates a context/instruction file (`CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, …). New integrations add nothing for context handling.
 
 Managing the "Spec Kit" section in the context file is fully owned by the bundled `agent-context` extension (`extensions/agent-context/`), which is a **full opt-in**: `specify init` does not install it. A user adds/enables it through the standard extension verbs, after which the extension's own bundled scripts maintain the context section. When the extension is absent or disabled, nothing in Spec Kit touches the context file.
 
@@ -191,7 +187,7 @@ context_markers:
   end: "<!-- SPECKIT END -->"
 ```
 
-- The Specify CLI does **not** write this config. When `context_file` is empty, the extension's bundled scripts self-seed it by resolving the active integration's declared `context_file` metadata from the registry (`extensions/agent-context/scripts/bash/update-agent-context.sh` and `.ps1`).
+- The Specify CLI does **not** write this config. When `context_file` is empty, the extension's bundled scripts self-seed it by looking up the active integration's key in the extension's own `agent-context-defaults.json` map (`extensions/agent-context/scripts/bash/update-agent-context.sh` and `.ps1`). The CLI registry is never consulted — all agent→context-file knowledge lives inside the extension.
 - `context_markers.{start,end}` are read solely by the extension's scripts; they default to the Spec Kit markers shown above and can be customized by editing `agent-context-config.yml` directly.
 
 Existing projects created by older Spec Kit versions keep working: any previously written managed section or extension config is left intact and is only ever updated by the extension when run.
@@ -403,7 +399,6 @@ Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
 2. Extracts title and description from frontmatter
 3. Renders output as Goose recipe YAML (version, title, description, author, extensions, activities, prompt)
 4. Uses `yaml.safe_dump()` for header fields to ensure proper escaping
-5. Sets `context_file = "AGENTS.md"` so the base setup manages the Spec Kit context section there
 
 ## Branch Naming Convention
 
@@ -468,7 +463,7 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 ## Common Pitfalls
 
 1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
-2. **Forgetting context configuration**: The opt-in `agent-context` extension reads from `.specify/extensions/agent-context/agent-context-config.yml`. New integrations only need to set `context_file` on the class as inert metadata — the CLI never manages the context section, and the extension's bundled scripts own markers and context-file updates.
+2. **Reintroducing context handling into the CLI**: The opt-in `agent-context` extension owns everything about context files — including the per-agent default mapping in `agent-context-defaults.json`. Integration classes must **not** declare a `context_file`, and no CLI code should read, write, resolve, or migrate context files. All context-file logic lives in `.specify/extensions/agent-context/` and its bundled scripts.
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.
 5. **Skipping registration**: The import and `_register()` call in `_register_builtins()` must both be added.

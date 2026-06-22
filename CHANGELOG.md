@@ -4,7 +4,7 @@
 
 ### Changed
 
-- feat!: make the `agent-context` extension a full opt-in. `specify init` no longer installs the extension or writes `agent-context-config.yml`, and the Specify CLI no longer creates, updates, or removes the managed Spec Kit section in agent context files (e.g. `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`). The bundled `agent-context` extension now fully owns this lifecycle — install/enable it to manage the context section. Integration `context_file` declarations are retained as inert metadata. Removed the obsolete inline agent-context deprecation warning. Existing projects keep working: previously written sections and config files are left intact and only updated by the extension.
+- feat!: make the `agent-context` extension a full opt-in. `specify init` no longer installs the extension or writes `agent-context-config.yml`, and the Specify CLI no longer creates, updates, removes, resolves, or migrates the managed Spec Kit section in agent context files (e.g. `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`). All agent-context knowledge has been removed from the CLI — integration classes no longer declare a `context_file`, and the per-agent default mapping now ships with the extension itself as `agent-context-defaults.json`. The bundled `agent-context` extension fully owns this lifecycle and self-seeds from its own defaults map; install/enable it to manage the context section. Removed the obsolete inline agent-context deprecation warning. Existing projects keep working: previously written sections and config files are left intact and only updated by the extension.
 
 ## [0.11.4] - 2026-06-22
 
