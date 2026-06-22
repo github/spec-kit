@@ -53,8 +53,8 @@ class WorkflowDefinition:
             self.default_options = {}
 
         # Advisory pre-conditions (spec-kit version / integrations a workflow
-        # expects). Validated by ``validate_workflow`` (recognised keys only;
-        # see ``_RECOGNISED_REQUIRES_KEYS``) but NOT enforced at run time — they
+        # expects). Validated by ``validate_workflow`` (recognized keys only;
+        # see ``_RECOGNIZED_REQUIRES_KEYS``) but NOT enforced at run time — they
         # are not a security boundary. In particular there is no
         # ``requires.permissions`` capability gate: shell steps always run with
         # the user's privileges.
@@ -96,7 +96,7 @@ _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 # bundler (``speckit_version``, ``integrations``, ``tools``, ``mcp``). Any other
 # key — notably ``permissions`` — is rejected by ``validate_workflow`` so it is
 # never mistaken for an enforced runtime control.
-_RECOGNISED_REQUIRES_KEYS = frozenset(
+_RECOGNIZED_REQUIRES_KEYS = frozenset(
     {"speckit_version", "integrations", "tools", "mcp"}
 )
 
@@ -192,13 +192,18 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
 
     # -- Requires ---------------------------------------------------------
     # ``requires`` declares advisory pre-conditions (the spec-kit version and
-    # integrations a workflow expects). Only a fixed set of keys is recognised;
+    # integrations a workflow expects). Only a fixed set of keys is recognized;
     # reject anything else so authoring typos surface here instead of being
     # silently ignored at runtime. In particular ``requires.permissions`` is
     # rejected explicitly: it reads like a runtime capability gate, but no such
     # gate exists — a ``shell`` step always runs with the user's privileges, so
     # declaring it would give a false sense of sandboxing.
-    if definition.requires:
+    #
+    # Guard on ``is not None`` rather than truthiness: a falsy but non-mapping
+    # value (e.g. ``requires: []`` or ``requires: ''``) is still an authoring
+    # error and must surface, whereas ``requires:`` (YAML null) is treated as
+    # an omitted block.
+    if definition.requires is not None:
         if not isinstance(definition.requires, dict):
             errors.append(
                 "'requires' must be a mapping (or omitted)."
@@ -207,15 +212,15 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             for key in definition.requires:
                 if key == "permissions":
                     errors.append(
-                        "'requires.permissions' is not a recognised or "
+                        "'requires.permissions' is not a recognized or "
                         "enforced capability gate — shell steps always run "
                         "with the user's privileges. Remove it and gate "
                         "sensitive steps with a 'gate' step instead."
                     )
-                elif key not in _RECOGNISED_REQUIRES_KEYS:
+                elif key not in _RECOGNIZED_REQUIRES_KEYS:
                     errors.append(
-                        f"Unknown 'requires' key {key!r}. Recognised keys: "
-                        f"{', '.join(sorted(_RECOGNISED_REQUIRES_KEYS))}."
+                        f"Unknown 'requires' key {key!r}. Recognized keys: "
+                        f"{', '.join(sorted(_RECOGNIZED_REQUIRES_KEYS))}."
                     )
 
     # -- Steps ------------------------------------------------------------

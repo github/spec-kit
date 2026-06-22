@@ -2123,7 +2123,31 @@ steps:
     run: "echo hi"
 """)
         errors = validate_workflow(definition)
-        assert any("permissions" in e and "not" in e.lower() for e in errors)
+        # Assert on specific markers from the intended message (the offending
+        # key and the `gate` remediation) so the test fails if the validation
+        # path or wording drifts, rather than passing on any error that merely
+        # happens to contain "permissions" and "not".
+        assert any("requires.permissions" in e and "gate" in e for e in errors)
+
+    def test_requires_empty_sequence_is_rejected_as_non_mapping(self):
+        """A falsy-but-non-mapping ``requires`` (e.g. an empty list) is still an
+        authoring error: validation must guard on ``is not None`` rather than
+        truthiness, otherwise ``requires: []`` would silently pass.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires: []
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
 
 
 # ===== Workflow Engine Tests =====
