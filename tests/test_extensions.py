@@ -4700,6 +4700,78 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0, result.output
         assert f"URL: {url}" in result.output
 
+    def test_catalog_add_escapes_config_saved_path_markup(self, tmp_path):
+        """Catalog add's saved-path label should render literally under Rich."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        display_path = "project[red]/.specify/extension-catalogs.yml"
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.extensions._commands._display_project_path", return_value=display_path):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    "community",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert f"Config saved to {display_path}" in result.output
+
+    def test_catalog_list_escapes_config_path_markup(self, tmp_path):
+        """Catalog list's config-path label should render literally under Rich."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import yaml
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir()
+        (specify_dir / "extension-catalogs.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "community",
+                            "url": "https://example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        display_path = "project[red]/.specify/extension-catalogs.yml"
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.extensions._commands._display_project_path", return_value=display_path):
+            result = runner.invoke(
+                app,
+                ["extension", "catalog", "list"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert f"Config: {display_path}" in result.output
+
     def test_catalog_add_escapes_config_read_exception_markup(self, tmp_path):
         """Catalog config parse errors can include user-controlled file content."""
         import yaml
@@ -5471,6 +5543,62 @@ class TestExtensionUpdateCLI:
 
         for cmd_file in command_files:
             assert cmd_file.exists(), f"Expected command file to be restored after rollback: {cmd_file}"
+
+    @pytest.mark.parametrize(
+        ("manifest_text", "expected_detail"),
+        [
+            ("- not\n- a\n- mapping\n", "YAML mapping"),
+            ("extension: []\n", "'extension' mapping"),
+        ],
+    )
+    def test_update_rejects_malformed_zip_manifest(
+        self, tmp_path, monkeypatch, manifest_text, expected_detail
+    ):
+        """Downloaded extension.yml shape must be valid before ID validation."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import zipfile
+
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        runner = CliRunner()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0")
+        original_registry_entry = manager.registry.get("test-ext")
+
+        zip_path = tmp_path / "bad-manifest.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("extension.yml", manifest_text)
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext",
+                 "name": "Test Extension",
+                 "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path):
+            result = runner.invoke(
+                app,
+                ["extension", "update", "test-ext"],
+                input="y\n",
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "Invalid extension manifest in downloaded archive" in result.output
+        assert expected_detail in result.output
+        assert "AttributeError" not in result.output
+        assert ExtensionManager(project_dir).registry.get("test-ext") == original_registry_entry
 
 
 class TestExtensionListCLI:

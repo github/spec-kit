@@ -276,7 +276,8 @@ def catalog_list():
         except ValidationError:
             proj_loaded = False
         if proj_loaded:
-            console.print(f"[dim]Config: {_display_project_path(project_root, config_path)}[/dim]")
+            config_label = _escape_markup(str(_display_project_path(project_root, config_path)))
+            console.print(f"[dim]Config: {config_label}[/dim]")
         else:
             try:
                 user_loaded = user_config_path.exists() and catalog._load_catalog_config(user_config_path) is not None
@@ -354,7 +355,8 @@ def catalog_add(
     console.print(f"\n[green]✓[/green] Added catalog '[bold]{safe_name}[/bold]' ({install_label})")
     console.print(f"  URL: {safe_url}")
     console.print(f"  Priority: {priority}")
-    console.print(f"\nConfig saved to {_display_project_path(project_root, config_path)}")
+    config_label = _escape_markup(str(_display_project_path(project_root, config_path)))
+    console.print(f"\nConfig saved to {config_label}")
 
 
 @catalog_app.command("remove")
@@ -1189,19 +1191,30 @@ def extension_update(
                         # First try root-level extension.yml
                         if "extension.yml" in namelist:
                             with zf.open("extension.yml") as f:
-                                manifest_data = yaml.safe_load(f) or {}
+                                parsed_manifest = yaml.safe_load(f)
+                                manifest_data = parsed_manifest if parsed_manifest is not None else {}
                         else:
                             # Look for extension.yml in a single top-level subdirectory
                             # (e.g., "repo-name-branch/extension.yml")
                             manifest_paths = [n for n in namelist if n.endswith("/extension.yml") and n.count("/") == 1]
                             if len(manifest_paths) == 1:
                                 with zf.open(manifest_paths[0]) as f:
-                                    manifest_data = yaml.safe_load(f) or {}
+                                    parsed_manifest = yaml.safe_load(f)
+                                    manifest_data = parsed_manifest if parsed_manifest is not None else {}
 
                         if manifest_data is None:
                             raise ValueError("Downloaded extension archive is missing 'extension.yml'")
+                        if not isinstance(manifest_data, dict):
+                            raise ValueError(
+                                "Invalid extension manifest in downloaded archive: expected YAML mapping"
+                            )
+                        extension_data = manifest_data.get("extension", {})
+                        if not isinstance(extension_data, dict):
+                            raise ValueError(
+                                "Invalid extension manifest in downloaded archive: expected 'extension' mapping"
+                            )
 
-                    zip_extension_id = manifest_data.get("extension", {}).get("id")
+                    zip_extension_id = extension_data.get("id")
                     if zip_extension_id != extension_id:
                         raise ValueError(
                             f"Extension ID mismatch: expected '{extension_id}', got '{zip_extension_id}'"
