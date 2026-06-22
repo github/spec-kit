@@ -54,7 +54,7 @@ For non-interactive or CI runs where you do not want to `cd`, set
 
 ```bash
 # from the monorepo root, operate on apps/web without cd-ing in
-SPECIFY_INIT_DIR=apps/web   # exported in the shell your agent runs commands in
+export SPECIFY_INIT_DIR=apps/web
 ```
 
 The path must exist and contain `.specify/`. If it does not, the command
@@ -88,13 +88,16 @@ when it is present in the environment of the shell that runs those scripts.
 ## Git in a monorepo
 
 > [!NOTE]
-> The Git extension scopes branch creation to the **resolved project root**. In a
-> monorepo with a single Git repository at the root and projects in
-> subdirectories, a member project directory (e.g. `apps/web`) is not itself a
-> Git work tree, so feature-branch creation is skipped with a
-> *"Git repository not detected"* notice. Manage branches and commits at the
-> repository root, or initialize Git per member project if you want per-project
-> branches.
+> Spec Kit project files are scoped to the **resolved project root**, but Git
+> operations still run in the containing Git work tree. In a monorepo with a
+> single Git repository at the root and projects in subdirectories, feature
+> branch creation creates or switches branches in the shared root repository.
+> Spec directories still live under the selected member project, while the Git
+> branch namespace is shared by the whole monorepo. Manage branches and commits
+> at the repository root, or initialize Git per member project if you want
+> isolated per-project branch namespaces. Tighter Git scoping for monorepos is a
+> known limitation tracked in
+> [#3081](https://github.com/github/spec-kit/issues/3081).
 
 ## Constitutions
 
