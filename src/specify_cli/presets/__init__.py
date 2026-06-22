@@ -1064,11 +1064,14 @@ class PresetManager:
                         body = self._resolve_skill_command_refs(
                             body, registrar, selected_ai
                         )
+                    from ..integrations import get_integration
+                    integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
                     fm_data = registrar.build_skill_frontmatter(
                         selected_ai if isinstance(selected_ai, str) else "",
                         skill_name, desc,
                         f"override:{cmd_name}",
                     )
+                    registrar.apply_argument_hint(fm, fm_data, integration)
                     fm_text = dump_frontmatter(fm_data)
                     skill_title = self._skill_title_from_command(cmd_name)
                     skill_content = (
@@ -1076,8 +1079,6 @@ class PresetManager:
                         f"# Speckit {skill_title} Skill\n\n{body}\n"
                     )
                     # Apply integration post-processing (e.g. Claude flags)
-                    from ..integrations import get_integration
-                    integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
                     if integration is not None and hasattr(integration, "post_process_skill_content"):
                         skill_content = integration.post_process_skill_content(skill_content)
                     skill_file.write_text(skill_content, encoding="utf-8")
@@ -1346,6 +1347,7 @@ class PresetManager:
                     enhanced_desc,
                     f"preset:{manifest.id}",
                 )
+                registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
                 frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_content = (
                     f"---\n"
@@ -1442,6 +1444,7 @@ class PresetManager:
                     enhanced_desc,
                     f"templates/commands/{short_name}.md",
                 )
+                registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
                 frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_title = self._skill_title_from_command(short_name)
                 skill_content = (
@@ -1479,6 +1482,7 @@ class PresetManager:
                     frontmatter.get("description", f"Extension command: {command_name}"),
                     extension_restore["source"],
                 )
+                registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
                 frontmatter_text = dump_frontmatter(frontmatter_data)
                 skill_content = (
                     f"---\n"

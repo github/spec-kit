@@ -28,7 +28,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from ._init_options import is_ai_skills_enabled
 from ._invocation_style import is_slash_skills_agent
-from ._utils import dump_frontmatter
+from ._utils import dump_frontmatter, relative_extension_path_violation
 from .catalogs import CatalogEntry as BaseCatalogEntry
 from .catalogs import CatalogStackBase
 
@@ -289,6 +289,18 @@ class ExtensionManifest:
                 )
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
+
+            # Validate the 'file' field at manifest-load time using the single
+            # shared policy in relative_extension_path_violation(), so manifest
+            # validation cannot drift from the runtime registrar guard. This is
+            # defense-in-depth: the command/skill/preset readers also contain
+            # the resolved path, but rejecting an unsafe value here surfaces a
+            # clear error instead of silently skipping the command.
+            cmd_file = cmd["file"]
+            reason = relative_extension_path_violation(cmd_file)
+            if reason:
+                label = repr(cmd_file) if isinstance(cmd_file, str) else f"for command '{cmd.get('name')}'"
+                raise ValidationError(f"Invalid command 'file' {label}: {reason}")
 
             # Validate command name format
             if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):
@@ -1061,20 +1073,10 @@ class ExtensionManager:
             )
             # Preserve the command's argument-hint in the generated skill,
             # mirroring the core template path (ClaudeIntegration.setup injects
-            # it for built-in commands). The value is added to the frontmatter
-            # dict before serialization — rather than via the string-based
-            # inject_argument_hint helper — so that a folded multi-line
-            # description cannot be split by the inserted line. Gated on the
-            # integration exposing inject_argument_hint so only argument-hint
-            # aware agents receive the key, leaving build_skill_frontmatter's
-            # shared shape unchanged for every other agent.
-            argument_hint = frontmatter.get("argument-hint")
-            if (
-                argument_hint
-                and integration is not None
-                and hasattr(integration, "inject_argument_hint")
-            ):
-                frontmatter_data["argument-hint"] = str(argument_hint)
+            # it for built-in commands). See CommandRegistrar.apply_argument_hint
+            # for why the value is added to the dict before serialization rather
+            # than via the string-based inject_argument_hint helper.
+            registrar.apply_argument_hint(frontmatter, frontmatter_data, integration)
             frontmatter_text = dump_frontmatter(frontmatter_data)
 
             # Derive a human-friendly title from the command name
