@@ -12,10 +12,9 @@ import json
 import hashlib
 import os
 import tempfile
-import zipfile
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Optional, Dict, List, Any
 
 if TYPE_CHECKING:
@@ -27,6 +26,12 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
+from .._download_security import (
+    MAX_JSON_CATALOG_BYTES,
+    read_response_limited,
+    safe_extract_zip,
+    verify_sha256,
+)
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
@@ -219,12 +224,21 @@ class PresetManifest:
 
             # Validate file path safety: must be relative, no parent traversal
             file_path = tmpl["file"]
-            normalized = os.path.normpath(file_path)
-            if os.path.isabs(normalized) or normalized.startswith(".."):
+            if not isinstance(file_path, str) or not file_path.strip():
+                raise PresetValidationError(
+                    "Invalid template file path: must be a non-empty string"
+                )
+            normalized = file_path.replace("\\", "/")
+            normalized_path = PurePosixPath(normalized)
+            has_windows_drive = re.match(r"^[A-Za-z]:", normalized) is not None
+            if normalized_path.is_absolute() or any(
+                part == ".." for part in normalized_path.parts
+            ) or has_windows_drive:
                 raise PresetValidationError(
                     f"Invalid template file path '{file_path}': "
                     "must be a relative path within the preset directory"
                 )
+            tmpl["file"] = normalized
 
             # Validate strategy field (optional, defaults to "replace")
             strategy = tmpl.get("strategy", "replace")
@@ -1642,18 +1656,7 @@ class PresetManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise PresetValidationError(
-                            f"Unsafe path in ZIP archive: {member} "
-                            "(potential path traversal)"
-                        )
-                zf.extractall(temp_path)
+            safe_extract_zip(zip_path, temp_path, error_type=PresetValidationError)
 
             pack_dir = temp_path
             manifest_path = pack_dir / "preset.yml"
@@ -1837,7 +1840,7 @@ class PresetCatalog:
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
     def _validate_catalog_url(self, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS (localhost HTTP allowed).
+        """Validate that a catalog URL uses HTTPS (loopback HTTP allowed).
 
         Args:
             url: URL to validate
@@ -1848,17 +1851,17 @@ class PresetCatalog:
         from urllib.parse import urlparse
 
         parsed = urlparse(url)
+        if not parsed.hostname:
+            raise PresetValidationError(
+                "Catalog URL must be a valid URL with a host."
+            )
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
             raise PresetValidationError(
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
-                "HTTP is only allowed for localhost."
-            )
-        if not parsed.netloc:
-            raise PresetValidationError(
-                "Catalog URL must be a valid URL with a host."
+                "HTTP is only allowed for localhost, 127.0.0.1, and ::1."
             )
 
     def _make_request(self, url: str):
@@ -1874,13 +1877,19 @@ class PresetCatalog:
         url: str,
         timeout: int = 10,
         extra_headers: Optional[Dict[str, str]] = None,
+        strict_redirects: bool = True,
     ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
         """
         from specify_cli.authentication.http import open_url
-        return open_url(url, timeout, extra_headers=extra_headers)
+        return open_url(
+            url,
+            timeout,
+            extra_headers=extra_headers,
+            strict_redirects=strict_redirects,
+        )
 
     def _resolve_github_release_asset_api_url(
         self,
@@ -2158,8 +2167,19 @@ class PresetCatalog:
                 pass
 
         try:
-            with self._open_url(entry.url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+            with self._open_url(
+                entry.url,
+                timeout=10,
+                strict_redirects=True,
+            ) as response:
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=PresetError,
+                        label=f"preset catalog {entry.url}",
+                    )
+                )
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
@@ -2309,8 +2329,19 @@ class PresetCatalog:
                 pass
 
         try:
-            with self._open_url(catalog_url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+            with self._open_url(
+                catalog_url,
+                timeout=10,
+                strict_redirects=True,
+            ) as response:
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=PresetError,
+                        label=f"preset catalog {catalog_url}",
+                    )
+                )
 
             # Validate catalog structure. Reuses the same helper as
             # ``_fetch_single_catalog`` so all three branches (root type,
@@ -2475,12 +2506,18 @@ class PresetCatalog:
         from urllib.parse import urlparse
 
         parsed = urlparse(download_url)
+        if not parsed.hostname:
+            raise PresetError(
+                f"Preset download URL must be a valid URL with a host: {download_url}"
+            )
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
             raise PresetError(
-                f"Preset download URL must use HTTPS: {download_url}"
+                "Preset download URL must use HTTPS "
+                "(HTTP is allowed only for localhost, 127.0.0.1, and ::1): "
+                f"{download_url}"
             )
 
         if target_dir is None:
@@ -2498,8 +2535,24 @@ class PresetCatalog:
             extra_headers = {"Accept": "application/octet-stream"}
 
         try:
-            with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
-                zip_data = response.read()
+            with self._open_url(
+                download_url,
+                timeout=60,
+                extra_headers=extra_headers,
+                strict_redirects=True,
+            ) as response:
+                zip_data = read_response_limited(
+                    response,
+                    error_type=PresetError,
+                    label=f"preset '{pack_id}' download",
+                )
+
+            verify_sha256(
+                zip_data,
+                pack_info.get("sha256"),
+                error_type=PresetError,
+                label=f"preset '{pack_id}' download",
+            )
 
             zip_path.write_bytes(zip_data)
             return zip_path

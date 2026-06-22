@@ -13,6 +13,7 @@ Tests cover:
 import pytest
 import io
 import json
+import hashlib
 import tempfile
 import shutil
 import warnings
@@ -290,6 +291,39 @@ class TestPresetManifest:
             yaml.dump(valid_pack_data, f)
         with pytest.raises(PresetValidationError, match="Invalid template name"):
             PresetManifest(manifest_path)
+
+    @pytest.mark.parametrize(
+        "bad_file",
+        [
+            "../outside.md",
+            "/tmp/outside.md",
+            "templates/../../outside.md",
+            "C:\\Windows\\outside.md",
+            "C:outside.md",
+        ],
+    )
+    def test_invalid_template_file_path(self, temp_dir, valid_pack_data, bad_file):
+        """Template files must stay inside the preset package."""
+        valid_pack_data["provides"]["templates"][0]["file"] = bad_file
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_pack_data, f)
+
+        with pytest.raises(PresetValidationError, match="Invalid template file path"):
+            PresetManifest(manifest_path)
+
+    def test_windows_template_file_path_is_normalized(self, temp_dir, valid_pack_data):
+        """Windows-authored manifests keep compatibility without traversal."""
+        valid_pack_data["provides"]["templates"][0]["file"] = (
+            "templates\\spec-template.md"
+        )
+        manifest_path = temp_dir / "preset.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_pack_data, f)
+
+        manifest = PresetManifest(manifest_path)
+
+        assert manifest.templates[0]["file"] == "templates/spec-template.md"
 
     def test_get_hash(self, pack_dir):
         """Test manifest hash calculation."""
@@ -1390,6 +1424,12 @@ class TestPresetCatalog:
         with pytest.raises(PresetValidationError, match="must use HTTPS"):
             catalog._validate_catalog_url("http://example.com/catalog.json")
 
+    def test_validate_catalog_url_hostless_https_rejected(self, project_dir):
+        """Hostless HTTPS catalog URLs should fail before scheme messaging."""
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="valid URL with a host"):
+            catalog._validate_catalog_url("https:///catalog.json")
+
     def test_validate_catalog_url_localhost_http_allowed(self, project_dir):
         """Test that HTTP is allowed for localhost."""
         catalog = PresetCatalog(project_dir)
@@ -1490,7 +1530,7 @@ class TestPresetCatalog:
 
         catalog_data = {"schema_version": "1.0", "presets": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/presets/catalog.json"
@@ -1515,6 +1555,59 @@ class TestPresetCatalog:
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_fetch_single_catalog_uses_strict_redirects(self, project_dir):
+        """Catalog stack fetches must reject unsafe redirects."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        payload = {"schema_version": "1.0", "presets": {}}
+        calls = []
+
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return make_response()
+
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert calls[-1]["strict_redirects"] is True
+
+    def test_fetch_catalog_uses_strict_redirects(self, project_dir):
+        """Legacy catalog fetch uses the same redirect hardening."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        payload = {"schema_version": "1.0", "presets": {}}
+        calls = []
+
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return mock_response
+
+        with patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            catalog.fetch_catalog(force_refresh=True)
+
+        assert calls[-1]["strict_redirects"] is True
 
     @pytest.mark.parametrize(
         "payload",
@@ -1546,7 +1639,7 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1614,10 +1707,12 @@ class TestPresetCatalog:
             "schema_version": "1.0",
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
 
         entry = PresetCatalogEntry(
             url=catalog.DEFAULT_CATALOG_URL,
@@ -1626,7 +1721,7 @@ class TestPresetCatalog:
             install_allowed=True,
         )
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             result = catalog._fetch_single_catalog(entry, force_refresh=False)
 
         # The poisoned cache was discarded and the network payload returned.
@@ -1662,7 +1757,7 @@ class TestPresetCatalog:
 
         catalog = PresetCatalog(project_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1702,12 +1797,14 @@ class TestPresetCatalog:
             "schema_version": "1.0",
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             result = catalog.fetch_catalog(force_refresh=False)
 
         # Recovered via network rather than crashing on the unreadable cache.
@@ -1741,7 +1838,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1811,7 +1908,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode("utf-8")).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1859,10 +1956,12 @@ class TestPresetCatalog:
             "schema_version": "1.0",
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -1875,7 +1974,7 @@ class TestPresetCatalog:
 
         monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             # Legacy single-catalog path.
             assert catalog.fetch_catalog(force_refresh=True) == valid
 
@@ -1912,7 +2011,7 @@ class TestPresetCatalog:
             },
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1946,7 +2045,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -1955,12 +2054,12 @@ class TestPresetCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -2008,7 +2107,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -2037,6 +2136,143 @@ class TestPresetCatalog:
         assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[0].get_header("Accept") == "application/octet-stream"
+
+    def test_download_pack_rejects_hostless_url(self, project_dir):
+        """Catalog download URLs must include a hostname."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https:///test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info):
+            with pytest.raises(PresetError, match="valid URL with a host"):
+                catalog.download_pack("test-pack")
+
+    def test_download_pack_uses_strict_redirects(self, project_dir):
+        """Catalog-based preset downloads must reject unsafe redirects."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes = b"fake zip data"
+        calls = []
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(zip_bytes).read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return mock_response
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_resolve_github_release_asset_api_url", return_value=None), \
+             patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+        assert calls[-1]["strict_redirects"] is True
+
+    def test_fetch_single_catalog_uses_bounded_read(self, project_dir):
+        """Catalog JSON responses must use the shared bounded-read helper."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="custom",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.presets.read_response_limited",
+                 side_effect=PresetError("catalog too large"),
+             ):
+            with pytest.raises(PresetError, match="catalog too large"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_catalog_uses_bounded_read(self, project_dir):
+        """The legacy single-catalog path must also bound catalog JSON reads."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "get_catalog_url", return_value="https://example.com/catalog.json"), \
+             patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.presets.read_response_limited",
+                 side_effect=PresetError("catalog too large"),
+             ):
+            with pytest.raises(PresetError, match="catalog too large"):
+                catalog.fetch_catalog(force_refresh=True)
+
+    def test_download_pack_verifies_sha256(self, project_dir):
+        """Catalog-provided checksums are enforced when present."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes = b"fake zip data"
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(zip_bytes).read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert result.read_bytes() == zip_bytes
+
+    def test_download_pack_rejects_sha256_mismatch(self, project_dir):
+        """A mismatched catalog checksum stops the downloaded ZIP being used."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": "0" * 64,
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(PresetError, match="checksum mismatch"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
 
 
 # ===== Integration Tests =====
@@ -4451,6 +4687,22 @@ class TestBundledPresetLocator:
 class TestPresetAddFromUrlResolution:
     """CLI-level tests for preset add --from <url> GitHub release resolution."""
 
+    def test_preset_add_from_hostless_url_explains_hostname_requirement(self, project_dir):
+        """Hostless HTTPS URLs should fail with actionable CLI guidance."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https:///preset.zip",
+            ])
+
+        assert result.exit_code == 1
+        assert "valid URL with a host" in result.output
+
     def test_preset_add_from_github_release_url_resolves_and_downloads(self, project_dir):
         """'preset add --from <github-release-url>' resolves to API asset URL."""
         from typer.testing import CliRunner
@@ -4472,10 +4724,10 @@ class TestPresetAddFromUrlResolution:
 
         class FakeResponse:
             def __init__(self, data):
-                self._data = data
+                self._stream = io.BytesIO(data)
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def __enter__(self):
                 return self
@@ -4483,7 +4735,9 @@ class TestPresetAddFromUrlResolution:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        def fake_open_url(
+            url, timeout=None, extra_headers=None, redirect_validator=None, strict_redirects=False
+        ):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
@@ -4530,10 +4784,10 @@ class TestPresetAddFromUrlResolution:
 
         class FakeResponse:
             def __init__(self, data):
-                self._data = data
+                self._stream = io.BytesIO(data)
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def __enter__(self):
                 return self
@@ -4541,7 +4795,9 @@ class TestPresetAddFromUrlResolution:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        def fake_open_url(
+            url, timeout=None, extra_headers=None, redirect_validator=None, strict_redirects=False
+        ):
             captured_urls.append((url, extra_headers))
             return FakeResponse(zip_bytes)
 

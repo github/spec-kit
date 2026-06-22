@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 from urllib.request import url2pathname
 
+from ..._download_security import MAX_JSON_CATALOG_BYTES, read_response_limited
 from .. import BundlerError
 from ..lib.yamlio import loads_json
 from ..models.catalog import CatalogSource
@@ -149,7 +150,12 @@ def _http_get_json(source_id: str, url: str) -> dict:
         ) as response:
             final_url = response.geturl()
             _validate_remote_url(source_id, final_url)
-            raw = response.read().decode("utf-8")
+            raw = read_response_limited(
+                response,
+                max_bytes=MAX_JSON_CATALOG_BYTES,
+                error_type=BundlerError,
+                label=f"bundle catalog '{source_id}'",
+            ).decode("utf-8")
     except BundlerError:
         raise
     except Exception as exc:  # noqa: BLE001

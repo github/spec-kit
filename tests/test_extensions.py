@@ -10,7 +10,9 @@ Tests cover:
 """
 
 import pytest
+import io
 import json
+import hashlib
 import os
 import platform
 import tempfile
@@ -376,6 +378,43 @@ class TestExtensionManifest:
 
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize(
+        "bad_file",
+        [
+            "../outside.md",
+            "/tmp/outside.md",
+            "commands/../../outside.md",
+            "C:\\Windows\\outside.md",
+            "C:outside.md",
+        ],
+    )
+    def test_invalid_command_file_path(self, temp_dir, valid_manifest_data, bad_file):
+        """Command files must stay inside the extension package."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["file"] = bad_file
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command file path"):
+            ExtensionManifest(manifest_path)
+
+    def test_windows_command_file_path_is_normalized(self, temp_dir, valid_manifest_data):
+        """Windows-authored manifests keep compatibility without traversal."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["file"] = "commands\\hello.md"
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        manifest = ExtensionManifest(manifest_path)
+
+        assert manifest.commands[0]["file"] == "commands/hello.md"
 
     def test_command_name_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
         """Test that 'speckit.command' is auto-corrected to 'speckit.{ext_id}.command'."""
@@ -2470,7 +2509,8 @@ Run {SCRIPT}
         registrar = CommandRegistrar()
         from specify_cli.extensions import ExtensionManifest
         manifest = ExtensionManifest(ext_dir / "extension.yml")
-        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+        registered = registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+        assert registered == ["speckit.cleanup-ext.run"]
 
         skill_subdir = skills_dir / "speckit-cleanup-ext-run"
         assert skill_subdir.exists(), "Skill subdirectory should exist after registration"
@@ -2652,6 +2692,16 @@ class TestExtensionCatalog:
 
         assert catalog.project_root == project_dir
         assert catalog.cache_dir == project_dir / ".specify" / "extensions" / ".cache"
+
+    def test_validate_catalog_url_hostless_https_rejected(self, temp_dir):
+        """Hostless HTTPS catalog URLs should fail before scheme messaging."""
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+        with pytest.raises(ValidationError, match="valid URL with a host"):
+            catalog._validate_catalog_url("https:///catalog.json")
 
     def test_cache_directory_creation(self, temp_dir):
         """Test catalog cache directory is created when fetching."""
@@ -3175,7 +3225,7 @@ class TestExtensionCatalog:
 
         catalog_data = {"schema_version": "1.0", "extensions": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/catalog.json"
@@ -3200,6 +3250,59 @@ class TestExtensionCatalog:
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+
+    def test_fetch_single_catalog_uses_strict_redirects(self, temp_dir):
+        """Catalog stack fetches must reject unsafe redirects."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        payload = {"schema_version": "1.0", "extensions": {}}
+        calls = []
+
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return make_response()
+
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert calls[-1]["strict_redirects"] is True
+
+    def test_fetch_catalog_uses_strict_redirects(self, temp_dir):
+        """Legacy catalog fetch uses the same redirect hardening."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        payload = {"schema_version": "1.0", "extensions": {}}
+        calls = []
+
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return mock_response
+
+        with patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            catalog.fetch_catalog(force_refresh=True)
+
+        assert calls[-1]["strict_redirects"] is True
 
     @pytest.mark.parametrize(
         "payload",
@@ -3227,11 +3330,10 @@ class TestExtensionCatalog:
         extension catalog must stay consistent.
         """
         from unittest.mock import patch, MagicMock
-
         catalog = self._make_catalog(temp_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -3298,10 +3400,12 @@ class TestExtensionCatalog:
             "schema_version": "1.0",
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
 
         entry = CatalogEntry(
             url=ExtensionCatalog.DEFAULT_CATALOG_URL,
@@ -3310,7 +3414,7 @@ class TestExtensionCatalog:
             install_allowed=True,
         )
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             result = catalog._fetch_single_catalog(entry, force_refresh=False)
 
         # The poisoned cache was discarded and the network payload returned.
@@ -3346,7 +3450,7 @@ class TestExtensionCatalog:
 
         catalog = self._make_catalog(temp_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -3385,12 +3489,14 @@ class TestExtensionCatalog:
             "schema_version": "1.0",
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             result = catalog.fetch_catalog(force_refresh=False)
 
         # Recovered via network rather than crashing on the unreadable cache.
@@ -3424,7 +3530,7 @@ class TestExtensionCatalog:
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -3498,7 +3604,7 @@ class TestExtensionCatalog:
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode("utf-8")).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -3548,10 +3654,12 @@ class TestExtensionCatalog:
             "schema_version": "1.0",
             "extensions": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -3564,7 +3672,7 @@ class TestExtensionCatalog:
 
         monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             # Legacy single-catalog path.
             assert catalog.fetch_catalog(force_refresh=True) == valid
 
@@ -3600,7 +3708,7 @@ class TestExtensionCatalog:
             },
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -3619,8 +3727,49 @@ class TestExtensionCatalog:
         # silently dropped rather than raising or crashing.
         assert [ext["id"] for ext in merged] == ["good"]
 
+    def test_fetch_single_catalog_uses_bounded_read(self, temp_dir):
+        """Catalog JSON responses must use the shared bounded-read helper."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        entry = CatalogEntry(
+            url="https://example.com/catalog.json",
+            name="custom",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.extensions.read_response_limited",
+                 side_effect=ExtensionError("catalog too large"),
+             ):
+            with pytest.raises(ExtensionError, match="catalog too large"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_catalog_uses_bounded_read(self, temp_dir):
+        """The legacy single-catalog path must also bound catalog JSON reads."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "get_catalog_url", return_value="https://example.com/catalog.json"), \
+             patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch(
+                 "specify_cli.extensions.read_response_limited",
+                 side_effect=ExtensionError("catalog too large"),
+             ):
+            with pytest.raises(ExtensionError, match="catalog too large"):
+                catalog.fetch_catalog(force_refresh=True)
+
     def test_download_extension_sends_auth_header(self, temp_dir, monkeypatch):
-        """download_extension passes Authorization header when a provider is configured."""
+        """download_extension passes Authorization header via opener for GitHub URLs."""
         from unittest.mock import patch, MagicMock
         import zipfile
         import io
@@ -3636,7 +3785,7 @@ class TestExtensionCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -3645,12 +3794,12 @@ class TestExtensionCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -3686,7 +3835,6 @@ class TestExtensionCatalog:
         """download_extension can use a GitHub REST release asset URL directly."""
         from unittest.mock import patch, MagicMock
         import zipfile
-        import io
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
@@ -3698,7 +3846,7 @@ class TestExtensionCatalog:
         zip_bytes = zip_buf.getvalue()
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -3726,6 +3874,52 @@ class TestExtensionCatalog:
         assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[0].get_header("Accept") == "application/octet-stream"
+
+    def test_download_extension_verifies_sha256(self, temp_dir):
+        """Catalog-provided checksums are enforced when present."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        zip_bytes = b"fake zip data"
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(zip_bytes).read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert result.read_bytes() == zip_bytes
+
+    def test_download_extension_rejects_sha256_mismatch(self, temp_dir):
+        """A mismatched catalog checksum stops the downloaded ZIP being used."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+            "sha256": "0" * 64,
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="checksum mismatch"):
+                catalog.download_extension("test-ext", target_dir=temp_dir)
 
 
 
@@ -4039,7 +4233,7 @@ class TestCatalogStack:
     @pytest.mark.parametrize(
         ("url", "expected_detail"),
         [
-            ("relative/catalog.json", "HTTPS"),
+            ("relative/catalog.json", "valid URL with a host"),
             ("https:///no-host", "valid URL with a host"),
         ],
     )
@@ -4871,9 +5065,137 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0
         assert "Cancelled" in result.output
 
+    def test_add_from_url_download_uses_strict_redirects(self, tmp_path):
+        """extension add --from must harden the direct ZIP download."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        captured = []
+
+        class FakeResponse:
+            def __init__(self):
+                self._stream = io.BytesIO(b"fake zip")
+
+            def read(self, size=-1):
+                return self._stream.read(size)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_open_url(
+            url,
+            timeout=None,
+            extra_headers=None,
+            redirect_validator=None,
+            strict_redirects=False,
+        ):
+            captured.append(
+                {
+                    "url": url,
+                    "timeout": timeout,
+                    "extra_headers": extra_headers,
+                    "strict_redirects": strict_redirects,
+                }
+            )
+            return FakeResponse()
+
+        fake_manifest = SimpleNamespace(
+            id="my-ext",
+            name="My Extension",
+            version="1.0.0",
+            description="Test extension",
+            warnings=[],
+            commands=[],
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
+             patch(
+                 "specify_cli.extensions.ExtensionManager.install_from_zip",
+                 return_value=fake_manifest,
+             ):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert captured == [
+            {
+                "url": "https://example.com/ext.zip",
+                "timeout": 60,
+                "extra_headers": None,
+                "strict_redirects": True,
+            }
+        ]
+
 
 class TestDownloadExtensionBundled:
     """Tests for download_extension handling of bundled extensions."""
+
+    def test_download_extension_rejects_hostless_url(self, temp_dir):
+        """Catalog download URLs must include a hostname."""
+        from unittest.mock import patch
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https:///test-ext.zip",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info):
+            with pytest.raises(ExtensionError, match="valid URL with a host"):
+                catalog.download_extension("test-ext")
+
+    def test_download_extension_uses_strict_redirects(self, temp_dir):
+        """Catalog-based extension downloads must reject unsafe redirects."""
+        from unittest.mock import patch, MagicMock
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+        calls = []
+        mock_response = MagicMock()
+        mock_response.read.side_effect = io.BytesIO(b"fake zip").read
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+        }
+
+        def fake_open_url(*args, **kwargs):
+            calls.append(kwargs)
+            return mock_response
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_resolve_github_release_asset_api_url", return_value=None), \
+             patch.object(catalog, "_open_url", side_effect=fake_open_url):
+            zip_path = catalog.download_extension("test-ext", target_dir=temp_dir / "downloads")
+
+        assert zip_path.read_bytes() == b"fake zip"
+        assert calls[-1]["strict_redirects"] is True
 
     def test_download_extension_raises_for_bundled(self, temp_dir):
         """download_extension should raise a clear error for bundled extensions without a URL."""
@@ -4900,7 +5222,6 @@ class TestDownloadExtensionBundled:
     def test_download_extension_allows_bundled_with_url(self, temp_dir):
         """download_extension should allow bundled extensions that have a download_url (newer version)."""
         from unittest.mock import patch, MagicMock
-        import urllib.request
 
         project_dir = temp_dir / "project"
         project_dir.mkdir()
@@ -4918,12 +5239,12 @@ class TestDownloadExtensionBundled:
         }
 
         mock_response = MagicMock()
-        mock_response.read.return_value = b"fake zip data"
+        mock_response.read.side_effect = io.BytesIO(b"fake zip data").read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with patch.object(catalog, "get_extension_info", return_value=bundled_with_url), \
-             patch.object(urllib.request, "urlopen", return_value=mock_response):
+             patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.download_extension("git")
             assert result.name == "git-2.0.0.zip"
 

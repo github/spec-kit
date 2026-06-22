@@ -121,6 +121,31 @@ class TestAliasTraversal:
         _assert_no_stray_files(tmp_path, Path(bad_alias).name.replace("/", ""))
 
 
+class TestSourceFileTraversal:
+    """Command source files must stay inside the declared source directory."""
+
+    @pytest.mark.parametrize("bad_file", TRAVERSAL_PAYLOADS)
+    def test_rejects_traversal_in_command_source_file(self, tmp_path, bad_file):
+        project, ext_dir = _project_and_source(tmp_path)
+        (project / ".gemini" / "commands").mkdir(parents=True)
+
+        registrar = CommandRegistrar()
+        with pytest.raises(ValueError, match="escapes directory"):
+            registrar.register_commands(
+                "gemini",
+                [
+                    {
+                        "name": "speckit.myext.ok",
+                        "file": bad_file,
+                        "aliases": [],
+                    }
+                ],
+                "myext",
+                ext_dir,
+                project,
+            )
+
+
 class TestCopilotPromptTraversal:
     """`write_copilot_prompt` is a public static method — guard it directly."""
 

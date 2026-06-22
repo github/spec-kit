@@ -15,10 +15,9 @@ import os
 import re
 import shutil
 import tempfile
-import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Set
 
 import pathspec
@@ -26,6 +25,12 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from ._download_security import (
+    MAX_JSON_CATALOG_BYTES,
+    read_response_limited,
+    safe_extract_zip,
+    verify_sha256,
+)
 from ._init_options import is_ai_skills_enabled
 from ._invocation_style import is_slash_skills_agent
 from ._utils import dump_frontmatter
@@ -289,6 +294,24 @@ class ExtensionManifest:
                 )
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
+            if not isinstance(cmd["file"], str) or not cmd["file"].strip():
+                raise ValidationError(
+                    f"Command '{cmd['name']}' file must be a non-empty string"
+                )
+
+            normalized_file = cmd["file"].replace("\\", "/")
+            file_path = PurePosixPath(normalized_file)
+            has_windows_drive = re.match(r"^[A-Za-z]:", normalized_file) is not None
+            if (
+                file_path.is_absolute()
+                or has_windows_drive
+                or any(part == ".." for part in file_path.parts)
+            ):
+                raise ValidationError(
+                    f"Invalid command file path '{cmd['file']}': "
+                    "must be a relative path within the extension directory"
+                )
+            cmd["file"] = normalized_file
 
             # Validate command name format
             if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):
@@ -1473,21 +1496,7 @@ class ExtensionManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            # Extract ZIP safely (prevent Zip Slip attack)
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                # Validate all paths first before extracting anything
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    # Use is_relative_to for safe path containment check
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise ValidationError(
-                            f"Unsafe path in ZIP archive: {member} (potential path traversal)"
-                        )
-                # Only extract after all paths are validated
-                zf.extractall(temp_path)
+            safe_extract_zip(zip_path, temp_path, error_type=ValidationError)
 
             # Find extension directory (may be nested)
             extension_dir = temp_path
@@ -2023,6 +2032,7 @@ class ExtensionCatalog(CatalogStackBase):
         url: str,
         timeout: int = 10,
         extra_headers: Optional[Dict[str, str]] = None,
+        strict_redirects: bool = True,
     ):
         """Open a URL with provider-based auth, trying each configured provider.
 
@@ -2030,7 +2040,12 @@ class ExtensionCatalog(CatalogStackBase):
         """
         from specify_cli.authentication.http import open_url
 
-        return open_url(url, timeout, extra_headers=extra_headers)
+        return open_url(
+            url,
+            timeout,
+            extra_headers=extra_headers,
+            strict_redirects=strict_redirects,
+        )
 
     def _resolve_github_release_asset_api_url(
         self,
@@ -2248,8 +2263,19 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Fetch from network
         try:
-            with self._open_url(entry.url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+            with self._open_url(
+                entry.url,
+                timeout=10,
+                strict_redirects=True,
+            ) as response:
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {entry.url}",
+                    )
+                )
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
@@ -2425,8 +2451,19 @@ class ExtensionCatalog(CatalogStackBase):
         try:
             import urllib.error
 
-            with self._open_url(catalog_url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+            with self._open_url(
+                catalog_url,
+                timeout=10,
+                strict_redirects=True,
+            ) as response:
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {catalog_url}",
+                    )
+                )
 
             # Validate catalog structure. Reuses the same helper as
             # ``_fetch_single_catalog`` so all three branches (root type,
@@ -2576,10 +2613,16 @@ class ExtensionCatalog(CatalogStackBase):
         from urllib.parse import urlparse
 
         parsed = urlparse(download_url)
+        if not parsed.hostname:
+            raise ExtensionError(
+                f"Extension download URL must be a valid URL with a host: {download_url}"
+            )
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             raise ExtensionError(
-                f"Extension download URL must use HTTPS: {download_url}"
+                "Extension download URL must use HTTPS "
+                "(HTTP is allowed only for localhost, 127.0.0.1, and ::1): "
+                f"{download_url}"
             )
 
         # Determine target path
@@ -2600,9 +2643,23 @@ class ExtensionCatalog(CatalogStackBase):
         # Download the ZIP file
         try:
             with self._open_url(
-                download_url, timeout=60, extra_headers=extra_headers
+                download_url,
+                timeout=60,
+                extra_headers=extra_headers,
+                strict_redirects=True,
             ) as response:
-                zip_data = response.read()
+                zip_data = read_response_limited(
+                    response,
+                    error_type=ExtensionError,
+                    label=f"extension '{extension_id}' download",
+                )
+
+            verify_sha256(
+                zip_data,
+                ext_info.get("sha256"),
+                error_type=ExtensionError,
+                label=f"extension '{extension_id}' download",
+            )
 
             zip_path.write_bytes(zip_data)
             return zip_path
