@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="https://raw.githubusercontent.com/github/spec-kit/main/media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
+    <img src="./media/logo_large.webp" alt="Spec Kit Logo" width="200" height="200"/>
     <h1>🌱 Spec Kit</h1>
     <h3><em>Build high-quality software faster.</em></h3>
 </div>
@@ -45,19 +45,13 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify CLI
 
-Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](https://github.com/github/spec-kit/blob/main/docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
 ```
 
-Or install from [PyPI](https://pypi.org/project/specify-cli/) (once published for a new release):
-
-```bash
-uv tool install specify-cli@latest
-```
-
-See the [Installation Guide](https://github.com/github/spec-kit/blob/main/docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.
+See the [Installation Guide](./docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.
 
 ### 2. Initialize a project
 
@@ -66,7 +60,7 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
-To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](https://github.com/github/spec-kit/blob/main/docs/upgrade.md) for detailed scenarios and customization options.
+To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](./docs/upgrade.md) for detailed scenarios and customization options.
 
 ```bash
 # Check whether a newer release is available (read-only — does not modify anything)
@@ -126,13 +120,13 @@ Use **`/speckit.implement`** to execute all tasks and build your feature accordi
 /speckit.implement
 ```
 
-For detailed step-by-step instructions, see our [comprehensive guide](https://github.com/github/spec-kit/blob/main/spec-driven.md).
+For detailed step-by-step instructions, see our [comprehensive guide](./spec-driven.md).
 
 ## 📽️ Video Overview
 
 Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)!
 
-[![Spec Kit video header](https://raw.githubusercontent.com/github/spec-kit/main/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
+[![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
 ## 🌍 Community
 
@@ -316,7 +310,7 @@ Spec-Driven Development is a structured process that emphasizes:
 For existing projects, keep Spec Kit tooling updates separate from feature
 artifact evolution: refresh managed project files when upgrading, and update
 `specs/` artifacts when intended behavior changes. The
-[Evolving Specs guide](https://github.com/github/spec-kit/blob/main/docs/guides/evolving-specs.md) describes the
+[Evolving Specs guide](./docs/guides/evolving-specs.md) describes the
 recommended brownfield loop.
 
 ## 🎯 Experimental Goals
@@ -357,7 +351,7 @@ If you encounter issues with an agent, please open an issue so we can refine the
 
 ## 📖 Learn More
 
-- **[Complete Spec-Driven Development Methodology](https://github.com/github/spec-kit/blob/main/spec-driven.md)** - Deep dive into the full process
+- **[Complete Spec-Driven Development Methodology](./spec-driven.md)** - Deep dive into the full process
 - **[Detailed Walkthrough](#-detailed-process)** - Step-by-step implementation guide
 
 ---
@@ -385,7 +379,7 @@ specify init . --force
 specify init --here --force
 ```
 
-![Specify CLI bootstrapping a new project in the terminal](https://raw.githubusercontent.com/github/spec-kit/main/media/specify_cli.gif)
+![Specify CLI bootstrapping a new project in the terminal](./media/specify_cli.gif)
 
 In an interactive terminal, you will be prompted to select the coding agent integration you are using. In non-interactive sessions, such as CI or piped runs, `specify init` defaults to GitHub Copilot unless you pass `--integration`. You can also proactively specify the integration directly in the terminal:
 
@@ -419,7 +413,7 @@ specify init <project_name> --integration copilot --ignore-agent-tools
 
 Go to the project folder and run your coding agent. In our example, we're using `claude`.
 
-![Bootstrapping Claude Code environment](https://raw.githubusercontent.com/github/spec-kit/main/media/bootstrap-claude-code.gif)
+![Bootstrapping Claude Code environment](./media/bootstrap-claude-code.gif)
 
 You will know that things are configured correctly if you see the `/speckit.constitution`, `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement` commands available.
 
@@ -659,4 +653,4 @@ This project is heavily influenced by and based on the work and research of [Joh
 
 ## 📄 License
 
-This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](https://github.com/github/spec-kit/blob/main/LICENSE) file for the full terms.
+This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.

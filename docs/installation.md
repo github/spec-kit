@@ -10,8 +10,8 @@
 
 ## Installation
 
-> [!NOTE]
-> The `specify-cli` package will also be available on [PyPI](https://pypi.org/project/specify-cli/) once official publishing is enabled. Source installs from the GitHub repository are always available immediately.
+> [!IMPORTANT]
+> The only official, maintained packages for Spec Kit come from the [github/spec-kit](https://github.com/github/spec-kit) GitHub repository. Any packages with the same name available on PyPI (e.g. `specify-cli` on pypi.org) are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. For normal installs, use the GitHub-based commands shown below. For offline or air-gapped environments, locally built wheels created from this repository are also valid.
 
 ### Persistent Installation (Recommended)
 
@@ -22,12 +22,6 @@ Install once and use everywhere. Replace `vX.Y.Z` with a tag from [Releases](htt
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
-```
-
-Or, once official PyPI publishing is enabled, install from PyPI:
-
-```bash
-uv tool install specify-cli@latest
 ```
 
 Then initialize a project:
