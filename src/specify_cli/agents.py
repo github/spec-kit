@@ -552,17 +552,27 @@ class CommandRegistrar:
             if not isinstance(cmd_file, str) or not cmd_file:
                 continue
 
-            # Guard against path traversal: reject any anchored value under
-            # either POSIX or Windows semantics — POSIX-absolute (``/abs``),
-            # Windows drive-relative (``C:foo``, not ``is_absolute()`` but
+            # Guard against path traversal, keeping runtime policy aligned with
+            # ExtensionManifest._validate() and the skill/preset/restore readers.
+            # Evaluate the value under both POSIX and Windows path flavors
+            # because a native ``Path`` is OS-dependent (a ``PurePosixPath`` on
+            # POSIX does not interpret Windows drive/UNC forms). Reject any
+            # non-empty anchor — which covers POSIX-absolute (``/abs``), Windows
+            # drive-relative (``C:foo``, anchored but not ``is_absolute()`` yet
             # resolved against the CWD on its drive), Windows absolute
-            # (``C:\foo``), and rooted-without-drive (``\foo``) — then ensure
-            # the resolved file stays within the source directory. Mirrors the
-            # containment checks already applied on the skill, preset, and
-            # restore paths (see extensions.py and presets/__init__.py) so a
-            # malicious manifest ``file`` field (e.g. ``../../../outside.txt``)
-            # cannot read arbitrary host files into a generated command.
-            if PurePosixPath(cmd_file).anchor or PureWindowsPath(cmd_file).anchor:
+            # (``C:\foo``), and UNC roots — and any ``..`` segment in either
+            # separator style, so a malicious manifest ``file`` field
+            # (e.g. ``../../../outside.txt``) cannot read arbitrary host files
+            # into a generated command. The resolve()/relative_to() check below
+            # is the final containment backstop.
+            posix_path = PurePosixPath(cmd_file)
+            win_path = PureWindowsPath(cmd_file)
+            if (
+                posix_path.anchor
+                or win_path.anchor
+                or ".." in posix_path.parts
+                or ".." in win_path.parts
+            ):
                 continue
             try:
                 source_file = (source_root / cmd_file).resolve()

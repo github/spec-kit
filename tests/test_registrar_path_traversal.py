@@ -141,6 +141,7 @@ FILE_FIELD_PAYLOADS = [
     "../outside.txt",
     "../../outside.txt",
     "commands/../../outside.txt",
+    "commands/../cmd.md",  # in-bounds after resolve; only the '..' check rejects it
     "C:outside.txt",
     ABS_OUTSIDE,
 ]
@@ -155,6 +156,15 @@ def _resolve_payload(bad_file: str, outside_file: Path) -> str:
     happens not to exist (e.g. on Windows runners).
     """
     return str(outside_file) if bad_file == ABS_OUTSIDE else bad_file
+
+
+def _assert_no_marker_leak(project: Path, marker: str) -> None:
+    """Fail if ``marker`` content was written into any file under ``project``."""
+    leaked = [
+        p for p in project.rglob("*")
+        if p.is_file() and marker in p.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert leaked == [], f"Outside file leaked into generated command: {leaked}"
 
 
 class TestCommandFileTraversal:
@@ -184,11 +194,7 @@ class TestCommandFileTraversal:
         )
 
         assert registered == []
-        leaked = [
-            p for p in (project).rglob("*")
-            if p.is_file() and "OUTSIDE-FILE-MARKER" in p.read_text(encoding="utf-8", errors="ignore")
-        ]
-        assert leaked == [], f"Outside file leaked into generated command: {leaked}"
+        _assert_no_marker_leak(project, "OUTSIDE-FILE-MARKER")
 
     @pytest.mark.parametrize("bad_file", FILE_FIELD_PAYLOADS)
     def test_gemini_skips_traversal_in_file_field(self, tmp_path, bad_file):
@@ -208,11 +214,7 @@ class TestCommandFileTraversal:
         )
 
         assert registered == []
-        leaked = [
-            p for p in (project).rglob("*")
-            if p.is_file() and "OUTSIDE-FILE-MARKER" in p.read_text(encoding="utf-8", errors="ignore")
-        ]
-        assert leaked == [], f"Outside file leaked into generated command: {leaked}"
+        _assert_no_marker_leak(project, "OUTSIDE-FILE-MARKER")
 
     @pytest.mark.parametrize("bad_value", [None, 123, "", ["x"]])
     def test_non_string_file_is_skipped(self, tmp_path, bad_value):

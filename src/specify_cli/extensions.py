@@ -305,12 +305,13 @@ class ExtensionManifest:
                     "trailing whitespace"
                 )
             # Evaluate the value under both POSIX and Windows path semantics so
-            # the check is platform-independent. Reject any non-empty anchor —
-            # which covers POSIX-absolute (``/abs``), Windows drive-relative
-            # (``C:foo``), Windows absolute (``C:\foo``), and rooted-without-
-            # drive (``\foo``) — plus ``..`` segments written with either
-            # separator. Native ``Path`` alone is insufficient: on Windows
-            # ``WindowsPath('/abs').is_absolute()`` is False (no drive).
+            # the check is platform-independent. A native ``Path`` is OS-
+            # dependent — a ``PurePosixPath`` on POSIX won't interpret Windows
+            # drive/UNC forms, and ``C:foo`` is anchored but not
+            # ``is_absolute()``. Reject any non-empty anchor — which covers
+            # POSIX-absolute (``/abs``), Windows drive-relative (``C:foo``),
+            # Windows absolute (``C:\foo``), and UNC/rooted forms — plus ``..``
+            # segments written with either separator.
             posix_path = PurePosixPath(cmd_file)
             win_path = PureWindowsPath(cmd_file)
             if (
