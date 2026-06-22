@@ -143,6 +143,10 @@ function Save-FeatureJson {
 }
 
 function Get-FeaturePathsEnv {
+    param(
+        [switch]$NoPersist
+    )
+
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
 
@@ -158,7 +162,9 @@ function Get-FeaturePathsEnv {
             $featureDir = Join-Path $repoRoot $featureDir
         }
         # Persist to feature.json so future sessions without the env var still work
-        Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
+        if (-not $NoPersist) {
+            Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
+        }
     } elseif (Test-Path $featureJson) {
         $featureJsonRaw = Get-Content -LiteralPath $featureJson -Raw
         try {

@@ -57,7 +57,11 @@ EXAMPLES:
 . "$PSScriptRoot/common.ps1"
 
 # Get feature paths
-$paths = Get-FeaturePathsEnv
+$paths = if ($PathsOnly) {
+    Get-FeaturePathsEnv -NoPersist
+} else {
+    Get-FeaturePathsEnv
+}
 
 # If paths-only mode, output paths and exit (no validation)
 if ($PathsOnly) {
