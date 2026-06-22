@@ -141,6 +141,7 @@ FILE_FIELD_PAYLOADS = [
     "../outside.txt",
     "../../outside.txt",
     "commands/../../outside.txt",
+    "C:outside.txt",
     ABS_OUTSIDE,
 ]
 

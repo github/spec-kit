@@ -10,7 +10,7 @@ import os
 import platform
 import re
 from copy import deepcopy
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Dict, List, Optional
 
 import yaml
@@ -546,14 +546,18 @@ class CommandRegistrar:
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
 
-            # Guard against path traversal: reject absolute paths and ensure
-            # the resolved file stays within the source directory. Mirrors the
-            # containment checks already applied on the skill, preset, and
-            # restore paths (see extensions.py and presets/__init__.py) so a
-            # malicious manifest ``file`` field (e.g. ``../../../outside.txt``)
-            # cannot read arbitrary host files into a generated command.
+            # Guard against path traversal: reject absolute paths (including
+            # Windows drive-relative paths like ``C:foo``, which are not
+            # ``is_absolute()`` but resolve against the CWD on their drive) and
+            # ensure the resolved file stays within the source directory.
+            # Mirrors the containment checks already applied on the skill,
+            # preset, and restore paths (see extensions.py and
+            # presets/__init__.py) so a malicious manifest ``file`` field
+            # (e.g. ``../../../outside.txt``) cannot read arbitrary host files
+            # into a generated command.
             cmd_path = Path(cmd_file)
-            if cmd_path.is_absolute():
+            win_path = PureWindowsPath(cmd_file)
+            if cmd_path.is_absolute() or win_path.is_absolute() or win_path.drive:
                 continue
             try:
                 source_root = source_dir.resolve()
