@@ -135,18 +135,22 @@ class TestCatalogEntry:
 def _install_agent_context_config(project_root: Path, **overrides: object) -> None:
     _write_ext_config(project_root, **overrides)
     # Mirror the real install layout: the extension ships its own
-    # agent->context-file defaults map alongside the config.
+    # agent->context-file defaults map alongside the config. Self-seeding
+    # tests depend on it, so require it to exist and always copy it rather
+    # than silently skipping when it is missing.
     defaults_src = EXT_DIR / "agent-context-defaults.json"
-    if defaults_src.is_file():
-        defaults_dst = (
-            project_root
-            / ".specify"
-            / "extensions"
-            / "agent-context"
-            / "agent-context-defaults.json"
-        )
-        defaults_dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(defaults_src, defaults_dst)
+    assert defaults_src.is_file(), (
+        f"bundled agent-context defaults map missing: {defaults_src}"
+    )
+    defaults_dst = (
+        project_root
+        / ".specify"
+        / "extensions"
+        / "agent-context"
+        / "agent-context-defaults.json"
+    )
+    defaults_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(defaults_src, defaults_dst)
 
 
 def _bash_posix_path(path: Path) -> str:

@@ -1,10 +1,8 @@
 """Tests for CursorAgentIntegration."""
 
-from pathlib import Path
 from urllib.parse import urlparse
 
 from specify_cli.integrations import get_integration
-from specify_cli.integrations.manifest import IntegrationManifest
 
 from .test_integration_base_skills import SkillsIntegrationTests
 

@@ -91,6 +91,8 @@ class IntegrationBase(ABC):
     And may optionally set:
 
     * ``invoke_separator`` — slash-command separator (defaults to ``"."``)
+    * ``multi_install_safe`` — declare the integration safe to install
+      alongside others (defaults to ``False``)
     """
 
     # -- Must be set by every subclass ------------------------------------

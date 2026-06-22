@@ -77,7 +77,7 @@ class TestInitIntegrationFlag:
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
-        # context_file lives in the agent-context extension config, not init-options.json
+        # init must not leave any legacy agent-context keys in init-options.json
         assert "context_file" not in opts
 
         # agent-context is fully opt-in: init must not install it or write its config
