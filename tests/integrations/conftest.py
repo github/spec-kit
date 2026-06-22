@@ -20,4 +20,3 @@ class StubIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "STUB.md"

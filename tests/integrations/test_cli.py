@@ -1064,7 +1064,6 @@ class TestIntegrationCatalogDiscoveryCLI:
                 "args": "$ARGUMENTS",
                 "extension": ".md",
             }
-            context_file = "BROKEN.md"
 
             def setup(self, project_root, manifest, **kwargs):
                 raise OSError("setup exploded\nwith context")

@@ -31,10 +31,6 @@ class TestGenericIntegration:
         i = get_integration("generic")
         assert i.config["requires_cli"] is False
 
-    def test_context_file_is_agents_md(self):
-        i = get_integration("generic")
-        assert i.context_file == "AGENTS.md"
-
     # -- Options ----------------------------------------------------------
 
     def test_options_include_commands_dir(self):
@@ -165,21 +161,20 @@ class TestGenericIntegration:
         i = get_integration("generic")
         m = IntegrationManifest("generic", tmp_path)
         i.setup(tmp_path, m, parsed_options={"commands_dir": ".custom/cmds"})
-        if i.context_file:
-            ctx_path = tmp_path / i.context_file
-            assert not ctx_path.exists()
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text
 
-    def test_plan_references_correct_context_file(self, tmp_path):
-        """The generated plan command must reference generic's context file."""
+    def test_plan_command_has_no_context_placeholder(self, tmp_path):
+        """The core plan command must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         i = get_integration("generic")
         m = IntegrationManifest("generic", tmp_path)
         i.setup(tmp_path, m, parsed_options={"commands_dir": ".custom/cmds"})
         plan_file = tmp_path / ".custom" / "cmds" / "speckit.plan.md"
         assert plan_file.exists()
         content = plan_file.read_text(encoding="utf-8")
-        assert i.context_file in content, (
-            f"Plan command should reference {i.context_file!r}"
-        )
         assert "__CONTEXT_FILE__" not in content
 
     def test_plan_defines_quickstart_as_validation_guide(self, tmp_path):

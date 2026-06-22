@@ -52,7 +52,6 @@ class TestRovodevIntegration:
     which violates the base mixin's pure-skills assumptions)."""
 
     KEY = "rovodev"
-    CONTEXT_FILE = "AGENTS.md"
 
     # -- ACLI dispatch -----------------------------------------------------
 
@@ -261,10 +260,6 @@ class TestRovodevIntegration:
             assert "/speckit." not in body, (
                 f"{skill_file} body contains dot-notation /speckit. reference"
             )
-
-        # The plan skill must reference the agent's context file.
-        plan_content = (skills_dir / "speckit-plan" / "SKILL.md").read_text(encoding="utf-8")
-        assert self.CONTEXT_FILE in plan_content
 
     # -- Full-CLI init: integration metadata -------------------------------
 

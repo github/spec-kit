@@ -43,7 +43,6 @@ class TestIntegrationBase:
         assert i.key == "stub"
         assert i.config["name"] == "Stub Agent"
         assert i.registrar_config["format"] == "markdown"
-        assert i.context_file == "STUB.md"
 
     def test_options_default_empty(self):
         assert StubIntegration.options() == []

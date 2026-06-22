@@ -1,8 +1,8 @@
 """Reusable test mixin for standard MarkdownIntegration subclasses.
 
 Each per-agent test file sets ``KEY``, ``FOLDER``, ``COMMANDS_SUBDIR``,
-``REGISTRAR_DIR``, and ``CONTEXT_FILE``, then inherits all verification
-logic from ``MarkdownIntegrationTests``.
+and ``REGISTRAR_DIR``, then inherits all verification logic from
+``MarkdownIntegrationTests``.
 """
 
 import os
@@ -21,14 +21,12 @@ class MarkdownIntegrationTests:
         FOLDER: str           — e.g. ".claude/"
         COMMANDS_SUBDIR: str  — e.g. "commands"
         REGISTRAR_DIR: str    — e.g. ".claude/commands"
-        CONTEXT_FILE: str     — e.g. "CLAUDE.md"
     """
 
     KEY: str
     FOLDER: str
     COMMANDS_SUBDIR: str
     REGISTRAR_DIR: str
-    CONTEXT_FILE: str
 
     # -- Registration -----------------------------------------------------
 
@@ -55,10 +53,6 @@ class MarkdownIntegrationTests:
         assert i.registrar_config["format"] == "markdown"
         assert i.registrar_config["args"] == "$ARGUMENTS"
         assert i.registrar_config["extension"] == ".md"
-
-    def test_context_file(self):
-        i = get_integration(self.KEY)
-        assert i.context_file == self.CONTEXT_FILE
 
     # -- Setup / teardown -------------------------------------------------
 
@@ -101,19 +95,18 @@ class MarkdownIntegrationTests:
             assert "__SPECKIT_COMMAND_" not in content, f"{f.name} has unprocessed __SPECKIT_COMMAND_*__"
             assert "\nscripts:\n" not in content, f"{f.name} has unstripped scripts: block"
 
-    def test_plan_references_correct_context_file(self, tmp_path):
-        """The generated plan command must reference this integration's context file."""
+    def test_plan_command_has_no_context_placeholder(self, tmp_path):
+        """The generated plan command must not carry a context-file placeholder.
+
+        Agent context files are owned entirely by the opt-in agent-context
+        extension, so the core plan command must not reference one.
+        """
         i = get_integration(self.KEY)
-        if not i.context_file:
-            return
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
         plan_file = i.commands_dest(tmp_path) / i.command_filename("plan")
         assert plan_file.exists(), f"Plan file {plan_file} not created"
         content = plan_file.read_text(encoding="utf-8")
-        assert i.context_file in content, (
-            f"Plan command should reference {i.context_file!r} but it was not found in {plan_file.name}"
-        )
         assert "__CONTEXT_FILE__" not in content, (
             f"Plan command has unprocessed __CONTEXT_FILE__ placeholder in {plan_file.name}"
         )
@@ -152,25 +145,23 @@ class MarkdownIntegrationTests:
     # -- Context file ownership (extension-owned, opt-in) -----------------
 
     def test_setup_does_not_write_context_section(self, tmp_path):
-        """Setup must not create or manage the agent context file — that is
+        """Setup must not create or manage any agent context file — that is
         owned entirely by the opt-in agent-context extension."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
-        if i.context_file:
-            ctx_path = tmp_path / i.context_file
-            assert not ctx_path.exists(), (
-                f"Context file {i.context_file} should not be created for {self.KEY}"
-            )
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text, (
+                    f"Setup wrote a managed context section into {path} for {self.KEY}"
+                )
 
     def test_teardown_leaves_existing_context_file_intact(self, tmp_path):
-        """A user-authored context file must survive teardown untouched."""
+        """A user-authored context file must survive setup + teardown untouched."""
         i = get_integration(self.KEY)
         m = IntegrationManifest(self.KEY, tmp_path)
-        if not i.context_file:
-            return
-        ctx_path = tmp_path / i.context_file
-        ctx_path.parent.mkdir(parents=True, exist_ok=True)
+        ctx_path = tmp_path / "AGENTS.md"
         original = "# My Rules\n\nUser content.\n"
         ctx_path.write_text(original, encoding="utf-8")
         i.setup(tmp_path, m)

@@ -17,7 +17,6 @@ class TestCopilotIntegration:
         assert copilot.config["folder"] == ".github/"
         assert copilot.config["commands_subdir"] == "agents"
         assert copilot.registrar_config["extension"] == ".agent.md"
-        assert copilot.context_file == ".github/copilot-instructions.md"
 
     def test_command_filename_agent_md(self):
         copilot = get_integration("copilot")
@@ -162,8 +161,9 @@ class TestCopilotIntegration:
         assert "Copy `.specify/templates/spec-template.md`" not in content
         assert "Load `.specify/templates/spec-template.md`" not in content
 
-    def test_plan_references_correct_context_file(self, tmp_path):
-        """The generated plan command must reference copilot's context file."""
+    def test_plan_command_has_no_context_placeholder(self, tmp_path):
+        """The core plan command must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         from specify_cli.integrations.copilot import CopilotIntegration
         copilot = CopilotIntegration()
         m = IntegrationManifest("copilot", tmp_path)
@@ -171,9 +171,6 @@ class TestCopilotIntegration:
         plan_file = tmp_path / ".github" / "agents" / "speckit.plan.agent.md"
         assert plan_file.exists()
         content = plan_file.read_text(encoding="utf-8")
-        assert copilot.context_file in content, (
-            f"Plan command should reference {copilot.context_file!r}"
-        )
         assert "__CONTEXT_FILE__" not in content
 
     def test_complete_file_inventory_sh(self, tmp_path):
@@ -515,14 +512,14 @@ class TestCopilotSkillsMode:
             body = parts[2].strip() if len(parts) >= 3 else ""
             assert len(body) > 0, f"{f} has empty body"
 
-    def test_plan_references_correct_context_file(self, tmp_path):
-        """The generated plan skill must reference copilot's context file."""
+    def test_plan_skill_has_no_context_placeholder(self, tmp_path):
+        """The core plan skill must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         copilot = self._make_copilot()
         self._setup_skills(copilot, tmp_path)
         plan_file = tmp_path / ".github" / "skills" / "speckit-plan" / "SKILL.md"
         assert plan_file.exists()
         content = plan_file.read_text(encoding="utf-8")
-        assert copilot.context_file in content
         assert "__CONTEXT_FILE__" not in content
 
     # -- Manifest tracking ------------------------------------------------
@@ -584,8 +581,10 @@ class TestCopilotSkillsMode:
     def test_skills_setup_does_not_write_context_section(self, tmp_path):
         copilot = self._make_copilot()
         self._setup_skills(copilot, tmp_path)
-        ctx_path = tmp_path / copilot.context_file
-        assert not ctx_path.exists()
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text
 
     # -- CLI integration test ---------------------------------------------
 

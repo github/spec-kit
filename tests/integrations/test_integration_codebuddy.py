@@ -8,4 +8,3 @@ class TestCodebuddyIntegration(MarkdownIntegrationTests):
     FOLDER = ".codebuddy/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".codebuddy/commands"
-    CONTEXT_FILE = "CODEBUDDY.md"

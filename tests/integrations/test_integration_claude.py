@@ -33,10 +33,6 @@ class TestClaudeIntegration:
         assert integration.registrar_config["args"] == "$ARGUMENTS"
         assert integration.registrar_config["extension"] == "/SKILL.md"
 
-    def test_context_file(self):
-        integration = get_integration("claude")
-        assert integration.context_file == "CLAUDE.md"
-
     def test_setup_creates_skill_files(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
@@ -82,14 +78,15 @@ class TestClaudeIntegration:
         manifest = IntegrationManifest("claude", tmp_path)
         integration.setup(tmp_path, manifest, script_type="sh")
 
-        ctx_path = tmp_path / integration.context_file
-        assert not ctx_path.exists()
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text
 
     def test_teardown_does_not_touch_existing_context_file(self, tmp_path):
         """A user-authored context file is left intact on teardown."""
         integration = get_integration("claude")
-        ctx_path = tmp_path / integration.context_file
-        ctx_path.parent.mkdir(parents=True, exist_ok=True)
+        ctx_path = tmp_path / "CLAUDE.md"
         original = "# CLAUDE.md\n\nUser content.\n"
         ctx_path.write_text(original, encoding="utf-8")
 

@@ -8,7 +8,6 @@ class TestDevinIntegration(SkillsIntegrationTests):
     FOLDER = ".devin/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".devin/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
 
 class TestDevinBuildExecArgs:

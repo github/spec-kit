@@ -11,7 +11,6 @@ class TestCodexIntegration(SkillsIntegrationTests):
     FOLDER = ".agents/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".agents/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
 
 class TestCodexInitFlow:
@@ -29,9 +28,9 @@ class TestCodexInitFlow:
         assert result.exit_code == 0, f"init --integration codex failed: {result.output}"
         assert (target / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
-    def test_plan_skill_references_integration_context_file(self, tmp_path):
-        """Plan skill renders the integration's declared context file, sourced
-        from integration metadata (not the extension config)."""
+    def test_plan_skill_has_no_context_placeholder(self, tmp_path):
+        """The core plan skill must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         target = tmp_path / "test-proj"
         target.mkdir()
 
@@ -41,12 +40,11 @@ class TestCodexInitFlow:
 
         plan_skill = target / ".agents" / "skills" / "speckit-plan" / "SKILL.md"
         content = plan_skill.read_text(encoding="utf-8")
-        assert "AGENTS.md" in content
         assert "__CONTEXT_FILE__" not in content
 
     def test_plan_skill_ignores_extension_config(self, tmp_path):
-        """The extension config must not influence rendered commands: context
-        file resolution is metadata-only now."""
+        """The extension config must not influence rendered commands: the CLI
+        no longer reads any context-file metadata when rendering."""
         import yaml
 
         target = tmp_path / "test-proj"
@@ -77,7 +75,6 @@ class TestCodexInitFlow:
         content = plan_skill.read_text(encoding="utf-8")
         assert "FROM_CONFIG.md" not in content
         assert "ALSO_CONFIG.md" not in content
-        assert "AGENTS.md" in content
         assert "__CONTEXT_FILE__" not in content
 
 

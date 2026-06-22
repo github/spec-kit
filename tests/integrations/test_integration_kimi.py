@@ -12,7 +12,6 @@ class TestKimiIntegration(SkillsIntegrationTests):
     FOLDER = ".kimi/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".kimi/skills"
-    CONTEXT_FILE = "KIMI.md"
 
 
 class TestKimiOptions:

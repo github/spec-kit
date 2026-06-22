@@ -33,6 +33,9 @@ FORBIDDEN_SYMBOLS = [
     "CONTEXT_MARKER_END",
     "agent-context-config",
     "agent_context_config",
+    "__CONTEXT_FILE__",
+    "_context_file_display",
+    "context_file",
     "Inline agent-context updates",
     "v0.12.0",
 ]

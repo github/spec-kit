@@ -14,7 +14,6 @@ class TestCursorAgentIntegration(SkillsIntegrationTests):
     FOLDER = ".cursor/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".cursor/skills"
-    CONTEXT_FILE = ".cursor/rules/specify-rules.mdc"
 
 
 class TestCursorAgentInitFlow:
