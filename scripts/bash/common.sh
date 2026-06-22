@@ -151,6 +151,10 @@ get_feature_paths() {
 
     # Use printf '%q' to safely quote values, preventing shell injection
     # via crafted branch names or paths containing special characters
+    if [[ -z "$current_branch" ]]; then
+        current_branch="${feature_dir%"${feature_dir##*[!\\/]}"}"
+        current_branch="${current_branch##*[\\/]}"
+    fi
     printf 'REPO_ROOT=%q\n' "$repo_root"
     printf 'CURRENT_BRANCH=%q\n' "$current_branch"
     printf 'FEATURE_DIR=%q\n' "$feature_dir"

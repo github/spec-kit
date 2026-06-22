@@ -17,7 +17,11 @@ COMMON_PS = PROJECT_ROOT / "scripts" / "powershell" / "common.ps1"
 CHECK_PREREQS_PS = PROJECT_ROOT / "scripts" / "powershell" / "check-prerequisites.ps1"
 
 HAS_PWSH = shutil.which("pwsh") is not None
-_WINDOWS_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershell")) if os.name == "nt" else None
+_WINDOWS_POWERSHELL = (
+    (shutil.which("powershell.exe") or shutil.which("powershell"))
+    if os.name == "nt"
+    else None
+)
 
 
 def _install_bash_scripts(repo: Path) -> None:
@@ -142,6 +146,46 @@ def test_paths_only_text_mode_on_non_spec_branch(prereq_repo: Path) -> None:
 
 
 @requires_bash
+def test_paths_only_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:
+    """--paths-only should emit a non-empty branch name from feature.json."""
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    _write_feature_json(prereq_repo)
+    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--json", "--paths-only"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["BRANCH"] == "001-my-feature"
+
+
+@requires_bash
+def test_paths_only_fallback_handles_windows_style_feature_dir(
+    prereq_repo: Path,
+) -> None:
+    """--paths-only should derive BRANCH from backslash-separated feature dirs."""
+    _write_feature_json(prereq_repo, "specs\\001-my-feature")
+    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--json", "--paths-only"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["BRANCH"] == "001-my-feature"
+
+
+@requires_bash
 def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
     """Without --paths-only, feature directory validation must still fail on main."""
     script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
@@ -160,13 +204,17 @@ def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
 # ── PowerShell tests ──────────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
 def test_ps_paths_only_succeeds_on_non_spec_branch(prereq_repo: Path) -> None:
     """-PathsOnly must return paths when feature.json pins the feature dir."""
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
     _write_feature_json(prereq_repo)
-    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    script = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    )
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json", "-PathsOnly"],
@@ -183,7 +231,9 @@ def test_ps_paths_only_succeeds_on_non_spec_branch(prereq_repo: Path) -> None:
     assert "FEATURE_DIR" in data
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
 def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
     """-PathsOnly must also work when feature.json and SPECIFY_FEATURE agree."""
     subprocess.run(
@@ -194,7 +244,9 @@ def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
     _write_feature_json(prereq_repo)
-    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    script = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    )
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     env = _clean_env()
     env["SPECIFY_FEATURE"] = "001-my-feature"
@@ -211,10 +263,39 @@ def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
     assert "FEATURE_DIR" in data
 
 
-@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
+def test_ps_paths_only_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:
+    """-PathsOnly should emit a non-empty branch name from feature.json."""
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    _write_feature_json(prereq_repo)
+    script = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    )
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json", "-PathsOnly"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["BRANCH"] == "001-my-feature"
+
+
+@pytest.mark.skipif(
+    not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available"
+)
 def test_ps_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
     """Without -PathsOnly, feature directory validation must still fail on main."""
-    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    script = (
+        prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    )
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
         [exe, "-NoProfile", "-File", str(script), "-Json"],
