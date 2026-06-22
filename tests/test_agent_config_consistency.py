@@ -66,8 +66,24 @@ def _dropdown_options(path: str, item_id: str) -> list[str]:
     return item["attributes"]["options"]
 
 
+def _normalized_markdown(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _markdown_value_containing(path: str, marker: str) -> str:
+    template = _issue_template(path)
+    normalized_marker = _normalized_markdown(marker)
+    for item in template["body"]:
+        if item.get("type") != "markdown":
+            continue
+        value = item["attributes"]["value"]
+        if normalized_marker in _normalized_markdown(value):
+            return value
+    raise AssertionError(f"Expected issue template markdown containing {marker!r}")
+
+
 class TestAgentConfigConsistency:
-    """Ensure kiro-cli migration stays synchronized across key surfaces."""
+    """Ensure agent configuration stays synchronized across key surfaces."""
 
     def test_issue_template_agent_lists_match_runtime_integrations(self):
         """GitHub issue templates should list all concrete built-in agents."""
@@ -93,14 +109,17 @@ class TestAgentConfigConsistency:
             "Not applicable",
         ]
 
-        agent_request = _issue_template(
-            ".github/ISSUE_TEMPLATE/agent_request.yml"
+        supported_agents_text = _markdown_value_containing(
+            ".github/ISSUE_TEMPLATE/agent_request.yml",
+            "**Currently supported agents**:",
         )
-        supported_agents_text = agent_request["body"][0]["attributes"]["value"]
-        assert (
+        expected_supported_agents = (
             f"**Currently supported agents**: "
             f"{', '.join(ISSUE_TEMPLATE_AGENT_NAMES)}"
-            in supported_agents_text
+        )
+        assert (
+            _normalized_markdown(expected_supported_agents)
+            in _normalized_markdown(supported_agents_text)
         )
 
     def test_runtime_config_uses_kiro_cli_and_removes_q(self):
