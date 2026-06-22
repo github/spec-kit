@@ -237,9 +237,8 @@ $ContextFiles = $dedupedContextFiles
 if ($ContextFiles.Count -eq 0) {
     # Self-seed: the agent-context extension owns its lifecycle, so when its
     # own config declares no target it derives one from the active integration
-    # recorded in init-options.json via the Spec Kit integration registry.
-    # Best-effort — when the registry is unavailable the script reports nothing
-    # to do below.
+    # recorded in init-options.json, using the extension's OWN bundled mapping
+    # (agent-context-defaults.json). Independent of the Specify CLI by design.
     $initOptionsPath = Join-Path $ProjectRoot '.specify/init-options.json'
     if (Test-Path -LiteralPath $initOptionsPath) {
         try {
@@ -251,31 +250,20 @@ if ($ContextFiles.Count -eq 0) {
                 $integrationKey = [string]$initOpts.ai
             }
             if ($integrationKey) {
-                $pythonForRegistry = $null
-                foreach ($candidate in @($env:SPECKIT_PYTHON, 'python3', 'python')) {
-                    if ($candidate -and (Get-Command $candidate -ErrorAction SilentlyContinue)) {
-                        $pythonForRegistry = $candidate
-                        break
+                $defaultsPath = Join-Path $ProjectRoot '.specify/extensions/agent-context/agent-context-defaults.json'
+                if (Test-Path -LiteralPath $defaultsPath) {
+                    $defaults = Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                    $derived = $null
+                    if ($defaults.PSObject.Properties['agents'] -and $defaults.agents.PSObject.Properties[$integrationKey]) {
+                        $derived = [string]$defaults.agents.$integrationKey
                     }
-                }
-                if ($pythonForRegistry) {
-                    $registryScript = 'import sys' + "`n" +
-                        'try:' + "`n" +
-                        '    from specify_cli.integrations import INTEGRATION_REGISTRY' + "`n" +
-                        '    integration = INTEGRATION_REGISTRY.get(sys.argv[1])' + "`n" +
-                        '    sys.stdout.write(getattr(integration, "context_file", "") or "")' + "`n" +
-                        'except Exception:' + "`n" +
-                        '    sys.exit(3)'
-                    $derived = & $pythonForRegistry -c $registryScript $integrationKey 2>$null
-                    if ($LASTEXITCODE -eq 3) {
-                        Write-Warning ("agent-context: integration '{0}' is configured but could not be resolved because 'specify_cli' is not importable by '{1}'. Set 'context_file' in the extension config or point SPECKIT_PYTHON at the interpreter that has Spec Kit installed." -f $integrationKey, $pythonForRegistry)
-                    } elseif ($LASTEXITCODE -eq 0 -and $derived -and -not [string]::IsNullOrWhiteSpace($derived)) {
+                    if ($derived -and -not [string]::IsNullOrWhiteSpace($derived)) {
                         $ContextFiles += $derived.Trim()
                     } else {
-                        Write-Warning ("agent-context: integration '{0}' declares no context file; set 'context_file' in the extension config to choose one." -f $integrationKey)
+                        Write-Warning ("agent-context: no default context file is known for integration '{0}'; set 'context_file' in the extension config to choose one." -f $integrationKey)
                     }
                 } else {
-                    Write-Warning "agent-context: no Python interpreter found to resolve the active integration; set 'context_file' in the extension config or point SPECKIT_PYTHON at the interpreter that has Spec Kit installed."
+                    Write-Warning ("agent-context: unable to read {0}; cannot self-seed the context file. Set 'context_file' in the extension config." -f $defaultsPath)
                 }
             }
         } catch {

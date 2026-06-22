@@ -40,7 +40,7 @@ context_markers:
   end: "<!-- SPECKIT END -->"
 ```
 
-- `context_file` — the project-relative path to the coding agent context file. When empty, the bundled update scripts self-seed it by resolving the active integration's declared context file from the registry.
+- `context_file` — the project-relative path to the coding agent context file. When empty, the bundled update scripts self-seed it by looking up the active integration's key in this extension's own `agent-context-defaults.json` map. The Specify CLI is never consulted.
 - `context_files` — optional project-relative paths to multiple coding agent context files. When non-empty, the list takes precedence over `context_file`. Absolute paths, backslash separators, and `..` path segments are rejected.
 - `context_markers.start` / `.end` — the delimiters around the managed section. Edit these to use custom markers.
 
@@ -62,4 +62,4 @@ pip install pyyaml
 specify extension disable agent-context
 ```
 
-When disabled (or never installed), Spec Kit performs no agent context file creation, updates, or removal — the extension's bundled scripts are the only code that ever touches the managed section. The Specify CLI never reads this config during command rendering; the `__CONTEXT_FILE__` placeholder is always substituted from the active integration's declared metadata, so disabling the extension is a complete opt-out regardless of any `context_files` value left in the config.
+When disabled (or never installed), Spec Kit performs no agent context file creation, updates, or removal — the extension's bundled scripts are the only code that ever touches the managed section. The Specify CLI carries no agent-context state at all: it never reads this config, never resolves a context file, and the `__CONTEXT_FILE__` placeholder (if present in any template) is left untouched. All context-file knowledge — including the per-agent default mapping in `agent-context-defaults.json` — lives entirely within this extension, so disabling it is a complete opt-out.

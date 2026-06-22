@@ -115,44 +115,41 @@ if not context_files:
 if not context_files:
     # Self-seed: the agent-context extension owns its lifecycle, so when its
     # own config declares no target it derives one from the active integration
-    # recorded in init-options.json via the Spec Kit integration registry.
-    # This is best-effort — when the registry is unavailable the script simply
-    # reports nothing to do.
+    # recorded in init-options.json, using the extension's OWN bundled mapping
+    # (agent-context-defaults.json). This is independent of the Specify CLI by
+    # design — nothing here imports specify_cli.
     project_root = sys.argv[3] if len(sys.argv) > 3 else "."
     integration_key = ""
-    for candidate_path in (
-        f"{project_root}/.specify/init-options.json",
-    ):
-        try:
-            with open(candidate_path, "r", encoding="utf-8") as fh:
-                opts = json.load(fh)
-        except Exception:
-            continue
+    try:
+        with open(
+            f"{project_root}/.specify/init-options.json", "r", encoding="utf-8"
+        ) as fh:
+            opts = json.load(fh)
         if isinstance(opts, dict):
-            integration_key = (
-                opts.get("integration") or opts.get("ai") or ""
-            )
-            if integration_key:
-                break
+            integration_key = opts.get("integration") or opts.get("ai") or ""
+    except Exception:
+        integration_key = ""
     if integration_key:
+        defaults_path = (
+            f"{project_root}/.specify/extensions/agent-context/"
+            "agent-context-defaults.json"
+        )
+        mapping = {}
         try:
-            from specify_cli.integrations import INTEGRATION_REGISTRY
-
-            integration = INTEGRATION_REGISTRY.get(integration_key)
-            add_context_file(getattr(integration, "context_file", "") or "")
+            with open(defaults_path, "r", encoding="utf-8") as fh:
+                mapping = (json.load(fh) or {}).get("agents", {})
         except Exception:
             print(
-                "agent-context: integration '%s' is configured but could not be "
-                "resolved because 'specify_cli' is not importable by this Python "
-                "(%s). Set 'context_file' in the extension config or point "
-                "SPECKIT_PYTHON at the interpreter that has Spec Kit installed."
-                % (integration_key, sys.executable),
+                "agent-context: unable to read %s; cannot self-seed the context "
+                "file. Set 'context_file' in the extension config." % defaults_path,
                 file=sys.stderr,
             )
+            mapping = {}
+        add_context_file(mapping.get(integration_key, "") or "")
         if not context_files:
             print(
-                "agent-context: integration '%s' declares no context file; "
-                "set 'context_file' in the extension config to choose one."
+                "agent-context: no default context file is known for integration "
+                "'%s'. Set 'context_file' in the extension config to choose one."
                 % integration_key,
                 file=sys.stderr,
             )
