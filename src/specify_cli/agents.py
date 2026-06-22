@@ -546,7 +546,22 @@ class CommandRegistrar:
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
 
-            source_file = source_dir / cmd_file
+            # Guard against path traversal: reject absolute paths and ensure
+            # the resolved file stays within the source directory. Mirrors the
+            # containment checks already applied on the skill, preset, and
+            # restore paths (see extensions.py and presets/__init__.py) so a
+            # malicious manifest ``file`` field (e.g. ``../../../etc/passwd``)
+            # cannot read arbitrary host files into a generated command.
+            cmd_path = Path(cmd_file)
+            if cmd_path.is_absolute():
+                continue
+            try:
+                source_root = source_dir.resolve()
+                source_file = (source_root / cmd_path).resolve()
+                source_file.relative_to(source_root)  # raises ValueError if outside
+            except (OSError, ValueError):
+                continue
+
             if not source_file.exists():
                 continue
 
