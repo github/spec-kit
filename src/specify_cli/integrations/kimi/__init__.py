@@ -99,7 +99,15 @@ class KimiIntegration(SkillsIntegration):
         if parsed_options.get("migrate_legacy", False):
             new_skills_dir = self.skills_dest(project_root)
             old_skills_dir = project_root / ".kimi" / "skills"
-            if _is_safe_legacy_dir(old_skills_dir, project_root):
+            # Validate both endpoints. base setup() already rejects a
+            # destination that *escapes* the project root, but an in-tree
+            # symlinked ``.kimi-code``/``.kimi-code/skills`` (e.g. ``-> .``)
+            # would still misdirect the move; ``_is_safe_legacy_dir`` rejects
+            # any symlinked component, giving the destination the same
+            # protection as the source.
+            if _is_safe_legacy_dir(old_skills_dir, project_root) and (
+                _is_safe_legacy_dir(new_skills_dir, project_root)
+            ):
                 _migrate_legacy_kimi_skills_dir(old_skills_dir, new_skills_dir)
             marker_start, marker_end = self._resolve_context_markers(project_root)
             _migrate_legacy_kimi_context_file(
@@ -377,11 +385,19 @@ def _migrate_legacy_kimi_context_file(
 
 
 def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:
-    """Migrate legacy Kimi dotted skill dirs (speckit.xxx) to hyphenated format.
+    """Compatibility shim — migrate legacy dotted skill dirs in place.
 
     .. deprecated::
-        Kept for direct callers/tests; new code should use
-        ``_migrate_legacy_kimi_skills_dir``.
+        Kept for direct callers/tests. New code should call
+        ``_migrate_legacy_kimi_skills_dir`` directly.
+
+    Delegates to ``_migrate_legacy_kimi_skills_dir`` with *skills_dir* as both
+    source and destination, so it processes every ``speckit-*`` and
+    ``speckit.*`` entry under *skills_dir*. Because the two paths are
+    identical, the same-path short-circuit there skips any directory whose
+    target resolves to itself; in practice this renames dotted
+    ``speckit.xxx`` dirs to hyphenated ``speckit-xxx`` in place and never
+    moves content outside *skills_dir*.
 
     Returns ``(migrated_count, removed_count)``.
     """

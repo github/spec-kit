@@ -3653,7 +3653,11 @@ class TestPresetSkills:
         assert note_file.read_text(encoding="utf-8") == "user content"
 
     def test_kimi_legacy_dotted_skill_override_still_applies(self, project_dir, temp_dir):
-        """Preset overrides should still target legacy dotted Kimi skill directories."""
+        """Preset overrides should still target legacy dotted-named skill dirs.
+
+        This exercises legacy *naming* (``speckit.specify``) under the current
+        ``.kimi-code/`` base — distinct from the legacy ``.kimi/`` *location*.
+        """
         self._write_init_options(project_dir, ai="kimi")
         skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit.specify", body="untouched")
