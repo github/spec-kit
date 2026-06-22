@@ -30,8 +30,11 @@ pytest -q
 ```bash
 # Should produce NO matches outside extensions/agent-context/ and specs/
 grep -rn -E \
-  'upsert_context_section|remove_context_section|_agent_context_extension_enabled|_resolve_context_markers|_AGENT_CTX_EXT_CONFIG|_load_agent_context_config|_save_agent_context_config|_update_agent_context_config_file' \
+  'upsert_context_section|remove_context_section|_agent_context_extension_enabled|_resolve_context_markers|_resolve_context_files|_AGENT_CTX_EXT_CONFIG|_load_agent_context_config|_save_agent_context_config|_update_agent_context_config_file' \
   src/specify_cli/
+
+# Should produce NO matches (CLI no longer reads the extension's context_files list)
+grep -rn "agent-context-config" src/specify_cli/
 
 # Should produce NO matches (deprecation string removed)
 grep -rn 'Inline agent-context updates' src/specify_cli/

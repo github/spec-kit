@@ -18,14 +18,15 @@ This feature is a removal/refactor inside a known codebase, so "research" here r
 
 ## R2: How `__CONTEXT_FILE__` is resolved in `agents.py`
 
-**Current state**: `agents.py` (~lines 401–410) resolves `__CONTEXT_FILE__` by importing `_load_agent_context_config` and reading the extension's `agent-context-config.yml`, falling back to `init_opts["context_file"]`.
+**Current state** (post-sync with upstream/main): `agents.py` (~lines 429–458) resolves `__CONTEXT_FILE__` by importing `_load_agent_context_config`, reading the extension's `agent-context-config.yml`, and passing it through `IntegrationBase._resolve_context_file_values(...)` / `_format_context_file_values(...)`. Upstream has generalized the single `context_file` into a **plural `context_files`** concept (config key `context_files`, resolver helpers in `base.py` ~lines 738–833), with an `include_context_files` flag that ignores the extension's configured list when the extension is disabled while still honoring the integration's own declared value.
 
-**Decision**: Resolve `__CONTEXT_FILE__` directly from the integration's declared `context_file` (the in-memory metadata from R1), removing the dependency on the extension config file.
+**Decision**: Resolve `__CONTEXT_FILE__` directly from the integration's declared `context_file` metadata (R1), removing the dependency on `_load_agent_context_config` and the extension-config-driven `context_files` list. A small, self-contained formatting helper for one-or-more declared values may remain in the integration layer, but it MUST NOT read the extension config.
 
-**Rationale**: FR-002 forbids the CLI reading the extension config. The integration already knows its own context file path, so the CLI can substitute the placeholder without touching extension-owned files.
+**Rationale**: FR-002 forbids the CLI reading the extension config. The integration already knows its own context file path(s), so the CLI can substitute the placeholder without touching extension-owned files. The plural `context_files` config key (read from `agent-context-config.yml`) is exactly the kind of extension-owned configuration the CLI must stop consuming.
 
 **Alternatives considered**:
 - *Stop substituting `__CONTEXT_FILE__` and leave the placeholder for the extension to fill*: rejected — placeholder appears in command templates the CLI renders at install time; leaving it unresolved would ship literal `__CONTEXT_FILE__` strings to users.
+- *Keep the plural `context_files` resolver but only drop the config read*: viable; the resolver can stay as pure metadata formatting as long as every branch that reads `agent-context-config.yml` is removed. Decision defers the keep-vs-delete split for these helpers to `/speckit.tasks`, bound by the rule that no remaining branch reads the extension config.
 
 ## R3: Auto-install of the `agent-context` extension during `specify init`
 
@@ -42,18 +43,18 @@ This feature is a removal/refactor inside a known codebase, so "research" here r
 
 ## R4: Extension-enabled gating + marker resolution in `base.py`
 
-**Current state**: `base.py` has `_agent_context_extension_enabled()` (reads `.specify/extensions/.registry`) and `_resolve_context_markers()` (reads `agent-context-config.yml`), both used only by the upsert/remove methods.
+**Current state** (post-sync): `base.py` has `_agent_context_extension_enabled()` (~line 605, reads `.specify/extensions/.registry`) and `_resolve_context_markers()` (~line 645, reads `agent-context-config.yml`), used by `upsert_context_section()` (~line 895) and `remove_context_section()` (~line 948). Upstream additionally added `_resolve_context_file_values()` (~line 738), `_format_context_file_values()` (~line 787), and `_resolve_context_files()` (~line 791); upsert/remove now **iterate over a list of context files** (`for context_file in context_files:`) read from the extension config's plural `context_files` key.
 
-**Decision**: Remove both helpers along with `upsert_context_section()`, `remove_context_section()`, and all their call sites in `setup()`/`teardown()` across the base classes.
+**Decision**: Remove the gating helper, the marker resolver, and the `upsert_context_section()` / `remove_context_section()` methods (and their per-file loops) along with all their call sites in `setup()`/`teardown()` across the base classes (call sites at ~lines 1181, 1200, 1309, 1518, 1725, 1959). Remove `_resolve_context_files()` and the config-reading branches of `_resolve_context_file_values()`; retain only a pure metadata formatter if `__CONTEXT_FILE__` substitution still needs one (R2).
 
-**Rationale**: FR-001/FR-003 — the base layer must not manage the section, gate on the extension, or resolve markers. With the upsert/remove methods gone, these helpers are dead code.
+**Rationale**: FR-001/FR-003 — the base layer must not manage the section, gate on the extension, resolve markers, or read the extension's `context_files` list. With the upsert/remove methods gone, the gating, marker, and config-reading helpers are dead code.
 
 **Alternatives considered**:
 - *Keep helpers "just in case"*: rejected — FR-002/FR-003 and SC-002 require zero such references remaining; dead code with config I/O still violates the spec's intent.
 
 ## R5: The deprecation warning
 
-**Current state**: `upsert_context_section()` prints a `rich` "Deprecation: …v0.12.0… run `specify extension disable agent-context`" warning every time it runs (base.py ~lines 711–718). A test asserts its presence.
+**Current state**: `upsert_context_section()` prints a `rich` "Deprecation: …v0.12.0… run `specify extension disable agent-context`" warning every time it runs (base.py ~line 924). A test asserts its presence.
 
 **Decision**: Remove the warning entirely (it disappears with the method) and remove/replace the asserting test.
 

@@ -6,7 +6,7 @@
 
 ## Summary
 
-Make the bundled `agent-context` extension the sole owner of agent context/instruction file management. Remove every agent-context concern from the Specify CLI (Python) source: config-file I/O, context-section upsert/remove, marker resolution, extension-enabled gating, the `__CONTEXT_FILE__` config lookup, the auto-install + config-write during `specify init`, and the inline deprecation warning. The extension already ships self-contained bash/PowerShell scripts and its own `agent-context-config.yml`, so removing the CLI-side logic makes the extension a true opt-in without losing end-user functionality. Existing projects keep working: previously written files are left intact and simply unmanaged by the CLI.
+Make the bundled `agent-context` extension the sole owner of agent context/instruction file management. Remove every agent-context concern from the Specify CLI (Python) source: config-file I/O, context-section upsert/remove (including the upstream plural `context_files` support and its `_resolve_context_files` / `_resolve_context_file_values` / `_format_context_file_values` helpers), marker resolution, extension-enabled gating, the `__CONTEXT_FILE__` config lookup, the auto-install + config-write during `specify init`, and the inline deprecation warning. The extension already ships self-contained bash/PowerShell scripts and its own `agent-context-config.yml`, so removing the CLI-side logic makes the extension a true opt-in without losing end-user functionality. Existing projects keep working: previously written files are left intact and simply unmanaged by the CLI.
 
 ## Technical Context
 

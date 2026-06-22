@@ -53,6 +53,8 @@ This is a CLI tool, so the externally observable "contract" is the behavior of `
 **Then** there are zero references to:
 - `upsert_context_section`, `remove_context_section`
 - `_agent_context_extension_enabled`, `_resolve_context_markers`
+- `_resolve_context_files`, and any extension-config-reading branch of `_resolve_context_file_values` / `_format_context_file_values`
+- the plural `context_files` config-key consumption
 - `_AGENT_CTX_EXT_CONFIG`, `_load_agent_context_config`, `_save_agent_context_config`, `_update_agent_context_config_file`
 - the v0.12.0 deprecation string
 
