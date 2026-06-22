@@ -13,6 +13,7 @@ from validators.speckit_implement_contract import (
     validate_behavior_case_coverage,
     validate_behavior_contract_bundle,
     validate_behavior_draft_contract,
+    validate_visual_item_matrix_contract,
     validate_implement_contract,
     validate_handoff_contract,
     validate_manifest_contract,
@@ -93,6 +94,9 @@ BEHAVIOR_SCHEMA_PATHS = {
     / "schemas"
     / "speckit.behavior.assertions.v1.schema.json",
 }
+VISUAL_ITEM_MATRIX_SCHEMA_PATH = (
+    REPO_ROOT / "schemas" / "speckit.design.visual-item-matrix.v1.schema.json"
+)
 BEHAVIOR_TEMPLATE_PATHS = {
     "behavior-bdd-draft-template": REPO_ROOT / "templates" / "behavior" / "bdd-draft.feature",
     "behavior-scenarios-draft-template": REPO_ROOT
@@ -484,6 +488,58 @@ def minimal_behavior_assertions() -> dict:
     }
 
 
+def minimal_visual_item_matrix() -> dict:
+    return {
+        "contract_type": "speckit.design.visual_item_matrix.v1",
+        "source": {
+            "provider": "figma",
+            "source_refs": ["figma://file/page/frame/node"],
+            "capture_timestamp": "2026-06-22T00:00:00Z",
+        },
+        "readiness": {
+            "status": "PASS",
+            "raw_metadata_complete": True,
+            "node_inventory_coverage": 100,
+            "parity_passed": True,
+            "blocker_lint_errors": [],
+        },
+        "visual_items": [
+            {
+                "id": "VI-001",
+                "source_refs": ["figma://file/page/frame/node"],
+                "requirement_target": "Home screen header",
+                "ui_surface": "HomePage",
+                "fidelity_scope": "design-system-faithful",
+                "layout_facts": ["Header is aligned to the top safe area."],
+                "typography_facts": ["Title uses the observed display style."],
+                "color_token_facts": ["Primary action uses the observed brand token."],
+                "effect_facts": [],
+                "asset_refs": [],
+                "variant_state_evidence": [
+                    {
+                        "variant_ref": "component=Button,state=disabled",
+                        "source_refs": ["figma://component/button-disabled"],
+                        "observed_state_or_role": "disabled",
+                        "confidence": "high",
+                    }
+                ],
+                "component_requirement_role": "primary action",
+                "component_use_constraint": "unspecified",
+                "constraint_source_refs": [],
+                "copy_content_constraint": "unspecified",
+                "drawing_asset_constraint": "unspecified",
+                "required_states": ["default", "disabled"],
+                "required_viewport_coverage": ["desktop"],
+                "screenshot_refs": ["screenshots/home-desktop.png"],
+                "visual_proof_level": "L1",
+                "allowed_deviations": [],
+                "blockers": [],
+                "spec_requirement_target": "spec.md#visual-requirements",
+            }
+        ],
+    }
+
+
 def minimal_exception_behavior_assertions() -> dict:
     return minimal_exception_behavior_assertions_with_intent("state_invariant")
 
@@ -519,7 +575,7 @@ class PresetContractTests(unittest.TestCase):
         )
 
         provides = data["provides"]["templates"]
-        self.assertEqual(34, len(provides))
+        self.assertEqual(35, len(provides))
         entries = {entry["name"]: entry for entry in provides}
         self.assertNotIn("behavior-open-questions-template", entries)
         self.assertNotIn("speckit-behavior-open-questions-v1-schema", entries)
@@ -671,6 +727,16 @@ class PresetContractTests(unittest.TestCase):
             self.assertEqual(schema_name, schema["replaces"])
             self.assertEqual("replace", schema["strategy"])
 
+        visual_matrix_schema = entries["speckit-design-visual-item-matrix-v1-schema"]
+        self.assertEqual("template", visual_matrix_schema["type"])
+        self.assertEqual(
+            "schemas/speckit.design.visual-item-matrix.v1.schema.json",
+            visual_matrix_schema["file"],
+        )
+        self.assertIn("normalized design visual item matrix", visual_matrix_schema["description"])
+        self.assertEqual("speckit-design-visual-item-matrix-v1-schema", visual_matrix_schema["replaces"])
+        self.assertEqual("replace", visual_matrix_schema["strategy"])
+
         self.assertNotIn("scripts", data["provides"])
         self.assertNotIn("files", data["provides"])
         self.assertNotIn("workflows", data["provides"])
@@ -722,6 +788,7 @@ class PresetContractTests(unittest.TestCase):
             "viewport/state coverage strategy",
             "visual regression or baseline proof strategy",
             "Do not copy the Visual Fidelity Evidence Matrix into `research.md`",
+            "do not rebuild provider evidence matrices",
             "visual_item_refs",
             "viewport_matrix_refs",
             "state_matrix_refs",
@@ -811,17 +878,38 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("strategy: wrap", tasks)
         self.assertIn("implementation, integration, orchestration", tasks)
         self.assertIn("existing checklist format and user-story organization", tasks)
+        self.assertIn("Tasks owns validation and review task definition", tasks)
+        self.assertIn("executes only tasks already present in `tasks.md`", tasks)
+        self.assertIn("must not invent validation strategy", tasks)
+        self.assertIn("change requirements, update contracts, or widen scope", tasks)
         self.assertIn("Test Strategy Derivation", tasks)
         self.assertIn("derive the test level", tasks)
         self.assertIn("fixture/mock/sandbox/real-system strategy", tasks)
         self.assertIn("inline evidence requirement", tasks)
+        self.assertIn("Generate explicit validation tasks for the applicable scope", tasks)
+        self.assertIn("Contract validation tasks bind contract ref -> implementation surface -> validation command -> evidence", tasks)
+        self.assertIn("Visual verification or UI acceptance tasks bind Visual Item ID", tasks)
+        self.assertIn("Data-side-effect validation tasks bind affected entity or state transition", tasks)
+        self.assertIn("Integration or e2e validation tasks bind user-visible journey or cross-boundary flow", tasks)
         self.assertIn("Final Code Review", tasks)
         self.assertIn("append the final phase after user-story tasks", tasks)
-        self.assertIn("design, sequence, and contract consistency", tasks)
+        self.assertIn("review scopes: boundary, interface_contract, visual, data_side_effect, behavior_contract, sequence_consistency, and asset_binding", tasks)
+        self.assertIn("design, sequence, visual implementation, and contract consistency", tasks)
+        self.assertIn("`contracts/uif/`", tasks)
+        self.assertIn("`spec.md` Client Asset Contract entries", tasks)
+        self.assertIn("Visual Fidelity Readiness", tasks)
         self.assertIn("data side-effect review", tasks)
         self.assertIn("actual implementation diff", tasks)
         self.assertIn("field-level update/delete", tasks)
         self.assertIn("runtime database writes", tasks)
+        self.assertIn("boundary review", tasks)
+        self.assertIn("changed paths stay within the implement handoff boundary", tasks)
+        self.assertIn("no implementation task changed `spec.md`, `contracts/`, readiness checklists, or Visual Fidelity Readiness", tasks)
+        self.assertIn("visual consistency review", tasks)
+        self.assertIn("implemented UI states and viewport behavior", tasks)
+        self.assertIn("screenshot refs, visual proof refs", tasks)
+        self.assertIn("Client Asset Contract bindings, variants, and fallback policy", tasks)
+        self.assertIn("Visual implementation drift", tasks)
         self.assertIn("real e2e environment readiness", tasks)
         self.assertIn("task_type: code_review", tasks)
         self.assertIn("data_side_effect_review", tasks)
@@ -831,6 +919,9 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("deferred_validation_todos", tasks)
         self.assertIn("quickstart/contract validation command", tasks)
         self.assertIn("empty arrays or objects indicate no entries", tasks)
+        self.assertNotIn("task_type: visual_verification", tasks)
+        self.assertNotIn("task_type: interface_validation", tasks)
+        self.assertNotIn("task_type: data_side_effect_validation", tasks)
         self.assertNotIn("must require a `speckit.implement.receipt.v1` review receipt with `review_conclusion`, `consistency_repairs`, and `deferred_validation_todos`", tasks)
 
     def test_behavior_first_command_wrapper_contracts(self) -> None:
@@ -874,12 +965,15 @@ class PresetContractTests(unittest.TestCase):
             "Design intake input",
             "Design intake output",
             "recorded only in `spec.md`",
+            "stable Visual Item ID trace refs",
+            "observed variant/state facts",
             "provider-neutral design evidence",
             "source refs",
             "Stage 2: Requirement Merge",
             "Merge input",
             "Merge output",
             "Design Requirement Promotion Rules",
+            "preserve Visual Item ID trace refs for visual requirements",
             "conflicts",
             "provider blockers",
             "Stage 3: Generate baseline spec.md",
@@ -912,6 +1006,8 @@ class PresetContractTests(unittest.TestCase):
             "fallback policy",
             "blocker status",
             "Screenshot-implied business rules",
+            "Do not invent code props, code state names, component reuse decisions, self-drawing bans, or copy restrictions from Figma structure",
+            "Record component use, no-self-draw, and no-new-copy constraints only when product input or qualified provider evidence states them explicitly",
             "Continue to write only `spec.md`",
             "stage-wise report",
         ):
@@ -1186,17 +1282,38 @@ class PresetContractTests(unittest.TestCase):
             "derive the test level",
             "fixture/mock/sandbox/real-system strategy",
             "inline evidence requirement",
+            "Tasks owns validation and review task definition",
+            "executes only tasks already present in `tasks.md`",
+            "Generate explicit validation tasks for the applicable scope",
+            "Contract validation tasks bind contract ref -> implementation surface -> validation command -> evidence",
+            "Visual verification or UI acceptance tasks bind Visual Item ID",
+            "Data-side-effect validation tasks bind affected entity or state transition",
+            "Integration or e2e validation tasks bind user-visible journey or cross-boundary flow",
             "Client Asset Contract",
             "derive asset preparation, binding, implementation, and validation tasks",
             "Missing required client visual assets become readiness blockers",
+            "Use Visual Fidelity Readiness as the only visual planning readiness source",
+            "Do not create a second readiness rule",
+            "Screenshot Coverage Matrix",
+            "Visual Restoration Trace",
             "do not generate handoff fields or `allowed_write_paths`",
             "Missing Required case scenarios must become blockers, not silently skipped tasks",
             "negative, boundary, permission, validation, state_conflict, or error behavior",
             "For each non-positive BehaviorScenarioInstance",
             "derive fixture, contract or BDD test, implementation, and verification evidence tasks",
+            "visual consistency review",
+            "implemented UI states and viewport behavior",
+            "Client Asset Contract bindings, variants, and fallback policy",
+            "Visual implementation drift",
+            "review scopes: boundary, interface_contract, visual, data_side_effect, behavior_contract, sequence_consistency, and asset_binding",
+            "boundary review",
+            "no implementation task changed `spec.md`, `contracts/`, readiness checklists, or Visual Fidelity Readiness",
         ):
             self.assertIn(term, tasks)
 
+        self.assertNotIn("task_type: visual_verification", tasks)
+        self.assertNotIn("task_type: interface_validation", tasks)
+        self.assertNotIn("task_type: data_side_effect_validation", tasks)
         self.assertNotIn("test-plan.md", tasks)
 
         self.assertIn("./behavior/bdd.draft.feature", template)
@@ -1432,6 +1549,11 @@ class PresetContractTests(unittest.TestCase):
             "visual proof",
             "Screenshot evidence must declare L0-L3 coverage and coverage gaps",
             "not the primary Design Requirement Intake carrier",
+            "Screenshot evidence and the Screenshot Coverage Matrix record coverage facts and gaps only",
+            "must not decide visual planning readiness",
+            "proof sufficiency",
+            "checklist Gate Status",
+            "checklist Blocking Items",
             "Screenshot level: L0|L1|L2|L3",
             "L0: no screenshot evidence",
             "L1: static screenshot reference",
@@ -1456,7 +1578,35 @@ class PresetContractTests(unittest.TestCase):
             "Missing / Needs Clarification",
             "Out of Scope",
             "Figma Intake Readiness",
+            "Figma Intake Readiness is provider source readiness only",
+            "separate from Visual Fidelity planning readiness",
             "Visual Facts for Spec",
+            "Visual Item Matrix",
+            "one row per restorable UI surface, component, state, or visual proof obligation",
+            "provider-normalized visual facts",
+            "provider evidence blockers",
+            "proof level sufficiency",
+            "Visual Item ID",
+            "Figma frame/node refs",
+            "Requirement target",
+            "UI surface",
+            "Required fidelity: functional-equivalent|design-system-faithful|pixel-perfect|brand-critical|responsive-visual",
+            "Layout facts",
+            "Typography facts",
+            "Color/token facts",
+            "Effect facts",
+            "Asset refs",
+            "Variant/state evidence",
+            "Component requirement role",
+            "Component use constraint: visual-reference-only|must-reuse-existing|figma-export-required|unspecified",
+            "Constraint source refs",
+            "Copy/content constraint: no-new-copy|figma-copy-required|product-copy-required|unspecified",
+            "Drawing/asset constraint: no-self-draw|figma-export-required|existing-asset-required|unspecified",
+            "Required states",
+            "Required viewport coverage",
+            "Visual proof level: L0|L1|L2|L3",
+            "Allowed deviations",
+            "Spec requirement target",
             "Client Asset Inventory",
             "Asset ID",
             "Asset role",
@@ -1468,6 +1618,12 @@ class PresetContractTests(unittest.TestCase):
             "Fallback policy",
             "Blocker status",
             "Component Mapping",
+            "Figma component -> requirement-level component role",
+            "Variant -> observed state or semantic role",
+            "Existing code component constraint, only if explicitly provided",
+            "Visual-reference-only components",
+            "Must-reuse-existing components",
+            "No self-draw / no new copy constraints",
             "Spec Handoff Notes",
             "Open Questions",
             "Frame / Node IDs",
@@ -1500,6 +1656,7 @@ class PresetContractTests(unittest.TestCase):
             "Page Hierarchy",
             "User Paths",
             "Component Inventory",
+            "Existing code constraint, only if explicitly provided",
             "Component States",
             "Interaction Rules",
             "Visual Tokens",
@@ -1508,6 +1665,27 @@ class PresetContractTests(unittest.TestCase):
             "Motion Rules",
             "State Coverage",
             "Visual Acceptance Requirements",
+            "Visual Restoration Trace",
+            "accepted Visual Item ID",
+            "Do not copy the full provider Visual Item Matrix",
+            "Record only requirement-level facts promoted toward `spec.md`",
+            "must not decide visual planning readiness",
+            "checklist Gate Status",
+            "checklist Blocking Items",
+            "Provider source refs",
+            "Fidelity scope: functional-equivalent|design-system-faithful|pixel-perfect|brand-critical|responsive-visual",
+            "Layout constraints",
+            "Typography constraints",
+            "Color/token constraints",
+            "Effect constraints",
+            "Asset bindings",
+            "Requirement-level component role",
+            "Variant/state coverage",
+            "Component use constraint: visual-reference-only|must-reuse-existing|figma-export-required|unspecified",
+            "Constraint source refs",
+            "Copy/content constraint: no-new-copy|figma-copy-required|product-copy-required|unspecified",
+            "Drawing/asset constraint: no-self-draw|figma-export-required|existing-asset-required|unspecified",
+            "Required viewport coverage",
             "Client Asset Contract",
             "Asset ID",
             "Required resource type",
@@ -1522,7 +1700,10 @@ class PresetContractTests(unittest.TestCase):
             "Unsupported assumptions",
             "Screenshot-derived visual facts must include screenshot refs",
             "screenshots must not create product semantics",
+            "Screenshot Traceability records supported facts and unsupported assumptions only",
+            "must not create an independent visual readiness decision",
             "Traceability",
+            "Visual Item ID",
             "Source refs",
             "[NEEDS CLARIFICATION]",
         ]
@@ -1586,6 +1767,14 @@ class PresetContractTests(unittest.TestCase):
         for term in (
             "Use the behavior-testability checklist template as the visual gate authority",
             "provider readiness status, evidence refs, and blockers",
+            "Visual Fidelity Evidence Matrix alone decides visual planning readiness",
+            "proof level sufficiency",
+            "screenshot sufficiency",
+            "accepted exception rules",
+            "Read visual facts from `spec.md` and evidence refs",
+            "do not call Figma",
+            "rebuild provider matrices",
+            "another visual readiness path",
             CANONICAL_RESPONSIVE_VISUAL_RULE,
             "Use one Visual Fidelity Evidence Matrix as the single visual readiness record",
             "Do not add historical visual rules or alternate visual decision paths",
@@ -1607,6 +1796,14 @@ class PresetContractTests(unittest.TestCase):
             "visual proof refs",
             "L0|L1|L2|L3",
             "declared visual proof required",
+            "only artifact that decides visual planning readiness",
+            "proof level sufficiency",
+            "screenshot sufficiency",
+            "accepted exception rules",
+            "does not call Figma",
+            "re-extract provider evidence",
+            "rebuild provider matrices",
+            "another visual readiness path",
             "Missing screenshot evidence sets Gate Status: BLOCKED",
             "High-fidelity requirements without L3 screenshot evidence set Gate Status: BLOCKED",
             "Pixel-perfect requirements without L3 screenshot evidence set Gate Status: BLOCKED",
@@ -1673,6 +1870,7 @@ class PresetContractTests(unittest.TestCase):
             "## Metadata Index Completeness",
             "## Node Inventory Parity",
             "## Evidence Readiness Gate",
+            "## Normalized Visual Item Matrix",
             "## Blocker Lint Errors",
             "## Gap Rules",
             "## Preset Boundary",
@@ -1698,6 +1896,11 @@ class PresetContractTests(unittest.TestCase):
             "truncated_raw_evidence == false",
             "node_inventory_coverage: 100%",
             "parity_passed: true",
+            "provider source readiness only",
+            "Visual Fidelity planning readiness",
+            "proof sufficiency",
+            "checklist Gate Status",
+            "checklist Blocking Items",
             "FIGMA_RAW_METADATA_MISSING",
             "FIGMA_RAW_METADATA_SUMMARY_SUBSTITUTION",
             "FIGMA_RAW_METADATA_TRUNCATED",
@@ -1705,6 +1908,15 @@ class PresetContractTests(unittest.TestCase):
             "FIGMA_METADATA_INDEX_MISSING",
             "FIGMA_METADATA_PARITY_FAILED",
             "FIGMA_READY_WITHOUT_COMPLETENESS_PROOF",
+            "speckit.design.visual_item_matrix.v1",
+            "schemas/speckit.design.visual-item-matrix.v1.schema.json",
+            "must not replace raw provider evidence",
+            "provider evidence blockers, not checklist Blocking Items",
+            "must not create a second visual readiness gate",
+            "observed variant/state evidence",
+            "requirement-level component roles",
+            "Explicit constraints such as must-reuse-existing, no-self-draw, or no-new-copy",
+            "constraint source refs",
             "Required Figma intake artifacts and readiness gates",
             "must not call Figma MCP",
             "must not generate artifact instances",
@@ -1832,6 +2044,8 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("consistency_repairs", command)
         self.assertIn("deferred_validation_todos", command)
         self.assertIn("quickstart/contract validation command", command)
+        self.assertIn("execute validation and code review only when those tasks are already present in `tasks.md`", command)
+        self.assertIn("do not invent validation strategy, add lifecycle roles, change requirements, update contracts, or widen scope", command)
         self.assertIn("repair design, sequence, or contract drift", command)
         self.assertIn("real e2e cannot run", command)
         self.assertNotIn("test-plan.md", command)
@@ -1899,6 +2113,56 @@ class PresetContractTests(unittest.TestCase):
             self.assertIn("properties", schema)
             self.assertEqual(contract_type, schema["properties"]["contract_type"]["const"])
             Draft202012Validator(schema).validate(examples[contract_type])
+
+    def test_visual_item_matrix_schema_accepts_minimal_example(self) -> None:
+        schema = json.loads(VISUAL_ITEM_MATRIX_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+        self.assertEqual("object", schema["type"])
+        self.assertIn("required", schema)
+        self.assertIn("properties", schema)
+        self.assertEqual(
+            "speckit.design.visual_item_matrix.v1",
+            schema["properties"]["contract_type"]["const"],
+        )
+        self.assertIn("visual_items", schema["required"])
+        Draft202012Validator(schema).validate(minimal_visual_item_matrix())
+
+    def test_visual_item_matrix_schema_rejects_missing_source_refs(self) -> None:
+        schema = json.loads(VISUAL_ITEM_MATRIX_SCHEMA_PATH.read_text(encoding="utf-8"))
+        matrix = minimal_visual_item_matrix()
+        matrix["visual_items"][0]["source_refs"] = []
+
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(matrix)
+
+    def test_visual_item_matrix_schema_accepts_responsive_visual_scope(self) -> None:
+        schema = json.loads(VISUAL_ITEM_MATRIX_SCHEMA_PATH.read_text(encoding="utf-8"))
+        matrix = minimal_visual_item_matrix()
+        matrix["visual_items"][0]["fidelity_scope"] = "responsive-visual"
+
+        Draft202012Validator(schema).validate(matrix)
+
+    def test_visual_item_matrix_validator_enforces_readiness_gate(self) -> None:
+        matrix = minimal_visual_item_matrix()
+        validate_visual_item_matrix_contract(matrix)
+
+        matrix["readiness"]["node_inventory_coverage"] = 99
+        with self.assertRaisesRegex(ValueError, "node_inventory_coverage 100"):
+            validate_visual_item_matrix_contract(matrix)
+
+    def test_visual_item_matrix_validator_requires_sources_for_explicit_constraints(self) -> None:
+        matrix = minimal_visual_item_matrix()
+        matrix["visual_items"][0]["component_use_constraint"] = "must-reuse-existing"
+
+        with self.assertRaisesRegex(ValueError, "constraint_source_refs"):
+            validate_visual_item_matrix_contract(matrix)
+
+    def test_visual_item_matrix_validator_requires_l3_for_high_fidelity(self) -> None:
+        matrix = minimal_visual_item_matrix()
+        matrix["visual_items"][0]["fidelity_scope"] = "pixel-perfect"
+
+        with self.assertRaisesRegex(ValueError, "requires L3 proof"):
+            validate_visual_item_matrix_contract(matrix)
 
     def test_behavior_draft_schema_rejects_empty_given_when_then(self) -> None:
         schema = json.loads(
@@ -3457,6 +3721,11 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Design Requirement Intake", readme)
         self.assertIn("Requirement Merge", readme)
         self.assertIn("Product Requirement + Design Requirement", readme)
+        self.assertIn("stable Visual Item ID", readme)
+        self.assertIn("does not translate Figma variants into code props", readme)
+        self.assertIn("requirement-level component roles", readme)
+        self.assertIn("Visual Restoration Trace rows", readme)
+        self.assertIn("Visual Item Matrix rows", readme)
         self.assertIn("Figma is a Design Requirement provider", readme)
         self.assertIn("Figma Evidence Packet", readme)
         self.assertIn("direct Figma URL input", readme)
@@ -3481,6 +3750,10 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Visual Fidelity Evidence Matrix", readme)
         self.assertIn("visual requirement or visual proof obligation", readme)
         self.assertIn("single visual readiness record", readme)
+        self.assertIn("Provider evidence artifacts may record screenshot refs", readme)
+        self.assertIn("only the Visual Fidelity Evidence Matrix decides visual planning readiness", readme)
+        self.assertIn("proof sufficiency", readme)
+        self.assertIn("accepted exception rules", readme)
         self.assertIn("preset defines the required design intake and provider readiness artifact structure", readme)
         self.assertIn("runtime agent or external Figma intake", readme)
         self.assertIn("does not generate the artifact instances", readme)
@@ -3492,6 +3765,11 @@ class PresetContractTests(unittest.TestCase):
         )
         self.assertIn("raw metadata completeness", readme)
         self.assertIn("node inventory parity", readme)
+        self.assertIn("speckit.design.visual_item_matrix.v1", readme)
+        self.assertIn("schemas/speckit.design.visual-item-matrix.v1.schema.json", readme)
+        self.assertIn("raw Figma evidence remains the source of truth", readme)
+        self.assertIn("provider-ready", readme)
+        self.assertIn("It does not decide visual planning readiness", readme)
         self.assertIn("does not provide Figma MCP connection, authentication, or execution", readme)
         self.assertIn("clarifies design-derived gaps already written in `spec.md`", readme)
         self.assertIn("does not call Figma", readme)
@@ -3518,6 +3796,8 @@ class PresetContractTests(unittest.TestCase):
             "error code, failure feedback, and state invariant, rollback, or compensation assertion",
             readme,
         )
+        self.assertIn("visual verification, contract validation, data-side-effect validation, integration/e2e validation, and scope-aware code review tasks", readme)
+        self.assertIn("without inventing validation strategy, changing requirements, updating contracts, or widening scope", readme)
         self.assertIn("validation_evidence", readme)
         self.assertIn("Context-load controls", readme)
         self.assertIn("context-load controls", changelog)
@@ -3533,6 +3813,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Hardened behavior contract quality gates", changelog)
         self.assertIn("formalization blockers", changelog)
         self.assertIn("behavior-linked validation evidence", changelog)
+        self.assertIn("only the checklist Visual Fidelity Evidence Matrix decides visual planning readiness", changelog)
         self.assertNotIn("run-orchestrated-implement.py", readme)
         self.assertNotIn("speckit-implement-handoff.py", readme)
         self.assertNotIn("--dry-run true --run-id manual", readme)
@@ -3553,6 +3834,8 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("## 1.0.3", changelog)
         self.assertIn("Final Code Review", changelog)
         self.assertIn("structured code review receipts", changelog)
+        self.assertIn("/speckit.tasks` defines validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation", changelog)
+        self.assertIn("/speckit.implement` only executes those tasks and records receipt evidence", changelog)
         self.assertIn("agent-native handoff orchestration", changelog)
         self.assertIn("Removed Python dispatch tooling", changelog)
 
@@ -3658,6 +3941,10 @@ class PresetContractTests(unittest.TestCase):
             "Figma Evidence Packet",
             "Screenshot is provider evidence",
             "Screenshots must not become the primary Design Requirement Intake carrier",
+            "Provider evidence artifacts may record screenshot refs, visual proof refs",
+            "They must not",
+            "decide visual planning readiness",
+            "proof sufficiency",
             "Visual Fidelity Evidence Matrix",
             "one row per visual requirement or visual proof obligation",
             "Source `spec.md` section",
@@ -3669,11 +3956,21 @@ class PresetContractTests(unittest.TestCase):
             "Exception Rule",
             CANONICAL_RESPONSIVE_VISUAL_RULE,
             "single visual readiness record",
+            "only artifact that decides visual planning readiness",
+            "visual proof level sufficiency",
+            "screenshot sufficiency",
+            "accepted exception rules",
+            "checklist Gate Status",
+            "checklist Blocking Items",
+            "Provider source readiness remains separate",
             "packaged evidence templates are allowed preset artifacts",
             "Figma MCP execution, hooks, adapter scripts, and authentication",
             "external design extraction is not a clarification responsibility",
             "NFR readiness belongs in `spec.md` product requirements",
             "`/speckit.plan`: Phase 0 behavior projection, planning artifacts, and formal contracts",
+            "`/speckit.tasks` owns implementation, validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation, and code review task definition in `tasks.md`",
+            "`/speckit.implement` may execute those tasks and record receipt evidence",
+            "must not invent validation strategy, add lifecycle roles, change requirements, update contracts, or widen scope during execution",
             "Handoff extensions must update schema, validator, command, and cross-agent documentation together",
             "Do not bump preset version or release archive URLs until release preparation",
             "Use extensions, not presets, for new tooling",

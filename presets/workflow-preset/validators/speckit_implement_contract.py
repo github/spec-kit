@@ -6,6 +6,21 @@ from typing import Any
 VALID_EXECUTION_MODES = {"isolated_subagent", "manual_fresh_worker_session"}
 CASE_TYPES = {"positive", "negative", "boundary", "permission", "validation", "state_conflict"}
 FAILURE_CASE_TYPES = {"negative", "permission", "validation", "state_conflict"}
+EXPLICIT_COMPONENT_USE_CONSTRAINTS = {
+    "visual-reference-only",
+    "must-reuse-existing",
+    "figma-export-required",
+}
+EXPLICIT_COPY_CONSTRAINTS = {
+    "no-new-copy",
+    "figma-copy-required",
+    "product-copy-required",
+}
+EXPLICIT_DRAWING_CONSTRAINTS = {
+    "no-self-draw",
+    "figma-export-required",
+    "existing-asset-required",
+}
 
 
 def _duplicate_ids(items: list[dict[str, Any]], *, key: str, context: str) -> set[str]:
@@ -257,6 +272,46 @@ def validate_behavior_case_coverage(
             raise ValueError(f"Required case {context} missing tasks.md evidence")
         if scenario_id not in quickstart_text:
             raise ValueError(f"Required case {context} missing quickstart.md evidence")
+
+
+def validate_visual_item_matrix_contract(matrix: dict[str, Any]) -> None:
+    readiness = matrix.get("readiness", {})
+    if readiness.get("status") == "PASS":
+        if readiness.get("raw_metadata_complete") is not True:
+            raise ValueError("visual item matrix PASS requires raw_metadata_complete")
+        if readiness.get("node_inventory_coverage") != 100:
+            raise ValueError("visual item matrix PASS requires node_inventory_coverage 100")
+        if readiness.get("parity_passed") is not True:
+            raise ValueError("visual item matrix PASS requires parity_passed")
+        if readiness.get("blocker_lint_errors"):
+            raise ValueError("visual item matrix PASS requires no blocker_lint_errors")
+
+    visual_items = matrix.get("visual_items", [])
+    if not visual_items:
+        raise ValueError("visual item matrix must include visual_items")
+    _duplicate_ids(visual_items, key="id", context="visual item matrix")
+
+    for item in visual_items:
+        item_id = item.get("id", "<unknown>")
+        explicit_component = item.get("component_use_constraint") in EXPLICIT_COMPONENT_USE_CONSTRAINTS
+        explicit_copy = item.get("copy_content_constraint") in EXPLICIT_COPY_CONSTRAINTS
+        explicit_drawing = item.get("drawing_asset_constraint") in EXPLICIT_DRAWING_CONSTRAINTS
+        if (explicit_component or explicit_copy or explicit_drawing) and not item.get(
+            "constraint_source_refs"
+        ):
+            raise ValueError(
+                f"visual item {item_id} explicit constraints require constraint_source_refs"
+            )
+
+        if item.get("fidelity_scope") in {"pixel-perfect", "brand-critical"}:
+            if item.get("visual_proof_level") != "L3":
+                raise ValueError(
+                    f"visual item {item_id} pixel-perfect or brand-critical requires L3 proof"
+                )
+            if not item.get("screenshot_refs"):
+                raise ValueError(
+                    f"visual item {item_id} pixel-perfect or brand-critical requires screenshot_refs"
+                )
 
 
 def _handoff_has_behavior_contract_context(handoff: dict[str, Any]) -> bool:

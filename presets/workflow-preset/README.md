@@ -167,6 +167,12 @@ provider for the current toolchain; other providers can supply screenshots,
 prototype documents, design-system documentation, or other design evidence.
 Requirement Merge resolves Product Requirement and Design Requirement inputs
 into `spec.md` while leaving unresolved conflicts as `[NEEDS CLARIFICATION]`.
+For UI/UX restoration, provider evidence should preserve stable Visual Item ID
+trace refs from frame/node evidence through Design Requirement Intake, `spec.md`,
+and the Visual Fidelity Evidence Matrix.
+`/speckit.specify` does not translate Figma variants into code props or decide
+component reuse. It records observed states, requirement-level component roles,
+and explicit use constraints only when the input evidence already states them.
 
 ### Screenshot Evidence
 
@@ -188,6 +194,7 @@ requirements.
 Missing screenshot evidence blocks readiness when `spec.md` declares visual proof required and the checklist template requires the missing screenshot level.
 Responsive visual requirements block PASS only when they are complex, multi-state, or declare L2 or L3 visual proof; missing viewport-specific evidence then sets Gate Status: BLOCKED and lists the item in Blocking Items.
 The Visual Fidelity Evidence Matrix is the single visual readiness record; visual evidence decisions should not be duplicated outside the matrix and Blocking Items.
+Provider evidence artifacts may record screenshot refs, proof refs, coverage gaps, and provider blockers as source facts, but only the Visual Fidelity Evidence Matrix decides visual planning readiness, proof sufficiency, accepted exception rules, Gate Status, and Blocking Items.
 Ordinary UI screenshots remain recommended unless `spec.md` declares visual proof required.
 
 ### Figma Provider Input
@@ -211,6 +218,12 @@ not generate the artifact instances.
 Figma-derived requirements are ready only when the packet records raw metadata
 completeness, metadata index completeness proof, node inventory parity, and no
 blocker lint errors.
+For visual fidelity work, the external intake can additionally provide a
+normalized `speckit.design.visual_item_matrix.v1` JSON artifact validated by
+`schemas/speckit.design.visual-item-matrix.v1.schema.json`; this improves field
+determinism for Visual Item IDs, variant/state evidence, explicit component use
+constraints, screenshot refs, blockers, and spec targets without replacing raw
+Figma evidence.
 
 Then run agent-native orchestrated implementation:
 
@@ -301,13 +314,15 @@ Development-only contract helpers:
 
 `checklists/behavior-testability.md` is the BDD, NFR, and applicable Visual Fidelity readiness gate. It checks `spec.md` before planning so behavior, NFRs, design-derived evidence, and product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements are ready for behavior projection and planning. Its Case Coverage Matrix uses one row per story or capability case type; rows mark Required, Not Applicable, or Unknown, cite source sections, and list Blocker IDs while Scenario IDs remain a `/speckit.plan` output. Its Visual Fidelity Evidence Matrix uses one row per visual requirement or visual proof obligation and is the single visual readiness record for source section, fidelity scope, screenshot level, evidence refs, visual proof requirement, blocking item ID, and exception rule. Missing Required case coverage, Unknown case applicability, or missing NFR criteria blocks planning when it affects downstream behavior projection or design.
 
-`templates/design-requirement-intake-template.md` defines the provider-neutral Design Requirement Intake shape for page inventory, hierarchy, user paths, component states, visual tokens, layout, responsive, motion, state coverage, visual acceptance requirements, screenshot traceability, and traceability.
+`templates/design-requirement-intake-template.md` defines the provider-neutral Design Requirement Intake shape for page inventory, hierarchy, user paths, component states, visual tokens, layout, responsive, motion, state coverage, visual acceptance requirements, Visual Restoration Trace rows, screenshot traceability, and traceability.
 
 `templates/requirement-merge-report-template.md` defines how Product Requirement and Design Requirement inputs are reconciled before baseline `spec.md` generation. It records merge rules, product-owned facts, design-owned facts, design requirement promotion rules, conflicts, clarification outputs, and the `spec.md` handoff.
 
-`templates/figma-evidence-packet-template.md` defines how Figma-derived provider evidence is normalized before Design Requirement Intake and `/speckit.specify` write requirements. It separates observed design facts, screenshot evidence, structural inferences, missing requirements, and excluded scope so Figma evidence does not get treated as complete product behavior. It references Figma provider source readiness contract results for raw metadata completeness, metadata index completeness proof, node inventory parity, and blocker lint errors before Figma-derived requirements can be treated as ready.
+`templates/figma-evidence-packet-template.md` defines how Figma-derived provider evidence is normalized before Design Requirement Intake and `/speckit.specify` write requirements. It separates observed design facts, Visual Item Matrix rows, screenshot evidence, structural inferences, missing requirements, and excluded scope so Figma evidence does not get treated as complete product behavior. It references Figma provider source readiness contract results for raw metadata completeness, metadata index completeness proof, node inventory parity, and blocker lint errors before Figma-derived requirements can be treated as provider-ready. It does not decide visual planning readiness.
 
 `templates/figma-intake-contract.md` defines the raw Figma provider source readiness contract for `figma-metadata.part-*.xml`, `figma-metadata.index.yaml`, and `figma-node-inventory.yaml`. It owns raw metadata completeness, metadata index completeness proof, node inventory parity, blocker lint errors, and the ready gate; the Evidence Packet references those results as normalized provider input for `spec.md`.
+
+`schemas/speckit.design.visual-item-matrix.v1.schema.json` defines the normalized Visual Item Matrix JSON contract for machine-checkable UI/UX restoration intake. It validates field shape for visual item source refs, fidelity scope, observed variant/state evidence, explicit component/copy/drawing constraints, screenshot refs, visual proof level, blockers, and spec requirement targets while raw Figma evidence remains the source of truth.
 
 `behavior/bdd.draft.feature` captures Phase 0 behavior projection in readable Given/When/Then form. `behavior/behavior-scenarios.draft.json`, `behavior/uif.intent.json`, and `behavior/data-fixtures.intent.json` make the same draft behavior machine-readable enough for planning formalization.
 
@@ -319,7 +334,7 @@ Development-only contract helpers:
 
 For visual planning, research.md records visual validation decisions by Visual Item ID, including viewport and state coverage, asset or fixture strategy, visual proof strategy, related contracts, and quickstart validation paths. contracts formalize visual interaction and state constraints by linking accepted visual items to Expected UIF, behavior scenarios, assertions, and supporting API/data schemas. contracts/sequences.md records visual state flow only when it affects cross-boundary sequencing, async results, retries, rollback, compensation, or error propagation; it does not redefine layout, tokens, screenshot matrices, or visual readiness.
 
-Test strategy derivation happens during `/speckit.tasks`. The command derives unit, contract, integration, and end-to-end validation work from BDD contracts, Expected UIF contracts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then writes the strategy inline on the relevant `tasks.md` checklist items.
+Test strategy derivation happens during `/speckit.tasks`. The command derives unit, contract, integration, and end-to-end validation work from BDD contracts, Expected UIF contracts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then writes the strategy inline on the relevant `tasks.md` checklist items. It also defines visual verification, contract validation, data-side-effect validation, integration/e2e validation, and scope-aware code review tasks in `tasks.md`; `/speckit.implement` executes those tasks and records receipt evidence without inventing validation strategy, changing requirements, updating contracts, or widening scope.
 
 The handoff context digest includes relevant design constraints, visual fidelity requirements, screenshot refs, visual proof refs, Design Requirement trace refs, validation decisions, quickstart paths, and behavior contracts when present, so Worker Agents can preserve object boundaries, service flows, visual intent, and validation intent without reading full planning documents by default.
 

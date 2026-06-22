@@ -72,12 +72,27 @@ Required parity rules:
 
 ## Evidence Readiness Gate
 
-Figma intake is ready only when all conditions pass:
+Figma intake is ready only when all conditions pass. This gate is provider source readiness only; it proves raw Figma metadata and node inventory completeness.
+It must not decide Visual Fidelity planning readiness, proof sufficiency, accepted exception rules, checklist Gate Status, or checklist Blocking Items.
 
 - raw_metadata_complete: true
 - node_inventory_coverage: 100%
 - parity_passed: true
 - No blocker lint errors
+
+## Normalized Visual Item Matrix
+
+When UI/UX visual fidelity is in scope, the external intake should also write a
+normalized `speckit.design.visual_item_matrix.v1` JSON artifact that conforms to
+`schemas/speckit.design.visual-item-matrix.v1.schema.json`.
+This JSON is derived from the raw metadata shards, metadata index, node
+inventory, screenshots, and qualified provider notes. It must not replace raw provider evidence.
+
+The normalized matrix carries Visual Item IDs, source refs, observed variant/state evidence, requirement-level component roles, explicit component use constraints, asset/copy/drawing constraints, screenshot refs, visual proof level, blockers, and `spec.md` requirement targets.
+Its blockers are provider evidence blockers, not checklist Blocking Items, and
+the matrix must not create a second visual readiness gate.
+Explicit constraints such as must-reuse-existing, no-self-draw, or no-new-copy
+must include constraint source refs.
 
 ## Blocker Lint Errors
 

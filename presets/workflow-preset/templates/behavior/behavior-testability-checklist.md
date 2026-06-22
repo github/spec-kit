@@ -61,6 +61,8 @@ For each user story or capability, record one row per story or capability case t
 - [ ] Design-derived requirements identify the design source, provider source refs, and required fidelity.
 - [ ] Design-derived requirements record provider readiness status, evidence refs, and blockers when provider evidence is required.
 - [ ] Visual Fidelity Evidence Matrix rows cite source `spec.md` sections, evidence refs, required screenshot level, blocking item IDs, and accepted exception rules.
+- [ ] Visual Fidelity Evidence Matrix is the only artifact that decides visual planning readiness, proof level sufficiency, screenshot sufficiency, accepted exception rules, Gate Status, and Blocking Items.
+- [ ] Visual Fidelity Evidence Matrix reads visual facts from `spec.md` and evidence refs; it does not call Figma, re-extract provider evidence, rebuild provider matrices, or create another visual readiness path.
 - [ ] Use one Visual Fidelity Evidence Matrix as the single visual readiness record; do not duplicate visual evidence decisions outside the matrix and Blocking Items.
 - [ ] Do not add historical visual rules or alternate visual decision paths.
 

@@ -204,6 +204,12 @@ provides:
     replaces: speckit-behavior-assertions-v1-schema
     strategy: replace
   - type: template
+    name: speckit-design-visual-item-matrix-v1-schema
+    file: schemas/speckit.design.visual-item-matrix.v1.schema.json
+    description: Schema for normalized design visual item matrix intake
+    replaces: speckit-design-visual-item-matrix-v1-schema
+    strategy: replace
+  - type: template
     name: speckit-implement-manifest-v1-schema
     file: schemas/speckit.implement.manifest.v1.schema.json
     description: Decouple the handoff manifest JSON contract

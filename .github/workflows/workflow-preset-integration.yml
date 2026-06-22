@@ -117,6 +117,7 @@ jobs:
           test -f .specify/presets/workflow-preset/preset.yml
           test -f .specify/presets/workflow-preset/templates/plan-template.md
           test -f .specify/presets/workflow-preset/templates/constitution-template.md
+          test -f .specify/presets/workflow-preset/schemas/speckit.design.visual-item-matrix.v1.schema.json
           test -f .specify/templates/tasks-template.md
           test -f .specify/presets/workflow-preset/commands/speckit.constitution.md
           test -f .specify/presets/workflow-preset/commands/speckit.plan.md

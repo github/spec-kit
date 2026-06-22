@@ -23,6 +23,7 @@ Purpose: normalize Figma design evidence before Design Requirement Intake and
 
 Screenshot evidence must declare L0-L3 coverage and coverage gaps. Screenshots are visual proof, not the primary Design Requirement Intake carrier.
 Constraint: screenshot-derived visual facts require screenshot refs and must not replace Design Requirement Intake.
+Screenshot evidence and the Screenshot Coverage Matrix record coverage facts and gaps only. They must not decide visual planning readiness, proof sufficiency, accepted exception rules, checklist Gate Status, or checklist Blocking Items.
 
 - Screenshot level: L0|L1|L2|L3
 - L0: no screenshot evidence
@@ -48,6 +49,8 @@ Constraint: screenshot-derived visual facts require screenshot refs and must not
 - Visual baseline usage: none|manual review|visual diff
 
 ## Figma Intake Readiness
+
+Figma Intake Readiness is provider source readiness only. It proves raw Figma metadata and inventory completeness before evidence can be consumed; it is separate from Visual Fidelity planning readiness, which is decided only by the checklist Visual Fidelity Evidence Matrix.
 
 - figma-metadata.part-*.xml:
 - figma-metadata.index.yaml:
@@ -116,6 +119,36 @@ Record schema for observed, inferred, missing, and out-of-scope facts.
 - Accessibility evidence:
 - Accepted exceptions:
 
+## Visual Item Matrix
+
+Use one row per restorable UI surface, component, state, or visual proof obligation.
+Visual Item IDs must be stable enough to carry into Design Requirement Intake, `spec.md`, and the Visual Fidelity Evidence Matrix.
+The Visual Item Matrix records provider-normalized visual facts, observed state and viewport evidence, proof refs, and provider evidence blockers. It must not decide visual planning readiness, proof level sufficiency, accepted exception rules, checklist Gate Status, or checklist Blocking Items.
+
+- Visual Item ID:
+- Figma frame/node refs:
+- Requirement target:
+- UI surface:
+- Required fidelity: functional-equivalent|design-system-faithful|pixel-perfect|brand-critical|responsive-visual
+- Layout facts:
+- Typography facts:
+- Color/token facts:
+- Effect facts:
+- Asset refs:
+- Variant/state evidence:
+- Component requirement role:
+- Component use constraint: visual-reference-only|must-reuse-existing|figma-export-required|unspecified
+- Constraint source refs:
+- Copy/content constraint: no-new-copy|figma-copy-required|product-copy-required|unspecified
+- Drawing/asset constraint: no-self-draw|figma-export-required|existing-asset-required|unspecified
+- Required states:
+- Required viewport coverage:
+- Screenshot refs:
+- Visual proof level: L0|L1|L2|L3
+- Allowed deviations:
+- Blockers:
+- Spec requirement target:
+
 ## Client Asset Inventory
 
 - Asset ID:
@@ -130,9 +163,13 @@ Record schema for observed, inferred, missing, and out-of-scope facts.
 
 ## Component Mapping
 
-- Figma component -> code component:
-- Variant coverage:
-- Missing mappings:
+- Figma component -> requirement-level component role:
+- Variant -> observed state or semantic role:
+- Existing code component constraint, only if explicitly provided:
+- Visual-reference-only components:
+- Must-reuse-existing components:
+- No self-draw / no new copy constraints:
+- Missing mappings or constraints:
 
 ## Spec Handoff Notes
 
