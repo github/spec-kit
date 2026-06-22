@@ -38,13 +38,18 @@ FORBIDDEN_SYMBOLS = [
 ]
 
 
+@pytest.fixture(scope="module")
+def cli_source_texts() -> list[tuple[str, str]]:
+    """Read every CLI source file once, shared across all parametrized cases."""
+    return [
+        (str(path.relative_to(PROJECT_ROOT)), path.read_text(encoding="utf-8"))
+        for path in SRC_ROOT.rglob("*.py")
+    ]
+
+
 @pytest.mark.parametrize("symbol", FORBIDDEN_SYMBOLS)
-def test_symbol_absent_from_cli_source(symbol):
-    offenders = []
-    for path in SRC_ROOT.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        if symbol in text:
-            offenders.append(str(path.relative_to(PROJECT_ROOT)))
+def test_symbol_absent_from_cli_source(symbol, cli_source_texts):
+    offenders = [rel for rel, text in cli_source_texts if symbol in text]
     assert not offenders, (
         f"Forbidden agent-context symbol {symbol!r} still present in: {offenders}"
     )

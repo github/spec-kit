@@ -141,7 +141,21 @@ if not context_files:
             integration = INTEGRATION_REGISTRY.get(integration_key)
             add_context_file(getattr(integration, "context_file", "") or "")
         except Exception:
-            pass
+            print(
+                "agent-context: integration '%s' is configured but could not be "
+                "resolved because 'specify_cli' is not importable by this Python "
+                "(%s). Set 'context_file' in the extension config or point "
+                "SPECKIT_PYTHON at the interpreter that has Spec Kit installed."
+                % (integration_key, sys.executable),
+                file=sys.stderr,
+            )
+        if not context_files:
+            print(
+                "agent-context: integration '%s' declares no context file; "
+                "set 'context_file' in the extension config to choose one."
+                % integration_key,
+                file=sys.stderr,
+            )
 print(json.dumps(context_files))
 print(get_str(data, "context_markers", "start"))
 print(get_str(data, "context_markers", "end"))

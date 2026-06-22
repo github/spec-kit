@@ -265,11 +265,17 @@ if ($ContextFiles.Count -eq 0) {
                         '    integration = INTEGRATION_REGISTRY.get(sys.argv[1])' + "`n" +
                         '    sys.stdout.write(getattr(integration, "context_file", "") or "")' + "`n" +
                         'except Exception:' + "`n" +
-                        '    pass'
+                        '    sys.exit(3)'
                     $derived = & $pythonForRegistry -c $registryScript $integrationKey 2>$null
-                    if ($LASTEXITCODE -eq 0 -and $derived -and -not [string]::IsNullOrWhiteSpace($derived)) {
+                    if ($LASTEXITCODE -eq 3) {
+                        Write-Warning ("agent-context: integration '{0}' is configured but could not be resolved because 'specify_cli' is not importable by '{1}'. Set 'context_file' in the extension config or point SPECKIT_PYTHON at the interpreter that has Spec Kit installed." -f $integrationKey, $pythonForRegistry)
+                    } elseif ($LASTEXITCODE -eq 0 -and $derived -and -not [string]::IsNullOrWhiteSpace($derived)) {
                         $ContextFiles += $derived.Trim()
+                    } else {
+                        Write-Warning ("agent-context: integration '{0}' declares no context file; set 'context_file' in the extension config to choose one." -f $integrationKey)
                     }
+                } else {
+                    Write-Warning "agent-context: no Python interpreter found to resolve the active integration; set 'context_file' in the extension config or point SPECKIT_PYTHON at the interpreter that has Spec Kit installed."
                 }
             }
         } catch {

@@ -62,5 +62,4 @@ pip install pyyaml
 specify extension disable agent-context
 ```
 
-When disabled (or never installed), Spec Kit performs no agent context file creation, updates, or removal — the extension's bundled scripts are the only code that ever touches the managed section.
-Disabled projects also ignore stale `context_files` values during command rendering so disabling the extension remains a complete opt-out.
+When disabled (or never installed), Spec Kit performs no agent context file creation, updates, or removal — the extension's bundled scripts are the only code that ever touches the managed section. The Specify CLI never reads this config during command rendering; the `__CONTEXT_FILE__` placeholder is always substituted from the active integration's declared metadata, so disabling the extension is a complete opt-out regardless of any `context_files` value left in the config.
