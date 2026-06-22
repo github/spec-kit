@@ -1,0 +1,104 @@
+# Using Spec Kit in a Monorepo
+
+A Spec Kit project is **directory-scoped**: the project is whichever directory
+contains `.specify/`. A monorepo can hold several independent Spec Kit projects
+under one repository root, each with its own `.specify/`, `specs/`, constitution,
+and feature numbering.
+
+Root resolution already prefers the **nearest** `.specify/` over the Git
+toplevel, so commands run from inside a member project resolve to that project,
+not the repo root.
+
+## Layout
+
+```text
+my-monorepo/
+├── .git/                     # one Git repository at the root
+├── apps/
+│   ├── web/
+│   │   └── .specify/         # Spec Kit project "web"
+│   │       └── memory/constitution.md
+│   └── api/
+│       └── .specify/         # Spec Kit project "api"
+│           └── memory/constitution.md
+└── packages/
+    └── ui/
+        └── .specify/         # Spec Kit project "ui"
+```
+
+Initialize each member project independently:
+
+```bash
+specify init apps/web --integration claude
+specify init apps/api --integration claude
+```
+
+Each project keeps its own `specs/` directory and numbers features
+independently (`apps/web/specs/001-…`, `apps/api/specs/001-…`).
+
+## Working inside a member project
+
+The default workflow is unchanged: change into the project directory and run the
+slash commands. Root resolution finds the nearest `.specify/`.
+
+```bash
+cd apps/web
+# then run /speckit.specify, /speckit.plan, … in your agent
+```
+
+## Targeting a member project from the repo root
+
+For non-interactive or CI runs where you do not want to `cd`, set
+**`SPECIFY_INIT_DIR`** to the member project root (the directory *containing*
+`.specify/`). Relative paths resolve against the current directory.
+
+```bash
+# from the monorepo root, operate on apps/web without cd-ing in
+SPECIFY_INIT_DIR=apps/web   # exported in the shell your agent runs commands in
+```
+
+The path must exist and contain `.specify/`. If it does not, the command
+**errors and does not fall back** to the current directory or the Git toplevel —
+this is deliberate, so a typo never writes specs into the wrong project:
+
+```text
+ERROR: SPECIFY_INIT_DIR does not point to an existing directory: apps/wbe
+ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): apps/web
+```
+
+`SPECIFY_INIT_DIR` selects the **project**; `SPECIFY_FEATURE_DIRECTORY` selects
+the **feature** within it. They compose — set both to pick a project and a
+feature non-interactively. See the
+[`SPECIFY_INIT_DIR` reference](../reference/core.md#environment-variables) for
+the full contract and the two-axes model.
+
+## How `SPECIFY_INIT_DIR` reaches your agent
+
+`SPECIFY_INIT_DIR` is read by the shell scripts that the slash commands invoke
+(`get_repo_root` in Bash, `Get-RepoRoot` in PowerShell). It takes effect only
+when it is present in the environment of the shell that runs those scripts.
+
+- **Scripted / CI runs:** export it in the same shell that drives the commands —
+  reliable.
+- **Interactive agents:** whether an exported variable reaches the shell tool an
+  agent uses is agent-specific. Export `SPECIFY_INIT_DIR` *before* launching the
+  agent, and verify once (e.g. run `/speckit.specify` and confirm the new feature
+  landed under the intended project's `specs/`).
+
+## Git in a monorepo
+
+> [!NOTE]
+> The Git extension scopes branch creation to the **resolved project root**. In a
+> monorepo with a single Git repository at the root and projects in
+> subdirectories, a member project directory (e.g. `apps/web`) is not itself a
+> Git work tree, so feature-branch creation is skipped with a
+> *"Git repository not detected"* notice. Manage branches and commits at the
+> repository root, or initialize Git per member project if you want per-project
+> branches.
+
+## Constitutions
+
+Each member project has its own `.specify/memory/constitution.md` and
+`/speckit.constitution` edits the local project's file. There is no base/inherit
+mechanism today — shared engineering rules must be duplicated per project or kept
+out of the constitution.
