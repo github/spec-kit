@@ -550,7 +550,7 @@ class CommandRegistrar:
             # the resolved file stays within the source directory. Mirrors the
             # containment checks already applied on the skill, preset, and
             # restore paths (see extensions.py and presets/__init__.py) so a
-            # malicious manifest ``file`` field (e.g. ``../../../etc/passwd``)
+            # malicious manifest ``file`` field (e.g. ``../../../outside.txt``)
             # cannot read arbitrary host files into a generated command.
             cmd_path = Path(cmd_file)
             if cmd_path.is_absolute():

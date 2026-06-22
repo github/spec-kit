@@ -135,34 +135,34 @@ class TestCopilotPromptTraversal:
         _assert_no_stray_files(tmp_path, Path(bad_name).name.replace("/", ""))
 
 
-ABS_SECRET = "__ABS_SECRET__"
+ABS_OUTSIDE = "__ABS_OUTSIDE__"
 
 FILE_FIELD_PAYLOADS = [
-    "../secret.txt",
-    "../../secret.txt",
-    "commands/../../secret.txt",
-    ABS_SECRET,
+    "../outside.txt",
+    "../../outside.txt",
+    "commands/../../outside.txt",
+    ABS_OUTSIDE,
 ]
 
 
-def _resolve_payload(bad_file: str, secret: Path) -> str:
-    """Map the absolute-path sentinel to the real, existing secret file.
+def _resolve_payload(bad_file: str, outside_file: Path) -> str:
+    """Map the absolute-path sentinel to the real, existing outside file.
 
-    Using the temp secret's own absolute path (instead of ``/etc/passwd``)
+    Using the temp file's own absolute path (instead of ``/etc/passwd``)
     guarantees the file exists on every platform — so the test fails if the
     absolute-path guard regresses, rather than passing because the target
     happens not to exist (e.g. on Windows runners).
     """
-    return str(secret) if bad_file == ABS_SECRET else bad_file
+    return str(outside_file) if bad_file == ABS_OUTSIDE else bad_file
 
 
 class TestCommandFileTraversal:
-    """The manifest ``file`` field must not read host files outside source_dir.
+    """The manifest ``file`` field must not read files outside source_dir.
 
     Regression for GHSA-w5fv-7w9x-7fc5: ``register_commands`` read
     ``source_dir / cmd_file`` with no containment check, so a manifest with
-    ``file: ../../../etc/passwd`` (or an absolute path) leaked arbitrary host
-    files verbatim into the generated agent command.
+    a traversal (``file: ../../../outside.txt``) or an absolute path read an
+    arbitrary host file verbatim into the generated agent command.
     """
 
     @pytest.mark.parametrize("bad_file", FILE_FIELD_PAYLOADS)
@@ -170,13 +170,13 @@ class TestCommandFileTraversal:
         project, ext_dir = _project_and_source(tmp_path)
         (project / ".claude" / "skills").mkdir(parents=True)
 
-        secret = tmp_path / "secret.txt"
-        secret.write_text("TOP-SECRET-CREDENTIAL", encoding="utf-8")
+        outside_file = tmp_path / "outside.txt"
+        outside_file.write_text("OUTSIDE-FILE-MARKER", encoding="utf-8")
 
         registrar = CommandRegistrar()
         registered = registrar.register_commands(
             "claude",
-            [{"name": "speckit.myext.hello", "file": _resolve_payload(bad_file, secret), "aliases": []}],
+            [{"name": "speckit.myext.hello", "file": _resolve_payload(bad_file, outside_file), "aliases": []}],
             "myext",
             ext_dir,
             project,
@@ -185,22 +185,22 @@ class TestCommandFileTraversal:
         assert registered == []
         leaked = [
             p for p in (project).rglob("*")
-            if p.is_file() and "TOP-SECRET-CREDENTIAL" in p.read_text(encoding="utf-8", errors="ignore")
+            if p.is_file() and "OUTSIDE-FILE-MARKER" in p.read_text(encoding="utf-8", errors="ignore")
         ]
-        assert leaked == [], f"Secret leaked into generated command: {leaked}"
+        assert leaked == [], f"Outside file leaked into generated command: {leaked}"
 
     @pytest.mark.parametrize("bad_file", FILE_FIELD_PAYLOADS)
     def test_gemini_skips_traversal_in_file_field(self, tmp_path, bad_file):
         project, ext_dir = _project_and_source(tmp_path)
         (project / ".gemini" / "commands").mkdir(parents=True)
 
-        secret = tmp_path / "secret.txt"
-        secret.write_text("TOP-SECRET-CREDENTIAL", encoding="utf-8")
+        outside_file = tmp_path / "outside.txt"
+        outside_file.write_text("OUTSIDE-FILE-MARKER", encoding="utf-8")
 
         registrar = CommandRegistrar()
         registered = registrar.register_commands(
             "gemini",
-            [{"name": "speckit.myext.hello", "file": _resolve_payload(bad_file, secret), "aliases": []}],
+            [{"name": "speckit.myext.hello", "file": _resolve_payload(bad_file, outside_file), "aliases": []}],
             "myext",
             ext_dir,
             project,
@@ -209,9 +209,9 @@ class TestCommandFileTraversal:
         assert registered == []
         leaked = [
             p for p in (project).rglob("*")
-            if p.is_file() and "TOP-SECRET-CREDENTIAL" in p.read_text(encoding="utf-8", errors="ignore")
+            if p.is_file() and "OUTSIDE-FILE-MARKER" in p.read_text(encoding="utf-8", errors="ignore")
         ]
-        assert leaked == [], f"Secret leaked into generated command: {leaked}"
+        assert leaked == [], f"Outside file leaked into generated command: {leaked}"
 
 
 class TestSafeRegistration:

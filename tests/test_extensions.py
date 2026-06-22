@@ -379,7 +379,7 @@ class TestExtensionManifest:
 
     @pytest.mark.parametrize(
         "bad_file",
-        ["../../../etc/passwd", "../escape.md", "a/../../escape.md", "/etc/passwd"],
+        ["../../../outside.md", "../escape.md", "a/../../escape.md", "/abs/outside.md"],
     )
     def test_command_file_traversal_rejected(self, temp_dir, valid_manifest_data, bad_file):
         """Manifest 'file' field with traversal/absolute path raises ValidationError.
