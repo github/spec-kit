@@ -32,7 +32,19 @@ Make the bundled `agent-context` extension the sole owner of agent context/instr
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-No constitution file exists at `memory/constitution.md` or `.specify/memory/constitution.md`. The Constitution Check gate is a no-op (no project principles to enforce). PASS.
+Evaluated against **Spec Kit Constitution v1.0.0** (`.specify/memory/constitution.md`, present on `upstream/main`). All five binding principles pass; the feature is a net reduction in complexity and surface area.
+
+| Principle | Verdict | Notes |
+|-----------|---------|-------|
+| **I. Code Quality & Architectural Discipline** | ✅ PASS | Preserves the registry + base-class pattern. Principle I lists `context_file` as a required class attribute "where applicable" — so R1 (keep `context_file` as inert metadata) is *mandated*, not optional. We reinforce the single-source-of-truth rule by making the `agent-context` extension the sole owner of context management. No new cross-boundary `_`-private imports. |
+| **II. Test-Backed Change (NON-NEGOTIABLE)** | ✅ PASS | Behavioral change ships with tests (FR-009, contracts C1–C7, quickstart). **Parity invariant guard**: every integration MUST keep its registry entry + `tests/integrations/test_integration_<key>.py`; removing upsert/remove from the base layer MUST NOT delete or weaken those parity tests — only the agent-context-specific assertions are pruned/relocated. Security/idempotency suites (path-traversal, manifest, no-clobber) are untouched. Network stays mocked. Must pass the ubuntu+windows × py3.11/3.12/3.13 matrix. |
+| **III. CLI & UX Consistency** | ✅ PASS | Making `agent-context` opt-in routes it through the standard extension verbs (`add`/`install`, `enable`/`disable`) instead of a bespoke auto-install — *more* consistent, not less. `init` stays idempotent ("already present" → exit 0). Removing the deprecation line keeps output grammar clean. User-facing behavior change → update `docs/` (FR-010). |
+| **IV. Offline-First Performance & Resource Discipline** | ✅ PASS | No network paths involved. Removing config-file I/O during setup/teardown *reduces* filesystem writes; remaining writes stay idempotent and hash-tracked. No import-time cost added. |
+| **V. Minimal Dependencies & Safe, Idempotent File Operations** | ✅ PASS | Zero new dependencies (net deletion). Backward-compat (FR-008) leaves pre-existing files intact — no clobber, no traversal. User-visible behavior change is called out for SemVer/changelog. |
+
+**Gate result: PASS** (no violations → Complexity Tracking table stays empty).
+
+**Note on environment**: This worktree branched from the fork's `main`, which is **16 commits behind `upstream/main`** and therefore lacks the `.specify/` directory locally. The constitution above is the authoritative `upstream/main` version. Implementation work (`/speckit.tasks`, `/speckit.implement`) should be done on a branch synced with `upstream/main` so `.specify/memory/constitution.md`, the security suites, and CI gates referenced here are actually present.
 
 ## Project Structure
 
