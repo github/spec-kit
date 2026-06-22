@@ -290,6 +290,22 @@ class ExtensionManifest:
             if "name" not in cmd or "file" not in cmd:
                 raise ValidationError("Command missing 'name' or 'file'")
 
+            # Validate the 'file' field for path traversal at manifest-load
+            # time. This is defense-in-depth: the command/skill/preset readers
+            # also contain the resolved path, but rejecting a traversal here
+            # surfaces a clear error instead of silently skipping the command.
+            cmd_file = cmd["file"]
+            if not isinstance(cmd_file, str) or not cmd_file:
+                raise ValidationError(
+                    f"Command 'file' for '{cmd.get('name')}' must be a non-empty string"
+                )
+            cmd_file_path = Path(cmd_file)
+            if cmd_file_path.is_absolute() or ".." in cmd_file_path.parts:
+                raise ValidationError(
+                    f"Invalid command 'file' '{cmd_file}': must be a relative path "
+                    "within the extension directory (no absolute paths or '..' segments)"
+                )
+
             # Validate command name format
             if not EXTENSION_COMMAND_NAME_PATTERN.match(cmd["name"]):
                 corrected = self._try_correct_command_name(cmd["name"], ext["id"])

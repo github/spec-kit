@@ -377,6 +377,26 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid command name"):
             ExtensionManifest(manifest_path)
 
+    @pytest.mark.parametrize(
+        "bad_file",
+        ["../../../etc/passwd", "../escape.md", "a/../../escape.md", "/etc/passwd"],
+    )
+    def test_command_file_traversal_rejected(self, temp_dir, valid_manifest_data, bad_file):
+        """Manifest 'file' field with traversal/absolute path raises ValidationError.
+
+        Defense-in-depth for GHSA-w5fv-7w9x-7fc5.
+        """
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["file"] = bad_file
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w') as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid command 'file'"):
+            ExtensionManifest(manifest_path)
+
     def test_command_name_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):
         """Test that 'speckit.command' is auto-corrected to 'speckit.{ext_id}.command'."""
         import yaml
