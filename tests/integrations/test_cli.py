@@ -263,6 +263,64 @@ class TestInitIntegrationFlag:
         assert (scripts_dir / "setup-plan.sh").exists()
         assert (templates_dir / "plan-template.md").exists()
 
+    def test_shared_infra_removes_stale_managed_script(self, tmp_path):
+        """A managed script the core no longer ships (e.g. the legacy
+        update-agent-context.sh, superseded by the agent-context extension) is
+        removed, and the manifest stops tracking it (#3076)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "stale-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        # Legacy orphan the current bundle no longer ships, recorded in the
+        # manifest as a managed file (hash matches on disk) — a pre-refactor install.
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        (scripts_dir / "update-agent-context.sh").write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # The orphan is gone and the manifest no longer tracks it.
+        assert not (scripts_dir / "update-agent-context.sh").exists()
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert stale_rel not in refreshed.files
+        # Scripts the core DOES ship are installed and tracked.
+        assert (scripts_dir / "common.sh").exists()
+        assert ".specify/scripts/bash/common.sh" in refreshed.files
+
+    def test_shared_infra_preserves_modified_stale_script(self, tmp_path):
+        """A user-modified stale script is preserved (hash diverges from the
+        managed baseline), never silently deleted (#3076)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "stale-modified"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# original managed\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(".specify/scripts/bash/update-agent-context.sh")
+        manifest.save()
+
+        # User customizes it after install → on-disk hash now diverges.
+        stale.write_text("# user customization\n", encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # Preserved: it is no longer a managed (hash-matching) copy.
+        assert stale.exists()
+        assert stale.read_text(encoding="utf-8") == "# user customization\n"
+
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
         from specify_cli import _install_shared_infra

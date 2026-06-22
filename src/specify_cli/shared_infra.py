@@ -325,6 +325,11 @@ def install_shared_infra(
     symlinked_files: list[str] = []
     planned_copies: list[tuple[Path, str, bytes, int]] = []
     planned_templates: list[tuple[Path, str, str]] = []
+    # Track every shared path the current bundle produces so we can detect
+    # manifest entries the core no longer ships (stale-script cleanup, #3076).
+    seen_rels: set[str] = set()
+    scripts_scanned = False
+    variant_dir = "bash" if script_type == "sh" else "powershell"
 
     def _decide_overwrite(rel: str, dst: Path) -> tuple[bool, str | None]:
         """Return (write, bucket) where bucket is 'skip', 'preserved', or None."""
@@ -379,11 +384,14 @@ def install_shared_infra(
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
         if _ensure_or_bucket_dir(dest_scripts):
-            variant_dir = "bash" if script_type == "sh" else "powershell"
             variant_src = scripts_src / variant_dir
             if variant_src.is_dir():
                 dest_variant = dest_scripts / variant_dir
                 if _ensure_or_bucket_dir(dest_variant):
+                    # Only now is it safe to treat the variant as fully scanned:
+                    # a symlinked/unwritable dest_variant skips the loop below, so
+                    # ``seen_rels`` would be empty and stale-cleanup must NOT run.
+                    scripts_scanned = True
                     for src_path in variant_src.rglob("*"):
                         if not src_path.is_file():
                             continue
@@ -391,6 +399,7 @@ def install_shared_infra(
                         rel_path = src_path.relative_to(variant_src)
                         dst_path = dest_variant / rel_path
                         rel = dst_path.relative_to(project_path).as_posix()
+                        seen_rels.add(rel)
                         if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
                             continue
                         write, bucket = _decide_overwrite(rel, dst_path)
@@ -442,6 +451,7 @@ def install_shared_infra(
 
                 dst = dest_templates / src.name
                 rel = dst.relative_to(project_path).as_posix()
+                seen_rels.add(rel)
                 if not _safe_dest_or_bucket(dst, rel):
                     continue
                 write, bucket = _decide_overwrite(rel, dst)
@@ -520,6 +530,45 @@ def install_shared_infra(
             console.print(f"    {path}")
         if refresh_hint:
             console.print(refresh_hint)
+
+    # Remove stale managed scripts: paths a previous install recorded that the
+    # current core no longer ships — e.g. the legacy
+    # ``scripts/<variant>/update-agent-context.sh`` superseded by the bundled
+    # agent-context extension. Left behind, such an orphan can crash when it
+    # sources a refreshed ``common.sh`` (#3076). Only run when the script source
+    # was actually scanned (so a missing/empty source never triggers mass
+    # deletion), scoped to the active variant, and only for *managed* copies —
+    # a user-customized file (hash diverges), a symlink, or a recovered entry is
+    # preserved by ``_is_managed``.
+    if scripts_scanned:
+        stale_removed: list[str] = []
+        script_prefix = f".specify/scripts/{variant_dir}/"
+        for rel in list(prior_hashes):
+            if rel in seen_rels or not rel.startswith(script_prefix):
+                continue
+            dst = project_path / rel
+            if not _is_managed(rel, dst):
+                continue
+            # Never unlink through a symlinked ancestor (writes/deletes could
+            # escape the project root). The safe-destination check buckets such
+            # paths under ``symlinked_files`` and we leave them in place.
+            if not _safe_dest_or_bucket(dst, rel):
+                continue
+            try:
+                dst.unlink()
+            except OSError as exc:
+                console.print(f"[yellow]⚠[/yellow]  could not remove stale {rel}: {exc}")
+                continue
+            manifest.remove(rel)
+            stale_removed.append(rel)
+
+        if stale_removed:
+            console.print(
+                f"[yellow]⚠[/yellow]  Removed {len(stale_removed)} obsolete shared "
+                "script(s) left by a previous install:"
+            )
+            for path in stale_removed:
+                console.print(f"    {path}")
 
     manifest.save()
     return True

@@ -232,6 +232,18 @@ class IntegrationManifest:
             # transition. ``discard`` is a no-op when the key is absent.
             self._recovered_files.discard(normalized)
 
+    def remove(self, rel_path: str | Path) -> bool:
+        """Drop *rel_path* from the tracked file set and any recovered marker.
+
+        Operates purely on the manifest's recorded key; it does NOT touch the
+        file on disk. Returns ``True`` if an entry was present and removed.
+        Used to keep the manifest consistent after a caller deletes a stale
+        managed file that the current install no longer ships.
+        """
+        normalized = Path(rel_path).as_posix()
+        self._recovered_files.discard(normalized)
+        return self._files.pop(normalized, None) is not None
+
     # -- Querying ---------------------------------------------------------
 
     @property
