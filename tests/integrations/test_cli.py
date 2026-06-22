@@ -416,6 +416,53 @@ class TestInitIntegrationFlag:
         assert victim.exists()
         assert victim.read_bytes() == victim_bytes
 
+    def test_shared_infra_stale_cleanup_skips_escaping_key_without_failing(
+        self, tmp_path, monkeypatch
+    ):
+        """A key that passes the lexical guard but escapes containment — e.g. a
+        Windows drive-relative ``C:tmp`` that is not ``is_absolute()`` yet discards
+        the project root when joined — is skipped via ``_validate_rel_path``, never
+        unlinked, and never turned into an install-time hard failure (#3076 review
+        round 4). Simulated portably by forcing ``_validate_rel_path`` to reject the
+        managed key, since real drive-relative paths only escape on Windows."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations import manifest as manifest_mod
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "escaping-key"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        # A managed stale orphan that would normally be removed.
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+
+        # Force the containment check to reject this key, as it would for a
+        # drive-relative escape on Windows. The cleanup must skip it gracefully.
+        real_validate = manifest_mod._validate_rel_path
+
+        def fake_validate(rel, root):
+            if str(rel).endswith("update-agent-context.sh"):
+                raise ValueError("simulated drive-relative escape")
+            return real_validate(rel, root)
+
+        monkeypatch.setattr(manifest_mod, "_validate_rel_path", fake_validate)
+
+        # Must not raise (no install-time hard failure from a corrupted key).
+        _install_shared_infra(project, "sh", force=False)
+
+        # The escaping key was skipped, so its file is left untouched...
+        assert stale.exists()
+        assert stale.read_text(encoding="utf-8") == "# legacy orphan\n"
+        # ...yet the install otherwise completed: real scripts are installed.
+        assert (scripts_dir / "common.sh").exists()
+
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
         from specify_cli import _install_shared_infra

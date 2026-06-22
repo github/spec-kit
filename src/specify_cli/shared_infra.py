@@ -304,7 +304,7 @@ def install_shared_infra(
     customization warning to tell the user which flag would overwrite their
     customizations.
     """
-    from .integrations.manifest import _sha256
+    from .integrations.manifest import _sha256, _validate_rel_path
 
     manifest = load_speckit_manifest(project_path, version=version, console=console)
     prior_hashes = dict(manifest.files)
@@ -550,11 +550,18 @@ def install_shared_infra(
             if rel in seen_rels or not rel.startswith(script_prefix):
                 continue
             # Guard corrupted/hand-edited manifest keys BEFORE any filesystem
-            # access: an absolute path or a ``..`` segment could point outside
-            # the project root. Mirrors the containment checks in
-            # IntegrationManifest.check_modified / uninstall.
+            # access: absolute, ``..``, or (on Windows) drive-relative keys such
+            # as ``C:tmp`` are not ``is_absolute()`` yet discard the project root
+            # when joined. The lexical check is a fast reject; ``_validate_rel_path``
+            # resolves the join and confirms containment, catching the rest. A key
+            # that still escapes is *skipped*, never turned into an install-time
+            # hard failure. Mirrors IntegrationManifest.is_recovered / remove.
             rel_path = Path(rel)
             if rel_path.is_absolute() or ".." in rel_path.parts:
+                continue
+            try:
+                _validate_rel_path(rel_path, project_path)
+            except ValueError:
                 continue
             dst = project_path / rel_path
             # Already gone from disk but still tracked: drop the orphaned manifest
