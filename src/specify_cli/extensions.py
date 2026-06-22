@@ -28,7 +28,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from ._init_options import is_ai_skills_enabled
 from ._invocation_style import is_slash_skills_agent
-from ._utils import dump_frontmatter
+from ._utils import copy_file_preserving_exec, dump_frontmatter, ensure_writable_tree
 from .catalogs import CatalogEntry as BaseCatalogEntry
 from .catalogs import CatalogStackBase
 
@@ -1378,7 +1378,8 @@ class ExtensionManager:
             shutil.rmtree(dest_dir)
 
         ignore_fn = self._load_extensionignore(source_dir)
-        shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+        shutil.copytree(source_dir, dest_dir, ignore=ignore_fn, copy_function=copy_file_preserving_exec)
+        ensure_writable_tree(dest_dir)
 
         # Register commands with AI agents
         registered_commands = {}

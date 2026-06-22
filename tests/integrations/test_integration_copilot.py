@@ -3,6 +3,7 @@
 import json
 import os
 
+import pytest
 import yaml
 
 from specify_cli.integrations import get_integration
@@ -66,6 +67,21 @@ class TestCopilotIntegration:
         assert settings.exists()
         assert settings in created
         assert any("settings.json" in k for k in m.files)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
+    def test_setup_vscode_settings_readonly_source_is_writable(self, tmp_path, monkeypatch):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        import json as _json
+        copilot = CopilotIntegration()
+        # Simulate a bundled settings file with read-only store permissions.
+        ro_src = tmp_path / "ro_settings.json"
+        ro_src.write_text(_json.dumps({"foo": "bar"}))
+        ro_src.chmod(0o444)
+        monkeypatch.setattr(copilot, "_vscode_settings_path", lambda: ro_src)
+        m = IntegrationManifest("copilot", tmp_path)
+        copilot.setup(tmp_path, m)
+        settings = tmp_path / ".vscode" / "settings.json"
+        assert settings.stat().st_mode & 0o200, ".vscode/settings.json must be owner-writable"
 
     def test_setup_merges_existing_vscode_settings(self, tmp_path):
         from specify_cli.integrations.copilot import CopilotIntegration

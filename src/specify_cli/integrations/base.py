@@ -441,7 +441,7 @@ class IntegrationBase(ABC):
         """
         dest_dir.mkdir(parents=True, exist_ok=True)
         dst = dest_dir / filename
-        shutil.copy2(src, dst)
+        shutil.copyfile(src, dst)
         return dst
 
     @staticmethod
@@ -517,9 +517,9 @@ class IntegrationBase(ABC):
             if not src_script.is_file():
                 continue
             dst_script = scripts_dest / src_script.name
-            shutil.copy2(src_script, dst_script)
+            shutil.copyfile(src_script, dst_script)
             if dst_script.suffix == ".sh":
-                dst_script.chmod(dst_script.stat().st_mode | 0o111)
+                dst_script.chmod((dst_script.stat().st_mode & 0o7777) | 0o111)
             self.record_file_in_manifest(dst_script, project_root, manifest)
             created.append(dst_script)
 

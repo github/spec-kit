@@ -468,7 +468,7 @@ def register(app: typer.Typer) -> None:
                                 project_path / ".specify" / "workflows" / "speckit"
                             )
                             dest_wf.mkdir(parents=True, exist_ok=True)
-                            _shutil.copy2(
+                            _shutil.copyfile(
                                 bundled_wf / "workflow.yml",
                                 dest_wf / "workflow.yml",
                             )

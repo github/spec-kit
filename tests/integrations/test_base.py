@@ -1,6 +1,12 @@
 """Tests for IntegrationOption, IntegrationBase, MarkdownIntegration, and primitives."""
 
+import os
+
 import pytest
+
+_SKIP_WINDOWS = pytest.mark.skipif(
+    os.name == "nt", reason="POSIX mode bits are not stable on Windows"
+)
 
 from specify_cli.integrations.base import (
     IntegrationBase,
@@ -149,6 +155,15 @@ class TestBasePrimitives:
         assert result == dest_dir / "speckit.plan.md"
         assert result.read_text(encoding="utf-8") == "content"
 
+    @_SKIP_WINDOWS
+    def test_copy_command_to_directory_readonly_source_is_writable(self, tmp_path):
+        src = tmp_path / "source.md"
+        src.write_text("content", encoding="utf-8")
+        src.chmod(0o444)
+        dest_dir = tmp_path / "output"
+        result = IntegrationBase.copy_command_to_directory(src, dest_dir, "speckit.plan.md")
+        assert result.stat().st_mode & 0o200, "destination must be owner-writable"
+
     def test_record_file_in_manifest(self, tmp_path):
         f = tmp_path / "f.txt"
         f.write_text("hello", encoding="utf-8")
@@ -163,6 +178,28 @@ class TestBasePrimitives:
         assert result == dest
         assert dest.read_text(encoding="utf-8") == "content"
         assert "sub/f.txt" in m.files
+
+    @_SKIP_WINDOWS
+    def test_install_scripts_readonly_source_files_are_writable(self, tmp_path, monkeypatch):
+        scripts_src = tmp_path / "scripts_src"
+        scripts_src.mkdir()
+        helper = scripts_src / "helper.sh"
+        helper.write_text("#!/bin/sh\necho hi\n")
+        helper.chmod(0o444)
+        data = scripts_src / "data.txt"
+        data.write_text("payload")
+        data.chmod(0o444)
+
+        project = tmp_path / "project"
+        project.mkdir()
+        i = StubIntegration()
+        m = IntegrationManifest("stub", project)
+        monkeypatch.setattr(i, "integration_scripts_dir", lambda: scripts_src)
+        created = i.install_scripts(project, m)
+
+        assert len(created) == 2
+        for dst in created:
+            assert dst.stat().st_mode & 0o200, f"{dst.name} must be owner-writable"
 
     def test_setup_copies_shared_templates(self, tmp_path):
         i = StubIntegration()
