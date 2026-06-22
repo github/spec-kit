@@ -70,7 +70,7 @@ jobs:
           specify init my-project
           \`\`\`
 
-          Or from [PyPI](https://pypi.org/project/specify-cli/) (may lag briefly after release):
+          Or from [PyPI](https://pypi.org/project/specify-cli/) (once published for this release):
 
           \`\`\`bash
           uv tool install 'specify-cli==${VERSION_NO_V}'

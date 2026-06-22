@@ -51,7 +51,7 @@ Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](https://github.com/g
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
 ```
 
-Or install from [PyPI](https://pypi.org/project/specify-cli/) (may lag briefly after a new release):
+Or install from [PyPI](https://pypi.org/project/specify-cli/) (once published for a new release):
 
 ```bash
 uv tool install specify-cli@latest
@@ -316,7 +316,7 @@ Spec-Driven Development is a structured process that emphasizes:
 For existing projects, keep Spec Kit tooling updates separate from feature
 artifact evolution: refresh managed project files when upgrading, and update
 `specs/` artifacts when intended behavior changes. The
-[Evolving Specs guide](./docs/guides/evolving-specs.md) describes the
+[Evolving Specs guide](https://github.com/github/spec-kit/blob/main/docs/guides/evolving-specs.md) describes the
 recommended brownfield loop.
 
 ## 🎯 Experimental Goals
@@ -659,4 +659,4 @@ This project is heavily influenced by and based on the work and research of [Joh
 
 ## 📄 License
 
-This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
+This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](https://github.com/github/spec-kit/blob/main/LICENSE) file for the full terms.
