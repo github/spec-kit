@@ -39,7 +39,6 @@ class RovodevIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
 
     # -- CLI dispatch ------------------------------------------------------
 

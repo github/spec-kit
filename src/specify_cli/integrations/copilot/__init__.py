@@ -79,7 +79,6 @@ class _CopilotSkillsHelper(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = ".github/copilot-instructions.md"
 
 
 class CopilotIntegration(IntegrationBase):
@@ -108,7 +107,6 @@ class CopilotIntegration(IntegrationBase):
         "args": "$ARGUMENTS",
         "extension": ".agent.md",
     }
-    context_file = ".github/copilot-instructions.md"
 
     # Mutable flag set by setup() — indicates the active scaffolding mode.
     _skills_mode: bool = False
@@ -354,14 +352,12 @@ class CopilotIntegration(IntegrationBase):
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS")
-        context_file_display = self._context_file_display()
 
         # 1. Process and write command files as .agent.md
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=context_file_display,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(

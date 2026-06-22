@@ -35,7 +35,6 @@ class KimiIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "KIMI.md"
     multi_install_safe = True
 
     @classmethod

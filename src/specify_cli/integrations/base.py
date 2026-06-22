@@ -90,13 +90,7 @@ class IntegrationBase(ABC):
 
     And may optionally set:
 
-    * ``context_file``     — path (relative to project root) of the agent
-                             context/instructions file (e.g. ``"CLAUDE.md"``)
-
-    Projects may additionally opt into managing multiple context files by
-    setting ``context_files`` in the agent-context extension config. The
-    integration class still declares one default ``context_file`` for backwards
-    compatibility and command-template rendering.
+    * ``invoke_separator`` — slash-command separator (defaults to ``"."``)
     """
 
     # -- Must be set by every subclass ------------------------------------
@@ -111,9 +105,6 @@ class IntegrationBase(ABC):
     """Registration dict matching ``CommandRegistrar.AGENT_CONFIGS`` shape."""
 
     # -- Optional ---------------------------------------------------------
-
-    context_file: str | None = None
-    """Relative path to the agent context file (e.g. ``CLAUDE.md``)."""
 
     invoke_separator: str = "."
     """Separator used in slash-command invocations (``"."`` → ``/speckit.plan``)."""
@@ -524,18 +515,6 @@ class IntegrationBase(ABC):
 
         return created
 
-    # -- Agent context file metadata --------------------------------------
-
-    def _context_file_display(self) -> str:
-        """Return the integration's declared context file for templates.
-
-        Agent context/instruction files are owned entirely by the opt-in
-        agent-context extension. The CLI no longer reads the extension config
-        here; it only surfaces the integration's declared metadata path so
-        generated command templates point at the right file.
-        """
-        return self.context_file or ""
-
     @staticmethod
     def resolve_command_refs(content: str, separator: str = ".") -> str:
         """Replace ``__SPECKIT_COMMAND_<NAME>__`` placeholders with invocations.
@@ -560,7 +539,6 @@ class IntegrationBase(ABC):
         agent_name: str,
         script_type: str,
         arg_placeholder: str = "$ARGUMENTS",
-        context_file: str = "",
         invoke_separator: str = ".",
     ) -> str:
         """Process a raw command template into agent-ready content.
@@ -571,9 +549,8 @@ class IntegrationBase(ABC):
         3. Strip ``scripts:`` section from frontmatter
         4. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
         5. Replace ``__AGENT__`` with *agent_name*
-        6. Replace ``__CONTEXT_FILE__`` with *context_file*
-        7. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
-        8. Replace ``__SPECKIT_COMMAND_<NAME>__`` with invocation strings
+        6. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
+        7. Replace ``__SPECKIT_COMMAND_<NAME>__`` with invocation strings
         """
         # 1. Extract script command from frontmatter
         script_command = ""
@@ -633,10 +610,7 @@ class IntegrationBase(ABC):
         # 5. Replace __AGENT__
         content = content.replace("__AGENT__", agent_name)
 
-        # 6. Replace __CONTEXT_FILE__
-        content = content.replace("__CONTEXT_FILE__", context_file)
-
-        # 7. Rewrite paths — delegate to the shared implementation in
+        # 6. Rewrite paths — delegate to the shared implementation in
         #    CommandRegistrar so extension-local paths are preserved and
         #    boundary rules stay consistent across the codebase.
         from specify_cli.agents import CommandRegistrar
@@ -741,8 +715,8 @@ class IntegrationBase(ABC):
 class MarkdownIntegration(IntegrationBase):
     """Concrete base for integrations that use standard Markdown commands.
 
-    Subclasses only need to set ``key``, ``config``, ``registrar_config``
-    (and optionally ``context_file``).  Everything else is inherited.
+    Subclasses only need to set ``key``, ``config``, ``registrar_config``.
+    Everything else is inherited.
 
     ``setup()`` processes command templates (replacing ``{SCRIPT}``,
     ``{ARGS}``, ``__AGENT__``, rewriting paths).
@@ -800,13 +774,11 @@ class MarkdownIntegration(IntegrationBase):
             else "$ARGUMENTS"
         )
         created: list[Path] = []
-        context_file_display = self._context_file_display()
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=context_file_display,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -827,8 +799,7 @@ class TomlIntegration(IntegrationBase):
     """Concrete base for integrations that use TOML command format.
 
     Mirrors ``MarkdownIntegration`` closely: subclasses only need to set
-    ``key``, ``config``, ``registrar_config`` (and optionally
-    ``context_file``).  Everything else is inherited.
+    ``key``, ``config``, ``registrar_config``.  Everything else is inherited.
 
     ``setup()`` processes command templates through the same placeholder
     pipeline as ``MarkdownIntegration``, then converts the result to
@@ -1004,14 +975,12 @@ class TomlIntegration(IntegrationBase):
             else "{{args}}"
         )
         created: list[Path] = []
-        context_file_display = self._context_file_display()
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             description = self._extract_description(raw)
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=context_file_display,
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -1034,8 +1003,7 @@ class YamlIntegration(IntegrationBase):
     """Concrete base for integrations that use YAML recipe format.
 
     Mirrors ``TomlIntegration`` closely: subclasses only need to set
-    ``key``, ``config``, ``registrar_config`` (and optionally
-    ``context_file``).  Everything else is inherited.
+    ``key``, ``config``, ``registrar_config``.  Everything else is inherited.
 
     ``setup()`` processes command templates through the same placeholder
     pipeline as ``MarkdownIntegration``, then converts the result to
@@ -1198,7 +1166,6 @@ class YamlIntegration(IntegrationBase):
             else "{{args}}"
         )
         created: list[Path] = []
-        context_file_display = self._context_file_display()
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
@@ -1214,7 +1181,6 @@ class YamlIntegration(IntegrationBase):
 
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=context_file_display,
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1241,8 +1207,8 @@ class SkillsIntegration(IntegrationBase):
     Skills use the ``speckit-<name>/SKILL.md`` directory layout following
     the `agentskills.io <https://agentskills.io/specification>`_ spec.
 
-    Subclasses set ``key``, ``config``, ``registrar_config`` (and
-    optionally ``context_file``) like any integration.  They may also
+    Subclasses set ``key``, ``config``, ``registrar_config`` like any
+    integration.  They may also
     override ``options()`` to declare additional CLI flags (e.g.
     ``--skills``, ``--migrate-legacy``).
 
@@ -1387,7 +1353,6 @@ class SkillsIntegration(IntegrationBase):
             else "$ARGUMENTS"
         )
         created: list[Path] = []
-        context_file_display = self._context_file_display()
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
@@ -1411,7 +1376,6 @@ class SkillsIntegration(IntegrationBase):
             # Process body through the standard template pipeline
             processed_body = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=context_file_display,
                 invoke_separator=self.invoke_separator,
             )
             # Strip the processed frontmatter — we rebuild it for skills.

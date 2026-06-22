@@ -18,5 +18,4 @@ class IflowIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "IFLOW.md"
     multi_install_safe = True

@@ -18,4 +18,3 @@ class GooseIntegration(YamlIntegration):
         "args": "{{args}}",
         "extension": ".yaml",
     }
-    context_file = "AGENTS.md"

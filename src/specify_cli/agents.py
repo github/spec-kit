@@ -426,24 +426,6 @@ class CommandRegistrar:
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
-        # Resolve __CONTEXT_FILE__ from the integration's declared context file
-        # metadata. Agent context/instruction files are owned entirely by the
-        # opt-in agent-context extension, so the CLI never reads the extension
-        # config here — it only substitutes the integration's own declared path
-        # so generated commands point at the right file.
-        #
-        # Local import to avoid a circular import (the integrations package is
-        # imported by the CLI entrypoint which also imports agents.py).
-        from .integrations import INTEGRATION_REGISTRY
-
-        integration = INTEGRATION_REGISTRY.get(agent_name)
-        context_file = (
-            getattr(integration, "context_file", None)
-            or init_opts.get("context_file")
-            or ""
-        )
-        body = body.replace("__CONTEXT_FILE__", context_file)
-
         return CommandRegistrar.rewrite_project_relative_paths(body)
 
     def _convert_argument_placeholder(

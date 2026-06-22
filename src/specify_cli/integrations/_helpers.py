@@ -109,17 +109,10 @@ def _clear_init_options_for_integration(project_root: Path, integration_key: str
         save_init_options,
     )
     opts = load_init_options(project_root)
-    has_legacy_context_keys = ("context_file" in opts) or ("context_markers" in opts)
-    # Remove legacy fields that older versions may have written.
-    opts.pop("context_file", None)
-    opts.pop("context_markers", None)
-
     if opts.get("integration") == integration_key or opts.get("ai") == integration_key:
         opts.pop("integration", None)
         opts.pop("ai", None)
         opts.pop("ai_skills", None)
-        save_init_options(project_root, opts)
-    elif has_legacy_context_keys:
         save_init_options(project_root, opts)
 
 
@@ -264,8 +257,7 @@ def _update_init_options_for_integration(
 
     Agent context/instruction files are owned entirely by the opt-in
     agent-context extension, so this function does not touch the extension
-    config. Legacy ``context_file`` / ``context_markers`` keys that older
-    versions may have written into ``init-options.json`` are removed.
+    config or any context-file metadata.
     """
     from .. import (
         load_init_options,
@@ -275,9 +267,6 @@ def _update_init_options_for_integration(
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
-    # Remove legacy fields if they were written by an older version.
-    opts.pop("context_file", None)
-    opts.pop("context_markers", None)
     opts["speckit_version"] = _get_speckit_version()
     if script_type:
         opts["script"] = script_type
