@@ -299,6 +299,11 @@ class ExtensionManifest:
                 raise ValidationError(
                     f"Command 'file' for '{cmd.get('name')}' must be a non-empty string"
                 )
+            if cmd_file.strip() != cmd_file:
+                raise ValidationError(
+                    f"Invalid command 'file' '{cmd_file}': must not have leading or "
+                    "trailing whitespace"
+                )
             # Evaluate the value under both POSIX and Windows path semantics so
             # the check is platform-independent. Reject any non-empty anchor —
             # which covers POSIX-absolute (``/abs``), Windows drive-relative

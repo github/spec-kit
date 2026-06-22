@@ -214,6 +214,23 @@ class TestCommandFileTraversal:
         ]
         assert leaked == [], f"Outside file leaked into generated command: {leaked}"
 
+    @pytest.mark.parametrize("bad_value", [None, 123, "", ["x"]])
+    def test_non_string_file_is_skipped(self, tmp_path, bad_value):
+        """A non-string/empty ``file`` must be skipped, not raise TypeError."""
+        project, ext_dir = _project_and_source(tmp_path)
+        (project / ".gemini" / "commands").mkdir(parents=True)
+
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands(
+            "gemini",
+            [{"name": "speckit.myext.hello", "file": bad_value, "aliases": []}],
+            "myext",
+            ext_dir,
+            project,
+        )
+
+        assert registered == []
+
 
 class TestSafeRegistration:
     """Positive regression — well-formed names continue to register."""

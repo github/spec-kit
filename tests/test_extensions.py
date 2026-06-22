@@ -391,10 +391,24 @@ class TestExtensionManifest:
         valid_manifest_data["provides"]["commands"][0]["file"] = bad_file
 
         manifest_path = temp_dir / "extension.yml"
-        with open(manifest_path, 'w') as f:
-            yaml.dump(valid_manifest_data, f)
+        with open(manifest_path, 'w', encoding='utf-8') as f:
+            yaml.safe_dump(valid_manifest_data, f)
 
         with pytest.raises(ValidationError, match="Invalid command 'file'"):
+            ExtensionManifest(manifest_path)
+
+    @pytest.mark.parametrize("bad_file", [" commands/hello.md", "commands/hello.md ", "\tcommands/hello.md"])
+    def test_command_file_whitespace_rejected(self, temp_dir, valid_manifest_data, bad_file):
+        """Manifest 'file' with leading/trailing whitespace raises ValidationError."""
+        import yaml
+
+        valid_manifest_data["provides"]["commands"][0]["file"] = bad_file
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, 'w', encoding='utf-8') as f:
+            yaml.safe_dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="leading or trailing whitespace"):
             ExtensionManifest(manifest_path)
 
     def test_command_name_autocorrect_speckit_prefix(self, temp_dir, valid_manifest_data):

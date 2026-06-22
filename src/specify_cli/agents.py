@@ -540,11 +540,17 @@ class CommandRegistrar:
 
         registered = []
         is_cline_ext = agent_name == "cline" and source_id != "core"
+        source_root = source_dir.resolve()
 
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
+
+            # Skip malformed entries: a non-string/empty ``file`` cannot be a
+            # valid command body and would otherwise raise when used as a path.
+            if not isinstance(cmd_file, str) or not cmd_file:
+                continue
 
             # Guard against path traversal: reject any anchored value under
             # either POSIX or Windows semantics — POSIX-absolute (``/abs``),
@@ -559,7 +565,6 @@ class CommandRegistrar:
             if PurePosixPath(cmd_file).anchor or PureWindowsPath(cmd_file).anchor:
                 continue
             try:
-                source_root = source_dir.resolve()
                 source_file = (source_root / cmd_file).resolve()
                 source_file.relative_to(source_root)  # raises ValueError if outside
             except (OSError, ValueError):
