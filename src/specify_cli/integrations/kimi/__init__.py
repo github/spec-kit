@@ -59,6 +59,11 @@ class KimiIntegration(SkillsIntegration):
             invocation = f"{invocation} {args}"
         return invocation
 
+    def post_process_skill_content(self, content: str) -> str:
+        """Ensure in-skill cross-command references use Kimi's `/skill:` syntax."""
+        content = super().post_process_skill_content(content)
+        return content.replace("/speckit-", "/skill:speckit-")
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [
