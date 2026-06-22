@@ -4700,6 +4700,75 @@ class TestExtensionAddCLI:
         assert result.exit_code == 0, result.output
         assert f"URL: {url}" in result.output
 
+    def test_catalog_add_escapes_config_read_exception_markup(self, tmp_path):
+        """Catalog config parse errors can include user-controlled file content."""
+        import yaml
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir()
+        (specify_dir / "extension-catalogs.yml").write_text("[red]bad[/red]", encoding="utf-8")
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch(
+                 "specify_cli.extensions._commands.yaml.safe_load",
+                 side_effect=yaml.YAMLError("bad [red]catalog[/red] yaml"),
+             ):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    "community",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "bad [red]catalog[/red]" in result.output
+        assert "yaml" in result.output
+
+    def test_catalog_add_escapes_url_validation_exception_markup(self, tmp_path):
+        """URL validation errors may include user-controlled URL text."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(
+                 ExtensionCatalog,
+                 "_validate_catalog_url",
+                 side_effect=ValidationError("bad [red]url[/red]"),
+             ):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    "https://example.com/[red]catalog[/red].json",
+                    "--name",
+                    "community",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "bad [red]url[/red]" in result.output
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):
@@ -5013,6 +5082,79 @@ class TestExtensionAddCLI:
 
         assert result.exit_code == 0
         assert "Cancelled" in result.output
+
+    def test_add_from_url_escapes_download_exception_markup(self, tmp_path):
+        """Download errors can include user-controlled URL text."""
+        import urllib.error
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch(
+                 "specify_cli.authentication.http.open_url",
+                 side_effect=urllib.error.URLError("bad [red]download[/red]"),
+             ):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "add",
+                    "my-ext",
+                    "--from",
+                    "https://example.com/[red]ext[/red].zip",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "https://example.com/[red]ext[/red].zip" in result.output
+        assert "bad [red]download[/red]" in result.output
+
+    @pytest.mark.parametrize(
+        ("exc_type", "label"),
+        [
+            (ValidationError, "Validation Error"),
+            (CompatibilityError, "Compatibility Error"),
+            (ExtensionError, "Error"),
+        ],
+    )
+    def test_add_exception_handlers_escape_markup(self, tmp_path, exc_type, label):
+        """Extension install exceptions can include manifest-controlled values."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        ext_dir = tmp_path / "ext"
+        ext_dir.mkdir()
+        (ext_dir / "extension.yml").write_text("extension:\n  id: test\n", encoding="utf-8")
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(
+                 ExtensionManager,
+                 "install_from_directory",
+                 side_effect=exc_type("bad [red]extension[/red]"),
+             ):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(ext_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert f"{label}:" in result.output
+        assert "bad [red]extension[/red]" in result.output
 
     def test_add_from_url_uses_cache_tempfile_for_untrusted_extension_name(self, tmp_path):
         """The extension argument must not control the downloaded ZIP path."""

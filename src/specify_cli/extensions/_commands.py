@@ -65,14 +65,14 @@ def _load_catalog_command_config(project_root: Path, config_path: Path) -> dict:
     try:
         config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except Exception as e:
-        config_label = _display_project_path(project_root, config_path)
-        console.print(f"[red]Error:[/red] Failed to read {config_label}: {e}")
+        config_label = _escape_markup(str(_display_project_path(project_root, config_path)))
+        console.print(f"[red]Error:[/red] Failed to read {config_label}: {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
     if config is None:
         return {}
     if not isinstance(config, dict):
-        config_label = _display_project_path(project_root, config_path)
+        config_label = _escape_markup(str(_display_project_path(project_root, config_path)))
         console.print(
             f"[red]Error:[/red] Invalid catalog config {config_label}: "
             "expected a YAML mapping at the root."
@@ -249,7 +249,7 @@ def catalog_list():
     try:
         active_catalogs = catalog.get_active_catalogs()
     except ValidationError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
     console.print("\n[bold cyan]Active Extension Catalogs:[/bold cyan]\n")
@@ -313,7 +313,7 @@ def catalog_add(
     try:
         tmp_catalog._validate_catalog_url(url)
     except ValidationError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
     config_path = specify_dir / "extension-catalogs.yml"
@@ -505,7 +505,10 @@ def extension_add(
                     # Install from downloaded ZIP
                     manifest = manager.install_from_zip(zip_path, speckit_version, priority=priority, force=force)
                 except urllib.error.URLError as e:
-                    console.print(f"[red]Error:[/red] Failed to download from {safe_url}: {e}")
+                    console.print(
+                        f"[red]Error:[/red] Failed to download from {safe_url}: "
+                        f"{_escape_markup(str(e))}"
+                    )
                     raise typer.Exit(1)
                 finally:
                     # Clean up downloaded ZIP
@@ -615,13 +618,13 @@ def extension_add(
         console.print(f"   Check: .specify/extensions/{_escape_markup(str(manifest.id))}/")
 
     except ValidationError as e:
-        console.print(f"\n[red]Validation Error:[/red] {e}")
+        console.print(f"\n[red]Validation Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
     except CompatibilityError as e:
-        console.print(f"\n[red]Compatibility Error:[/red] {e}")
+        console.print(f"\n[red]Compatibility Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
     except ExtensionError as e:
-        console.print(f"\n[red]Error:[/red] {e}")
+        console.print(f"\n[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
 
@@ -768,7 +771,7 @@ def extension_search(
             console.print()
 
     except ExtensionError as e:
-        console.print(f"\n[red]Error:[/red] {e}")
+        console.print(f"\n[red]Error:[/red] {_escape_markup(str(e))}")
         console.print("\nTip: The catalog may be temporarily unavailable. Try again later.")
         raise typer.Exit(1)
 
@@ -1396,10 +1399,10 @@ def extension_update(
             raise typer.Exit(1)
 
     except ValidationError as e:
-        console.print(f"\n[red]Validation Error:[/red] {e}")
+        console.print(f"\n[red]Validation Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
     except ExtensionError as e:
-        console.print(f"\n[red]Error:[/red] {e}")
+        console.print(f"\n[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
 
