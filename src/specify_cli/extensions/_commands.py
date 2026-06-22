@@ -115,7 +115,7 @@ def _resolve_installed_extension(
     elif len(name_matches) > 1:
         # Ambiguous display-name match
         console.print(
-            f"[red]Error:[/red] Extension name '{argument}' is ambiguous. "
+            f"[red]Error:[/red] Extension name '{_escape_markup(argument)}' is ambiguous. "
             "Multiple installed extensions share this name:"
         )
         table = Table(title="Matching extensions")
@@ -123,7 +123,11 @@ def _resolve_installed_extension(
         table.add_column("Name", style="white")
         table.add_column("Version", style="green")
         for ext in name_matches:
-            table.add_row(ext.get("id", ""), ext.get("name", ""), str(ext.get("version", "")))
+            table.add_row(
+                _escape_markup(str(ext.get("id", ""))),
+                _escape_markup(str(ext.get("name", ""))),
+                _escape_markup(str(ext.get("version", ""))),
+            )
         console.print(table)
         console.print("\nPlease rerun using the extension ID:")
         console.print(f"  [bold]specify extension {command_name} <extension-id>[/bold]")
@@ -132,7 +136,7 @@ def _resolve_installed_extension(
         # No match by ID or display name
         if allow_not_found:
             return (None, None)
-        console.print(f"[red]Error:[/red] Extension '{argument}' is not installed")
+        console.print(f"[red]Error:[/red] Extension '{_escape_markup(argument)}' is not installed")
         raise typer.Exit(1)
 
 
@@ -171,7 +175,7 @@ def _resolve_catalog_extension(
         elif len(name_matches) > 1:
             # Ambiguous display-name match in catalog
             console.print(
-                f"[red]Error:[/red] Extension name '{argument}' is ambiguous. "
+                f"[red]Error:[/red] Extension name '{_escape_markup(argument)}' is ambiguous. "
                 "Multiple catalog extensions share this name:"
             )
             table = Table(title="Matching extensions")
@@ -181,10 +185,10 @@ def _resolve_catalog_extension(
             table.add_column("Catalog", style="dim")
             for ext in name_matches:
                 table.add_row(
-                    ext.get("id", ""),
-                    ext.get("name", ""),
-                    str(ext.get("version", "")),
-                    ext.get("_catalog_name", ""),
+                    _escape_markup(str(ext.get("id", ""))),
+                    _escape_markup(str(ext.get("name", ""))),
+                    _escape_markup(str(ext.get("version", ""))),
+                    _escape_markup(str(ext.get("_catalog_name", ""))),
                 )
             console.print(table)
             console.print("\nPlease rerun using the extension ID:")
@@ -223,9 +227,9 @@ def extension_list(
             status_icon = "✓" if ext["enabled"] else "✗"
             status_color = "green" if ext["enabled"] else "red"
 
-            console.print(f"  [{status_color}]{status_icon}[/{status_color}] [bold]{ext['name']}[/bold] (v{ext['version']})")
-            console.print(f"     [dim]{ext['id']}[/dim]")
-            console.print(f"     {ext['description']}")
+            console.print(f"  [{status_color}]{status_icon}[/{status_color}] [bold]{_escape_markup(ext['name'])}[/bold] (v{_escape_markup(str(ext['version']))})")
+            console.print(f"     [dim]{_escape_markup(ext['id'])}[/dim]")
+            console.print(f"     {_escape_markup(ext['description'])}")
             console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Priority: {ext['priority']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
             console.print()
 
@@ -255,10 +259,10 @@ def catalog_list():
             if entry.install_allowed
             else "[yellow]discovery only[/yellow]"
         )
-        console.print(f"  [bold]{entry.name}[/bold] (priority {entry.priority})")
+        console.print(f"  [bold]{_escape_markup(entry.name)}[/bold] (priority {entry.priority})")
         if entry.description:
-            console.print(f"     {entry.description}")
-        console.print(f"     URL: {entry.url}")
+            console.print(f"     {_escape_markup(entry.description)}")
+        console.print(f"     URL: {_escape_markup(str(entry.url))}")
         console.print(f"     Install: {install_str}")
         console.print()
 
@@ -453,16 +457,17 @@ def extension_add(
             if dev:
                 # Install from local directory
                 source_path = Path(extension).expanduser().resolve()
+                safe_source_path = _escape_markup(str(source_path))
                 if not source_path.exists():
-                    console.print(f"[red]Error:[/red] Directory not found: {source_path}")
+                    console.print(f"[red]Error:[/red] Directory not found: {safe_source_path}")
                     raise typer.Exit(1)
 
                 if not (source_path / "extension.yml").exists():
-                    console.print(f"[red]Error:[/red] No extension.yml found in {source_path}")
+                    console.print(f"[red]Error:[/red] No extension.yml found in {safe_source_path}")
                     raise typer.Exit(1)
 
                 if force:
-                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{source_path}[/cyan] (will overwrite if already installed)...")
+                    console.print(f"[yellow]--force:[/yellow] Installing from [cyan]{safe_source_path}[/cyan] (will overwrite if already installed)...")
 
                 manifest = manager.install_from_directory(
                     source_path,
@@ -520,10 +525,10 @@ def extension_add(
                     # Check if extension exists in catalog (supports both ID and display name)
                     ext_info, catalog_error = _resolve_catalog_extension(extension, catalog, "add")
                     if catalog_error:
-                        console.print(f"[red]Error:[/red] Could not query extension catalog: {catalog_error}")
+                        console.print(f"[red]Error:[/red] Could not query extension catalog: {_escape_markup(str(catalog_error))}")
                         raise typer.Exit(1)
                     if not ext_info:
-                        console.print(f"[red]Error:[/red] Extension '{extension}' not found in catalog")
+                        console.print(f"[red]Error:[/red] Extension '{safe_extension}' not found in catalog")
                         console.print("\nSearch available extensions:")
                         console.print("  specify extension search")
                         raise typer.Exit(1)
@@ -541,7 +546,7 @@ def extension_add(
                         # Bundled extensions without a download URL must come from the local package
                         if ext_info.get("bundled") and not ext_info.get("download_url"):
                             console.print(
-                                f"[red]Error:[/red] Extension '{ext_info['id']}' is bundled with spec-kit "
+                                f"[red]Error:[/red] Extension '{_escape_markup(ext_info['id'])}' is bundled with spec-kit "
                                 f"but could not be found in the installed package."
                             )
                             console.print(
@@ -553,20 +558,20 @@ def extension_add(
 
                         # Enforce install_allowed policy
                         if not ext_info.get("_install_allowed", True):
-                            catalog_name = ext_info.get("_catalog_name", "community")
+                            catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
                             console.print(
-                                f"[red]Error:[/red] '{extension}' is available in the "
+                                f"[red]Error:[/red] '{safe_extension}' is available in the "
                                 f"'{catalog_name}' catalog but installation is not allowed from that catalog."
                             )
                             console.print(
-                                f"\nTo enable installation, add '{extension}' to an approved catalog "
+                                f"\nTo enable installation, add '{safe_extension}' to an approved catalog "
                                 f"(install_allowed: true) in .specify/extension-catalogs.yml."
                             )
                             raise typer.Exit(1)
 
                         # Download extension ZIP (use resolved ID, not original argument which may be display name)
                         extension_id = ext_info['id']
-                        console.print(f"Downloading {ext_info['name']} v{ext_info.get('version', 'unknown')}...")
+                        console.print(f"Downloading {_escape_markup(str(ext_info['name']))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
                         zip_path = catalog.download_extension(extension_id)
 
                         try:
@@ -578,11 +583,11 @@ def extension_add(
                                 zip_path.unlink()
 
         console.print("\n[green]✓[/green] Extension installed successfully!")
-        console.print(f"\n[bold]{manifest.name}[/bold] (v{manifest.version})")
-        console.print(f"  {manifest.description}")
+        console.print(f"\n[bold]{_escape_markup(str(manifest.name))}[/bold] (v{_escape_markup(str(manifest.version))})")
+        console.print(f"  {_escape_markup(str(manifest.description))}")
 
         for warning in manifest.warnings:
-            console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {warning}")
+            console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")
 
         is_cline = load_init_options(project_root).get("ai") == "cline"
 
@@ -594,7 +599,7 @@ def extension_add(
             cmd_name = cmd['name']
             if is_cline:
                 cmd_name = format_cline_command_name(cmd_name)
-            console.print(f"  • {cmd_name} - {cmd.get('description', '')}")
+            console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
 
         # Report agent skills registration
         reg_meta = manager.registry.get(manifest.id)
@@ -675,7 +680,7 @@ def extension_remove(
     success = manager.remove(extension_id, keep_config=keep_config)
 
     if success:
-        console.print(f"\n[green]✓[/green] Extension '{display_name}' removed successfully")
+        console.print(f"\n[green]✓[/green] Extension '{_escape_markup(str(display_name))}' removed successfully")
         if keep_config:
             console.print(f"\nConfig files preserved in .specify/extensions/{extension_id}/")
         else:
@@ -717,17 +722,17 @@ def extension_search(
         for ext in results:
             # Extension header
             verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
-            console.print(f"[bold]{ext['name']}[/bold] (v{ext['version']}){verified_badge}")
-            console.print(f"  {ext['description']}")
+            console.print(f"[bold]{_escape_markup(str(ext['name']))}[/bold] (v{_escape_markup(str(ext['version']))}){verified_badge}")
+            console.print(f"  {_escape_markup(str(ext['description']))}")
 
             # Metadata
-            console.print(f"\n  [dim]Author:[/dim] {ext.get('author', 'Unknown')}")
+            console.print(f"\n  [dim]Author:[/dim] {_escape_markup(str(ext.get('author', 'Unknown')))}")
             if ext.get('tags'):
-                tags_str = ", ".join(ext['tags'])
-                console.print(f"  [dim]Tags:[/dim] {tags_str}")
+                tags_str = ", ".join(str(t) for t in ext['tags'])
+                console.print(f"  [dim]Tags:[/dim] {_escape_markup(tags_str)}")
 
             # Source catalog
-            catalog_name = ext.get("_catalog_name", "")
+            catalog_name = _escape_markup(str(ext.get("_catalog_name", "")))
             install_allowed = ext.get("_install_allowed", True)
             if catalog_name:
                 if install_allowed:
@@ -746,16 +751,17 @@ def extension_search(
 
             # Links
             if ext.get('repository'):
-                console.print(f"  [dim]Repository:[/dim] {ext['repository']}")
+                console.print(f"  [dim]Repository:[/dim] {_escape_markup(str(ext['repository']))}")
 
             # Install command (show warning if not installable)
+            safe_id = _escape_markup(str(ext['id']))
             if install_allowed:
-                console.print(f"\n  [cyan]Install:[/cyan] specify extension add {ext['id']}")
+                console.print(f"\n  [cyan]Install:[/cyan] specify extension add {safe_id}")
             else:
                 console.print(f"\n  [yellow]⚠[/yellow]  Not directly installable from '{catalog_name}'.")
                 console.print(
                     f"  Add to an approved catalog with install_allowed: true, "
-                    f"or install from a ZIP URL: specify extension add {ext['id']} --from <zip-url>"
+                    f"or install from a ZIP URL: specify extension add {safe_id} --from <zip-url>"
                 )
             console.print()
 
@@ -807,32 +813,32 @@ def extension_info(
             )
         version = metadata.get("version", "unknown") if metadata_is_dict else "unknown"
 
-        console.print(f"\n[bold]{resolved_installed_name}[/bold] (v{version})")
-        console.print(f"ID: {resolved_installed_id}")
+        console.print(f"\n[bold]{_escape_markup(str(resolved_installed_name))}[/bold] (v{_escape_markup(str(version))})")
+        console.print(f"ID: {_escape_markup(str(resolved_installed_id))}")
         console.print()
 
         if ext_manifest:
-            console.print(f"{ext_manifest.description}")
+            console.print(f"{_escape_markup(str(ext_manifest.description))}")
             console.print()
             # Author is optional in extension.yml, safely retrieve it
             author = ext_manifest.data.get("extension", {}).get("author")
             if author:
-                console.print(f"[dim]Author:[/dim] {author}")
+                console.print(f"[dim]Author:[/dim] {_escape_markup(str(author))}")
             if ext_manifest.category:
-                console.print(f"[dim]Category:[/dim] {ext_manifest.category}")
+                console.print(f"[dim]Category:[/dim] {_escape_markup(str(ext_manifest.category))}")
             if ext_manifest.effect:
-                console.print(f"[dim]Effect:[/dim] {ext_manifest.effect}")
+                console.print(f"[dim]Effect:[/dim] {_escape_markup(str(ext_manifest.effect))}")
             console.print()
 
             if ext_manifest.commands:
                 console.print("[bold]Commands:[/bold]")
                 for cmd in ext_manifest.commands:
-                    console.print(f"  • {cmd['name']}: {cmd.get('description', '')}")
+                    console.print(f"  • {_escape_markup(str(cmd['name']))}: {_escape_markup(str(cmd.get('description', '')))}")
                 console.print()
 
         # Show catalog status
         if catalog_error:
-            console.print(f"[yellow]Catalog unavailable:[/yellow] {catalog_error}")
+            console.print(f"[yellow]Catalog unavailable:[/yellow] {_escape_markup(str(catalog_error))}")
             console.print("[dim]Note: Using locally installed extension; catalog info could not be verified.[/dim]")
         else:
             console.print("[yellow]Note:[/yellow] Not found in catalog (custom/local extension)")
@@ -841,15 +847,15 @@ def extension_info(
         console.print("[green]✓ Installed[/green]")
         priority = normalize_priority(metadata.get("priority") if metadata_is_dict else None)
         console.print(f"[dim]Priority:[/dim] {priority}")
-        console.print(f"\nTo remove: specify extension remove {resolved_installed_id}")
+        console.print(f"\nTo remove: specify extension remove {_escape_markup(str(resolved_installed_id))}")
         return
 
     # Case 3: Not found anywhere
     if catalog_error:
-        console.print(f"[red]Error:[/red] Could not query extension catalog: {catalog_error}")
+        console.print(f"[red]Error:[/red] Could not query extension catalog: {_escape_markup(str(catalog_error))}")
         console.print("\nTry again when online, or use the extension ID directly.")
     else:
-        console.print(f"[red]Error:[/red] Extension '{extension}' not found")
+        console.print(f"[red]Error:[/red] Extension '{_escape_markup(extension)}' not found")
         console.print("\nTry: specify extension search")
     raise typer.Exit(1)
 
@@ -860,29 +866,29 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
-    console.print(f"\n[bold]{ext_info['name']}[/bold] (v{ext_info['version']}){verified_badge}")
-    console.print(f"ID: {ext_info['id']}")
+    console.print(f"\n[bold]{_escape_markup(str(ext_info['name']))}[/bold] (v{_escape_markup(str(ext_info['version']))}){verified_badge}")
+    console.print(f"ID: {_escape_markup(str(ext_info['id']))}")
     console.print()
 
     # Description
-    console.print(f"{ext_info['description']}")
+    console.print(f"{_escape_markup(str(ext_info['description']))}")
     console.print()
 
     # Author and License
-    console.print(f"[dim]Author:[/dim] {ext_info.get('author', 'Unknown')}")
-    console.print(f"[dim]License:[/dim] {ext_info.get('license', 'Unknown')}")
+    console.print(f"[dim]Author:[/dim] {_escape_markup(str(ext_info.get('author', 'Unknown')))}")
+    console.print(f"[dim]License:[/dim] {_escape_markup(str(ext_info.get('license', 'Unknown')))}")
 
     # Category and Effect
     if ext_info.get('category'):
-        console.print(f"[dim]Category:[/dim] {ext_info['category']}")
+        console.print(f"[dim]Category:[/dim] {_escape_markup(str(ext_info['category']))}")
     if ext_info.get('effect'):
-        console.print(f"[dim]Effect:[/dim] {ext_info['effect']}")
+        console.print(f"[dim]Effect:[/dim] {_escape_markup(str(ext_info['effect']))}")
 
     # Source catalog
     if ext_info.get("_catalog_name"):
         install_allowed = ext_info.get("_install_allowed", True)
         install_note = "" if install_allowed else " [yellow](discovery only)[/yellow]"
-        console.print(f"[dim]Source catalog:[/dim] {ext_info['_catalog_name']}{install_note}")
+        console.print(f"[dim]Source catalog:[/dim] {_escape_markup(str(ext_info['_catalog_name']))}{install_note}")
     console.print()
 
     # Requirements
@@ -890,11 +896,11 @@ def _print_extension_info(ext_info: dict, manager):
         console.print("[bold]Requirements:[/bold]")
         reqs = ext_info['requires']
         if reqs.get('speckit_version'):
-            console.print(f"  • Spec Kit: {reqs['speckit_version']}")
+            console.print(f"  • Spec Kit: {_escape_markup(str(reqs['speckit_version']))}")
         if reqs.get('tools'):
             for tool in reqs['tools']:
-                tool_name = tool['name']
-                tool_version = tool.get('version', 'any')
+                tool_name = _escape_markup(str(tool['name']))
+                tool_version = _escape_markup(str(tool.get('version', 'any')))
                 required = " (required)" if tool.get('required') else " (optional)"
                 console.print(f"  • {tool_name}: {tool_version}{required}")
         console.print()
@@ -904,15 +910,15 @@ def _print_extension_info(ext_info: dict, manager):
         console.print("[bold]Provides:[/bold]")
         provides = ext_info['provides']
         if provides.get('commands'):
-            console.print(f"  • Commands: {provides['commands']}")
+            console.print(f"  • Commands: {_escape_markup(str(provides['commands']))}")
         if provides.get('hooks'):
-            console.print(f"  • Hooks: {provides['hooks']}")
+            console.print(f"  • Hooks: {_escape_markup(str(provides['hooks']))}")
         console.print()
 
     # Tags
     if ext_info.get('tags'):
-        tags_str = ", ".join(ext_info['tags'])
-        console.print(f"[bold]Tags:[/bold] {tags_str}")
+        tags_str = ", ".join(str(t) for t in ext_info['tags'])
+        console.print(f"[bold]Tags:[/bold] {_escape_markup(tags_str)}")
         console.print()
 
     # Statistics
@@ -928,32 +934,33 @@ def _print_extension_info(ext_info: dict, manager):
     # Links
     console.print("[bold]Links:[/bold]")
     if ext_info.get('repository'):
-        console.print(f"  • Repository: {ext_info['repository']}")
+        console.print(f"  • Repository: {_escape_markup(str(ext_info['repository']))}")
     if ext_info.get('homepage'):
-        console.print(f"  • Homepage: {ext_info['homepage']}")
+        console.print(f"  • Homepage: {_escape_markup(str(ext_info['homepage']))}")
     if ext_info.get('documentation'):
-        console.print(f"  • Documentation: {ext_info['documentation']}")
+        console.print(f"  • Documentation: {_escape_markup(str(ext_info['documentation']))}")
     if ext_info.get('changelog'):
-        console.print(f"  • Changelog: {ext_info['changelog']}")
+        console.print(f"  • Changelog: {_escape_markup(str(ext_info['changelog']))}")
     console.print()
 
     # Installation status and command
     is_installed = manager.registry.is_installed(ext_info['id'])
     install_allowed = ext_info.get("_install_allowed", True)
+    safe_id = _escape_markup(str(ext_info['id']))
     if is_installed:
         console.print("[green]✓ Installed[/green]")
         metadata = manager.registry.get(ext_info['id'])
         priority = normalize_priority(metadata.get("priority") if isinstance(metadata, dict) else None)
         console.print(f"[dim]Priority:[/dim] {priority}")
-        console.print(f"\nTo remove: specify extension remove {ext_info['id']}")
+        console.print(f"\nTo remove: specify extension remove {safe_id}")
     elif install_allowed:
         console.print("[yellow]Not installed[/yellow]")
-        console.print(f"\n[cyan]Install:[/cyan] specify extension add {ext_info['id']}")
+        console.print(f"\n[cyan]Install:[/cyan] specify extension add {safe_id}")
     else:
-        catalog_name = ext_info.get("_catalog_name", "community")
+        catalog_name = _escape_markup(str(ext_info.get("_catalog_name", "community")))
         console.print("[yellow]Not installed[/yellow]")
         console.print(
-            f"\n[yellow]⚠[/yellow]  '{ext_info['id']}' is available in the '{catalog_name}' catalog "
+            f"\n[yellow]⚠[/yellow]  '{safe_id}' is available in the '{catalog_name}' catalog "
             f"but not in your approved catalog. Add it to .specify/extension-catalogs.yml "
             f"with install_allowed: true to enable installation."
         )
@@ -1000,35 +1007,36 @@ def extension_update(
         updates_available = []
 
         for ext_id in extensions_to_update:
+            safe_ext_id = _escape_markup(str(ext_id))
             # Get installed version
             metadata = manager.registry.get(ext_id)
             if metadata is None or not isinstance(metadata, dict) or "version" not in metadata:
-                console.print(f"⚠  {ext_id}: Registry entry corrupted or missing (skipping)")
+                console.print(f"⚠  {safe_ext_id}: Registry entry corrupted or missing (skipping)")
                 continue
             try:
                 installed_version = pkg_version.Version(metadata["version"])
             except pkg_version.InvalidVersion:
                 console.print(
-                    f"⚠  {ext_id}: Invalid installed version '{metadata.get('version')}' in registry (skipping)"
+                    f"⚠  {safe_ext_id}: Invalid installed version '{_escape_markup(str(metadata.get('version')))}' in registry (skipping)"
                 )
                 continue
 
             # Get catalog info
             ext_info = catalog.get_extension_info(ext_id)
             if not ext_info:
-                console.print(f"⚠  {ext_id}: Not found in catalog (skipping)")
+                console.print(f"⚠  {safe_ext_id}: Not found in catalog (skipping)")
                 continue
 
             # Check if installation is allowed from this catalog
             if not ext_info.get("_install_allowed", True):
-                console.print(f"⚠  {ext_id}: Updates not allowed from '{ext_info.get('_catalog_name', 'catalog')}' (skipping)")
+                console.print(f"⚠  {safe_ext_id}: Updates not allowed from '{_escape_markup(str(ext_info.get('_catalog_name', 'catalog')))}' (skipping)")
                 continue
 
             try:
                 catalog_version = pkg_version.Version(ext_info["version"])
             except pkg_version.InvalidVersion:
                 console.print(
-                    f"⚠  {ext_id}: Invalid catalog version '{ext_info.get('version')}' (skipping)"
+                    f"⚠  {safe_ext_id}: Invalid catalog version '{_escape_markup(str(ext_info.get('version')))}' (skipping)"
                 )
                 continue
 
@@ -1043,7 +1051,7 @@ def extension_update(
                     }
                 )
             else:
-                console.print(f"✓ {ext_id}: Up to date (v{installed_version})")
+                console.print(f"✓ {safe_ext_id}: Up to date (v{installed_version})")
 
         if not updates_available:
             console.print("\n[green]All extensions are up to date![/green]")
@@ -1053,7 +1061,7 @@ def extension_update(
         console.print("\n[bold]Updates available:[/bold]\n")
         for update in updates_available:
             console.print(
-                f"  • {update['id']}: {update['installed']} → {update['available']}"
+                f"  • {_escape_markup(str(update['id']))}: {update['installed']} → {update['available']}"
             )
 
         console.print()
@@ -1076,7 +1084,8 @@ def extension_update(
         for update in updates_available:
             extension_id = update["id"]
             ext_name = update["name"]  # Use display name for user-facing messages
-            console.print(f"📦 Updating {ext_name}...")
+            safe_ext_name = _escape_markup(str(ext_name))
+            console.print(f"📦 Updating {safe_ext_name}...")
 
             # Backup paths
             backup_base = manager.extensions_dir / ".backup" / f"{extension_id}-update"
@@ -1257,11 +1266,11 @@ def extension_update(
             except KeyboardInterrupt:
                 raise
             except Exception as e:
-                console.print(f"   [red]✗[/red] Failed: {e}")
+                console.print(f"   [red]✗[/red] Failed: {_escape_markup(str(e))}")
                 failed_updates.append((ext_name, str(e)))
 
                 # Rollback on failure
-                console.print(f"   [yellow]↩[/yellow] Rolling back {ext_name}...")
+                console.print(f"   [yellow]↩[/yellow] Rolling back {safe_ext_name}...")
 
                 try:
                     # Restore extension directory
@@ -1371,8 +1380,8 @@ def extension_update(
                     if backup_base.exists():
                         shutil.rmtree(backup_base)
                 except Exception as rollback_error:
-                    console.print(f"   [red]✗[/red] Rollback failed: {rollback_error}")
-                    console.print(f"   [dim]Backup preserved at: {backup_base}[/dim]")
+                    console.print(f"   [red]✗[/red] Rollback failed: {_escape_markup(str(rollback_error))}")
+                    console.print(f"   [dim]Backup preserved at: {_escape_markup(str(backup_base))}[/dim]")
 
         # Summary
         console.print()
@@ -1381,7 +1390,7 @@ def extension_update(
         if failed_updates:
             console.print(f"[red]✗[/red] Failed to update {len(failed_updates)} extension(s):")
             for ext_name, error in failed_updates:
-                console.print(f"   • {ext_name}: {error}")
+                console.print(f"   • {_escape_markup(str(ext_name))}: {_escape_markup(str(error))}")
             raise typer.Exit(1)
 
     except ValidationError as e:
@@ -1414,7 +1423,7 @@ def extension_enable(
         raise typer.Exit(1)
 
     if metadata.get("enabled", True):
-        console.print(f"[yellow]Extension '{display_name}' is already enabled[/yellow]")
+        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already enabled[/yellow]")
         raise typer.Exit(0)
 
     manager.registry.update(extension_id, {"enabled": True})
@@ -1428,7 +1437,7 @@ def extension_enable(
                     hook["enabled"] = True
         hook_executor.save_project_config(config)
 
-    console.print(f"[green]✓[/green] Extension '{display_name}' enabled")
+    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' enabled")
 
 
 @extension_app.command("disable")
@@ -1453,7 +1462,7 @@ def extension_disable(
         raise typer.Exit(1)
 
     if not metadata.get("enabled", True):
-        console.print(f"[yellow]Extension '{display_name}' is already disabled[/yellow]")
+        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' is already disabled[/yellow]")
         raise typer.Exit(0)
 
     manager.registry.update(extension_id, {"enabled": False})
@@ -1467,7 +1476,7 @@ def extension_disable(
                     hook["enabled"] = False
         hook_executor.save_project_config(config)
 
-    console.print(f"[green]✓[/green] Extension '{display_name}' disabled")
+    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' disabled")
     console.print("\nCommands will no longer be available. Hooks will not execute.")
     console.print(f"To re-enable: specify extension enable {extension_id}")
 
@@ -1503,7 +1512,7 @@ def extension_set_priority(
     # Only skip if the stored value is already a valid int equal to requested priority
     # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
     if isinstance(raw_priority, int) and raw_priority == priority:
-        console.print(f"[yellow]Extension '{display_name}' already has priority {priority}[/yellow]")
+        console.print(f"[yellow]Extension '{_escape_markup(str(display_name))}' already has priority {priority}[/yellow]")
         raise typer.Exit(0)
 
     old_priority = normalize_priority(raw_priority)
@@ -1511,7 +1520,7 @@ def extension_set_priority(
     # Update priority
     manager.registry.update(extension_id, {"priority": priority})
 
-    console.print(f"[green]✓[/green] Extension '{display_name}' priority changed: {old_priority} → {priority}")
+    console.print(f"[green]✓[/green] Extension '{_escape_markup(str(display_name))}' priority changed: {old_priority} → {priority}")
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
 
 
