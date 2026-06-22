@@ -369,18 +369,34 @@ def _migrate_legacy_kimi_context_file(
     except (OSError, UnicodeDecodeError):
         return False
 
-    start_idx = content.find(marker_start)
-    end_idx = content.find(marker_end, start_idx if start_idx != -1 else 0)
-    has_start = start_idx != -1
-    has_end = end_idx != -1
+    marker_pairs = [(marker_start, marker_end)]
+    default_pair = (
+        IntegrationBase.CONTEXT_MARKER_START,
+        IntegrationBase.CONTEXT_MARKER_END,
+    )
+    if default_pair not in marker_pairs:
+        marker_pairs.append(default_pair)
 
-    # Refuse to migrate a corrupted managed section: exactly one marker, or
-    # an end marker that does not follow the start. Otherwise the unstripped
-    # managed block would leak into AGENTS.md (duplicating the section base
-    # setup just wrote). Leaving KIMI.md in place lets the user fix it.
-    if has_start != has_end or (has_start and end_idx <= start_idx):
-        return False
-
+    start_idx = -1
+    end_idx = -1
+    has_start = False
+    has_end = False
+    for s, e in marker_pairs:
+        s_idx = content.find(s)
+        e_idx = content.find(e, s_idx if s_idx != -1 else 0)
+        has_s = s_idx != -1
+        has_e = e_idx != -1
+        if not has_s and not has_e:
+            continue
+        # Refuse to migrate a corrupted managed section: exactly one marker, or
+        # an end marker that does not follow the start.
+        if has_s != has_e or e_idx <= s_idx:
+            return False
+        marker_start, marker_end = s, e
+        start_idx, end_idx = s_idx, e_idx
+        has_start = True
+        has_end = True
+        break
     if has_start and has_end:
         removal_start = start_idx
         removal_end = end_idx + len(marker_end)
