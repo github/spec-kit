@@ -1120,7 +1120,7 @@ class TestResolveCore:
         assert result is not None
         assert result.parts[-2:] == ("commands", "implement.md")
 
-
+    def test_resolve_extension_command_via_manifest_skips_oserror_manifests(self, project_dir):
         """resolve_extension_command_via_manifest skips extensions whose manifest raises OSError."""
         import unittest.mock as mock
 
