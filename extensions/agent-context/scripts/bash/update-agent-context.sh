@@ -216,6 +216,8 @@ except Exception:
     print("")
 PY
 )"
+    # Normalize backslashes (written by PS on Windows) to forward slashes before path ops.
+    _feature_dir="$(printf '%s' "$_feature_dir" | tr '\\' '/')"
     _feature_dir="${_feature_dir%/}"
     if [[ -n "$_feature_dir" ]]; then
       # feature_directory may be relative or absolute (absolute paths outside PROJECT_ROOT
