@@ -45,7 +45,11 @@ def verify_archive_sha256(
         error_cls: If ``expected`` is provided and is not a well-formed
             SHA-256 hex digest, or does not match ``data``.
     """
-    if not expected:
+    # Skip only when no digest is declared at all (``None``). A declared but
+    # empty/blank value (e.g. ``sha256: ""``) is an authoring error, not an
+    # opt-out: let it fall through to the format check below so it is rejected
+    # rather than silently disabling verification.
+    if expected is None:
         logger.debug(
             "No sha256 declared for %r; archive integrity was not verified.",
             name,

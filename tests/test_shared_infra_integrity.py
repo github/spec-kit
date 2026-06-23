@@ -85,3 +85,17 @@ def test_absent_digest_skips_and_logs_debug(caplog):
         "not verified" in r.getMessage() and "thing" in r.getMessage()
         for r in caplog.records
     )
+
+
+def test_blank_declared_digest_is_rejected():
+    """A present-but-empty ``sha256`` is an authoring error, not an opt-out.
+
+    Catalog entries reach the helper via ``...get("sha256")``; a blank value
+    (``""``, whitespace, or a bare ``sha256:`` prefix) means the digest was
+    declared but left empty. It must surface as a malformed digest rather than
+    silently disabling the integrity check, which a bare ``if not expected``
+    guard would have done.
+    """
+    for blank in ("", "   ", "sha256:"):
+        with pytest.raises(_BoomError, match="[Ii]nvalid sha256"):
+            verify_archive_sha256(b"data", blank, "thing", _BoomError)
