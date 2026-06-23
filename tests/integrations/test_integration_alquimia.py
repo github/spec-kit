@@ -8,7 +8,7 @@ from unittest.mock import patch
 import yaml
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
 from specify_cli.integrations.alquimia_ai import ARGUMENT_HINTS
-from specify_cli.integrations.base import IntegrationBase
+from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
@@ -29,7 +29,7 @@ class TestAlquimiaAIIntegration:
         integration = get_integration("alquimia")
         assert integration.registrar_config["dir"] == ".alquimia/skills"
         assert integration.registrar_config["format"] == "markdown"
-        assert integration.registrar_config["args"] == "{{query}}"
+        assert integration.registrar_config["args"] == "$ARGUMENTS"
         assert integration.registrar_config["extension"] == "/SKILL.md"
 
     def test_context_file(self):
@@ -538,7 +538,7 @@ class TestAlquimiaHookCommandNote:
         from specify_cli.integrations.alquimia_ai import AlquimiaAIIntegration
 
         content = "---\nname: test\ndescription: test\n---\n\nNo hooks here.\n"
-        result = AlquimiaAIIntegration._inject_hook_command_note(content)
+        result = SkillsIntegration._inject_hook_command_note(content)
         assert "replace dots" not in result
 
     def test_hook_note_idempotent(self, tmp_path):
@@ -549,8 +549,8 @@ class TestAlquimiaHookCommandNote:
             "---\nname: test\n---\n\n"
             "- For each executable hook, output the following based on its flag:\n"
         )
-        once = AlquimiaAIIntegration._inject_hook_command_note(content)
-        twice = AlquimiaAIIntegration._inject_hook_command_note(once)
+        once = SkillsIntegration._inject_hook_command_note(content)
+        twice = SkillsIntegration._inject_hook_command_note(once)
         assert once == twice, "Hook note injection should be idempotent"
 
     def test_hook_note_preserves_indentation(self, tmp_path):
@@ -561,7 +561,7 @@ class TestAlquimiaHookCommandNote:
             "---\nname: test\n---\n\n"
             "   - For each executable hook, output the following\n"
         )
-        result = AlquimiaAIIntegration._inject_hook_command_note(content)
+        result = SkillsIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
         note_line = [l for l in lines if "replace dots" in l][0]
         assert note_line.startswith("   "), "Note should preserve indentation"
