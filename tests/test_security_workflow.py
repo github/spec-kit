@@ -61,6 +61,15 @@ def _step(job_name: str, step_name: str) -> dict:
     raise AssertionError(f"Step {step_name!r} not found in job {job_name!r}.")
 
 
+def _job_run_text(*job_names: str) -> str:
+    workflow = _load_security_workflow()
+    return "\n".join(
+        step.get("run", "")
+        for job_name in job_names
+        for step in workflow["jobs"][job_name]["steps"]
+    )
+
+
 def _load_sync_script():
     spec = importlib.util.spec_from_file_location(
         "check_security_requirements",
@@ -77,27 +86,26 @@ class TestDependencyAuditWorkflow:
     """Guard the dependency-audit security workflow."""
 
     def test_dependency_audit_uses_committed_requirements_for_prs_and_pushes(self):
-        scheduled_compile = _step("dependency-audit", "Compile scheduled audit requirements")
-        scheduled_audit = _step("dependency-audit", "Run pip-audit (scheduled live resolution)")
+        workflow = _load_security_workflow()
+        job = workflow["jobs"]["dependency-audit"]
         committed_audit = _step("dependency-audit", "Run pip-audit (committed requirements)")
         sync_check = _step("dependency-audit", "Check committed audit requirements are current")
+        setup_python = _step("dependency-audit", "Set up Python")
 
-        assert scheduled_compile["if"] == "${{ github.event_name == 'schedule' }}"
-        assert WORKFLOW_COMPILE_SCHEDULED_TEST_EXTRA_DEPS in scheduled_compile["run"]
-        assert scheduled_audit["if"] == "${{ github.event_name == 'schedule' }}"
-        assert scheduled_audit["run"] == WORKFLOW_LIVE_PIP_AUDIT
-        assert sync_check["if"] == "${{ github.event_name != 'schedule' }}"
+        assert job["if"] == "${{ github.event_name != 'schedule' }}"
+        assert job["runs-on"] == "ubuntu-latest"
+        assert "strategy" not in job
+        assert setup_python["with"]["python-version"] == "3.13"
         assert sync_check["env"]["DEPENDENCY_DIFF_BASE"] == (
             "${{ github.event.pull_request.base.sha || github.event.before || '' }}"
         )
         assert sync_check["env"]["DEPENDENCY_DIFF_HEAD"] == "${{ github.sha }}"
         assert sync_check["run"] == WORKFLOW_SYNC_SCRIPT
-        assert committed_audit["if"] == "${{ github.event_name != 'schedule' }}"
         assert committed_audit["run"] == LOCAL_PIP_AUDIT
 
-        dependency_job_text = "\n".join(
-            step.get("run", "")
-            for step in _load_security_workflow()["jobs"]["dependency-audit"]["steps"]
+        dependency_job_text = _job_run_text(
+            "dependency-audit",
+            "dependency-audit-scheduled",
         )
         protection_text = (
             dependency_job_text
@@ -133,13 +141,25 @@ class TestDependencyAuditWorkflow:
         assert "workflow_dispatch" in triggers
         assert triggers["schedule"] == [{"cron": "17 4 * * 1"}]
 
-    def test_dependency_audit_runs_supported_python_os_matrix(self):
+    def test_scheduled_dependency_audit_runs_supported_python_os_matrix(self):
         workflow = _load_security_workflow()
-        matrix = workflow["jobs"]["dependency-audit"]["strategy"]["matrix"]
+        job = workflow["jobs"]["dependency-audit-scheduled"]
+        matrix = job["strategy"]["matrix"]
+        scheduled_compile = _step(
+            "dependency-audit-scheduled",
+            "Compile scheduled audit requirements",
+        )
+        scheduled_audit = _step(
+            "dependency-audit-scheduled",
+            "Run pip-audit (scheduled live resolution)",
+        )
 
+        assert job["if"] == "${{ github.event_name == 'schedule' }}"
         assert matrix["os"] == ["ubuntu-latest", "windows-latest"]
         assert matrix["python-version"] == ["3.11", "3.12", "3.13"]
-        assert workflow["jobs"]["dependency-audit"]["runs-on"] == "${{ matrix.os }}"
+        assert job["runs-on"] == "${{ matrix.os }}"
+        assert WORKFLOW_COMPILE_SCHEDULED_TEST_EXTRA_DEPS in scheduled_compile["run"]
+        assert scheduled_audit["run"] == WORKFLOW_LIVE_PIP_AUDIT
 
     def test_pip_audit_is_pinned(self):
         workflow_text = SECURITY_WORKFLOW.read_text(encoding="utf-8")
