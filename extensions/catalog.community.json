@@ -2425,12 +2425,12 @@
       "updated_at": "2026-03-18T00:00:00Z"
     },
     "preview": {
-      "name": "Interactive HTML Preview",
+      "name": "Spec Kit Preview",
       "id": "preview",
-      "description": "Generate self-contained interactive HTML prototypes from Spec Kit artifacts",
+      "description": "Generate evidence-backed low, mid, or high fidelity previews from Spec Kit artifacts as Markdown or self-contained HTML",
       "author": "bigsmartben",
-      "version": "1.0.0",
-      "download_url": "https://github.com/bigsmartben/spec-kit-preview/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-preview/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-preview",
       "homepage": "https://github.com/bigsmartben/spec-kit-preview",
       "documentation": "https://github.com/bigsmartben/spec-kit-preview/blob/main/README.md",
@@ -2442,20 +2442,22 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 1,
+        "commands": 6,
         "hooks": 0
       },
       "tags": [
         "preview",
         "prototype",
         "html",
+        "markdown",
+        "wireflow",
         "ux"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-15T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "product": {
       "name": "Product Spec Extension",

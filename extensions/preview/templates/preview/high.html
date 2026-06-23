@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>High-Fidelity Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f6f7;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #5f6368;
+      --line: #d7dce0;
+      --accent: #7a4b19;
+      --accent-soft: #f3eadf;
+      --success: #236b45;
+      --danger: #9b2c2c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+    main {
+      width: min(1240px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    h1, h2 { margin: 0 0 12px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 18px; }
+    .metadata {
+      color: var(--muted);
+      display: grid;
+      gap: 6px;
+    }
+    .preview-surface {
+      border: 1px solid var(--accent);
+      background: var(--accent-soft);
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .frame-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 390px) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef1f2;
+      color: #2f3133;
+    }
+    button, input, select, textarea {
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: #ffffff;
+      color: var(--accent);
+      border-radius: 4px;
+      padding: 7px 11px;
+      cursor: pointer;
+    }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 3px solid #d8b98f;
+      outline-offset: 2px;
+    }
+    .status-success { color: var(--success); }
+    .status-danger { color: var(--danger); }
+    [hidden] { display: none !important; }
+    @media (max-width: 820px) {
+      main { width: min(100% - 20px, 1240px); padding-top: 16px; }
+      header, section { padding: 14px; }
+      .frame-grid { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>High-Fidelity Preview</h1>
+      <div class="metadata">{{metadata}}</div>
+    </header>
+
+    <section aria-labelledby="input-sources">
+      <h2 id="input-sources">输入来源与读取范围</h2>
+      {{input_sources}}
+    </section>
+
+    <section aria-labelledby="evidence-summary">
+      <h2 id="evidence-summary">需求证据摘要</h2>
+      {{evidence_summary}}
+    </section>
+
+    <section aria-labelledby="initial-screen">
+      <h2 id="initial-screen">首屏与交互预览</h2>
+      <div class="frame-grid">
+        <div class="preview-surface">{{initial_screen}}</div>
+        <div>{{interaction_controls}}</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="wireflow">
+      <h2 id="wireflow">Wireflow</h2>
+      {{wireflow}}
+    </section>
+
+    <section aria-labelledby="node-inventory">
+      <h2 id="node-inventory">页面/节点清单</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>屏幕/节点</th>
+            <th>目的</th>
+            <th>可见元素</th>
+            <th>用户动作</th>
+            <th>系统响应</th>
+            <th>状态</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+          </tr>
+        </thead>
+        <tbody>{{node_inventory_rows}}</tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="interaction-matrix">
+      <h2 id="interaction-matrix">交互矩阵</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>事件</th>
+            <th>目标</th>
+            <th>前置条件</th>
+            <th>反馈</th>
+            <th>状态变化</th>
+            <th>错误处理</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+          </tr>
+        </thead>
+        <tbody>{{interaction_matrix_rows}}</tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="state-matrix">
+      <h2 id="state-matrix">状态矩阵</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>状态</th>
+            <th>触发条件</th>
+            <th>用户可见反馈</th>
+            <th>恢复/下一步</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+          </tr>
+        </thead>
+        <tbody>{{state_matrix_rows}}</tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="branches">
+      <h2 id="branches">分支、状态与异常路径</h2>
+      {{branches_states_exceptions}}
+    </section>
+
+    <section aria-labelledby="coverage">
+      <h2 id="coverage">覆盖度证据结论</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>需求/场景</th>
+            <th>预览位置</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+            <th>缺口或问题</th>
+          </tr>
+        </thead>
+        <tbody>{{coverage_rows}}</tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="preserved-review">
+      <h2 id="preserved-review">已保留评审记录</h2>
+      {{preserved_review_records}}
+    </section>
+
+    <section aria-labelledby="review-questions">
+      <h2 id="review-questions">未覆盖项、未知项与评审问题</h2>
+      {{review_questions}}
+    </section>
+  </main>
+  <script>
+    document.querySelectorAll('[data-preview-action]').forEach((control) => {
+      control.addEventListener('click', () => {
+        const target = document.querySelector('[data-preview-status]');
+        if (!target) return;
+        const label = control.getAttribute('data-preview-label') || control.textContent.trim();
+        target.textContent = label;
+      });
+    });
+  </script>
+</body>
+</html>

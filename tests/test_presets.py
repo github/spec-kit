@@ -4539,7 +4539,18 @@ class TestBundledPresetLocator:
         )
         assert "test ! -d .claude/skills/speckit-arch-generate" in verify_run
         assert "test ! -d .claude/skills/speckit-arch-reverse" in verify_run
-        assert "test ! -d .claude/skills/speckit-preview-html" in verify_run
+        for preview_skill in (
+            "speckit-preview-low-md",
+            "speckit-preview-low-html",
+            "speckit-preview-mid-md",
+            "speckit-preview-mid-html",
+            "speckit-preview-high-md",
+            "speckit-preview-high-html",
+        ):
+            assert preview_skill in verify_run
+            assert f'test ! -d ".claude/skills/$preview_skill"' in verify_run
+            assert f'test -f ".claude/skills/$preview_skill/SKILL.md"' in verify_run
+        assert 'grep -q "evidence-backed" ".claude/skills/$preview_skill/SKILL.md"' in verify_run
         assert (
             "test ! -d .claude/skills/speckit-repository-governance-refresh"
             in verify_run

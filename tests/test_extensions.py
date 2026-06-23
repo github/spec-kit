@@ -227,6 +227,36 @@ class TestExtensionManifest:
 
         assert CORE_COMMAND_NAMES == expected
 
+    def test_bundled_preview_catalogs_match_manifest(self):
+        """Preview's bundled package, catalogs, and default command list stay aligned."""
+        from tests.integrations.community_defaults import DEFAULT_EXTENSION_COMMANDS
+
+        repo_root = Path(__file__).resolve().parent.parent
+        manifest = ExtensionManifest(repo_root / "extensions" / "preview" / "extension.yml")
+        bundled_catalog = json.loads(
+            (repo_root / "extensions" / "catalog.json").read_text(encoding="utf-8")
+        )
+        community_catalog = json.loads(
+            (repo_root / "extensions" / "catalog.community.json").read_text(encoding="utf-8")
+        )
+        bundled_entry = bundled_catalog["extensions"]["preview"]
+        community_entry = community_catalog["extensions"]["preview"]
+        manifest_repository = manifest.data["extension"]["repository"]
+        manifest_commands = tuple(command["name"] for command in manifest.commands)
+        preview_default_commands = tuple(
+            command for command in DEFAULT_EXTENSION_COMMANDS if command.startswith("speckit.preview.")
+        )
+
+        for entry in (bundled_entry, community_entry):
+            assert entry["name"] == manifest.name
+            assert entry["version"] == manifest.version
+            assert entry["description"] == manifest.description
+            assert entry["repository"] == manifest_repository
+            assert entry["provides"]["commands"] == len(manifest.commands)
+
+        assert community_entry["download_url"].endswith(f"/refs/tags/v{manifest.version}.zip")
+        assert preview_default_commands == manifest_commands
+
     def test_missing_required_field(self, temp_dir):
         """Test manifest missing required field."""
         import yaml

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Low-Fidelity Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f5;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #5f6368;
+      --line: #d9d9d2;
+      --accent: #255f85;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 40px;
+    }
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    h1, h2 { margin: 0 0 12px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 18px; }
+    .metadata {
+      color: var(--muted);
+      display: grid;
+      gap: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eeeeea;
+      color: #2f3133;
+    }
+    .wireflow {
+      border-left: 4px solid var(--accent);
+      padding-left: 14px;
+    }
+    @media (max-width: 720px) {
+      main { width: min(100% - 20px, 1120px); padding-top: 16px; }
+      header, section { padding: 14px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Low-Fidelity Preview</h1>
+      <div class="metadata">
+        {{metadata}}
+      </div>
+    </header>
+
+    <section aria-labelledby="input-sources">
+      <h2 id="input-sources">输入来源与读取范围</h2>
+      {{input_sources}}
+    </section>
+
+    <section aria-labelledby="evidence-summary">
+      <h2 id="evidence-summary">需求证据摘要</h2>
+      {{evidence_summary}}
+    </section>
+
+    <section aria-labelledby="wireflow">
+      <h2 id="wireflow">Wireflow</h2>
+      <div class="wireflow">{{wireflow}}</div>
+    </section>
+
+    <section aria-labelledby="node-inventory">
+      <h2 id="node-inventory">页面/节点清单</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>节点</th>
+            <th>目的</th>
+            <th>用户动作</th>
+            <th>系统响应</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{node_inventory_rows}}
+        </tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="branches">
+      <h2 id="branches">分支、状态与异常路径</h2>
+      {{branches_states_exceptions}}
+    </section>
+
+    <section aria-labelledby="coverage">
+      <h2 id="coverage">覆盖度证据结论</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>需求/场景</th>
+            <th>预览位置</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+            <th>缺口或问题</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{coverage_rows}}
+        </tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="preserved-review">
+      <h2 id="preserved-review">已保留评审记录</h2>
+      {{preserved_review_records}}
+    </section>
+
+    <section aria-labelledby="review-questions">
+      <h2 id="review-questions">未覆盖项、未知项与评审问题</h2>
+      {{review_questions}}
+    </section>
+  </main>
+</body>
+</html>
