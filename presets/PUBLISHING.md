@@ -150,9 +150,13 @@ specify preset add --from https://github.com/your-org/spec-kit-preset-your-prese
 ### 6. Usage README Requirements
 
 The catalog `documentation` field must point at a README that explains how to use
-**this preset** — not a product pitch for a broader framework or a separate CLI. The
-submission workflow validates the linked README and **fails** submissions that don't
-meet these requirements:
+**this preset** — not a product pitch for a broader framework or a separate CLI.
+
+The submission workflow **mechanically enforces** two of these requirements: the linked
+README must resolve to a readable file, and it must contain at least one valid
+`specify preset add ...` command. The remaining items (preferring a preset-scoped README,
+covering the minimum structure) are expectations a human reviewer checks — follow them so
+your submission isn't sent back for changes.
 
 - **Point `documentation` at the preset-scoped README.** In a monorepo where the preset
   lives in a subdirectory (e.g. `presets/<id>/`), link the README inside that directory
@@ -160,9 +164,9 @@ meet these requirements:
   often a marketing/overview page; the catalog should surface preset usage instead. (Keep
   this usage README **outside** the release ZIP — it should be discoverable *before* a user
   downloads the artifact.)
-- **Include a valid Spec Kit CLI install command.** The linked README must contain at least
-  one `specify preset add ...` invocation. Preferably use the catalog-install form whose URL
-  matches your Download URL:
+- **Include a valid Spec Kit CLI install command** *(enforced)*. The linked README must
+  contain at least one `specify preset add ...` invocation. Preferably use the
+  catalog-install form whose URL matches your Download URL:
 
   ```bash
   specify preset add --from https://github.com/<org>/<repo>/releases/download/vX.Y.Z/<id>-X.Y.Z.zip
@@ -176,8 +180,8 @@ meet these requirements:
   - The install command using Spec Kit CLI syntax (above)
   - When to use it / when not to use it
 
-A submission whose linked README lacks a valid `specify preset add ...` command is treated
-as a generic description rather than usage documentation and will be flagged for changes.
+A submission whose linked README lacks a valid `specify preset add ...` command **fails
+validation** (workflow check 2d) and will not be added until corrected.
 
 ---
 

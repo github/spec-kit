@@ -84,7 +84,7 @@ body:
       description: |
         Link to the README that explains how to use **this preset** (not a general product/framework pitch).
         Prefer the preset-scoped README (e.g. `presets/<id>/README.md` in a monorepo) over the repository root README.
-        It must contain at least one valid `specify preset ...` install command matching the Download URL above.
+        It must contain at least one valid `specify preset add ...` install command (ideally `specify preset add --from <download-url>`) matching the Download URL above.
       placeholder: "https://github.com/your-org/spec-kit-presets/blob/main/your-preset/README.md"
     validations:
       required: true
