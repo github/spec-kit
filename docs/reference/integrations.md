@@ -185,6 +185,7 @@ The currently declared multi-install safe integrations are:
 | `codebuddy` | `.codebuddy/commands`, `CODEBUDDY.md` |
 | `codex` | `.agents/skills`, `AGENTS.md` |
 | `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
+| `firebender` | `.firebender/commands`, `.firebender/rules/specify-rules.mdc` |
 | `gemini` | `.gemini/commands`, `GEMINI.md` |
 | `iflow` | `.iflow/commands`, `IFLOW.md` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |
