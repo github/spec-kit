@@ -53,7 +53,7 @@ For non-interactive or CI runs where you do not want to `cd`, set
 `.specify/`). Relative paths resolve against the current directory.
 
 ```bash
-# from the monorepo root, operate on apps/web without cd-ing in
+# operate on apps/web from the monorepo root (no cd required)
 export SPECIFY_INIT_DIR=apps/web
 ```
 
@@ -105,6 +105,6 @@ when it is present in the environment of the shell that runs those scripts.
 ## Constitutions
 
 Each member project has its own `.specify/memory/constitution.md` and
-`/speckit.constitution` edits the local project's file. There is no base/inherit
+`/speckit.constitution` edits the local project's file. There is no base/inheritance
 mechanism today, so shared engineering rules must be duplicated per project or kept
 out of the constitution.
