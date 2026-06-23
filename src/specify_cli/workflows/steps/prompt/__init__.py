@@ -67,6 +67,9 @@ class PromptStep(StepBase):
             output["executed"] = False
             output["dry_run"] = True
             output["dry_run_message"] = preview
+            # Preserve the original prompt so
+            # ``{{ steps.<id>.output.message }}`` keeps resolving to the
+            # original prompt text for downstream templates.
             output["message"] = preview
             return StepResult(status=StepStatus.COMPLETED, output=output)
 

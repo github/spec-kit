@@ -398,9 +398,9 @@ class TestWorkflowRunDryRunFlag:
         assert result.exit_code == 0
         # Banner is printed to stdout in default (non-JSON) mode.
         assert "DRY RUN" in result.stdout
-        # Preview loop printed the step_id of the gated step.
-        assert "ask" in result.stdout
-        assert "[DRY RUN]" in result.stdout
+        # Preview loop printed the dry-run message for the gated step.
+        assert "gate skipped" in result.stdout
+        assert "would choose" in result.stdout
         # Status is reported as completed (gate short-circuits in dry-run).
         assert "Status: completed" in result.stdout
         # "Resume with:" hint only appears for paused runs.

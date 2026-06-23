@@ -815,9 +815,11 @@ def workflow_run(
         "--dry-run",
         help=(
             "Preview the workflow without dispatching any AI or shell "
-            "commands. Built-in command, prompt, and gate steps emit a "
-            "synthetic preview message; the run is persisted so it can "
-            "be inspected but not resumed to a real run."
+            "commands for built-in command, prompt, and gate steps. "
+            "Those steps emit a synthetic preview message; the run is "
+            "persisted so it can be inspected but not resumed to a "
+            "real run. Other step types (e.g. init, shell) may still "
+            "perform their normal work during dry-run."
         ),
     ),
 ):
@@ -886,6 +888,15 @@ def workflow_run(
     except Exception as exc:
         if dry_run and not json_output:
             _print_dry_run_previews(getattr(exc, "partial_state", None))
+        if json_output:
+            partial = getattr(exc, "partial_state", None)
+            if partial:
+                _emit_workflow_json(_workflow_run_payload(partial))
+            raise typer.Exit(
+                _run_outcome_exit_code(
+                    partial.status.value if partial else "failed"
+                )
+            )
         console.print(f"[red]Workflow failed:[/red] {exc}")
         raise typer.Exit(1)
 
@@ -915,12 +926,11 @@ def workflow_run(
 def _print_dry_run_previews(state: Any) -> None:
     """Print the dry-run preview message emitted by each step.
 
-    Shared by ``workflow run`` and ``workflow resume``. Skipped silently
-    when ``state`` is ``None`` (e.g. the engine raised before any step
-    ran) or when the run did not include a dry-run step. Used both
-    after a successful dry-run and from exception handlers so a
-    mid-run failure still surfaces the previews resolved by earlier
-    steps.
+    Called by ``workflow run`` after a successful dry-run and from
+    exception handlers so a mid-run failure still surfaces the
+    previews resolved by earlier steps. Skipped silently when
+    ``state`` is ``None`` (e.g. the engine raised before any step
+    ran) or when the run did not include a dry-run step.
     """
     if state is None:
         return
@@ -936,7 +946,8 @@ def _print_dry_run_previews(state: Any) -> None:
             continue
         step_id_display = _escape_markup(str(step_id))
         preview = output.get("dry_run_message") or output.get("message") or ""
-        console.print(f"  [cyan][{step_id_display}][/cyan] {preview}")
+        preview_escaped = _escape_markup(preview)
+        console.print(f"  [cyan][{step_id_display}][/cyan] {preview_escaped}")
 
 
 def _escape_markup(text: str) -> str:

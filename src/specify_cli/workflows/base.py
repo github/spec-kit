@@ -81,10 +81,12 @@ class StepContext:
     #: those step types. Custom steps and built-in steps that have not
     #: been updated to honor ``dry_run`` may still perform their normal
     #: side effects; the flag is opt-in per step. Step implementations
-    #: publish the preview on ``output["message"]`` (the original, so
-    #: ``{{ steps.<id>.output.message }}`` keeps resolving) and
-    #: ``output["dry_run_message"]`` (the rendered ``[DRY RUN] ...``
-    #: body, consumed by the CLI's preview loop).
+    #: publish the preview on ``output["dry_run_message"]`` (consumed
+    #: by the CLI's preview loop). ``output["message"]`` is also set to
+    #: the preview string during dry-run (it may differ from the real
+    #: run's ``message``). Downstream templates that need the original
+    #: value should reference the step's pre-dispatch config fields
+    #: (e.g. ``command``, ``prompt``) instead of ``output.message``.
     dry_run: bool = False
 
 

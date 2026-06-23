@@ -104,6 +104,9 @@ class CommandStep(StepBase):
             output["executed"] = False
             output["dry_run"] = True
             output["dry_run_message"] = preview
+            # Preserve the original command/integration/input so
+            # ``{{ steps.<id>.output.message }}`` keeps resolving to the
+            # original command description for downstream templates.
             output["message"] = preview
             output["invoke_command"] = preview_invocation or command
             return StepResult(status=StepStatus.COMPLETED, output=output)

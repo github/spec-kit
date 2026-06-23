@@ -72,7 +72,9 @@ class GateStep(StepBase):
             output["choice"] = preview_choice
             output["dry_run"] = True
             output["dry_run_message"] = preview
-            output["message"] = preview
+            # Preserve the original message so
+            # ``{{ steps.<id>.output.message }}`` keeps resolving to the
+            # gate prompt for downstream template references.
             return StepResult(status=StepStatus.COMPLETED, output=output)
 
         # Non-interactive: pause for later resume (the file is not read here)
