@@ -1740,7 +1740,7 @@ class TestPresetCatalog:
 
         catalog_data = {"schema_version": "1.0", "presets": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/presets/catalog.json"
@@ -1893,7 +1893,7 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         # A real urllib response reports the final URL (== request URL with no
@@ -1965,7 +1965,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
@@ -2013,7 +2013,7 @@ class TestPresetCatalog:
 
         catalog = PresetCatalog(project_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2055,7 +2055,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2094,7 +2094,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2165,7 +2165,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode("utf-8")).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2214,11 +2214,13 @@ class TestPresetCatalog:
             "schema_version": "1.0",
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
+            return mock_response
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -2231,7 +2233,7 @@ class TestPresetCatalog:
 
         monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             # Legacy single-catalog path.
             assert catalog.fetch_catalog(force_refresh=True) == valid
 
@@ -2268,7 +2270,7 @@ class TestPresetCatalog:
             },
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://example.com/catalog.json"
@@ -2361,7 +2363,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         resp = MagicMock()
-        resp.read.return_value = zip_bytes
+        resp.read.side_effect = io.BytesIO(zip_bytes).read
         # Configure the context-manager protocol explicitly so `with resp`
         # yields `resp` itself, independent of how the protocol is invoked.
         resp.__enter__.return_value = resp
@@ -2471,7 +2473,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 

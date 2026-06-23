@@ -23,6 +23,7 @@ from rich.table import Table
 
 from .._console import console
 from .._assets import get_speckit_version
+from .._download_security import read_zip_member_limited
 
 extension_app = typer.Typer(
     name="extension",
@@ -1229,19 +1230,25 @@ def extension_update(
                         manifest_data = None
                         namelist = zf.namelist()
 
+                        # Read the manifest under a hard size cap: this happens
+                        # before install_from_zip()'s safe_extract_zip(), so a
+                        # raw zf.open().read() here would bypass that bound and
+                        # let a zip-bomb extension.yml exhaust memory.
                         # First try root-level extension.yml
                         if "extension.yml" in namelist:
-                            with zf.open("extension.yml") as f:
-                                parsed_manifest = yaml.safe_load(f)
-                                manifest_data = parsed_manifest if parsed_manifest is not None else {}
+                            parsed_manifest = yaml.safe_load(
+                                read_zip_member_limited(zf, "extension.yml")
+                            )
+                            manifest_data = parsed_manifest if parsed_manifest is not None else {}
                         else:
                             # Look for extension.yml in a single top-level subdirectory
                             # (e.g., "repo-name-branch/extension.yml")
                             manifest_paths = [n for n in namelist if n.endswith("/extension.yml") and n.count("/") == 1]
                             if len(manifest_paths) == 1:
-                                with zf.open(manifest_paths[0]) as f:
-                                    parsed_manifest = yaml.safe_load(f)
-                                    manifest_data = parsed_manifest if parsed_manifest is not None else {}
+                                parsed_manifest = yaml.safe_load(
+                                    read_zip_member_limited(zf, manifest_paths[0])
+                                )
+                                manifest_data = parsed_manifest if parsed_manifest is not None else {}
 
                         if manifest_data is None:
                             raise ValueError("Downloaded extension archive is missing 'extension.yml'")
