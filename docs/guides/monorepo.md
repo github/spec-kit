@@ -59,11 +59,16 @@ export SPECIFY_INIT_DIR=apps/web
 
 The path must exist and contain `.specify/`. If it does not, the command
 **errors and does not fall back** to the current directory or the Git toplevel.
-This is deliberate: a typo never writes specs into the wrong project:
+This is deliberate: a typo never writes specs into the wrong project. A
+nonexistent path is reported as you typed it; a path that exists but is not a
+Spec Kit project is reported as its resolved absolute path:
 
 ```text
+# SPECIFY_INIT_DIR=apps/wbe  (typo: no such directory)
 ERROR: SPECIFY_INIT_DIR does not point to an existing directory: apps/wbe
-ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): apps/web
+
+# SPECIFY_INIT_DIR=apps  (exists, but has no .specify/ of its own)
+ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): /home/you/my-monorepo/apps
 ```
 
 `SPECIFY_INIT_DIR` selects the **project**; `SPECIFY_FEATURE_DIRECTORY` selects
