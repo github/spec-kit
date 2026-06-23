@@ -80,6 +80,7 @@ def _register_builtins() -> None:
     from .trae import TraeIntegration
     from .vibe import VibeIntegration
     from .windsurf import WindsurfIntegration
+    from .zcode import ZcodeIntegration
     from .zed import ZedIntegration
 
     # -- Registration (alphabetical) --------------------------------------
@@ -116,6 +117,7 @@ def _register_builtins() -> None:
     _register(TraeIntegration())
     _register(VibeIntegration())
     _register(WindsurfIntegration())
+    _register(ZcodeIntegration())
     _register(ZedIntegration())
 
 

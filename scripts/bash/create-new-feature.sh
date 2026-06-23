@@ -123,7 +123,7 @@ clean_branch_name() {
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-REPO_ROOT=$(get_repo_root)
+REPO_ROOT=$(get_repo_root) || exit 1
 
 cd "$REPO_ROOT"
 

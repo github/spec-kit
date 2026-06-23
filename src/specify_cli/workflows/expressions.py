@@ -12,6 +12,19 @@ import re
 from typing import Any
 
 
+# The filters the expression evaluator recognizes. Used to tell a
+# *registered* filter used in an unsupported form (e.g. `| join` with no
+# argument) apart from a genuinely unknown filter name, so each raises an
+# error that names the real problem.
+_REGISTERED_FILTERS: tuple[str, ...] = (
+    "default",
+    "join",
+    "map",
+    "contains",
+    "from_json",
+)
+
+
 # -- Custom filters -------------------------------------------------------
 
 def _filter_default(value: Any, default_value: Any = "") -> Any:
@@ -192,7 +205,27 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         filter_name = filter_expr.strip()
         if filter_name == "default":
             return _filter_default(value)
-        return value
+        # No recognized filter matched. Fail loudly rather than silently
+        # returning the unfiltered value: a passthrough turns a mis-typed or
+        # unsupported filter into a wrong result with no signal. Mirrors the
+        # strict `from_json` handling above. Distinguish a *registered* filter
+        # used in an unsupported form (e.g. `| join` or `| map` with no
+        # argument) from a genuinely unknown filter name, so the message names
+        # the real problem instead of calling a known filter "unknown".
+        leading_name = re.match(r"\w+", filter_expr)
+        name = leading_name.group(0) if leading_name else filter_expr
+        expected = (
+            "expected one of default or default('x'), join('sep'), "
+            "map('attr'), contains('s'), or from_json"
+        )
+        if name in _REGISTERED_FILTERS:
+            raise ValueError(
+                f"filter '{name}' used in an unsupported form (got "
+                f"'| {filter_expr}'): {expected}"
+            )
+        raise ValueError(
+            f"unknown filter '{name}': {expected} (got '| {filter_expr}')"
+        )
 
     # Boolean operators — parse 'or' first (lower precedence) so that
     # 'a or b and c' is evaluated as 'a or (b and c)'.

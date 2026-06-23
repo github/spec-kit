@@ -676,6 +676,7 @@ class WorkflowEngine:
 
             # Record step results — prefer resolved values from step output
             step_data = {
+                "type": step_type,
                 "integration": result.output.get("integration")
                 or step_config.get("integration")
                 or context.default_integration,

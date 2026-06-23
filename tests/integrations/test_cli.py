@@ -1315,6 +1315,78 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert extension_list.exit_code == 0, extension_list.output
         assert "Config: .specify/extension-catalogs.yml" in extension_list.output
 
+    def test_extension_catalog_add_rejects_non_mapping_config_root(self, tmp_path):
+        project = self._make_project(tmp_path)
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+
+        result = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", "demo-extensions",
+        ], project)
+
+        assert result.exit_code == 1, result.output
+        output = _normalize_cli_output(result.output)
+        assert "Invalid catalog config .specify/extension-catalogs.yml" in output
+        assert "expected a YAML mapping at the root" in output
+        assert "AttributeError" not in output
+
+    def test_extension_catalog_remove_rejects_non_mapping_config_root(self, tmp_path):
+        project = self._make_project(tmp_path)
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+
+        result = self._invoke(["extension", "catalog", "remove", "demo"], project)
+
+        assert result.exit_code == 1, result.output
+        output = _normalize_cli_output(result.output)
+        assert "Invalid catalog config .specify/extension-catalogs.yml" in output
+        assert "expected a YAML mapping at the root" in output
+        assert "AttributeError" not in output
+
+    def test_extension_catalog_add_escapes_catalog_name_markup(self, tmp_path):
+        project = self._make_project(tmp_path)
+        catalog_name = "[red]demo[/red]"
+
+        result = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", catalog_name,
+        ], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        assert f"Added catalog '{catalog_name}'" in output
+
+    def test_extension_catalog_remove_escapes_catalog_name_markup(self, tmp_path):
+        project = self._make_project(tmp_path)
+        catalog_name = "[red]demo[/red]"
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": catalog_name,
+                            "url": "https://example.com/extension-catalog.yml",
+                            "priority": 10,
+                            "install_allowed": False,
+                            "description": "",
+                        }
+                    ]
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["extension", "catalog", "remove", catalog_name], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        assert f"Removed catalog '{catalog_name}'" in output
+
     # -- search ------------------------------------------------------------
 
     def test_search_lists_all(self, tmp_path, monkeypatch):

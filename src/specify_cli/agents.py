@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from ._init_options import is_ai_skills_enabled, load_init_options
+from ._utils import relative_extension_path_violation
 
 
 def _build_agent_configs() -> dict[str, Any]:
@@ -357,6 +358,33 @@ class CommandRegistrar:
         return skill_frontmatter
 
     @staticmethod
+    def apply_argument_hint(
+        source_frontmatter: Dict[str, Any],
+        skill_frontmatter: Dict[str, Any],
+        integration: Optional[object] = None,
+    ) -> None:
+        """Carry a command's ``argument-hint`` into its generated skill frontmatter.
+
+        Copies ``argument-hint`` from the parsed source command frontmatter into
+        *skill_frontmatter* (mutated in place) before serialization, so that a
+        folded multi-line ``description`` cannot be split into invalid YAML. Only
+        integrations that support the field — those exposing
+        ``inject_argument_hint`` (currently Claude) — receive the key, leaving
+        :meth:`build_skill_frontmatter`'s shared shape unchanged for every other
+        agent. Built-in templates carry no ``argument-hint``, so this is a no-op
+        for the core path.
+        """
+        if not isinstance(source_frontmatter, dict) or not isinstance(skill_frontmatter, dict):
+            return
+        argument_hint = source_frontmatter.get("argument-hint")
+        if (
+            argument_hint
+            and integration is not None
+            and hasattr(integration, "inject_argument_hint")
+        ):
+            skill_frontmatter["argument-hint"] = str(argument_hint)
+
+    @staticmethod
     def resolve_skill_placeholders(
         agent_name: str, frontmatter: dict, body: str, project_root: Path
     ) -> str:
@@ -399,14 +427,34 @@ class CommandRegistrar:
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
         # Resolve __CONTEXT_FILE__ from the agent-context extension config.
-        # Fall back to init-options.json for projects that haven't migrated.
+        # When disabled, ignore stale context_files but keep the singular
+        # context_file value so generated commands still point at the agent
+        # context file managed before the extension was disabled.
+        from .integrations.base import IntegrationBase
+
         # Local import: _load_agent_context_config lives in __init__.py which
         # imports agents.py, so a top-level import would be circular.
         from . import _load_agent_context_config
+
         ac_cfg = _load_agent_context_config(project_root)
-        context_file = ac_cfg.get("context_file") or ""
-        if not context_file:
-            context_file = init_opts.get("context_file") or ""
+        extension_enabled = IntegrationBase._agent_context_extension_enabled(
+            project_root
+        )
+        if extension_enabled:
+            context_files = IntegrationBase._resolve_context_file_values(
+                project_root,
+                ac_cfg,
+                legacy_context_file=init_opts.get("context_file"),
+            )
+        else:
+            context_files = IntegrationBase._resolve_context_file_values(
+                project_root,
+                ac_cfg,
+                legacy_context_file=init_opts.get("context_file"),
+                include_context_files=False,
+                validate=False,
+            )
+        context_file = IntegrationBase._format_context_file_values(context_files)
         body = body.replace("__CONTEXT_FILE__", context_file)
 
         return CommandRegistrar.rewrite_project_relative_paths(body)
@@ -540,17 +588,42 @@ class CommandRegistrar:
 
         registered = []
         is_cline_ext = agent_name == "cline" and source_id != "core"
+        source_root = source_dir.resolve()
 
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
 
-            source_file = source_dir / cmd_file
-            if not source_file.exists():
+            # Guard against path traversal using the single shared policy in
+            # relative_extension_path_violation(), so the runtime guard stays
+            # aligned with ExtensionManifest._validate() and the skill/preset
+            # readers. Skip a malformed/unsafe ``file`` (non-string, empty,
+            # whitespace, absolute/anchored, or ``..`` traversal); the
+            # resolve()/relative_to() check below is the final containment
+            # backstop.
+            if relative_extension_path_violation(cmd_file):
+                continue
+            try:
+                source_file = (source_root / cmd_file).resolve()
+                source_file.relative_to(source_root)  # raises ValueError if outside
+            except (OSError, ValueError):
                 continue
 
-            content = source_file.read_text(encoding="utf-8")
+            if not source_file.is_file():
+                continue
+
+            try:
+                content = source_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Skipping command '{cmd_name}': could not read source file "
+                    f"'{cmd_file}' ({exc.__class__.__name__}: {exc}).",
+                    stacklevel=2,
+                )
+                continue
             frontmatter, body = self.parse_frontmatter(content)
 
             if frontmatter.get("strategy") == "wrap":
