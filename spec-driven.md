@@ -12,13 +12,13 @@ This transformation is now possible because AI can understand and implement comp
 
 In this new world, maintaining software means evolving specifications. The intent of the development team is expressed in natural language ("**intent-driven development**"), design assets, core principles and other guidelines. The **lingua franca** of development moves to a higher level, and code is the last-mile approach.
 
-Debugging means fixing specifications and their implementation plans that generate incorrect code. Refactoring means restructuring for clarity. The entire development workflow reorganizes around specifications as the central source of truth, with implementation plans and code as the continuously regenerated output. Updating apps with new features or creating a new parallel implementation because we are creative beings, means revisiting the specification and creating new implementation plans. This process is therefore a 0 -> 1, (1', ..), 2, 3, N.
+Debugging means fixing specifications and their implementation plans that generate incorrect code. Refactoring means restructuring for clarity. The entire development process reorganizes around specifications as the central source of truth, with implementation plans and code as the continuously regenerated output. Updating apps with new features or creating a new parallel implementation because we are creative beings, means revisiting the specification and creating new implementation plans. This process is therefore a 0 -> 1, (1', ..), 2, 3, N.
 
 The development team focuses in on their creativity, experimentation, their critical thinking.
 
-## The SDD Workflow in Practice
+## The SDD Process in Practice
 
-The workflow begins with an idea—often vague and incomplete. Through iterative dialogue with AI, this idea becomes a comprehensive PRD. The AI asks clarifying questions, identifies edge cases, and helps define precise acceptance criteria. What might take days of meetings and documentation in traditional development happens in hours of focused specification work. This transforms the traditional SDLC—requirements and design become continuous activities rather than discrete phases. This is supportive of a **team process**, where team-reviewed specifications are expressed and versioned, created in branches, and merged.
+The process begins with an idea—often vague and incomplete. Through iterative dialogue with AI, this idea becomes a comprehensive PRD. The AI asks clarifying questions, identifies edge cases, and helps define precise acceptance criteria. What might take days of meetings and documentation in traditional development happens in hours of focused specification work. This transforms the traditional SDLC—requirements and design become continuous activities rather than discrete phases. This is supportive of a **team process**, where team-reviewed specifications are expressed, versioned, reviewed, and accepted.
 
 When a product manager updates acceptance criteria, implementation plans automatically flag affected technical decisions. When an architect discovers a better pattern, the PRD updates to reflect new possibilities.
 
@@ -42,7 +42,7 @@ Third, the pace of change accelerates. Requirements change far more rapidly toda
 
 SDD can support what-if/simulation experiments: "If we need to re-implement or change the application to promote a business need to sell more T-shirts, how would we implement and experiment for that?"
 
-SDD transforms requirement changes from obstacles into normal workflow. When specifications drive implementation, pivots become systematic regenerations rather than manual rewrites. Change a core requirement in the PRD, and affected implementation plans update automatically. Modify a user story, and corresponding API endpoints regenerate. This isn't just about initial development—it's about maintaining engineering velocity through inevitable changes.
+SDD transforms requirement changes from obstacles into normal process. When specifications drive implementation, pivots become systematic regenerations rather than manual rewrites. Change a core requirement in the PRD, and affected implementation plans update automatically. Modify a user story, and corresponding API endpoints regenerate. This isn't just about initial development—it's about maintaining engineering velocity through inevitable changes.
 
 ## Core Principles
 
@@ -65,14 +65,14 @@ Today, practicing SDD requires assembling existing tools and maintaining discipl
 - AI assistants for iterative specification development
 - Research agents for gathering technical context
 - Code generation tools for translating specifications to implementation
-- Version control systems adapted for specification-first workflows
+- Version control systems adapted for specification-first processes
 - Consistency checking through AI analysis of specification documents
 
 The key is treating specifications as the source of truth, with code as the generated output that serves the specification rather than the other way around.
 
 ## Streamlining SDD with Commands
 
-The SDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking workflow:
+The SDD methodology is significantly enhanced through three powerful commands that automate the specification → planning → tasking process:
 
 ### The `/speckit.specify` Command
 
@@ -104,7 +104,7 @@ After a plan is created, this command analyzes the plan and related design docum
 
 ### Example: Building a Chat Feature
 
-Here's how these commands transform the traditional development workflow:
+Here's how these commands transform the traditional development process:
 
 **Traditional Approach:**
 
@@ -149,7 +149,7 @@ In 15 minutes, you have:
 - A detailed implementation plan with technology choices and rationale
 - API contracts and data models ready for code generation
 - Comprehensive test scenarios for both automated and manual testing
-- All documents properly versioned in a feature branch
+- All documents properly versioned and reviewable
 
 ### The Power of Structured Automation
 
@@ -273,7 +273,7 @@ The templates transform the LLM from a creative writer into a disciplined specif
 
 ## The Constitutional Foundation: Enforcing Architectural Discipline
 
-At the heart of SDD lies a constitution—a set of immutable principles that govern how specifications become code. The constitution (`memory/constitution.md`) acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality.
+At the heart of SDD lies a constitution—a set of governing principles that define how specifications become code. The constitution acts as the architectural DNA of the system, ensuring that every generated implementation maintains consistency, simplicity, and quality. Run `/speckit.constitution` to create or update your project's constitution; the resulting file is stored at `.specify/memory/constitution.md`.
 
 ### The Nine Articles of Development
 
@@ -317,6 +317,18 @@ No implementation code shall be written before:
 ```
 
 This completely inverts traditional AI code generation. Instead of generating code and hoping it works, the LLM must first generate comprehensive tests that define behavior, get them approved, and only then generate implementation.
+
+#### Articles IV, V & VI: Project-Specific Standards
+
+Articles IV, V, and VI are the primary customization points in the constitution. In the constitution file (`.specify/memory/constitution.md`), these slots are expressed as named principles—not as fixed numbered headings. Teams use `/speckit.constitution` to define them, and `/speckit.analyze` validates spec, plan, and task artifacts against every principle in the project constitution.
+
+Common areas that projects define for these principles include:
+
+- **Requirement quality and coverage** (Article IV): for example, rules about testability, unambiguity, and traceability that specifications must satisfy for that project.
+- **Operational concerns** (Article V): for example, explicit thresholds for performance, security, observability, and accessibility that the project requires.
+- **Lifecycle concerns** (Article VI): for example, how the constitution and specifications are versioned, how derived artifacts stay consistent with their source, and how implementation gaps are resolved.
+
+Teams are free to name and scope these principles in whatever way best fits their project. The number of principles is also flexible—`/speckit.constitution` supports fewer or more than the template default.
 
 #### Articles VII & VIII: Simplicity and Anti-Abstraction
 
@@ -371,9 +383,9 @@ The implementation plan template operationalizes these articles through concrete
 
 These gates act as compile-time checks for architectural principles. The LLM cannot proceed without either passing the gates or documenting justified exceptions in the "Complexity Tracking" section.
 
-### The Power of Immutable Principles
+### The Power of Governing Principles
 
-The constitution's power lies in its immutability. While implementation details can evolve, the core principles remain constant. This provides:
+The constitution's power lies in its stability. While implementation details can evolve freely, changes to core principles require deliberate governance—explicit rationale, review, and versioning. This provides:
 
 1. **Consistency Across Time**: Code generated today follows the same principles as code generated next year
 2. **Consistency Across LLMs**: Different AI models produce architecturally compatible code
@@ -382,7 +394,7 @@ The constitution's power lies in its immutability. While implementation details 
 
 ### Constitutional Evolution
 
-While principles are immutable, their application can evolve:
+While principles are stable, both their application and the principles themselves can evolve through a governed process:
 
 ```text
 Section 4.2: Amendment Process
