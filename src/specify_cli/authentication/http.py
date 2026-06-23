@@ -17,6 +17,7 @@ from fnmatch import fnmatch
 from typing import Callable
 from urllib.parse import urlparse
 
+from .._download_security import is_https_or_localhost_http
 from . import get_provider
 from .config import AuthConfigEntry, _default_config_path, find_entries_for_url, load_auth_config
 
@@ -60,8 +61,23 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
 RedirectValidator = Callable[[str, str], None]
 
 
+def _validate_strict_redirect(_old_url: str, new_url: str) -> None:
+    if not is_https_or_localhost_http(new_url):
+        raise urllib.error.URLError(
+            "unsafe redirect: target must use HTTPS with a hostname, "
+            "or HTTP for localhost (127.0.0.1, ::1)"
+        )
+
+
 class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
-    """Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades."""
+    """Redirect handler that guards every redirect it is installed for.
+
+    1. Run any caller-provided redirect validator.
+    2. Reject redirects that are not HTTPS with a hostname, except HTTP to
+       localhost / 127.0.0.1 / ::1 (the exact hosts allowed by
+       ``is_https_or_localhost_http``).
+    3. Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades.
+    """
 
     def __init__(
         self,
@@ -75,6 +91,7 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if self._redirect_validator is not None:
             self._redirect_validator(req.full_url, newurl)
+        _validate_strict_redirect(req.full_url, newurl)
 
         original_auth = (
             req.get_header("Authorization")
@@ -137,6 +154,7 @@ def open_url(
     timeout: int = 10,
     extra_headers: dict[str, str] | None = None,
     redirect_validator: RedirectValidator | None = None,
+    strict_redirects: bool = False,
 ):
     """Open *url* with config-driven auth, redirect stripping, and fallthrough.
 
@@ -149,8 +167,18 @@ def open_url(
     *extra_headers* (e.g. ``Accept``) are merged into every attempt.
     *redirect_validator*, when provided, is called with ``(old_url, new_url)``
     before following each redirect and may raise to reject the redirect.
+
+    Redirect scheme safety: every authenticated attempt goes through
+    ``_StripAuthOnRedirect``, which always rejects redirects to non-HTTPS
+    URLs (except HTTP to localhost / 127.0.0.1 / ::1, the hosts allowed by
+    ``is_https_or_localhost_http``). The unauthenticated fallback installs the
+    same handler when *strict_redirects* is true or *redirect_validator* is
+    supplied; without either, it follows redirects without that handler.
     """
     entries = find_entries_for_url(url, _load_config())
+
+    effective_redirect_validator = redirect_validator
+    use_redirect_handler = strict_redirects or effective_redirect_validator is not None
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
         merged = {}
@@ -171,7 +199,7 @@ def open_url(
             continue
 
         req = _make_req(provider.auth_headers(token, entry.auth))
-        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, redirect_validator))
+        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, effective_redirect_validator))
         try:
             return opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as exc:
@@ -182,7 +210,9 @@ def open_url(
 
     # No entry worked (or none matched) — unauthenticated fallback
     req = _make_req({})
-    if redirect_validator is not None:
-        opener = urllib.request.build_opener(_StripAuthOnRedirect((), redirect_validator))
+    if use_redirect_handler:
+        # No auth is attached on this path, so the handler's host list is empty:
+        # here it runs redirect validation only, not auth stripping.
+        opener = urllib.request.build_opener(_StripAuthOnRedirect((), effective_redirect_validator))
         return opener.open(req, timeout=timeout)
     return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310

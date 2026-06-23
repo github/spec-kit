@@ -95,6 +95,11 @@ def resolve_github_release_asset_api_url(
     import json
     import urllib.error
 
+    from specify_cli._download_security import (
+        MAX_JSON_METADATA_BYTES,
+        read_response_limited,
+    )
+
     parsed = urlparse(download_url)
     hostname = (parsed.hostname or "").lower()
     parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
@@ -143,8 +148,17 @@ def resolve_github_release_asset_api_url(
 
     try:
         with open_url_fn(release_url, timeout=timeout) as response:
-            release_data = json.loads(response.read())
-    except (urllib.error.URLError, json.JSONDecodeError):
+            release_data = json.loads(
+                read_response_limited(
+                    response,
+                    max_bytes=MAX_JSON_METADATA_BYTES,
+                    label=f"GitHub release metadata {release_url}",
+                )
+            )
+    # ValueError covers both an oversized body (raised by read_response_limited)
+    # and json.JSONDecodeError (a ValueError subclass); on any of these, fall
+    # back to the original URL by returning None.
+    except (urllib.error.URLError, ValueError):
         return None
 
     for asset in release_data.get("assets", []):
