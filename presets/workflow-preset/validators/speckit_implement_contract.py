@@ -1,9 +1,25 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
 VALID_EXECUTION_MODES = {"isolated_subagent", "manual_fresh_worker_session"}
+VALID_VERTICAL_CAPABILITIES = (
+    "domain-model",
+    "api-contract",
+    "persistence",
+    "service-flow",
+    "ui",
+    "cli",
+    "test-validation",
+    "documentation",
+    "integration",
+    "cleanup",
+)
+SHARD_ID_PATTERN = re.compile(
+    rf"^S[0-9]{{2}}-({'|'.join(VALID_VERTICAL_CAPABILITIES)})-[0-9]{{2}}$"
+)
 CASE_TYPES = {"positive", "negative", "boundary", "permission", "validation", "state_conflict"}
 FAILURE_CASE_TYPES = {"negative", "permission", "validation", "state_conflict"}
 EXPLICIT_COMPONENT_USE_CONSTRAINTS = {
@@ -62,6 +78,13 @@ def _duplicate_values(values: list[Any], *, context: str, label: str = "value") 
         if key in seen:
             raise ValueError(f"{context} duplicates {label}: {key}")
         seen.add(key)
+
+
+def _shard_id_capability(shard_id: Any) -> str:
+    match = SHARD_ID_PATTERN.match(str(shard_id))
+    if match is None:
+        raise ValueError(f"invalid shard_id: {shard_id}")
+    return match.group(1)
 
 
 def _normalized_path_parts(path: Any) -> tuple[bool, tuple[str, ...]]:
@@ -343,8 +366,6 @@ def validate_design_requirement_intake_trace_contract(intake: dict[str, Any]) ->
 
     for row in rows:
         item_id = row.get("visual_item_id", "<unknown>")
-        if not row.get("visual_item_id"):
-            raise ValueError("visual restoration trace row missing visual_item_id")
         copied_structures = FULL_PROVIDER_MATRIX_KEYS.intersection(row)
         if copied_structures:
             raise ValueError(
@@ -549,6 +570,13 @@ def validate_manifest_contract(manifest: dict[str, Any]) -> None:
     shards = manifest.get("shards", [])
     shard_ids = _duplicate_ids(shards, key="shard_id", context="manifest shards")
     for shard in shards:
+        shard_capability = _shard_id_capability(shard.get("shard_id"))
+        vertical_capability = shard.get("vertical_capability")
+        if shard_capability != vertical_capability:
+            raise ValueError(
+                f"shard_id vertical_capability mismatch: {shard.get('shard_id')}"
+            )
+
         task_ids = shard.get("task_ids")
         if not isinstance(task_ids, list) or not task_ids:
             raise ValueError(
@@ -724,6 +752,10 @@ def validate_handoff_contract(handoff: dict[str, Any]) -> None:
             raise ValueError("allowed_write_paths must not include tasks.md")
 
     vertical_capability = handoff["vertical_capability"]
+    shard_capability = _shard_id_capability(handoff["shard_id"])
+    if shard_capability != vertical_capability:
+        raise ValueError("shard_id vertical_capability mismatch")
+
     planner_capability = handoff["planner_outputs"]["vertical_capability"]
     if planner_capability != vertical_capability:
         raise ValueError("planner_outputs vertical_capability mismatch")

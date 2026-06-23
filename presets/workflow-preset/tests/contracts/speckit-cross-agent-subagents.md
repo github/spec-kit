@@ -1,14 +1,17 @@
 # Spec Kit Cross-Agent Subagents
 ## Purpose
 Reduce implementation-stage context load and reasoning drift by turning broad `/speckit.implement` work into persisted, capability-scoped handoffs. Workers receive only task-local context, allowed paths, validation commands, and receipt obligations.
-## Files
+## Files and Schemas
 - `handoffs/implement/<run-id>/handoff-manifest.json`, `planner-outputs/`, `context-index.json`
 - `handoffs/implement/<run-id>/<shard>.json`, `<shard>.context.md`, `results/<shard>.json`
 - `schemas/speckit.implement.manifest.v1.schema.json`, `schemas/speckit.implement.handoff.v2.schema.json`, `schemas/speckit.implement.receipt.v1.schema.json`
+- Handoff records `planner_outputs` and `draft_source` fields.
 ## Authority
 - Only Vertical Planner Agents may produce shard plans and digest drafts.
 - Only Core Agent may write final `handoff-manifest.json` and commit `tasks.md`.
 - Only Worker Agents may execute implementation handoffs.
+## Lifecycle
+`intake` -> `context_indexing` -> `vertical_planning` -> `manifest_assembly` -> `worker_dispatch` -> `worker_execution` -> `receipt_review` -> `code_review` -> `task_commit` -> `integration_verification` -> `closeout`
 ## Runtime Isolation Mapping
 Use `agent-runtime=<spec-kit-integration-key>` as a prompt hint. The manifest records only `isolated_subagent` or `manual_fresh_worker_session`.
 | Runtime key | Isolated execution | Planner dispatch | Worker dispatch |
@@ -94,18 +97,20 @@ vertical_capability: <capability>
 - ignore completed `[x]` checklist items
 - preserve `tasks.md` order
 - infer `vertical_capability` from task section heading, task text, referenced paths
-- group by lifecycle dependencies, vertical_capability, allowed_write_paths
+- group candidates only when lifecycle dependencies, vertical_capability, and allowed_write_paths match
 - shard IDs use `S<2-digit-sequence>-<vertical_capability>-<2-digit-sequence>`
 ## Context Digest Rules
 - include task text for assigned `task_ids`
 - include document headings from `context-index.json`
-- include only referenced sections
+- include only sections referenced by assigned task paths or vertical_capability
 - include relevant `class-diagram.md`, `contracts/sequences.md`, `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` constraints, plus research.md validation decisions and quickstart.md validation paths from `research.md` and `quickstart.md`
+- include behavior contract constraints, visual fidelity requirements, screenshot refs, visual proof refs, Design Requirement trace refs, and Client Asset Contract entries
+- asset binding maps required Client Asset Contract items to local asset paths or code asset mappings; missing required client visual assets, mappings, variants, or fallbacks become `context_gaps`
 - record unresolved required context as `context_gaps`
 ## Path Rules
-- derive `allowed_write_paths` from referenced task paths
+- derive `allowed_write_paths` from paths referenced by assigned task text, planned `U` design object, and specific source, test, fixture, configuration, or receipt paths
 - include receipt path in `allowed_write_paths`
-- derive `allowed_read_paths` from allowed write parents, validation files, context digest, context index
+- derive `allowed_read_paths` from allowed write parents, validation files, context digest, and context index
 - exclude `tasks.md` from `allowed_write_paths`
 ## Receipt Rejection
 - mismatched `shard_id`

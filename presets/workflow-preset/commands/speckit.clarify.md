@@ -11,15 +11,15 @@ Use `spec.md` as the clarification source. Ask and record clarification only for
 
 Do not read or update behavior draft artifacts. Do not use behavior drafts as clarification inputs, and do not open a separate behavior-question channel. Product requirements stay in `spec.md`; update `spec.md` only after user-provided answers make the requirement clear.
 
-## User Input
+## Wrapper Input Additions
 
 Treat `$ARGUMENTS` as prioritization context for the current clarification run. Do not ask the user to restate requirements already present in `spec.md`.
 
-## Pre-Execution Checks
+## Wrapper Preflight Additions
 
 Load the active `spec.md` through the core command. Official hooks still apply: `hooks.before_clarify` runs before Outline, `hooks.after_clarify` runs before Completion Report, and mandatory hooks emit `EXECUTE_COMMAND`. If `spec.md` is missing, follow the core command error path and do not create a new spec here.
 
-## Outline
+## Wrapper Outline Additions
 
 ## Design Requirement Clarification Strategy
 
@@ -29,7 +29,7 @@ Do not call Figma MCP. Do not re-extract design facts, re-parse Figma links, or 
 
 Ask at most 5 high-impact questions whose answers materially affect requirements, implementation planning, or validation readiness. Maximum of 5 total questions. Present EXACTLY ONE question at a time. Do NOT output them all at once. Never reveal future queued questions.
 
-Format recommendations as `**Recommended:** Option [X] - <reasoning>` when a discrete 2-5 option choice is available. For short-answer gaps, use `Suggested` and constrain answers to `<=5 words`. Accept `yes`, `recommended`, or `suggested` as approval of the shown recommendation. Question selection order:
+Format recommendations as `**Recommended:** Option [X] - <brief rationale>` when a discrete 2-5 option choice is available. Keep the rationale short and decision-focused. For short-answer gaps, use `Suggested` and constrain answers to `<=5 words`. Accept `yes`, `recommended`, or `suggested` as approval of the shown recommendation. Question selection order:
 
 1. Required frames, states, and breakpoints for acceptance.
 2. visual fidelity scope: pixel-perfect, design-system faithful, or functional equivalent.

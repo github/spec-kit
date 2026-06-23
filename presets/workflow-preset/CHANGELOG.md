@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.3.10
+
+- Tightened implement handoff, manifest, and receipt shard IDs to the `S00-capability-00` format.
+- Added validator checks that shard ID capabilities match declared vertical capabilities.
+- Moved detailed `/speckit.implement` subagent lifecycle, shard, context digest, path, receipt, and review rules into the cross-agent contract reference.
+- Clarified `/speckit.tasks`, `/speckit.specify`, and `/speckit.clarify` wrapper boundaries.
+
 ## 1.3.9
 
 - Hardened implement receipt completion gates so deferred validation or unapproved code review cannot mark `tasks.md` items complete.

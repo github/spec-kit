@@ -31,7 +31,7 @@
     },
     "shard_id": {
       "type": "string",
-      "minLength": 1
+      "pattern": "^S[0-9]{2}-(domain-model|api-contract|persistence|service-flow|ui|cli|test-validation|documentation|integration|cleanup)-[0-9]{2}$"
     },
     "agent_topology": {
       "type": "object",
