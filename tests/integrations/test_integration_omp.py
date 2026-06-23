@@ -22,10 +22,10 @@ class TestOmpIntegration(MarkdownIntegrationTests):
 
         assert args == [
             "omp",
-            "-p",
-            "/speckit.specify Build auth",
+            "--print",
             "--model",
             "gpt-5",
             "--mode",
             "json",
+            "/speckit.specify Build auth",
         ]
