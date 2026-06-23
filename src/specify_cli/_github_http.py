@@ -100,6 +100,8 @@ def resolve_github_release_asset_api_url(
     import json
     import urllib.error
 
+    from specify_cli._download_security import read_response_limited
+
     parsed = urlparse(download_url)
     hostname = (parsed.hostname or "").lower()
     parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
@@ -158,10 +160,13 @@ def resolve_github_release_asset_api_url(
         if redirect_validator is not None:
             open_kwargs["redirect_validator"] = redirect_validator
         with open_url_fn(release_url, **open_kwargs) as response:
-            raw_release_data = response.read(max_metadata_bytes + 1)
-            if len(raw_release_data) > max_metadata_bytes:
-                raise ValueError("GitHub release metadata exceeds size limit")
-            release_data = json.loads(raw_release_data)
+            release_data = json.loads(
+                read_response_limited(
+                    response,
+                    max_bytes=max_metadata_bytes,
+                    label=f"GitHub release metadata {release_url}",
+                )
+            )
     except (
         urllib.error.URLError,
         json.JSONDecodeError,

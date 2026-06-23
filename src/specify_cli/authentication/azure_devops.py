@@ -8,6 +8,7 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
+from .._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from .base import AuthProvider
 
 if TYPE_CHECKING:
@@ -15,6 +16,10 @@ if TYPE_CHECKING:
 
 # Azure DevOps resource ID for OAuth / Azure AD token acquisition.
 _ADO_RESOURCE_ID = "499b84ac-1321-427f-aa17-267ca6975798"
+
+
+class _TokenResponseTooLarge(Exception):
+    """Raised when an Azure AD token response exceeds the bounded read limit."""
 
 
 class AzureDevOpsAuth(AuthProvider):
@@ -119,9 +124,31 @@ class AzureDevOpsAuth(AuthProvider):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-                payload = _json.loads(resp.read().decode("utf-8"))
+            from specify_cli.authentication.http import _StripAuthOnRedirect
+
+            # A 307/308 redirect preserves the POST body, which carries the
+            # client_secret. Reuse the package HTTPS-downgrade guard (empty host
+            # list means no auth header to strip, just the scheme check) so the
+            # secret can never be forwarded to a non-HTTPS, non-loopback host.
+            opener = urllib.request.build_opener(_StripAuthOnRedirect(()))
+            with opener.open(req, timeout=30) as resp:  # noqa: S310
+                payload = _json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_METADATA_BYTES,
+                        error_type=_TokenResponseTooLarge,
+                        label="Azure DevOps token response",
+                    ).decode("utf-8")
+                )
                 token = payload.get("access_token", "").strip()
                 return token or None
-        except (urllib.error.URLError, OSError, _json.JSONDecodeError, KeyError):
+        except (
+            urllib.error.URLError,
+            OSError,
+            _json.JSONDecodeError,
+            _TokenResponseTooLarge,
+        ):
+            # Network failure, malformed JSON, or an oversized response — fall
+            # through to the next strategy. Unrelated programming errors (other
+            # ValueErrors, KeyErrors) intentionally propagate so they surface.
             return None
