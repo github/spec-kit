@@ -58,7 +58,12 @@ class WorkflowDefinition:
         # are not a security boundary. In particular there is no
         # ``requires.permissions`` capability gate: shell steps always run with
         # the user's privileges.
-        self.requires: dict[str, Any] = data.get("requires", {})
+        #
+        # Holds the raw parsed value, so before ``validate_workflow`` runs it may
+        # be a non-mapping (``None`` for a bare ``requires:``, a list for
+        # ``requires: []``, etc.); typed ``Any`` rather than ``dict[str, Any]``
+        # to avoid implying it is always a mapping at this point.
+        self.requires: Any = data.get("requires", {})
 
         # Inputs
         self.inputs: dict[str, Any] = data.get("inputs", {})
