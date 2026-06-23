@@ -16,7 +16,10 @@ from .integrations.manifest import IntegrationManifest
 
 logger = logging.getLogger(__name__)
 
-# A SHA-256 digest is exactly 64 lowercase hexadecimal characters.
+# Matches a SHA-256 digest in its normalized form: exactly 64 hexadecimal
+# characters. Callers lowercase the declared value before matching (see
+# ``expected_hex = raw.lower()`` below), so an uppercase digest is accepted and
+# normalized rather than rejected.
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
