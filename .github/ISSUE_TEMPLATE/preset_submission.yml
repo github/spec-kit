@@ -187,9 +187,7 @@ body:
       options:
         - label: Valid `preset.yml` manifest included
           required: true
-        - label: README.md with description and usage instructions
-          required: true
-        - label: Linked README explains how to use this preset and includes a valid `specify preset add ...` command matching the download URL
+        - label: Linked README (Documentation URL) explains how to use this preset and includes a valid `specify preset add ...` command matching the download URL
           required: true
         - label: LICENSE file included
           required: true

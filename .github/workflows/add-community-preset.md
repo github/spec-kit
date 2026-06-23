@@ -113,22 +113,34 @@ The `documentation` field must point to the README that explains **how to use th
 preset** — not just any file named `README.md`, and not a product/framework pitch.
 
 - **Restrict the URL to GitHub before fetching.** The `documentation` value is
-  user-provided input. Only accept GitHub-hosted README URLs — `https://github.com/<owner>/<repo>/blob/<ref>/<path>`
-  or `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`. If the URL points
-  anywhere else (or isn't a URL), **fail this check** and do not fetch it.
-- Fetch the **exact URL** in the `documentation` field (convert GitHub `blob` URLs to
-  their `raw.githubusercontent.com` equivalent before fetching) and confirm it resolves
-  to a readable Markdown file.
+  user-provided input. Only accept GitHub-hosted README URLs:
+  - `https://github.com/<owner>/<repo>/blob/<ref>/<path>`
+  - `https://github.com/<owner>/<repo>/raw/<ref>/<path>`
+  - `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`
+
+  If the URL points anywhere else (or isn't a URL), **fail this check** and do not fetch it.
+- Fetch the **exact URL** in the `documentation` field. First strip any fragment (`#...`)
+  or query string (`?...`) — these are common when copying from the browser UI and must be
+  ignored so the fetch target is deterministic. Then convert GitHub `blob`/`raw` web URLs to
+  their `raw.githubusercontent.com` equivalent before fetching, and confirm it resolves to a
+  readable Markdown file.
 - **Validate that the README contains a valid Spec Kit CLI install command.** The fetched
   README must contain at least one `specify preset add ...` invocation. The strongest
   signal is the catalog-install form whose URL matches the submitted **Download URL**:
-  - `specify preset add --from <download-url>` (preferred — the URL must match exactly), or
+  - `specify preset add --from <download-url>` (preferred), or
   - `specify preset add <preset-id>`, or
   - `specify preset add --dev <path>`
 
-  If **no** `specify preset add ...` command is present, the README is treated as a generic
-  description/pitch rather than preset-usage documentation — **fail this check** and tell the
-  submitter to add a valid install command (ideally `specify preset add --from <download-url>`).
+  A `specify preset add --from <url>` command only counts when its `<url>` **matches the
+  submitted Download URL exactly**. A `--from` command pointing at a *different* URL does
+  **not** satisfy the install-command requirement (treat it as if absent) — but the README
+  may still pass on one of the other accepted forms (`specify preset add <preset-id>` or
+  `specify preset add --dev <path>`).
+
+  If **no** accepted `specify preset add ...` command is present, the README is treated as a
+  generic description/pitch rather than preset-usage documentation — **fail this check** and
+  tell the submitter to add a valid install command (ideally
+  `specify preset add --from <download-url>`).
 - **Prefer a preset-scoped README in monorepos.** If `documentation` resolves to a generic
   repository-root README in a monorepo (the preset lives in a subdirectory such as
   `presets/<id>/` and a preset-scoped README exists there), **flag it** in your comment and

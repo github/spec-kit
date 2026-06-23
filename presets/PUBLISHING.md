@@ -169,6 +169,9 @@ your submission isn't sent back for changes.
   catalog-install form whose URL matches your Download URL:
 
   ```bash
+  # <download-url> is the same URL you submit as the catalog Download URL —
+  # either the tag archive or a release asset, e.g.:
+  specify preset add --from https://github.com/<org>/<repo>/archive/refs/tags/vX.Y.Z.zip
   specify preset add --from https://github.com/<org>/<repo>/releases/download/vX.Y.Z/<id>-X.Y.Z.zip
   ```
 
