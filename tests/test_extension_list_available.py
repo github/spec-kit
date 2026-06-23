@@ -108,6 +108,28 @@ def test_list_available_catalog_error_exits(project_dir, monkeypatch):
     assert "catalog unreachable" in result.output
 
 
+def test_list_available_tolerates_entry_missing_name_or_version(project_dir, monkeypatch):
+    """A malformed catalog entry missing name/version must not crash listing.
+
+    Catalog entries are untrusted (remote/community catalogs) and only
+    guaranteed to be dicts with an injected ``id``. A missing ``name`` or
+    ``version`` must degrade to a placeholder, not raise KeyError.
+    """
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [])
+    monkeypatch.setattr(ExtensionCatalog, "search", lambda self: [
+        {"id": "broken-ext"},  # no name, no version, no description
+    ])
+
+    result = runner.invoke(app, ["extension", "list", "--available"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0
+    assert "broken-ext" in result.output
+    assert "(unnamed)" in result.output
+    assert "(v?)" in result.output
+
+
 def test_list_all_shows_installed_and_available(project_dir, monkeypatch):
     """--all lists installed extensions and available catalog extensions."""
     monkeypatch.chdir(project_dir)

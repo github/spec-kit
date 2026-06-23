@@ -11,6 +11,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -47,6 +48,29 @@ catalog_app = typer.Typer(
     add_completion=False,
 )
 extension_app.add_typer(catalog_app, name="catalog")
+
+
+def _catalog_str(ext: dict, key: str, fallback: str = "") -> str:
+    """Return a non-blank catalog string field, or a safe fallback."""
+    value = ext.get(key)
+    if isinstance(value, str):
+        value = value.strip()
+        if value:
+            return value
+    return fallback
+
+
+def _catalog_id(ext: dict) -> str:
+    """Return an installable catalog ID, or an empty string when invalid."""
+    extension_id = _catalog_str(ext, "id")
+    return extension_id if re.fullmatch(r"[a-z0-9-]+", extension_id) else ""
+
+
+def _catalog_number(value) -> str:
+    """Return a formatted numeric catalog value, omitting malformed input."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return ""
+    return f"{value:,}"
 
 
 # Root helpers re-fetched at call time so test monkeypatching of
@@ -334,18 +358,16 @@ def _resolve_catalog_extension(
         # First try by ID
         ext_info = catalog.get_extension_info(argument)
         if ext_info:
-            return (ext_info, None)
+            if _catalog_id(ext_info):
+                return (ext_info, None)
+            return (None, None)
 
-        # Try by display name - search using argument as query, then filter for exact match.
-        # Coerce name defensively: catalog JSON is user-editable, so a hand-authored
-        # non-string/missing name must not crash the match (the ambiguous-match display
-        # below already str()-coerces name for the same reason).
-        search_results = catalog.search()
-        argument_lower = argument.lower()
+        # Resolve display names only from entries the CLI can safely install.
+        search_results = catalog.search(query=argument)
         name_matches = [
             ext
             for ext in search_results
-            if str(ext.get("name", "")).lower() == argument_lower
+            if _catalog_id(ext) and _catalog_str(ext, "name").lower() == argument.lower()
         ]
 
         if len(name_matches) == 1:
@@ -442,7 +464,9 @@ def extension_list(
                 # before embedding in Rich markup to prevent markup injection.
                 safe_id = _escape_markup(str(ext.get("id", "")))
                 verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
-                console.print(f"  [bold]{_escape_markup(str(ext['name']))}[/bold] (v{_escape_markup(str(ext['version']))}){verified_badge}")
+                safe_name = _escape_markup(str(ext.get("name", "(unnamed)")))
+                safe_version = _escape_markup(str(ext.get("version", "?")))
+                console.print(f"  [bold]{safe_name}[/bold] (v{safe_version}){verified_badge}")
                 console.print(f"     [dim]{safe_id}[/dim]")
                 console.print(f"     {_escape_markup(str(ext.get('description', '')))}")
                 install_allowed = ext.get("_install_allowed", True)
@@ -1057,7 +1081,9 @@ def extension_add(
 
                         # Download extension archive (use the resolved catalog ID).
                         extension_id = ext_info['id']
-                        console.print(f"Downloading {_escape_markup(str(ext_info['name']))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
+                        dl_name = _escape_markup(_catalog_str(ext_info, "name", extension_id))
+                        dl_version = _escape_markup(_catalog_str(ext_info, "version", "unknown"))
+                        console.print(f"Downloading {dl_name} v{dl_version}...")
                         archive_path = catalog.download_extension(extension_id)
 
                         try:
@@ -1247,8 +1273,8 @@ def extension_search(
         for ext in results:
             # Extension header
             verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
-            console.print(f"[bold]{_escape_markup(str(ext['name']))}[/bold] (v{_escape_markup(str(ext['version']))}){verified_badge}")
-            console.print(f"  {_escape_markup(str(ext['description']))}")
+            console.print(f"[bold]{_escape_markup(str(ext.get('name', '(unnamed)')))}[/bold] (v{_escape_markup(str(ext.get('version', '?')))}){verified_badge}")
+            console.print(f"  {_escape_markup(str(ext.get('description', '')))}")
 
             # Metadata
             console.print(f"\n  [dim]Author:[/dim] {_escape_markup(str(ext.get('author', 'Unknown')))}")
@@ -1268,24 +1294,11 @@ def extension_search(
 
             # Stats
             stats = []
-            downloads = ext.get('downloads')
-            if downloads is not None:
-                # Catalog fields are untrusted; a non-numeric ``downloads``
-                # (e.g. the JSON string "1500") would crash the ``:,`` format
-                # with "Cannot specify ',' with 's'". Only group-format numbers,
-                # and escape the fallback: the joined stats are rendered as Rich
-                # markup, so a value like "[/red]foo" would raise MarkupError
-                # (matching how every other catalog field here is escaped).
-                stats.append(
-                    f"Downloads: {downloads:,}"
-                    if isinstance(downloads, (int, float))
-                    else f"Downloads: {_escape_markup(str(downloads))}"
-                )
-            stars = ext.get('stars')
-            if stars is not None:
-                # Same untrusted-value/Rich-markup hazard as `downloads` above,
-                # in the same joined string.
-                stats.append(f"Stars: {_escape_markup(str(stars))}")
+            downloads = _catalog_number(ext.get("downloads"))
+            if downloads:
+                stats.append(f"Downloads: {downloads}")
+            if ext.get('stars') is not None:
+                stats.append(f"Stars: {_escape_markup(str(ext['stars']))}")
             if stats:
                 console.print(f"  [dim]{' | '.join(stats)}[/dim]")
 
@@ -1427,12 +1440,12 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
-    console.print(f"\n[bold]{_escape_markup(str(ext_info['name']))}[/bold] (v{_escape_markup(str(ext_info['version']))}){verified_badge}")
+    console.print(f"\n[bold]{_escape_markup(str(ext_info.get('name', '(unnamed)')))}[/bold] (v{_escape_markup(str(ext_info.get('version', '?')))}){verified_badge}")
     console.print(f"ID: {_escape_markup(str(ext_info['id']))}")
     console.print()
 
     # Description
-    console.print(f"{_escape_markup(str(ext_info['description']))}")
+    console.print(f"{_escape_markup(str(ext_info.get('description', '')))}")
     console.print()
 
     # Author and License
@@ -1453,23 +1466,26 @@ def _print_extension_info(ext_info: dict, manager):
     console.print()
 
     # Requirements
-    if ext_info.get('requires'):
+    reqs = ext_info.get('requires')
+    if isinstance(reqs, dict) and reqs:
         console.print("[bold]Requirements:[/bold]")
-        reqs = ext_info['requires']
         if reqs.get('speckit_version'):
             console.print(f"  • Spec Kit: {_escape_markup(str(reqs['speckit_version']))}")
-        if reqs.get('tools'):
-            for tool in reqs['tools']:
-                tool_name = _escape_markup(str(tool['name']))
+        tools = reqs.get('tools')
+        if isinstance(tools, list):
+            for tool in tools:
+                if not isinstance(tool, dict):
+                    continue
+                tool_name = _escape_markup(str(tool.get('name', '(unnamed)')))
                 tool_version = _escape_markup(str(tool.get('version', 'any')))
                 required = " (required)" if tool.get('required') else " (optional)"
                 console.print(f"  • {tool_name}: {tool_version}{required}")
         console.print()
 
     # Provides
-    if ext_info.get('provides'):
+    provides = ext_info.get('provides')
+    if isinstance(provides, dict) and provides:
         console.print("[bold]Provides:[/bold]")
-        provides = ext_info['provides']
         if provides.get('commands'):
             console.print(f"  • Commands: {_escape_markup(str(provides['commands']))}")
         if provides.get('hooks'):
@@ -1485,24 +1501,11 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Statistics
     stats = []
-    downloads = ext_info.get('downloads')
-    if downloads is not None:
-        # Catalog fields are untrusted; a non-numeric ``downloads`` (e.g. the
-        # JSON string "1500") would crash the ``:,`` format with "Cannot
-        # specify ',' with 's'". Only group-format numbers, and escape the
-        # fallback: the joined stats are rendered as Rich markup, so a value
-        # like "[/red]foo" would raise MarkupError (matching how every other
-        # catalog field here is escaped).
-        stats.append(
-            f"Downloads: {downloads:,}"
-            if isinstance(downloads, (int, float))
-            else f"Downloads: {_escape_markup(str(downloads))}"
-        )
-    stars = ext_info.get('stars')
-    if stars is not None:
-        # Same untrusted-value/Rich-markup hazard as `downloads` above, in the
-        # same joined string.
-        stats.append(f"Stars: {_escape_markup(str(stars))}")
+    downloads = _catalog_number(ext_info.get("downloads"))
+    if downloads:
+        stats.append(f"Downloads: {downloads}")
+    if ext_info.get('stars') is not None:
+        stats.append(f"Stars: {_escape_markup(str(ext_info['stars']))}")
     if stats:
         console.print(f"[bold]Statistics:[/bold] {' | '.join(stats)}")
         console.print()
@@ -1610,8 +1613,8 @@ def extension_update(
                 continue
 
             try:
-                catalog_version = pkg_version.Version(ext_info["version"])
-            except pkg_version.InvalidVersion:
+                catalog_version = pkg_version.Version(str(ext_info["version"]))
+            except (pkg_version.InvalidVersion, KeyError):
                 console.print(
                     f"⚠  {safe_ext_id}: Invalid catalog version '{_escape_markup(str(ext_info.get('version')))}' (skipping)"
                 )
