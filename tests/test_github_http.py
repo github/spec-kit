@@ -1,16 +1,20 @@
 """Tests for GitHub-authenticated HTTP request helpers."""
 
+import io
 import json
 import os
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
+from urllib.request import Request
 
 import pytest
 
 from specify_cli._github_http import (
+    GITHUB_HOSTS,
     build_github_request,
     resolve_github_release_asset_api_url,
 )
+from specify_cli.authentication.http import _StripAuthOnRedirect
 
 
 class TestBuildGitHubRequest:
@@ -90,7 +94,7 @@ class TestResolveGitHubReleaseAssetApiUrl:
         @contextmanager
         def fake_open(url, timeout=None, extra_headers=None):
             resp = MagicMock()
-            resp.read.return_value = json.dumps(release_json).encode()
+            resp.read.side_effect = io.BytesIO(json.dumps(release_json).encode()).read
             yield resp
         return fake_open
 
@@ -144,7 +148,7 @@ class TestResolveGitHubReleaseAssetApiUrl:
         @contextmanager
         def failing_open(url, timeout=None, extra_headers=None):
             raise urllib.error.URLError("network error")
-            yield  # noqa: unreachable
+            yield  # pragma: no cover
 
         result = resolve_github_release_asset_api_url(
             "https://github.com/org/repo/releases/download/v1/pack.zip",
@@ -160,7 +164,7 @@ class TestResolveGitHubReleaseAssetApiUrl:
         def capturing_open(url, timeout=None, extra_headers=None):
             captured_urls.append(url)
             resp = MagicMock()
-            resp.read.return_value = json.dumps({"assets": []}).encode()
+            resp.read.side_effect = io.BytesIO(json.dumps({"assets": []}).encode()).read
             yield resp
 
         resolve_github_release_asset_api_url(
@@ -179,7 +183,7 @@ class TestResolveGitHubReleaseAssetApiUrl:
         def capturing_open(url, timeout=None, extra_headers=None):
             captured_urls.append(url)
             resp = MagicMock()
-            resp.read.return_value = json.dumps({"assets": []}).encode()
+            resp.read.side_effect = io.BytesIO(json.dumps({"assets": []}).encode()).read
             yield resp
 
         resolve_github_release_asset_api_url(
@@ -188,3 +192,43 @@ class TestResolveGitHubReleaseAssetApiUrl:
         )
         assert len(captured_urls) == 1
         assert "releases/tags/v1%23beta" in captured_urls[0]
+
+
+class TestGitHubRedirectAuth:
+    """Tests for GitHub-owned redirect auth handling."""
+
+    def test_multi_hop_github_redirect_preserves_unredirected_auth(self):
+        """Auth survives a multi-hop redirect chain within GitHub hosts."""
+        handler = _StripAuthOnRedirect(tuple(GITHUB_HOSTS))
+        req1 = Request(
+            "https://github.com/org/repo",
+            headers={"Authorization": "Bearer tok"},
+        )
+
+        req2 = handler.redirect_request(
+            req1,
+            io.BytesIO(b""),
+            302,
+            "Found",
+            {},
+            "https://codeload.github.com/org/repo/zip",
+        )
+        assert req2 is not None
+        auth2 = req2.get_header("Authorization") or req2.unredirected_hdrs.get(
+            "Authorization"
+        )
+        assert auth2 == "Bearer tok"
+
+        req3 = handler.redirect_request(
+            req2,
+            io.BytesIO(b""),
+            302,
+            "Found",
+            {},
+            "https://raw.githubusercontent.com/org/repo/main/file",
+        )
+        assert req3 is not None
+        auth3 = req3.get_header("Authorization") or req3.unredirected_hdrs.get(
+            "Authorization"
+        )
+        assert auth3 == "Bearer tok"
