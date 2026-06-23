@@ -9,10 +9,20 @@ from specify_cli.extensions import ExtensionManager
 from specify_cli.integrations import get_integration
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_EXTENSION_IDS = ("arch", "preview", "repository-governance")
+DEFAULT_EXTENSION_IDS = ("arch", "discovery", "preview", "repository-governance")
 DEFAULT_EXTENSION_COMMANDS = (
     "speckit.arch.generate",
     "speckit.arch.reverse",
+    "speckit.discovery.feasibility",
+    "speckit.discovery.techselect",
+    "speckit.discovery.codebase",
+    "speckit.discovery.codebase-api-imp",
+    "speckit.discovery.poc",
+    "speckit.discovery.api",
+    "speckit.discovery.performance",
+    "speckit.discovery.migration",
+    "speckit.discovery.ux",
+    "speckit.discovery.compatibility",
     "speckit.preview.html",
     "speckit.repository-governance.refresh",
 )

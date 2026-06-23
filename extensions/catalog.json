@@ -91,6 +91,29 @@
         "ux"
       ]
     },
+    "discovery": {
+      "name": "Spec Kit Discovery Extension",
+      "id": "discovery",
+      "version": "0.1.0",
+      "description": "Run technical discovery commands before formal planning",
+      "author": "bigsmartben",
+      "repository": "https://github.com/bigsmartben/spec-kit-discovery",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 10
+      },
+      "tags": [
+        "discovery",
+        "feasibility",
+        "selection",
+        "codebase",
+        "poc"
+      ]
+    },
     "repository-governance": {
       "name": "Repository Governance",
       "id": "repository-governance",

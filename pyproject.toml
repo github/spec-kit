@@ -41,6 +41,7 @@ packages = ["src/specify_cli"]
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/catalog.json" = "specify_cli/core_pack/extensions/catalog.json"
 "extensions/arch" = "specify_cli/core_pack/extensions/arch"
+"extensions/discovery" = "specify_cli/core_pack/extensions/discovery"
 "extensions/git" = "specify_cli/core_pack/extensions/git"
 "extensions/preview" = "specify_cli/core_pack/extensions/preview"
 "extensions/repository-governance" = "specify_cli/core_pack/extensions/repository-governance"

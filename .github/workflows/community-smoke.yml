@@ -47,6 +47,7 @@ jobs:
 
           test -f .specify/extensions/arch/extension.yml
           test -f .specify/extensions/preview/extension.yml
+          test -f .specify/extensions/discovery/extension.yml
           test -f .specify/extensions/repository-governance/extension.yml
           test -f .specify/presets/workflow-preset/preset.yml
           /tmp/specify-community-smoke-venv/bin/python - <<'PY'
@@ -93,6 +94,7 @@ jobs:
 
           test -f .claude/skills/speckit-arch-generate/SKILL.md
           test -f .claude/skills/speckit-preview-html/SKILL.md
+          test -f .claude/skills/speckit-discovery-feasibility/SKILL.md
           test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
           test -f .claude/skills/speckit-specify/SKILL.md
           test -f .claude/skills/speckit-clarify/SKILL.md
@@ -110,7 +112,7 @@ jobs:
           grep -q "Vertical Planner Agent" .claude/skills/speckit-implement/SKILL.md
           grep -q "Worker Agent" .claude/skills/speckit-implement/SKILL.md
 
-          for extension_id in arch preview repository-governance; do
+          for extension_id in arch discovery preview repository-governance; do
             /tmp/specify-community-smoke-venv/bin/specify extension remove "$extension_id" --force
             test ! -d ".specify/extensions/$extension_id"
             case "$extension_id" in
@@ -121,13 +123,16 @@ jobs:
               preview)
                 test ! -d .claude/skills/speckit-preview-html
                 ;;
+              discovery)
+                test "$(find .claude/skills -maxdepth 1 -type d -name 'speckit-discovery-*' | wc -l)" -eq 0
+                ;;
               repository-governance)
                 test ! -d .claude/skills/speckit-repository-governance-refresh
                 ;;
             esac
           done
 
-          for extension_id in arch preview repository-governance; do
+          for extension_id in arch discovery preview repository-governance; do
             /tmp/specify-community-smoke-venv/bin/specify extension add "$GITHUB_WORKSPACE/extensions/$extension_id" --dev
             case "$extension_id" in
               arch)
@@ -139,12 +144,21 @@ jobs:
                 test -f .claude/skills/speckit-preview-html/SKILL.md
                 grep -q "self-contained interactive HTML prototype" .claude/skills/speckit-preview-html/SKILL.md
                 ;;
+              discovery)
+                test -f .claude/skills/speckit-discovery-feasibility/SKILL.md
+                grep -q "evidence-backed feasibility study" .claude/skills/speckit-discovery-feasibility/SKILL.md
+                ;;
               repository-governance)
                 test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
                 grep -q "Repository Governance Generate/Update" .claude/skills/speckit-repository-governance-refresh/SKILL.md
                 ;;
             esac
           done
+
+          /tmp/specify-community-smoke-venv/bin/specify extension remove discovery --force
+          /tmp/specify-community-smoke-venv/bin/specify extension add discovery
+          test -f .claude/skills/speckit-discovery-feasibility/SKILL.md
+          test -f .claude/skills/speckit-discovery-compatibility/SKILL.md
 
           /tmp/specify-community-smoke-venv/bin/specify preset resolve plan-template | tee resolve-plan-template.txt
           grep -q "workflow-preset" resolve-plan-template.txt

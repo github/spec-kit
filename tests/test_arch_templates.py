@@ -119,7 +119,7 @@ def test_init_next_steps_do_not_list_arch_as_core_workflow():
     )
 
     assert "_display_cmd('arch')" not in init_source
-    assert 'DEFAULT_BUNDLED_EXTENSIONS = ("arch", "preview", "repository-governance")' in init_source
+    assert 'DEFAULT_BUNDLED_EXTENSIONS = ("arch", "discovery", "preview", "repository-governance")' in init_source
     assert "specify extension add arch" not in init_source
 
 

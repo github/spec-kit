@@ -4530,7 +4530,7 @@ class TestBundledPresetLocator:
             "speckit.design.visual-item-matrix.v1.schema.json"
         ) in verify_run
         assert (
-            'for extension_id in arch preview repository-governance; do'
+            'for extension_id in arch discovery preview repository-governance; do'
             in verify_run
         )
         assert (
@@ -4540,6 +4540,7 @@ class TestBundledPresetLocator:
         assert "test ! -d .claude/skills/speckit-arch-generate" in verify_run
         assert "test ! -d .claude/skills/speckit-arch-reverse" in verify_run
         assert "test ! -d .claude/skills/speckit-preview-html" in verify_run
+        assert "find .claude/skills -maxdepth 1 -type d -name 'speckit-discovery-*'" in verify_run
         assert (
             "test ! -d .claude/skills/speckit-repository-governance-refresh"
             in verify_run
@@ -4550,6 +4551,15 @@ class TestBundledPresetLocator:
         )
         assert (
             'test -f .claude/skills/speckit-arch-generate/SKILL.md'
+            in verify_run
+        )
+        assert (
+            'test -f .claude/skills/speckit-discovery-feasibility/SKILL.md'
+            in verify_run
+        )
+        assert "specify extension add discovery" in verify_run
+        assert (
+            'test -f .claude/skills/speckit-discovery-compatibility/SKILL.md'
             in verify_run
         )
         assert (
