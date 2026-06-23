@@ -34,6 +34,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "kiro-cli",
     "lingma",
     "vibe",
+    "omp",
     "opencode",
     "pi",
     "qodercli",

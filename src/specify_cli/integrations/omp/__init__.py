@@ -29,10 +29,9 @@ class OmpIntegration(MarkdownIntegration):
         model: str | None = None,
         output_json: bool = True,
     ) -> list[str] | None:
-        args = [self._resolve_executable(), "-p", prompt]
-        self._apply_extra_args_env_var(args)
-        if model:
-            args.extend(["--model", model])
+        args = super().build_exec_args(prompt, model=model, output_json=False)
+        if args is None:
+            return None
         if output_json:
             args.extend(["--mode", "json"])
         return args
