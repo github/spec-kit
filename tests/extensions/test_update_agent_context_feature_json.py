@@ -26,14 +26,23 @@ _WINDOWS_POWERSHELL = (shutil.which("powershell.exe") or shutil.which("powershel
 
 
 def _setup_project(root: Path, context_file: str = "CLAUDE.md") -> None:
-    """Write the minimal agent-context extension config."""
+    """Write the minimal agent-context extension config as JSON.
+
+    JSON is a valid subset of YAML so bash+Python/PyYAML can still parse it,
+    but it also lets PowerShell's built-in ConvertFrom-Json parse it without
+    needing the powershell-yaml module or an external Python call.
+    """
     cfg_dir = root / ".specify" / "extensions" / "agent-context"
     cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = {
+        "context_file": context_file,
+        "context_markers": {
+            "start": "<!-- SPECKIT START -->",
+            "end": "<!-- SPECKIT END -->",
+        },
+    }
     (cfg_dir / "agent-context-config.yml").write_text(
-        f"context_file: {context_file}\n"
-        "context_markers:\n"
-        "  start: '<!-- SPECKIT START -->'\n"
-        "  end: '<!-- SPECKIT END -->'\n",
+        json.dumps(cfg),
         encoding="utf-8",
     )
 

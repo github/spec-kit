@@ -137,7 +137,19 @@ if (Get-Command ConvertFrom-Yaml -ErrorAction SilentlyContinue) {
 }
 
 if ($null -eq $Options) {
-    # ConvertFrom-Yaml unavailable or failed; fall back to Python+PyYAML.
+    # ConvertFrom-Yaml unavailable or failed; try ConvertFrom-Json (no external deps,
+    # works when the config file is valid JSON, which is a subset of YAML).
+    try {
+        $raw = Get-Content -LiteralPath $ExtConfig -Raw -Encoding UTF8
+        $Options = $raw | ConvertFrom-Json -ErrorAction Stop
+        if (-not (Test-ConfigObject -Object $Options)) { $Options = $null }
+    } catch {
+        $Options = $null
+    }
+}
+
+if ($null -eq $Options) {
+    # ConvertFrom-Yaml/Json unavailable or failed; fall back to Python+PyYAML.
     $pythonCmd = $null
     $pythonCandidates = @()
     if ($env:SPECKIT_PYTHON) {
