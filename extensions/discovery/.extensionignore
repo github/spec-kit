@@ -1,0 +1,12 @@
+.git/
+.gitignore
+.extensionignore
+
+# Local editor state
+.idea/
+.vscode/
+
+# Temporary files
+*.log
+tmp/
+temp/

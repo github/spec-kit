@@ -93,6 +93,30 @@
         "ux"
       ]
     },
+    "discovery": {
+      "name": "Spec Kit Discovery Extension",
+      "id": "discovery",
+      "version": "0.2.0",
+      "description": "Run technical discovery commands for feasibility, technology selection, scenario-specific technical decisions, legacy codebase assessment, implementation understanding, and proof-of-concept validation",
+      "author": "bigsmartben",
+      "repository": "https://github.com/bigsmartben/spec-kit-discovery",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 6
+      },
+      "tags": [
+        "discovery",
+        "feasibility",
+        "selection",
+        "codebase",
+        "poc",
+        "decision"
+      ]
+    },
     "repository-governance": {
       "name": "Repository Governance",
       "id": "repository-governance",
