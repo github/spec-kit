@@ -1669,6 +1669,47 @@ $ARGUMENTS
 
         assert parsed["description"] == "first line\nsecond line\n"
 
+    def test_render_toml_command_preserves_backslashes_in_body(self):
+        """A backslash in the body (e.g. a Windows path) must not break TOML.
+
+        A multiline basic string ("\"\"\"") processes backslash escapes, so
+        ``C:\\Users`` (``\\U``) would render as invalid TOML; the body must
+        round-trip with backslashes intact.
+        """
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "x"},
+            r"Run C:\Users\dev\tool.exe then report.",
+            "extension:test-ext",
+        )
+        parsed = tomllib.loads(output)  # must not raise
+        assert parsed["prompt"].strip() == r"Run C:\Users\dev\tool.exe then report."
+
+    def test_render_toml_command_handles_trailing_backslash(self):
+        """A body ending in a backslash must round-trip without corruption."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "x"},
+            "path ends with sep\\",
+            "extension:test-ext",
+        )
+        parsed = tomllib.loads(output)
+        assert parsed["prompt"].strip() == "path ends with sep\\"
+
+    def test_render_toml_command_backslash_with_both_triple_quotes_escapes(self):
+        """Body with a backslash and both triple-quote styles → escaped basic string."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        body = "a \\ b\nc \"\"\" d\ne ''' f"
+        output = registrar.render_toml_command({"description": "x"}, body, "extension:test-ext")
+        parsed = tomllib.loads(output)
+        assert parsed["prompt"] == body
+
     def test_register_commands_for_claude(self, extension_dir, project_dir):
         """Test registering commands for Claude agent."""
         # Create .claude directory
