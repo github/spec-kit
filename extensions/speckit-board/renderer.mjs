@@ -349,6 +349,55 @@ input[type="text"]:focus, textarea:focus {
     cursor: pointer;
 }
 .back-link:hover { color: var(--text-color-default, #1f2328); }
+.scenario-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px 4px 10px;
+    border: 1px dashed var(--border-color-default, #d1d9e0);
+    border-radius: 6px;
+    background: var(--n-1-10, transparent);
+    margin-left: 8px;
+}
+.scenario-picker .scenario-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-color-muted, #59636e);
+    font-weight: var(--font-weight-semibold, 600);
+}
+.scenario-picker select {
+    font: inherit;
+    font-size: 12px;
+    color: var(--text-color-default, #1f2328);
+    background: var(--background-color-default, #fff);
+    border: 1px solid var(--border-color-default, #d1d9e0);
+    border-radius: 4px;
+    padding: 2px 6px;
+    cursor: pointer;
+}
+.scenario-picker select:focus {
+    outline: 2px solid var(--color-focus-outline, #0969da);
+    outline-offset: 1px;
+}
+.mock-banner {
+    background: linear-gradient(90deg, var(--p-11-10, #8250df), var(--b-11-10, #0969da));
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: var(--font-weight-semibold, 600);
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+}
+.mock-banner code {
+    background: rgba(255,255,255,0.18);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: #fff;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+}
 `;
 
 const CLIENT_JS = `
@@ -449,6 +498,17 @@ document.addEventListener("submit", (ev) => {
     }
 });
 
+document.addEventListener("change", (ev) => {
+    if (ev.target.matches(".scenario-picker select")) {
+        const v = ev.target.value;
+        const url = new URL(window.location.href);
+        if (v) url.searchParams.set("scenario", v);
+        else url.searchParams.delete("scenario");
+        window.__lastRefresh = Date.now();
+        window.location.href = url.toString();
+    }
+});
+
 window.addEventListener("focus", () => {
     if (window.__lastRefresh && Date.now() - window.__lastRefresh < 800) return;
     window.__lastRefresh = Date.now();
@@ -461,6 +521,24 @@ document.addEventListener("keydown", (ev) => {
     }
 });
 `;
+
+function renderScenarioPicker(scenarios, active) {
+    if (!scenarios || scenarios.length === 0) return "";
+    const opts = scenarios
+        .map((s) => `<option value="${escapeHtml(s.value)}"${s.value === (active || "") ? " selected" : ""}>${escapeHtml(s.label)}</option>`)
+        .join("");
+    return `<label class="scenario-picker" title="Preview canvas with synthetic data — no project changes">
+        <span class="scenario-label">Mock</span>
+        <select aria-label="Mock scenario">${opts}</select>
+    </label>`;
+}
+
+function renderMockBanner(active, scenarios) {
+    if (!active) return "";
+    const found = (scenarios || []).find((s) => s.value === active);
+    const label = found ? found.label : active;
+    return `<div class="mock-banner">🎭 Previewing mock scenario: <code>${escapeHtml(label)}</code></div>`;
+}
 
 function escapeHtml(s) {
     return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -615,7 +693,7 @@ function renderEmptyStates(state) {
     return "";
 }
 
-export function renderBoard(state) {
+export function renderBoard(state, opts = {}) {
     const featureList =
         state.features.length > 0
             ? `<div class="feature-list">${state.features
@@ -625,6 +703,8 @@ export function renderBoard(state) {
 
     const featureCount = state.features.length;
     const branchLabel = state.currentBranch ? `branch: <code>${escapeHtml(state.currentBranch)}</code>` : "";
+    const picker = renderScenarioPicker(opts.scenarios, opts.activeScenario);
+    const banner = renderMockBanner(opts.activeScenario, opts.scenarios);
 
     return `<!doctype html>
 <html>
@@ -644,11 +724,13 @@ export function renderBoard(state) {
             </div>
         </div>
         <div class="toolbar">
+            ${picker}
             <button class="ghost" data-action="refresh" title="Refresh (R)">
                 ↻ Refresh
             </button>
         </div>
     </header>
+    ${banner}
     ${state.isSpecKit ? renderConstitution(state.constitution) : ""}
     ${state.isSpecKit && state.features.length > 0 ? featureList : ""}
     ${renderEmptyStates(state)}
@@ -677,16 +759,31 @@ function renderFileTile(label, fileObj, options = {}) {
     </div>`;
 }
 
-export function renderFeatureView(state, feature) {
+export function renderFeatureView(state, feature, opts = {}) {
+    const picker = renderScenarioPicker(opts.scenarios, opts.activeScenario);
+    const banner = renderMockBanner(opts.activeScenario, opts.scenarios);
+
     if (!feature) {
         return `<!doctype html><html><head><meta charset="utf-8"/><title>Feature not found</title><style>${STYLES}</style></head>
 <body><div class="app">
+    <header class="topbar">
+        <div class="title-block">
+            <span class="brand-mark">SK</span>
+            <div>
+                <h1 class="title">Spec Kit Feature</h1>
+                <p class="subtitle">no feature loaded</p>
+            </div>
+        </div>
+        <div class="toolbar">
+            ${picker}
+            <button class="ghost" data-action="refresh">↻ Refresh</button>
+        </div>
+    </header>
+    ${banner}
     <div class="empty-state">
         <h2>Feature not found</h2>
-        <p>That feature slug doesn't exist in <code>specs/</code>.</p>
-        <div class="empty-actions">
-            <button class="primary" data-action="refresh">Refresh</button>
-        </div>
+        <p>${escapeHtml(opts.requestedSlug ? "Slug '" + opts.requestedSlug + "' doesn't exist in specs/." : "That feature slug doesn't exist in specs/.")}</p>
+        <p>Pick a mock scenario above to preview the feature canvas.</p>
     </div>
 </div><script>${CLIENT_JS}</script></body></html>`;
     }
@@ -715,10 +812,12 @@ export function renderFeatureView(state, feature) {
             </div>
         </div>
         <div class="toolbar">
+            ${picker}
             <button class="ghost" data-action="refresh">↻ Refresh</button>
         </div>
     </header>
 
+    ${banner}
     <div class="feature-meta">
         ${renderPipeline(feature)}
         ${feature.tasks.total > 0 ? `<div class="task-summary">

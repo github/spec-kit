@@ -95,3 +95,18 @@ Both canvases expose actions the agent can invoke directly:
   inline text inputs for arg-taking commands.
 - **Out**: editing markdown, toggling task checkboxes, multi-workspace,
   filesystem watching (refresh is on focus / on-demand only).
+
+## Mock UX scenarios
+
+Both canvases include a **Mock** picker in the top-right toolbar that
+swaps the live project scan for a synthetic project. Useful for design
+review and previewing every pipeline state without seeding a real repo.
+
+- `speckit-board` scenarios: `not-initialized`, `initialized-empty`,
+  `early`, `mixed`, `mature`.
+- `speckit-feature` scenarios: `not-found`, `spec-only`, `with-clarify`,
+  `planned`, `tasks-started`, `tasks-done`, `analyzed`, `implemented`.
+
+Selecting a scenario adds `?scenario=<name>` to the iframe URL; pick
+**Live (real project)** to return to the actual scan. Mock scenarios
+never read or write files and never send prompts to the session.

@@ -15,6 +15,12 @@ import path from "node:path";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import { scanProject } from "./scanner.mjs";
 import { renderBoard, renderFeatureView } from "./renderer.mjs";
+import {
+    getBoardScenario,
+    getFeatureScenario,
+    BOARD_SCENARIO_NAMES,
+    FEATURE_SCENARIO_NAMES,
+} from "./mocks.mjs";
 
 // instanceId → { server, url, kind, slug?, cwd }
 const servers = new Map();
@@ -62,13 +68,16 @@ function htmlResponse(res, status, body) {
 
 async function handleBoardRequest(req, res, entry) {
     const url = new URL(req.url, "http://127.0.0.1");
+    const scenario = url.searchParams.get("scenario") || "";
 
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-        const state = await scanProject(entry.cwd);
-        return htmlResponse(res, 200, renderBoard(state));
+        const state = scenario ? getBoardScenario(scenario) : await scanProject(entry.cwd);
+        if (!state) return htmlResponse(res, 404, `<p>Unknown scenario: ${scenario}</p>`);
+        return htmlResponse(res, 200, renderBoard(state, { scenarios: BOARD_SCENARIO_NAMES, activeScenario: scenario }));
     }
     if (req.method === "GET" && url.pathname === "/api/state") {
-        const state = await scanProject(entry.cwd);
+        const state = scenario ? getBoardScenario(scenario) : await scanProject(entry.cwd);
+        if (!state) return jsonResponse(res, 404, { error: "unknown scenario" });
         return jsonResponse(res, 200, state);
     }
     return handleCommonRequest(req, res, entry, url);
@@ -76,11 +85,24 @@ async function handleBoardRequest(req, res, entry) {
 
 async function handleFeatureRequest(req, res, entry) {
     const url = new URL(req.url, "http://127.0.0.1");
+    const scenario = url.searchParams.get("scenario") || "";
 
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-        const state = await scanProject(entry.cwd);
-        const feature = state.features.find((f) => f.slug === entry.slug) || null;
-        return htmlResponse(res, 200, renderFeatureView(state, feature));
+        let state, feature;
+        if (scenario) {
+            const mock = getFeatureScenario(scenario);
+            if (!mock) return htmlResponse(res, 404, `<p>Unknown scenario: ${scenario}</p>`);
+            state = mock.wrapper;
+            feature = mock.feature;
+        } else {
+            state = await scanProject(entry.cwd);
+            feature = state.features.find((f) => f.slug === entry.slug) || null;
+        }
+        return htmlResponse(res, 200, renderFeatureView(state, feature, {
+            scenarios: FEATURE_SCENARIO_NAMES,
+            activeScenario: scenario,
+            requestedSlug: entry.slug,
+        }));
     }
     return handleCommonRequest(req, res, entry, url);
 }
