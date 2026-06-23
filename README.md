@@ -156,7 +156,7 @@ specify integration list
 | --- | --- | --- | --- |
 | ARCH SSOT | `arch` 扩展 | `/speckit.arch.generate`、`/speckit.arch.reverse`、`.specify/memory/architecture*.md` | 把项目级 4+1 架构视图沉淀为稳定记忆，避免每个 feature 重新猜边界、约束和部署假设。 |
 | 仓库治理规范 | `repository-governance` 扩展 | `/speckit.repository-governance.refresh`、受管 `SPECKIT GOVERNANCE` 段 | 统一 agent 的 SSOT 读取顺序、目录责任、平台适配和仓库事实证据。 |
-| UI/UX 需求规格 | `workflow-preset` + `preview` 扩展 | `spec.md` 用户旅程、`behavior/uif.intent.json`、`contracts/uif/`、`/speckit.preview.html` | 先把界面状态、断点、用户路径和交互假设写成规格/契约，再生成可打开的 HTML 原型评审。 |
+| UI/UX 需求规格 | `workflow-preset` + `preview` 扩展 | `spec.md` 用户旅程、`behavior/uif.intent.json`、`contracts/uif/`、`/speckit.preview.mid-html` | 先把界面状态、断点、用户路径和交互假设写成规格/契约，再生成可打开的预览产物评审。 |
 | BDD 引入 | `workflow-preset` | `/speckit.checklist`、`checklists/behavior-testability.md`、`contracts/bdd/` | 在规划前检查 Given/When/Then、可观察结果、边界和 NFR 声明，避免不可验证需求进入实现。 |
 | 任务期验证策略 | `workflow-preset` | `/speckit.tasks`、`tasks.md` 内联测试层级和证据要求 | 从 BDD、UIF、行为契约、接口契约、`research.md`、`quickstart.md` 派生验证任务，不再依赖散落的测试策略说明。 |
 | imp subagent 矩阵 | `workflow-preset` | `/speckit.implement`、Core/Vertical Planner/Worker、`handoffs/implement/<run-id>/` | 把大实现拆成按 vertical capability 隔离的 handoff，让 Codex、Claude、Gemini、Copilot 等 runtime 使用各自 subagent/worker 模式执行。 |
@@ -168,7 +168,7 @@ specify integration list
 | 扩展 | 默认状态 | 你会用它做什么 |
 | --- | --- | --- |
 | `arch` | `specify init` 默认安装 | 生成或反向生成项目级 4+1 架构视图，形成 `.specify/memory/architecture*.md` 架构记忆。 |
-| `preview` | `specify init` 默认安装 | 根据当前 feature 的规格和计划生成 `specs/<feature>/preview/index.html`，用于实现前验证 UI 和交互假设。 |
+| `preview` | `specify init` 默认安装 | 根据当前 feature 的规格和计划生成低/中/高保真 Markdown wireflow 或自包含 HTML 预览，用于实现前验证 UI 和交互假设。 |
 | `repository-governance` | `specify init` 默认安装 | 生成 Repository Governance Framework 治理说明，包含垂直 SSOT 注册、读取顺序、缺失 SSOT 处理和仓库事实证据。 |
 | `git` | 初始化时默认安装，传 `--no-git` 可跳过 | 初始化 Git、创建 feature branch、校验分支、检测 remote，并可配置自动提交。 |
 | `template` | 开发模板 | 给扩展作者复制使用，不是普通项目必装扩展。 |
@@ -195,7 +195,9 @@ specify extension info arch
 ```text
 /speckit.arch.generate
 /speckit.arch.reverse
-/speckit.preview.html
+/speckit.preview.low-md
+/speckit.preview.mid-html
+/speckit.preview.high-html
 /speckit.repository-governance.refresh
 ```
 
@@ -228,7 +230,7 @@ specify preset info workflow-preset
 - 接手旧仓库：跑 `/speckit.arch.reverse`，先从仓库事实反推架构记忆。
 - 团队使用多个 agent 或新人频繁接手：跑 `/speckit.repository-governance.refresh`，把目录责任、SSOT 边界和 agent 执行规则写入上下文。
 - 希望引入 BDD：保留默认 `workflow-preset`，让 `/speckit.checklist` 在规划前检查 BDD readiness，让 `/speckit.plan` 生成 BDD/UIF/fixture 行为草稿和正式契约。
-- 做前端或交互功能：在 `/speckit.specify` 或 `/speckit.plan` 后跑 `/speckit.preview.html`，先看原型再实现。
+- 做前端或交互功能：在 `/speckit.specify` 或 `/speckit.plan` 后跑 `/speckit.preview.mid-html` 或对应保真的 `*-md`/`*-html` 命令，先看预览再实现。
 - 中大型实现或跨模块改动：使用默认 `/speckit.implement`，让 Core Agent 生成 handoff manifest，Vertical Planner 拆分能力维度，Worker 按允许路径执行并写 receipt。
 - 需要实现后复核：保留 Final Code Review task，要求 code review receipt 检查设计、sequence、contract、quickstart 和数据副作用。
 - 希望 feature 分支和提交更规范：保留 `git` 扩展，按需要配置 `.specify/extensions/git/git-config.yml`。
@@ -312,7 +314,7 @@ AGENTS.md
 /speckit.arch.generate
 /speckit.specify
 /speckit.clarify
-/speckit.preview.html
+/speckit.preview.mid-html
 /speckit.plan
 /speckit.tasks
 /speckit.analyze
@@ -385,7 +387,7 @@ specify preset remove lean
 
 - 写 `/speckit.specify` 时只写需求和业务规则，技术栈留给 `/speckit.plan`。
 - 在 `/speckit.plan` 前运行 `/speckit.clarify`，可以减少实现阶段反复改规格。
-- 对 UI 或流程不确定的功能，先用 `/speckit.preview.html` 看一个可打开的 HTML 原型。
+- 对 UI 或流程不确定的功能，先用 `/speckit.preview.low-md`、`/speckit.preview.mid-html` 或 `/speckit.preview.high-html` 看一个保真度合适的预览。
 - 对中大型功能，保留默认 `workflow-preset`，让任务和实现阶段通过验证证据、handoff 和 receipt 留下可审查记录。
 - 对非常小的实验，使用 `lean`，减少模板负担。
 - 如果 agent 生成了你没要求的复杂设计，让它回到 `spec.md`、`plan.md` 和 `.specify/memory/constitution.md` 逐条解释依据。

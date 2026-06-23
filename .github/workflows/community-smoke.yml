@@ -93,7 +93,15 @@ jobs:
           test -f .specify/presets/workflow-preset/.composed/speckit.tasks.md
 
           test -f .claude/skills/speckit-arch-generate/SKILL.md
-          test -f .claude/skills/speckit-preview-html/SKILL.md
+          for preview_skill in \
+            speckit-preview-low-md \
+            speckit-preview-low-html \
+            speckit-preview-mid-md \
+            speckit-preview-mid-html \
+            speckit-preview-high-md \
+            speckit-preview-high-html; do
+            test -f ".claude/skills/$preview_skill/SKILL.md"
+          done
           test -f .claude/skills/speckit-discovery-feasibility/SKILL.md
           test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
           test -f .claude/skills/speckit-specify/SKILL.md
@@ -121,7 +129,15 @@ jobs:
                 test ! -d .claude/skills/speckit-arch-reverse
                 ;;
               preview)
-                test ! -d .claude/skills/speckit-preview-html
+                for preview_skill in \
+                  speckit-preview-low-md \
+                  speckit-preview-low-html \
+                  speckit-preview-mid-md \
+                  speckit-preview-mid-html \
+                  speckit-preview-high-md \
+                  speckit-preview-high-html; do
+                  test ! -d ".claude/skills/$preview_skill"
+                done
                 ;;
               discovery)
                 test "$(find .claude/skills -maxdepth 1 -type d -name 'speckit-discovery-*' | wc -l)" -eq 0
@@ -141,8 +157,16 @@ jobs:
                 grep -q "4+1 architecture workflow" .claude/skills/speckit-arch-generate/SKILL.md
                 ;;
               preview)
-                test -f .claude/skills/speckit-preview-html/SKILL.md
-                grep -q "self-contained interactive HTML prototype" .claude/skills/speckit-preview-html/SKILL.md
+                for preview_skill in \
+                  speckit-preview-low-md \
+                  speckit-preview-low-html \
+                  speckit-preview-mid-md \
+                  speckit-preview-mid-html \
+                  speckit-preview-high-md \
+                  speckit-preview-high-html; do
+                  test -f ".claude/skills/$preview_skill/SKILL.md"
+                  grep -q "evidence-backed" ".claude/skills/$preview_skill/SKILL.md"
+                done
                 ;;
               discovery)
                 test -f .claude/skills/speckit-discovery-feasibility/SKILL.md

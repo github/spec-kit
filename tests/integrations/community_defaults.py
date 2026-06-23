@@ -19,7 +19,12 @@ DEFAULT_EXTENSION_COMMANDS = (
     "speckit.discovery.codebase-api-imp",
     "speckit.discovery.poc",
     "speckit.discovery.decision",
-    "speckit.preview.html",
+    "speckit.preview.low-md",
+    "speckit.preview.low-html",
+    "speckit.preview.mid-md",
+    "speckit.preview.mid-html",
+    "speckit.preview.high-md",
+    "speckit.preview.high-html",
     "speckit.repository-governance.refresh",
 )
 DEFAULT_PRESET_ID = "workflow-preset"
