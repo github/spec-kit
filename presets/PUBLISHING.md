@@ -217,6 +217,7 @@ Edit `presets/catalog.community.json` and add your preset.
   "presets": {
     "your-preset": {
       "name": "Your Preset Name",
+      "id": "your-preset",
       "description": "Brief description of what your preset provides",
       "author": "Your Name",
       "version": "1.0.0",

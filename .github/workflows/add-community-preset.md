@@ -101,14 +101,21 @@ deciding pass/fail:
 ### 2c. Repository validation
 - Fetch the repository URL — confirm it exists and is publicly accessible
 - Confirm the repository contains a `preset.yml` file
-- Confirm the repository contains a `README.md` file
 - Confirm the repository contains a `LICENSE` file
+
+> The README requirement is enforced once, in **Step 2d**, against the specific file the
+> `documentation` field points to — not a generic repository-root `README.md`. This avoids
+> the monorepo false-positive where a root README exists but isn't the preset-usage doc.
 
 ### 2d. Documentation README validation
 
 The `documentation` field must point to the README that explains **how to use this
 preset** — not just any file named `README.md`, and not a product/framework pitch.
 
+- **Restrict the URL to GitHub before fetching.** The `documentation` value is
+  user-provided input. Only accept GitHub-hosted README URLs — `https://github.com/<owner>/<repo>/blob/<ref>/<path>`
+  or `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`. If the URL points
+  anywhere else (or isn't a URL), **fail this check** and do not fetch it.
 - Fetch the **exact URL** in the `documentation` field (convert GitHub `blob` URLs to
   their `raw.githubusercontent.com` equivalent before fetching) and confirm it resolves
   to a readable Markdown file.
