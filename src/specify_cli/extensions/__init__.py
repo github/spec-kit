@@ -49,6 +49,7 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
     }
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+EXTENSION_ID_PATTERN = re.compile(r"^[a-z0-9-]+$")
 
 VALID_EFFECTS = frozenset({"read-only", "read-write"})
 
@@ -217,7 +218,7 @@ class ExtensionManifest:
                 raise ValidationError(f"Missing extension.{field}")
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not EXTENSION_ID_PATTERN.match(ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -2580,6 +2581,14 @@ class ExtensionCatalog(CatalogStackBase):
         """
         import urllib.error
 
+        if not isinstance(extension_id, str) or not EXTENSION_ID_PATTERN.match(
+            extension_id
+        ):
+            raise ExtensionError(
+                f"Invalid extension ID '{extension_id}': "
+                "must be lowercase alphanumeric with hyphens only"
+            )
+
         # Get extension info from catalog
         ext_info = self.get_extension_info(extension_id)
         if not ext_info:
@@ -2615,6 +2624,10 @@ class ExtensionCatalog(CatalogStackBase):
         version = ext_info.get("version", "unknown")
         zip_filename = f"{extension_id}-{version}.zip"
         zip_path = target_dir / zip_filename
+        try:
+            zip_path.resolve().relative_to(target_dir.resolve())
+        except ValueError as e:
+            raise ExtensionError(f"Refusing unsafe extension ZIP path: {zip_filename}") from e
 
         extra_headers = None
         resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
