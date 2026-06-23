@@ -2248,6 +2248,50 @@ Run {SCRIPT}
         assert target.is_file()
         assert "Extension: test-ext" in cmd_file.read_text(encoding="utf-8")
 
+    def test_dev_register_commands_replaces_codex_dev_symlink(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """Codex dev registration should replace prior symlinks with real files."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        skill_file = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        skill_file.parent.mkdir(parents=True)
+        cache_file = (
+            extension_dir
+            / ".specify-dev"
+            / "agent-commands"
+            / "codex"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text("old linked content", encoding="utf-8")
+        os.symlink(os.path.relpath(cache_file, skill_file.parent), skill_file)
+
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent(
+            "codex",
+            manifest,
+            extension_dir,
+            project_dir,
+            link_outputs=True,
+        )
+
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "name: speckit-test-ext-hello" in skill_file.read_text(
+            encoding="utf-8"
+        )
+        assert cache_file.read_text(encoding="utf-8") == "old linked content"
+
     def test_dev_register_commands_falls_back_to_copy_when_symlink_fails(
         self, extension_dir, project_dir, monkeypatch
     ):
@@ -4873,6 +4917,93 @@ class TestExtensionAddCLI:
             assert ".specify-dev" in agent_file.resolve().parts
         else:
             assert not agent_file.is_symlink()
+
+    def test_add_dev_writes_codex_skills_as_files(self, extension_dir, project_dir):
+        """Codex dev skills should be written as files so Codex can load them."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.write_text(
+            json.dumps({"ai": "codex", "ai_skills": True}), encoding="utf-8"
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+
+        skill_file = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+
+        content = skill_file.read_text(encoding="utf-8")
+        assert "name: speckit-test-ext-hello" in content
+        assert "metadata:" in content
+        assert "source: test-ext:commands/hello.md" in content
+
+    def test_add_dev_replaces_existing_codex_skill_symlink(
+        self, extension_dir, project_dir, temp_dir
+    ):
+        """Codex dev installs should migrate expected dev symlinks to files."""
+        if not can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.write_text(
+            json.dumps({"ai": "codex", "ai_skills": True}), encoding="utf-8"
+        )
+
+        skill_file = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        skill_file.parent.mkdir(parents=True)
+        cache_file = (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text("old linked content", encoding="utf-8")
+        os.symlink(os.path.relpath(cache_file, skill_file.parent), skill_file)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(extension_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "name: speckit-test-ext-hello" in content
+        assert "source: test-ext:commands/hello.md" in content
+        assert cache_file.read_text(encoding="utf-8") == "old linked content"
 
     def test_add_dev_falls_back_to_copy_when_windows_symlinks_unavailable(
         self, extension_dir, project_dir, monkeypatch

@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.11.6] - 2026-06-23
+
+### Changed
+
+- [extension] Update Spec Kit Preview extension to v1.1.0 and sync Firebender agent lists (#3116)
+- Add Spec Kit Discovery Extension to community catalog (#3119)
+- Update Architecture Workflow extension to v1.2.1 (#3118)
+- docs: clarify project-defined constitution articles (#2994)
+- Add Intake extension to community catalog (#3117)
+- feat: add Firebender integration (Android Studio / IntelliJ) (#3077)
+- Update DocGuard — CDD Enforcement extension to v0.28.0 (#3115)
+- chore: sync issue template agent lists (#3052)
+- fix(shared-infra): remove stale managed scripts the core no longer ships (#3076) (#3098)
+- chore: release 0.11.5, begin 0.11.6.dev0 development (#3105)
+
 ## [0.11.5] - 2026-06-22
 
 ### Changed

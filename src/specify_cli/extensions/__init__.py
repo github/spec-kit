@@ -997,6 +997,7 @@ class ExtensionManager:
         if not isinstance(selected_ai, str) or not selected_ai:
             return []
         registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         integration = get_integration(selected_ai)
 
         for cmd_info in manifest.commands:
@@ -1030,15 +1031,16 @@ class ExtensionManager:
             skill_file = skill_subdir / "SKILL.md"
             cache_root = extension_dir / ".specify-dev" / "extension-skills"
             cache_file = cache_root / skill_name / "SKILL.md"
+            use_dev_symlink = link_outputs and not agent_config.get("dev_no_symlink")
             CommandRegistrar._ensure_inside(cache_file, cache_root)
             if skill_file.exists() or skill_file.is_symlink():
+                is_expected_dev_symlink = self._is_expected_dev_symlink(
+                    skill_file, cache_file
+                )
                 # Do not overwrite user-customized skills, but allow dev-mode
                 # symlinks that point back to this extension's generated cache
                 # to be refreshed on a subsequent dev install.
-                if not (
-                    link_outputs
-                    and self._is_expected_dev_symlink(skill_file, cache_file)
-                ):
+                if not is_expected_dev_symlink:
                     continue
 
             # Create skill directory; track whether we created it so we can clean
@@ -1093,7 +1095,7 @@ class ExtensionManager:
             ):
                 skill_content = integration.post_process_skill_content(skill_content)
 
-            if link_outputs:
+            if use_dev_symlink:
                 try:
                     cache_file.parent.mkdir(parents=True, exist_ok=True)
                     cache_file.write_text(skill_content, encoding="utf-8")
@@ -1106,6 +1108,8 @@ class ExtensionManager:
                         skill_file.unlink()
                     skill_file.write_text(skill_content, encoding="utf-8")
             else:
+                if skill_file.is_symlink():
+                    skill_file.unlink()
                 skill_file.write_text(skill_content, encoding="utf-8")
             written.append(skill_name)
 

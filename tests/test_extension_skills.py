@@ -573,6 +573,84 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-hello" in written
         assert "Run this updated hello." in skill_file.read_text(encoding="utf-8")
 
+    def test_codex_dev_skill_registration_replaces_existing_dev_symlink(
+        self, project_dir, extension_dir, temp_dir
+    ):
+        """Codex dev skill registration should migrate prior dev symlinks to files."""
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file = (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text("old linked content", encoding="utf-8")
+        os.symlink(os.path.relpath(cache_file, skill_file.parent), skill_file)
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert cache_file.read_text(encoding="utf-8") == "old linked content"
+
+    def test_codex_dev_skill_registration_preserves_unrelated_symlink(
+        self, project_dir, extension_dir, temp_dir
+    ):
+        """Codex dev registration should not overwrite user-owned symlinks."""
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True, exist_ok=True)
+        unrelated_cache_file = (
+            temp_dir
+            / "other-extension"
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        unrelated_cache_file.parent.mkdir(parents=True)
+        unrelated_cache_file.write_text("user-owned linked content", encoding="utf-8")
+        os.symlink(
+            os.path.relpath(unrelated_cache_file, skill_file.parent), skill_file
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        assert "speckit-test-ext-hello" not in written
+        assert skill_file.is_symlink()
+        assert skill_file.resolve(strict=True) == unrelated_cache_file.resolve()
+        assert unrelated_cache_file.read_text(encoding="utf-8") == (
+            "user-owned linked content"
+        )
+
     def test_dev_skill_registration_falls_back_to_copy_when_symlink_fails(
         self, skills_project, extension_dir, monkeypatch
     ):
