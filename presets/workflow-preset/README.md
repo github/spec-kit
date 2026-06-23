@@ -149,7 +149,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.9/spec-kit-workflow-preset-v1.3.9.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.10/spec-kit-workflow-preset-v1.3.10.zip
 ```
 
 Local development install:
@@ -458,7 +458,7 @@ This repository owns preset artifact health:
 - publish or confirm the release artifact for a tag or manual release run;
 - create or update a `workflow-preset-release-v<version>` integration PR in `bigsmartben/spec-kit` on tag releases or manual runs with `create_integration_pr=true`.
 
-Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.9` defaults to release version `1.3.10`.
+Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.10` defaults to release version `1.3.11`.
 
 The integration PR step requires a repository secret named `SPEC_KIT_FORK_PR_TOKEN` with permission to push branches and open pull requests in `bigsmartben/spec-kit`. If a tag release or manual `create_integration_pr=true` run reaches that step without the secret, the workflow fails fast instead of skipping integration PR creation.
 
@@ -477,7 +477,7 @@ Release install smoke validation is intentionally owned by GitHub Actions, not b
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.9/spec-kit-workflow-preset-v1.3.9.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.10/spec-kit-workflow-preset-v1.3.10.zip
 ```
 
 ## Source Rationale

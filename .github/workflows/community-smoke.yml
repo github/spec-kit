@@ -105,7 +105,7 @@ jobs:
 
           grep -q "Change Scope Granularity" .claude/skills/speckit-constitution/SKILL.md
           grep -q "Phase 0 Behavior Projection" .claude/skills/speckit-plan/SKILL.md
-          grep -q "Test Strategy Derivation" .claude/skills/speckit-tasks/SKILL.md
+          grep -q "Validation Task Derivation" .claude/skills/speckit-tasks/SKILL.md
           grep -q "Core Agent" .claude/skills/speckit-implement/SKILL.md
           grep -q "Vertical Planner Agent" .claude/skills/speckit-implement/SKILL.md
           grep -q "Worker Agent" .claude/skills/speckit-implement/SKILL.md

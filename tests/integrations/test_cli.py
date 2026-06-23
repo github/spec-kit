@@ -896,7 +896,7 @@ class TestGitExtensionOptIn:
 
         assert "Change Scope Granularity" in constitution_skill.read_text(encoding="utf-8")
         assert "Phase 0 Behavior Projection" in plan_skill.read_text(encoding="utf-8")
-        assert "test strategy derivation" in tasks_skill.read_text(encoding="utf-8").lower()
+        assert "validation task derivation" in tasks_skill.read_text(encoding="utf-8").lower()
         implement_text = implement_skill.read_text(encoding="utf-8")
         assert "Core Agent" in implement_text
         assert "Vertical Planner Agent" in implement_text

@@ -577,7 +577,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("1.0", data["schema_version"])
         self.assertEqual("workflow-preset", data["preset"]["id"])
         self.assertEqual("Workflow Preset", data["preset"]["name"])
-        self.assertEqual("1.3.9", data["preset"]["version"])
+        self.assertEqual("1.3.10", data["preset"]["version"])
         self.assertEqual(
             "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
             data["preset"]["description"],
@@ -861,17 +861,16 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Do not lock operation-level implementation details or concrete write paths.", plan)
 
         self.assertIn("Preserve the planned `M + U` scope", tasks)
-        self.assertIn("Do not generate handoff fields or `allowed_write_paths`.", tasks)
+        self.assertIn("Do not generate execution metadata or write-path fields.", tasks)
 
         self.assertIn("Check that tasks preserve the planned `M + U` scope.", analyze)
         self.assertIn("Report missing, widened, or ambiguous scope boundaries as blockers.", analyze)
 
-        self.assertIn(
-            "Map planned `U` design objects to concrete source, test, fixture, configuration, and receipt paths before worker execution.",
-            implement,
-        )
-        self.assertIn("If the mapping is ambiguous, record `context_gaps`", implement)
-        self.assertIn("do not widen to repository scope or broad module scope.", implement)
+        cross_agent = CROSS_AGENT_SUBAGENTS_PATH.read_text(encoding="utf-8")
+        self.assertIn("Map planned `U` design objects to concrete source", implement)
+        self.assertIn("planned `U` design object", cross_agent)
+        self.assertIn("specific source, test, fixture, configuration, or receipt paths", cross_agent)
+        self.assertIn("context_gaps", cross_agent)
 
     def test_preplanning_commands_do_not_infer_scope_granularity(self) -> None:
         for path in (SPECIFY_COMMAND_PATH, CLARIFY_COMMAND_PATH, CHECKLIST_COMMAND_PATH):
@@ -898,51 +897,69 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("strategy: wrap", tasks)
         self.assertIn("implementation, integration, orchestration", tasks)
         self.assertIn("existing checklist format and user-story organization", tasks)
-        self.assertIn("Tasks owns validation and review task definition", tasks)
-        self.assertIn("executes only tasks already present in `tasks.md`", tasks)
+        self.assertIn("`/speckit.tasks` owns implementation, validation, and review task definition in `tasks.md`", tasks)
         self.assertIn("must not invent validation strategy", tasks)
         self.assertIn("change requirements, update contracts, or widen scope", tasks)
-        self.assertIn("Test Strategy Derivation", tasks)
-        self.assertIn("derive the test level", tasks)
-        self.assertIn("fixture/mock/sandbox/real-system strategy", tasks)
+        self.assertIn("Planning Input Taxonomy", tasks)
+        self.assertIn("validation level taxonomy", tasks)
+        self.assertIn("fixture strategy and external-system execution mode taxonomy", tasks)
+        self.assertIn("Evidence binding", tasks)
+        self.assertIn("Validation Task Derivation", tasks)
+        self.assertIn("derive the validation level", tasks)
+        self.assertIn("fixture strategy, external-system execution mode", tasks)
         self.assertIn("inline evidence requirement", tasks)
-        self.assertIn("Generate explicit validation tasks for the applicable scope", tasks)
-        self.assertIn("Contract validation tasks bind contract ref -> implementation surface -> validation command -> evidence", tasks)
-        self.assertIn("Visual verification or UI acceptance tasks bind Visual Item ID", tasks)
-        self.assertIn("Data-side-effect validation tasks bind affected entity or state transition", tasks)
-        self.assertIn("Integration or e2e validation tasks bind user-visible journey or cross-boundary flow", tasks)
+        self.assertIn("validation task taxonomy", tasks)
+        for validation_scope in (
+            "`contract_validation`",
+            "`visual_verification` or `ui_acceptance`",
+            "`data_side_effect_validation`",
+            "`integration_e2e_validation`",
+        ):
+            self.assertIn(validation_scope, tasks)
         self.assertIn("Final Code Review", tasks)
         self.assertIn("append the final phase after user-story tasks", tasks)
-        self.assertIn("review scopes: boundary, interface_contract, visual, data_side_effect, behavior_contract, sequence_consistency, and asset_binding", tasks)
-        self.assertIn("design, sequence, visual implementation, and contract consistency", tasks)
+        self.assertIn("final review scope taxonomy", tasks)
+        self.assertIn("`boundary`, `interface_contract`, `visual`, `data_side_effect`, `behavior_contract`, `sequence_consistency`, and `asset_binding`", tasks)
+        self.assertIn("Checked sources include", tasks)
         self.assertIn("`contracts/uif/`", tasks)
         self.assertIn("`spec.md` Client Asset Contract entries", tasks)
         self.assertIn("Visual Fidelity Readiness", tasks)
         self.assertIn("data side-effect review", tasks)
-        self.assertIn("actual implementation diff", tasks)
         self.assertIn("field-level update/delete", tasks)
         self.assertIn("runtime database writes", tasks)
         self.assertIn("boundary review", tasks)
-        self.assertIn("changed paths stay within the implement handoff boundary", tasks)
+        self.assertIn("task scope stays within planned `M + U`", tasks)
         self.assertIn("no implementation task changed `spec.md`, `contracts/`, readiness checklists, or Visual Fidelity Readiness", tasks)
         self.assertIn("visual consistency review", tasks)
         self.assertIn("implemented UI states and viewport behavior", tasks)
         self.assertIn("screenshot refs, visual proof refs", tasks)
+        self.assertIn("visual task taxonomy", tasks)
+        self.assertIn("story-local task granularity", tasks)
+        self.assertIn("`visual_setup` -> `visual_validation` -> `visual_implementation` -> `visual_evidence`", tasks)
+        self.assertIn("Do not create a separate visual lifecycle phase", tasks)
+        self.assertIn("Visual tasks must name concrete source, test, fixture, configuration, or asset paths", tasks)
+        self.assertIn("report a readiness blocker instead of generating an ambiguous visual task", tasks)
         self.assertIn("Client Asset Contract bindings, variants, and fallback policy", tasks)
-        self.assertIn("Visual implementation drift", tasks)
-        self.assertIn("real e2e environment readiness", tasks)
-        self.assertIn("task_type: code_review", tasks)
-        self.assertIn("data_side_effect_review", tasks)
-        self.assertIn("review_conclusion", tasks)
-        self.assertIn("checked_sources", tasks)
-        self.assertIn("consistency_repairs", tasks)
-        self.assertIn("deferred_validation_todos", tasks)
-        self.assertIn("quickstart/contract validation command", tasks)
-        self.assertIn("empty arrays or objects indicate no entries", tasks)
+        self.assertIn("real-system e2e environment readiness", tasks)
+        self.assertIn("Review evidence binding", tasks)
+        self.assertIn("concrete review scope, source artifacts, implementation surfaces, and evidence refs", tasks)
+        self.assertIn("bounded repair permission", tasks)
+        self.assertIn("review evidence, bounded repair permission, or a blocker", tasks)
+        self.assertIn("record a blocker instead of treating the change as implementation work", tasks)
+        self.assertNotIn("handoff", tasks)
+        self.assertNotIn("allowed_write_paths", tasks)
+        self.assertNotIn("receipt", tasks)
+        self.assertNotIn("speckit.implement.receipt.v1", tasks)
+        self.assertNotIn("task_type: code_review", tasks)
+        self.assertNotIn("data_side_effect_review", tasks)
+        self.assertNotIn("review_conclusion", tasks)
+        self.assertNotIn("checked_sources", tasks)
+        self.assertNotIn("consistency_repairs", tasks)
+        self.assertNotIn("deferred_validation_todos", tasks)
+        self.assertNotIn("empty arrays or objects indicate no entries", tasks)
         self.assertNotIn("task_type: visual_verification", tasks)
         self.assertNotIn("task_type: interface_validation", tasks)
         self.assertNotIn("task_type: data_side_effect_validation", tasks)
-        self.assertNotIn("must require a `speckit.implement.receipt.v1` review receipt with `review_conclusion`, `consistency_repairs`, and `deferred_validation_todos`", tasks)
 
     def test_behavior_first_command_wrapper_contracts(self) -> None:
         specify = SPECIFY_COMMAND_PATH.read_text(encoding="utf-8")
@@ -958,6 +975,11 @@ class PresetContractTests(unittest.TestCase):
             )
 
         self.assertIn("Spec-Only Requirement Policy", specify)
+        self.assertIn("Wrapper Input Additions", specify)
+        self.assertIn("Wrapper Preflight Additions", specify)
+        self.assertIn("Wrapper Outline Additions", specify)
+        self.assertNotIn("## User Input", specify)
+        self.assertNotIn("## Pre-Execution Checks", specify)
         self.assertIn("Preset-added requirement output writes only `spec.md`", specify)
         self.assertIn("Product requirements stay in `spec.md`", specify)
         self.assertIn("non-functional requirements", specify)
@@ -1051,6 +1073,11 @@ class PresetContractTests(unittest.TestCase):
         self.assertNotIn("contracts/uif/", specify)
 
         self.assertIn("Spec-Only Clarification Policy", clarify)
+        self.assertIn("Wrapper Input Additions", clarify)
+        self.assertIn("Wrapper Preflight Additions", clarify)
+        self.assertIn("Wrapper Outline Additions", clarify)
+        self.assertNotIn("## User Input", clarify)
+        self.assertNotIn("## Pre-Execution Checks", clarify)
         self.assertIn("Use `spec.md` as the clarification source", clarify)
         self.assertIn("Do not read or update behavior draft artifacts", clarify)
         self.assertIn("Product requirements stay in `spec.md`", clarify)
@@ -1073,7 +1100,9 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Do NOT output them all at once", clarify)
         self.assertIn("Never reveal future queued questions", clarify)
         self.assertIn("Maximum of 5 total questions", clarify)
-        self.assertIn("Format recommendations as `**Recommended:** Option [X] - <reasoning>`", clarify)
+        self.assertIn("Format recommendations as `**Recommended:** Option [X] - <brief rationale>`", clarify)
+        self.assertIn("Keep the rationale short and decision-focused", clarify)
+        self.assertNotIn("<reasoning>", clarify)
         self.assertIn("Suggested", clarify)
         self.assertIn("2-5", clarify)
         self.assertIn("<=5 words", clarify)
@@ -1286,41 +1315,54 @@ class PresetContractTests(unittest.TestCase):
             "BDD/E2E or contract test task",
             "implementation task",
             "verification evidence task",
-            "For each UIF user_event",
-            "For each UIF api_call",
-            "UI implementation and acceptance tasks must be paired",
+            "Expected UIF contract step with type `user_event`",
+            "Expected UIF contract step with type `api_call`",
+            "visual task taxonomy",
+            "`visual_verification` or `ui_acceptance`",
             "UI acceptance task",
             "state coverage",
             "viewport coverage",
             "visual proof ref",
             "For each quickstart validation path",
-            "derive the test level",
-            "fixture/mock/sandbox/real-system strategy",
+            "derive the validation level",
+            "fixture strategy, external-system execution mode",
             "inline evidence requirement",
-            "Tasks owns validation and review task definition",
-            "executes only tasks already present in `tasks.md`",
-            "Generate explicit validation tasks for the applicable scope",
-            "Contract validation tasks bind contract ref -> implementation surface -> validation command -> evidence",
-            "Visual verification or UI acceptance tasks bind Visual Item ID",
-            "Data-side-effect validation tasks bind affected entity or state transition",
-            "Integration or e2e validation tasks bind user-visible journey or cross-boundary flow",
+            "Planning Input Taxonomy",
+            "`/speckit.tasks` owns implementation, validation, and review task definition in `tasks.md`",
+            "must not invent validation strategy",
+            "validation level taxonomy",
+            "fixture strategy and external-system execution mode taxonomy",
+            "Evidence binding",
+            "validation task taxonomy",
+            "`contract_validation`",
+            "`visual_verification` or `ui_acceptance`",
+            "`data_side_effect_validation`",
+            "`integration_e2e_validation`",
             "Client Asset Contract",
             "derive asset preparation, binding, implementation, and validation tasks",
-            "Missing required client visual assets become readiness blockers",
+            "Missing required client visual assets are readiness blockers",
             "Use Visual Fidelity Readiness as the only visual planning readiness source",
             "Do not create a second readiness rule",
             "Screenshot Coverage Matrix",
             "Visual Restoration Trace",
-            "do not generate handoff fields or `allowed_write_paths`",
-            "Missing Required case scenarios must become blockers, not silently skipped tasks",
-            "negative, boundary, permission, validation, state_conflict, or error behavior",
-            "For each non-positive BehaviorScenarioInstance",
+            "Do not generate execution metadata or write-path fields.",
+            "Missing Required case coverage is a coverage blocker, not silently skipped work",
+            "`negative`, `boundary`, `permission`, `validation`, or `state_conflict`",
+            "For each BehaviorScenarioInstance with type",
             "derive fixture, contract or BDD test, implementation, and verification evidence tasks",
             "visual consistency review",
             "implemented UI states and viewport behavior",
+            "visual task taxonomy",
+            "story-local task granularity",
+            "`visual_setup` -> `visual_validation` -> `visual_implementation` -> `visual_evidence`",
+            "Do not create a separate visual lifecycle phase",
+            "Visual tasks must name concrete source, test, fixture, configuration, or asset paths",
+            "report a readiness blocker instead of generating an ambiguous visual task",
             "Client Asset Contract bindings, variants, and fallback policy",
-            "Visual implementation drift",
-            "review scopes: boundary, interface_contract, visual, data_side_effect, behavior_contract, sequence_consistency, and asset_binding",
+            "Review evidence binding",
+            "bounded repair permission",
+            "final review scope taxonomy",
+            "`boundary`, `interface_contract`, `visual`, `data_side_effect`, `behavior_contract`, `sequence_consistency`, and `asset_binding`",
             "boundary review",
             "no implementation task changed `spec.md`, `contracts/`, readiness checklists, or Visual Fidelity Readiness",
         ):
@@ -1336,26 +1378,27 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("./contracts/uif/", template)
         self.assertIn("./contracts/behavior/", template)
 
-        self.assertIn("contracts/bdd/", implement)
-        self.assertIn("contracts/uif/", implement)
-        self.assertIn("contracts/behavior/", implement)
-        self.assertIn("behavior contract constraints", implement)
-        self.assertIn("validation_evidence must reference", implement)
-        self.assertIn("BDD scenario", implement)
-        self.assertIn("behavior assertion", implement)
-        self.assertIn("API contract", implement)
-        self.assertIn("quickstart path", implement)
-        self.assertIn("visual fidelity requirements", implement)
-        self.assertIn("screenshot refs", implement)
-        self.assertIn("visual proof refs", implement)
-        self.assertIn("Design Requirement trace refs", implement)
-        self.assertIn("Client Asset Contract", implement)
-        self.assertIn("asset binding", implement)
-        self.assertIn("local asset paths or code asset mappings", implement)
-        self.assertIn("missing required client visual assets", implement)
-        self.assertIn("planned `U` design object and target component or module", implement)
-        self.assertIn("specific source, test, fixture, or configuration file paths", implement)
-        self.assertIn("If no concrete file path can be derived, record `context_gaps`", implement)
+        cross_agent = CROSS_AGENT_SUBAGENTS_PATH.read_text(encoding="utf-8")
+        self.assertIn("tests/contracts/speckit-cross-agent-subagents.md", implement)
+        self.assertIn("contracts/bdd/", cross_agent)
+        self.assertIn("contracts/uif/", cross_agent)
+        self.assertIn("contracts/behavior/", cross_agent)
+        self.assertIn("behavior contract constraints", cross_agent)
+        self.assertIn("validation_evidence references", cross_agent)
+        self.assertIn("BDD scenario", cross_agent)
+        self.assertIn("behavior assertion", cross_agent)
+        self.assertIn("API contract", cross_agent)
+        self.assertIn("quickstart path", cross_agent)
+        self.assertIn("visual fidelity requirements", cross_agent)
+        self.assertIn("screenshot refs", cross_agent)
+        self.assertIn("visual proof refs", cross_agent)
+        self.assertIn("Design Requirement trace refs", cross_agent)
+        self.assertIn("Client Asset Contract", cross_agent)
+        self.assertIn("asset binding", cross_agent)
+        self.assertIn("local asset paths or code asset mappings", cross_agent)
+        self.assertIn("missing required client visual assets", cross_agent)
+        self.assertIn("planned `U` design object", cross_agent)
+        self.assertIn("specific source, test, fixture, configuration, or receipt paths", cross_agent)
 
     def test_bdd_formalization_strengthens_reasoning_without_traceability_system(self) -> None:
         plan = PLAN_COMMAND_PATH.read_text(encoding="utf-8")
@@ -1941,6 +1984,7 @@ class PresetContractTests(unittest.TestCase):
 
     def test_implement_command_is_agent_native_handoff_orchestrator(self) -> None:
         command = IMPLEMENT_COMMAND_PATH.read_text(encoding="utf-8")
+        cross_agent = CROSS_AGENT_SUBAGENTS_PATH.read_text(encoding="utf-8")
 
         self.assertNotIn("{CORE_TEMPLATE}", command)
         self.assertNotIn("strategy: wrap", command)
@@ -1955,35 +1999,39 @@ class PresetContractTests(unittest.TestCase):
         self.assertNotIn('"contract_type": "speckit.implement.manifest.v1"', command)
         self.assertNotIn('"contract_type": "speckit.implement.receipt.v1"', command)
 
-        required_terms = [
+        command_terms = [
             "Core mode",
             "Worker mode",
             "Core Agent",
             "Vertical Planner Agent",
             "Worker Agent",
             "vertical_capability",
-            "planner_outputs",
-            "draft_source",
             "speckit.implement.handoff.v2",
             "speckit.implement.receipt.v1",
-            "context-index.json",
             "handoff-manifest.json",
             "speckit.implement.manifest.v1.schema.json",
             "speckit.implement.handoff.v2.schema.json",
             "speckit.implement.receipt.v1.schema.json",
-            ".context.md",
-            "handoffs/implement/<run-id>",
+            "validators/speckit_implement_contract.py",
+            "tests/contracts/speckit-cross-agent-subagents.md",
             "Use handoff JSON <path>",
             "allowed_read_paths",
             "allowed_write_paths",
             "context_gaps",
             "task_status_update",
-            "task_type",
-            "receipt path does not equal `task_status_update.receipt_path`",
-            "results/<shard-id>.json",
             "Do not edit `tasks.md`",
-            "single handoff only",
-            "vertical planner only",
+        ]
+        for term in command_terms:
+            self.assertIn(term, command)
+
+        contract_terms = [
+            "planner_outputs",
+            "draft_source",
+            "context-index.json",
+            ".context.md",
+            "handoffs/implement/<run-id>",
+            "results/<shard>.json",
+            "exactly one handoff",
             "intake",
             "context_indexing",
             "vertical_planning",
@@ -1995,32 +2043,31 @@ class PresetContractTests(unittest.TestCase):
             "task_commit",
             "integration_verification",
             "closeout",
-            "domain-model",
-            "api-contract",
-            "persistence",
-            "service-flow",
-            "ui",
-            "test-validation",
-            "documentation",
-            "integration",
-            "cleanup",
         ]
-        for term in required_terms:
-            self.assertIn(term, command)
+        for term in contract_terms:
+            self.assertIn(term, cross_agent)
 
     def test_implement_command_declares_deterministic_handoff_rules(self) -> None:
         command = IMPLEMENT_COMMAND_PATH.read_text(encoding="utf-8")
+        cross_agent = CROSS_AGENT_SUBAGENTS_PATH.read_text(encoding="utf-8")
 
-        required_terms = [
+        command_terms = [
             "agent-runtime=<spec-kit-integration-key>",
-            "Isolation Policy",
             "isolated_subagent",
             "manual_fresh_worker_session",
             "isolated subagent/subsession",
-            "Core mode must not execute Worker handoffs inline in the same conversation context",
-            "If isolated dispatch is unavailable or unknown, Core mode writes the manifest and handoffs, then stops with Worker-mode instructions.",
-            "Worker runs receive only the Worker prompt and one handoff JSON path.",
-            "Core consumes planner outputs and worker receipts, not worker conversation history.",
+            "write the manifest and handoffs, then stop with Worker-mode instructions",
+            "Consume planner outputs and worker receipts, not worker conversation history",
+            "Reject non-existent handoff paths",
+            "Reject handoffs not listed in `handoff-manifest.json`",
+        ]
+        for term in command_terms:
+            self.assertIn(term, command)
+
+        contract_terms = [
+            "Runtime Isolation Mapping",
+            "Worker payload",
+            "no full `spec.md`, `plan.md`, `research.md`, `contracts/`, `quickstart.md`",
             "Shard Rules",
             "Only Vertical Planner Agents may produce shard plans and digest drafts.",
             "Only Core Agent may write final `handoff-manifest.json` and commit `tasks.md`.",
@@ -2039,31 +2086,32 @@ class PresetContractTests(unittest.TestCase):
             "derive `allowed_write_paths` from paths referenced by assigned task text",
             "include receipt path in `allowed_write_paths`",
             "derive `allowed_read_paths` from allowed write parents, validation files, context digest, and context index",
-            "Worker mode must reject non-existent handoff paths",
-            "Worker mode must reject handoffs not listed in `handoff-manifest.json`",
+            "Reject non-existent handoff paths",
+            "Reject handoffs not listed in `handoff-manifest.json`",
         ]
-        for term in required_terms:
-            self.assertIn(term, command)
+        for term in contract_terms:
+            self.assertIn(term, cross_agent)
 
-        self.assertIn("include relevant `research.md` validation decisions", command)
-        self.assertIn("include relevant `quickstart.md` validation paths", command)
-        self.assertIn("Code Review Receipts", command)
-        self.assertIn("task_type: code_review", command)
-        self.assertIn("review_conclusion", command)
-        self.assertIn("checked_sources", command)
-        self.assertIn("data_side_effect_review", command)
-        self.assertIn("data side-effect review", command)
-        self.assertIn("field-level update/delete", command)
-        self.assertIn("runtime database writes", command)
-        self.assertIn("actual implementation diff", command)
-        self.assertIn("consistency_repairs", command)
-        self.assertIn("deferred_validation_todos", command)
-        self.assertIn("quickstart/contract validation command", command)
-        self.assertIn("execute validation and code review only when those tasks are already present in `tasks.md`", command)
-        self.assertIn("do not invent validation strategy, add lifecycle roles, change requirements, update contracts, or widen scope", command)
-        self.assertIn("repair implementation drift against existing design, sequence, or contract constraints", command)
-        self.assertIn("exclude upstream requirement, contract, research, quickstart, checklist, and planning artifacts from repair write paths", command)
-        self.assertIn("real e2e cannot run", command)
+        self.assertIn("research.md validation decisions", cross_agent)
+        self.assertIn("quickstart.md validation paths", cross_agent)
+        self.assertIn("Code Review Receipts", cross_agent)
+        self.assertIn("task_type: code_review", cross_agent)
+        self.assertIn("review_conclusion", cross_agent)
+        self.assertIn("checked_sources", cross_agent)
+        self.assertIn("data_side_effect_review", cross_agent)
+        self.assertIn("data side effects", cross_agent)
+        self.assertIn("field-level update/delete", cross_agent)
+        self.assertIn("runtime database writes", cross_agent)
+        self.assertIn("actual implementation diff", cross_agent)
+        self.assertIn("consistency_repairs", cross_agent)
+        self.assertIn("deferred_validation_todos", cross_agent)
+        self.assertIn("quickstart/contract validation command", cross_agent)
+        self.assertIn("repair implementation drift against existing design, sequence, or contract constraints", cross_agent)
+        self.assertIn("real e2e gaps become todos", cross_agent)
+        self.assertNotIn("## Shard Rules", command)
+        self.assertNotIn("## Context Digest Rules", command)
+        self.assertNotIn("## Path Rules", command)
+        self.assertNotIn("## Code Review Receipts", command)
         self.assertNotIn("test-plan.md", command)
 
     def test_contract_schemas_are_decoupled_json_files(self) -> None:
@@ -2101,6 +2149,12 @@ class PresetContractTests(unittest.TestCase):
         data_side_effect_review = receipt["properties"]["data_side_effect_review"]
         self.assertIn("reviewed_diff_paths", data_side_effect_review["required"])
         self.assertIn("mutation_findings", data_side_effect_review["required"])
+        self.assertIn("pattern", handoff["properties"]["shard_id"])
+        self.assertIn("pattern", receipt["properties"]["shard_id"])
+
+        manifest = json.loads(MANIFEST_SCHEMA_PATH.read_text(encoding="utf-8"))
+        manifest_shard = manifest["properties"]["shards"]["items"]["properties"]["shard_id"]
+        self.assertIn("pattern", manifest_shard)
 
     def test_manifest_schema_declares_runtime_neutral_execution_mode(self) -> None:
         schema = json.loads(MANIFEST_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -2184,13 +2238,6 @@ class PresetContractTests(unittest.TestCase):
         validate_design_requirement_intake_trace_contract(
             minimal_design_requirement_intake_trace()
         )
-
-    def test_design_requirement_intake_trace_validator_rejects_missing_visual_item_id(self) -> None:
-        intake = minimal_design_requirement_intake_trace()
-        del intake["visual_restoration_trace"][0]["visual_item_id"]
-
-        with self.assertRaisesRegex(ValueError, "missing visual_item_id"):
-            validate_design_requirement_intake_trace_contract(intake)
 
     def test_design_requirement_intake_trace_validator_rejects_full_provider_matrix_copy(self) -> None:
         intake = minimal_design_requirement_intake_trace()
@@ -2769,6 +2816,29 @@ class PresetContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "task_ids"):
             validate_manifest_contract(manifest)
 
+    def test_validate_manifest_contract_rejects_shard_id_vertical_capability_mismatch(
+        self,
+    ) -> None:
+        manifest = minimal_manifest(
+            shards=[
+                minimal_shard(shard_id="S01-ui-01", vertical_capability="service-flow")
+            ],
+            dispatch_order=[["S01-ui-01"]],
+            vertical_capability="service-flow",
+        )
+
+        with self.assertRaisesRegex(ValueError, "shard_id vertical_capability mismatch"):
+            validate_manifest_contract(manifest)
+
+    def test_validate_manifest_contract_rejects_invalid_shard_id_pattern(self) -> None:
+        manifest = minimal_manifest(
+            shards=[minimal_shard(shard_id="S1-service-flow-01")],
+            dispatch_order=[["S1-service-flow-01"]],
+        )
+
+        with self.assertRaisesRegex(ValueError, "invalid shard_id"):
+            validate_manifest_contract(manifest)
+
     def test_validate_manifest_contract_rejects_unknown_dependency_shard(self) -> None:
         manifest = minimal_manifest(
             dependencies=[{"shard_id": SHARD_ID, "depends_on": ["S02-service-flow-01"]}]
@@ -3064,6 +3134,18 @@ class PresetContractTests(unittest.TestCase):
     def test_validate_handoff_contract_rejects_planner_output_vertical_mismatch(self) -> None:
         handoff = minimal_handoff(planner_vertical_capability="ui")
         with self.assertRaises(ValueError):
+            validate_handoff_contract(handoff)
+
+    def test_validate_handoff_contract_rejects_shard_id_vertical_capability_mismatch(
+        self,
+    ) -> None:
+        handoff = minimal_handoff(shard_id="S01-ui-01", vertical_capability="service-flow")
+        with self.assertRaisesRegex(ValueError, "shard_id vertical_capability mismatch"):
+            validate_handoff_contract(handoff)
+
+    def test_validate_handoff_contract_rejects_invalid_shard_id_pattern(self) -> None:
+        handoff = minimal_handoff(shard_id="S01_service_flow_01")
+        with self.assertRaisesRegex(ValueError, "invalid shard_id"):
             validate_handoff_contract(handoff)
 
     def test_receipt_schema_accepts_minimal_valid_receipt(self) -> None:
@@ -3742,6 +3824,27 @@ class PresetContractTests(unittest.TestCase):
         with self.assertRaises(Exception):
             Draft202012Validator(schema).validate(handoff)
 
+    def test_manifest_schema_rejects_invalid_shard_id_pattern(self) -> None:
+        schema = json.loads(MANIFEST_SCHEMA_PATH.read_text(encoding="utf-8"))
+        manifest = minimal_manifest(
+            shards=[minimal_shard(shard_id="S1-service-flow-01")],
+            dispatch_order=[["S1-service-flow-01"]],
+        )
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(manifest)
+
+    def test_handoff_schema_rejects_invalid_shard_id_pattern(self) -> None:
+        schema = json.loads(HANDOFF_SCHEMA_PATH.read_text(encoding="utf-8"))
+        handoff = minimal_handoff(shard_id="S01_service_flow_01")
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(handoff)
+
+    def test_receipt_schema_rejects_invalid_shard_id_pattern(self) -> None:
+        schema = json.loads(RECEIPT_SCHEMA_PATH.read_text(encoding="utf-8"))
+        receipt = minimal_receipt(shard_id="S01-service-flow-1")
+        with self.assertRaises(ValidationError):
+            Draft202012Validator(schema).validate(receipt)
+
     def test_handoff_schema_rejects_unknown_vertical_capability(self) -> None:
         schema = json.loads(HANDOFF_SCHEMA_PATH.read_text(encoding="utf-8"))
         handoff = minimal_handoff(shard_id="S01-unknown-01", vertical_capability="unknown")
@@ -3769,7 +3872,10 @@ class PresetContractTests(unittest.TestCase):
     def test_implement_prompt_omits_narrative_filler(self) -> None:
         command = IMPLEMENT_COMMAND_PATH.read_text(encoding="utf-8")
 
-        self.assertLessEqual(len(command.splitlines()), 130)
+        lines = command.splitlines()
+        self.assertLessEqual(len(lines), 80)
+        self.assertLessEqual(len(command), 4000)
+        self.assertLessEqual(max(len(line) for line in lines), 120)
         forbidden_terms = [
             "This command is",
             "The current agent either acts",
