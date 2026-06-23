@@ -102,6 +102,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
     },
+    "firebender": {
+      "id": "firebender",
+      "name": "Firebender",
+      "version": "1.0.0",
+      "description": "Firebender IDE integration for Android Studio / IntelliJ",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
+    },
     "forge": {
       "id": "forge",
       "name": "Forge",

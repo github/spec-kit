@@ -15,6 +15,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Codex CLI](https://github.com/openai/codex)                                         | `codex`          | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
 | [Cursor](https://cursor.sh/)                                                         | `cursor-agent`   |                                                                                                                                           |
 | [Devin for Terminal](https://cli.devin.ai/docs)                                      | `devin`          | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
+| [Firebender](https://firebender.com/)                                                | `firebender`     | IDE-based agent for Android Studio / IntelliJ                                                                                             |
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
 | [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        |                                                                                                                                           |
@@ -186,6 +187,7 @@ The currently declared multi-install safe integrations are:
 | `codebuddy` | `.codebuddy/commands`, `CODEBUDDY.md` |
 | `codex` | `.agents/skills`, `AGENTS.md` |
 | `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
+| `firebender` | `.firebender/commands`, `.firebender/rules/specify-rules.mdc` |
 | `gemini` | `.gemini/commands`, `GEMINI.md` |
 | `iflow` | `.iflow/commands`, `IFLOW.md` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |
