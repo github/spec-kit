@@ -4559,7 +4559,7 @@ class TestBundledPresetLocator:
         )
         assert "specify extension add discovery" in verify_run
         assert (
-            'test -f .claude/skills/speckit-discovery-compatibility/SKILL.md'
+            'test -f .claude/skills/speckit-discovery-decision/SKILL.md'
             in verify_run
         )
         assert (

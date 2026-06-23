@@ -18,11 +18,7 @@ DEFAULT_EXTENSION_COMMANDS = (
     "speckit.discovery.codebase",
     "speckit.discovery.codebase-api-imp",
     "speckit.discovery.poc",
-    "speckit.discovery.api",
-    "speckit.discovery.performance",
-    "speckit.discovery.migration",
-    "speckit.discovery.ux",
-    "speckit.discovery.compatibility",
+    "speckit.discovery.decision",
     "speckit.preview.html",
     "speckit.repository-governance.refresh",
 )

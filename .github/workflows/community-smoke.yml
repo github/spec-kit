@@ -158,7 +158,7 @@ jobs:
           /tmp/specify-community-smoke-venv/bin/specify extension remove discovery --force
           /tmp/specify-community-smoke-venv/bin/specify extension add discovery
           test -f .claude/skills/speckit-discovery-feasibility/SKILL.md
-          test -f .claude/skills/speckit-discovery-compatibility/SKILL.md
+          test -f .claude/skills/speckit-discovery-decision/SKILL.md
 
           /tmp/specify-community-smoke-venv/bin/specify preset resolve plan-template | tee resolve-plan-template.txt
           grep -q "workflow-preset" resolve-plan-template.txt

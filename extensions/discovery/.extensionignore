@@ -1,10 +1,12 @@
 .git/
-.github/
-__pycache__/
-*.pyc
-.pytest_cache/
-tests/
-.DS_Store
-.venv/
-dist/
-*.zip
+.gitignore
+.extensionignore
+
+# Local editor state
+.idea/
+.vscode/
+
+# Temporary files
+*.log
+tmp/
+temp/

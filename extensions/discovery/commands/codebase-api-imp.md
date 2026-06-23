@@ -59,7 +59,7 @@ Infer optional fields only from repository context and conversation, and label i
 <constraints>
 - Analyze existing implementation only. Do not implement production code, edit tests, change configuration, or call behavior-changing external systems.
 - Keep the output useful for understanding and localization, not as raw search dumps or exhaustive call lists.
-- Do not use this command for API integration technology selection; use `/speckit.discovery.api`.
+- Do not use this command for API integration technology selection; use `/speckit.discovery.decision type: api`.
 - Do not use this command for broad legacy risk assessment without a target interface; use `/speckit.discovery.codebase`.
 - Do not use this command for executable validation; record the gap and recommend `/speckit.discovery.poc`.
 - Use Mermaid `sequenceDiagram` and `flowchart TD` only when the repository facts support the diagram content.

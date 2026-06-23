@@ -5,23 +5,19 @@
 ```text
 /speckit.discovery.feasibility [goal or idea] [constraints] [success criteria]
 /speckit.discovery.techselect [decision to make] [candidate options] [criteria or constraints]
+/speckit.discovery.decision type: api|performance|migration|ux|compatibility [scenario] [constraints or risks]
 /speckit.discovery.codebase [target area or fuzzy scope] [planned change or integration] [known concerns]
-/speckit.discovery.poc [user stories] [use cases] [core design idea]
-/speckit.discovery.api [integration target] [intended workflow] [constraints or risks]
 /speckit.discovery.codebase-api-imp [API route, SDK method, topic, command, or capability] [known concern] [source scope]
-/speckit.discovery.performance [performance concern] [target flow] [load or success criteria]
-/speckit.discovery.migration [data or storage change] [current state] [migration constraints]
-/speckit.discovery.ux [user workflow] [interaction concern] [success criteria]
-/speckit.discovery.compatibility [compatibility target] [feature or workflow] [supported environments]
+/speckit.discovery.poc [user stories] [use cases] [core design idea]
 ```
 
-The extension helps teams complete technical discovery before formal planning. `feasibility`, `techselect`, and `codebase` produce decision documents; `codebase-api-imp` explains existing interface implementations from source facts; `poc` creates a bounded-scope experiment that supports feasibility, selection, or legacy-codebase risk decisions. Vertical technology decision commands provide single-decision entry points for common API, performance, migration, UX, and compatibility decisions.
+The extension helps teams complete technical discovery before formal planning. `feasibility`, `techselect`, and `codebase` produce decision documents; `decision` evaluates scenario-specific API, performance, migration, UX, and compatibility risks; `codebase-api-imp` explains existing interface implementations from source facts; `poc` creates a bounded-scope experiment that supports feasibility, selection, scenario decision, or legacy-codebase risk decisions.
 
 Internally, the commands are organized into four capability types:
 
 - `feasibility`: support a go/no-go continuation decision.
 - `techselect`: compare general technology choices.
-- `api`, `performance`, `migration`, `ux`, and `compatibility`: evaluate vertical technology decisions with scenario-specific risks.
+- `decision`: evaluate scenario-specific API, performance, migration, UX, and compatibility decisions with type-specific risks.
 - `codebase`, `codebase-api-imp` (API implementation overview), and `poc`: locate relevant source scope, gather source-backed evidence, record evidence levels and unknowns, explain implemented interface behavior, or run executable validation.
 
 ## Installation
@@ -59,6 +55,19 @@ Typical output:
 
 - `tech-selection-matrix.md`
 - recommendation, shortlist, or evidence gap
+
+### `speckit.discovery.decision`
+
+Evaluates a scenario-specific technical decision before formal planning. Use `type: api`, `type: performance`, `type: migration`, `type: ux`, or `type: compatibility` to select the decision frame and output template.
+
+Typical output:
+
+- `api-integration-discovery.md`
+- `performance-discovery.md`
+- `data-migration-discovery.md`
+- `ux-discovery.md`
+- `compatibility-discovery.md`
+- type-specific `Planning Decision`
 
 ### `speckit.discovery.codebase`
 
@@ -109,54 +118,17 @@ The command produces:
 - evidence logs or outputs
 - result: `passed`, `failed`, or `inconclusive`
 
-## Vertical Technology Decision Commands
+## Scenario-Specific Technical Decisions
 
-Use vertical technology decision commands when the unknown is already tied to a common technical decision situation. Each command creates a single-decision discovery document with a command-specific `Planning Decision`, while remaining independent from the other commands. Each command sets `Evaluation Mode` to either `comparison` or `single-approach-readiness`.
+Use `/speckit.discovery.decision` when the unknown is already tied to a common technical decision situation. The command creates a single-decision discovery document with a type-specific `Planning Decision`, and sets `Evaluation Mode` to either `comparison` or `single-approach-readiness`.
 
-### `speckit.discovery.api`
-
-Evaluates a third-party API, SDK, webhook, service, SaaS platform, or partner integration technology decision.
-
-Typical output:
-
-- `api-integration-discovery.md`
-- decision question, candidate approaches, contract, auth, rate-limit, failure-handling, security, validation findings, and planning decision
-
-### `speckit.discovery.performance`
-
-Evaluates a latency, throughput, scalability, resource, or capacity technology decision.
-
-Typical output:
-
-- `performance-discovery.md`
-- decision question, candidate approaches, workload assumptions, success criteria, bottleneck hypotheses, measurement plan, evidence, and planning decision
-
-### `speckit.discovery.migration`
-
-Evaluates a data model, storage, schema, backfill, import/export, or migration technology decision.
-
-Typical output:
-
-- `data-migration-discovery.md`
-- decision question, candidate approaches, affected data flows, rollout and rollback notes, scenario risks, validation plan, and planning decision
-
-### `speckit.discovery.ux`
-
-Evaluates a complex UX interaction, stateful workflow, accessibility requirement, or frontend/backend handoff technology decision.
-
-Typical output:
-
-- `ux-discovery.md`
-- decision question, candidate approaches, user scenarios, states, edge cases, accessibility and responsiveness risks, and planning decision
-
-### `speckit.discovery.compatibility`
-
-Evaluates a browser, OS, device, runtime, framework, API version, or deployment compatibility technology decision.
-
-Typical output:
-
-- `compatibility-discovery.md`
-- decision question, candidate approaches, support matrix, scenario risks, test matrix, fallback notes, and planning decision
+| Decision type | Use for | Typical output |
+|---|---|---|
+| `api` | Third-party API, SDK, webhook, service, SaaS platform, or partner integration decisions. | `api-integration-discovery.md` |
+| `performance` | Latency, throughput, scalability, resource, capacity, or cost decisions. | `performance-discovery.md` |
+| `migration` | Data model, storage, schema, backfill, import/export, or migration decisions. | `data-migration-discovery.md` |
+| `ux` | Complex interaction, stateful workflow, accessibility, responsive behavior, or frontend/backend handoff decisions. | `ux-discovery.md` |
+| `compatibility` | Browser, OS, device, runtime, framework, API version, or deployment compatibility decisions. | `compatibility-discovery.md` |
 
 ## Repository Structure
 
@@ -164,16 +136,12 @@ Typical output:
 .
 ├── extension.yml
 ├── commands/
-│   ├── api.md
 │   ├── codebase-api-imp.md
-│   ├── compatibility.md
-│   ├── feasibility.md
-│   ├── migration.md
-│   ├── performance.md
-│   ├── poc.md
 │   ├── codebase.md
-│   ├── techselect.md
-│   └── ux.md
+│   ├── decision.md
+│   ├── feasibility.md
+│   ├── poc.md
+│   └── techselect.md
 ├── templates/
 │   ├── api-integration-discovery.md
 │   ├── codebase-api-imp.md
