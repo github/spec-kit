@@ -1,5 +1,9 @@
 """Tests for KimiIntegration — skills integration with legacy migration."""
 
+from pathlib import Path
+
+import pytest
+
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.kimi import (
     _migrate_legacy_kimi_context_file,
@@ -8,6 +12,22 @@ from specify_cli.integrations.kimi import (
 from specify_cli.integrations.manifest import IntegrationManifest
 
 from .test_integration_base_skills import SkillsIntegrationTests
+
+
+def _symlink_or_skip(
+    link: Path, target: Path, *, target_is_directory: bool = False
+) -> None:
+    """Create *link* pointing at *target*, skipping the test if unsupported.
+
+    Symlink creation fails on Windows without the create-symlink privilege and
+    in some restricted CI sandboxes. The symlink-safety tests below assert
+    behavior that only matters when symlinks exist, so skip (rather than error)
+    when the platform cannot create them.
+    """
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
 
 
 class TestKimiIntegration(SkillsIntegrationTests):
@@ -380,8 +400,8 @@ class TestKimiLegacySymlinkSafety:
         project = tmp_path / "project"
         (project / ".kimi").mkdir(parents=True)
         # .kimi/skills is a symlink to the outside directory.
-        (project / ".kimi" / "skills").symlink_to(
-            outside, target_is_directory=True
+        _symlink_or_skip(
+            project / ".kimi" / "skills", outside, target_is_directory=True
         )
 
         i = get_integration("kimi")
@@ -402,14 +422,9 @@ class TestKimiLegacySymlinkSafety:
 
         project = tmp_path / "project"
         (project / ".kimi").mkdir(parents=True)
-        try:
-            (project / ".kimi" / "skills").symlink_to(
-                outside, target_is_directory=True
-            )
-        except (OSError, NotImplementedError) as exc:
-            import pytest
-
-            pytest.skip(f"symlinks unavailable: {exc}")
+        _symlink_or_skip(
+            project / ".kimi" / "skills", outside, target_is_directory=True
+        )
 
         i = get_integration("kimi")
         m = IntegrationManifest("kimi", project)
@@ -428,7 +443,7 @@ class TestKimiLegacySymlinkSafety:
         unrelated.mkdir(parents=True)
         (unrelated / "SKILL.md").write_text("# unrelated\n")
         # .kimi -> project root, so .kimi/skills == ./skills.
-        (project / ".kimi").symlink_to(project, target_is_directory=True)
+        _symlink_or_skip(project / ".kimi", project, target_is_directory=True)
 
         i = get_integration("kimi")
         m = IntegrationManifest("kimi", project)
@@ -449,7 +464,7 @@ class TestKimiLegacySymlinkSafety:
         (unrelated / "SKILL.md").write_text(
             "---\nmetadata:\n  author: github-spec-kit\n---\n# x\n"
         )
-        (project / ".kimi").symlink_to(project, target_is_directory=True)
+        _symlink_or_skip(project / ".kimi", project, target_is_directory=True)
 
         i = get_integration("kimi")
         m = IntegrationManifest("kimi", project)
@@ -470,7 +485,7 @@ class TestKimiLegacySymlinkSafety:
 
         project = tmp_path / "project"
         project.mkdir()
-        (project / "AGENTS.md").symlink_to(secret)
+        _symlink_or_skip(project / "AGENTS.md", secret)
         (project / "KIMI.md").write_text("# Notes\n\nKeep this.\n")
 
         result = _migrate_legacy_kimi_context_file(project)
@@ -490,7 +505,7 @@ class TestKimiLegacySymlinkSafety:
 
         project = tmp_path / "project"
         project.mkdir()
-        (project / "KIMI.md").symlink_to(external)
+        _symlink_or_skip(project / "KIMI.md", external)
 
         result = _migrate_legacy_kimi_context_file(project)
 
