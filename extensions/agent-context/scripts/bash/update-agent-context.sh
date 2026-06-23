@@ -237,21 +237,30 @@ PY
   fi
 
   # Fall back to mtime only when feature.json is absent or its plan does not exist yet.
+  # Python emits a project-relative POSIX path directly to avoid bash prefix-strip
+  # issues with backslash paths on Windows (Git bash / MSYS2).
   if [[ -z "$PLAN_PATH" ]]; then
-    _plan_abs="$("$_python" - "$PROJECT_ROOT" <<'PY'
+    _plan_rel="$("$_python" - "$PROJECT_ROOT" <<'PY'
 import sys
-from pathlib import Path
-specs = Path(sys.argv[1]) / "specs"
+from pathlib import Path, PurePosixPath
+root = Path(sys.argv[1]).resolve()
+specs = root / "specs"
 plans = sorted(
     specs.glob("*/plan.md"),
     key=lambda p: p.stat().st_mtime,
     reverse=True,
 )
-print(plans[0] if plans else "")
+if plans:
+    try:
+        print(str(PurePosixPath(plans[0].relative_to(root))))
+    except ValueError:
+        print("")
+else:
+    print("")
 PY
 )"
-    if [[ -n "$_plan_abs" ]]; then
-      PLAN_PATH="${_plan_abs#"$PROJECT_ROOT/"}"
+    if [[ -n "$_plan_rel" ]]; then
+      PLAN_PATH="$_plan_rel"
     fi
   fi
 fi
