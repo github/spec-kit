@@ -60,6 +60,7 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
     }
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+EXTENSION_ID_PATTERN = re.compile(r"^[a-z0-9-]+$")
 
 VALID_EFFECTS = frozenset({"read-only", "read-write"})
 
@@ -306,7 +307,7 @@ class ExtensionManifest:
                 )
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not EXTENSION_ID_PATTERN.match(ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -4078,6 +4079,14 @@ class ExtensionCatalog(CatalogStackBase):
             ExtensionError: If extension not found or download fails
         """
         import urllib.error
+
+        if not isinstance(extension_id, str) or not EXTENSION_ID_PATTERN.match(
+            extension_id
+        ):
+            raise ExtensionError(
+                f"Invalid extension ID '{extension_id}': "
+                "must be lowercase alphanumeric with hyphens only"
+            )
 
         # Get extension info from catalog
         ext_info = self.get_extension_info(extension_id)
