@@ -268,6 +268,20 @@ class TestExpressions:
         ctx = StepContext(inputs={"a": False, "b": True})
         assert evaluate_expression("{{ inputs.a or inputs.b }}", ctx) is True
 
+    def test_list_literal_preserves_quoted_commas(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        # commas inside a quoted element must not split it
+        assert evaluate_expression('{{ ["a, b", "c"] }}', ctx) == ["a, b", "c"]
+        assert evaluate_expression('{{ ["x, y, z"] }}', ctx) == ["x, y, z"]
+        # plain and empty lists still parse correctly
+        assert evaluate_expression("{{ [1, 2, 3] }}", ctx) == [1, 2, 3]
+        assert evaluate_expression("{{ [] }}", ctx) == []
+        # nested list elements stay intact
+        assert evaluate_expression('{{ [["a", "b"], "c"] }}', ctx) == [["a", "b"], "c"]
+
     def test_filter_default(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
