@@ -290,6 +290,30 @@ work **offline** against local or pinned sources.
 | Ship reusable domain-specific templates | Either — presets for template overrides, extensions for templates bundled with new commands |
 | Provision a complete role-based setup in one command | Bundle |
 
+## 🎨 Canvas: Spec Kit Board
+
+If you use **GitHub Copilot CLI** (the `github-app`), Spec Kit ships an opt-in
+canvas extension — `speckit-board` — that turns the side panel into a live
+Spec-Driven Development dashboard:
+
+- A **portfolio view** of every feature in `specs/` with its pipeline state
+  (`Specify → Clarify → Plan → Tasks → Analyze → Implement`).
+- A **feature drill-in** with an artifact grid and stage-specific buttons that
+  send `/speckit.*` commands straight to the chat.
+- A **constitution strip** at the top so principles are always one glance away.
+- Native theming via GitHub canvas tokens (light, dark, and high-contrast).
+
+```bash
+specify canvas install                 # copy into ~/.copilot/extensions
+specify canvas install --dev           # or symlink for active development
+specify canvas list
+specify canvas uninstall
+```
+
+After installing, restart Copilot CLI and ask the chat to **open the
+speckit-board canvas**. Source lives at
+[`extensions/speckit-board/`](extensions/speckit-board/).
+
 ## 📚 Core Philosophy
 
 Spec-Driven Development is a structured process that emphasizes:

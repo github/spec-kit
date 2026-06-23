@@ -619,6 +619,13 @@ from .commands.bundle import register as _register_bundle_cmds  # noqa: E402
 _register_bundle_cmds(app)
 
 
+# ===== Canvas Commands =====
+
+# Canvas subcommand group (specify canvas ...) — see commands/canvas/.
+from .commands.canvas import register as _register_canvas_cmds  # noqa: E402
+_register_canvas_cmds(app)
+
+
 # ===== Workflow Commands =====
 
 workflow_app = typer.Typer(
