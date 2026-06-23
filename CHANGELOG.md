@@ -142,7 +142,6 @@
 
 ### Changed
 
-- feat(integration): update Kimi integration for Kimi Code CLI (`@moonshot-ai/kimi-code`): skills path moved from `.kimi/skills/` to `.kimi-code/skills/`, context file moved from `KIMI.md` to `AGENTS.md`; `--migrate-legacy` migrates old installs and `teardown()` cleans up leftover legacy directories
 - Add Research Harness extension to community catalog (#2935)
 - Add Coding Standards Drift Control extension to community catalog (#2934)
 - Add Spec Trace extension to community catalog (#2527)
