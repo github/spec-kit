@@ -52,7 +52,7 @@ class KimiIntegration(SkillsIntegration):
         """
         stem = command_name
         if stem.startswith("speckit."):
-            stem = stem[len("speckit."):]
+            stem = stem[len("speckit.") :]
 
         invocation = "/skill:speckit-" + stem.replace(".", "-")
         if args:
@@ -308,7 +308,7 @@ def _legacy_to_target_name(legacy_name: str) -> str:
     if legacy_name.startswith("speckit-"):
         return legacy_name
     if legacy_name.startswith("speckit."):
-        suffix = legacy_name[len("speckit."):]
+        suffix = legacy_name[len("speckit.") :]
         if suffix:
             return f"speckit-{suffix.replace('.', '-')}"
     return ""
@@ -354,8 +354,10 @@ def _is_speckit_generated_skill(skill_dir: Path) -> bool:
 
     author = metadata.get("author", "")
     source = metadata.get("source", "")
-    return author == "github-spec-kit" or (
-        isinstance(source, str) and source.startswith("templates/commands/")
+    return (
+        author == "github-spec-kit"
+        and isinstance(source, str)
+        and source.startswith("templates/commands/")
     )
 
 
@@ -393,9 +395,7 @@ def _migrate_legacy_kimi_context_file(
     target_path = project_root / "AGENTS.md"
     # Never follow a symlinked target, and never treat an existing non-file
     # (e.g. a directory) as a writable context file.
-    if target_path.is_symlink() or (
-        target_path.exists() and not target_path.is_file()
-    ):
+    if target_path.is_symlink() or (target_path.exists() and not target_path.is_file()):
         return False
 
     try:
