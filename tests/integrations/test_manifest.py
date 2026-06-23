@@ -116,6 +116,34 @@ class TestManifestPathTraversal:
         assert len(removed) == 1
         assert removed[0].name == "safe.txt"
 
+    def test_remove_drops_entry_and_is_noop_second_time(self, tmp_path):
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt")
+        assert "f.txt" in m.files
+        assert m.remove("f.txt") is True
+        assert "f.txt" not in m.files
+        assert m.remove("f.txt") is False  # already gone → no-op
+
+    def test_remove_rejects_absolute_path(self, tmp_path):
+        # Matches record_existing/is_recovered: an absolute key can never be a
+        # canonical manifest key, so remove() rejects it lexically and leaves
+        # the tracked entry untouched.
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt")
+        import sys
+        abs_input = "C:\\tmp\\f.txt" if sys.platform == "win32" else "/tmp/f.txt"
+        assert m.remove(abs_input) is False
+        assert "f.txt" in m.files
+
+    def test_remove_rejects_parent_traversal(self, tmp_path):
+        (tmp_path / "f.txt").write_text("x", encoding="utf-8")
+        m = IntegrationManifest("test", tmp_path)
+        m.record_existing("f.txt")
+        assert m.remove("../f.txt") is False
+        assert "f.txt" in m.files
+
 
 class TestManifestCheckModified:
     def test_unmodified_file(self, tmp_path):

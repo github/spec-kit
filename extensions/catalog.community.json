@@ -1006,8 +1006,8 @@
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise.",
       "author": "raccioly",
-      "version": "0.27.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.27.0/spec-kit-docguard-v0.27.0.zip",
+      "version": "0.28.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.28.0/spec-kit-docguard-v0.28.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1043,7 +1043,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-06-22T00:00:00Z"
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1369,6 +1369,46 @@
       "stars": 0,
       "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "intake": {
+      "name": "Intake",
+      "id": "intake",
+      "description": "Normalize PRD, design, and test-case evidence into SDD-ready intake artifacts.",
+      "author": "bigsmartben",
+      "version": "0.1.2",
+      "download_url": "https://github.com/bigsmartben/spec-kit-intake/archive/refs/tags/v0.1.2.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-intake",
+      "homepage": "https://github.com/bigsmartben/spec-kit-intake",
+      "documentation": "https://github.com/bigsmartben/spec-kit-intake/blob/main/README.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-intake/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0",
+        "tools": [
+          {
+            "name": "figma-mcp",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "intake",
+        "sdd",
+        "requirements",
+        "validation",
+        "figma"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-23T00:00:00Z",
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "issue": {
       "name": "GitHub Issues Integration 2",

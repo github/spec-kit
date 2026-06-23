@@ -1,15 +1,157 @@
 """Consistency checks for agent configuration across runtime surfaces."""
 
+import re
 from pathlib import Path
+
+import yaml
 
 from specify_cli import AGENT_CONFIG
 from specify_cli.extensions import CommandRegistrar
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+ISSUE_TEMPLATE_AGENT_KEYS = [
+    "amp",
+    "agy",
+    "auggie",
+    "claude",
+    "cline",
+    "codebuddy",
+    "codex",
+    "cursor-agent",
+    "devin",
+    "forge",
+    "gemini",
+    "copilot",
+    "goose",
+    "hermes",
+    "bob",
+    "iflow",
+    "junie",
+    "kilocode",
+    "kimi",
+    "kiro-cli",
+    "lingma",
+    "vibe",
+    "opencode",
+    "pi",
+    "qodercli",
+    "qwen",
+    "roo",
+    "rovodev",
+    "shai",
+    "tabnine",
+    "trae",
+    "windsurf",
+    "zcode",
+    "zed",
+]
+
+
+def _issue_template(path: str) -> dict:
+    return yaml.safe_load((REPO_ROOT / path).read_text(encoding="utf-8"))
+
+
+def _body_item_by_id(template: dict, item_id: str) -> dict:
+    for item in template["body"]:
+        if item.get("id") == item_id:
+            return item
+    raise AssertionError(f"Expected issue template body item {item_id!r}")
+
+
+def _dropdown_options(path: str, item_id: str) -> list[str]:
+    item = _body_item_by_id(_issue_template(path), item_id)
+    return item["attributes"]["options"]
+
+
+def _normalized_markdown(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _markdown_value_containing(path: str, marker: str) -> str:
+    template = _issue_template(path)
+    normalized_marker = _normalized_markdown(marker)
+    for item in template["body"]:
+        if item.get("type") != "markdown":
+            continue
+        value = item["attributes"]["value"]
+        if normalized_marker in _normalized_markdown(value):
+            return value
+    raise AssertionError(f"Expected issue template markdown containing {marker!r}")
+
+
+def _markdown_paragraph_containing(path: str, marker: str) -> str:
+    value = _markdown_value_containing(path, marker)
+    normalized_marker = _normalized_markdown(marker)
+    for paragraph in re.split(r"\n\s*\n", value):
+        if normalized_marker in _normalized_markdown(paragraph):
+            return paragraph
+    raise AssertionError(f"Expected issue template paragraph containing {marker!r}")
+
+
+def _supported_agent_names_from_agent_request_template() -> list[str]:
+    marker = "**Currently supported agents**:"
+    paragraph = _markdown_paragraph_containing(
+        ".github/ISSUE_TEMPLATE/agent_request.yml",
+        marker,
+    )
+    supported_agents_text = _normalized_markdown(paragraph).split(marker, 1)[1].strip()
+    return [agent.strip() for agent in supported_agents_text.split(",")]
+
 
 class TestAgentConfigConsistency:
-    """Ensure kiro-cli migration stays synchronized across key surfaces."""
+    """Ensure agent configuration stays synchronized across key surfaces."""
+
+    def test_issue_template_agent_lists_match_runtime_integrations(self):
+        """GitHub issue templates should list all concrete built-in agents."""
+        concrete_agent_keys = set(AGENT_CONFIG) - {"generic"}
+        issue_template_agent_keys = set(ISSUE_TEMPLATE_AGENT_KEYS)
+
+        missing_agent_keys = sorted(concrete_agent_keys - issue_template_agent_keys)
+        unexpected_agent_keys = sorted(issue_template_agent_keys - concrete_agent_keys)
+        duplicate_agent_keys = sorted(
+            key
+            for key in issue_template_agent_keys
+            if ISSUE_TEMPLATE_AGENT_KEYS.count(key) > 1
+        )
+        assert not missing_agent_keys, (
+            "Issue template agent list is missing AGENT_CONFIG keys: "
+            f"{missing_agent_keys}"
+        )
+        assert not unexpected_agent_keys, (
+            "Issue template agent list includes unknown AGENT_CONFIG keys: "
+            f"{unexpected_agent_keys}"
+        )
+        assert not duplicate_agent_keys, (
+            "Issue template agent list contains duplicate keys: "
+            f"{duplicate_agent_keys}"
+        )
+
+        issue_template_agent_names = [
+            AGENT_CONFIG[key]["name"] for key in ISSUE_TEMPLATE_AGENT_KEYS
+        ]
+        assert "Generic (bring your own agent)" not in issue_template_agent_names
+
+        bug_options = _dropdown_options(
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+            "ai-agent",
+        )
+        assert bug_options == issue_template_agent_names + ["Not applicable"]
+
+        feature_options = _dropdown_options(
+            ".github/ISSUE_TEMPLATE/feature_request.yml",
+            "ai-agent",
+        )
+        assert feature_options == [
+            "All agents",
+            *issue_template_agent_names,
+            "Not applicable",
+        ]
+
+        assert (
+            _supported_agent_names_from_agent_request_template()
+            == issue_template_agent_names
+        )
 
     def test_runtime_config_uses_kiro_cli_and_removes_q(self):
         """AGENT_CONFIG should include kiro-cli and exclude legacy q."""
