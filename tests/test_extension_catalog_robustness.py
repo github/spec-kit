@@ -13,7 +13,7 @@ import pytest
 from typer.testing import CliRunner
 
 from specify_cli import app
-from specify_cli.extensions import ExtensionManager, ExtensionCatalog
+from specify_cli.extensions import ExtensionError, ExtensionManager, ExtensionCatalog
 
 runner = CliRunner()
 
@@ -99,3 +99,30 @@ def test_info_tolerates_missing_fields_and_non_dict_sections(project_dir, monkey
     assert "Provides:" not in result.output
     # stars is escaped.
     assert "[bold]42[/bold]" in result.output
+
+
+def test_download_rejects_catalog_id_path_traversal(project_dir, monkeypatch):
+    """Catalog-controlled IDs must not become path-traversing ZIP filenames."""
+    monkeypatch.chdir(project_dir)
+
+    catalog = ExtensionCatalog(project_dir)
+    malicious_id = "../escape"
+
+    monkeypatch.setattr(
+        catalog,
+        "_get_merged_extensions",
+        lambda: [{
+            "id": malicious_id,
+            "name": "Evil",
+            "version": "1.0.0",
+            "download_url": "https://example.com/evil.zip",
+        }],
+    )
+
+    def fail_open_url(*args, **kwargs):
+        raise AssertionError("download should not be attempted for an unsafe id")
+
+    monkeypatch.setattr(catalog, "_open_url", fail_open_url)
+
+    with pytest.raises(ExtensionError, match="Invalid extension ID"):
+        catalog.download_extension(malicious_id)
