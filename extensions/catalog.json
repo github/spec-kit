@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-05T00:00:00Z",
+  "updated_at": "2026-06-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
   "extensions": {
     "agent-context": {
@@ -70,10 +70,10 @@
       ]
     },
     "preview": {
-      "name": "Interactive HTML Preview",
+      "name": "Spec Kit Preview",
       "id": "preview",
-      "version": "1.0.0",
-      "description": "Generate self-contained interactive HTML prototypes from Spec Kit artifacts",
+      "version": "1.1.0",
+      "description": "Generate evidence-backed low, mid, or high fidelity previews from Spec Kit artifacts as Markdown or self-contained HTML",
       "author": "bigsmartben",
       "repository": "https://github.com/bigsmartben/spec-kit-preview",
       "license": "MIT",
@@ -82,12 +82,14 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 1
+        "commands": 6
       },
       "tags": [
         "preview",
         "prototype",
         "html",
+        "markdown",
+        "wireflow",
         "ux"
       ]
     },

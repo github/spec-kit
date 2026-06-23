@@ -1,0 +1,276 @@
+{
+  "schemaVersion": "1.0.0",
+  "extension": {
+    "id": "preview",
+    "version": "1.1.0",
+    "repository": "https://github.com/bigsmartben/spec-kit-preview"
+  },
+  "commands": [
+    {
+      "name": "speckit.preview.low-md",
+      "file": "commands/speckit.preview.low-md.md",
+      "target": "specs/<feature>/preview/wireflow-low.md",
+      "format": "md",
+      "fidelity": "low",
+      "template": "templates/preview/low.md",
+      "requiredPhrases": [
+        "Low-Fidelity Extraction Policy",
+        "Core actor, trigger",
+        "Do not create HTML"
+      ],
+      "forbiddenPhrases": [
+        "Do not create Markdown"
+      ]
+    },
+    {
+      "name": "speckit.preview.low-html",
+      "file": "commands/speckit.preview.low-html.md",
+      "target": "specs/<feature>/preview/wireflow-low.html",
+      "format": "html",
+      "fidelity": "low",
+      "template": "templates/preview/low.html",
+      "requiredPhrases": [
+        "Low-Fidelity Extraction Policy",
+        "Core actor, trigger",
+        "Do not create Markdown",
+        "self-contained",
+        "network-free",
+        "Escape user-provided content and source excerpts",
+        "Use embedded CSS only",
+        "do not use external fonts"
+      ],
+      "forbiddenPhrases": [
+        "Do not create HTML"
+      ]
+    },
+    {
+      "name": "speckit.preview.mid-md",
+      "file": "commands/speckit.preview.mid-md.md",
+      "target": "specs/<feature>/preview/wireflow-mid.md",
+      "format": "md",
+      "fidelity": "mid",
+      "template": "templates/preview/mid.md",
+      "requiredPhrases": [
+        "Mid-Fidelity Extraction Policy",
+        "Source-defined page, field, button",
+        "primary alternate flow state",
+        "Do not create HTML"
+      ],
+      "forbiddenPhrases": [
+        "Do not create Markdown"
+      ]
+    },
+    {
+      "name": "speckit.preview.mid-html",
+      "file": "commands/speckit.preview.mid-html.md",
+      "target": "specs/<feature>/preview/wireflow-mid.html",
+      "format": "html",
+      "fidelity": "mid",
+      "template": "templates/preview/mid.html",
+      "requiredPhrases": [
+        "Mid-Fidelity Extraction Policy",
+        "Source-defined page, field, button",
+        "primary alternate flow state",
+        "Do not create Markdown",
+        "self-contained",
+        "network-free",
+        "Escape user-provided content and source excerpts",
+        "minimal JavaScript",
+        "do not create an end-to-end interactive prototype",
+        "Do not simulate undocumented navigation"
+      ],
+      "forbiddenPhrases": [
+        "Do not create HTML"
+      ]
+    },
+    {
+      "name": "speckit.preview.high-md",
+      "file": "commands/speckit.preview.high-md.md",
+      "target": "specs/<feature>/preview/wireflow-high.md",
+      "format": "md",
+      "fidelity": "high",
+      "template": "templates/preview/high.md",
+      "requiredPhrases": [
+        "High-Fidelity Extraction Policy",
+        "Interaction matrix content",
+        "State matrix content",
+        "covered interactions",
+        "primary alternate flow state",
+        "Do not create HTML"
+      ],
+      "forbiddenPhrases": [
+        "Do not create Markdown"
+      ]
+    },
+    {
+      "name": "speckit.preview.high-html",
+      "file": "commands/speckit.preview.high-html.md",
+      "target": "specs/<feature>/preview/wireflow-high.html",
+      "format": "html",
+      "fidelity": "high",
+      "template": "templates/preview/high.html",
+      "requiredPhrases": [
+        "High-Fidelity Extraction Policy",
+        "Interaction matrix content",
+        "State matrix content",
+        "covered interactions",
+        "primary alternate flow state",
+        "Do not create Markdown",
+        "self-contained",
+        "network-free",
+        "Escape user-provided content and source excerpts",
+        "inline CSS and JavaScript",
+        "documented interactions",
+        "source evidence",
+        "review question instead of making it clickable",
+        "observable state transitions",
+        "Responsive mobile and desktop review states",
+        "Do not claim that HTML is production-ready"
+      ],
+      "forbiddenPhrases": [
+        "Do not create HTML"
+      ]
+    }
+  ],
+  "sharedCommandRequiredPhrases": [
+    "Command Responsibilities",
+    "Evidence Policy",
+    "Extraction Policy",
+    "specs/<feature>/spec.md",
+    "Do not modify source code",
+    "推理补齐",
+    "已覆盖",
+    "输入未说明",
+    "If `$ARGUMENTS` requests",
+    "Create `specs/<feature>/preview/` if it is missing",
+    "do not create any other files or directories",
+    "Do not choose by most recent timestamp",
+    "Every requirement",
+    "coverage label and provenance",
+    "Provenance must be either a source anchor",
+    "Use `输入未说明` when no source supports",
+    "Use `推理补齐` only when a minimal inference",
+    "minimal traceable inference",
+    "source of truth",
+    "template slots",
+    "already exists, read it before writing",
+    "Preserve user-authored review notes",
+    "UPDATED",
+    "SUPERSEDED",
+    "Prefer `SPECIFY_FEATURE` when set.",
+    "current Git branch name when it exactly matches",
+    "unambiguous candidate directory",
+    "stop and ask the user"
+  ],
+  "sharedCommandForbiddenPhrases": [
+    "Markdown Shape",
+    "HTML Shape",
+    "Required tables",
+    "smallest bridge needed to keep the preview understandable",
+    "one single clear candidate",
+    "Meaningful state changes",
+    "black/white/gray wireframe language",
+    "browser-friendly form",
+    "without becoming production code",
+    "choose the most recent feature directory",
+    "Coverage evidence should name the source and a precise anchor when available",
+    "prototype-only"
+  ],
+  "templates": [
+    {
+      "path": "templates/preview/low.md",
+      "format": "md",
+      "requiredPhrases": [
+        "# Low-Fidelity Preview",
+        "## 已保留评审记录",
+        "| ID | 节点 | 目的 | 用户动作 | 系统响应 | 覆盖标签 | 证据/推理 |",
+        "| 需求/场景 | 预览位置 | 覆盖标签 | 证据/推理 | 缺口或问题 |",
+        "{{preserved_review_records}}"
+      ]
+    },
+    {
+      "path": "templates/preview/mid.md",
+      "format": "md",
+      "requiredPhrases": [
+        "# Mid-Fidelity Preview",
+        "## 状态清单",
+        "## 已保留评审记录",
+        "| ID | 页面/节点 | 目的 | 可见元素 | 用户动作 | 系统响应 | 状态 | 覆盖标签 | 证据/推理 |",
+        "| 状态 | 触发条件 | 用户可见反馈 | 恢复/下一步 | 覆盖标签 | 证据/推理 |"
+      ]
+    },
+    {
+      "path": "templates/preview/high.md",
+      "format": "md",
+      "requiredPhrases": [
+        "# High-Fidelity Preview",
+        "## 交互矩阵",
+        "## 状态矩阵",
+        "## 已保留评审记录",
+        "| 事件 | 目标 | 前置条件 | 反馈 | 状态变化 | 错误处理 | 覆盖标签 | 证据/推理 |",
+        "| 状态 | 触发条件 | 用户可见反馈 | 恢复/下一步 | 覆盖标签 | 证据/推理 |"
+      ]
+    },
+    {
+      "path": "templates/preview/low.html",
+      "format": "html",
+      "requiredPhrases": [
+        "<!doctype html>",
+        "Low-Fidelity Preview",
+        "已保留评审记录",
+        "{{node_inventory_rows}}",
+        "{{coverage_rows}}",
+        "<style>"
+      ]
+    },
+    {
+      "path": "templates/preview/mid.html",
+      "format": "html",
+      "requiredPhrases": [
+        "<!doctype html>",
+        "Mid-Fidelity Preview",
+        "状态清单",
+        "已保留评审记录",
+        "data-toggle",
+        "{{state_inventory_rows}}"
+      ]
+    },
+    {
+      "path": "templates/preview/high.html",
+      "format": "html",
+      "requiredPhrases": [
+        "<!doctype html>",
+        "High-Fidelity Preview",
+        "首屏与交互预览",
+        "交互矩阵",
+        "状态矩阵",
+        "已保留评审记录",
+        "data-preview-action",
+        "{{interaction_matrix_rows}}",
+        "{{state_matrix_rows}}"
+      ]
+    }
+  ],
+  "docs": {
+    "paths": [
+      "README.md",
+      "CATALOG-SUBMISSION.md"
+    ],
+    "forbiddenPhrases": [
+      "speckit.preview.html",
+      "preview/index.html",
+      "refs/tags/v1.0.0.zip"
+    ]
+  },
+  "catalogRequiredPhrases": [
+    "Extension ID: {extension.id}",
+    "Name: {extension.name}",
+    "Version: {extension.version}",
+    "Description: {extension.description}",
+    "Repository URL: {extension.repository}",
+    "Download URL: {extension.repository}/archive/refs/tags/v{extension.version}.zip",
+    "Required Spec Kit version: {requires.speckit_version}",
+    "Commands count: {commands.count}",
+    "Tags: {tags.csv}"
+  ]
+}
