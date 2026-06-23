@@ -651,11 +651,11 @@
     "workflow-preset": {
       "name": "Workflow Preset",
       "id": "workflow-preset",
-      "version": "1.3.2",
-      "description": "Behavior-first specification, design artifacts, and agent-native handoff orchestration.",
+      "version": "1.3.9",
+      "description": "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
       "author": "bigsmartben",
       "repository": "https://github.com/bigsmartben/spec-kit-workflow-preset",
-      "download_url": "https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.2/spec-kit-workflow-preset-v1.3.2.zip",
+      "download_url": "https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.9/spec-kit-workflow-preset-v1.3.9.zip",
       "homepage": "https://github.com/bigsmartben/spec-kit-workflow-preset",
       "documentation": "https://github.com/bigsmartben/spec-kit-workflow-preset/blob/main/README.md",
       "license": "MIT",
@@ -663,7 +663,7 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "templates": 22,
+        "templates": 27,
         "commands": 8
       },
       "tags": [
@@ -674,7 +674,7 @@
         "handoff"
       ],
       "created_at": "2026-05-27T00:00:00Z",
-      "updated_at": "2026-06-03T00:00:00Z"
+      "updated_at": "2026-06-23T00:00:00Z"
     }
   }
 }

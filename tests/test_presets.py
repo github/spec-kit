@@ -4434,6 +4434,30 @@ class TestBundledPresetLocator:
         assert entry["provides"]["templates"] == template_count
         assert entry["tags"] == manifest["tags"]
 
+    def test_workflow_preset_community_catalog_matches_manifest(self):
+        """workflow-preset community catalog entry matches the released preset."""
+        catalog_path = Path(__file__).parent.parent / "presets" / "catalog.community.json"
+        manifest_path = Path(__file__).parent.parent / "presets" / "workflow-preset" / "preset.yml"
+        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+
+        entry = catalog["presets"]["workflow-preset"]
+        provided = manifest["provides"]["templates"]
+        command_count = sum(1 for item in provided if item["type"] == "command")
+        template_count = sum(1 for item in provided if item["type"] == "template")
+        version = manifest["preset"]["version"]
+
+        assert entry["version"] == version
+        assert entry["repository"] == manifest["preset"]["repository"]
+        assert entry["download_url"] == (
+            "https://github.com/bigsmartben/spec-kit-workflow-preset/"
+            f"releases/download/v{version}/spec-kit-workflow-preset-v{version}.zip"
+        )
+        assert entry["requires"]["speckit_version"] == manifest["requires"]["speckit_version"]
+        assert entry["provides"]["commands"] == command_count
+        assert entry["provides"]["templates"] == template_count
+        assert entry["tags"] == manifest["tags"]
+
     def test_workflow_preset_integration_release_payload_contract(self):
         """Workflow preset release dispatch contract stays aligned with preset repo."""
         workflow_path = (
