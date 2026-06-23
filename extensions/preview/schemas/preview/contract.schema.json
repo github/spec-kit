@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bigsmartben/spec-kit-preview/schemas/preview/contract.schema.json",
+  "title": "Spec Kit Preview Extension Validation Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "extension",
+    "commands",
+    "sharedCommandRequiredPhrases",
+    "sharedCommandForbiddenPhrases",
+    "templates",
+    "docs",
+    "catalogRequiredPhrases"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "repository"],
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "string" },
+        "repository": { "type": "string", "format": "uri" }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/command" }
+    },
+    "sharedCommandRequiredPhrases": {
+      "$ref": "#/$defs/stringList"
+    },
+    "sharedCommandForbiddenPhrases": {
+      "$ref": "#/$defs/stringList"
+    },
+    "templates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/template" }
+    },
+    "docs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paths", "forbiddenPhrases"],
+      "properties": {
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "forbiddenPhrases": {
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    },
+    "catalogRequiredPhrases": {
+      "$ref": "#/$defs/stringList"
+    }
+  },
+  "$defs": {
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "file",
+        "target",
+        "format",
+        "fidelity",
+        "template",
+        "requiredPhrases",
+        "forbiddenPhrases"
+      ],
+      "properties": {
+        "name": { "type": "string" },
+        "file": { "type": "string" },
+        "target": { "type": "string" },
+        "format": { "enum": ["md", "html"] },
+        "fidelity": { "enum": ["low", "mid", "high"] },
+        "template": { "type": "string" },
+        "requiredPhrases": { "$ref": "#/$defs/stringList" },
+        "forbiddenPhrases": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "format", "requiredPhrases"],
+      "properties": {
+        "path": { "type": "string" },
+        "format": { "enum": ["md", "html"] },
+        "requiredPhrases": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

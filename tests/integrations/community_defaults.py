@@ -13,7 +13,12 @@ DEFAULT_EXTENSION_IDS = ("arch", "preview", "repository-governance")
 DEFAULT_EXTENSION_COMMANDS = (
     "speckit.arch.generate",
     "speckit.arch.reverse",
-    "speckit.preview.html",
+    "speckit.preview.low-md",
+    "speckit.preview.low-html",
+    "speckit.preview.mid-md",
+    "speckit.preview.mid-html",
+    "speckit.preview.high-md",
+    "speckit.preview.high-html",
     "speckit.repository-governance.refresh",
 )
 DEFAULT_PRESET_ID = "workflow-preset"

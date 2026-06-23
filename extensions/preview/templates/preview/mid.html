@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mid-Fidelity Preview</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f8;
+      --panel: #ffffff;
+      --text: #202124;
+      --muted: #5f6368;
+      --line: #d5d9dc;
+      --accent: #2b6f6b;
+      --soft: #edf3f2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+    }
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 44px;
+    }
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    h1, h2 { margin: 0 0 12px; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 18px; }
+    .metadata {
+      color: var(--muted);
+      display: grid;
+      gap: 6px;
+    }
+    .wireframe {
+      border: 1px dashed var(--accent);
+      background: var(--soft);
+      padding: 14px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef1f2;
+      color: #2f3133;
+    }
+    button {
+      border: 1px solid var(--accent);
+      background: #ffffff;
+      color: var(--accent);
+      border-radius: 4px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    button:focus-visible {
+      outline: 3px solid #9cc7c3;
+      outline-offset: 2px;
+    }
+    [hidden] { display: none !important; }
+    @media (max-width: 760px) {
+      main { width: min(100% - 20px, 1180px); padding-top: 16px; }
+      header, section { padding: 14px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Mid-Fidelity Preview</h1>
+      <div class="metadata">{{metadata}}</div>
+    </header>
+
+    <section aria-labelledby="input-sources">
+      <h2 id="input-sources">输入来源与读取范围</h2>
+      {{input_sources}}
+    </section>
+
+    <section aria-labelledby="evidence-summary">
+      <h2 id="evidence-summary">需求证据摘要</h2>
+      {{evidence_summary}}
+    </section>
+
+    <section aria-labelledby="wireflow">
+      <h2 id="wireflow">Wireflow</h2>
+      <div class="wireframe">{{wireflow}}</div>
+    </section>
+
+    <section aria-labelledby="node-inventory">
+      <h2 id="node-inventory">页面/节点清单</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>页面/节点</th>
+            <th>目的</th>
+            <th>可见元素</th>
+            <th>用户动作</th>
+            <th>系统响应</th>
+            <th>状态</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+          </tr>
+        </thead>
+        <tbody>{{node_inventory_rows}}</tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="state-inventory">
+      <h2 id="state-inventory">状态清单</h2>
+      <button type="button" data-toggle="state-examples" aria-controls="state-examples">切换状态示例</button>
+      <div id="state-examples">
+        {{state_examples}}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>状态</th>
+            <th>触发条件</th>
+            <th>用户可见反馈</th>
+            <th>恢复/下一步</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+          </tr>
+        </thead>
+        <tbody>{{state_inventory_rows}}</tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="branches">
+      <h2 id="branches">分支、状态与异常路径</h2>
+      {{branches_states_exceptions}}
+    </section>
+
+    <section aria-labelledby="coverage">
+      <h2 id="coverage">覆盖度证据结论</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>需求/场景</th>
+            <th>预览位置</th>
+            <th>覆盖标签</th>
+            <th>证据/推理</th>
+            <th>缺口或问题</th>
+          </tr>
+        </thead>
+        <tbody>{{coverage_rows}}</tbody>
+      </table>
+    </section>
+
+    <section aria-labelledby="preserved-review">
+      <h2 id="preserved-review">已保留评审记录</h2>
+      {{preserved_review_records}}
+    </section>
+
+    <section aria-labelledby="review-questions">
+      <h2 id="review-questions">未覆盖项、未知项与评审问题</h2>
+      {{review_questions}}
+    </section>
+  </main>
+  <script>
+    document.querySelectorAll('[data-toggle]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = document.getElementById(button.dataset.toggle);
+        if (!target) return;
+        target.hidden = !target.hidden;
+      });
+    });
+  </script>
+</body>
+</html>
