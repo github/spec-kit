@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-17T00:00:00Z",
+  "updated_at": "2026-06-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "agent-assign": {
@@ -1372,6 +1372,47 @@
       "stars": 0,
       "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "intake": {
+      "name": "Intake",
+      "id": "intake",
+      "description": "Extract and validate SDD-ready intake artifacts from PRDs, visual designs, test cases, and other software sources",
+      "author": "bigsmartben",
+      "version": "0.1.1",
+      "download_url": "https://github.com/bigsmartben/spec-kit-intake/archive/refs/tags/v0.1.1.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-intake",
+      "homepage": "https://github.com/bigsmartben/spec-kit-intake",
+      "documentation": "https://github.com/bigsmartben/spec-kit-intake/blob/main/README.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-intake/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0",
+        "tools": [
+          {
+            "name": "figma-mcp",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "intake",
+        "prd",
+        "test-cases",
+        "visual-design",
+        "requirements",
+        "validation"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-23T00:00:00Z",
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "issue": {
       "name": "GitHub Issues Integration 2",
