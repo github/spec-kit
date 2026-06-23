@@ -1516,7 +1516,7 @@ class TestPresetCatalog:
 
         catalog_data = {"schema_version": "1.0", "presets": {}}
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(catalog_data).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(catalog_data).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/presets/catalog.json"
@@ -1572,7 +1572,7 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
 
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1641,7 +1641,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1688,7 +1688,7 @@ class TestPresetCatalog:
 
         catalog = PresetCatalog(project_dir)
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1729,7 +1729,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1767,7 +1767,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1837,7 +1837,7 @@ class TestPresetCatalog:
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode("utf-8")).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1885,10 +1885,12 @@ class TestPresetCatalog:
             "schema_version": "1.0",
             "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
         }
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(valid).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        def make_response():
+            mock_response = MagicMock()
+            mock_response.read.side_effect = io.BytesIO(json.dumps(valid).encode()).read
+            mock_response.__enter__ = lambda s: s
+            mock_response.__exit__ = MagicMock(return_value=False)
+            return mock_response
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -1901,7 +1903,7 @@ class TestPresetCatalog:
 
         monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
 
-        with patch.object(catalog, "_open_url", return_value=mock_response):
+        with patch.object(catalog, "_open_url", side_effect=lambda *a, **kw: make_response()):
             # Legacy single-catalog path.
             assert catalog.fetch_catalog(force_refresh=True) == valid
 
@@ -1938,7 +1940,7 @@ class TestPresetCatalog:
             },
         }
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
 
@@ -1972,7 +1974,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -1981,12 +1983,12 @@ class TestPresetCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -2034,7 +2036,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -4576,10 +4578,10 @@ class TestPresetAddFromUrlResolution:
 
         class FakeResponse:
             def __init__(self, data):
-                self._data = data
+                self._stream = io.BytesIO(data)
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def __enter__(self):
                 return self
@@ -4587,7 +4589,9 @@ class TestPresetAddFromUrlResolution:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        def fake_open_url(
+            url, timeout=None, extra_headers=None, redirect_validator=None, strict_redirects=False
+        ):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
@@ -4634,10 +4638,10 @@ class TestPresetAddFromUrlResolution:
 
         class FakeResponse:
             def __init__(self, data):
-                self._data = data
+                self._stream = io.BytesIO(data)
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def __enter__(self):
                 return self
@@ -4645,7 +4649,9 @@ class TestPresetAddFromUrlResolution:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        def fake_open_url(
+            url, timeout=None, extra_headers=None, redirect_validator=None, strict_redirects=False
+        ):
             captured_urls.append((url, extra_headers))
             return FakeResponse(zip_bytes)
 

@@ -68,18 +68,18 @@ class CatalogStackBase:
 
     @classmethod
     def _validate_catalog_url(cls, url: str) -> None:
-        """Validate that a catalog URL uses HTTPS, except localhost HTTP."""
+        """Validate that a catalog URL uses HTTPS, except loopback HTTP."""
         from urllib.parse import urlparse
 
         parsed = urlparse(url)
+        if not parsed.hostname:
+            raise cls._error("Catalog URL must be a valid URL with a host.")
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             raise cls._error(
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
-                "HTTP is only allowed for localhost."
+                "HTTP is only allowed for localhost, 127.0.0.1, and ::1."
             )
-        if not parsed.netloc:
-            raise cls._error("Catalog URL must be a valid URL with a host.")
 
     def _load_catalog_config(self, config_path: Path) -> list[CatalogEntry] | None:
         """Load catalog stack configuration from a YAML file.

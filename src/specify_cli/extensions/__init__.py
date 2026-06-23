@@ -15,7 +15,6 @@ import os
 import re
 import shutil
 import tempfile
-import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +25,12 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from .._download_security import (
+    MAX_JSON_CATALOG_BYTES,
+    read_response_limited,
+    safe_extract_zip,
+    verify_sha256,
+)
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation
@@ -1475,21 +1480,7 @@ class ExtensionManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            # Extract ZIP safely (prevent Zip Slip attack)
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                # Validate all paths first before extracting anything
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    # Use is_relative_to for safe path containment check
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise ValidationError(
-                            f"Unsafe path in ZIP archive: {member} (potential path traversal)"
-                        )
-                # Only extract after all paths are validated
-                zf.extractall(temp_path)
+            safe_extract_zip(zip_path, temp_path, error_type=ValidationError)
 
             # Find extension directory (may be nested)
             extension_dir = temp_path
@@ -2262,7 +2253,14 @@ class ExtensionCatalog(CatalogStackBase):
         # Fetch from network
         try:
             with self._open_url(entry.url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {entry.url}",
+                    )
+                )
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
@@ -2439,7 +2437,14 @@ class ExtensionCatalog(CatalogStackBase):
             import urllib.error
 
             with self._open_url(catalog_url, timeout=10) as response:
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {catalog_url}",
+                    )
+                )
 
             # Validate catalog structure. Reuses the same helper as
             # ``_fetch_single_catalog`` so all three branches (root type,
@@ -2615,7 +2620,18 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(
                 download_url, timeout=60, extra_headers=extra_headers
             ) as response:
-                zip_data = response.read()
+                zip_data = read_response_limited(
+                    response,
+                    error_type=ExtensionError,
+                    label=f"extension '{extension_id}' download",
+                )
+
+            verify_sha256(
+                zip_data,
+                ext_info.get("sha256"),
+                error_type=ExtensionError,
+                label=f"extension '{extension_id}' download",
+            )
 
             zip_path.write_bytes(zip_data)
             return zip_path
