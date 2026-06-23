@@ -934,6 +934,16 @@ class CommandRegistrar:
             self._active_skills_agent(project_root)
             if create_missing_active_skills_dir else None
         )
+        active_skills_dir: Optional[Path] = None
+        if active_skills_agent:
+            active_skills_config = self.AGENT_CONFIGS.get(active_skills_agent)
+            if (
+                active_skills_config
+                and active_skills_config.get("extension") == "/SKILL.md"
+            ):
+                active_skills_dir = self._resolve_agent_dir(
+                    active_skills_agent, active_skills_config, project_root,
+                )
         active_created_skills_dir: Optional[Path] = None
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
             active_skills_output = (
@@ -965,6 +975,14 @@ class CommandRegistrar:
             agent_dir = self._resolve_agent_dir(
                 agent_name, agent_config, project_root,
             )
+            shares_active_skills_dir = (
+                active_skills_dir is not None
+                and agent_name != active_skills_agent
+                and agent_config.get("extension") == "/SKILL.md"
+                and self._same_lexical_path(agent_dir, active_skills_dir)
+            )
+            if shares_active_skills_dir:
+                continue
 
             agent_dir_existed = agent_dir.is_dir()
             register_missing_active_skills_agent = (
