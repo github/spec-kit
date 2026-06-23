@@ -1,5 +1,6 @@
 """Consistency checks for agent configuration across runtime surfaces."""
 
+import re
 from pathlib import Path
 
 import yaml
@@ -42,11 +43,8 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "tabnine",
     "trae",
     "windsurf",
+    "zcode",
     "zed",
-]
-
-ISSUE_TEMPLATE_AGENT_NAMES = [
-    AGENT_CONFIG[key]["name"] for key in ISSUE_TEMPLATE_AGENT_KEYS
 ]
 
 
@@ -82,22 +80,63 @@ def _markdown_value_containing(path: str, marker: str) -> str:
     raise AssertionError(f"Expected issue template markdown containing {marker!r}")
 
 
+def _markdown_paragraph_containing(path: str, marker: str) -> str:
+    value = _markdown_value_containing(path, marker)
+    normalized_marker = _normalized_markdown(marker)
+    for paragraph in re.split(r"\n\s*\n", value):
+        if normalized_marker in _normalized_markdown(paragraph):
+            return paragraph
+    raise AssertionError(f"Expected issue template paragraph containing {marker!r}")
+
+
+def _supported_agent_names_from_agent_request_template() -> list[str]:
+    marker = "**Currently supported agents**:"
+    paragraph = _markdown_paragraph_containing(
+        ".github/ISSUE_TEMPLATE/agent_request.yml",
+        marker,
+    )
+    supported_agents_text = _normalized_markdown(paragraph).split(marker, 1)[1].strip()
+    return [agent.strip() for agent in supported_agents_text.split(",")]
+
+
 class TestAgentConfigConsistency:
     """Ensure agent configuration stays synchronized across key surfaces."""
 
     def test_issue_template_agent_lists_match_runtime_integrations(self):
         """GitHub issue templates should list all concrete built-in agents."""
         concrete_agent_keys = set(AGENT_CONFIG) - {"generic"}
+        issue_template_agent_keys = set(ISSUE_TEMPLATE_AGENT_KEYS)
 
-        assert set(ISSUE_TEMPLATE_AGENT_KEYS) == concrete_agent_keys
-        assert len(ISSUE_TEMPLATE_AGENT_KEYS) == len(concrete_agent_keys)
-        assert "Generic (bring your own agent)" not in ISSUE_TEMPLATE_AGENT_NAMES
+        missing_agent_keys = sorted(concrete_agent_keys - issue_template_agent_keys)
+        unexpected_agent_keys = sorted(issue_template_agent_keys - concrete_agent_keys)
+        duplicate_agent_keys = sorted(
+            key
+            for key in issue_template_agent_keys
+            if ISSUE_TEMPLATE_AGENT_KEYS.count(key) > 1
+        )
+        assert not missing_agent_keys, (
+            "Issue template agent list is missing AGENT_CONFIG keys: "
+            f"{missing_agent_keys}"
+        )
+        assert not unexpected_agent_keys, (
+            "Issue template agent list includes unknown AGENT_CONFIG keys: "
+            f"{unexpected_agent_keys}"
+        )
+        assert not duplicate_agent_keys, (
+            "Issue template agent list contains duplicate keys: "
+            f"{duplicate_agent_keys}"
+        )
+
+        issue_template_agent_names = [
+            AGENT_CONFIG[key]["name"] for key in ISSUE_TEMPLATE_AGENT_KEYS
+        ]
+        assert "Generic (bring your own agent)" not in issue_template_agent_names
 
         bug_options = _dropdown_options(
             ".github/ISSUE_TEMPLATE/bug_report.yml",
             "ai-agent",
         )
-        assert bug_options == ISSUE_TEMPLATE_AGENT_NAMES + ["Not applicable"]
+        assert bug_options == issue_template_agent_names + ["Not applicable"]
 
         feature_options = _dropdown_options(
             ".github/ISSUE_TEMPLATE/feature_request.yml",
@@ -105,21 +144,13 @@ class TestAgentConfigConsistency:
         )
         assert feature_options == [
             "All agents",
-            *ISSUE_TEMPLATE_AGENT_NAMES,
+            *issue_template_agent_names,
             "Not applicable",
         ]
 
-        supported_agents_text = _markdown_value_containing(
-            ".github/ISSUE_TEMPLATE/agent_request.yml",
-            "**Currently supported agents**:",
-        )
-        expected_supported_agents = (
-            f"**Currently supported agents**: "
-            f"{', '.join(ISSUE_TEMPLATE_AGENT_NAMES)}"
-        )
         assert (
-            _normalized_markdown(expected_supported_agents)
-            in _normalized_markdown(supported_agents_text)
+            _supported_agent_names_from_agent_request_template()
+            == issue_template_agent_names
         )
 
     def test_runtime_config_uses_kiro_cli_and_removes_q(self):
