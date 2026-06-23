@@ -794,22 +794,43 @@ def _download_remote_manifest(entry_id: str, url: str):
     import tempfile
 
     from ...authentication.http import open_url
+    from ..._github_http import resolve_github_release_asset_api_url
 
     def _validate_redirect(old_url: str, new_url: str) -> None:
         _require_https(f"bundle '{entry_id}'", new_url)
 
     _require_https(f"bundle '{entry_id}'", url)
+
+    # For private/SSO-protected GitHub repos, browser release download URLs
+    # (https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>)
+    # redirect to an HTML/SSO page instead of delivering the asset.  Resolve
+    # such URLs to the GitHub REST API asset URL so the authenticated client
+    # can download the actual file.
+    extra_headers = None
+    effective_url = url
+    resolved = resolve_github_release_asset_api_url(url, open_url, timeout=30)
+    if resolved:
+        effective_url = resolved
+        extra_headers = {"Accept": "application/octet-stream"}
+
     try:
-        with open_url(url, timeout=30, redirect_validator=_validate_redirect) as resp:
+        with open_url(
+            effective_url,
+            timeout=30,
+            redirect_validator=_validate_redirect,
+            extra_headers=extra_headers,
+        ) as resp:
             _require_https(f"bundle '{entry_id}'", resp.geturl())
             raw = resp.read()
     except BundlerError:
         raise
     except Exception as exc:  # noqa: BLE001
-        raise BundlerError(f"Failed to download bundle '{entry_id}' from {url}: {exc}") from exc
+        raise BundlerError(f"Failed to download bundle '{entry_id}' from {effective_url}: {exc}") from exc
 
     # A .zip artifact is written to a temp file and parsed via the local-source
     # path (which extracts bundle.yml); any other payload is treated as YAML.
+    # Use the original catalog URL (``url``) to determine the artifact format
+    # since the resolved API URL does not carry the file extension.
     if url.lower().endswith(".zip"):
         with tempfile.TemporaryDirectory() as tmp:
             artifact = Path(tmp) / "bundle.zip"
