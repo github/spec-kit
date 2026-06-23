@@ -316,11 +316,14 @@ if (-not $PlanPath) {
                 }
                 if (Test-Path -LiteralPath $candidatePlan) {
                     # Normalize absolute feature paths to project-relative (mirrors bash behavior).
+                    # Use case-insensitive comparison on Windows only (matches common.ps1 pattern).
                     $relDir = $featureDir
                     if ([System.IO.Path]::IsPathRooted($featureDir)) {
                         $normRoot = $ProjectRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
                         $normDir  = $featureDir.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
-                        if ($normDir.StartsWith($normRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        if ($null -ne $IsWindows) { $onWin = $IsWindows } else { $onWin = $true }
+                        $cmp = if ($onWin) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+                        if ($normDir.StartsWith($normRoot, $cmp)) {
                             $relDir = $normDir.Substring($normRoot.Length)
                         }
                     }
@@ -343,9 +346,12 @@ if (-not $PlanPath) {
                 Select-Object -First 1
             if ($candidate) {
                 # GetRelativePath is .NET 5+ only; strip prefix manually for PS 5.1 compat.
+                # Use case-insensitive comparison on Windows only (matches common.ps1 pattern).
                 $fullPath = $candidate.FullName.Replace('\', '/')
                 $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
-                if ($fullPath.StartsWith($normRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                if ($null -ne $IsWindows) { $onWin = $IsWindows } else { $onWin = $true }
+                $cmp = if ($onWin) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+                if ($fullPath.StartsWith($normRoot, $cmp)) {
                     $PlanPath = $fullPath.Substring($normRoot.Length)
                 } else {
                     $PlanPath = $fullPath
