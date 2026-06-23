@@ -14,7 +14,6 @@ from tests.extensions.test_extension_agent_context import (
     BASH,
     POWERSHELL,
     _bash_posix_path,
-    _install_agent_context_config,
     _run_bash_agent_context_script,
     _run_powershell_agent_context_script,
 )
@@ -25,14 +24,20 @@ def _setup_project(root: Path, context_file: str = "CLAUDE.md") -> None:
 
     JSON is valid YAML so bash+PyYAML can parse it, and PowerShell's built-in
     ConvertFrom-Json can parse it without needing powershell-yaml or Python.
+    Written directly as JSON (not via yaml.safe_dump) so the PS ConvertFrom-Json
+    fallback actually works on Windows CI.
     """
-    _install_agent_context_config(
-        root,
-        context_file=context_file,
-        context_markers={
-            "start": "<!-- SPECKIT START -->",
-            "end": "<!-- SPECKIT END -->",
-        },
+    cfg_dir = root / ".specify" / "extensions" / "agent-context"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    (cfg_dir / "agent-context-config.yml").write_text(
+        json.dumps({
+            "context_file": context_file,
+            "context_markers": {
+                "start": "<!-- SPECKIT START -->",
+                "end": "<!-- SPECKIT END -->",
+            },
+        }),
+        encoding="utf-8",
     )
 
 
