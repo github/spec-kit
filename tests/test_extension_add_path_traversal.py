@@ -1,10 +1,12 @@
 """Security test for `specify extension add <label> --from <url>`.
 
-The raw extension label is interpolated into the downloaded ZIP filename. A
-label containing path separators (e.g. "../../etc/evil") must not let the
-download escape the downloads cache directory. The handler sanitizes the
-label before building the filename; this test asserts the resulting path
-stays inside the downloads dir.
+A label containing path separators (e.g. "../../etc/evil") must not let the
+download escape the downloads cache directory. The handler does not let the
+label participate in the path at all: it downloads to a generated tempfile
+(``extension-url-download-*.zip``) created with ``dir=download_dir``, so the
+filename is machine-generated and confined to the downloads cache. This test
+asserts the resulting path stays inside that directory and carries no path
+separators from the raw label.
 """
 
 import contextlib
