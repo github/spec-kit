@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-22T00:00:00Z",
+  "updated_at": "2026-06-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1000,6 +1000,40 @@
       "stars": 0,
       "created_at": "2026-04-08T00:00:00Z",
       "updated_at": "2026-04-08T00:00:00Z"
+    },
+    "discovery": {
+      "name": "Spec Kit Discovery Extension",
+      "id": "discovery",
+      "description": "Run technical discovery commands for feasibility, technology selection, scenario-specific technical decisions, legacy codebase assessment, implementation understanding, and proof-of-concept validation.",
+      "author": "bigsmartben",
+      "version": "0.2.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-discovery/archive/refs/tags/v0.2.0.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-discovery",
+      "homepage": "https://github.com/bigsmartben/spec-kit-discovery",
+      "documentation": "https://github.com/bigsmartben/spec-kit-discovery/blob/main/docs/usage.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-discovery/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 0
+      },
+      "tags": [
+        "discovery",
+        "workflow",
+        "validation",
+        "feasibility",
+        "decision"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-23T00:00:00Z",
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
