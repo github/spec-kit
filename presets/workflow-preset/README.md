@@ -1,8 +1,8 @@
 # Workflow Preset
 
-This Spec Kit community preset combines behavior-first specification, design-aware planning, and agent-native handoff orchestration.
+This Spec Kit community preset combines behavior-first specification, design-aware planning, scoped change governance, and agent-native handoff orchestration.
 
-It wraps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` with BDD, NFR, and applicable Visual Fidelity readiness gates, Phase 0 behavior projection, optional design artifacts for internal object design and service sequencing, and task-time test strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
+It wraps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.constitution`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` with BDD, NFR, and applicable Visual Fidelity readiness gates, Change Scope Granularity governance, Phase 0 behavior projection, optional design artifacts for internal object design and service sequencing, visual restoration traceability, and task-time validation strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
 
 ## Goal
 
@@ -13,6 +13,7 @@ The preset has four goals:
 - Make BDD/NFR/applicable Visual Fidelity readiness explicit before planning by checking `spec.md` for observable, verifiable behavior, explicit non-functional requirement declarations, and design evidence when relevant.
 - Project accepted requirements into BDD, UIF intent, and fixture intent drafts during `/speckit.plan` Phase 0.
 - Preserve richer planning intent so downstream tasks and implementation do not lose object design, service-flow, or validation decisions.
+- Keep implementation scope explicit by applying Change Scope Granularity from planning onward: M + U boundaries are locked before execution maps them to concrete paths and O-level edits.
 - Execute implementation through agent-native handoff orchestration so each worker receives explicit task IDs, lifecycle stage, vertical capability, context, read/write paths, validation commands, and receipt requirements.
 
 ## Problem Addressed
@@ -22,6 +23,7 @@ Large Spec Kit features can overload the implementation phase. A single `/specki
 `workflow-preset` reduces that failure mode in three complementary ways:
 
 - Requirement enhancement keeps product requirements in `spec.md` and gates planning with a BDD/NFR/applicable Visual Fidelity readiness checklist.
+- Scope governance keeps broad repository context from becoming implementation scope by applying the R/M/U/O model once planning begins.
 - Plan enhancement projects accepted behavior drafts, then gives object design, service sequencing, and validation intent stable homes before tasks are generated.
 - Implement handoff orchestration slices work by lifecycle and vertical capability, then gives each Worker Agent a compact digest, scoped paths, validation commands, and a receipt contract instead of the full planning corpus.
 
@@ -39,8 +41,17 @@ Requirement capabilities:
 - Checks user stories, acceptance criteria, Given/When/Then readiness, roles, permissions, states, data, validation, boundary, exception, state_conflict behavior, and non-functional requirements directly from `spec.md`.
 - Adds a Case Coverage Matrix with one row per story or capability case type so positive, negative, boundary, permission, validation, and state_conflict cases are marked Required, Not Applicable, or Unknown before planning.
 - Checks design-derived requirements for source traceability, provider readiness status, evidence refs, blockers, and visual fidelity scope before planning.
+- Preserves stable Visual Item ID trace refs from provider evidence through Design Requirement Intake, `spec.md`, and the Visual Fidelity Evidence Matrix.
+- Records Client Asset Contract facts in `spec.md` for asset source strategy, required variants, fallback policy, and blocker status.
 - Requires NFR dimensions to be marked Required, Not Applicable, or Unknown in product language before planning.
 - Blocks planning when readiness gaps or missing or unverifiable NFR assumptions must return to `/speckit.clarify` or `/speckit.specify`.
+
+Governance capabilities:
+
+- Wraps `/speckit.constitution` and the constitution template with Change Scope Granularity governance.
+- Defines the R/M/U/O model: Repository or Workspace as environment context, Module or Capability as the hard outer boundary, Unit or Design Object as the primary planning boundary, and Operation or Detail as execution detail.
+- Requires planning to lock M + U before execution maps units to concrete paths.
+- Treats unresolved U -> path mapping as a context gap instead of widening execution to repository-wide or broad module scope.
 
 Planning capabilities:
 
@@ -58,6 +69,7 @@ Planning capabilities:
 - Stores service, command, event, async, retry, rollback, and failure-path flows in `contracts/sequences.md`.
 - Records validation decisions in `research.md` and validation paths in `quickstart.md`.
 - When visual requirements are in scope, research.md records visual validation decisions, contracts formalize visual interaction and state constraints, and contracts/sequences.md records visual state flow only when it affects cross-boundary sequencing.
+- For visual restoration work, Visual Item IDs carry requirement traceability while Client Asset Contract entries carry local asset binding expectations.
 - Keeps product requirements in `spec.md`, domain facts in `data-model.md`, interface schemas in `contracts/`, and executable validation guidance in `quickstart.md`.
 
 Task generation capabilities:
@@ -66,7 +78,10 @@ Task generation capabilities:
 - Uses formal BDD, UIF, and behavior contracts to derive test-first fixture, acceptance test, implementation, and verification tasks.
 - Treats missing Required failure behavior scenarios as blockers instead of generating complete-looking happy-path-only tasks.
 - Performs test strategy derivation from BDD contracts, Expected UIF contracts, behavior contracts, interface contracts, `research.md`, and `quickstart.md` without writing a separate strategy artifact.
+- Derives paired UI implementation and acceptance tasks when UIF contracts, Visual Fidelity Readiness rows, visual acceptance requirements, or Client Asset Contract entries apply.
+- Binds visual verification tasks to Visual Item ID, Visual Fidelity Readiness row, viewport/state coverage, proof level, screenshot or visual proof refs, quickstart validation path, and evidence.
 - Uses design artifacts to derive implementation, integration, orchestration, failure-handling, and validation tasks.
+- Adds Final Code Review tasks for boundary, interface contract, visual, data side-effect, behavior contract, sequence consistency, and asset binding scopes when applicable.
 - Preserves the existing checklist format and user-story organization.
 
 Analysis capabilities:
@@ -86,7 +101,8 @@ Implementation capabilities:
 - Defines deterministic shard, context digest, and allowed path derivation rules.
 - Keeps manifest, handoff, and receipt JSON contracts in standalone schema files.
 - Requires behavior-linked `validation_evidence` in worker receipts when behavior contracts are in handoff context.
-- Requires Final Code Review receipts to include post-implementation data side-effect review of actual implementation diffs before task status commit.
+- Requires Final Code Review receipts to include post-implementation data side-effect review, visual consistency review, and asset binding review of actual implementation diffs before task status commit when those scopes apply.
+- Requires visual implementation review to reconcile implemented UI states, viewport behavior, visual proof evidence, and Client Asset Contract bindings with the planned contracts.
 - Assigns every handoff a lifecycle stage and vertical capability such as `domain-model`, `api-contract`, `persistence`, `service-flow`, `ui`, `test-validation`, `documentation`, `integration`, or `cleanup`.
 - Supports direct single-shard execution with `Use handoff JSON <path>`.
 - Blocks worker execution when generated context has unresolved `context_gaps`.
@@ -103,19 +119,20 @@ Context-load controls:
 
 ## Workflow
 
-1. `/speckit.specify` keeps the core requirements output in `spec.md`.
-2. `/speckit.clarify` resolves requirement ambiguity in `spec.md`.
-3. `/speckit.checklist` checks BDD, NFR, and applicable Visual Fidelity readiness directly from `spec.md` and blocks planning when readiness gaps remain.
-4. `/speckit.plan` runs Phase 0 preflight, performs Phase 0 behavior projection, formalizes behavior drafts into contracts, and adds design artifacts when they help implementation.
-5. `/speckit.tasks` reads the core plan outputs, optional design artifacts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then produces executable tasks with inline test level, data strategy, and evidence requirements.
-6. `/speckit.analyze` checks vertical consistency across requirements, behavior drafts, contracts, and tasks.
-7. `/speckit.implement` enters Core Agent mode when no handoff path is provided.
-8. The Core Agent writes `context-index.json` and dispatches one Vertical Planner Agent per active vertical capability.
-9. Vertical Planner Agents produce shard plans, handoff drafts, context digest drafts, and allowed path derivations.
-10. The Core Agent assembles final handoffs and writes `handoff-manifest.json`.
-11. Worker Agents run only from persisted handoff JSON files and write receipts.
-12. Final Code Review checks consistency, implementation data side effects, and real e2e readiness.
-13. The Core Agent reviews receipts, updates `tasks.md`, runs integration verification, and reports closeout status.
+1. `/speckit.constitution` preserves Change Scope Granularity when the project constitution is created or updated.
+2. `/speckit.specify` keeps the core requirements output in `spec.md`.
+3. `/speckit.clarify` resolves requirement ambiguity in `spec.md`.
+4. `/speckit.checklist` checks BDD, NFR, and applicable Visual Fidelity readiness directly from `spec.md` and blocks planning when readiness gaps remain.
+5. `/speckit.plan` applies Change Scope Granularity, runs Phase 0 preflight, performs Phase 0 behavior projection, formalizes behavior drafts into contracts, and adds design artifacts when they help implementation.
+6. `/speckit.tasks` reads the core plan outputs, optional design artifacts, behavior contracts, interface contracts, `research.md`, and `quickstart.md`, then produces executable tasks with inline test level, data strategy, visual proof, asset binding, and evidence requirements.
+7. `/speckit.analyze` checks vertical consistency across requirements, behavior drafts, contracts, and tasks.
+8. `/speckit.implement` enters Core Agent mode when no handoff path is provided.
+9. The Core Agent writes `context-index.json` and dispatches one Vertical Planner Agent per active vertical capability.
+10. Vertical Planner Agents produce shard plans, handoff drafts, context digest drafts, and allowed path derivations.
+11. The Core Agent assembles final handoffs and writes `handoff-manifest.json`.
+12. Worker Agents run only from persisted handoff JSON files and write receipts.
+13. Final Code Review checks boundary, contract, visual, asset binding, sequence, implementation data side effects, and real e2e readiness.
+14. The Core Agent reviews receipts, updates `tasks.md`, runs integration verification, and reports closeout status.
 
 ## Non-Goals
 
@@ -132,7 +149,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.8/spec-kit-workflow-preset-v1.3.8.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.9/spec-kit-workflow-preset-v1.3.9.zip
 ```
 
 Local development install:
@@ -146,6 +163,7 @@ specify preset add --dev /path/to/workflow-preset
 Run the behavior-first workflow:
 
 ```text
+/speckit.constitution
 /speckit.specify
 /speckit.clarify
 /speckit.checklist
@@ -239,8 +257,9 @@ Run a single worker handoff directly:
 
 ## Files Written
 
-The core planning workflow still owns its normal artifacts:
+The core governance and planning workflow still owns its normal artifacts:
 
+- `.specify/memory/constitution.md`
 - `specs/<feature>/plan.md`
 - `specs/<feature>/research.md`
 - `specs/<feature>/data-model.md`
@@ -295,12 +314,14 @@ Contract files packaged by the preset:
 - `schemas/speckit.behavior.scenario-instances.v1.schema.json`
 - `schemas/speckit.behavior.data-fixtures.v1.schema.json`
 - `schemas/speckit.behavior.assertions.v1.schema.json`
+- `schemas/speckit.design.visual-item-matrix.v1.schema.json`
 - `schemas/speckit.implement.manifest.v1.schema.json`
 - `schemas/speckit.implement.handoff.v2.schema.json`
 - `schemas/speckit.implement.receipt.v1.schema.json`
 
-Input evidence template packaged by the preset:
+Governance and input evidence templates packaged by the preset:
 
+- `templates/constitution-template.md`
 - `templates/design-requirement-intake-template.md`
 - `templates/requirement-merge-report-template.md`
 - `templates/figma-evidence-packet-template.md`
@@ -309,6 +330,8 @@ Input evidence template packaged by the preset:
 Development-only contract helpers:
 
 - `validators/speckit_implement_contract.py`
+
+The validator helpers include a Design Requirement Intake trace check that rejects full provider Visual Item Matrix copies inside Visual Restoration Trace rows, keeping the trace requirement-facing and minimal.
 
 ## Artifact Roles
 
@@ -338,7 +361,7 @@ Test strategy derivation happens during `/speckit.tasks`. The command derives un
 
 The handoff context digest includes relevant design constraints, visual fidelity requirements, screenshot refs, visual proof refs, Design Requirement trace refs, validation decisions, quickstart paths, and behavior contracts when present, so Worker Agents can preserve object boundaries, service flows, visual intent, and validation intent without reading full planning documents by default.
 
-See `speckit-cross-agent-subagents.md` for the cross-platform subagent mapping, worker prompt, parallel dispatch rules, and minimal handoff/receipt contract.
+See `tests/contracts/speckit-cross-agent-subagents.md` for the cross-platform subagent mapping, worker prompt, parallel dispatch rules, and minimal handoff/receipt contract.
 
 ## Agent Topology
 
@@ -435,7 +458,7 @@ This repository owns preset artifact health:
 - publish or confirm the release artifact for a tag or manual release run;
 - create or update a `workflow-preset-release-v<version>` integration PR in `bigsmartben/spec-kit` on tag releases or manual runs with `create_integration_pr=true`.
 
-Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.8` defaults to release version `1.3.9`.
+Manual release runs default to the next patch version when `version` is omitted. For example, a `preset.yml` version of `1.3.9` defaults to release version `1.3.10`.
 
 The integration PR step requires a repository secret named `SPEC_KIT_FORK_PR_TOKEN` with permission to push branches and open pull requests in `bigsmartben/spec-kit`. If a tag release or manual `create_integration_pr=true` run reaches that step without the secret, the workflow fails fast instead of skipping integration PR creation.
 
@@ -454,7 +477,7 @@ Release install smoke validation is intentionally owned by GitHub Actions, not b
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.8/spec-kit-workflow-preset-v1.3.8.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.9/spec-kit-workflow-preset-v1.3.9.zip
 ```
 
 ## Source Rationale

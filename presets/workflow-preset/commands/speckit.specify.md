@@ -11,10 +11,10 @@ Product requirements stay in `spec.md`: user stories, acceptance criteria, funct
 
 Keep requirement text implementation-agnostic and scoped to product behavior. Non-functional requirements must be explicit product-level assumptions or constraints, including no-special-requirement or not-applicable statements when that is the confirmed requirement.
 
-## Preset Input Policy
+## User Input
 Treat product notes, PRDs, user prompts, design evidence, provider source packets, screenshots, visual proof, and source refs as input to the same feature description. If the core feature description is empty, follow the core command error path.
 
-## Provider Evidence Preflight
+## Pre-Execution Checks
 Before writing design-derived requirements, check whether provider evidence is ready. This preset consumes qualified provider evidence; it does not call Figma MCP and does not generate provider artifact instances.
 
 For Figma-derived evidence, require a ready Figma Evidence Packet and Figma provider source readiness contract: raw metadata completeness, metadata index completeness proof, node inventory parity, and no blocker lint errors. If evidence is not ready, write explicit non-design requirements only and record Provider evidence readiness blockers as `[BLOCKED: PROVIDER_EVIDENCE]`; provider blockers must not become product `[NEEDS CLARIFICATION]` items.

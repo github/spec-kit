@@ -13,6 +13,7 @@ from validators.speckit_implement_contract import (
     validate_behavior_case_coverage,
     validate_behavior_contract_bundle,
     validate_behavior_draft_contract,
+    validate_design_requirement_intake_trace_contract,
     validate_visual_item_matrix_contract,
     validate_implement_contract,
     validate_handoff_contract,
@@ -25,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PRESET_PATH = REPO_ROOT / "preset.yml"
 README_PATH = REPO_ROOT / "README.md"
 CHANGELOG_PATH = REPO_ROOT / "CHANGELOG.md"
-CROSS_AGENT_SUBAGENTS_PATH = REPO_ROOT / "speckit-cross-agent-subagents.md"
+CROSS_AGENT_SUBAGENTS_PATH = REPO_ROOT / "tests" / "contracts" / "speckit-cross-agent-subagents.md"
 AGENTS_PATH = REPO_ROOT / "AGENTS.md"
 EXTENSION_GOVERNANCE_PATH = REPO_ROOT / "docs" / "extension-governance.md"
 SPECIFY_COMMAND_PATH = REPO_ROOT / "commands" / "speckit.specify.md"
@@ -298,7 +299,7 @@ def minimal_receipt(
         "shard_id": shard_id,
         "task_type": task_type,
         "task_ids": task_ids,
-        "completed_task_ids": completed_task_ids or task_ids,
+        "completed_task_ids": task_ids if completed_task_ids is None else completed_task_ids,
         "changed_paths": changed_paths or [SERVICE_PATH],
         "validation_evidence": validation_evidence
         if validation_evidence is not None
@@ -540,6 +541,25 @@ def minimal_visual_item_matrix() -> dict:
     }
 
 
+def minimal_design_requirement_intake_trace() -> dict:
+    return {
+        "visual_restoration_trace": [
+            {
+                "visual_item_id": "VI-001",
+                "provider_source_refs": ["figma://file/page/frame/node"],
+                "requirement_id": "FR-001",
+                "ui_surface": "HomePage",
+                "fidelity_scope": "design-system-faithful",
+                "promoted_requirement_facts": [
+                    "Header preserves the accepted hierarchy and primary action role."
+                ],
+                "supporting_evidence_refs": ["figma-evidence-packet.md#VI-001"],
+                "unresolved_gaps": [],
+            }
+        ]
+    }
+
+
 def minimal_exception_behavior_assertions() -> dict:
     return minimal_exception_behavior_assertions_with_intent("state_invariant")
 
@@ -557,7 +577,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("1.0", data["schema_version"])
         self.assertEqual("workflow-preset", data["preset"]["id"])
         self.assertEqual("Workflow Preset", data["preset"]["name"])
-        self.assertEqual("1.3.8", data["preset"]["version"])
+        self.assertEqual("1.3.9", data["preset"]["version"])
         self.assertEqual(
             "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
             data["preset"]["description"],
@@ -937,11 +957,6 @@ class PresetContractTests(unittest.TestCase):
                 command,
             )
 
-        for path in (SPECIFY_COMMAND_PATH, CLARIFY_COMMAND_PATH):
-            command = path.read_text(encoding="utf-8")
-            for heading in ("## User Input", "## Pre-Execution Checks"):
-                self.assertNotIn(heading, command, f"{path.name} redefines {heading}")
-
         self.assertIn("Spec-Only Requirement Policy", specify)
         self.assertIn("Preset-added requirement output writes only `spec.md`", specify)
         self.assertIn("Product requirements stay in `spec.md`", specify)
@@ -1085,7 +1100,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("visual fidelity scope", clarify)
         self.assertIn("missing UI states", clarify)
         self.assertIn("responsive behavior", clarify)
-        self.assertIn("component mapping", clarify)
+        self.assertIn("component reuse constraints", clarify)
         self.assertIn("data semantics", clarify)
         self.assertIn("acceptance evidence", clarify)
         self.assertIn("write confirmed answers back into `spec.md`", clarify)
@@ -2046,7 +2061,8 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("quickstart/contract validation command", command)
         self.assertIn("execute validation and code review only when those tasks are already present in `tasks.md`", command)
         self.assertIn("do not invent validation strategy, add lifecycle roles, change requirements, update contracts, or widen scope", command)
-        self.assertIn("repair design, sequence, or contract drift", command)
+        self.assertIn("repair implementation drift against existing design, sequence, or contract constraints", command)
+        self.assertIn("exclude upstream requirement, contract, research, quickstart, checklist, and planning artifacts from repair write paths", command)
         self.assertIn("real e2e cannot run", command)
         self.assertNotIn("test-plan.md", command)
 
@@ -2163,6 +2179,44 @@ class PresetContractTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "requires L3 proof"):
             validate_visual_item_matrix_contract(matrix)
+
+    def test_design_requirement_intake_trace_validator_accepts_minimal_trace(self) -> None:
+        validate_design_requirement_intake_trace_contract(
+            minimal_design_requirement_intake_trace()
+        )
+
+    def test_design_requirement_intake_trace_validator_rejects_missing_visual_item_id(self) -> None:
+        intake = minimal_design_requirement_intake_trace()
+        del intake["visual_restoration_trace"][0]["visual_item_id"]
+
+        with self.assertRaisesRegex(ValueError, "missing visual_item_id"):
+            validate_design_requirement_intake_trace_contract(intake)
+
+    def test_design_requirement_intake_trace_validator_rejects_full_provider_matrix_copy(self) -> None:
+        intake = minimal_design_requirement_intake_trace()
+        intake["visual_restoration_trace"][0]["visual_item_matrix"] = minimal_visual_item_matrix()
+
+        with self.assertRaisesRegex(ValueError, "must not copy full provider Visual Item Matrix"):
+            validate_design_requirement_intake_trace_contract(intake)
+
+    def test_design_requirement_intake_trace_validator_rejects_provider_field_copy(self) -> None:
+        intake = minimal_design_requirement_intake_trace()
+        intake["visual_restoration_trace"][0].update(
+            {
+                "layout_facts": ["copied provider layout fact"],
+                "typography_facts": ["copied provider typography fact"],
+                "variant_state_evidence": [
+                    {
+                        "variant_ref": "state=disabled",
+                        "source_refs": ["figma://component/button-disabled"],
+                        "observed_state_or_role": "disabled",
+                    }
+                ],
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "must record only requirement-level facts"):
+            validate_design_requirement_intake_trace_contract(intake)
 
     def test_behavior_draft_schema_rejects_empty_given_when_then(self) -> None:
         schema = json.loads(
@@ -3175,6 +3229,50 @@ class PresetContractTests(unittest.TestCase):
     def test_validate_receipt_contract_accepts_valid_cross_fields(self) -> None:
         validate_receipt_contract(minimal_handoff(), minimal_receipt(), RECEIPT_PATH)
 
+    def test_validate_receipt_contract_rejects_completed_tasks_with_deferred_validation(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(ValueError, "completed_task_ids"):
+            validate_receipt_contract(
+                minimal_handoff(),
+                minimal_receipt(
+                    deferred_validation_todos=[
+                        {
+                            "id": "VAL-001",
+                            "reason": "Sandbox credentials unavailable.",
+                            "missing_environment": ["PAYMENT_SANDBOX_TOKEN"],
+                            "validation_path": "quickstart.md#payment",
+                            "commands": ["npm run e2e:payment"],
+                            "blocking": False,
+                        }
+                    ],
+                ),
+                RECEIPT_PATH,
+            )
+
+    def test_validate_receipt_contract_rejects_completed_code_review_without_approval(
+        self,
+    ) -> None:
+        handoff = minimal_handoff(task_ids=["T099"], task_type="code_review")
+        handoff["allowed_read_paths"] = [TASKS_PATH, SERVICE_PATH]
+
+        with self.assertRaisesRegex(ValueError, "approved"):
+            validate_receipt_contract(
+                handoff,
+                minimal_receipt(
+                    task_ids=["T099"],
+                    task_type="code_review",
+                    review_conclusion={
+                        "status": "changes_requested",
+                        "summary": "Review found pending repairs.",
+                        "checked_sources": [SERVICE_PATH],
+                        "findings": [],
+                    },
+                    data_side_effect_review=no_data_side_effects_review(),
+                ),
+                RECEIPT_PATH,
+            )
+
     def test_validate_receipt_contract_requires_review_conclusion_for_code_review_task(
         self,
     ) -> None:
@@ -3373,6 +3471,7 @@ class PresetContractTests(unittest.TestCase):
                 minimal_receipt(
                     task_ids=["T099"],
                     task_type="code_review",
+                    completed_task_ids=[],
                     review_conclusion={
                         "status": "changes_requested",
                         "summary": "Contract drift repaired.",
@@ -3406,6 +3505,7 @@ class PresetContractTests(unittest.TestCase):
                 minimal_receipt(
                     task_ids=["T099"],
                     task_type="code_review",
+                    completed_task_ids=[],
                     validation_evidence=[
                         "quickstart.md command npm run e2e:payment: real e2e cannot run, missing PAYMENT_SANDBOX_TOKEN"
                     ],
@@ -3469,6 +3569,7 @@ class PresetContractTests(unittest.TestCase):
                 minimal_receipt(
                     task_ids=["T099"],
                     task_type="code_review",
+                    completed_task_ids=[],
                     validation_evidence=[
                         "quickstart.md command npm run e2e:payment: real e2e cannot run, missing PAYMENT_SANDBOX_TOKEN"
                     ],
@@ -3508,6 +3609,7 @@ class PresetContractTests(unittest.TestCase):
                 minimal_receipt(
                     task_ids=["T099"],
                     task_type="code_review",
+                    completed_task_ids=[],
                     validation_evidence=["Code review completed."],
                     review_conclusion={
                         "status": "changes_requested",
@@ -3540,6 +3642,7 @@ class PresetContractTests(unittest.TestCase):
             minimal_receipt(
                 task_ids=["T099"],
                 task_type="code_review",
+                completed_task_ids=[],
                 changed_paths=[SERVICE_PATH],
                 validation_evidence=[
                     "checked contracts/sequences.md; quickstart.md command npm run e2e:payment deferred because PAYMENT_SANDBOX_TOKEN is unavailable; real e2e deferred"
@@ -3707,7 +3810,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("vertical capability", readme)
         self.assertIn("speckit.implement.handoff.v2", readme)
         self.assertIn("speckit.implement.receipt.v1", readme)
-        self.assertIn("speckit-cross-agent-subagents.md", readme)
+        self.assertIn("tests/contracts/speckit-cross-agent-subagents.md", readme)
         self.assertIn("Problem Addressed", readme)
         self.assertIn("reasoning quality", readme)
         self.assertNotIn("compatible with the core workflow", readme)
@@ -3721,6 +3824,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Design Requirement Intake", readme)
         self.assertIn("Requirement Merge", readme)
         self.assertIn("Product Requirement + Design Requirement", readme)
+        self.assertIn("rejects full provider Visual Item Matrix copies inside Visual Restoration Trace rows", readme)
         self.assertIn("stable Visual Item ID", readme)
         self.assertIn("does not translate Figma variants into code props", readme)
         self.assertIn("requirement-level component roles", readme)
@@ -3834,6 +3938,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("## 1.0.3", changelog)
         self.assertIn("Final Code Review", changelog)
         self.assertIn("structured code review receipts", changelog)
+        self.assertIn("rejects full provider Visual Item Matrix copies inside Design Requirement Intake Visual Restoration Trace rows", changelog)
         self.assertIn("/speckit.tasks` defines validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation", changelog)
         self.assertIn("/speckit.implement` only executes those tasks and records receipt evidence", changelog)
         self.assertIn("agent-native handoff orchestration", changelog)
@@ -4064,7 +4169,7 @@ class PresetContractTests(unittest.TestCase):
             'export TMPDIR="${RUNNER_TEMP}"',
             'export TEMP="${RUNNER_TEMP}"',
             'export TMP="${RUNNER_TEMP}"',
-            'specify init --here --ai claude --script sh --ignore-agent-tools',
+            'specify init --here --integration claude --script sh --ignore-agent-tools',
             "specify preset remove workflow-preset",
             "specify preset add --dev",
             "specify preset resolve plan-template",
@@ -4077,7 +4182,7 @@ class PresetContractTests(unittest.TestCase):
             "WORKFLOW_PRESET_DOWNLOAD_URL",
             'assert entry\\["version"\\] == "[0-9]+\\.[0-9]+\\.[0-9]+"',
             "tests/test_presets.py",
-            "speckit-cross-agent-subagents.md",
+            "tests/contracts/speckit-cross-agent-subagents.md",
             "ZipInfo",
             "1980, 1, 1",
             "github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && env.CREATE_INTEGRATION_PR == 'true')",

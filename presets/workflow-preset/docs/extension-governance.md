@@ -118,7 +118,7 @@ Agents may read or write must be reflected in:
 - `validators/speckit_implement_contract.py` when cross-field validation changes.
 - `commands/speckit.implement.md` when Core, Vertical Planner, or Worker
   behavior changes.
-- `speckit-cross-agent-subagents.md` when worker prompts, context digest rules,
+- `tests/contracts/speckit-cross-agent-subagents.md` when worker prompts, context digest rules,
   shard rules, or path rules change.
 - `tests/test_preset_contract.py` for all of the above.
 

@@ -34,6 +34,7 @@ Use `agent-runtime=<spec-kit-integration-key>` as a prompt hint. The manifest re
 - dispatch Worker Agent runs only for isolated execution
 - review receipts
 - commit `tasks.md`
+- during task_commit, mark `[x]` only for receipt completed_task_ids that passed receipt review, required code review, and integration verification with no deferred_validation_todos
 - run integration verification
 - report closeout
 ## Vertical Planner Agent
@@ -53,9 +54,10 @@ Use `agent-runtime=<spec-kit-integration-key>` as a prompt hint. The manifest re
 - Read only allowed_read_paths
 - Write only allowed_write_paths
 - write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, or quickstart path
+- use empty completed_task_ids when the handoff is blocked, validation is deferred, required evidence is missing, or code review status is not approved
 - Code Review Receipts use task_type: code_review, review_conclusion.checked_sources, data_side_effect_review, consistency_repairs, deferred_validation_todos, and quickstart/contract validation command evidence
 - review actual implementation diff data side effects, including runtime database writes and field-level update/delete behavior
-- repair design, sequence, contract drift, or high-risk data side effects only inside allowed_write_paths; real e2e gaps become todos
+- repair implementation drift against existing design, sequence, or contract constraints, or high-risk data side effects, only inside allowed_write_paths; upstream requirement, contract, checklist, or planning artifact gaps become blockers or todos instead of repair edits; real e2e gaps become todos
 - must not edit tasks.md, create handoffs, dispatch workers
 ## Worker Prompt
 ```text
@@ -70,7 +72,8 @@ Handoff JSON: <path>
 - Do not edit tasks.md
 - Do not dispatch workers
 - Write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, or quickstart path
-- For Code Review tasks, echo task_type: code_review; add review_conclusion.checked_sources and data_side_effect_review; review actual implementation diff runtime database writes and field-level update/delete behavior; include quickstart/contract validation command evidence; repair allowed drift; record real e2e todos
+- Use empty completed_task_ids when the handoff is blocked, validation is deferred, required evidence is missing, or code review status is not approved
+- For Code Review tasks, echo task_type: code_review; add review_conclusion.checked_sources and data_side_effect_review; review actual implementation diff runtime database writes and field-level update/delete behavior; include quickstart/contract validation command evidence; repair only authorized implementation drift; record upstream artifact gaps and real e2e todos
 ```
 ## Planner Prompt
 ```text
@@ -108,6 +111,8 @@ vertical_capability: <capability>
 - mismatched `shard_id`
 - `task_ids` outside handoff
 - `completed_task_ids` outside handoff
+- non-empty `completed_task_ids` with `deferred_validation_todos`
+- non-empty `completed_task_ids` on Code Review Receipts whose `review_conclusion.status` is not approved
 - empty `validation_evidence` or missing relevant BDD scenario, behavior assertion, API contract, or quickstart path reference
 - receipt 路径不等于 handoff 中声明的 `task_status_update.receipt_path`
 - Code Review Receipts missing `task_type: code_review`, `review_conclusion.checked_sources`, `data_side_effect_review`, quickstart/contract validation command evidence, in-scope `consistency_repairs`, or needed `deferred_validation_todos`

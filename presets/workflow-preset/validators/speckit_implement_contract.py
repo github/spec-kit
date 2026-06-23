@@ -21,6 +21,24 @@ EXPLICIT_DRAWING_CONSTRAINTS = {
     "figma-export-required",
     "existing-asset-required",
 }
+PROVIDER_MATRIX_COPY_KEYS = {
+    "figma_frame_node_refs",
+    "requirement_target",
+    "layout_facts",
+    "typography_facts",
+    "color_token_facts",
+    "effect_facts",
+    "variant_state_evidence",
+    "visual_proof_level",
+    "spec_requirement_target",
+}
+FULL_PROVIDER_MATRIX_KEYS = {
+    "source",
+    "readiness",
+    "visual_items",
+    "visual_item_matrix",
+    "provider_visual_item_matrix",
+}
 
 
 def _duplicate_ids(items: list[dict[str, Any]], *, key: str, context: str) -> set[str]:
@@ -312,6 +330,39 @@ def validate_visual_item_matrix_contract(matrix: dict[str, Any]) -> None:
                 raise ValueError(
                     f"visual item {item_id} pixel-perfect or brand-critical requires screenshot_refs"
                 )
+
+
+def validate_design_requirement_intake_trace_contract(intake: dict[str, Any]) -> None:
+    rows = intake.get("visual_restoration_trace", [])
+    if rows in (None, []):
+        return
+    if not isinstance(rows, list):
+        raise ValueError("visual restoration trace must be a list")
+
+    _duplicate_ids(rows, key="visual_item_id", context="visual restoration trace")
+
+    for row in rows:
+        item_id = row.get("visual_item_id", "<unknown>")
+        if not row.get("visual_item_id"):
+            raise ValueError("visual restoration trace row missing visual_item_id")
+        copied_structures = FULL_PROVIDER_MATRIX_KEYS.intersection(row)
+        if copied_structures:
+            raise ValueError(
+                f"visual restoration trace {item_id} must not copy full provider Visual Item Matrix"
+            )
+
+        copied_provider_fields = PROVIDER_MATRIX_COPY_KEYS.intersection(row)
+        if len(copied_provider_fields) >= 3:
+            raise ValueError(
+                f"visual restoration trace {item_id} must record only requirement-level facts"
+            )
+
+        if not row.get("requirement_id") and not row.get("spec_requirement_ref"):
+            raise ValueError(f"visual restoration trace {item_id} missing requirement reference")
+        if not row.get("supporting_evidence_refs") and not row.get("provider_source_refs"):
+            raise ValueError(
+                f"visual restoration trace {item_id} missing supporting evidence refs"
+            )
 
 
 def _handoff_has_behavior_contract_context(handoff: dict[str, Any]) -> bool:
@@ -722,10 +773,15 @@ def validate_receipt_contract(
     handoff_task_ids = set(handoff.get("task_ids", []))
     if not set(receipt.get("task_ids", [])).issubset(handoff_task_ids):
         raise ValueError("receipt task_ids outside handoff")
-    if not set(receipt.get("completed_task_ids", [])).issubset(handoff_task_ids):
+    completed_task_ids = set(receipt.get("completed_task_ids", []))
+    if not completed_task_ids.issubset(handoff_task_ids):
         raise ValueError("receipt completed_task_ids outside handoff")
-    if not set(receipt.get("completed_task_ids", [])).issubset(set(receipt.get("task_ids", []))):
+    if not completed_task_ids.issubset(set(receipt.get("task_ids", []))):
         raise ValueError("receipt completed_task_ids outside receipt task_ids")
+    if completed_task_ids and receipt.get("deferred_validation_todos"):
+        raise ValueError(
+            "receipt completed_task_ids must be empty when deferred_validation_todos exist"
+        )
 
     if not receipt.get("validation_evidence"):
         raise ValueError("receipt validation_evidence must not be empty")
@@ -749,6 +805,10 @@ def validate_receipt_contract(
             raise ValueError("code review receipt must include review_conclusion")
 
         review_conclusion = receipt["review_conclusion"]
+        if completed_task_ids and review_conclusion.get("status") != "approved":
+            raise ValueError(
+                "code review receipt completed_task_ids require approved review_conclusion"
+            )
         checked_sources = review_conclusion.get("checked_sources")
         if not isinstance(checked_sources, list) or not checked_sources:
             raise ValueError("code review receipt must include checked_sources")

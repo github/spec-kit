@@ -11,11 +11,11 @@ Use `spec.md` as the clarification source. Ask and record clarification only for
 
 Do not read or update behavior draft artifacts. Do not use behavior drafts as clarification inputs, and do not open a separate behavior-question channel. Product requirements stay in `spec.md`; update `spec.md` only after user-provided answers make the requirement clear.
 
-## Clarification Prioritization Input
+## User Input
 
 Treat `$ARGUMENTS` as prioritization context for the current clarification run. Do not ask the user to restate requirements already present in `spec.md`.
 
-## Clarification Preflight
+## Pre-Execution Checks
 
 Load the active `spec.md` through the core command. Official hooks still apply: `hooks.before_clarify` runs before Outline, `hooks.after_clarify` runs before Completion Report, and mandatory hooks emit `EXECUTE_COMMAND`. If `spec.md` is missing, follow the core command error path and do not create a new spec here.
 
@@ -35,7 +35,7 @@ Format recommendations as `**Recommended:** Option [X] - <reasoning>` when a dis
 2. visual fidelity scope: pixel-perfect, design-system faithful, or functional equivalent.
 3. missing UI states such as loading, empty, error, disabled, hover, and focus.
 4. responsive behavior, scrolling, safe areas, and long-copy handling.
-5. component mapping from Figma components to existing code components.
+5. required component reuse constraints explicitly stated in `spec.md`.
 6. data semantics for mock copy, API-backed copy, and interface-driven values.
 7. Prototype-uncovered navigation, dialogs, recovery paths, and failure handling.
 8. acceptance evidence, visual-difference tolerance, and exception approval flow.
