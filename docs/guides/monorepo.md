@@ -105,6 +105,7 @@ when it is present in the environment of the shell that runs those scripts.
 ## Constitutions
 
 Each member project has its own `.specify/memory/constitution.md` and
-`/speckit.constitution` edits the local project's file. There is no base/inheritance
-mechanism today, so shared engineering rules must be duplicated per project or kept
-out of the constitution.
+`/speckit.constitution` edits the local project's file. Spec Kit does not provide
+a built-in base/inheritance mechanism; if you want one constitution to reference
+shared rules elsewhere in the monorepo, you need to maintain that wiring yourself.
+Otherwise, duplicate or sync shared engineering rules per project.
