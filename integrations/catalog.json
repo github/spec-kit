@@ -246,6 +246,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
     },
+    "omp": {
+      "id": "omp",
+      "name": "Oh My Pi",
+      "version": "1.0.0",
+      "description": "Oh My Pi (omp) terminal coding agent prompt-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
     "iflow": {
       "id": "iflow",
       "name": "iFlow CLI",
