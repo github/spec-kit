@@ -1974,7 +1974,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -1983,12 +1983,12 @@ class TestPresetCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -4667,9 +4667,14 @@ class TestPresetAddFromUrlResolution:
         class FakeResponse:
             def __init__(self, data):
                 self._data = data
+                self._pos = 0
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def __enter__(self):
                 return self
