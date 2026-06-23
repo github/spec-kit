@@ -74,6 +74,19 @@ class StepContext:
     #: Current run ID.
     run_id: str | None = None
 
+    #: When ``True``, the built-in step implementations
+    #: (``command`` / ``prompt`` / ``gate``) short-circuit and return a
+    #: synthetic ``StepResult`` carrying a preview of what would have
+    #: been dispatched — no subprocess, no CLI call, no network I/O for
+    #: those step types. Custom steps and built-in steps that have not
+    #: been updated to honor ``dry_run`` may still perform their normal
+    #: side effects; the flag is opt-in per step. Step implementations
+    #: publish the preview on ``output["message"]`` (the original, so
+    #: ``{{ steps.<id>.output.message }}`` keeps resolving) and
+    #: ``output["dry_run_message"]`` (the rendered ``[DRY RUN] ...``
+    #: body, consumed by the CLI's preview loop).
+    dry_run: bool = False
+
 
 @dataclass
 class StepResult:

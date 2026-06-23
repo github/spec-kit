@@ -55,9 +55,6 @@ class CommandStep(StepBase):
 
         # Attempt CLI dispatch
         args_str = str(resolved_input.get("args", ""))
-        dispatch_result = self._try_dispatch(
-            command, integration, model, args_str, context
-        )
 
         output: dict[str, Any] = {
             "command": command,
@@ -67,11 +64,61 @@ class CommandStep(StepBase):
             "input": resolved_input,
         }
 
+        # Dry-run short-circuit — surface a synthetic preview of what a
+        # real run would have dispatched, without invoking the CLI.
+        if context.dry_run:
+            preview_invocation: str | None = None
+            if integration:
+                try:
+                    from specify_cli.integrations import get_integration
+
+                    impl = get_integration(integration)
+                except (ImportError, AttributeError, TypeError):
+                    impl = None
+                if impl is not None:
+                    try:
+                        preview_invocation = impl.build_command_invocation(
+                            command, args_str
+                        )
+                    except (ImportError, AttributeError, TypeError):
+                        # ImportError: integrations module not importable in
+                        #   minimal environments or test sandboxes.
+                        # AttributeError: integration class is missing
+                        #   ``build_command_invocation`` (older integration
+                        #   API).
+                        # TypeError: integration returned a non-string value
+                        #   from ``build_command_invocation``.
+                        # Anything else (e.g. a real bug inside the
+                        # integration) bubbles up so it's not silently
+                        # masked by the dry-run preview path.
+                        preview_invocation = None
+            if preview_invocation:
+                preview = f"DRY RUN: would invoke {preview_invocation!r}"
+            else:
+                preview = (
+                    f"DRY RUN: would invoke command {command!r} "
+                    f"(integration {integration!r}, args {args_str!r})"
+                )
+            output["exit_code"] = 0
+            output["dispatched"] = False
+            output["executed"] = False
+            output["dry_run"] = True
+            output["dry_run_message"] = preview
+            output["message"] = preview
+            output["invoke_command"] = preview_invocation or command
+            return StepResult(status=StepStatus.COMPLETED, output=output)
+
+        dispatch_result = self._try_dispatch(
+            command, integration, model, args_str, context
+        )
+
         if dispatch_result is not None:
             output["exit_code"] = dispatch_result["exit_code"]
             output["stdout"] = dispatch_result["stdout"]
             output["stderr"] = dispatch_result["stderr"]
             output["dispatched"] = True
+            output["executed"] = True
+            output["dry_run"] = False
             if dispatch_result["exit_code"] != 0:
                 return StepResult(
                     status=StepStatus.FAILED,
@@ -85,6 +132,8 @@ class CommandStep(StepBase):
         else:
             output["exit_code"] = 1
             output["dispatched"] = False
+            output["executed"] = False
+            output["dry_run"] = False
             return StepResult(
                 status=StepStatus.FAILED,
                 output=output,

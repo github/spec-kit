@@ -334,6 +334,11 @@ class RunState:
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
         self.log_entries: list[dict[str, Any]] = []
+        #: Whether the run was started in dry-run mode. Persisted via
+        #: :meth:`save` so :meth:`load` (and the resumed run's
+        #: ``StepContext``) can keep the run in preview mode across
+        #: process restarts.
+        self.dry_run: bool = False
 
     @property
     def runs_dir(self) -> Path:
@@ -352,6 +357,7 @@ class RunState:
             "current_step_index": self.current_step_index,
             "current_step_id": self.current_step_id,
             "step_results": self.step_results,
+            "dry_run": self.dry_run,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -398,6 +404,7 @@ class RunState:
         state.step_results = state_data.get("step_results", {})
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
+        state.dry_run = state_data.get("dry_run", False)
 
         inputs_path = runs_dir / "inputs.json"
         if inputs_path.exists():
@@ -478,6 +485,7 @@ class WorkflowEngine:
         definition: WorkflowDefinition,
         inputs: dict[str, Any] | None = None,
         run_id: str | None = None,
+        dry_run: bool = False,
     ) -> RunState:
         """Execute a workflow definition.
 
@@ -489,6 +497,21 @@ class WorkflowEngine:
             User-provided input values.
         run_id:
             Optional run ID (uses SPECKIT_WORKFLOW_RUN_ID when set, otherwise auto-generated).
+        dry_run:
+            Preview-only mode. When ``True``, the built-in ``command``,
+            ``prompt`` and ``gate`` step implementations skip
+            side-effecting work (AI invocations, interactive prompts,
+            subprocess dispatches) and emit a synthetic
+            ``dry_run_message`` instead. Other built-in steps (``init``,
+            ``shell``, custom user-registered steps) currently still
+            execute their normal logic during a dry run; the flag is
+            opt-in per step. ``dry_run`` propagates into each step's
+            ``StepContext`` and is persisted on the resulting
+            ``RunState`` so ``resume()`` keeps the run in preview mode
+            across restarts. Step ``output`` shape is unchanged;
+            downstream ``switch``/``do-while`` gates coerce any
+            dry-run-only fields (e.g. ``output.choice``) so the preview
+            branch is deterministic.
 
         Returns
         -------
@@ -507,6 +530,7 @@ class WorkflowEngine:
             workflow_id=definition.id,
             project_root=self.project_root,
         )
+        state.dry_run = dry_run
 
         # Persist a copy of the workflow definition so resume can
         # reload it even if the original source is no longer available
@@ -531,6 +555,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            dry_run=dry_run,
         )
 
         # Execute steps
@@ -545,6 +570,10 @@ class WorkflowEngine:
             state.status = RunStatus.FAILED
             state.append_log({"event": "workflow_failed", "error": str(exc)})
             state.save()
+            # Attach the partially-populated state so the CLI can render
+            # any dry-run previews resolved by earlier steps when the
+            # engine raises mid-run (e.g. template resolution failure).
+            exc.partial_state = state  # type: ignore[attr-defined]
             raise
 
         if state.status == RunStatus.RUNNING:
@@ -587,7 +616,8 @@ class WorkflowEngine:
             merged = {**state.inputs, **inputs}
             state.inputs = self._resolve_inputs(definition, merged)
 
-        # Restore context
+        # Restore context — including the persisted ``dry_run`` flag so an
+        # interrupted dry-run stays a dry-run after a process restart.
         context = StepContext(
             inputs=state.inputs,
             steps=state.step_results,
@@ -596,6 +626,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            dry_run=state.dry_run,
         )
 
         from . import STEP_REGISTRY
@@ -622,6 +653,10 @@ class WorkflowEngine:
             state.status = RunStatus.FAILED
             state.append_log({"event": "resume_failed", "error": str(exc)})
             state.save()
+            # Same preview surface as ``execute()`` — when the engine
+            # raises mid-resume the CLI wants the partially-resolved
+            # dry-run previews for debugging.
+            exc.partial_state = state  # type: ignore[attr-defined]
             raise
 
         if state.status == RunStatus.RUNNING:

@@ -40,7 +40,7 @@ class GateStep(StepBase):
         if isinstance(message, str) and "{{" in message:
             message = evaluate_expression(message, context)
 
-        options = config.get("options", ["approve", "reject"])
+        options = self._coerce_options(config.get("options", ["approve", "reject"]))
         on_reject = config.get("on_reject", "abort")
 
         show_file = config.get("show_file")
@@ -60,6 +60,20 @@ class GateStep(StepBase):
             "show_file": show_file,
             "choice": None,
         }
+
+        # Dry-run short-circuit — pick a deterministic first-non-sentinel
+        # choice so downstream ``switch``/``do-while`` branches resolve
+        # without an interactive prompt. We never want a dry-run to
+        # route into the ``reject``/``abort`` paths, so explicit
+        # ``reject`` / ``abort`` options are skipped over.
+        if context.dry_run:
+            preview_choice = self._first_non_sentinel(options)
+            preview = f"DRY RUN: gate skipped (would choose {preview_choice!r})"
+            output["choice"] = preview_choice
+            output["dry_run"] = True
+            output["dry_run_message"] = preview
+            output["message"] = preview
+            return StepResult(status=StepStatus.COMPLETED, output=output)
 
         # Non-interactive: pause for later resume (the file is not read here)
         if not sys.stdin.isatty():
@@ -88,6 +102,42 @@ class GateStep(StepBase):
             return StepResult(status=StepStatus.COMPLETED, output=output)
 
         return StepResult(status=StepStatus.COMPLETED, output=output)
+
+    @staticmethod
+    def _coerce_options(options: Any) -> list[str]:
+        """Normalize gate ``options`` into a list of strings.
+
+        A YAML literal can pass through as ``None``, a bare string, a
+        dict, or a non-string sequence. Without coercion any of these
+        would crash ``_prompt`` (which iterates and indexes). Returns
+        the default ``["approve", "reject"]`` when no usable options
+        are present so the gate always has a valid choice surface.
+        """
+        if options is None:
+            return ["approve", "reject"]
+        if isinstance(options, str):
+            return [options]
+        if isinstance(options, dict):
+            return [str(k) for k in options.keys()]
+        try:
+            coerced = [str(o) for o in options]
+        except TypeError:
+            return ["approve", "reject"]
+        return coerced or ["approve", "reject"]
+
+    @staticmethod
+    def _first_non_sentinel(options: list[str]) -> str:
+        """Return the first option that is not a reject/abort sentinel.
+
+        Dry-run picks the first non-sentinel so the preview branch
+        never routes into a FAILED / ABORTED downstream outcome; if
+        every option is a sentinel, fall back to the first one so the
+        gate still resolves.
+        """
+        for opt in options:
+            if opt not in ("reject", "abort"):
+                return opt
+        return options[0]
 
     @classmethod
     def _compose_prompt(cls, message: object, show_file: str | None) -> str:

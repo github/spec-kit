@@ -810,6 +810,16 @@ def workflow_run(
         "--json",
         help="Emit the run outcome as a single JSON object instead of formatted text.",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help=(
+            "Preview the workflow without dispatching any AI or shell "
+            "commands. Built-in command, prompt, and gate steps emit a "
+            "synthetic preview message; the run is persisted so it can "
+            "be inspected but not resumed to a real run."
+        ),
+    ),
 ):
     """Run a workflow from an installed ID or local YAML path."""
     from .workflows import load_custom_steps
@@ -857,19 +867,30 @@ def workflow_run(
     # Parse inputs
     inputs = _parse_input_values(input_values)
 
+    if dry_run and not json_output:
+        console.print(
+            "\n[bold yellow]DRY RUN:[/bold yellow] previewing without "
+            "dispatching any AI or shell commands."
+        )
+
     if not json_output:
         console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
         console.print(f"[dim]Version: {definition.version}[/dim]\n")
 
     try:
         with _stdout_to_stderr_when(json_output):
-            state = engine.execute(definition, inputs)
+            state = engine.execute(definition, inputs, dry_run=dry_run)
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
+        if dry_run and not json_output:
+            _print_dry_run_previews(getattr(exc, "partial_state", None))
         console.print(f"[red]Workflow failed:[/red] {exc}")
         raise typer.Exit(1)
+
+    if dry_run and not json_output:
+        _print_dry_run_previews(state)
 
     if json_output:
         _emit_workflow_json(_workflow_run_payload(state))
@@ -889,6 +910,45 @@ def workflow_run(
         console.print(f"\nResume with: [cyan]specify workflow resume {state.run_id}[/cyan]")
 
     raise typer.Exit(_run_outcome_exit_code(state.status.value))
+
+
+def _print_dry_run_previews(state: Any) -> None:
+    """Print the dry-run preview message emitted by each step.
+
+    Shared by ``workflow run`` and ``workflow resume``. Skipped silently
+    when ``state`` is ``None`` (e.g. the engine raised before any step
+    ran) or when the run did not include a dry-run step. Used both
+    after a successful dry-run and from exception handlers so a
+    mid-run failure still surfaces the previews resolved by earlier
+    steps.
+    """
+    if state is None:
+        return
+    step_results = getattr(state, "step_results", None) or {}
+    if not step_results:
+        return
+    console.print("\n[bold yellow]DRY RUN previews:[/bold yellow]")
+    for step_id, result in step_results.items():
+        if not isinstance(result, dict):
+            continue
+        output = result.get("output") or {}
+        if not output.get("dry_run"):
+            continue
+        step_id_display = _escape_markup(str(step_id))
+        preview = output.get("dry_run_message") or output.get("message") or ""
+        console.print(f"  [cyan][{step_id_display}][/cyan] {preview}")
+
+
+def _escape_markup(text: str) -> str:
+    """Escape Rich markup characters so a step ID can be printed safely.
+
+    Step IDs are user-controlled YAML; without escaping, an ID
+    containing ``[`` or ``]`` would raise ``MarkupError`` from Rich.
+    """
+    return (
+        text.replace("[", "\\[")
+        .replace("]", "\\]")
+    )
 
 
 @workflow_app.command("resume")

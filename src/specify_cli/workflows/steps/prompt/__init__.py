@@ -52,22 +52,36 @@ class PromptStep(StepBase):
         if model and isinstance(model, str) and "{{" in model:
             model = evaluate_expression(model, context)
 
-        # Attempt CLI dispatch
-        dispatch_result = self._try_dispatch(
-            prompt, integration, model, context
-        )
-
         output: dict[str, Any] = {
             "prompt": prompt,
             "integration": integration,
             "model": model,
         }
 
+        # Dry-run short-circuit — emit a synthetic preview without
+        # dispatching to the integration CLI.
+        if context.dry_run:
+            preview = f"DRY RUN: would prompt integration {integration!r}: {prompt!r}"
+            output["exit_code"] = 0
+            output["dispatched"] = False
+            output["executed"] = False
+            output["dry_run"] = True
+            output["dry_run_message"] = preview
+            output["message"] = preview
+            return StepResult(status=StepStatus.COMPLETED, output=output)
+
+        # Attempt CLI dispatch
+        dispatch_result = self._try_dispatch(
+            prompt, integration, model, context
+        )
+
         if dispatch_result is not None:
             output["exit_code"] = dispatch_result["exit_code"]
             output["stdout"] = dispatch_result["stdout"]
             output["stderr"] = dispatch_result["stderr"]
             output["dispatched"] = True
+            output["executed"] = True
+            output["dry_run"] = False
             if dispatch_result["exit_code"] != 0:
                 return StepResult(
                     status=StepStatus.FAILED,
@@ -84,6 +98,8 @@ class PromptStep(StepBase):
         else:
             output["exit_code"] = 1
             output["dispatched"] = False
+            output["executed"] = False
+            output["dry_run"] = False
             return StepResult(
                 status=StepStatus.FAILED,
                 output=output,
