@@ -8,6 +8,9 @@ and ``specify init``'s next-steps output stay consistent.
 
 from __future__ import annotations
 
+# Agents that render $speckit-<name> (chat invocation) when in skills mode.
+DOLLAR_SKILLS_AGENTS: frozenset[str] = frozenset({"codex", "zcode"})
+
 # Agents that always render /speckit-<name>, regardless of ai_skills.
 ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset({"devin", "trae", "zed"})
 
@@ -24,6 +27,17 @@ CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
         "vibe",
     }
 )
+
+
+def is_dollar_skills_agent(selected_ai: str | None, ai_skills_enabled: bool) -> bool:
+    """Return ``True`` if *selected_ai* uses ``$speckit-<name>`` invocations.
+
+    Agents in `DOLLAR_SKILLS_AGENTS` (e.g. ``codex``, ``zcode``) render
+    ``$speckit-<name>`` chat invocations when installed in skills mode.
+    """
+    if not isinstance(selected_ai, str):
+        return False
+    return selected_ai in DOLLAR_SKILLS_AGENTS and ai_skills_enabled
 
 
 def is_slash_skills_agent(selected_ai: str | None, ai_skills_enabled: bool) -> bool:

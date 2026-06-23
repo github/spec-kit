@@ -4670,6 +4670,177 @@ class TestExtensionIgnore:
 class TestExtensionAddCLI:
     """CLI integration tests for extension add command."""
 
+    def test_catalog_add_escapes_url_markup(self, tmp_path):
+        """Catalog add should render user-supplied URLs literally."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        url = "https://example.com/[red]catalog[/red].json"
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    url,
+                    "--name",
+                    "community",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert f"URL: {url}" in result.output
+
+    def test_catalog_add_escapes_config_saved_path_markup(self, tmp_path):
+        """Catalog add's saved-path label should render literally under Rich."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        display_path = "project[red]/.specify/extension-catalogs.yml"
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.extensions._commands._display_project_path", return_value=display_path):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    "community",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert f"Config saved to {display_path}" in result.output
+
+    def test_catalog_list_escapes_config_path_markup(self, tmp_path):
+        """Catalog list's config-path label should render literally under Rich."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import yaml
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir()
+        (specify_dir / "extension-catalogs.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "community",
+                            "url": "https://example.com/catalog.json",
+                            "priority": 10,
+                            "install_allowed": False,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        display_path = "project[red]/.specify/extension-catalogs.yml"
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.extensions._commands._display_project_path", return_value=display_path):
+            result = runner.invoke(
+                app,
+                ["extension", "catalog", "list"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert f"Config: {display_path}" in result.output
+
+    def test_catalog_add_escapes_config_read_exception_markup(self, tmp_path):
+        """Catalog config parse errors can include user-controlled file content."""
+        import yaml
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        specify_dir = project_dir / ".specify"
+        specify_dir.mkdir()
+        (specify_dir / "extension-catalogs.yml").write_text("[red]bad[/red]", encoding="utf-8")
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch(
+                 "specify_cli.extensions._commands.yaml.safe_load",
+                 side_effect=yaml.YAMLError("bad [red]catalog[/red] yaml"),
+             ):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    "https://example.com/catalog.json",
+                    "--name",
+                    "community",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "bad [red]catalog[/red]" in result.output
+        assert "yaml" in result.output
+
+    def test_catalog_add_escapes_url_validation_exception_markup(self, tmp_path):
+        """URL validation errors may include user-controlled URL text."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(
+                 ExtensionCatalog,
+                 "_validate_catalog_url",
+                 side_effect=ValidationError("bad [red]url[/red]"),
+             ):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "catalog",
+                    "add",
+                    "https://example.com/[red]catalog[/red].json",
+                    "--name",
+                    "community",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "bad [red]url[/red]" in result.output
+
     def test_add_dev_links_copilot_agent_when_supported(
         self, extension_dir, project_dir, temp_dir
     ):
@@ -4883,6 +5054,85 @@ class TestExtensionAddCLI:
                 f"confirm must precede spinner, got: {call_order}"
         assert result.exit_code == 0  # user declined → clean exit
 
+    def test_add_status_escapes_extension_markup(self, tmp_path):
+        """User-controlled extension names must not be parsed as Rich markup."""
+        from rich.markup import escape as escape_markup
+        from typer.testing import CliRunner
+        from unittest.mock import MagicMock, patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        status_messages: list[str] = []
+
+        def record_status(message, *args, **kwargs):
+            status_messages.append(message)
+            return MagicMock()
+
+        extension_name = "[red]bad[/red]"
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.console.status", side_effect=record_status):
+            result = runner.invoke(
+                app,
+                ["extension", "add", extension_name, "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert status_messages == [
+            f"[cyan]Installing extension: {escape_markup(extension_name)}[/cyan]"
+        ]
+
+    def test_add_post_install_hint_escapes_manifest_id_markup(self, tmp_path):
+        """Extension IDs printed in Rich-rendered hints must stay literal."""
+        import io
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        manifest_id = "[red]bad[/red]"
+
+        def fake_install_from_zip(self_obj, zip_path, speckit_version, priority=10, force=False):
+            return SimpleNamespace(
+                id=manifest_id,
+                name="Bad Extension",
+                version="1.0.0",
+                description="Test extension",
+                warnings=[],
+                commands=[],
+                hooks=[],
+            )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"zip-bytes")), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
+             patch.object(ExtensionRegistry, "get", return_value={}):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "bad", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert ".specify/extensions/[red]bad[/red]/" in result.output
+
     def test_add_from_url_cancel_exits_cleanly(self, tmp_path):
         """Declining the --from <url> confirmation should exit with code 0."""
         from typer.testing import CliRunner
@@ -4904,6 +5154,131 @@ class TestExtensionAddCLI:
 
         assert result.exit_code == 0
         assert "Cancelled" in result.output
+
+    def test_add_from_url_escapes_download_exception_markup(self, tmp_path):
+        """Download errors can include user-controlled URL text."""
+        import urllib.error
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch(
+                 "specify_cli.authentication.http.open_url",
+                 side_effect=urllib.error.URLError("bad [red]download[/red]"),
+             ):
+            result = runner.invoke(
+                app,
+                [
+                    "extension",
+                    "add",
+                    "my-ext",
+                    "--from",
+                    "https://example.com/[red]ext[/red].zip",
+                ],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "https://example.com/[red]ext[/red].zip" in result.output
+        assert "bad [red]download[/red]" in result.output
+
+    @pytest.mark.parametrize(
+        ("exc_type", "label"),
+        [
+            (ValidationError, "Validation Error"),
+            (CompatibilityError, "Compatibility Error"),
+            (ExtensionError, "Error"),
+        ],
+    )
+    def test_add_exception_handlers_escape_markup(self, tmp_path, exc_type, label):
+        """Extension install exceptions can include manifest-controlled values."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        ext_dir = tmp_path / "ext"
+        ext_dir.mkdir()
+        (ext_dir / "extension.yml").write_text("extension:\n  id: test\n", encoding="utf-8")
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(
+                 ExtensionManager,
+                 "install_from_directory",
+                 side_effect=exc_type("bad [red]extension[/red]"),
+             ):
+            result = runner.invoke(
+                app,
+                ["extension", "add", str(ext_dir), "--dev"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert f"{label}:" in result.output
+        assert "bad [red]extension[/red]" in result.output
+
+    def test_add_from_url_uses_cache_tempfile_for_untrusted_extension_name(self, tmp_path):
+        """The extension argument must not control the downloaded ZIP path."""
+        import io
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        downloads_dir = project_dir / ".specify" / "extensions" / ".cache" / "downloads"
+        installed = {}
+
+        def fake_install_from_zip(self_obj, zip_path, speckit_version, priority=10, force=False):
+            captured_path = Path(zip_path)
+            installed["zip_path"] = captured_path
+            installed["zip_bytes"] = captured_path.read_bytes()
+            return SimpleNamespace(
+                id="escape",
+                name="Escape Test",
+                version="1.0.0",
+                description="Test extension",
+                warnings=[],
+                commands=[],
+                hooks=[],
+            )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"zip-bytes")), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "../outside", "--from", "https://example.com/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0
+        assert installed["zip_bytes"] == b"zip-bytes"
+        assert installed["zip_path"].resolve().is_relative_to(downloads_dir.resolve())
+        assert installed["zip_path"].name.startswith("extension-url-download-")
+        assert not installed["zip_path"].exists()
 
 
 class TestDownloadExtensionBundled:
@@ -5168,6 +5543,62 @@ class TestExtensionUpdateCLI:
 
         for cmd_file in command_files:
             assert cmd_file.exists(), f"Expected command file to be restored after rollback: {cmd_file}"
+
+    @pytest.mark.parametrize(
+        ("manifest_text", "expected_detail"),
+        [
+            ("- not\n- a\n- mapping\n", "YAML mapping"),
+            ("extension: []\n", "'extension' mapping"),
+        ],
+    )
+    def test_update_rejects_malformed_zip_manifest(
+        self, tmp_path, monkeypatch, manifest_text, expected_detail
+    ):
+        """Downloaded extension.yml shape must be valid before ID validation."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import zipfile
+
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+        runner = CliRunner()
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0")
+        original_registry_entry = manager.registry.get("test-ext")
+
+        zip_path = tmp_path / "bad-manifest.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("extension.yml", manifest_text)
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext",
+                 "name": "Test Extension",
+                 "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(ExtensionCatalog, "download_extension", return_value=zip_path):
+            result = runner.invoke(
+                app,
+                ["extension", "update", "test-ext"],
+                input="y\n",
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "Invalid extension manifest in downloaded archive" in result.output
+        assert expected_detail in result.output
+        assert "AttributeError" not in result.output
+        assert ExtensionManager(project_dir).registry.get("test-ext") == original_registry_entry
 
 
 class TestExtensionListCLI:
@@ -6052,6 +6483,24 @@ class TestHookInvocationRendering:
         assert execution["command"] == "speckit.tasks"
         assert execution["invocation"] == "$speckit-tasks"
 
+    def test_zcode_hooks_render_dollar_skill_invocation(self, project_dir):
+        """ZCode projects with skills mode should render $speckit-* invocations."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "zcode", "ai_skills": True}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "$speckit-tasks"
+
     def test_non_boolean_ai_skills_keeps_default_hook_invocation(self, project_dir):
         """Corrupted truthy ai_skills values should not enable skill invocation."""
         init_options = project_dir / ".specify" / "init-options.json"
@@ -6244,6 +6693,118 @@ class TestExtensionRemoveCLI:
             )
 
         assert "2 commands" in result.output
+
+    def test_remove_output_escapes_extension_id_markup(self, tmp_path):
+        """Removal paths and reinstall hints must not parse extension IDs as markup."""
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        extension_id = "[red]bad[/red]"
+        installed = [
+            {
+                "id": extension_id,
+                "name": "Bad Extension",
+                "version": "1.0.0",
+                "description": "Test extension",
+                "enabled": True,
+            }
+        ]
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionManager, "list_installed", return_value=installed), \
+             patch.object(ExtensionManager, "get_extension", return_value=SimpleNamespace(commands=[])), \
+             patch.object(ExtensionRegistry, "get", return_value={"registered_commands": {}, "registered_skills": []}), \
+             patch.object(ExtensionManager, "remove", return_value=True):
+            result = runner.invoke(
+                app,
+                ["extension", "remove", extension_id, "--force"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert ".specify/extensions/.backup/[red]bad[/red]/" in result.output
+        assert "specify extension add [red]bad[/red]" in result.output
+
+
+class TestExtensionStateCLI:
+    """CLI tests for installed extension state commands."""
+
+    def test_enable_registry_error_escapes_extension_id_markup(self, tmp_path):
+        """Registry-corruption errors should render extension IDs literally."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        extension_id = "[red]bad[/red]"
+        installed = [
+            {
+                "id": extension_id,
+                "name": "Bad Extension",
+                "version": "1.0.0",
+                "description": "Test extension",
+                "enabled": False,
+            }
+        ]
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionManager, "list_installed", return_value=installed), \
+             patch.object(ExtensionRegistry, "get", return_value=None):
+            result = runner.invoke(
+                app,
+                ["extension", "enable", extension_id],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "Extension '[red]bad[/red]' not found in registry" in result.output
+
+    def test_disable_reenable_hint_escapes_extension_id_markup(self, tmp_path):
+        """Disable success hints should not parse extension IDs as markup."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        extension_id = "[red]bad[/red]"
+        installed = [
+            {
+                "id": extension_id,
+                "name": "Bad Extension",
+                "version": "1.0.0",
+                "description": "Test extension",
+                "enabled": True,
+            }
+        ]
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionManager, "list_installed", return_value=installed), \
+             patch.object(ExtensionRegistry, "get", return_value={"enabled": True}), \
+             patch.object(ExtensionRegistry, "update", return_value=None), \
+             patch.object(HookExecutor, "get_project_config", return_value={}):
+            result = runner.invoke(
+                app,
+                ["extension", "disable", extension_id],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "specify extension enable [red]bad[/red]" in result.output
 
 
 class TestClineExtensionHyphenation:

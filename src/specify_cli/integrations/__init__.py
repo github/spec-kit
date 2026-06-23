@@ -58,6 +58,7 @@ def _register_builtins() -> None:
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
     from .devin import DevinIntegration
+    from .firebender import FirebenderIntegration
     from .forge import ForgeIntegration
     from .gemini import GeminiIntegration
     from .generic import GenericIntegration
@@ -80,6 +81,7 @@ def _register_builtins() -> None:
     from .trae import TraeIntegration
     from .vibe import VibeIntegration
     from .windsurf import WindsurfIntegration
+    from .zcode import ZcodeIntegration
     from .zed import ZedIntegration
 
     # -- Registration (alphabetical) --------------------------------------
@@ -94,6 +96,7 @@ def _register_builtins() -> None:
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
     _register(DevinIntegration())
+    _register(FirebenderIntegration())
     _register(ForgeIntegration())
     _register(GeminiIntegration())
     _register(GenericIntegration())
@@ -116,6 +119,7 @@ def _register_builtins() -> None:
     _register(TraeIntegration())
     _register(VibeIntegration())
     _register(WindsurfIntegration())
+    _register(ZcodeIntegration())
     _register(ZedIntegration())
 
 

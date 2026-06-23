@@ -10,6 +10,7 @@ Not every Spec Kit user wants Spec Kit to write into the coding agent's context 
 
 - **Opt out** entirely with `specify extension disable agent-context` — Spec Kit will then never create or modify the agent context file.
 - **Customize the markers** by editing `.specify/extensions/agent-context/agent-context-config.yml` — both the Python layer and the bundled scripts honor the same `context_markers` value.
+- **Synchronize multiple agent anchors** by setting `context_files` when a project intentionally uses more than one coding agent context file, such as `AGENTS.md` and `CLAUDE.md`.
 - **Refresh on demand** with `/speckit.agent-context.update`, or automatically through the hooks declared in `extension.yml` (`after_specify`, `after_plan`).
 
 ## Commands
@@ -27,6 +28,12 @@ All configuration flows through the extension's own config file at
 # Path to the coding agent context file managed by this extension
 context_file: CLAUDE.md
 
+# Optional list of coding agent context files to manage together.
+# When non-empty, this takes precedence over context_file.
+context_files:
+  - AGENTS.md
+  - CLAUDE.md
+
 # Delimiters for the managed Spec Kit section
 context_markers:
   start: "<!-- SPECKIT START -->"
@@ -34,6 +41,7 @@ context_markers:
 ```
 
 - `context_file` — the project-relative path to the coding agent context file, written by `specify init` and `specify integration install`.
+- `context_files` — optional project-relative paths to multiple coding agent context files. When non-empty, the list takes precedence over `context_file`. Absolute paths, backslash separators, and `..` path segments are rejected.
 - `context_markers.start` / `.end` — the delimiters around the managed section. Edit these to use custom markers.
 
 ## Requirements
@@ -55,3 +63,4 @@ specify extension disable agent-context
 ```
 
 When disabled, Spec Kit skips context file creation, updates, and removal (the gates are inside `upsert_context_section()` and `remove_context_section()`).
+Disabled projects also ignore stale `context_files` values during command rendering so disabling the extension remains a complete opt-out.
