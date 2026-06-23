@@ -116,7 +116,7 @@ uv pip install -e ".[test]"
 #### Shell scripts
 
 ```bash
-shellcheck --severity=error scripts/bash/*.sh
+git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error
 ```
 
 The CI `lint.yml` `shellcheck` job blocks at `--severity=error` to catch real bugs while leaving stylistic warnings (SC2155 etc.) advisory.
