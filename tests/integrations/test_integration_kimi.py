@@ -473,6 +473,25 @@ class TestKimiLegacySymlinkSafety:
         # The unrelated ./skills content must survive teardown.
         assert (unrelated / "SKILL.md").exists()
 
+    def test_setup_rejects_symlinked_destination_before_writing(self, tmp_path):
+        # `.kimi-code` is a symlink to the project root, so the skills
+        # destination `.kimi-code/skills` resolves to `./skills` — an
+        # unintended in-tree location. base setup() only rejects a
+        # destination that escapes the project root, so without the
+        # pre-check it would write SKILL.md files into `./skills`. setup()
+        # must refuse before any write occurs.
+        project = tmp_path / "project"
+        project.mkdir()
+        _symlink_or_skip(project / ".kimi-code", project, target_is_directory=True)
+
+        i = get_integration("kimi")
+        m = IntegrationManifest("kimi", project)
+        with pytest.raises(ValueError, match="symlinked"):
+            i.setup(project, m)
+
+        # Nothing was written into the unintended `./skills` location.
+        assert not (project / "skills").exists()
+
     def test_context_migration_does_not_write_through_symlinked_agents_md(
         self, tmp_path
     ):

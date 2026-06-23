@@ -80,7 +80,8 @@ class KimiIntegration(SkillsIntegration):
                 help=(
                     "Migrate legacy Kimi installations: "
                     ".kimi/skills/ → .kimi-code/skills/, speckit.xxx → speckit-xxx, "
-                    "and KIMI.md user content → AGENTS.md"
+                    "and (when the agent-context extension is enabled) "
+                    "KIMI.md user content → AGENTS.md"
                 ),
             ),
         ]
@@ -95,6 +96,20 @@ class KimiIntegration(SkillsIntegration):
         """Install skills with optional legacy migration."""
         parsed_options = parsed_options or {}
 
+        # Refuse a symlinked destination before any writes occur. base
+        # setup() only rejects a destination that *escapes* project_root
+        # after resolve(), so an in-tree symlinked ``.kimi-code`` /
+        # ``.kimi-code/skills`` (e.g. ``-> .``) would still pass that check
+        # and misdirect the SKILL.md writes into an unintended in-tree
+        # location (e.g. ``./skills/``). Reject any symlinked destination
+        # component up front so this never happens.
+        new_skills_dir = self.skills_dest(project_root)
+        if _has_symlinked_component(new_skills_dir, project_root):
+            raise ValueError(
+                f"Skills destination {new_skills_dir} contains a symlinked "
+                f"path component; refusing to install into it."
+            )
+
         # Run base setup first so new-path targets (speckit-*) exist,
         # then migrate/clean legacy dirs without risking user content loss.
         created = super().setup(
@@ -102,7 +117,6 @@ class KimiIntegration(SkillsIntegration):
         )
 
         if parsed_options.get("migrate_legacy", False):
-            new_skills_dir = self.skills_dest(project_root)
             old_skills_dir = project_root / ".kimi" / "skills"
             # Validate both endpoints. base setup() already rejects a
             # destination that *escapes* the project root, but an in-tree
@@ -158,6 +172,27 @@ class KimiIntegration(SkillsIntegration):
         return removed, skipped
 
 
+def _has_symlinked_component(path: Path, project_root: Path) -> bool:
+    """Return ``True`` when *path* escapes *project_root* or any component is a symlink.
+
+    Walks the components strictly between *project_root* and *path*
+    (including the final one) and reports whether any of them is a symlink.
+    Components that do not exist yet are not symlinks, so this safely handles
+    a not-yet-created destination. *project_root* itself is trusted and never
+    checked. A *path* outside *project_root* is treated as unsafe.
+    """
+    try:
+        relative = path.relative_to(project_root)
+    except ValueError:
+        return True
+    current = project_root
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
 def _is_safe_legacy_dir(path: Path, project_root: Path) -> bool:
     """Return ``True`` when *path* is a real directory safely inside *project_root*.
 
@@ -178,17 +213,11 @@ def _is_safe_legacy_dir(path: Path, project_root: Path) -> bool:
     if not path.is_dir():
         return False
 
-    # Reject if any path component below project_root is a symlink. We trust
-    # project_root itself, so only components strictly under it are checked.
-    try:
-        relative = path.relative_to(project_root)
-    except ValueError:
+    # Reject if any path component below project_root is a symlink (or the
+    # path escapes project_root). We trust project_root itself, so only
+    # components strictly under it are checked.
+    if _has_symlinked_component(path, project_root):
         return False
-    current = project_root
-    for part in relative.parts:
-        current = current / part
-        if current.is_symlink():
-            return False
 
     try:
         resolved = path.resolve()
