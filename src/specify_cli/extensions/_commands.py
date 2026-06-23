@@ -207,7 +207,7 @@ def extension_list(
     available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
     all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
 ):
-    """List installed extensions."""
+    """List installed extensions, and available catalog extensions with --available/--all."""
     from . import ExtensionManager, ExtensionCatalog, ExtensionError
 
     project_root = _require_specify_project()
@@ -225,9 +225,12 @@ def extension_list(
         console.print("  specify extension add <extension-name>")
         return
 
-    if show_installed and installed:
+    if show_installed:
         console.print("\n[bold cyan]Installed Extensions:[/bold cyan]\n")
 
+        if not installed:
+            console.print("  [dim]No extensions installed.[/dim]")
+            console.print()
         for ext in installed:
             status_icon = "✓" if ext["enabled"] else "✗"
             status_color = "green" if ext["enabled"] else "red"
@@ -246,7 +249,7 @@ def extension_list(
         try:
             results = catalog.search()
         except ExtensionError as e:
-            console.print(f"\n[red]Error:[/red] Could not query extension catalog: {e}")
+            console.print(f"\n[red]Error:[/red] Could not query extension catalog: {_escape_markup(str(e))}")
             console.print("[dim]The catalog may be temporarily unavailable. Try again later.[/dim]")
             raise typer.Exit(1)
 
@@ -257,15 +260,18 @@ def extension_list(
             console.print("  [dim]No additional extensions available in the catalog.[/dim]")
         else:
             for ext in available_exts:
+                # Catalog fields are untrusted (remote/community catalogs); escape
+                # before embedding in Rich markup to prevent markup injection.
+                safe_id = _escape_markup(str(ext.get("id", "")))
                 verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
-                console.print(f"  [bold]{ext['name']}[/bold] (v{ext['version']}){verified_badge}")
-                console.print(f"     [dim]{ext['id']}[/dim]")
-                console.print(f"     {ext.get('description', '')}")
+                console.print(f"  [bold]{_escape_markup(str(ext['name']))}[/bold] (v{_escape_markup(str(ext['version']))}){verified_badge}")
+                console.print(f"     [dim]{safe_id}[/dim]")
+                console.print(f"     {_escape_markup(str(ext.get('description', '')))}")
                 install_allowed = ext.get("_install_allowed", True)
                 if install_allowed:
-                    console.print(f"     [cyan]Install:[/cyan] specify extension add {ext['id']}")
+                    console.print(f"     [cyan]Install:[/cyan] specify extension add {safe_id}")
                 else:
-                    catalog_name = ext.get("_catalog_name", "")
+                    catalog_name = _escape_markup(str(ext.get("_catalog_name", "")))
                     console.print(f"     [yellow]Discovery only — not installable from '{catalog_name}'[/yellow]")
                 console.print()
 
