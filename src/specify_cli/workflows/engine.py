@@ -91,14 +91,14 @@ class WorkflowDefinition:
 # ID format: lowercase alphanumeric with hyphens
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
 
-# Keys accepted under a workflow's ``requires`` block. These mirror the
-# pre-conditions documented in workflows/PUBLISHING.md and resolved by the
-# bundler (``speckit_version``, ``integrations``, ``tools``, ``mcp``). Any other
-# key — notably ``permissions`` — is rejected by ``validate_workflow`` so it is
-# never mistaken for an enforced runtime control.
-_RECOGNIZED_REQUIRES_KEYS = frozenset(
-    {"speckit_version", "integrations", "tools", "mcp"}
-)
+# Keys accepted under a workflow's ``requires`` block: the advisory
+# pre-conditions documented for workflows (``speckit_version`` and
+# ``integrations``). This is the *workflow* schema only — the bundle manifest's
+# ``requires`` (see ``bundler/models/manifest.py``) is a separate schema that
+# also carries ``tools``/``mcp``; those are not workflow ``requires`` keys.
+# Any other key — notably ``permissions`` — is rejected by ``validate_workflow``
+# so it is never mistaken for an enforced runtime control.
+_RECOGNIZED_REQUIRES_KEYS = frozenset({"speckit_version", "integrations"})
 
 # Valid step types (matching STEP_REGISTRY keys)
 def _get_valid_step_types() -> set[str]:
