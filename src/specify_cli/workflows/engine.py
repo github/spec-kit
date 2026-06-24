@@ -204,29 +204,26 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     # gate exists — a ``shell`` step always runs with the user's privileges, so
     # declaring it would give a false sense of sandboxing.
     #
-    # Guard on ``is not None`` rather than truthiness: a falsy but non-mapping
-    # value (e.g. ``requires: []`` or ``requires: ''``) is still an authoring
-    # error and must surface, whereas ``requires:`` (YAML null) is treated as
-    # an omitted block.
-    if definition.requires is not None:
-        if not isinstance(definition.requires, dict):
-            errors.append(
-                "'requires' must be a mapping (or omitted)."
-            )
-        else:
-            for key in definition.requires:
-                if key == "permissions":
-                    errors.append(
-                        "'requires.permissions' is not a recognized or "
-                        "enforced capability gate — shell steps always run "
-                        "with the user's privileges. Remove it and gate "
-                        "sensitive steps with a 'gate' step instead."
-                    )
-                elif key not in _RECOGNIZED_REQUIRES_KEYS:
-                    errors.append(
-                        f"Unknown 'requires' key {key!r}. Recognized keys: "
-                        f"{', '.join(sorted(_RECOGNIZED_REQUIRES_KEYS))}."
-                    )
+    # Mirror ``inputs`` validation: an omitted block defaults to ``{}`` and is
+    # valid, but any present-but-non-mapping value — ``requires:`` (YAML null),
+    # ``requires: []`` or ``requires: ''`` — is an authoring error and must
+    # surface here rather than be silently ignored at runtime.
+    if not isinstance(definition.requires, dict):
+        errors.append("'requires' must be a mapping (or omitted).")
+    else:
+        for key in definition.requires:
+            if key == "permissions":
+                errors.append(
+                    "'requires.permissions' is not a recognized or "
+                    "enforced capability gate — shell steps always run "
+                    "with the user's privileges. Remove it and gate "
+                    "sensitive steps with a 'gate' step instead."
+                )
+            elif key not in _RECOGNIZED_REQUIRES_KEYS:
+                errors.append(
+                    f"Unknown 'requires' key {key!r}. Recognized keys: "
+                    f"{', '.join(sorted(_RECOGNIZED_REQUIRES_KEYS))}."
+                )
 
     # -- Steps ------------------------------------------------------------
     if not isinstance(definition.steps, list):

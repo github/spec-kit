@@ -2130,9 +2130,9 @@ steps:
         assert any("requires.permissions" in e and "gate" in e for e in errors)
 
     def test_requires_empty_sequence_is_rejected_as_non_mapping(self):
-        """A falsy-but-non-mapping ``requires`` (e.g. an empty list) is still an
-        authoring error: validation must guard on ``is not None`` rather than
-        truthiness, otherwise ``requires: []`` would silently pass.
+        """A non-mapping ``requires`` (e.g. an empty list) is an authoring
+        error. Mirroring ``inputs``, validation checks ``isinstance(..., dict)``
+        so ``requires: []`` surfaces instead of silently passing.
         """
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
@@ -2148,6 +2148,47 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_yaml_null_is_rejected_as_non_mapping(self):
+        """A bare ``requires:`` parses as YAML null. Like ``inputs``, a present
+        block must be a mapping, so YAML null is rejected as an authoring error
+        rather than being silently treated as an omitted block. (A truly
+        omitted ``requires`` defaults to ``{}`` and stays valid.)
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_omitted_is_valid(self):
+        """A workflow with no ``requires`` block at all defaults to ``{}`` and
+        must validate cleanly — only a present-but-non-mapping value is an
+        error (guards against over-correcting YAML-null rejection into also
+        flagging the omitted case).
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert not any("requires" in e for e in errors)
 
 
 # ===== Workflow Engine Tests =====
