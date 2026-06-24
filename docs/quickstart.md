@@ -14,7 +14,11 @@
 
 ```text
 /speckit.constitution
-/speckit.arch.generate
+/speckit.arch.scenario-generate
+/speckit.arch.logical-generate
+/speckit.arch.process-generate
+/speckit.arch.development-generate
+/speckit.arch.physical-generate
 /speckit.repository-governance.refresh
 /speckit.specify
 /speckit.clarify
@@ -26,7 +30,7 @@
 /speckit.implement
 ```
 
-接手旧仓库时，把 `/speckit.arch.generate` 换成 `/speckit.arch.reverse`，先从仓库事实反向生成架构 SSOT。
+接手旧仓库时，把五个 `/speckit.arch.*-generate` 换成对应的 `/speckit.arch.*-reverse`，先从仓库事实反向生成架构 SSOT。
 
 小实验可以安装 `lean` 预设后走轻量路径：
 
@@ -125,13 +129,21 @@ specify integration list
 新项目或架构正在重塑时：
 
 ```text
-/speckit.arch.generate
+/speckit.arch.scenario-generate
+/speckit.arch.logical-generate
+/speckit.arch.process-generate
+/speckit.arch.development-generate
+/speckit.arch.physical-generate
 ```
 
 接手已有仓库时：
 
 ```text
-/speckit.arch.reverse
+/speckit.arch.scenario-reverse
+/speckit.arch.logical-reverse
+/speckit.arch.process-reverse
+/speckit.arch.development-reverse
+/speckit.arch.physical-reverse
 ```
 
 主要产物：
