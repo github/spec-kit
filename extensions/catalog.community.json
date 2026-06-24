@@ -1337,7 +1337,6 @@
       "repository": "https://github.com/jasstt/spec-kit-golden-demo",
       "homepage": "https://github.com/jasstt/spec-kit-golden-demo",
       "documentation": "https://github.com/jasstt/spec-kit-golden-demo",
-      "changelog": "",
       "license": "MIT",
       "category": "docs",
       "effect": "read-write",
