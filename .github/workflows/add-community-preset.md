@@ -119,6 +119,9 @@ preset** — not just any file named `README.md`, and not a product/framework pi
   - `https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`
 
   If the URL points anywhere else (or isn't a URL), **fail this check** and do not fetch it.
+- **Require the URL to point at a README file.** After stripping any fragment/query (see
+  below), the URL path must end with `README.md` (case-insensitive). If it points at some
+  other Markdown file, **fail this check** and ask the submitter to link the preset's README.
 - Fetch the **exact URL** in the `documentation` field. First strip any fragment (`#...`)
   or query string (`?...`) — these are common when copying from the browser UI and must be
   ignored so the fetch target is deterministic. Then convert GitHub `blob`/`raw` web URLs to

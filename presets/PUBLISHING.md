@@ -161,9 +161,10 @@ your submission isn't sent back for changes.
 - **Point `documentation` at the preset-scoped README.** In a monorepo where the preset
   lives in a subdirectory (e.g. `presets/<id>/`), link the README inside that directory
   (`presets/<id>/README.md`) rather than the repository-root README. The root README is
-  often a marketing/overview page; the catalog should surface preset usage instead. (Keep
-  this usage README **outside** the release ZIP — it should be discoverable *before* a user
-  downloads the artifact.)
+  often a marketing/overview page; the catalog should surface preset usage instead. The key
+  requirement is that this README is reachable at the `documentation` URL so users can read
+  it *before* downloading the release artifact — it's fine for the same file to also ship
+  inside the release ZIP.
 - **Include a valid Spec Kit CLI install command** *(enforced)*. The linked README must
   contain at least one `specify preset add ...` invocation. Preferably use the
   catalog-install form whose URL matches your Download URL:
