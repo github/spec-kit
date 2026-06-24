@@ -2,27 +2,27 @@
 
 **Input**: `.specify/memory/architecture-scenario-view.md`, `.specify/memory/architecture-logical-view.md`
 
-**Purpose**: Derive runtime collaboration, handoffs, approvals, receipts, state advancement, and failure closure from scenario paths and logical boundaries.
+**Purpose**: Runtime collaboration, handoffs, approvals, receipts, state advancement, and failure closure from scenario paths and logical boundaries.
 
 ## Architecture Intent
 
-[State what runtime collaboration, handoff, or failure-closure meaning this view must preserve.]
+[Runtime collaboration, handoff, or failure-closure decision and source.]
 
 ## Core Tensions
 
-| Tension | Current Tradeoff Direction | Process Consequence |
+| Tension | Chosen Architectural Direction | Process Consequence |
 |---------|----------------------------|---------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Stable Boundaries
 
-| Boundary | Must Remain Stable Because | Explicitly Does Not Control |
+| Boundary | Must Remain Stable Because | Excluded Responsibility / Scope |
 |----------|----------------------------|-----------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Change Axes
 
-| Expected Change | Isolated By | Process Impact |
+| Expected Change | Isolation Mechanism / Boundary Rule | Process Impact |
 |-----------------|-------------|----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
@@ -62,12 +62,14 @@
 |------------------|--------------------|----------------------|-----------------------------|---------------------|-------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
+## Source Traceability
+
+| Architecture Conclusion | Source Type | Source Reference | Confidence |
+|-------------------------|-------------|------------------|------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
 ## Process Gaps
 
 | Gap | Affected Runtime Link / Scenario | Why It Matters |
 |-----|----------------------------------|----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
-
-## Prohibited Content
-
-Do not write call stacks, queue names, retry counts, thread/process details, endpoint sequences, workflow engine configuration, or orchestration code here.

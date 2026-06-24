@@ -154,7 +154,8 @@ specify integration list
 
 | 能力 | 来源 | 关键命令或产物 | 解决什么问题 |
 | --- | --- | --- | --- |
-| ARCH SSOT | `arch` 扩展 | `/speckit.arch.generate`、`/speckit.arch.reverse`、`.specify/memory/architecture*.md` | 把项目级 4+1 架构视图沉淀为稳定记忆，避免每个 feature 重新猜边界、约束和部署假设。 |
+| ARCH SSOT | `arch` 扩展 | `/speckit.arch.scenario-generate`、`/speckit.arch.logical-generate`、`/speckit.arch.*-reverse`、`.specify/memory/architecture*.md` | 把项目级 4+1 架构视图沉淀为稳定记忆，避免每个 feature 重新猜边界、约束和部署假设。 |
+| Intake 证据归一化 | `intake` 扩展 | `/speckit.intake.visual-design`、`/speckit.intake.prd`、`/speckit.intake.test-cases` | 把 PRD、设计和测试用例证据整理成 SDD 可消费的 intake artifact，再进入 specify/plan。 |
 | 仓库治理规范 | `repository-governance` 扩展 | `/speckit.repository-governance.refresh`、受管 `SPECKIT GOVERNANCE` 段 | 统一 agent 的 SSOT 读取顺序、目录责任、平台适配和仓库事实证据。 |
 | UI/UX 需求规格 | `workflow-preset` + `preview` 扩展 | `spec.md` 用户旅程、`behavior/uif.intent.json`、`contracts/uif/`、`/speckit.preview.mid-html` | 先把界面状态、断点、用户路径和交互假设写成规格/契约，再生成可打开的预览产物评审。 |
 | BDD 引入 | `workflow-preset` | `/speckit.checklist`、`checklists/behavior-testability.md`、`contracts/bdd/` | 在规划前检查 Given/When/Then、可观察结果、边界和 NFR 声明，避免不可验证需求进入实现。 |
@@ -168,6 +169,7 @@ specify integration list
 | 扩展 | 默认状态 | 你会用它做什么 |
 | --- | --- | --- |
 | `arch` | `specify init` 默认安装 | 生成或反向生成项目级 4+1 架构视图，形成 `.specify/memory/architecture*.md` 架构记忆。 |
+| `intake` | `specify init` 默认安装 | 归一化 PRD、视觉设计和测试用例证据，生成下游 SDD 命令可读取的 intake artifact。 |
 | `preview` | `specify init` 默认安装 | 根据当前 feature 的规格和计划生成低/中/高保真 Markdown wireflow 或自包含 HTML 预览，用于实现前验证 UI 和交互假设。 |
 | `repository-governance` | `specify init` 默认安装 | 生成 Repository Governance Framework 治理说明，包含垂直 SSOT 注册、读取顺序、缺失 SSOT 处理和仓库事实证据。 |
 | `git` | 初始化时默认安装，传 `--no-git` 可跳过 | 初始化 Git、创建 feature branch、校验分支、检测 remote，并可配置自动提交。 |
@@ -178,6 +180,7 @@ specify integration list
 
 ```bash
 specify extension add arch
+specify extension add intake
 specify extension add preview
 specify extension add repository-governance
 specify extension add git
@@ -193,8 +196,11 @@ specify extension info arch
 扩展命令示例：
 
 ```text
-/speckit.arch.generate
-/speckit.arch.reverse
+/speckit.arch.scenario-generate
+/speckit.arch.logical-generate
+/speckit.arch.scenario-reverse
+/speckit.intake.visual-design
+/speckit.intake.prd
 /speckit.preview.low-md
 /speckit.preview.mid-html
 /speckit.preview.high-html
@@ -226,8 +232,9 @@ specify preset info workflow-preset
 
 ### 什么时候用这些能力
 
-- 新项目或架构正在变化：先跑 `/speckit.arch.generate`，让后续计划有稳定架构上下文。
-- 接手旧仓库：跑 `/speckit.arch.reverse`，先从仓库事实反推架构记忆。
+- 新项目或架构正在变化：按 scenario/logical/process/development/physical 顺序跑 `/speckit.arch.*-generate`，让后续计划有稳定架构上下文。
+- 接手旧仓库：按 scenario/logical/process/development/physical 顺序跑 `/speckit.arch.*-reverse`，先从仓库事实反推架构记忆。
+- 已有 PRD、设计稿或测试用例：先跑 `/speckit.intake.prd`、`/speckit.intake.visual-design` 或 `/speckit.intake.test-cases`，把外部证据归一化后再进入 `/speckit.specify`。
 - 团队使用多个 agent 或新人频繁接手：跑 `/speckit.repository-governance.refresh`，把目录责任、SSOT 边界和 agent 执行规则写入上下文。
 - 希望引入 BDD：保留默认 `workflow-preset`，让 `/speckit.checklist` 在规划前检查 BDD readiness，让 `/speckit.plan` 生成 BDD/UIF/fixture 行为草稿和正式契约。
 - 做前端或交互功能：在 `/speckit.specify` 或 `/speckit.plan` 后跑 `/speckit.preview.mid-html` 或对应保真的 `*-md`/`*-html` 命令，先看预览再实现。
@@ -311,7 +318,11 @@ AGENTS.md
 
 ```text
 /speckit.constitution
-/speckit.arch.generate
+/speckit.arch.scenario-generate
+/speckit.arch.logical-generate
+/speckit.arch.process-generate
+/speckit.arch.development-generate
+/speckit.arch.physical-generate
 /speckit.specify
 /speckit.clarify
 /speckit.preview.mid-html
@@ -325,7 +336,11 @@ AGENTS.md
 
 ```text
 /speckit.constitution
-/speckit.arch.reverse
+/speckit.arch.scenario-reverse
+/speckit.arch.logical-reverse
+/speckit.arch.process-reverse
+/speckit.arch.development-reverse
+/speckit.arch.physical-reverse
 /speckit.repository-governance.refresh
 /speckit.specify
 /speckit.clarify

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/test-case-source-manifest.schema.json",
+  "title": "Test Case Source Manifest",
+  "type": "object",
+  "required": [
+    "source_type",
+    "source_files",
+    "source_integrity_complete",
+    "captured_at",
+    "capture_method",
+    "framework_or_format",
+    "execution_scope"
+  ],
+  "properties": {
+    "source_type": { "enum": ["code", "gherkin", "spreadsheet", "test_management", "issue", "mixed"] },
+    "source_integrity_complete": { "type": "boolean" },
+    "captured_at": { "type": "string", "minLength": 1 },
+    "capture_method": { "type": "string", "minLength": 1 },
+    "framework_or_format": { "type": "string", "minLength": 1 },
+    "execution_scope": { "type": "string", "minLength": 1 },
+    "source_files": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/source_file" }
+    },
+    "source_details": { "type": "object" },
+    "retrieval_metadata": { "type": "object" },
+    "snapshot_status": { "enum": ["captured", "not_available", "not_required"] },
+    "integrity_gap_reason": { "type": "string", "minLength": 1 },
+    "source_precedence": { "type": "array" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "source_type": { "const": "code" } } },
+      "then": {
+        "required": ["source_details"],
+        "properties": {
+          "source_details": {
+            "type": "object",
+            "required": ["test_names", "execution_status"],
+            "properties": {
+              "test_names": { "type": "array", "minItems": 1 },
+              "execution_status": { "enum": ["passed", "failed", "not_run", "unknown"] },
+              "skipped_markers": { "type": "array" },
+              "fixture_refs": { "type": "array" }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "source_type": { "const": "gherkin" } } },
+      "then": {
+        "required": ["source_details"],
+        "properties": {
+          "source_details": {
+            "type": "object",
+            "required": ["feature_names", "scenario_count", "step_coverage"],
+            "properties": {
+              "feature_names": { "type": "array", "minItems": 1 },
+              "scenario_count": { "type": "integer", "minimum": 0 },
+              "step_coverage": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "source_type": { "enum": ["spreadsheet", "test_management"] } } },
+      "then": {
+        "required": ["source_details"],
+        "properties": {
+          "source_details": {
+            "type": "object",
+            "required": ["suite_or_sheet_names", "imported_range_coverage"],
+            "properties": {
+              "suite_or_sheet_names": { "type": "array", "minItems": 1 },
+              "imported_range_coverage": { "type": "string", "minLength": 1 },
+              "case_id_fields": { "type": "array" }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "source_type": { "const": "issue" } } },
+      "then": {
+        "required": ["retrieval_metadata", "snapshot_status"],
+        "properties": {
+          "retrieval_metadata": {
+            "type": "object",
+            "required": ["retrieved_at", "stable_url", "visible_title"],
+            "properties": {
+              "retrieved_at": { "type": "string", "minLength": 1 },
+              "stable_url": { "type": "string", "minLength": 1 },
+              "visible_title": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "source_type": { "const": "mixed" } } },
+      "then": { "required": ["source_precedence"] }
+    }
+  ],
+  "$defs": {
+    "source_file": {
+      "type": "object",
+      "required": ["path", "mime_type", "byte_size", "sha256", "role"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "mime_type": { "type": "string", "minLength": 1 },
+        "byte_size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["original", "export", "attachment", "snapshot"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

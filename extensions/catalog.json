@@ -20,8 +20,8 @@
     "arch": {
       "name": "Architecture Workflow",
       "id": "arch",
-      "version": "1.1.0",
-      "description": "Generate or reverse project-level 4+1 architecture view artifacts and synthesis",
+      "version": "1.2.1",
+      "description": "Generate or reverse project-level 4+1 architecture views as separate commands",
       "author": "bigsmartben",
       "repository": "https://github.com/bigsmartben/spec-kit-arch",
       "license": "MIT",
@@ -30,7 +30,7 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 2
+        "commands": 10
       },
       "tags": [
         "architecture",
@@ -67,6 +67,30 @@
         "branching",
         "workflow",
         "core"
+      ]
+    },
+    "intake": {
+      "name": "Intake",
+      "id": "intake",
+      "version": "0.1.2",
+      "description": "Normalize PRD, design, and test-case evidence into SDD-ready intake artifacts",
+      "author": "bigsmartben",
+      "repository": "https://github.com/bigsmartben/spec-kit-intake",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "intake",
+        "sdd",
+        "requirements",
+        "validation",
+        "figma"
       ]
     },
     "preview": {

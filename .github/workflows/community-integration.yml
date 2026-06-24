@@ -1,0 +1,43 @@
+name: Community Integration Validation
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate-community-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.11"
+
+      - name: Write PR body
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          Set-Content -LiteralPath .pr-body.md -Value $env:PR_BODY -Encoding utf8
+
+      - name: Validate community integration workflow
+        shell: pwsh
+        run: |
+          $argsList = @(
+            'scripts/community/validate_integration.py',
+            '--branch',
+            '${{ github.head_ref }}'
+          )
+          if (Test-Path -LiteralPath .pr-body.md) {
+            $argsList += @('--pr-body-file', '.pr-body.md')
+          }
+          python @argsList

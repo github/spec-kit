@@ -96,6 +96,8 @@ resolve_architecture_template() {
 
 REPO_ROOT=$(get_repo_root)
 ARCH_DIR="$REPO_ROOT/.specify/memory"
+SCHEMA_DIR="$REPO_ROOT/.specify/extensions/arch/schemas"
+ARCH_SCHEMA_FILE="$SCHEMA_DIR/architecture-artifacts.schema.json"
 ARCH_FILE="$ARCH_DIR/architecture.md"
 REPO_FACTS_FILE="$ARCH_DIR/architecture-repo-facts.md"
 SCENARIO_VIEW="$ARCH_DIR/architecture-scenario-view.md"
@@ -142,17 +144,21 @@ if $JSON_MODE; then
         jq -cn \
             --arg arch_file "$ARCH_FILE" \
             --arg arch_dir "$ARCH_DIR" \
+            --arg schema_dir "$SCHEMA_DIR" \
+            --arg arch_schema_file "$ARCH_SCHEMA_FILE" \
             --arg repo_facts_file "$REPO_FACTS_FILE" \
             --arg scenario_view "$SCENARIO_VIEW" \
             --arg logical_view "$LOGICAL_VIEW" \
             --arg process_view "$PROCESS_VIEW" \
             --arg development_view "$DEVELOPMENT_VIEW" \
             --arg physical_view "$PHYSICAL_VIEW" \
-            '{ARCH_FILE:$arch_file,ARCH_DIR:$arch_dir,REPO_FACTS_FILE:$repo_facts_file,SCENARIO_VIEW:$scenario_view,LOGICAL_VIEW:$logical_view,PROCESS_VIEW:$process_view,DEVELOPMENT_VIEW:$development_view,PHYSICAL_VIEW:$physical_view}'
+            '{ARCH_FILE:$arch_file,ARCH_DIR:$arch_dir,SCHEMA_DIR:$schema_dir,ARCH_SCHEMA_FILE:$arch_schema_file,REPO_FACTS_FILE:$repo_facts_file,SCENARIO_VIEW:$scenario_view,LOGICAL_VIEW:$logical_view,PROCESS_VIEW:$process_view,DEVELOPMENT_VIEW:$development_view,PHYSICAL_VIEW:$physical_view}'
     else
-        printf '{"ARCH_FILE":"%s","ARCH_DIR":"%s","REPO_FACTS_FILE":"%s","SCENARIO_VIEW":"%s","LOGICAL_VIEW":"%s","PROCESS_VIEW":"%s","DEVELOPMENT_VIEW":"%s","PHYSICAL_VIEW":"%s"}\n' \
+        printf '{"ARCH_FILE":"%s","ARCH_DIR":"%s","SCHEMA_DIR":"%s","ARCH_SCHEMA_FILE":"%s","REPO_FACTS_FILE":"%s","SCENARIO_VIEW":"%s","LOGICAL_VIEW":"%s","PROCESS_VIEW":"%s","DEVELOPMENT_VIEW":"%s","PHYSICAL_VIEW":"%s"}\n' \
             "$(json_escape "$ARCH_FILE")" \
             "$(json_escape "$ARCH_DIR")" \
+            "$(json_escape "$SCHEMA_DIR")" \
+            "$(json_escape "$ARCH_SCHEMA_FILE")" \
             "$(json_escape "$REPO_FACTS_FILE")" \
             "$(json_escape "$SCENARIO_VIEW")" \
             "$(json_escape "$LOGICAL_VIEW")" \
@@ -163,6 +169,8 @@ if $JSON_MODE; then
 else
     echo "ARCH_FILE: $ARCH_FILE"
     echo "ARCH_DIR: $ARCH_DIR"
+    echo "SCHEMA_DIR: $SCHEMA_DIR"
+    echo "ARCH_SCHEMA_FILE: $ARCH_SCHEMA_FILE"
     echo "REPO_FACTS_FILE: $REPO_FACTS_FILE"
     echo "SCENARIO_VIEW: $SCENARIO_VIEW"
     echo "LOGICAL_VIEW: $LOGICAL_VIEW"

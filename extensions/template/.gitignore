@@ -9,9 +9,12 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 
 # Testing
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 
@@ -36,4 +39,12 @@ build/
 
 # Temporary files
 *.tmp
+.tmp/
+tmp/
+temp/
 .cache/
+.worktrees/
+*.zip
+.env
+.env.*
+!.env.example

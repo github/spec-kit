@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bigsmartben/spec-kit-arch/schemas/architecture-artifacts.schema.json",
+  "title": "Spec Kit Architecture Artifact Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifactType",
+    "project",
+    "sections",
+    "traceability",
+    "gaps"
+  ],
+  "properties": {
+    "artifactType": {
+      "type": "string",
+      "enum": [
+        "architecture-synthesis",
+        "repo-facts",
+        "scenario-view",
+        "logical-view",
+        "process-view",
+        "development-view",
+        "physical-view"
+      ]
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceMode": {
+      "type": "string",
+      "enum": [
+        "generate",
+        "reverse",
+        "synthesis"
+      ]
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/section"
+      }
+    },
+    "traceability": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/trace"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/gap"
+      }
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "records"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "array",
+                "object",
+                "null"
+              ]
+            },
+            "not": {
+              "required": [
+                "NEEDS ARCH UPDATE"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conclusion",
+        "sourceType",
+        "sourceReference",
+        "confidence"
+      ],
+      "properties": {
+        "conclusion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceReference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap",
+        "affectedArea",
+        "reason"
+      ],
+      "properties": {
+        "gap": {
+          "type": "string",
+          "minLength": 1
+        },
+        "affectedArea": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "High",
+        "Medium",
+        "Low"
+      ]
+    }
+  }
+}

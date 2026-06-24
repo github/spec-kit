@@ -4530,16 +4530,16 @@ class TestBundledPresetLocator:
             "speckit.design.visual-item-matrix.v1.schema.json"
         ) in verify_run
         assert (
-            'for extension_id in arch discovery preview repository-governance; do'
+            'for extension_id in arch discovery intake preview repository-governance; do'
             in verify_run
         )
         assert (
             '/tmp/specify-community-smoke-venv/bin/specify extension remove "$extension_id" --force'
             in verify_run
         )
-        assert "test ! -d .claude/skills/speckit-arch-generate" in verify_run
-        assert "test ! -d .claude/skills/speckit-arch-reverse" in verify_run
+        assert "find .claude/skills -maxdepth 1 -type d -name 'speckit-arch-*'" in verify_run
         assert "find .claude/skills -maxdepth 1 -type d -name 'speckit-discovery-*'" in verify_run
+        assert "find .claude/skills -maxdepth 1 -type d -name 'speckit-intake-*'" in verify_run
         for preview_skill in (
             "speckit-preview-low-md",
             "speckit-preview-low-html",
@@ -4561,11 +4561,19 @@ class TestBundledPresetLocator:
             in verify_run
         )
         assert (
-            'test -f .claude/skills/speckit-arch-generate/SKILL.md'
+            'test -f .claude/skills/speckit-arch-scenario-generate/SKILL.md'
             in verify_run
         )
         assert (
             'test -f .claude/skills/speckit-discovery-feasibility/SKILL.md'
+            in verify_run
+        )
+        assert (
+            'test -f .claude/skills/speckit-intake-visual-design/SKILL.md'
+            in verify_run
+        )
+        assert (
+            'grep -q "visual design intake" .claude/skills/speckit-intake-visual-design/SKILL.md'
             in verify_run
         )
         assert "specify extension add discovery" in verify_run

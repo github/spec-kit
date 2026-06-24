@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/figma-metadata-index.schema.json",
+  "title": "Figma Metadata Index",
+  "type": "object",
+  "required": [
+    "file_url",
+    "file_key",
+    "page_id",
+    "selected_node_ids",
+    "captured_at",
+    "mcp_tool",
+    "design_version_or_timestamp",
+    "selected_subtree_complete",
+    "raw_metadata_complete",
+    "expected_root_node_ids",
+    "captured_root_node_ids",
+    "missing_root_node_ids",
+    "gap_count",
+    "gaps",
+    "shards"
+  ],
+  "properties": {
+    "file_url": { "type": "string", "minLength": 1 },
+    "file_key": { "type": "string", "minLength": 1 },
+    "page_id": { "type": "string", "minLength": 1 },
+    "selected_node_ids": { "type": "array" },
+    "captured_at": { "type": "string", "minLength": 1 },
+    "mcp_tool": { "const": "get_metadata" },
+    "design_version_or_timestamp": { "type": "string", "minLength": 1 },
+    "selected_subtree_complete": { "type": "boolean" },
+    "raw_metadata_complete": { "type": "boolean" },
+    "expected_root_node_ids": { "type": "array" },
+    "captured_root_node_ids": { "type": "array" },
+    "missing_root_node_ids": { "type": "array" },
+    "gap_count": { "type": "integer", "minimum": 0 },
+    "gaps": { "type": "array" },
+    "shards": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "byte_size", "sha256", "root_node_ids", "node_count", "truncated"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "byte_size": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "minLength": 1 },
+          "root_node_ids": { "type": "array" },
+          "node_count": { "type": "integer", "minimum": 0 },
+          "truncated": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -2,27 +2,27 @@
 
 **Input**: `.specify/memory/architecture-logical-view.md`, `.specify/memory/architecture-process-view.md`
 
-**Purpose**: Derive architecture-level components, package boundary intent, contract/artifact semantics, and dependency rules from logical and process views.
+**Purpose**: Architecture-level components, package boundary intent, contract/artifact semantics, and dependency rules from logical and process views.
 
 ## Architecture Intent
 
-[State what component, package, contract, or dependency meaning this view must preserve.]
+[Component, package, contract, or dependency decision and source.]
 
 ## Core Tensions
 
-| Tension | Current Tradeoff Direction | Development Consequence |
+| Tension | Chosen Architectural Direction | Development Consequence |
 |---------|----------------------------|-------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Stable Boundaries
 
-| Boundary | Must Remain Stable Because | Explicitly Must Not Own |
+| Boundary | Must Remain Stable Because | Excluded Responsibility / Scope |
 |----------|----------------------------|-------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Change Axes
 
-| Expected Change | Isolated By | Development Impact |
+| Expected Change | Isolation Mechanism / Boundary Rule | Development Impact |
 |-----------------|-------------|--------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
@@ -40,7 +40,7 @@
 
 ## Architecture-Level Components
 
-| Component / Capability Package | Responsibility | Input / Output Boundary | Collaborators | Explicitly Must Not Own | Source View Evidence |
+| Component / Capability Package | Responsibility | Input / Output Boundary | Collaborators | Excluded Responsibility / Scope | Source Reference |
 |--------------------------------|----------------|-------------------------|---------------|--------------------------|----------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
@@ -62,12 +62,14 @@
 |------|-------------------|---------------------|--------|------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
+## Source Traceability
+
+| Architecture Conclusion | Source Type | Source Reference | Confidence |
+|-------------------------|-------------|------------------|------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
 ## Development View Gaps
 
 | Gap | Affected Component / Boundary | Why It Matters |
 |-----|-------------------------------|----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
-
-## Prohibited Content
-
-Do not write source file paths, concrete package trees, classes, functions, implementation tasks, framework-specific wiring, or code generation notes here.
