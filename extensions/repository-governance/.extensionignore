@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 tests/
+tools/
 .DS_Store
 .venv/
 dist/

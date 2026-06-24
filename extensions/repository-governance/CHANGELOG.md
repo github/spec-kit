@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## [2.0.5] - 2026-06-24
+
+### Fixed
+
+- Update the release smoke install command to use Spec Kit's current `--integration codex` option.
+
+## [2.0.4] - 2026-06-24
+
+### Changed
+
+- Lock local GitHub Actions verification commands with `uv run --locked` and keep the extension install smoke test on the GitHub runner.
+- Broaden repository fact detection for extension assets, Spec Kit metadata, project policy files, feature specs, build/runtime config, and Python/uv test commands.
+- Replace the local `zip` shell command with a cross-platform Python package builder shared by docs and the release workflow.
+
 ### Fixed
 
 - Keep spec-kit integration PR sync aligned with the runtime extension package boundary and current spec-kit test node ids.

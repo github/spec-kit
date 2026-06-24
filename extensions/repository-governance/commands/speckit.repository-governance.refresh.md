@@ -35,6 +35,10 @@ $ARGUMENTS
    - Directory Structure evidence
    - Toolchain evidence
    - Agent Harness evidence
+   - README, project docs, repository policy, and Spec Kit metadata
+   - extension assets and command/template governance contracts
+   - feature specs, API contracts, build config, runtime config, source paths, and test paths
+   - development commands from package scripts or Python/uv test conventions
 9. Resolve the Spec Kit Agent Adapter for the active integration.
    - context target
    - repository-local skill discovery behavior

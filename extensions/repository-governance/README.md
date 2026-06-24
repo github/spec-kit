@@ -25,17 +25,8 @@ Generate the active Repository Governance Framework SSOT section.
 
 ## Install
 
-New projects install `repository-governance` by default with `specify init`.
-Use the catalog command to restore or reinstall the bundled extension:
-
 ```bash
-specify extension add repository-governance
-```
-
-Install a specific released archive when you need to pin an exact external version:
-
-```bash
-specify extension add repository-governance --from https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v2.0.2.zip
+specify extension add repository-governance --from https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v2.0.5.zip
 ```
 
 Local development:
@@ -59,9 +50,7 @@ uv run python .specify/extensions/repository-governance/scripts/refresh_reposito
 ## Build
 
 ```bash
-rm -f dist/repository-governance.zip
-mkdir -p dist
-zip -qr dist/repository-governance.zip extension.yml commands scripts templates -x '*/__pycache__/*' '*.pyc'
+uv run python tools/build_repository_governance_zip.py
 ```
 
 ## Files
@@ -73,12 +62,14 @@ zip -qr dist/repository-governance.zip extension.yml commands scripts templates 
 
 ## SSOT Coverage
 
-- Architecture SSOT evidence from source roots, route files, API contracts, and deployment directories.
-- Engineering SSOT evidence from CI workflows, release/version files, manifests, and task runners.
+- Architecture SSOT evidence from source roots, extension source assets, route files, API contracts, and deployment directories.
+- Engineering SSOT evidence from CI workflows, release/version files, command/template governance contracts, manifests, and task runners.
 - Code Style SSOT evidence from formatter, lint, type-check, and test configuration.
 - Directory Structure SSOT evidence from repository areas scanned to depth 2.
-- Toolchain SSOT evidence from manifests, lockfiles, Docker, compose, and task runner files.
-- Agent Harness SSOT evidence from active agent context files, repository-local skills, and MCP config candidates.
+- Toolchain SSOT evidence from manifests, lockfiles, extension assets, build config, runtime config, Docker, compose, and task runner files.
+- Agent Harness SSOT evidence from active agent context files, Spec Kit metadata, repository-local skills, and MCP config candidates.
+- Repository fact evidence from README files, project docs, repository policy files, feature specs, source/test paths, and runtime/build configuration.
+- Development command evidence from package scripts or Python/uv test conventions.
 
 ## Agent Adapter
 
@@ -91,6 +82,6 @@ Repository-local `SKILL.md` files are indexed by declared name, description, tri
 ## Verify
 
 ```bash
-uv run python -m py_compile scripts/refresh_repository_governance.py
-uv run pytest -q tests/test_extensions.py::TestBundledCommunityExtensionLocator tests/integrations/test_cli.py::TestGitExtensionAutoInstall::test_community_extensions_and_workflow_preset_auto_installed
+uv run --locked python -m py_compile scripts/refresh_repository_governance.py tools/build_repository_governance_zip.py tests/test_governance_domains.py
+uv run --locked pytest -q
 ```
