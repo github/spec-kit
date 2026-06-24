@@ -11,17 +11,17 @@
 ## Installation
 
 > [!IMPORTANT]
-> The only official, maintained packages for Spec Kit come from the [github/spec-kit](https://github.com/github/spec-kit) GitHub repository. Any packages with the same name available on PyPI (e.g. `specify-cli` on pypi.org) are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. For normal installs, use the GitHub-based commands shown below. For offline or air-gapped environments, locally built wheels created from this repository are also valid.
+> The maintained packages for this fork come from the [bigsmartben/spec-kit](https://github.com/bigsmartben/spec-kit) GitHub repository. Any packages with the same name available on PyPI (e.g. `specify-cli` on pypi.org) are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. For normal installs, use the GitHub-based commands shown below. For offline or air-gapped environments, locally built wheels created from this repository are also valid.
 
 ### Persistent Installation (Recommended)
 
-Install once and use everywhere. Replace `vX.Y.Z` with a tag from [Releases](https://github.com/github/spec-kit/releases):
+Install once and use everywhere. Replace `vX.Y.Z` with a tag from [Releases](https://github.com/bigsmartben/spec-kit/releases):
 
 > [!NOTE]
 > The command below requires **[uv](https://docs.astral.sh/uv/)**. If you see `command not found: uv`, [install uv first](./install/uv.md).
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git@vX.Y.Z
 ```
 
 Then initialize a project:

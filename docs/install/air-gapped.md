@@ -8,7 +8,7 @@ If your environment blocks access to PyPI or GitHub, you can create a portable w
 
 ```bash
 # Clone the repository
-git clone https://github.com/github/spec-kit.git
+git clone https://github.com/bigsmartben/spec-kit.git
 cd spec-kit
 
 # Build the wheel

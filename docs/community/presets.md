@@ -3,7 +3,7 @@
 > [!NOTE]
 > Community presets are independently created and maintained by their respective authors. Maintainers only verify that catalog entries are complete and correctly formatted — they do **not review, audit, endorse, or support the preset code itself**. Review preset source code before installation and use at your own discretion.
 
-The following community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Presets are available in [`catalog.community.json`](https://github.com/github/spec-kit/blob/main/presets/catalog.community.json):
+The following community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Presets are available in [`catalog.community.json`](https://github.com/bigsmartben/spec-kit/blob/main/presets/catalog.community.json):
 
 | Preset | Purpose | Provides | Requires | URL |
 |--------|---------|----------|----------|-----|
@@ -31,4 +31,4 @@ The following community-contributed presets customize how Spec Kit behaves — o
 | VS Code Ask Questions | Enhances the clarify command to use `vscode/askQuestions` for batched interactive questioning. | 1 command | — | [spec-kit-presets](https://github.com/fdcastel/spec-kit-presets) |
 | Workflow Preset | Behavior-first specification, design artifacts, and agent-native handoff orchestration — adds requirement-phase behavior drafts, formal BDD/UIF/behavior contracts, optional design artifacts, and scoped implementation handoffs with Core Agent, Vertical Planner Agent, and Worker Agent modes | 22 templates, 8 commands | — | [spec-kit-workflow-preset](https://github.com/bigsmartben/spec-kit-workflow-preset) |
 
-To build and publish your own preset, see the [Presets Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md).
+To build and publish your own preset, see the [Presets Publishing Guide](https://github.com/bigsmartben/spec-kit/blob/main/presets/PUBLISHING.md).

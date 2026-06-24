@@ -50,10 +50,10 @@ specify preset add lean
 uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git
 ```
 
-从当前仓库本地开发安装：
+从仓库地址安装：
 
 ```bash
-uv tool install --force ./
+uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git
 ```
 
 也可以一次性运行：

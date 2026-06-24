@@ -30,10 +30,10 @@
 
 ## 快速开始
 
-在本仓库开发或试用时，优先从当前目录安装 CLI：
+在本仓库开发或试用时，优先从仓库地址安装 CLI：
 
 ```bash
-uv tool install --force ./
+uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git
 ```
 
 初始化一个项目：

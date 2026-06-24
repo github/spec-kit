@@ -143,7 +143,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 <div class="footer-cta">
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git
+uvx --from git+https://github.com/bigsmartben/spec-kit.git
 specify init my-project --integration copilot
 ```
 

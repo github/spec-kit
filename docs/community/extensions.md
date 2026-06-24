@@ -5,7 +5,7 @@
 
 🔍 **Browse and search community extensions on the [Community Extensions website](https://speckit-community.github.io/extensions/).**
 
-The following community-contributed extensions are available in [`catalog.community.json`](https://github.com/github/spec-kit/blob/main/extensions/catalog.community.json):
+The following community-contributed extensions are available in [`catalog.community.json`](https://github.com/bigsmartben/spec-kit/blob/main/extensions/catalog.community.json):
 
 **Categories** (common values, but any string is allowed):
 
@@ -147,4 +147,4 @@ The following community-contributed extensions are available in [`catalog.commun
 | Worktree Isolation | Spawn isolated git worktrees for parallel feature development without checkout switching | `process` | Read+Write | [spec-kit-worktree](https://github.com/Quratulain-bilal/spec-kit-worktree) |
 | Worktrees | Default-on worktree isolation for parallel agents — sibling or nested layout | `process` | Read+Write | [spec-kit-worktree-parallel](https://github.com/dango85/spec-kit-worktree-parallel) |
 
-To submit your own extension, see the [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md).
+To submit your own extension, see the [Extension Publishing Guide](https://github.com/bigsmartben/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md).
