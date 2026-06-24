@@ -19,7 +19,7 @@ Before publishing a preset, ensure you have:
 
 1. **Valid Preset**: A working preset with a valid `preset.yml` manifest
 2. **Git Repository**: Preset hosted on GitHub (or other public git hosting)
-3. **Documentation**: A preset-scoped README.md that explains how to use **this preset**, including a valid `specify preset add ...` install command (see [Usage README requirements](#6-usage-readme-requirements))
+3. **Documentation**: A preset-scoped README.md that explains how to use **this preset**, including a valid `specify preset add ...` install command (see [Usage README Requirements](#usage-readme-requirements))
 4. **License**: Open source license file (MIT, Apache 2.0, etc.)
 5. **Versioning**: Semantic versioning (e.g., 1.0.0)
 6. **Testing**: Preset tested on real projects with `specify preset add --dev`
@@ -147,7 +147,7 @@ https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0
 specify preset add --from https://github.com/your-org/spec-kit-preset-your-preset/archive/refs/tags/v1.0.0.zip
 ```
 
-### 6. Usage README Requirements
+### Usage README Requirements
 
 The catalog `documentation` field must point at a README that explains how to use
 **this preset** — not a product pitch for a broader framework or a separate CLI.
