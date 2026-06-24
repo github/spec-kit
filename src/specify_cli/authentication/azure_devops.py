@@ -136,6 +136,7 @@ class AzureDevOpsAuth(AuthProvider):
             urllib.error.URLError,
             OSError,
             _json.JSONDecodeError,
+            UnicodeDecodeError,
             _TokenResponseTooLarge,
         ):
             # Network failure, malformed JSON, or an oversized response — fall
