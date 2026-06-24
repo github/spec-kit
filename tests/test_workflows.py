@@ -12,6 +12,7 @@ Covers:
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shutil
@@ -4718,6 +4719,7 @@ class TestWorkflowStepAddCLI:
         from specify_cli.authentication import http as auth_http
 
         monkeypatch.chdir(project_dir)
+        strict_values = []
 
         def _fake_get_step_info(self, step_id):
             return {
@@ -4734,6 +4736,8 @@ class TestWorkflowStepAddCLI:
         class _FakeResponse:
             def __init__(self, url: str):
                 self.url = url
+                data = b"step:\n  type_key: my-step\n" if url.endswith("/step.yml") else b""
+                self._stream = io.BytesIO(data)
 
             def __enter__(self):
                 return self
@@ -4741,15 +4745,14 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self.url
 
-        def _fake_open_url(url, timeout=30):
+        def _fake_open_url(url, timeout=30, strict_redirects=False):
+            strict_values.append(strict_redirects)
             return _FakeResponse(url)
 
         monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
@@ -4760,6 +4763,8 @@ class TestWorkflowStepAddCLI:
 
         assert result.exit_code != 0
         assert "non-string path key" in result.output
+        assert strict_values
+        assert all(value is True for value in strict_values)
 
     @pytest.mark.parametrize(
         "rel_path,expected",
@@ -4793,6 +4798,8 @@ class TestWorkflowStepAddCLI:
         class _FakeResponse:
             def __init__(self, url: str):
                 self.url = url
+                data = b"step:\n  type_key: my-step\n" if url.endswith("/step.yml") else b""
+                self._stream = io.BytesIO(data)
 
             def __enter__(self):
                 return self
@@ -4800,15 +4807,13 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self.url
 
-        def _fake_open_url(url, timeout=30):
+        def _fake_open_url(url, timeout=30, strict_redirects=False):
             return _FakeResponse(url)
 
         monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
@@ -4841,6 +4846,8 @@ class TestWorkflowStepAddCLI:
         class _FakeResponse:
             def __init__(self, url: str):
                 self.url = url
+                data = b"step:\n  type_key: my-step\n" if url.endswith("/step.yml") else b""
+                self._stream = io.BytesIO(data)
 
             def __enter__(self):
                 return self
@@ -4848,15 +4855,13 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
-                if self.url.endswith("/step.yml"):
-                    return b"step:\n  type_key: my-step\n"
-                return b""
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self.url
 
-        def _fake_open_url(url, timeout=30):
+        def _fake_open_url(url, timeout=30, strict_redirects=False):
             return _FakeResponse(url)
 
         monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
@@ -5162,11 +5167,11 @@ steps:
 
         class FakeResponse:
             def __init__(self, data, url=None):
-                self._data = data
+                self._stream = io.BytesIO(data)
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self._url
@@ -5177,8 +5182,8 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
-            captured_urls.append((url, extra_headers, timeout))
+        def fake_open_url(url, timeout=None, extra_headers=None, strict_redirects=False):
+            captured_urls.append((url, extra_headers, timeout, strict_redirects))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
                     "assets": [{"name": "workflow.yml", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
@@ -5196,13 +5201,23 @@ steps:
         assert result.exit_code == 0, result.output
         assert "Test Workflow" in result.output
         # First call resolves the release tag with timeout=30
-        tag_calls = [(url, h, t) for url, h, t in captured_urls if "releases/tags/" in url]
+        tag_calls = [
+            (url, h, t, strict)
+            for url, h, t, strict in captured_urls
+            if "releases/tags/" in url
+        ]
         assert len(tag_calls) == 1
         assert tag_calls[0][2] == 30  # timeout matches download timeout
+        assert tag_calls[0][3] is True
         # Second call downloads from the resolved asset URL with octet-stream
-        asset_calls = [(url, h, t) for url, h, t in captured_urls if "releases/assets/" in url]
+        asset_calls = [
+            (url, h, t, strict)
+            for url, h, t, strict in captured_urls
+            if "releases/assets/" in url
+        ]
         assert len(asset_calls) >= 1
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+        assert asset_calls[0][3] is True
 
     def test_workflow_add_from_direct_api_asset_url_passes_through(self, project_dir):
         """'workflow add <api-asset-url>' uses URL directly with octet-stream."""
@@ -5214,11 +5229,11 @@ steps:
 
         class FakeResponse:
             def __init__(self, data, url=None):
-                self._data = data
+                self._stream = io.BytesIO(data)
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self._url
@@ -5229,8 +5244,8 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
-            captured_urls.append((url, extra_headers))
+        def fake_open_url(url, timeout=None, extra_headers=None, strict_redirects=False):
+            captured_urls.append((url, extra_headers, strict_redirects))
             return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
 
         runner = CliRunner()
@@ -5246,6 +5261,7 @@ steps:
         assert len(captured_urls) == 1
         assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
         assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
+        assert captured_urls[0][2] is True
 
     def test_workflow_add_catalog_based_resolves_github_release_url(self, project_dir):
         """'workflow add <id>' with catalog GitHub release URL resolves via API."""
@@ -5257,11 +5273,11 @@ steps:
 
         class FakeResponse:
             def __init__(self, data, url=None):
-                self._data = data
+                self._stream = io.BytesIO(data)
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/55"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                return self._stream.read(size)
 
             def geturl(self):
                 return self._url
@@ -5272,8 +5288,8 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
-            captured_urls.append((url, extra_headers))
+        def fake_open_url(url, timeout=None, extra_headers=None, strict_redirects=False):
+            captured_urls.append((url, extra_headers, strict_redirects))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
                     "assets": [{"name": "workflow.yml", "url": "https://api.github.com/repos/org/repo/releases/assets/55"}]
@@ -5309,13 +5325,23 @@ steps:
 
         assert result.exit_code == 0, result.output
         # Should resolve via releases/tags API
-        tag_calls = [url for url, _ in captured_urls if "releases/tags/" in url]
+        tag_calls = [
+            (url, strict)
+            for url, _, strict in captured_urls
+            if "releases/tags/" in url
+        ]
         assert len(tag_calls) == 1
-        assert "releases/tags/v2.0" in tag_calls[0]
+        assert "releases/tags/v2.0" in tag_calls[0][0]
+        assert tag_calls[0][1] is True
         # Should download from resolved asset URL with octet-stream
-        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        asset_calls = [
+            (url, h, strict)
+            for url, h, strict in captured_urls
+            if "releases/assets/" in url
+        ]
         assert len(asset_calls) >= 1
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+        assert asset_calls[0][2] is True
 
 
 class TestWorkflowRunExitCodes:

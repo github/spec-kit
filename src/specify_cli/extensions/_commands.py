@@ -23,7 +23,7 @@ from rich.table import Table
 
 from .._console import console
 from .._assets import get_speckit_version
-from .._download_security import read_zip_member_limited
+from .._download_security import read_response_limited, read_zip_member_limited
 
 extension_app = typer.Typer(
     name="extension",
@@ -501,8 +501,12 @@ def extension_add(
                 try:
                     from specify_cli.authentication.http import open_url as _open_url
 
-                    with _open_url(from_url, timeout=60) as response:
-                        zip_data = response.read()
+                    with _open_url(from_url, timeout=60, strict_redirects=True) as response:
+                        zip_data = read_response_limited(
+                            response,
+                            error_type=ExtensionError,
+                            label=f"extension {safe_url}",
+                        )
                     zip_path.write_bytes(zip_data)
 
                     # Install from downloaded ZIP
