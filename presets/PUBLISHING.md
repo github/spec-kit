@@ -308,10 +308,12 @@ After submission, maintainers will review:
 5. **Documentation** — the README linked from `documentation` explains how to use *this* preset and contains a valid `specify preset add ...` command
 
 > **Reviewer note:** the workflow can mechanically check *structure* (the linked README
-> resolves, contains a valid `specify preset add ...` snippet, and the download URL matches),
-> but whether the README genuinely documents *this* preset is partly a content judgment. A
-> human reviewer should still confirm the linked doc isn't just a funnel to a separate
-> product or CLI before approving.
+> resolves and contains a valid `specify preset add ...` snippet; when that snippet uses the
+> `--from <url>` form, its URL must match the submitted download URL exactly — other accepted
+> forms like `specify preset add <id>` don't reference the download URL at all). Whether the
+> README genuinely documents *this* preset is partly a content judgment, so a human reviewer
+> should still confirm the linked doc isn't just a funnel to a separate product or CLI before
+> approving.
 
 Once verified, `verified: true` is set and the preset appears in `specify preset search`.
 
