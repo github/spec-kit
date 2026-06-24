@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/test-case-intake.schema.json",
+  "title": "Test Case Intake",
+  "type": "object",
+  "required": [
+    "test_case_intake_complete",
+    "source_refs_complete",
+    "scenario_count",
+    "assertions_complete",
+    "fixture_evidence_complete",
+    "coverage_gaps_recorded",
+    "assertion_gaps",
+    "fixture_or_test_data_gaps",
+    "coverage_gaps",
+    "flaky_or_skipped_cases",
+    "blocker_lint_errors",
+    "scenarios"
+  ],
+  "properties": {
+    "test_case_intake_complete": { "type": "boolean" },
+    "source_refs_complete": { "type": "boolean" },
+    "scenario_count": { "type": "integer", "minimum": 0 },
+    "assertions_complete": { "type": "boolean" },
+    "fixture_evidence_complete": { "type": "boolean" },
+    "coverage_gaps_recorded": { "type": "boolean" },
+    "assertion_gaps": { "type": "array" },
+    "fixture_or_test_data_gaps": { "type": "array" },
+    "coverage_gaps": { "type": "array" },
+    "flaky_or_skipped_cases": { "type": "array" },
+    "blocker_lint_errors": { "type": "array" },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "scenario",
+          "source_refs",
+          "evidence_type",
+          "confidence",
+          "confidence_rationale",
+          "actors",
+          "preconditions",
+          "actions",
+          "expected_outcomes",
+          "assertions",
+          "fixtures_or_test_data",
+          "coverage_signal"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "category": {
+            "enum": [
+              "unit",
+              "component",
+              "integration",
+              "api",
+              "e2e",
+              "manual",
+              "regression",
+              "bug_repro",
+              "performance",
+              "accessibility",
+              "security"
+            ]
+          },
+          "scenario": { "type": "string", "minLength": 1 },
+          "source_refs": { "type": "array", "minItems": 1 },
+          "evidence_type": { "enum": ["observed", "inferred", "missing", "out_of_scope"] },
+          "confidence": { "enum": ["low", "medium", "high"] },
+          "confidence_rationale": { "type": "string", "minLength": 1 },
+          "actors": { "type": "array" },
+          "preconditions": { "type": "array" },
+          "actions": { "type": "array" },
+          "expected_outcomes": { "type": "array" },
+          "assertions": { "type": "array" },
+          "fixtures_or_test_data": { "type": "array" },
+          "coverage_signal": { "type": "string", "minLength": 1 },
+          "blockers": { "type": "array" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

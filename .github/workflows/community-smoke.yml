@@ -48,6 +48,7 @@ jobs:
           test -f .specify/extensions/arch/extension.yml
           test -f .specify/extensions/preview/extension.yml
           test -f .specify/extensions/discovery/extension.yml
+          test -f .specify/extensions/intake/extension.yml
           test -f .specify/extensions/repository-governance/extension.yml
           test -f .specify/presets/workflow-preset/preset.yml
           /tmp/specify-community-smoke-venv/bin/python - <<'PY'
@@ -92,7 +93,19 @@ jobs:
           test -f .specify/presets/workflow-preset/.composed/speckit.plan.md
           test -f .specify/presets/workflow-preset/.composed/speckit.tasks.md
 
-          test -f .claude/skills/speckit-arch-generate/SKILL.md
+          for arch_skill in \
+            speckit-arch-scenario-generate \
+            speckit-arch-logical-generate \
+            speckit-arch-process-generate \
+            speckit-arch-development-generate \
+            speckit-arch-physical-generate \
+            speckit-arch-scenario-reverse \
+            speckit-arch-logical-reverse \
+            speckit-arch-process-reverse \
+            speckit-arch-development-reverse \
+            speckit-arch-physical-reverse; do
+            test -f ".claude/skills/$arch_skill/SKILL.md"
+          done
           for preview_skill in \
             speckit-preview-low-md \
             speckit-preview-low-html \
@@ -103,6 +116,9 @@ jobs:
             test -f ".claude/skills/$preview_skill/SKILL.md"
           done
           test -f .claude/skills/speckit-discovery-feasibility/SKILL.md
+          test -f .claude/skills/speckit-intake-visual-design/SKILL.md
+          test -f .claude/skills/speckit-intake-prd/SKILL.md
+          test -f .claude/skills/speckit-intake-test-cases/SKILL.md
           test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
           test -f .claude/skills/speckit-specify/SKILL.md
           test -f .claude/skills/speckit-clarify/SKILL.md
@@ -120,13 +136,12 @@ jobs:
           grep -q "Vertical Planner Agent" .claude/skills/speckit-implement/SKILL.md
           grep -q "Worker Agent" .claude/skills/speckit-implement/SKILL.md
 
-          for extension_id in arch discovery preview repository-governance; do
+          for extension_id in arch discovery intake preview repository-governance; do
             /tmp/specify-community-smoke-venv/bin/specify extension remove "$extension_id" --force
             test ! -d ".specify/extensions/$extension_id"
             case "$extension_id" in
               arch)
-                test ! -d .claude/skills/speckit-arch-generate
-                test ! -d .claude/skills/speckit-arch-reverse
+                test "$(find .claude/skills -maxdepth 1 -type d -name 'speckit-arch-*' | wc -l)" -eq 0
                 ;;
               preview)
                 for preview_skill in \
@@ -142,19 +157,22 @@ jobs:
               discovery)
                 test "$(find .claude/skills -maxdepth 1 -type d -name 'speckit-discovery-*' | wc -l)" -eq 0
                 ;;
+              intake)
+                test "$(find .claude/skills -maxdepth 1 -type d -name 'speckit-intake-*' | wc -l)" -eq 0
+                ;;
               repository-governance)
                 test ! -d .claude/skills/speckit-repository-governance-refresh
                 ;;
             esac
           done
 
-          for extension_id in arch discovery preview repository-governance; do
+          for extension_id in arch discovery intake preview repository-governance; do
             /tmp/specify-community-smoke-venv/bin/specify extension add "$GITHUB_WORKSPACE/extensions/$extension_id" --dev
             case "$extension_id" in
               arch)
-                test -f .claude/skills/speckit-arch-generate/SKILL.md
-                test -f .claude/skills/speckit-arch-reverse/SKILL.md
-                grep -q "4+1 architecture workflow" .claude/skills/speckit-arch-generate/SKILL.md
+                test -f .claude/skills/speckit-arch-scenario-generate/SKILL.md
+                test -f .claude/skills/speckit-arch-scenario-reverse/SKILL.md
+                grep -q "scenario view" .claude/skills/speckit-arch-scenario-generate/SKILL.md
                 ;;
               preview)
                 for preview_skill in \
@@ -171,6 +189,12 @@ jobs:
               discovery)
                 test -f .claude/skills/speckit-discovery-feasibility/SKILL.md
                 grep -q "evidence-backed feasibility study" .claude/skills/speckit-discovery-feasibility/SKILL.md
+                ;;
+              intake)
+                test -f .claude/skills/speckit-intake-visual-design/SKILL.md
+                test -f .claude/skills/speckit-intake-prd/SKILL.md
+                test -f .claude/skills/speckit-intake-test-cases/SKILL.md
+                grep -q "visual design evidence" .claude/skills/speckit-intake-visual-design/SKILL.md
                 ;;
               repository-governance)
                 test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md

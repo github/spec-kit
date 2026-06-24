@@ -1,6 +1,4 @@
 """Quality guards for 4+1 architecture templates and command."""
-
-import re
 from pathlib import Path
 
 
@@ -14,75 +12,47 @@ def _read_template(name: str) -> str:
     return (TEMPLATES / name).read_text(encoding="utf-8")
 
 
-def test_arch_command_is_phase_based_and_does_not_require_uc_command():
-    content = (COMMANDS / "speckit.arch.generate.md").read_text(encoding="utf-8")
+def test_arch_commands_are_split_by_view_and_bootstrap_setup():
+    command_files = sorted(COMMANDS.glob("speckit.arch.*.md"))
 
-    assert "scripts:" in content
-    assert ".specify/extensions/arch/scripts/bash/setup-arch.sh --json" in content
-    assert ".specify/extensions/arch/scripts/powershell/setup-arch.ps1 -Json" in content
-    for phase in [
-        "Phase -1: Architecture Framing",
-        "Phase 0: Scenario View",
-        "Phase 1: Logical View",
-        "Phase 2: Process View",
-        "Phase 3: Development View",
-        "Phase 4: Physical View",
-        "Phase 5: Architecture Synthesis",
-    ]:
-        assert phase in content
-    assert "Before filling any view, identify the architecture judgment" in content
-    assert "Architecture Reasoning Layer" in content
-    assert "Representation Layer" in content
-    assert "project-level architecture SSOT" in content
-    assert "Use each view template as the source of truth for that view's reasoning contract" in content
-    assert "Produce architecture design inference, not tracking, audit, or implementation planning" in content
-    assert "normalizes architecture meaning for synthesis" in content
-    assert "Markdown tables are the default artifact structure" in content
-    assert "Optional diagrams are renderings, not reasoning inputs" in content
-    assert "Add optional diagrams only after the relevant view's reasoning is complete" in content
-    assert "Defer any optional diagram or notation-specific rendering until the affected view's 4+1 reasoning" in content
-    assert "Representation choices:" not in content
-    assert "Before filling tables" not in content
-    assert "Architecture Gates" in content
-    assert "ERROR if a boundary has responsibilities but no explicit non-responsibility" in content
-    assert "ERROR if notation-specific output changes 4+1 view responsibilities" in content
-    assert "Use Case, Domain Object, Component, Container, or Deployment Unit" in content
-    for term in ["C4", "UML", "Mermaid", "PlantUML"]:
-        assert len(re.findall(rf"\b{re.escape(term)}\b", content)) == 1
-    assert "not as a hard prerequisite or sole source of truth" in content
-    assert "Read the six architecture templates under `.specify/extensions/arch/templates/`" in content
-    assert "__SPECKIT_COMMAND_UC__" not in content
-    assert "Read `.specify/memory/constitution.md`" not in content
-    assert ".specify/memory/architecture/" not in content
-
-
-def test_arch_command_delegates_view_details_to_templates():
-    content = (COMMANDS / "speckit.arch.generate.md").read_text(encoding="utf-8")
-
-    delegated_phrases = [
-        "using its template",
-        "following the scenario view template",
-        "following the logical view template",
-        "following the process view template",
-        "following the development view template",
-        "following the physical view template",
-        "following the synthesis template",
+    assert [path.name for path in command_files] == [
+        "speckit.arch.development-generate.md",
+        "speckit.arch.development-reverse.md",
+        "speckit.arch.logical-generate.md",
+        "speckit.arch.logical-reverse.md",
+        "speckit.arch.physical-generate.md",
+        "speckit.arch.physical-reverse.md",
+        "speckit.arch.process-generate.md",
+        "speckit.arch.process-reverse.md",
+        "speckit.arch.scenario-generate.md",
+        "speckit.arch.scenario-reverse.md",
     ]
-    for phrase in delegated_phrases:
-        assert phrase in content
 
-    template_owned_details = [
-        "Actors and external participants",
-        "System capability boundaries",
-        "Main runtime links",
-        "Architecture-level components or capability packages",
-        "Deployment and hosting boundaries",
-        "Do not write class models",
-        "Do not write call stacks",
-        "Do not write Kubernetes YAML",
-    ]
-    for phrase in template_owned_details:
-        assert phrase not in content
+    for command_file in command_files:
+        content = command_file.read_text(encoding="utf-8")
+        assert "scripts:" in content
+        assert ".specify/extensions/arch/scripts/bash/setup-arch.sh --json" in content
+        assert ".specify/extensions/arch/scripts/powershell/setup-arch.ps1 -Json" in content
+        assert "ARCH_SCHEMA_FILE" in content
+        assert "Synthesis Readiness" in content
+        assert "NEEDS ARCH UPDATE" in content
+        assert ".specify/memory/architecture/" not in content
+        assert "__SPECKIT_COMMAND_UC__" not in content
+
+
+def test_arch_generate_and_reverse_commands_keep_distinct_evidence_boundaries():
+    for command_file in COMMANDS.glob("speckit.arch.*-generate.md"):
+        content = command_file.read_text(encoding="utf-8")
+        assert "Do not read, populate, or update `REPO_FACTS_FILE`" in content
+        assert "record" in content
+        assert "instead of inventing" in content
+
+    for command_file in COMMANDS.glob("speckit.arch.*-reverse.md"):
+        content = command_file.read_text(encoding="utf-8")
+        assert "observable repository" in content
+        assert "REPO_FACTS_FILE" in content
+        assert "Every non-placeholder fact must name an evidence source" in content
+        assert "Architecture conclusions must trace to repo facts" in content
 
 
 def test_architecture_synthesis_references_five_view_files():
@@ -119,7 +89,7 @@ def test_init_next_steps_do_not_list_arch_as_core_workflow():
     )
 
     assert "_display_cmd('arch')" not in init_source
-    assert 'DEFAULT_BUNDLED_EXTENSIONS = ("arch", "discovery", "preview", "repository-governance")' in init_source
+    assert 'DEFAULT_BUNDLED_EXTENSIONS = ("arch", "discovery", "intake", "preview", "repository-governance")' in init_source
     assert "specify extension add arch" not in init_source
 
 

@@ -82,6 +82,8 @@ function Convert-ToPlainPath {
 
 $repoRoot = Convert-ToPlainPath (Get-RepoRoot)
 $archDir = Join-Path $repoRoot ".specify/memory"
+$schemaDir = Join-Path $repoRoot ".specify/extensions/arch/schemas"
+$archSchemaFile = Join-Path $schemaDir "architecture-artifacts.schema.json"
 $archFile = Join-Path $archDir "architecture.md"
 $repoFactsFile = Join-Path $archDir "architecture-repo-facts.md"
 $scenarioView = Join-Path $archDir "architecture-scenario-view.md"
@@ -128,6 +130,8 @@ if ($Json) {
     [PSCustomObject]@{
         ARCH_FILE = $archFile
         ARCH_DIR = $archDir
+        SCHEMA_DIR = $schemaDir
+        ARCH_SCHEMA_FILE = $archSchemaFile
         REPO_FACTS_FILE = $repoFactsFile
         SCENARIO_VIEW = $scenarioView
         LOGICAL_VIEW = $logicalView
@@ -138,6 +142,8 @@ if ($Json) {
 } else {
     Write-Output "ARCH_FILE: $archFile"
     Write-Output "ARCH_DIR: $archDir"
+    Write-Output "SCHEMA_DIR: $schemaDir"
+    Write-Output "ARCH_SCHEMA_FILE: $archSchemaFile"
     Write-Output "REPO_FACTS_FILE: $repoFactsFile"
     Write-Output "SCENARIO_VIEW: $scenarioView"
     Write-Output "LOGICAL_VIEW: $logicalView"

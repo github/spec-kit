@@ -3,8 +3,8 @@ schema_version: "1.0"
 extension:
   id: arch
   name: "Architecture Workflow"
-  version: "1.1.0"
-  description: "Generate or reverse project-level 4+1 architecture view artifacts and synthesis"
+  version: "1.2.1"
+  description: "Generate or reverse project-level 4+1 architecture views as separate commands"
   author: bigsmartben
   repository: https://github.com/bigsmartben/spec-kit-arch
   homepage: https://github.com/bigsmartben/spec-kit-arch
@@ -15,12 +15,36 @@ requires:
 
 provides:
   commands:
-    - name: speckit.arch.generate
-      file: commands/speckit.arch.generate.md
-      description: "Execute the 4+1 architecture workflow and generate architecture view artifacts"
-    - name: speckit.arch.reverse
-      file: commands/speckit.arch.reverse.md
-      description: "Reverse-generate 4+1 architecture artifacts from observable repository facts"
+    - name: speckit.arch.scenario-generate
+      file: commands/speckit.arch.scenario-generate.md
+      description: "Generate the 4+1 scenario view from intended product and use-case context"
+    - name: speckit.arch.logical-generate
+      file: commands/speckit.arch.logical-generate.md
+      description: "Generate the 4+1 logical view from scenario architecture semantics"
+    - name: speckit.arch.process-generate
+      file: commands/speckit.arch.process-generate.md
+      description: "Generate the 4+1 process view from scenario and logical architecture views"
+    - name: speckit.arch.development-generate
+      file: commands/speckit.arch.development-generate.md
+      description: "Generate the 4+1 development view from logical and process architecture views"
+    - name: speckit.arch.physical-generate
+      file: commands/speckit.arch.physical-generate.md
+      description: "Generate the 4+1 physical view from process and development architecture views"
+    - name: speckit.arch.scenario-reverse
+      file: commands/speckit.arch.scenario-reverse.md
+      description: "Reverse-generate the 4+1 scenario view from observable repository facts"
+    - name: speckit.arch.logical-reverse
+      file: commands/speckit.arch.logical-reverse.md
+      description: "Reverse-generate the 4+1 logical view from observable repository facts"
+    - name: speckit.arch.process-reverse
+      file: commands/speckit.arch.process-reverse.md
+      description: "Reverse-generate the 4+1 process view from observable repository facts"
+    - name: speckit.arch.development-reverse
+      file: commands/speckit.arch.development-reverse.md
+      description: "Reverse-generate the 4+1 development view from observable repository facts"
+    - name: speckit.arch.physical-reverse
+      file: commands/speckit.arch.physical-reverse.md
+      description: "Reverse-generate the 4+1 physical view from observable repository facts"
 
 tags:
   - architecture

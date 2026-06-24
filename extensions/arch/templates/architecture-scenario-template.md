@@ -1,26 +1,26 @@
 # Scenario View
 
-**Purpose**: Produce the UC semantics for the architecture workflow. This view is the source for the logical, process, development, and physical views.
+**Purpose**: Use-case semantics for the architecture workflow. This view is the source for the logical, process, development, and physical views.
 
 ## Architecture Intent
 
-[State what scenario-level meaning this view must stabilize for later architecture decisions.]
+[Scenario-level decision, boundary, and source.]
 
 ## Core Tensions
 
-| Tension | Current Tradeoff Direction | Scenario Consequence |
+| Tension | Chosen Architectural Direction | Scenario Consequence |
 |---------|----------------------------|----------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Stable Boundaries
 
-| Boundary | Must Remain Stable Because | Explicitly Does Not Cover |
+| Boundary | Must Remain Stable Because | Excluded Responsibility / Scope |
 |----------|----------------------------|---------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Change Axes
 
-| Expected Change | Isolated By | Scenario Impact |
+| Expected Change | Isolation Mechanism / Boundary Rule | Scenario Impact |
 |-----------------|-------------|-----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
@@ -60,12 +60,14 @@
 |---------------------|-------------------|-----------|-------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
+## Source Traceability
+
+| Architecture Conclusion | Source Type | Source Reference | Confidence |
+|-------------------------|-------------|------------------|------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
 ## Scenario Gaps
 
 | Gap | Affected Scenario | Why It Matters |
 |-----|-------------------|----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
-
-## Prohibited Content
-
-Do not write architecture components, class designs, APIs, database tables, implementation tasks, test strategy, deployment scripts, or framework choices here.

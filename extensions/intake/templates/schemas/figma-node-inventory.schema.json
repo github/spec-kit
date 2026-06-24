@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/figma-node-inventory.schema.json",
+  "title": "Figma Node Inventory",
+  "type": "object",
+  "required": [
+    "raw_node_count",
+    "inventory_node_count",
+    "excluded_node_count",
+    "missing_node_count",
+    "duplicate_node_count",
+    "truncated_raw_evidence",
+    "node_inventory_coverage",
+    "parity_passed"
+  ],
+  "properties": {
+    "raw_node_count": { "type": "integer", "minimum": 0 },
+    "inventory_node_count": { "type": "integer", "minimum": 0 },
+    "excluded_node_count": { "type": "integer", "minimum": 0 },
+    "missing_node_count": { "type": "integer", "minimum": 0 },
+    "duplicate_node_count": { "type": "integer", "minimum": 0 },
+    "truncated_raw_evidence": { "type": "boolean" },
+    "node_inventory_coverage": { "const": "100%" },
+    "parity_passed": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/visual-requirements.schema.json",
+  "title": "Visual Requirements Intake",
+  "type": "object",
+  "required": [
+    "visual_requirements_complete",
+    "visual_requirements_count",
+    "source_refs_complete",
+    "fidelity_rules_applied",
+    "visual_parity_plan_complete",
+    "parity_plan",
+    "requirements"
+  ],
+  "properties": {
+    "visual_requirements_complete": { "type": "boolean" },
+    "visual_requirements_count": { "type": "integer", "minimum": 0 },
+    "source_refs_complete": { "type": "boolean" },
+    "fidelity_rules_applied": { "type": "boolean" },
+    "visual_parity_plan_complete": { "type": "boolean" },
+    "blocker_lint_errors": { "type": "array" },
+    "parity_plan": {
+      "type": "object",
+      "required": [
+        "comparison_targets",
+        "original_refs",
+        "comparison_method",
+        "thresholds",
+        "accepted_exceptions",
+        "blocking_difference_categories"
+      ],
+      "properties": {
+        "comparison_targets": { "type": "array", "minItems": 1 },
+        "original_refs": { "type": "array", "minItems": 1 },
+        "comparison_method": {
+          "enum": ["visual_diff", "measurement", "token_match", "asset_match", "manual_review"]
+        },
+        "thresholds": {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "max_pixel_diff_percent": { "type": "number", "minimum": 0 },
+            "max_spacing_delta_px": { "type": "number", "minimum": 0 },
+            "token_match_required": { "type": "boolean" },
+            "asset_match_required": { "type": "boolean" },
+            "manual_review_checklist": { "type": "array", "minItems": 1 }
+          },
+          "additionalProperties": true
+        },
+        "accepted_exceptions": { "type": "array" },
+        "blocking_difference_categories": { "type": "array", "minItems": 1 }
+      },
+      "additionalProperties": true
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "requirement",
+          "source_refs",
+          "evidence_type",
+          "confidence",
+          "confidence_rationale",
+          "engineering_action",
+          "acceptance_check",
+          "fidelity_level"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "category": {
+            "enum": [
+              "layout",
+              "spacing",
+              "sizing",
+              "typography",
+              "color",
+              "asset",
+              "component",
+              "state",
+              "interaction",
+              "responsive",
+              "accessibility",
+              "content"
+            ]
+          },
+          "requirement": { "type": "string", "minLength": 1 },
+          "source_refs": { "type": "array", "minItems": 1 },
+          "evidence_type": { "enum": ["observed", "inferred", "missing", "out_of_scope"] },
+          "confidence": { "enum": ["low", "medium", "high"] },
+          "confidence_rationale": { "type": "string", "minLength": 1 },
+          "engineering_action": { "type": "string", "minLength": 1 },
+          "acceptance_check": { "type": "string", "minLength": 1 },
+          "fidelity_level": { "enum": ["low", "medium", "high"] },
+          "blockers": { "type": "array" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,8 +1,8 @@
 # Architecture Repo Facts: [PROJECT]
 
-**Purpose**: Record observable repository facts that support reverse generation of the project-level 4+1 architecture artifacts.
+**Purpose**: Observable repository facts that support reverse generation of the project-level 4+1 architecture artifacts.
 
-**Note**: This evidence file is filled in by the `__SPECKIT_COMMAND_ARCH_REVERSE__` command before the architecture views are updated. It is a fact source for architecture reasoning, not an implementation audit report.
+**Scope**: Observable repository evidence for architecture reasoning, not an implementation audit report.
 
 ## Repository Identity
 
@@ -48,7 +48,7 @@
 
 ## Repository-First Projection
 
-Record repository-first evidence only when `.specify/memory/repository-first/` exists. Leave explicit gaps when the directory or expected artifacts are absent.
+Repository-first signals relevant to architecture evidence.
 
 ### Build Manifest Detection
 
@@ -91,15 +91,3 @@ Record repository-first evidence only when `.specify/memory/repository-first/` e
 | Gap | Affected View | Why It Blocks Architecture Conclusion |
 |-----|---------------|----------------------------------------|
 | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE |
-
-## Evidence Rules
-
-- Every non-placeholder fact must name an evidence source such as a file, directory, configuration, test, script, manifest, command output, or commit signal.
-- Confidence values are `High`, `Medium`, or `Low`.
-- `High` means multiple independent sources agree, or docs/tests and code entry points agree.
-- `Medium` means one strong source is present, such as clear configuration, entry point, route declaration, or behavior test.
-- `Low` means naming, directory structure, isolated code, or Git history suggests a fact but lacks behavior evidence.
-- Git history is an auxiliary signal for change axes and boundary risks. It cannot independently prove architecture conclusions.
-- Repository-first dependency matrices are fact inputs. Do not copy full dependency inventories into architecture views; summarize only architecture constraints, governance signals, gaps, or review triggers.
-- Repository-first module invocation specs may support development-view dependency rules when each rule maps to a concrete module edge or dependency signal.
-- Concrete classes, functions, fields, endpoints, database tables, and implementation data structures may appear only as evidence sources, not architecture conclusions.

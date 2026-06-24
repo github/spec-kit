@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/prd-intake.schema.json",
+  "title": "PRD Intake",
+  "type": "object",
+  "required": [
+    "prd_intake_complete",
+    "source_refs_complete",
+    "extracted_fact_count",
+    "acceptance_evidence_complete",
+    "unresolved_ambiguity_marked",
+    "acceptance_gaps",
+    "open_questions",
+    "blocker_lint_errors",
+    "facts"
+  ],
+  "properties": {
+    "prd_intake_complete": { "type": "boolean" },
+    "source_refs_complete": { "type": "boolean" },
+    "extracted_fact_count": { "type": "integer", "minimum": 0 },
+    "acceptance_evidence_complete": { "type": "boolean" },
+    "unresolved_ambiguity_marked": { "type": "boolean" },
+    "acceptance_gaps": { "type": "array" },
+    "open_questions": { "type": "array" },
+    "blocker_lint_errors": { "type": "array" },
+    "facts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "statement",
+          "source_refs",
+          "evidence_type",
+          "confidence",
+          "confidence_rationale",
+          "downstream_hint",
+          "acceptance_or_validation_signal"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "category": {
+            "enum": [
+              "goal",
+              "non_goal",
+              "user",
+              "actor",
+              "scope",
+              "flow",
+              "business_rule",
+              "data",
+              "permission",
+              "integration",
+              "compliance",
+              "acceptance",
+              "metric",
+              "risk",
+              "open_question"
+            ]
+          },
+          "statement": { "type": "string", "minLength": 1 },
+          "source_refs": { "type": "array", "minItems": 1 },
+          "evidence_type": { "enum": ["observed", "inferred", "missing", "out_of_scope"] },
+          "confidence": { "enum": ["low", "medium", "high"] },
+          "confidence_rationale": { "type": "string", "minLength": 1 },
+          "downstream_hint": { "type": "string", "minLength": 1 },
+          "acceptance_or_validation_signal": { "type": "string", "minLength": 1 },
+          "blockers": { "type": "array" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

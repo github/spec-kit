@@ -1,0 +1,11 @@
+pytest>=7.0
+pyyaml>=6.0
+jsonschema>=4.0
+typer>=0.24.0
+click>=8.2.1
+rich
+platformdirs
+readchar
+packaging>=23.0
+pathspec>=0.12.0
+json5>=0.13.0

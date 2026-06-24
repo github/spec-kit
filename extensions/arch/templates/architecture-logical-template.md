@@ -2,27 +2,27 @@
 
 **Input**: `.specify/memory/architecture-scenario-view.md`
 
-**Purpose**: Derive capability boundaries, domain objects, states, relationships, and invariants from the scenario view.
+**Purpose**: Capability boundaries, domain objects, states, relationships, and invariants from the scenario view.
 
 ## Architecture Intent
 
-[State what logical separation, authority, or lifecycle meaning this view must preserve.]
+[Logical authority, boundary, or lifecycle decision and source.]
 
 ## Core Tensions
 
-| Tension | Current Tradeoff Direction | Logical Consequence |
+| Tension | Chosen Architectural Direction | Logical Consequence |
 |---------|----------------------------|---------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Stable Boundaries
 
-| Boundary | Must Remain Stable Because | Explicitly Does Not Own |
+| Boundary | Must Remain Stable Because | Excluded Responsibility / Scope |
 |----------|----------------------------|-------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Change Axes
 
-| Expected Change | Isolated By | Logical Impact |
+| Expected Change | Isolation Mechanism / Boundary Rule | Logical Impact |
 |-----------------|-------------|----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
@@ -40,7 +40,7 @@
 
 ## Capability Boundaries
 
-| Capability / Boundary | Responsibility | Input | Output | Explicitly Does Not Own | Scenario Source |
+| Capability / Boundary | Responsibility | Input | Output | Excluded Responsibility / Scope | Scenario Source |
 |-----------------------|----------------|-------|--------|--------------------------|-----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
@@ -62,12 +62,14 @@
 |----------|-------|------------------|---------------------------|-------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
+## Source Traceability
+
+| Architecture Conclusion | Source Type | Source Reference | Confidence |
+|-------------------------|-------------|------------------|------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
 ## Logical Gaps
 
 | Gap | Affected Capability / Object | Why It Matters |
 |-----|------------------------------|----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
-
-## Prohibited Content
-
-Do not write classes, DTOs, database tables, fields, method names, endpoints, schemas, or implementation data structures here.

@@ -6,4 +6,19 @@ obj/
 # Temporary files
 *.tmp
 *.log
+.tmp/
+tmp/
+temp/
 
+# Local caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.DS_Store
+Thumbs.db

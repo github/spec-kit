@@ -10,6 +10,70 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 ---
 
+## Local Community Integration Workflow
+
+This local checkout uses `spec-kit` as the fork of `github/spec-kit` that
+integrates community extensions and presets. Sibling directories named
+`spec-kit-*` are treated as source projects for community extensions or presets,
+not as extra checkouts of this repository unless `git worktree list` proves they
+are linked worktrees.
+
+### Repository roles
+
+- `C:\Users\24598\Documents\github\spec-kit` is the integration repository.
+  Keep its main working directory on `main`.
+- `C:\Users\24598\Documents\github\spec-kit-*` directories are source
+  repositories for community extensions or presets. Develop, release, and tag
+  source packages there.
+- Use temporary linked worktrees for concurrent integration PRs. Remove them
+  with `git worktree remove` and `git worktree prune` after the PR is merged,
+  closed, or abandoned.
+
+### Community submission routes
+
+Spec Kit supports two community submission routes:
+
+1. **PR template route**: the contributor opens a direct PR. The PR body must
+   identify `Submission route: pr-template` and include source repository,
+   source version, source commit, changed catalog type, and validation evidence.
+2. **Issue template route**: the contributor files an extension or preset issue
+   using `.github/ISSUE_TEMPLATE/extension_submission.yml` or
+   `.github/ISSUE_TEMPLATE/preset_submission.yml`. The catalog workflow creates
+   the integration PR from the issue. The PR body must identify
+   `Submission route: issue-template` and include `Closes #<issue-number>`.
+
+Agents must preserve the route. Do not convert an issue-template submission into
+a direct PR-template submission unless the maintainer explicitly asks for that
+reroute.
+
+### Required local steps for agents
+
+When integrating a community extension or preset:
+
+1. Start from `spec-kit` on `main`, fetch the upstream default branch, and make a
+   short-lived `community/*` branch or linked worktree.
+2. Record source-backed metadata: source repository URL, release version,
+   source commit SHA, download URL, catalog type (`extension` or `preset`), and
+   submission route (`pr-template` or `issue-template`).
+3. Update only the catalog, bundled extension or preset snapshot, docs, and
+   tests required by the integration. Do not develop the source project inside
+   this repository unless the integration requires a bundled snapshot change.
+4. Run `scripts/community/validate-integration.ps1` before opening or updating
+   the PR.
+5. Run targeted tests for touched surfaces, and run `uv run pytest` when shared
+   catalog, extension, preset, or init behavior changes.
+6. Clean temporary linked worktrees with
+   `scripts/community/cleanup-worktrees.ps1` after they are no longer needed.
+
+Community integration branches follow:
+
+```
+community/<issue-number>-<short-slug>   # issue-template route
+community/<short-slug>                  # pr-template route without an issue
+```
+
+---
+
 ## Integration Architecture
 
 Each AI agent is a self-contained **integration subpackage** under `src/specify_cli/integrations/<key>/`. The subpackage exposes a single class that declares all metadata and inherits setup/teardown logic from a base class. Built-in integrations are then instantiated and added to the global `INTEGRATION_REGISTRY` by `src/specify_cli/integrations/__init__.py` via `_register_builtins()`.

@@ -2,27 +2,27 @@
 
 **Input**: `.specify/memory/architecture-process-view.md`, `.specify/memory/architecture-development-view.md`
 
-**Purpose**: Derive deployment, hosting, external system, fact-source, observability, and operational boundaries from process and development views.
+**Purpose**: Deployment, hosting, external system, fact-source, observability, and operational boundaries from process and development views.
 
 ## Architecture Intent
 
-[State what deployment, fact-source, operational, or external-boundary meaning this view must preserve.]
+[Deployment, fact-source, operational, or external-boundary decision and source.]
 
 ## Core Tensions
 
-| Tension | Current Tradeoff Direction | Physical Consequence |
+| Tension | Chosen Architectural Direction | Physical Consequence |
 |---------|----------------------------|----------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Stable Boundaries
 
-| Boundary | Must Remain Stable Because | Explicitly Does Not Carry |
+| Boundary | Must Remain Stable Because | Excluded Responsibility / Scope |
 |----------|----------------------------|---------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Change Axes
 
-| Expected Change | Isolated By | Physical Impact |
+| Expected Change | Isolation Mechanism / Boundary Rule | Physical Impact |
 |-----------------|-------------|-----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
@@ -58,16 +58,18 @@
 
 ## Operations and Release Boundaries
 
-| Operational Concern | Responsible Boundary | Trigger | Affected Views | Architecture Consequence |
+| Operational Concern | Responsible Boundary | Trigger | Affected Views | Review Trigger / Architecture Consequence |
 |---------------------|----------------------|---------|----------------|--------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Source Traceability
+
+| Architecture Conclusion | Source Type | Source Reference | Confidence |
+|-------------------------|-------------|------------------|------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Physical View Gaps
 
 | Gap | Affected Deployment / External Boundary | Why It Matters |
 |-----|-----------------------------------------|----------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
-
-## Prohibited Content
-
-Do not write Kubernetes YAML, cloud resource manifests, machine sizes, service SKUs, deployment scripts, runbooks, or concrete infrastructure configuration here.

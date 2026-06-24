@@ -1,0 +1,75 @@
+# Intake Configuration
+
+artifacts:
+  base_dir: "specs/{feature}/intake"
+  visual_design_dir: "visual-design"
+  prd_dir: "prd"
+  test_cases_dir: "test-cases"
+  prd_source_manifest: "source-manifest.yaml"
+  visual_design_source_manifest: "design-source-manifest.yaml"
+  test_cases_source_manifest: "source-manifest.yaml"
+  source_files_dir: "source-files"
+  prd_intake: "prd-intake.yaml"
+  visual_requirements: "visual-requirements.yaml"
+  test_case_intake: "test-case-intake.yaml"
+  prd_contract: "templates/intake-prd-contract.md"
+  prd_evidence_packet_template: "templates/intake-prd-evidence-packet-template.md"
+  visual_design_contract: "templates/intake-visual-design-contract.md"
+  visual_design_evidence_packet_template: "templates/intake-visual-design-evidence-packet-template.md"
+  test_cases_contract: "templates/intake-test-cases-contract.md"
+  test_cases_evidence_packet_template: "templates/intake-test-cases-evidence-packet-template.md"
+  schemas_dir: "templates/schemas"
+  prd_source_manifest_schema: "templates/schemas/prd-source-manifest.schema.json"
+  prd_intake_schema: "templates/schemas/prd-intake.schema.json"
+  visual_design_source_manifest_schema: "templates/schemas/visual-source-manifest.schema.json"
+  visual_requirements_schema: "templates/schemas/visual-requirements.schema.json"
+  test_cases_source_manifest_schema: "templates/schemas/test-case-source-manifest.schema.json"
+  test_case_intake_schema: "templates/schemas/test-case-intake.schema.json"
+  figma_metadata_index_schema: "templates/schemas/figma-metadata-index.schema.json"
+  figma_node_inventory_schema: "templates/schemas/figma-node-inventory.schema.json"
+  metadata_glob: "figma-metadata.part-*.xml"
+  metadata_index: "figma-metadata.index.yaml"
+  node_inventory: "figma-node-inventory.yaml"
+  prd_evidence_packet: "evidence-packet.md"
+  visual_design_evidence_packet: "visual-evidence-packet.md"
+  test_cases_evidence_packet: "evidence-packet.md"
+  comparison_report: "visual-comparison-report.md"
+
+readiness:
+  require_prd_intake: true
+  require_prd_acceptance_evidence: true
+  require_prd_clarification_marking: true
+  require_test_case_intake: true
+  require_test_assertions: true
+  require_test_fixture_evidence: true
+  require_test_coverage_gaps: true
+  allowed_source_types:
+    - "image"
+    - "pdf"
+    - "markdown"
+    - "figma"
+  allowed_fidelity_levels:
+    - "low"
+    - "medium"
+    - "high"
+  require_source_integrity: true
+  require_visual_requirements: true
+  require_visual_source_refs: true
+  require_fidelity_rules_applied: true
+  require_visual_parity_plan: true
+  require_raw_metadata_complete_for_figma: true
+  require_selected_subtree_complete_for_figma: true
+  require_node_inventory_coverage_for_figma: "100%"
+  require_parity_passed_for_figma: true
+  fail_on_blocker_lint_errors: true
+
+capture:
+  preserve_original_sources: true
+  source_file_dir: "source-files"
+  prd_intake_file: "prd-intake.yaml"
+  visual_requirements_file: "visual-requirements.yaml"
+  test_case_intake_file: "test-case-intake.yaml"
+  shard_prefix: "figma-metadata.part-"
+  preserve_raw_metadata: true
+  allow_screenshot_only_intake: true
+  default_screenshot_level: "L0"
