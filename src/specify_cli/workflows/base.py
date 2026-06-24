@@ -82,11 +82,11 @@ class StepContext:
     #: been updated to honor ``dry_run`` may still perform their normal
     #: side effects; the flag is opt-in per step. Step implementations
     #: publish the preview on ``output["dry_run_message"]`` (consumed
-    #: by the CLI's preview loop). ``output["message"]`` is also set to
-    #: the preview string during dry-run (it may differ from the real
-    #: run's ``message``). Downstream templates that need the original
-    #: value should reference the step's pre-dispatch config fields
-    #: (e.g. ``command``, ``prompt``) instead of ``output.message``.
+    #: by the CLI's preview loop). ``output["message"]`` preserves the
+    #: step's original value (e.g. the gate prompt or command name) so
+    #: ``{{ steps.<id>.output.message }}`` remains stable across dry-run
+    #: and real execution. Downstream templates that need the preview
+    #: text should reference ``output.dry_run_message``.
     dry_run: bool = False
 
 

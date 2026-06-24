@@ -871,8 +871,9 @@ def workflow_run(
 
     if dry_run and not json_output:
         console.print(
-            "\n[bold yellow]DRY RUN:[/bold yellow] previewing without "
-            "dispatching any AI or shell commands."
+            "\n[bold yellow]DRY RUN:[/bold yellow] previewing built-in "
+            "command, prompt, and gate steps without dispatching. "
+            "Other step types (e.g. shell, init) may still execute."
         )
 
     if not json_output:
@@ -883,6 +884,17 @@ def workflow_run(
         with _stdout_to_stderr_when(json_output):
             state = engine.execute(definition, inputs, dry_run=dry_run)
     except ValueError as exc:
+        if dry_run and not json_output:
+            _print_dry_run_previews(getattr(exc, "partial_state", None))
+        if json_output:
+            partial = getattr(exc, "partial_state", None)
+            if partial:
+                _emit_workflow_json(_workflow_run_payload(partial))
+            raise typer.Exit(
+                _run_outcome_exit_code(
+                    partial.status.value if partial else "failed"
+                )
+            )
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
@@ -950,16 +962,15 @@ def _print_dry_run_previews(state: Any) -> None:
         console.print(f"  [cyan][{step_id_display}][/cyan] {preview_escaped}")
 
 
-def _escape_markup(text: str) -> str:
-    """Escape Rich markup characters so a step ID can be printed safely.
+from rich.markup import escape as _rich_escape_markup
 
-    Step IDs are user-controlled YAML; without escaping, an ID
-    containing ``[`` or ``]`` would raise ``MarkupError`` from Rich.
+
+def _escape_markup(text: str) -> str:
+    """Escape Rich markup characters so user-controlled text can be
+    printed safely. Delegates to ``rich.markup.escape`` for canonical
+    handling of ``[``, ``]``, ``{``, ``}``, and other special chars.
     """
-    return (
-        text.replace("[", "\\[")
-        .replace("]", "\\]")
-    )
+    return _rich_escape_markup(text)
 
 
 @workflow_app.command("resume")
@@ -993,11 +1004,18 @@ def workflow_resume(
         console.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
     except ValueError as exc:
+        if getattr(state, "dry_run", False) and not json_output:
+            _print_dry_run_previews(getattr(exc, "partial_state", None))
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
+        if getattr(state, "dry_run", False) and not json_output:
+            _print_dry_run_previews(getattr(exc, "partial_state", None))
         console.print(f"[red]Resume failed:[/red] {exc}")
         raise typer.Exit(1)
+
+    if getattr(state, "dry_run", False) and not json_output:
+        _print_dry_run_previews(state)
 
     if json_output:
         _emit_workflow_json(_workflow_run_payload(state))

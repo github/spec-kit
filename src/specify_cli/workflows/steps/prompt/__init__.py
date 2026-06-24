@@ -70,7 +70,7 @@ class PromptStep(StepBase):
             # Preserve the original prompt so
             # ``{{ steps.<id>.output.message }}`` keeps resolving to the
             # original prompt text for downstream templates.
-            output["message"] = preview
+            output["message"] = prompt
             return StepResult(status=StepStatus.COMPLETED, output=output)
 
         # Attempt CLI dispatch

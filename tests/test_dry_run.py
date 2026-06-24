@@ -77,8 +77,9 @@ class TestCommandStepDryRun:
         assert result.output["executed"] is False
         assert result.output["command"] == "speckit.specify"
         assert result.output["input"]["args"] == "login"
-        assert "DRY RUN" in result.output["message"]
-        assert result.output["dry_run_message"] == result.output["message"]
+        assert "DRY RUN" in result.output["dry_run_message"]
+        assert result.output["message"] == "speckit.specify"
+        assert result.output["dry_run_message"] != result.output["message"]
 
     def test_falls_back_when_no_integration(self, tmp_path: Path) -> None:
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -100,7 +101,7 @@ class TestCommandStepDryRun:
 
         assert result.status == StepStatus.COMPLETED
         assert "speckit.specify" in result.output["message"]
-        assert "DRY RUN" in result.output["message"]
+        assert "DRY RUN" in result.output["dry_run_message"]
 
 
 # -- Step-level: PromptStep -----------------------------------------------
@@ -130,8 +131,9 @@ class TestPromptStepDryRun:
         assert result.output["executed"] is False
         assert result.output["dispatched"] is False
         assert result.output["exit_code"] == 0
-        assert "DRY RUN" in result.output["message"]
-        assert result.output["dry_run_message"] == result.output["message"]
+        assert "DRY RUN" in result.output["dry_run_message"]
+        assert result.output["message"] == "Review auth.py for security issues"
+        assert result.output["dry_run_message"] != result.output["message"]
 
 
 # -- Step-level: GateStep -------------------------------------------------
@@ -158,6 +160,7 @@ class TestGateStepDryRun:
         # ``{{ steps.<id>.output.message }}`` references still resolve.
         assert result.output["message"] == "Review the spec."
         assert "DRY RUN" in result.output["dry_run_message"]
+        assert result.output["dry_run_message"] != result.output["message"]
         # First non-sentinel option is the preview choice.
         assert result.output["choice"] == "approve"
 
@@ -437,7 +440,7 @@ class TestWorkflowRunDryRunFlag:
                 "output": {
                     "dry_run": True,
                     "dry_run_message": "[DRY RUN] Gate: Review",
-                    "message": "[DRY RUN] Gate: Review",
+                    "message": "Review",
                 }
             }
             state.status = RunStatus.FAILED
@@ -474,7 +477,7 @@ class TestWorkflowRunDryRunFlag:
                 "output": {
                     "dry_run": True,
                     "dry_run_message": "[DRY RUN] Gate: Review",
-                    "message": "[DRY RUN] Gate: Review",
+                    "message": "Review",
                 }
             }
             state.status = RunStatus.FAILED

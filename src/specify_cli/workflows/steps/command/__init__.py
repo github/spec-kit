@@ -107,7 +107,7 @@ class CommandStep(StepBase):
             # Preserve the original command/integration/input so
             # ``{{ steps.<id>.output.message }}`` keeps resolving to the
             # original command description for downstream templates.
-            output["message"] = preview
+            output["message"] = command
             output["invoke_command"] = preview_invocation or command
             return StepResult(status=StepStatus.COMPLETED, output=output)
 

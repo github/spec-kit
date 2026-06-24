@@ -137,7 +137,7 @@ class GateStep(StepBase):
         gate still resolves.
         """
         for opt in options:
-            if opt not in ("reject", "abort"):
+            if opt.lower() not in ("reject", "abort"):
                 return opt
         return options[0]
 
@@ -232,9 +232,9 @@ class GateStep(StepBase):
                 f"Gate step {config.get('id', '?')!r} is missing 'message' field."
             )
         options = config.get("options", ["approve", "reject"])
-        if not isinstance(options, list) or not options:
+        if not isinstance(options, (list, tuple)) or not options:
             errors.append(
-                f"Gate step {config.get('id', '?')!r}: 'options' must be a non-empty list."
+                f"Gate step {config.get('id', '?')!r}: 'options' must be a non-empty list or tuple."
             )
         elif not all(isinstance(o, str) for o in options):
             errors.append(
