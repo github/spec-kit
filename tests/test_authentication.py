@@ -558,6 +558,24 @@ class TestAzureDevOpsAuth:
                     side_effect=urllib.error.URLError("connection refused")):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
+    def test_resolve_token_azure_ad_invalid_utf8_returns_none(self, monkeypatch):
+        """azure-ad returns None when the token response is not valid UTF-8."""
+        from unittest.mock import MagicMock, patch
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_resp = MagicMock()
+        mock_resp.read.side_effect = io.BytesIO(b"\xff").read
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
 
 # ---------------------------------------------------------------------------
 # open_url / build_request — positive tests
