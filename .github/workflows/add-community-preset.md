@@ -124,9 +124,14 @@ preset** — not just any file named `README.md`, and not a product/framework pi
   other Markdown file, **fail this check** and ask the submitter to link the preset's README.
 - Fetch the **exact URL** in the `documentation` field. First strip any fragment (`#...`)
   or query string (`?...`) — these are common when copying from the browser UI and must be
-  ignored so the fetch target is deterministic. Then convert GitHub `blob`/`raw` web URLs to
-  their `raw.githubusercontent.com` equivalent before fetching, and confirm it resolves to a
-  readable Markdown file.
+  ignored so the fetch target is deterministic. Then resolve the raw content to fetch:
+  - For a `github.com/<owner>/<repo>/blob/<ref>/<path>` URL, fetch the equivalent
+    `github.com/<owner>/<repo>/raw/<ref>/<path>` URL (only swap `/blob/` → `/raw/`).
+  - Fetch `github.com/.../raw/...` and `raw.githubusercontent.com/...` URLs as-is.
+
+  Do **not** rewrite into `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>` form — that
+  format can't reliably represent refs containing slashes (e.g. a `feature/foo` branch).
+  Confirm the fetched URL resolves to a readable Markdown file.
 - **Validate that the README contains a valid Spec Kit CLI install command.** The fetched
   README must contain at least one `specify preset add ...` invocation. The strongest
   signal is the catalog-install form whose URL matches the submitted **Download URL**:
