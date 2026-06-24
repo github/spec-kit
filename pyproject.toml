@@ -43,6 +43,7 @@ packages = ["src/specify_cli"]
 "extensions/arch" = "specify_cli/core_pack/extensions/arch"
 "extensions/discovery" = "specify_cli/core_pack/extensions/discovery"
 "extensions/git" = "specify_cli/core_pack/extensions/git"
+"extensions/intake" = "specify_cli/core_pack/extensions/intake"
 "extensions/preview" = "specify_cli/core_pack/extensions/preview"
 "extensions/repository-governance" = "specify_cli/core_pack/extensions/repository-governance"
 "extensions/agent-context" = "specify_cli/core_pack/extensions/agent-context"
