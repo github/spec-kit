@@ -573,6 +573,84 @@ class TestExtensionSkillRegistration:
         assert "speckit-test-ext-hello" in written
         assert "Run this updated hello." in skill_file.read_text(encoding="utf-8")
 
+    def test_codex_dev_skill_registration_replaces_existing_dev_symlink(
+        self, project_dir, extension_dir, temp_dir
+    ):
+        """Codex dev skill registration should migrate prior dev symlinks to files."""
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file = (
+            extension_dir
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text("old linked content", encoding="utf-8")
+        os.symlink(os.path.relpath(cache_file, skill_file.parent), skill_file)
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        assert "speckit-test-ext-hello" in written
+        assert skill_file.exists()
+        assert not skill_file.is_symlink()
+        assert "Run this to say hello." in skill_file.read_text(encoding="utf-8")
+        assert cache_file.read_text(encoding="utf-8") == "old linked content"
+
+    def test_codex_dev_skill_registration_preserves_unrelated_symlink(
+        self, project_dir, extension_dir, temp_dir
+    ):
+        """Codex dev registration should not overwrite user-owned symlinks."""
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        skill_file.parent.mkdir(parents=True, exist_ok=True)
+        unrelated_cache_file = (
+            temp_dir
+            / "other-extension"
+            / ".specify-dev"
+            / "extension-skills"
+            / "speckit-test-ext-hello"
+            / "SKILL.md"
+        )
+        unrelated_cache_file.parent.mkdir(parents=True)
+        unrelated_cache_file.write_text("user-owned linked content", encoding="utf-8")
+        os.symlink(
+            os.path.relpath(unrelated_cache_file, skill_file.parent), skill_file
+        )
+
+        written = manager._register_extension_skills(
+            manifest,
+            extension_dir,
+            link_outputs=True,
+        )
+
+        assert "speckit-test-ext-hello" not in written
+        assert skill_file.is_symlink()
+        assert skill_file.resolve(strict=True) == unrelated_cache_file.resolve()
+        assert unrelated_cache_file.read_text(encoding="utf-8") == (
+            "user-owned linked content"
+        )
+
     def test_dev_skill_registration_falls_back_to_copy_when_symlink_fails(
         self, skills_project, extension_dir, monkeypatch
     ):
@@ -1035,6 +1113,93 @@ class TestExtensionSkillRegistration:
         }
         assert metadata["registered_skills"] == []
         assert (project_dir / ".github" / "agents").is_dir()
+
+    def test_one_failing_extension_does_not_abort_the_rest(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A single failing extension must not block registration of the others.
+
+        Regression for #2950: ``register_enabled_extensions_for_agent`` iterates
+        enabled extensions; before the per-extension isolation, the first one
+        that raised (e.g. an OSError writing a command file) aborted the loop and
+        the exception propagated, so every later extension was silently skipped.
+        """
+        from specify_cli.extensions import CommandRegistrar
+
+        _create_init_options(project_dir, ai="claude", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        # Two enabled extensions; the first one iterated ("aaa-fail") will raise.
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="aaa-fail"), "0.1.0",
+            register_commands=False,
+        )
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="bbb-ok"), "0.1.0",
+            register_commands=False,
+        )
+
+        original = CommandRegistrar.register_commands_for_agent
+
+        def flaky(self, agent_name, manifest, ext_dir, project_root, link_outputs=False):
+            if manifest.id == "aaa-fail":
+                raise OSError("simulated command-file write failure")
+            return original(
+                self, agent_name, manifest, ext_dir, project_root,
+                link_outputs=link_outputs,
+            )
+
+        monkeypatch.setattr(CommandRegistrar, "register_commands_for_agent", flaky)
+
+        # Must not propagate, despite the first extension failing.
+        manager.register_enabled_extensions_for_agent("claude")
+
+        # The healthy extension was still registered for the agent...
+        ok_meta = manager.registry.get("bbb-ok")
+        assert "claude" in ok_meta["registered_commands"], (
+            "a later extension must still register after an earlier one fails (#2950)"
+        )
+        # ...and the failing one was not.
+        fail_meta = manager.registry.get("aaa-fail")
+        assert "claude" not in fail_meta.get("registered_commands", {})
+
+    def test_skill_registration_failure_preserves_registered_commands(
+        self, project_dir, temp_dir, monkeypatch, capsys
+    ):
+        """Persist successful command registration even if skills fail.
+
+        If command files are written but skill generation raises, the command
+        registry must still be updated so later unregister/cleanup can find the
+        command files.
+        """
+        _create_init_options(project_dir, ai="claude", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="skill-fail"), "0.1.0",
+            register_commands=False,
+        )
+
+        def fail_skills(self, manifest, ext_dir, link_outputs=False):
+            raise OSError("simulated skill directory failure")
+
+        monkeypatch.setattr(
+            ExtensionManager, "_register_extension_skills", fail_skills
+        )
+
+        manager.register_enabled_extensions_for_agent("claude")
+
+        metadata = manager.registry.get("skill-fail")
+        assert metadata is not None
+        assert metadata["registered_commands"] == {
+            "claude": [
+                "speckit.skill-fail.hello",
+                "speckit.skill-fail.world",
+            ]
+        }
+        assert metadata["registered_skills"] == []
+
+        captured = capsys.readouterr()
+        assert "register extension skills for extension 'skill-fail'" in captured.out
+        assert "Continuing with available registration results" in captured.out
 
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir

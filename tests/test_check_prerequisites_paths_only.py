@@ -143,7 +143,11 @@ def test_paths_only_text_mode_on_non_spec_branch(prereq_repo: Path) -> None:
 
 @requires_bash
 def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
-    """Without --paths-only, feature directory validation must still fail on main."""
+    """Without --paths-only, feature directory validation must still fail on main.
+
+    The error must go to stderr and stdout must stay clean, so a caller that
+    parses stdout as JSON is not handed the error string instead (#3122).
+    """
     script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
     result = subprocess.run(
         ["bash", str(script), "--json"],
@@ -155,6 +159,8 @@ def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
     )
     assert result.returncode != 0
     assert "Feature directory not found" in result.stderr
+    assert "Feature directory not found" not in result.stdout
+    assert result.stdout.strip() == ""
 
 
 # ── PowerShell tests ──────────────────────────────────────────────────────
@@ -213,7 +219,11 @@ def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
-    """Without -PathsOnly, feature directory validation must still fail on main."""
+    """Without -PathsOnly, feature directory validation must still fail on main.
+
+    The error must land on stderr only, leaving stdout clean for -Json
+    callers that parse it as JSON (#3122).
+    """
     script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
     exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
     result = subprocess.run(
@@ -225,5 +235,51 @@ def test_ps_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
         env=_clean_env(),
     )
     assert result.returncode != 0
-    combined = result.stdout + result.stderr
-    assert "Feature directory not found" in combined
+    assert "Feature directory not found" in result.stderr
+    assert "Feature directory not found" not in result.stdout
+    assert result.stdout.strip() == ""
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_ps_missing_plan_error_goes_to_stderr(prereq_repo: Path) -> None:
+    """A missing plan.md must report on stderr, not stdout (#3122)."""
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    _write_feature_json(prereq_repo)
+    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    assert result.returncode != 0
+    assert "plan.md not found" in result.stderr
+    assert "plan.md not found" not in result.stdout
+    assert result.stdout.strip() == ""
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_ps_missing_tasks_error_goes_to_stderr(prereq_repo: Path) -> None:
+    """With -RequireTasks, a missing tasks.md must report on stderr only (#3122)."""
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    _write_feature_json(prereq_repo)
+    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json", "-RequireTasks"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    assert result.returncode != 0
+    assert "tasks.md not found" in result.stderr
+    assert "tasks.md not found" not in result.stdout
+    assert result.stdout.strip() == ""

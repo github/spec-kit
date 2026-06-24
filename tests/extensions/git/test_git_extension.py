@@ -89,6 +89,17 @@ def _write_config(project: Path, content: str) -> Path:
     return config_path
 
 
+def _add_sibling_worktree(project: Path, path: Path, branch: str) -> None:
+    """Add a sibling worktree so `git branch -a` marks it with `+`."""
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", branch, str(path), "HEAD"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 # Git identity env vars for CI runners without global git config
 _GIT_ENV = {
     "GIT_AUTHOR_NAME": "Test User",
@@ -312,6 +323,40 @@ class TestCreateFeatureBash:
         data = json.loads(result.stdout)
         assert data["FEATURE_NUM"] == "003"
 
+    def test_dry_run_counts_branches_checked_out_in_worktrees(self, tmp_path: Path):
+        """Branches checked out in sibling worktrees still reserve their prefix."""
+        project = _setup_project(tmp_path / "project")
+        _add_sibling_worktree(project, tmp_path / "sibling-worktree", "007-worktree-feature")
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_dry_run_preserves_literal_plus_branch_prefix(self, tmp_path: Path):
+        """A literal leading plus in a branch name is not a git worktree marker."""
+        project = _setup_project(tmp_path)
+        subprocess.run(
+            ["git", "branch", "+007-plus-prefix"],
+            cwd=project,
+            check=True,
+        )
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "001-next"
+        assert data["FEATURE_NUM"] == "001"
+
     def test_no_git_graceful_degradation(self, tmp_path: Path):
         """create-new-feature-branch.sh works without git (outputs branch name, skips branch creation)."""
         project = _setup_project(tmp_path, git=False)
@@ -337,6 +382,36 @@ class TestCreateFeatureBash:
         assert data.get("DRY_RUN") is True
         assert not (project / "specs" / data["BRANCH_NAME"]).exists()
 
+    def test_specify_init_dir_without_core_errors(self, tmp_path: Path):
+        """With no core scripts (only git-common.sh loaded), a set SPECIFY_INIT_DIR
+        hard-errors instead of silently falling back to the walk-up project root."""
+        project = _setup_project(tmp_path, git=False)
+        # Simulate a no-core install: drop core common.sh so only git-common.sh loads.
+        (project / "scripts" / "bash" / "common.sh").unlink()
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "x", "X feature",
+            env_extra={"SPECIFY_INIT_DIR": str(project)},
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_specify_init_dir_with_stale_core_errors(self, tmp_path: Path):
+        """With an older core common.sh, a set SPECIFY_INIT_DIR must hard-error
+        instead of calling the stale get_repo_root that ignores the override."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "bash" / "common.sh").write_text(
+            "#!/usr/bin/env bash\nget_repo_root() { pwd; }\n",
+            encoding="utf-8",
+        )
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "x", "X feature",
+            env_extra={"SPECIFY_INIT_DIR": str(tmp_path / "missing")},
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestCreateFeaturePowerShell:
@@ -350,6 +425,21 @@ class TestCreateFeaturePowerShell:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "001-user-auth"
+
+    def test_dry_run_counts_branches_checked_out_in_worktrees(self, tmp_path: Path):
+        """Branches checked out in sibling worktrees still reserve their prefix."""
+        project = _setup_project(tmp_path / "project")
+        _add_sibling_worktree(project, tmp_path / "sibling-worktree", "007-worktree-feature")
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "008-next"
+        assert data["FEATURE_NUM"] == "008"
 
     def test_creates_branch_timestamp(self, tmp_path: Path):
         """Extension create-new-feature-branch.ps1 creates timestamp branch."""
@@ -376,6 +466,43 @@ class TestCreateFeaturePowerShell:
         data = json.loads(json_line[-1])
         assert "BRANCH_NAME" in data
         assert "FEATURE_NUM" in data
+
+    def test_specify_init_dir_without_core_errors(self, tmp_path: Path):
+        """With no core scripts (only git-common.ps1 loaded), a set SPECIFY_INIT_DIR
+        hard-errors instead of silently falling back to the walk-up project root."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "powershell" / "common.ps1").unlink()
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+        env = {**os.environ, **_GIT_ENV, "SPECIFY_INIT_DIR": str(project)}
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-ShortName", "x", "X feature"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_specify_init_dir_with_stale_core_errors(self, tmp_path: Path):
+        """With an older core common.ps1, a set SPECIFY_INIT_DIR must hard-error
+        instead of calling the stale Get-RepoRoot that ignores the override."""
+        project = _setup_project(tmp_path, git=False)
+        (project / "scripts" / "powershell" / "common.ps1").write_text(
+            "function Get-RepoRoot { return (Get-Location).Path }\n",
+            encoding="utf-8",
+        )
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "create-new-feature-branch.ps1"
+        env = {**os.environ, **_GIT_ENV, "SPECIFY_INIT_DIR": str(tmp_path / "missing")}
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-ShortName", "x", "X feature"],
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode != 0
+        assert "requires updated Spec Kit core scripts" in result.stderr
 
 
 # ── auto-commit.sh Tests ─────────────────────────────────────────────────────

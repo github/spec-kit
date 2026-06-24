@@ -20,7 +20,7 @@ import shlex
 import shutil
 from abc import ABC
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -93,6 +93,11 @@ class IntegrationBase(ABC):
 
     * ``context_file``     — path (relative to project root) of the agent
                              context/instructions file (e.g. ``"CLAUDE.md"``)
+
+    Projects may additionally opt into managing multiple context files by
+    setting ``context_files`` in the agent-context extension config. The
+    integration class still declares one default ``context_file`` for backwards
+    compatibility and command-template rendering.
     """
 
     # -- Must be set by every subclass ------------------------------------
@@ -113,6 +118,9 @@ class IntegrationBase(ABC):
 
     invoke_separator: str = "."
     """Separator used in slash-command invocations (``"."`` → ``/speckit.plan``)."""
+
+    dev_no_symlink: bool = False
+    """Whether dev-mode registration should write files instead of symlinks."""
 
     multi_install_safe: bool = False
     """Whether this integration is declared safe to install alongside others.
@@ -632,6 +640,11 @@ class IntegrationBase(ABC):
             return True
         return entry.get("enabled", True) is not False
 
+    @staticmethod
+    def _context_file_dedupe_key(path: str) -> str:
+        """Return the comparison key for context file de-duplication."""
+        return path.casefold() if os.name == "nt" else path
+
     def _resolve_context_markers(self, project_root: Path) -> tuple[str, str]:
         """Return the (start, end) context markers to use for *project_root*.
 
@@ -681,51 +694,156 @@ class IntegrationBase(ABC):
                 end = cm_end  # type: ignore[assignment]
         return start, end
 
-    def upsert_context_section(
-        self,
-        project_root: Path,
-        plan_path: str = "",
-    ) -> Path | None:
-        """Create or update the managed section in the agent context file.
+    @staticmethod
+    def _validate_context_file_path(project_root: Path, context_file: str) -> str:
+        """Return a safe project-relative context file path.
 
-        If the context file does not exist it is created with just the
-        managed section.  If it exists, the content between the configured
-        start/end markers (default ``<!-- SPECKIT START -->`` /
-        ``<!-- SPECKIT END -->``) is replaced, or appended when no markers
-        are found. Markers are read from the agent-context extension config
-        (``.specify/extensions/agent-context/agent-context-config.yml``)
-        when present, falling back to the class-level constants.
-
-        Returns the path to the context file, or ``None`` when
-        ``context_file`` is not set or the ``agent-context`` extension is
-        disabled.
+        The agent-context scripts reject paths that can escape the project
+        root; the Python integration path must apply the same guard before
+        setup or teardown touches context files.
         """
-        if not self.context_file:
-            return None
+        candidate = context_file.strip()
+        if not candidate:
+            raise ValueError("agent-context: context file path must not be empty")
 
+        win_path = PureWindowsPath(candidate)
+        if Path(candidate).is_absolute() or win_path.drive or win_path.root:
+            raise ValueError(
+                "agent-context: context files must be project-relative paths; "
+                f"got {candidate!r}"
+            )
+        if "\\" in candidate:
+            raise ValueError(
+                "agent-context: context files must not contain backslash "
+                f"separators; got {candidate!r}"
+            )
+
+        parts = [part for part in re.split(r"[\\/]+", candidate) if part]
+        if ".." in parts:
+            raise ValueError(
+                "agent-context: context files must not contain '..' path "
+                f"segments; got {candidate!r}"
+            )
+
+        root = project_root.resolve()
+        target = (root / candidate).resolve(strict=False)
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(
+                "agent-context: context file path resolves outside the project "
+                f"root; got {candidate!r}"
+            ) from exc
+
+        return candidate
+
+    @classmethod
+    def _resolve_context_file_values(
+        cls,
+        project_root: Path,
+        cfg: dict[str, Any] | None,
+        *,
+        fallback_context_file: Any = None,
+        legacy_context_file: Any = None,
+        include_context_files: bool = True,
+        validate: bool = True,
+    ) -> list[str]:
+        """Resolve context file config with shared precedence and de-duplication."""
+        files: list[str] = []
+        seen: set[str] = set()
+
+        def add_context_file(value: Any) -> None:
+            if not isinstance(value, str):
+                return
+            candidate = value.strip()
+            if not candidate:
+                return
+            if validate:
+                candidate = cls._validate_context_file_path(project_root, candidate)
+            key = cls._context_file_dedupe_key(candidate)
+            if key in seen:
+                return
+            files.append(candidate)
+            seen.add(key)
+
+        if isinstance(cfg, dict) and include_context_files:
+            configured = cfg.get("context_files")
+            if isinstance(configured, list):
+                for value in configured:
+                    add_context_file(value)
+                if files:
+                    return files
+
+        if isinstance(cfg, dict):
+            add_context_file(cfg.get("context_file"))
+            if files:
+                return files
+
+        add_context_file(fallback_context_file)
+        if files:
+            return files
+
+        add_context_file(legacy_context_file)
+        return files
+
+    @staticmethod
+    def _format_context_file_values(context_files: list[str]) -> str:
+        """Return context file targets as the template display string."""
+        return ", ".join(context_files)
+
+    def _resolve_context_files(self, project_root: Path) -> list[str]:
+        """Return project-relative context files managed for *project_root*.
+
+        ``context_files`` in the agent-context extension config, when present
+        and non-empty, takes precedence over the config's singular
+        ``context_file``. The integration class default is used only when the
+        extension config has no context file target.
+        Raises ``ValueError`` when a configured path can escape the project
+        root.
+        """
+        config_path = (
+            project_root
+            / ".specify"
+            / "extensions"
+            / "agent-context"
+            / "agent-context-config.yml"
+        )
+        try:
+            raw = config_path.read_text(encoding="utf-8")
+            cfg = yaml.safe_load(raw)
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
+            cfg = None
+        return self._resolve_context_file_values(
+            project_root,
+            cfg,
+            fallback_context_file=self.context_file,
+        )
+
+    def _context_file_display(self, project_root: Path) -> str:
+        """Return human-readable context file target(s) for templates."""
         if not self._agent_context_extension_enabled(project_root):
-            return None
+            from .. import _load_agent_context_config
 
-        from .._console import console  # local import to avoid cycles
-
-        console.print(
-            "[yellow]Deprecation:[/yellow] Inline agent-context updates during "
-            "integration setup will be disabled in v0.12.0. Context file "
-            "management has moved to the bundled [bold]agent-context[/bold] "
-            "extension. Run [cyan]specify extension disable agent-context[/cyan] "
-            "to opt out early.",
-            highlight=False,
+            context_files = self._resolve_context_file_values(
+                project_root,
+                _load_agent_context_config(project_root),
+                fallback_context_file=self.context_file,
+                include_context_files=False,
+                validate=False,
+            )
+            return context_files[0] if context_files else ""
+        return self._format_context_file_values(
+            self._resolve_context_files(project_root)
         )
 
-        marker_start, marker_end = self._resolve_context_markers(project_root)
-
-        ctx_path = project_root / self.context_file
-        section = (
-            f"{marker_start}\n"
-            f"{self._build_context_section(plan_path)}\n"
-            f"{marker_end}\n"
-        )
-
+    @staticmethod
+    def _upsert_context_file(
+        ctx_path: Path,
+        section: str,
+        marker_start: str,
+        marker_end: str,
+    ) -> None:
+        """Create or update one managed context section."""
         if ctx_path.exists():
             content = ctx_path.read_text(encoding="utf-8-sig")
             start_idx = content.find(marker_start)
@@ -765,18 +883,70 @@ class IntegrationBase(ABC):
 
             # Ensure .mdc files have required YAML frontmatter
             if ctx_path.suffix == ".mdc":
-                new_content = self._ensure_mdc_frontmatter(new_content)
+                new_content = IntegrationBase._ensure_mdc_frontmatter(new_content)
         else:
             ctx_path.parent.mkdir(parents=True, exist_ok=True)
             # Cursor .mdc files require YAML frontmatter to be loaded
             if ctx_path.suffix == ".mdc":
-                new_content = self._ensure_mdc_frontmatter(section)
+                new_content = IntegrationBase._ensure_mdc_frontmatter(section)
             else:
                 new_content = section
 
         normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
         ctx_path.write_bytes(normalized.encode("utf-8"))
-        return ctx_path
+
+    def upsert_context_section(
+        self,
+        project_root: Path,
+        plan_path: str = "",
+    ) -> Path | None:
+        """Create or update the managed section in the agent context file.
+
+        If the context file does not exist it is created with just the
+        managed section.  If it exists, the content between the configured
+        start/end markers (default ``<!-- SPECKIT START -->`` /
+        ``<!-- SPECKIT END -->``) is replaced, or appended when no markers
+        are found. Markers are read from the agent-context extension config
+        (``.specify/extensions/agent-context/agent-context-config.yml``)
+        when present, falling back to the class-level constants.
+
+        Returns the path to the first context file, or ``None`` when no context
+        files are configured or the ``agent-context`` extension is
+        disabled.
+        """
+        if not self._agent_context_extension_enabled(project_root):
+            return None
+
+        context_files = self._resolve_context_files(project_root)
+        if not context_files:
+            return None
+
+        from .._console import console  # local import to avoid cycles
+
+        console.print(
+            "[yellow]Deprecation:[/yellow] Inline agent-context updates during "
+            "integration setup will be disabled in v0.12.0. Context file "
+            "management has moved to the bundled [bold]agent-context[/bold] "
+            "extension. Run [cyan]specify extension disable agent-context[/cyan] "
+            "to opt out early.",
+            highlight=False,
+        )
+
+        marker_start, marker_end = self._resolve_context_markers(project_root)
+
+        section = (
+            f"{marker_start}\n"
+            f"{self._build_context_section(plan_path)}\n"
+            f"{marker_end}\n"
+        )
+
+        first_path: Path | None = None
+        for context_file in context_files:
+            ctx_path = project_root / context_file
+            self._upsert_context_file(ctx_path, section, marker_start, marker_end)
+            if first_path is None:
+                first_path = ctx_path
+        return first_path
 
     def remove_context_section(self, project_root: Path) -> bool:
         """Remove the managed section from the agent context file.
@@ -787,68 +957,73 @@ class IntegrationBase(ABC):
         (``.specify/extensions/agent-context/agent-context-config.yml``)
         when present, falling back to the class-level constants.
         """
-        if not self.context_file:
-            return False
-
         if not self._agent_context_extension_enabled(project_root):
             return False
 
-        ctx_path = project_root / self.context_file
-        if not ctx_path.exists():
+        context_files = self._resolve_context_files(project_root)
+        if not context_files:
             return False
 
         marker_start, marker_end = self._resolve_context_markers(project_root)
+        removed_any = False
 
-        content = ctx_path.read_text(encoding="utf-8-sig")
-        start_idx = content.find(marker_start)
-        end_idx = content.find(
-            marker_end,
-            start_idx if start_idx != -1 else 0,
-        )
+        for context_file in context_files:
+            ctx_path = project_root / context_file
+            if not ctx_path.exists():
+                continue
 
-        # Only remove a complete, well-ordered managed section. If either
-        # marker is missing, leave the file unchanged to avoid deleting
-        # unrelated user-authored content.
-        if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
-            return False
-
-        removal_start = start_idx
-        removal_end = end_idx + len(marker_end)
-
-        # Consume trailing line ending (CRLF or LF)
-        if removal_end < len(content) and content[removal_end] == "\r":
-            removal_end += 1
-        if removal_end < len(content) and content[removal_end] == "\n":
-            removal_end += 1
-
-        # Also strip a blank line before the section if present
-        if removal_start > 0 and content[removal_start - 1] == "\n":
-            if removal_start > 1 and content[removal_start - 2] == "\n":
-                removal_start -= 1
-
-        new_content = content[:removal_start] + content[removal_end:]
-
-        # Normalize line endings before comparisons
-        normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
-
-        # For .mdc files, treat Speckit-generated frontmatter-only content as empty
-        if ctx_path.suffix == ".mdc":
-            import re
-
-            # Delete the file if only YAML frontmatter remains (no body content)
-            frontmatter_only = re.match(
-                r"^---\n.*?\n---\s*$", normalized, re.DOTALL
+            content = ctx_path.read_text(encoding="utf-8-sig")
+            start_idx = content.find(marker_start)
+            end_idx = content.find(
+                marker_end,
+                start_idx if start_idx != -1 else 0,
             )
-            if not normalized.strip() or frontmatter_only:
+
+            # Only remove a complete, well-ordered managed section. If either
+            # marker is missing, leave the file unchanged to avoid deleting
+            # unrelated user-authored content.
+            if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
+                continue
+
+            removal_start = start_idx
+            removal_end = end_idx + len(marker_end)
+
+            # Consume trailing line ending (CRLF or LF)
+            if removal_end < len(content) and content[removal_end] == "\r":
+                removal_end += 1
+            if removal_end < len(content) and content[removal_end] == "\n":
+                removal_end += 1
+
+            # Also strip a blank line before the section if present
+            if removal_start > 0 and content[removal_start - 1] == "\n":
+                if removal_start > 1 and content[removal_start - 2] == "\n":
+                    removal_start -= 1
+
+            new_content = content[:removal_start] + content[removal_end:]
+
+            # Normalize line endings before comparisons
+            normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
+
+            # For .mdc files, treat Speckit-generated frontmatter-only content as empty
+            if ctx_path.suffix == ".mdc":
+                import re
+
+                # Delete the file if only YAML frontmatter remains (no body content)
+                frontmatter_only = re.match(
+                    r"^---\n.*?\n---\s*$", normalized, re.DOTALL
+                )
+                if not normalized.strip() or frontmatter_only:
+                    ctx_path.unlink()
+                    removed_any = True
+                    continue
+
+            if not normalized.strip():
                 ctx_path.unlink()
-                return True
+            else:
+                ctx_path.write_bytes(normalized.encode("utf-8"))
+            removed_any = True
 
-        if not normalized.strip():
-            ctx_path.unlink()
-        else:
-            ctx_path.write_bytes(normalized.encode("utf-8"))
-
-        return True
+        return removed_any
 
     @staticmethod
     def resolve_command_refs(content: str, separator: str = ".") -> str:
@@ -1131,12 +1306,13 @@ class MarkdownIntegration(IntegrationBase):
             else "$ARGUMENTS"
         )
         created: list[Path] = []
+        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
+                context_file=context_file_display,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -1336,13 +1512,14 @@ class TomlIntegration(IntegrationBase):
             else "{{args}}"
         )
         created: list[Path] = []
+        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             description = self._extract_description(raw)
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
+                context_file=context_file_display,
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -1531,6 +1708,7 @@ class YamlIntegration(IntegrationBase):
             else "{{args}}"
         )
         created: list[Path] = []
+        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
@@ -1546,7 +1724,7 @@ class YamlIntegration(IntegrationBase):
 
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
+                context_file=context_file_display,
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1721,6 +1899,7 @@ class SkillsIntegration(IntegrationBase):
             else "$ARGUMENTS"
         )
         created: list[Path] = []
+        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
@@ -1744,7 +1923,7 @@ class SkillsIntegration(IntegrationBase):
             # Process body through the standard template pipeline
             processed_body = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
+                context_file=context_file_display,
                 invoke_separator=self.invoke_separator,
             )
             # Strip the processed frontmatter — we rebuild it for skills.

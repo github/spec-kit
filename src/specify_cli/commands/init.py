@@ -831,6 +831,7 @@ def register(app: typer.Typer) -> None:
         ) or getattr(resolved_integration, "_skills_mode", False)
 
         codex_skill_mode = selected_ai == "codex" and _is_skills_integration
+        zcode_skill_mode = selected_ai == "zcode" and _is_skills_integration
         claude_skill_mode = selected_ai == "claude" and _is_skills_integration
         kimi_skill_mode = selected_ai == "kimi"
         agy_skill_mode = selected_ai == "agy" and _is_skills_integration
@@ -844,6 +845,7 @@ def register(app: typer.Typer) -> None:
         cline_skill_mode = selected_ai == "cline"
         native_skill_mode = (
             codex_skill_mode
+            or zcode_skill_mode
             or claude_skill_mode
             or kimi_skill_mode
             or agy_skill_mode
@@ -857,6 +859,11 @@ def register(app: typer.Typer) -> None:
         if codex_skill_mode:
             steps_lines.append(
                 f"{step_num}. Start Codex in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]"
+            )
+            step_num += 1
+        if zcode_skill_mode:
+            steps_lines.append(
+                f"{step_num}. Start ZCode in this project directory; spec-kit skills were installed to [cyan].zcode/skills[/cyan]"
             )
             step_num += 1
         if claude_skill_mode:
@@ -881,7 +888,10 @@ def register(app: typer.Typer) -> None:
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"
 
-        from .._invocation_style import is_slash_skills_agent as _is_slash_skills_agent
+        from .._invocation_style import (
+            is_dollar_skills_agent as _is_dollar_skills_agent,
+            is_slash_skills_agent as _is_slash_skills_agent,
+        )
 
         # `_is_skills_integration` means the integration is installed in
         # skills mode, which is the semantic equivalent of `ai_skills_enabled`
@@ -889,7 +899,7 @@ def register(app: typer.Typer) -> None:
         _ai_skills_enabled = _is_skills_integration
 
         def _display_cmd(name: str) -> str:
-            if codex_skill_mode:
+            if _is_dollar_skills_agent(selected_ai, _ai_skills_enabled):
                 return f"$speckit-{name}"
             if kimi_skill_mode:
                 return f"/skill:speckit-{name}"

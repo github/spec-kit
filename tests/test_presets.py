@@ -1033,6 +1033,32 @@ class TestPresetResolver:
         result = resolver.resolve("hidden-template")
         assert result is None
 
+    def test_collect_all_layers_finds_bundled_core_without_specify_commands(
+        self, project_dir
+    ):
+        """Tier-5 fallback locates the bundled core command when
+        .specify/templates/commands/ has no matching file.
+
+        Regression test for #3086: a stale ``.parent`` chain made the
+        source-checkout fallback resolve to ``src/templates/...`` (which does
+        not exist), so ``wrap`` presets found no base layer. The fallback must
+        resolve against the real repo-root ``templates/commands`` tree.
+        """
+        # project_dir's commands dir is empty, so tier-4 cannot satisfy this.
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.implement", "command")
+        assert layers, "expected a bundled core base layer to be found"
+        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
+
+    def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
+        """resolve() tier-5 returns the bundled core command when
+        .specify/templates/commands/ lacks it (regression for #3086)."""
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("speckit.implement", "command")
+        assert result is not None
+        assert result.parts[-2:] == ("commands", "implement.md")
+
 
 class TestResolveCore:
     """Test PresetResolver.resolve_core() skips the installed-presets tier."""
@@ -2997,6 +3023,84 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" in metadata.get("registered_skills", [])
 
+    def _install_arg_hint_preset(self, project_dir, temp_dir, ai, skills_dir, description, arg_hint):
+        """Install a preset whose command declares argument-hint; return the SKILL.md path."""
+        self._write_init_options(project_dir, ai=ai)
+        self._create_skill(skills_dir, "speckit-hinttest-cmd")
+        (project_dir / ".specify" / "extensions" / "hinttest").mkdir(parents=True, exist_ok=True)
+
+        preset_dir = temp_dir / f"hint-preset-{ai}"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.hinttest.cmd.md").write_text(
+            "---\n"
+            f'description: "{description}"\n'
+            f'argument-hint: "{arg_hint}"\n'
+            "---\n\n"
+            "Preset command body.\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": f"hint-preset-{ai}",
+                "name": "Hint Preset",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.hinttest.cmd",
+                        "file": "commands/speckit.hinttest.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        return skills_dir / "speckit-hinttest-cmd" / "SKILL.md"
+
+    def test_argument_hint_preserved_for_preset_command(self, project_dir, temp_dir):
+        """argument-hint from a preset command must survive into the SKILL.md.
+
+        Follow-up to #2903/#2916 for the preset skill generator. The
+        description is long enough to fold across lines when serialized,
+        guarding against an in-place string injection that would split the
+        folded scalar into invalid YAML.
+        """
+        long_description = (
+            "Build and maintain a lean, static context/ knowledge folder so "
+            "coding agents load only what is relevant and save tokens"
+        )
+        arg_hint = "<init | update | list | check> [area] [slug] [-- notes]"
+        skills_dir = project_dir / ".claude" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "claude", skills_dir, long_description, arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert parsed["argument-hint"] == arg_hint
+        assert parsed["description"] == long_description
+
+    def test_argument_hint_not_added_for_non_claude_preset_command(self, project_dir, temp_dir):
+        """Non-Claude skills agents must not receive argument-hint in preset skills."""
+        arg_hint = "<init | update | list | check> [area]"
+        skills_dir = project_dir / ".agents" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "codex", skills_dir, "Build context", arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert "argument-hint" not in parsed
+
     def test_register_skills_resolves_command_refs(self, project_dir, temp_dir):
         """Preset skill overrides must resolve __SPECKIT_COMMAND_*__ tokens (issue #2717).
 
@@ -4875,7 +4979,7 @@ class TestWrapStrategy:
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
 
-        written = (skill_subdir / "SKILL.md").read_text()
+        written = (skill_subdir / "SKILL.md").read_text(encoding="utf-8")
         assert "{CORE_TEMPLATE}" not in written
         assert "# Core Wrap-Test Body" in written
         assert "preset:self-test wrap-pre" in written
@@ -4927,7 +5031,7 @@ class TestWrapStrategy:
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
 
-        written = (skill_subdir / "SKILL.md").read_text()
+        written = (skill_subdir / "SKILL.md").read_text(encoding="utf-8")
         # {SCRIPT} should have been resolved (not left as a literal placeholder)
         assert "{SCRIPT}" not in written
 

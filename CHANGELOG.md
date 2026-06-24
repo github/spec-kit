@@ -9,6 +9,66 @@
 - Update bundled Repository Governance extension to v2.0.2, including the `/speckit.repository-governance.refresh` command, `.specify/memory/repository-governance.md` internal cache, and default bundled installation behavior.
 - Update bundled Workflow Preset documentation for v1.3.2 Final Code Review task generation and structured code review receipts.
 
+## [0.11.6] - 2026-06-23
+
+### Changed
+
+- [extension] Update Spec Kit Preview extension to v1.1.0 and sync Firebender agent lists (#3116)
+- Add Spec Kit Discovery Extension to community catalog (#3119)
+- Update Architecture Workflow extension to v1.2.1 (#3118)
+- docs: clarify project-defined constitution articles (#2994)
+- Add Intake extension to community catalog (#3117)
+- feat: add Firebender integration (Android Studio / IntelliJ) (#3077)
+- Update DocGuard — CDD Enforcement extension to v0.28.0 (#3115)
+- chore: sync issue template agent lists (#3052)
+- fix(shared-infra): remove stale managed scripts the core no longer ships (#3076) (#3098)
+- chore: release 0.11.5, begin 0.11.6.dev0 development (#3105)
+
+## [0.11.5] - 2026-06-22
+
+### Changed
+
+- fix: register enabled extensions for agent on integration use/upgrade (#2949)
+- Add SicarioSpec Core preset to community catalog (#3102)
+- Update Game Narrative Writing preset to v1.1.0 (#3099)
+- feat: add PyPI publishing workflow and readme metadata (#2915)
+- refactor: move extension command handlers to extensions/_commands.py (PR-7/8) (#3014)
+- feat: add ZCode (Z.AI) integration (#3063)
+- fix(agent-context): support multiple context files safely (#2969)
+- Update DocGuard — CDD Enforcement extension to v0.27.0 (#3094)
+- fix(presets): use _repo_root() for bundled-core source-checkout fallback (#3086) (#3091)
+- chore: release 0.11.4, begin 0.11.5.dev0 development (#3092)
+
+## [0.11.4] - 2026-06-22
+
+### Changed
+
+- [extension] Add Tasks to GitHub Project extension to community catalog (#3090)
+- Update Linear Integration extension to v0.7.0 (#3089)
+- fix: fail loudly on an unknown workflow expression filter (#3074)
+- fix: anchor lib/ and lib64/ patterns to repo root in .gitignore (#3083)
+- fix(build): include specify_cli.bundler.lib in built distribution (#3085)
+- Harden command registration path handling (#3088)
+- fix(presets): preserve argument-hint in preset SKILL.md generation (#2978)
+- feat: surface gate detail in the workflow run/resume --json payload (#2965)
+- feat: add `specify bundle` command (#3070)
+- chore: release 0.11.3, begin 0.11.4.dev0 development (#3072)
+
+## [0.11.3] - 2026-06-19
+
+### Changed
+
+- docs: strengthen agent disclosure to cover commits and per-round comments (#3071)
+- fix: isolate per-extension failures so one bad extension can't drop the rest (#2951)
+- fix(taskstoissues): skip tasks that already have a GitHub issue (#2992)
+- feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
+- Update Multi-Model Review extension to v0.1.2 (#3066)
+- chore(deps): bump actions/checkout from 6.0.3 to 7.0.0 (#3064)
+- feat(claude): run /analyze in a forked subagent (#2511)
+- fix: count worktree branches in git extension numbering (#3054)
+- Add Token Economy extension to community catalog (#3049)
+- chore: release 0.11.2, begin 0.11.3.dev0 development (#3059)
+
 ## [0.11.2] - 2026-06-18
 
 ### Changed
