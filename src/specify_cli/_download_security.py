@@ -247,10 +247,11 @@ def safe_extract_zip(
                 f"ZIP archive contains too many entries ({len(members)} > {max_entries})",
             )
 
-        normalized_members: list[tuple[zipfile.ZipInfo, str]] = []
+        normalized_members: list[tuple[zipfile.ZipInfo, str, bool]] = []
         total_size = 0
         for member in members:
             normalized_name = _safe_zip_name(member.filename, error_type=error_type)
+            is_dir = member.is_dir() or normalized_name.endswith("/")
 
             mode = member.external_attr >> 16
             if stat.S_ISLNK(mode):
@@ -266,7 +267,7 @@ def safe_extract_zip(
                     "(potential path traversal)",
                 )
 
-            if not member.is_dir():
+            if not is_dir:
                 if member.file_size > max_member_bytes:
                     _raise(
                         error_type,
@@ -281,16 +282,16 @@ def safe_extract_zip(
                         f"of {max_total_bytes} bytes",
                     )
 
-            normalized_members.append((member, normalized_name))
+            normalized_members.append((member, normalized_name, is_dir))
 
         # The loop above bounds the *declared* total via member.file_size, but a
         # crafted archive can understate those headers. Mirror the per-member
         # guard below with a cumulative count of the bytes actually written so
         # the total-size bound holds even when the headers lie.
         total_written = 0
-        for member, normalized_name in normalized_members:
+        for member, normalized_name, is_dir in normalized_members:
             member_path = target_dir / normalized_name
-            if member.is_dir():
+            if is_dir:
                 try:
                     member_path.mkdir(parents=True, exist_ok=True)
                 except OSError as exc:

@@ -212,3 +212,16 @@ def test_safe_extract_zip_extracts_safe_archive(tmp_path):
     safe_extract_zip(zip_path, out_dir)
 
     assert (out_dir / "nested" / "file.txt").read_text(encoding="utf-8") == "hello"
+
+
+def test_safe_extract_zip_treats_normalized_trailing_backslash_as_directory(tmp_path):
+    zip_path = tmp_path / "ok.zip"
+    out_dir = tmp_path / "out"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("nested\\", "")
+        zf.writestr("nested/file.txt", "hello")
+
+    safe_extract_zip(zip_path, out_dir)
+
+    assert (out_dir / "nested").is_dir()
+    assert (out_dir / "nested" / "file.txt").read_text(encoding="utf-8") == "hello"
