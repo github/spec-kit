@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-23T00:00:00Z",
+  "updated_at": "2026-06-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2961,6 +2961,40 @@
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-20T00:00:00Z"
+    },
+    "roadmap": {
+      "name": "Spec Roadmap",
+      "id": "roadmap",
+      "description": "Capture a durable spec roadmap after the constitution, then review specs against it before and after implementation so spec-specific decisions, outcomes, and constraints are never lost.",
+      "author": "srobroek",
+      "version": "0.1.0",
+      "download_url": "https://github.com/srobroek/speckit-roadmap/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/srobroek/speckit-roadmap",
+      "homepage": "https://github.com/srobroek/speckit-roadmap",
+      "documentation": "https://github.com/srobroek/speckit-roadmap/blob/main/README.md",
+      "changelog": "https://github.com/srobroek/speckit-roadmap/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.11.6"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "roadmap",
+        "planning",
+        "governance",
+        "review",
+        "spec-alignment"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-24T00:00:00Z",
+      "updated_at": "2026-06-24T00:00:00Z"
     },
     "schedule": {
       "name": "Spec Kit Schedule — CP-SAT Agent Orchestrator",
