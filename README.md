@@ -22,20 +22,18 @@
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
 - [⚡ Get Started](#-get-started)
 - [📽️ Video Overview](#️-video-overview)
-- [🧩 Community Extensions](#-community-extensions)
-- [🎨 Community Presets](#-community-presets)
-- [🚶 Community Walkthroughs](#-community-walkthroughs)
-- [🛠️ Community Friends](#️-community-friends)
+- [🌍 Community](#-community)
 - [🤖 Supported AI Coding Agent Integrations](#-supported-ai-coding-agent-integrations)
 - [🔧 Specify CLI Reference](#-specify-cli-reference)
 - [🧩 Making Spec Kit Your Own: Extensions & Presets](#-making-spec-kit-your-own-extensions--presets)
+- [📦 Bundles: Role-Based Setups](#-bundles-role-based-setups)
 - [📚 Core Philosophy](#-core-philosophy)
 - [🌟 Development Phases](#-development-phases)
 - [🎯 Experimental Goals](#-experimental-goals)
 - [🔧 Prerequisites](#-prerequisites)
 - [📖 Learn More](#-learn-more)
 - [📋 Detailed Process](#-detailed-process)
-- [ Support](#-support)
+- [💬 Support](#-support)
 - [🙏 Acknowledgements](#-acknowledgements)
 - [📄 License](#-license)
 
@@ -62,9 +60,27 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
+To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](./docs/upgrade.md) for detailed scenarios and customization options.
+
+```bash
+# Check whether a newer release is available (read-only — does not modify anything)
+specify self check
+
+# Preview what would run, without actually upgrading
+specify self upgrade --dry-run
+
+# Upgrade in place to the latest stable release (auto-detects uv tool vs pipx install)
+specify self upgrade
+
+# Or pin a specific release tag (replace vX.Y.Z[suffix] with your desired release tag)
+specify self upgrade --tag vX.Y.Z[suffix]
+```
+
+Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. For `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work, including dev, alpha/beta/rc, or build metadata suffixes. `uvx` (ephemeral) runs and source checkouts are detected and produce path-specific guidance instead of running an installer. Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed).
+
 ### 3. Establish project principles
 
-Launch your coding agent in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead.
+Launch your coding agent in the project directory. Most agents expose spec-kit as `/speckit.*` slash commands; Codex CLI in skills mode uses `$speckit-*` instead; GitHub Copilot CLI uses `/agents` to select the agent or address it directly in a prompt.
 
 Use the **`/speckit.constitution`** command to create your project's governing principles and development guidelines that will guide all subsequent development.
 
@@ -112,31 +128,19 @@ Want to see Spec Kit in action? Watch our [video overview](https://www.youtube.c
 
 [![Spec Kit video header](/media/spec-kit-video-header.jpg)](https://www.youtube.com/watch?v=a9eR1xsfvHg&pp=0gcJCckJAYcqIYzv)
 
-## 🧩 Community Extensions
+## 🌍 Community
 
-Community-contributed extensions add new commands, hooks, and capabilities to Spec Kit. See the full list on the [Community Extensions](https://github.github.io/spec-kit/community/extensions.html) page.
+Explore community-contributed resources on the [Spec Kit docs site](https://github.github.io/spec-kit/):
 
-> [!NOTE]
-> Community extensions are independently created and maintained by their respective authors. Maintainers only verify that catalog entries are complete and correctly formatted — they do **not review, audit, endorse, or support the extension code itself**. Review extension source code before installation and use at your own discretion.
-
-To submit your own extension, see the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md).
-
-## 🎨 Community Presets
-
-Community-contributed presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. See the full list on the [Community Presets](https://github.github.io/spec-kit/community/presets.html) page.
+- [Extensions](https://github.github.io/spec-kit/community/extensions.html) — commands, hooks, and capabilities
+- [Presets](https://github.github.io/spec-kit/community/presets.html) — template and terminology overrides
+- [Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) — end-to-end SDD scenarios
+- [Friends](https://github.github.io/spec-kit/community/friends.html) — projects that extend or build on Spec Kit
 
 > [!NOTE]
-> Community presets are third-party contributions and are not maintained by the Spec Kit team. Review them carefully before use, and see the docs page above for the full disclaimer.
+> Community contributions are independently created and maintained by their respective authors. Review source code before installation and use at your own discretion.
 
-To submit your own preset, see the [Presets Publishing Guide](presets/PUBLISHING.md).
-
-## 🚶 Community Walkthroughs
-
-See Spec-Driven Development in action across different scenarios with community-contributed walkthroughs; find the full list on the [Community Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) page.
-
-## 🛠️ Community Friends
-
-Community projects that extend, visualize, or build on Spec Kit. See the full list on the [Community Friends](https://github.github.io/spec-kit/community/friends.html) page.
+Want to contribute? See the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md) or the [Presets Publishing Guide](presets/PUBLISHING.md).
 
 ## 🤖 Supported AI Coding Agent Integrations
 
@@ -148,7 +152,7 @@ Run `specify integration list` to see all available integrations in your install
 
 After running `specify init`, your AI coding agent will have access to these slash commands for structured development. For integrations that support skills mode, passing `--integration <agent> --integration-options="--skills"` installs agent skills instead of slash-command prompt files.
 
-#### Core Commands
+### Core Commands
 
 Essential commands for the Spec-Driven Development workflow:
 
@@ -160,8 +164,9 @@ Essential commands for the Spec-Driven Development workflow:
 | `/speckit.tasks`         | `speckit-tasks`        | Generate actionable task lists for implementation                          |
 | `/speckit.taskstoissues` | `speckit-taskstoissues`| Convert generated task lists into GitHub issues for tracking and execution |
 | `/speckit.implement`     | `speckit-implement`    | Execute all tasks to build the feature according to the plan               |
+| `/speckit.converge`      | `speckit-converge`     | Assess the codebase against spec/plan/tasks and append remaining work as new tasks |
 
-#### Optional Commands
+### Optional Commands
 
 Additional commands for enhanced quality and validation:
 
@@ -206,7 +211,7 @@ specify extension add <extension-name>
 
 For example, extensions could add Jira integration, post-implementation code review, V-Model test traceability, or project health diagnostics.
 
-See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](#-community-extensions) above for what's available.
+See the [Extensions reference](https://github.github.io/spec-kit/reference/extensions.html) for the full command guide. Browse the [community extensions](https://github.github.io/spec-kit/community/extensions.html) for what's available.
 
 ### Presets — Customize Existing Workflows
 
@@ -224,6 +229,56 @@ For example, presets could restructure spec templates to require regulatory trac
 
 See the [Presets reference](https://github.github.io/spec-kit/reference/presets.html) for the full command guide, including resolution order and priority stacking.
 
+## 📦 Bundles: Role-Based Setups
+
+Extensions and presets are individual building blocks. A **bundle** packages a
+curated set of them — extensions, presets, steps, and workflows — into a single,
+versioned, role-oriented setup so a whole team persona (product manager, business
+analyst, security researcher, developer, …) can be provisioned with one command.
+
+A bundle is described by a hand-written `bundle.yml` manifest. It pins each
+component to a version and, optionally, targets a specific integration; a bundle
+with no `integration` is **agnostic** and inherits whatever integration the
+project already uses.
+
+```bash
+# Discover bundles in the active catalog stack
+specify bundle search [<query>]
+
+# Inspect the exact component set a bundle will add (equals what install does)
+specify bundle info <bundle-id>
+
+# Install a bundle's full component set in one operation
+specify bundle install <bundle-id>
+
+# See what's installed, then update or remove non-destructively
+specify bundle list
+specify bundle update <bundle-id>     # or --all
+specify bundle remove <bundle-id>     # removes only this bundle's components
+```
+
+Bundles resolve from a **priority-ordered catalog stack** (project > user >
+built-in). Each source carries an install policy: `install-allowed` sources can
+be installed from, while `discovery-only` sources are visible in `search`/`info`
+but refuse installation. Manage the stack with `specify bundle catalog list|add|remove`.
+
+Authors validate and package bundles locally — there is no first-class publish;
+distribution is hosting the built artifact and adding a catalog entry:
+
+```bash
+specify bundle validate --path ./my-bundle      # structural + reference checks
+specify bundle build --path ./my-bundle         # produce a versioned .zip artifact
+```
+
+Four ready-to-read example manifests live under
+[`examples/bundles/`](examples/bundles/) (product manager, business analyst,
+security researcher, developer).
+
+Key guarantees: `info` shows exactly what `install` adds (transparency);
+installs are idempotent and confined to the project root; `remove` never touches
+components another installed bundle still needs; and all consume/author commands
+work **offline** against local or pinned sources.
+
 ### When to Use Which
 
 | Goal | Use |
@@ -233,6 +288,7 @@ See the [Presets reference](https://github.github.io/spec-kit/reference/presets.
 | Integrate an external tool or service | Extension |
 | Enforce organizational or regulatory standards | Preset |
 | Ship reusable domain-specific templates | Either — presets for template overrides, extensions for templates bundled with new commands |
+| Provision a complete role-based setup in one command | Bundle |
 
 ## 📚 Core Philosophy
 
@@ -250,6 +306,12 @@ Spec-Driven Development is a structured process that emphasizes:
 | **0-to-1 Development** ("Greenfield")    | Generate from scratch    | <ul><li>Start with high-level requirements</li><li>Generate specifications</li><li>Plan implementation steps</li><li>Build production-ready applications</li></ul> |
 | **Creative Exploration**                 | Parallel implementations | <ul><li>Explore diverse solutions</li><li>Support multiple technology stacks & architectures</li><li>Experiment with UX patterns</li></ul>                         |
 | **Iterative Enhancement** ("Brownfield") | Brownfield modernization | <ul><li>Add features iteratively</li><li>Modernize legacy systems</li><li>Adapt processes</li></ul>                                                                |
+
+For existing projects, keep Spec Kit tooling updates separate from feature
+artifact evolution: refresh managed project files when upgrading, and update
+`specs/` artifacts when intended behavior changes. The
+[Evolving Specs guide](./docs/guides/evolving-specs.md) describes the
+recommended brownfield loop.
 
 ## 🎯 Experimental Goals
 
@@ -281,7 +343,7 @@ Our research and experimentation focus on:
 
 - **Linux/macOS/Windows**
 - [Supported](#-supported-ai-coding-agent-integrations) AI coding agent.
-- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pypa.github.io/pipx/) for persistent installation
+- [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pipx.pypa.io/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads)
 
@@ -341,7 +403,7 @@ specify init . --force --integration copilot
 specify init --here --force --integration copilot
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Forge, Goose, or Mistral Vibe installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Forge, Goose, Mistral Vibe, or ZCode installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --integration copilot --ignore-agent-tools
@@ -581,7 +643,7 @@ Once the implementation is complete, test the application and resolve any runtim
 
 ---
 
-##  Support
+## 💬 Support
 
 For support, please open a [GitHub issue](https://github.com/github/spec-kit/issues/new). We welcome bug reports, feature requests, and questions about using Spec-Driven Development.
 

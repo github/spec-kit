@@ -22,12 +22,12 @@ ALL_INTEGRATION_KEYS = [
     "copilot",
     # Stage 3 — standard markdown integrations
     "claude", "qwen", "opencode", "junie", "kilocode", "auggie",
-    "roo", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
-    "pi", "iflow", "kiro-cli", "windsurf", "vibe", "cursor-agent",
+    "roo", "rovodev", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
+    "pi", "iflow", "kiro-cli", "windsurf", "vibe", "cursor-agent", "firebender",
     # Stage 4 — TOML integrations
     "gemini", "tabnine",
     # Stage 5 — skills, generic & option-driven integrations
-    "codex", "kimi", "agy", "generic",
+    "codex", "kimi", "agy", "zed", "generic",
 ]
 
 
@@ -254,7 +254,6 @@ class TestMultiInstallSafeContracts:
                         initial,
                         "--script",
                         "sh",
-                        "--no-git",
                         "--ignore-agent-tools",
                     ],
                     catch_exceptions=False,

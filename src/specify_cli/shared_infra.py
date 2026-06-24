@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -88,7 +89,13 @@ def _shared_relative_path(project_path: Path, dest: Path) -> Path:
     return rel
 
 
-def _ensure_safe_shared_directory(project_path: Path, directory: Path, *, create: bool = True) -> None:
+def _ensure_safe_shared_directory(
+    project_path: Path,
+    directory: Path,
+    *,
+    create: bool = True,
+    context: str = "shared infrastructure directory",
+) -> None:
     """Create a shared infra directory without following symlinked parents."""
     root = project_path.resolve()
     rel = _shared_relative_path(project_path, directory)
@@ -98,24 +105,24 @@ def _ensure_safe_shared_directory(project_path: Path, directory: Path, *, create
         current = current / part
         label = _shared_destination_label(project_path, current)
         if current.is_symlink():
-            raise SymlinkedSharedPathError(f"Refusing to use symlinked shared infrastructure directory: {label}")
+            raise SymlinkedSharedPathError(f"Refusing to use symlinked {context}: {label}")
         if current.exists():
             if not current.is_dir():
-                raise ValueError(f"Shared infrastructure directory path is not a directory: {label}")
+                raise ValueError(f"{context.capitalize()} path is not a directory: {label}")
             try:
                 current.resolve().relative_to(root)
             except (OSError, ValueError):
-                raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
+                raise ValueError(f"{context.capitalize()} escapes project root: {label}") from None
             continue
         if not create:
-            raise ValueError(f"Shared infrastructure directory does not exist: {label}")
+            raise ValueError(f"{context.capitalize()} does not exist: {label}")
         current.mkdir()
         if current.is_symlink():
-            raise SymlinkedSharedPathError(f"Refusing to use symlinked shared infrastructure directory: {label}")
+            raise SymlinkedSharedPathError(f"Refusing to use symlinked {context}: {label}")
         try:
             current.resolve().relative_to(root)
         except (OSError, ValueError):
-            raise ValueError(f"Shared infrastructure directory escapes project root: {label}") from None
+            raise ValueError(f"{context.capitalize()} escapes project root: {label}") from None
 
 
 def _validate_safe_shared_directory(project_path: Path, directory: Path) -> None:
@@ -186,6 +193,37 @@ def _write_shared_bytes(
     finally:
         if temp_path.exists():
             temp_path.unlink()
+
+
+_BASH_FORMAT_COMMAND_RE = re.compile(
+    r"\$\(\s*format_speckit_command\s+(['\"]?)([A-Za-z0-9_.-]+)\1(?:\s+[^)]*)?\)"
+)
+_POWERSHELL_FORMAT_COMMAND_RE = re.compile(
+    r"Format-SpecKitCommand\s+-CommandName\s+(['\"])([A-Za-z0-9_.-]+)\1(?:\s+-RepoRoot\s+[^\r\n]+)?"
+)
+
+
+def _format_speckit_command(command_name: str, separator: str) -> str:
+    name = command_name.strip().lstrip("/")
+    if name.startswith("speckit."):
+        name = name[len("speckit.") :]
+    elif name.startswith("speckit-"):
+        name = name[len("speckit-") :]
+    name = name.replace(".", separator)
+    return f"/speckit{separator}{name}"
+
+
+def _resolve_dynamic_command_refs(content: str, separator: str) -> str:
+    """Render script runtime command helpers for managed shared infra copies."""
+
+    content = _BASH_FORMAT_COMMAND_RE.sub(
+        lambda match: _format_speckit_command(match.group(2), separator),
+        content,
+    )
+    return _POWERSHELL_FORMAT_COMMAND_RE.sub(
+        lambda match: f"'{_format_speckit_command(match.group(2), separator)}'",
+        content,
+    )
 
 
 def refresh_shared_templates(
@@ -266,7 +304,7 @@ def install_shared_infra(
     customization warning to tell the user which flag would overwrite their
     customizations.
     """
-    from .integrations.manifest import _sha256
+    from .integrations.manifest import _sha256, _validate_rel_path
 
     manifest = load_speckit_manifest(project_path, version=version, console=console)
     prior_hashes = dict(manifest.files)
@@ -274,6 +312,8 @@ def install_shared_infra(
     def _is_managed(rel: str, dst: Path) -> bool:
         expected = prior_hashes.get(rel)
         if not expected or not dst.is_file() or dst.is_symlink():
+            return False
+        if manifest.is_recovered(rel):
             return False
         try:
             return _sha256(dst) == expected
@@ -285,6 +325,11 @@ def install_shared_infra(
     symlinked_files: list[str] = []
     planned_copies: list[tuple[Path, str, bytes, int]] = []
     planned_templates: list[tuple[Path, str, str]] = []
+    # Track every shared path the current bundle produces so we can detect
+    # manifest entries the core no longer ships (stale-script cleanup, #3076).
+    seen_rels: set[str] = set()
+    scripts_scanned = False
+    variant_dir = "bash" if script_type == "sh" else "powershell"
 
     def _decide_overwrite(rel: str, dst: Path) -> tuple[bool, str | None]:
         """Return (write, bucket) where bucket is 'skip', 'preserved', or None."""
@@ -339,7 +384,6 @@ def install_shared_infra(
     if scripts_src.is_dir():
         dest_scripts = project_path / ".specify" / "scripts"
         if _ensure_or_bucket_dir(dest_scripts):
-            variant_dir = "bash" if script_type == "sh" else "powershell"
             variant_src = scripts_src / variant_dir
             if variant_src.is_dir():
                 dest_variant = dest_scripts / variant_dir
@@ -347,10 +391,18 @@ def install_shared_infra(
                     for src_path in variant_src.rglob("*"):
                         if not src_path.is_file():
                             continue
+                        # Mark scanned only once a real source file is seen. An
+                        # empty (or symlink-skipped) variant keeps this False, so
+                        # stale-cleanup is skipped — otherwise it would treat every
+                        # tracked script as obsolete and delete it. (The safety
+                        # hinge is this flag, not ``seen_rels``, which also holds
+                        # template paths populated later.)
+                        scripts_scanned = True
 
                         rel_path = src_path.relative_to(variant_src)
                         dst_path = dest_variant / rel_path
                         rel = dst_path.relative_to(project_path).as_posix()
+                        seen_rels.add(rel)
                         if not _safe_dest_or_bucket(dst_path, rel, parent_must_exist=False):
                             continue
                         write, bucket = _decide_overwrite(rel, dst_path)
@@ -359,11 +411,38 @@ def install_shared_infra(
                                 preserved_user_files.append(rel)
                             else:
                                 skipped_files.append(rel)
+                                # Record the existing-on-disk file in the manifest so a
+                                # fresh manifest run against an already-populated
+                                # ``.specify/`` tree does not silently drop it (#2107).
+                                # ``prior_hashes`` is the function-scope snapshot taken
+                                # at entry, so this membership check is O(1) and avoids
+                                # the repeated ``dict(self._files)`` copy that
+                                # ``manifest.files`` performs on every access.
+                                if dst_path.is_file() and rel not in prior_hashes:
+                                    try:
+                                        manifest.record_existing(rel, recovered=True)
+                                    except (OSError, ValueError) as exc:
+                                        # Tolerate races / permission issues / non-file
+                                        # collisions so one weird path does not abort
+                                        # the whole install.
+                                        console.print(
+                                            f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                        )
                             continue
 
                         if not _ensure_or_bucket_dir(dst_path.parent):
                             continue
-                        planned_copies.append((dst_path, rel, src_path.read_bytes(), src_path.stat().st_mode & 0o777))
+                        content = src_path.read_text(encoding="utf-8")
+                        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
+                        content = _resolve_dynamic_command_refs(content, invoke_separator)
+                        planned_copies.append(
+                            (
+                                dst_path,
+                                rel,
+                                content.encode("utf-8"),
+                                src_path.stat().st_mode & 0o777,
+                            )
+                        )
 
     templates_src = shared_templates_source(core_pack=core_pack, repo_root=repo_root)
     if templates_src.is_dir():
@@ -375,6 +454,7 @@ def install_shared_infra(
 
                 dst = dest_templates / src.name
                 rel = dst.relative_to(project_path).as_posix()
+                seen_rels.add(rel)
                 if not _safe_dest_or_bucket(dst, rel):
                     continue
                 write, bucket = _decide_overwrite(rel, dst)
@@ -383,6 +463,23 @@ def install_shared_infra(
                         preserved_user_files.append(rel)
                     else:
                         skipped_files.append(rel)
+                        # Record the existing-on-disk template in the manifest so a
+                        # fresh manifest run against an already-populated
+                        # ``.specify/`` tree does not silently drop it (#2107).
+                        # ``prior_hashes`` is the function-scope snapshot taken at
+                        # entry, so this membership check is O(1) and avoids the
+                        # repeated ``dict(self._files)`` copy that ``manifest.files``
+                        # performs on every access.
+                        if dst.is_file() and rel not in prior_hashes:
+                            try:
+                                manifest.record_existing(rel, recovered=True)
+                            except (OSError, ValueError) as exc:
+                                # Tolerate races / permission issues / non-file
+                                # collisions so one weird path does not abort
+                                # the whole install.
+                                console.print(
+                                    f"[yellow]⚠[/yellow]  could not record {rel} in manifest: {exc}"
+                                )
                     continue
 
                 content = src.read_text(encoding="utf-8")
@@ -401,7 +498,7 @@ def install_shared_infra(
 
     if skipped_files:
         console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure file(s) already exist and were not updated:"
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} shared infrastructure path(s) already exist and were not updated:"
         )
         for path in skipped_files:
             console.print(f"    {path}")
@@ -436,6 +533,64 @@ def install_shared_infra(
             console.print(f"    {path}")
         if refresh_hint:
             console.print(refresh_hint)
+
+    # Remove stale managed scripts: paths a previous install recorded that the
+    # current core no longer ships — e.g. the legacy
+    # ``scripts/<variant>/update-agent-context.sh`` superseded by the bundled
+    # agent-context extension. Left behind, such an orphan can crash when it
+    # sources a refreshed ``common.sh`` (#3076). Only run when the script source
+    # was actually scanned (so a missing/empty source never triggers mass
+    # deletion), scoped to the active variant, and only for *managed* copies —
+    # a user-customized file (hash diverges), a symlink, or a recovered entry is
+    # preserved by ``_is_managed``.
+    if scripts_scanned:
+        stale_removed: list[str] = []
+        script_prefix = f".specify/scripts/{variant_dir}/"
+        for rel in list(prior_hashes):
+            if rel in seen_rels or not rel.startswith(script_prefix):
+                continue
+            # Guard corrupted/hand-edited manifest keys BEFORE any filesystem
+            # access: absolute, ``..``, or (on Windows) drive-relative keys such
+            # as ``C:tmp`` are not ``is_absolute()`` yet discard the project root
+            # when joined. The lexical check is a fast reject; ``_validate_rel_path``
+            # resolves the join and confirms containment, catching the rest. A key
+            # that still escapes is *skipped*, never turned into an install-time
+            # hard failure. Mirrors IntegrationManifest.is_recovered / remove.
+            rel_path = Path(rel)
+            if rel_path.is_absolute() or ".." in rel_path.parts:
+                continue
+            try:
+                _validate_rel_path(rel_path, project_path)
+            except ValueError:
+                continue
+            dst = project_path / rel_path
+            # Already gone from disk but still tracked: drop the orphaned manifest
+            # entry so the manifest stays consistent (nothing to unlink).
+            if not dst.exists() and not dst.is_symlink():
+                manifest.remove(rel)
+                continue
+            if not _is_managed(rel, dst):
+                continue  # user-modified / symlink / recovered → preserve
+            # Never unlink through a symlinked ancestor (writes/deletes could
+            # escape the project root). The safe-destination check buckets such
+            # paths under ``symlinked_files`` and we leave them in place.
+            if not _safe_dest_or_bucket(dst, rel):
+                continue
+            try:
+                dst.unlink()
+            except OSError as exc:
+                console.print(f"[yellow]⚠[/yellow]  could not remove stale {rel}: {exc}")
+                continue
+            manifest.remove(rel)
+            stale_removed.append(rel)
+
+        if stale_removed:
+            console.print(
+                f"[yellow]⚠[/yellow]  Removed {len(stale_removed)} obsolete shared "
+                "script(s) left by a previous install:"
+            )
+            for path in stale_removed:
+                console.print(f"    {path}")
 
     manifest.save()
     return True

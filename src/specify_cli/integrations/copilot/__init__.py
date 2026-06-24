@@ -24,6 +24,16 @@ from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
+def _copilot_executable() -> str:
+    """Return the executable name for Copilot CLI on this platform.
+
+    On Windows, subprocess invocation is reliable with `copilot.cmd`.
+    """
+    if os.name == "nt":
+        return "copilot.cmd"
+    return "copilot"
+
+
 def _allow_all() -> bool:
     """Return True if the Copilot CLI should run with full permissions.
 
@@ -124,6 +134,18 @@ class CopilotIntegration(IntegrationBase):
             ),
         ]
 
+    def _resolve_executable(self) -> str:
+        """Return the Copilot CLI executable, respecting the env-var override.
+
+        Checks ``SPECKIT_INTEGRATION_COPILOT_EXECUTABLE`` first.  Falls
+        back to the platform-specific default from ``_copilot_executable()``
+        (``copilot.cmd`` on Windows, ``copilot`` elsewhere) so that
+        existing behaviour is preserved when the env var is unset.
+        """
+        env_name = "SPECKIT_INTEGRATION_COPILOT_EXECUTABLE"
+        override = os.environ.get(env_name, "").strip()
+        return override if override else _copilot_executable()
+
     def build_exec_args(
         self,
         prompt: str,
@@ -138,7 +160,8 @@ class CopilotIntegration(IntegrationBase):
         # Controlled by SPECKIT_COPILOT_ALLOW_ALL_TOOLS env var
         # (default: enabled).  The deprecated SPECKIT_ALLOW_ALL_TOOLS
         # is also honoured as a fallback.
-        args = ["copilot", "-p", prompt]
+        args = [self._resolve_executable(), "-p", prompt]
+        self._apply_extra_args_env_var(args)
         if _allow_all():
             args.append("--yolo")
         if model:
@@ -206,7 +229,12 @@ class CopilotIntegration(IntegrationBase):
             agent_name = f"speckit.{stem}"
             prompt = args or ""
 
-        cli_args = ["copilot", "-p", prompt]
+        cli_args = [self._resolve_executable(), "-p", prompt]
+        # Honour SPECKIT_INTEGRATION_COPILOT_EXTRA_ARGS for real workflow
+        # runs.  `dispatch_command` builds cli_args inline rather than
+        # going through `build_exec_args`, so the hook must be invoked
+        # here too — otherwise the env var is silently ignored.
+        self._apply_extra_args_env_var(cli_args)
         if not skills_mode:
             cli_args.extend(["--agent", agent_name])
         if _allow_all():
@@ -254,58 +282,25 @@ class CopilotIntegration(IntegrationBase):
         """Copilot commands use ``.agent.md`` extension."""
         return f"speckit.{template_name}.agent.md"
 
-    def post_process_skill_content(self, content: str) -> str:
-        """Inject Copilot-specific ``mode:`` field into SKILL.md frontmatter.
+    def stale_cleanup_exclusions(self) -> set[str]:
+        """Protect ``.vscode/settings.json`` from upgrade stale-deletion.
 
-        Inserts ``mode: speckit.<stem>`` before the closing ``---`` so
-        Copilot can associate the skill with its agent mode.
+        ``setup()`` records this file in the manifest only when it creates it;
+        when it already exists the file is merged and intentionally left
+        untracked.  On upgrade the untracked-but-existing file would otherwise
+        be flagged stale and deleted, destroying user settings (and the file
+        the integration still manages).
         """
-        lines = content.splitlines(keepends=True)
+        return {".vscode/settings.json"}
 
-        # Extract skill name from frontmatter to derive the mode value
-        dash_count = 0
-        skill_name = ""
-        for line in lines:
-            stripped = line.rstrip("\n\r")
-            if stripped == "---":
-                dash_count += 1
-                if dash_count == 2:
-                    break
-                continue
-            if dash_count == 1:
-                if stripped.startswith("mode:"):
-                    return content  # already present
-                if stripped.startswith("name:"):
-                    # Parse: name: "speckit-plan" → speckit.plan
-                    val = stripped.split(":", 1)[1].strip().strip('"').strip("'")
-                    # Convert speckit-plan → speckit.plan
-                    if val.startswith("speckit-"):
-                        skill_name = "speckit." + val[len("speckit-"):]
-                    else:
-                        skill_name = val
+    def post_process_skill_content(self, content: str) -> str:
+        """Inject shared hook guidance into Copilot skill content.
 
-        if not skill_name:
-            return content
-
-        # Inject mode: before the closing --- of frontmatter
-        out: list[str] = []
-        dash_count = 0
-        injected = False
-        for line in lines:
-            stripped = line.rstrip("\n\r")
-            if stripped == "---":
-                dash_count += 1
-                if dash_count == 2 and not injected:
-                    if line.endswith("\r\n"):
-                        eol = "\r\n"
-                    elif line.endswith("\n"):
-                        eol = "\n"
-                    else:
-                        eol = ""
-                    out.append(f"mode: {skill_name}{eol}")
-                    injected = True
-            out.append(line)
-        return "".join(out)
+        Delegates to :class:`_CopilotSkillsHelper` for shared post-processing.
+        The ``mode:`` frontmatter field is intentionally omitted: VS Code
+        Copilot Agent Skills do not support it (see issue #2799).
+        """
+        return _CopilotSkillsHelper().post_process_skill_content(content)
 
     def setup(
         self,
@@ -359,13 +354,14 @@ class CopilotIntegration(IntegrationBase):
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS")
+        context_file_display = self._context_file_display(project_root)
 
         # 1. Process and write command files as .agent.md
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
+                context_file=context_file_display,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(

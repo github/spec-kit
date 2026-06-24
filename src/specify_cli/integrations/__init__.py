@@ -52,15 +52,18 @@ def _register_builtins() -> None:
     from .auggie import AuggieIntegration
     from .bob import BobIntegration
     from .claude import ClaudeIntegration
+    from .cline import ClineIntegration
     from .codebuddy import CodebuddyIntegration
     from .codex import CodexIntegration
     from .copilot import CopilotIntegration
     from .cursor_agent import CursorAgentIntegration
     from .devin import DevinIntegration
+    from .firebender import FirebenderIntegration
     from .forge import ForgeIntegration
     from .gemini import GeminiIntegration
     from .generic import GenericIntegration
     from .goose import GooseIntegration
+    from .hermes import HermesIntegration
     from .iflow import IflowIntegration
     from .junie import JunieIntegration
     from .kilocode import KilocodeIntegration
@@ -72,11 +75,14 @@ def _register_builtins() -> None:
     from .qodercli import QodercliIntegration
     from .qwen import QwenIntegration
     from .roo import RooIntegration
+    from .rovodev import RovodevIntegration
     from .shai import ShaiIntegration
     from .tabnine import TabnineIntegration
     from .trae import TraeIntegration
     from .vibe import VibeIntegration
     from .windsurf import WindsurfIntegration
+    from .zcode import ZcodeIntegration
+    from .zed import ZedIntegration
 
     # -- Registration (alphabetical) --------------------------------------
     _register(AgyIntegration())
@@ -84,15 +90,18 @@ def _register_builtins() -> None:
     _register(AuggieIntegration())
     _register(BobIntegration())
     _register(ClaudeIntegration())
+    _register(ClineIntegration())
     _register(CodebuddyIntegration())
     _register(CodexIntegration())
     _register(CopilotIntegration())
     _register(CursorAgentIntegration())
     _register(DevinIntegration())
+    _register(FirebenderIntegration())
     _register(ForgeIntegration())
     _register(GeminiIntegration())
     _register(GenericIntegration())
     _register(GooseIntegration())
+    _register(HermesIntegration())
     _register(IflowIntegration())
     _register(JunieIntegration())
     _register(KilocodeIntegration())
@@ -104,11 +113,14 @@ def _register_builtins() -> None:
     _register(QodercliIntegration())
     _register(QwenIntegration())
     _register(RooIntegration())
+    _register(RovodevIntegration())
     _register(ShaiIntegration())
     _register(TabnineIntegration())
     _register(TraeIntegration())
     _register(VibeIntegration())
     _register(WindsurfIntegration())
+    _register(ZcodeIntegration())
+    _register(ZedIntegration())
 
 
 _register_builtins()

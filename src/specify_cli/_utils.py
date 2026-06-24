@@ -8,12 +8,61 @@ import shutil
 import stat
 import subprocess
 import tempfile
-from pathlib import Path
+import yaml
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from ._console import console
 
 CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
+
+
+def relative_extension_path_violation(value: Any) -> str | None:
+    """Return why ``value`` is unsafe as an extension-relative ``file`` path.
+
+    Single source of truth for the path-safety policy shared by
+    ``ExtensionManifest._validate()`` (manifest-load validation) and
+    ``CommandRegistrar.register_commands()`` (runtime guard), so the two cannot
+    drift. Returns a human-readable reason string when ``value`` is unsafe, or
+    ``None`` when it is an acceptable relative path within the extension
+    directory.
+
+    Policy: the value must be a non-empty string with no leading/trailing
+    whitespace, no absolute/anchored form, and no ``..`` traversal. The value is
+    evaluated under both POSIX and Windows path semantics because a native
+    ``Path`` is OS-dependent (a ``PurePosixPath`` on POSIX does not interpret
+    Windows drive/UNC forms, and ``C:foo`` is anchored but not ``is_absolute()``
+    yet resolves against the CWD on its drive). Rejecting any non-empty anchor
+    covers POSIX-absolute (``/abs``), Windows drive-relative (``C:foo``), Windows
+    absolute (``C:\\foo``), and UNC/rooted forms.
+    """
+    if not isinstance(value, str) or not value:
+        return "must be a non-empty string"
+    if value.strip() != value:
+        return "must not have leading or trailing whitespace"
+    posix_path = PurePosixPath(value)
+    win_path = PureWindowsPath(value)
+    if (
+        posix_path.anchor
+        or win_path.anchor
+        or ".." in posix_path.parts
+        or ".." in win_path.parts
+    ):
+        return (
+            "must be a relative path within the extension directory "
+            "(no absolute paths, drive letters, or '..' segments)"
+        )
+    return None
+
+
+def dump_frontmatter(data: dict[str, Any]) -> str:
+    """Serialize skill/command frontmatter to a YAML string.
+
+    Centralizes the dump options used for SKILL.md frontmatter: ``allow_unicode``
+    preserves Unicode descriptions and ``sort_keys=False`` keeps key order, so no
+    call site can silently drop either.
+    """
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True).strip()
 
 
 def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> str | None:
@@ -58,10 +107,13 @@ def check_tool(tool: str, tracker=None) -> bool:
                 tracker.complete(tool, "available")
             return True
 
+    # Per-integration executable resolution.
     if tool == "kiro-cli":
         # Kiro currently supports both executable names. Prefer kiro-cli and
         # accept kiro as a compatibility fallback.
         found = shutil.which("kiro-cli") is not None or shutil.which("kiro") is not None
+    elif tool == "rovodev":
+        found = shutil.which("acli") is not None
     else:
         found = shutil.which(tool) is not None
 
@@ -73,51 +125,6 @@ def check_tool(tool: str, tracker=None) -> bool:
 
     return found
 
-
-def is_git_repo(path: Path | None = None) -> bool:
-    """Check if the specified path is inside a git repository."""
-    if path is None:
-        path = Path.cwd()
-
-    if not path.is_dir():
-        return False
-
-    try:
-        subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            check=True,
-            capture_output=True,
-            cwd=path,
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-
-def init_git_repo(project_path: Path, quiet: bool = False) -> tuple[bool, str | None]:
-    """Initialize a git repository in the specified path."""
-    try:
-        original_cwd = Path.cwd()
-        os.chdir(project_path)
-        if not quiet:
-            console.print("[cyan]Initializing git repository...[/cyan]")
-        subprocess.run(["git", "init"], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "add", "."], check=True, capture_output=True, text=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit from Specify template"], check=True, capture_output=True, text=True)
-        if not quiet:
-            console.print("[green]✓[/green] Git repository initialized")
-        return True, None
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Command: {' '.join(e.cmd)}\nExit code: {e.returncode}"
-        if e.stderr:
-            error_msg += f"\nError: {e.stderr.strip()}"
-        elif e.stdout:
-            error_msg += f"\nOutput: {e.stdout.strip()}"
-        if not quiet:
-            console.print(f"[red]Error initializing git repository:[/red] {e}")
-        return False, error_msg
-    finally:
-        os.chdir(original_cwd)
 
 
 def handle_vscode_settings(sub_item, dest_file, rel_path, verbose=False, tracker=None) -> None:

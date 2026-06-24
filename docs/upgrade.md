@@ -8,8 +8,10 @@
 
 | What to Upgrade | Command | When to Use |
 |----------------|---------|-------------|
-| **CLI Tool Only** | `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z` | Get latest CLI features without touching project files |
-| **CLI Tool Only (pipx)** | `pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z` | Reinstall/upgrade a pipx-installed CLI to a specific release |
+| **CLI Tool (recommended)** | `specify self upgrade` | Latest stable release, in place. Auto-detects whether you installed via `uv tool` or `pipx`. |
+| **CLI Tool — pin a version** | `specify self upgrade --tag vX.Y.Z[suffix]` | Upgrade to a specific release tag instead of the latest stable. Suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms. |
+| **CLI Tool — manual fallback** | `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z` | When `specify self upgrade` isn't available (older installs) or when you want explicit control. |
+| **CLI Tool — manual fallback (pipx)** | `pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z` | Same as above, for pipx installs. |
 | **Project Files** | `specify init --here --force --integration <your-agent>` | Update slash commands, templates, and scripts in your project |
 | **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
 
@@ -19,11 +21,31 @@
 
 The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.
 
-Before upgrading, you can check whether a newer released version is available:
+### Recommended: `specify self upgrade`
+
+The CLI ships with two self-management commands that handle the common case automatically:
 
 ```bash
+# Check whether a newer release is available (read-only — does not modify anything)
 specify self check
+
+# Preview what would run, without actually upgrading
+specify self upgrade --dry-run
+
+# Upgrade in place to the latest stable release (auto-detects uv tool vs pipx install)
+specify self upgrade
+
+# Or pin a specific release tag (replace vX.Y.Z[suffix] with the tag you want)
+specify self upgrade --tag vX.Y.Z[suffix]
 ```
+
+Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. The other paths print path-specific guidance and exit 0 without touching anything.
+
+Pinned tags must start with `vMAJOR.MINOR.PATCH`. Optional suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms such as `v1.0.0-rc1`, `v0.8.0.dev0`, `v0.8.0+build.42`, or the combination `v1.0.0-rc1+build.42`; branch names, hash refs, `latest`, and bare versions without `v` are rejected.
+
+Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed). If that internal timeout fires, `specify self upgrade` exits 124 and reports that it timed out while waiting for the installer subprocess, including the configured timeout and manual retry command. A real installer exit code 124 is propagated with `Upgrade failed. Installer exit code: 124.`, so scripts should treat exit 124 as ambiguous and inspect the message when they need to distinguish the two cases.
+
+If your installed CLI is older than the release that introduced `specify self upgrade`, use the manual equivalents below. These commands are also useful when you want explicit control over the installer command.
 
 ### If you installed with `uv tool install`
 
@@ -54,10 +76,14 @@ pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
 ### Verify the upgrade
 
 ```bash
+# Confirms the CLI is working and shows installed tools
 specify check
+
+# Confirms the installed version against the latest GitHub release
+specify self check
 ```
 
-This shows installed tools and confirms the CLI is working. Use `specify version` to confirm which persistent CLI version is currently on your `PATH`.
+`specify check` shows the surrounding tool environment; `specify self check` is read-only and tells you whether you're now on the latest release (`Up to date: X.Y.Z`) or if a newer one became available between releases.
 
 ---
 
@@ -186,8 +212,8 @@ Restart your IDE to refresh the command list.
 ### Scenario 1: "I just want new slash commands"
 
 ```bash
-# Upgrade CLI (if using persistent install)
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
+# Upgrade CLI (auto-detects uv tool vs pipx install)
+specify self upgrade
 
 # Update project files to get new commands
 specify init --here --force --integration copilot
@@ -204,7 +230,7 @@ cp .specify/memory/constitution.md /tmp/constitution-backup.md
 cp -r .specify/templates /tmp/templates-backup
 
 # 2. Upgrade CLI
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
+specify self upgrade
 
 # 3. Update project
 specify init --here --force --integration copilot
@@ -231,70 +257,38 @@ rm speckit.old-command-name.md
 # Restart your IDE
 ```
 
-### Scenario 4: "I'm working on a project without Git"
+### Scenario 4: "I don't want the git extension"
 
-If you initialized your project with `--no-git`, you can still upgrade:
+The git extension is now opt-in, so upgrades do not install it unless you add it explicitly.
 
 ```bash
 # Manually back up files you customized
-cp .specify/memory/constitution.md /tmp/constitution-backup.md
+cp .specify/memory/constitution.md .specify/memory/constitution.backup.md
 
 # Run upgrade
-specify init --here --force --integration copilot --no-git
+specify init --here --force --integration copilot
 
 # Restore customizations
-mv /tmp/constitution-backup.md .specify/memory/constitution.md
+mv .specify/memory/constitution.backup.md .specify/memory/constitution.md
 ```
 
-The `--no-git` flag skips git initialization but doesn't affect file updates.
-
----
-
-## Using `--no-git` Flag
-
-The `--no-git` flag tells Spec Kit to **skip git repository initialization**. This is useful when:
-
-- You manage version control differently (Mercurial, SVN, etc.)
-- Your project is part of a larger monorepo with existing git setup
-- You're experimenting and don't want version control yet
-
-**During initial setup:**
+If you later decide you want the git extension's commands and hooks, install it explicitly:
 
 ```bash
-specify init my-project --integration copilot --no-git
+specify extension add git
 ```
 
-**During upgrade:**
-
-```bash
-specify init --here --force --integration copilot --no-git
-```
-
-### What `--no-git` does NOT do
-
-❌ Does NOT prevent file updates
-❌ Does NOT skip slash command installation
-❌ Does NOT affect template merging
-
-It **only** skips running `git init` and creating the initial commit.
-
-### Working without Git
-
-If you use `--no-git`, you'll need to manage feature directories manually:
-
-**Set the `SPECIFY_FEATURE` environment variable** before using planning commands:
+Projects that do not use Git can still work with Spec Kit by setting `SPECIFY_FEATURE_DIRECTORY` to the feature directory path before planning commands:
 
 ```bash
 # Bash/Zsh
-export SPECIFY_FEATURE="001-my-feature"
+export SPECIFY_FEATURE_DIRECTORY="specs/001-my-feature"
 
 # PowerShell
-$env:SPECIFY_FEATURE = "001-my-feature"
+$env:SPECIFY_FEATURE_DIRECTORY = "specs/001-my-feature"
 ```
 
-This tells Spec Kit which feature directory to use when creating specs, plans, and tasks.
-
-**Why this matters:** Without git, Spec Kit can't detect your current branch name to determine the active feature. The environment variable provides that context manually.
+Alternatively, run the `/speckit.specify` command which creates `.specify/feature.json` automatically.
 
 ---
 
@@ -388,15 +382,19 @@ Only Spec Kit infrastructure files:
 
 ### "CLI upgrade doesn't seem to work"
 
-If a command behaves like an older Spec Kit version, first check for local CLI drift:
+If a command behaves like an older Spec Kit version, first ask the CLI itself:
 
 ```bash
+# Read-only — prints "Up to date: X.Y.Z" or "Update available: X.Y.Z → vY.Z.W"
 specify self check
+
+# Preview the install method, current version, and target tag the upgrade would use
+specify self upgrade --dry-run
 ```
 
 `specify check` is an offline environment scan; `specify self check` is the CLI version lookup.
 
-Verify the installation:
+If `self check` shows the wrong version, verify the installation:
 
 ```bash
 # Check installed tools

@@ -13,6 +13,14 @@ extension:
   # CUSTOMIZE: Brief description (under 200 characters)
   description: "Brief description of what your extension does"
 
+  # CUSTOMIZE: Extension category — describes what the extension operates on
+  # Common values: docs, code, process, integration, visibility
+  # category: "process"
+
+  # CUSTOMIZE: Extension effect — whether it modifies project files
+  # One of: read-only | read-write
+  # effect: "read-write"
+
   # CUSTOMIZE: Your name or organization name
   author: "Your Name"
 
@@ -78,6 +86,14 @@ hooks:
   #   command: "speckit.my-extension.another"
   #   optional: false  # Auto-execute without prompting
   #   description: "Runs automatically after implementation"
+
+  # MULTIPLE COMMANDS ON ONE EVENT: use a list of entries.
+  # Add optional `priority` (integer >= 1, default 10) to order them, lowest first.
+  # after_plan:
+  #   - command: "speckit.my-extension.verify"
+  #     priority: 5
+  #   - command: "speckit.my-extension.report"
+  #     priority: 10
 
 # CUSTOMIZE: Add relevant tags (2-5 recommended)
 # Used for discovery in catalog

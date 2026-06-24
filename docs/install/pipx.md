@@ -1,6 +1,6 @@
 # Installing with pipx
 
-[pipx](https://pypa.github.io/pipx/) is a tool for installing Python CLI applications in isolated environments. It does not require [uv](https://docs.astral.sh/uv/).
+[pipx](https://pipx.pypa.io/) is a tool for installing Python CLI applications in isolated environments. It does not require [uv](https://docs.astral.sh/uv/).
 
 ## Install Specify CLI
 

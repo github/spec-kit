@@ -111,6 +111,15 @@ class TestCheckToolOther:
         with patch("shutil.which", side_effect=fake_which):
             assert check_tool("kiro-cli") is True
 
+    def test_rovodev_uses_acli_executable(self):
+        """rovodev should resolve through the shared acli executable."""
+
+        def fake_which(name):
+            return "/usr/bin/acli" if name == "acli" else None
+
+        with patch("shutil.which", side_effect=fake_which):
+            assert check_tool("rovodev") is True
+
 
 class TestCheckTip:
     """`specify check` should point users to the existing version check."""

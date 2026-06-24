@@ -56,11 +56,11 @@ class TestDevinBuildExecArgs:
         assert args == ["devin", "-p", "hi", "--model", "claude-sonnet-4"]
 
 
-class TestDevinAutoPromote:
-    """--ai devin auto-promotes to integration path."""
+class TestDevinInitFlow:
+    """--integration devin creates expected files."""
 
-    def test_ai_devin_without_ai_skills_auto_promotes(self, tmp_path):
-        """--ai devin should work the same as --integration devin."""
+    def test_integration_devin_creates_skills(self, tmp_path):
+        """--integration devin should create skills directory."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -68,8 +68,8 @@ class TestDevinAutoPromote:
         target = tmp_path / "test-proj"
         result = runner.invoke(
             app,
-            ["init", str(target), "--ai", "devin", "--no-git", "--ignore-agent-tools", "--script", "sh"],
+            ["init", str(target), "--integration", "devin", "--ignore-agent-tools", "--script", "sh"],
         )
 
-        assert result.exit_code == 0, f"init --ai devin failed: {result.output}"
+        assert result.exit_code == 0, f"init --integration devin failed: {result.output}"
         assert (target / ".devin" / "skills" / "speckit-plan" / "SKILL.md").exists()

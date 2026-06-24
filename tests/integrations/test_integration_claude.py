@@ -3,13 +3,14 @@
 import codecs
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import yaml
 
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.base import IntegrationBase
-from specify_cli.integrations.claude import ARGUMENT_HINTS
+from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
+from specify_cli.integrations.claude import ARGUMENT_HINTS, FORK_CONTEXT_COMMANDS
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
@@ -65,6 +66,16 @@ class TestClaudeIntegration:
         assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
+    def test_render_skill_unicode(self):
+        """Test rendering a skill preserves non-ASCII characters."""
+        integration = get_integration("claude")
+        rendered = integration._render_skill(
+            "constitution",
+            {"description": "Prüfe Konformität der Implementierung"},
+            "Body",
+        )
+        assert "Prüfe Konformität" in rendered
+
     def test_setup_upserts_context_section(self, tmp_path):
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
@@ -117,7 +128,7 @@ class TestClaudeIntegration:
         assert b"<!-- SPECKIT" not in remaining
         assert b"# CLAUDE.md" in remaining
 
-    def test_ai_flag_auto_promotes_and_enables_skills(self, tmp_path):
+    def test_integration_flag_creates_skill_files_cli(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -132,11 +143,10 @@ class TestClaudeIntegration:
                 [
                     "init",
                     "--here",
-                    "--ai",
+                    "--integration",
                     "claude",
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -174,7 +184,6 @@ class TestClaudeIntegration:
                     "claude",
                     "--script",
                     "sh",
-                    "--no-git",
                     "--ignore-agent-tools",
                 ],
                 catch_exceptions=False,
@@ -197,8 +206,8 @@ class TestClaudeIntegration:
             os.chdir(project)
             runner = CliRunner()
             with (
-                patch("specify_cli._stdin_is_interactive", return_value=True),
-                patch("specify_cli.select_with_arrows", return_value="claude"),
+                patch("specify_cli.commands.init._stdin_is_interactive", return_value=True),
+                patch("specify_cli.commands.init.select_with_arrows", return_value="claude"),
             ):
                 result = runner.invoke(
                     app,
@@ -207,7 +216,6 @@ class TestClaudeIntegration:
                         "--here",
                         "--script",
                         "sh",
-                        "--no-git",
                         "--ignore-agent-tools",
                     ],
                     catch_exceptions=False,
@@ -233,7 +241,7 @@ class TestClaudeIntegration:
         assert init_options["integration"] == "claude"
 
     def test_claude_init_remains_usable_when_converter_fails(self, tmp_path):
-        """Claude init should succeed even without install_ai_skills."""
+        """Claude init should succeed even without install_skills."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -242,7 +250,7 @@ class TestClaudeIntegration:
 
         result = runner.invoke(
             app,
-            ["init", str(target), "--ai", "claude", "--script", "sh", "--no-git", "--ignore-agent-tools"],
+            ["init", str(target), "--integration", "claude", "--script", "sh", "--ignore-agent-tools"],
         )
 
         assert result.exit_code == 0
@@ -333,18 +341,30 @@ class TestClaudeIntegration:
 class TestClaudeArgumentHints:
     """Verify that argument-hint frontmatter is injected for Claude skills."""
 
+    def test_converge_has_no_argument_hint(self):
+        """Converge should not advertise unsupported feature-name arguments."""
+        assert "converge" not in ARGUMENT_HINTS
+
     def test_all_skills_have_hints(self, tmp_path):
-        """Every generated SKILL.md must contain an argument-hint line."""
+        """Every skill with a configured hint must contain an argument-hint line."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         assert len(skill_files) > 0
         for f in skill_files:
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
             content = f.read_text(encoding="utf-8")
-            assert "argument-hint:" in content, (
-                f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
-            )
+            if stem in ARGUMENT_HINTS:
+                assert "argument-hint:" in content, (
+                    f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
+                )
+            else:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
 
     def test_hints_match_expected_values(self, tmp_path):
         """Each skill's argument-hint must match the expected text."""
@@ -358,13 +378,15 @@ class TestClaudeArgumentHints:
             if stem.startswith("speckit-"):
                 stem = stem[len("speckit-"):]
             expected_hint = ARGUMENT_HINTS.get(stem)
-            assert expected_hint is not None, (
-                f"No expected hint defined for skill '{stem}'"
-            )
             content = f.read_text(encoding="utf-8")
-            assert f'argument-hint: "{expected_hint}"' in content, (
-                f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
-            )
+            if expected_hint is None:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
+            else:
+                assert f'argument-hint: "{expected_hint}"' in content, (
+                    f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
+                )
 
     def test_hint_is_inside_frontmatter(self, tmp_path):
         """argument-hint must appear between the --- delimiters, not in the body."""
@@ -378,12 +400,20 @@ class TestClaudeArgumentHints:
             assert len(parts) >= 3, f"No frontmatter in {f.parent.name}/SKILL.md"
             frontmatter = parts[1]
             body = parts[2]
-            assert "argument-hint:" in frontmatter, (
-                f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
-            )
-            assert "argument-hint:" not in body, (
-                f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
-            )
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem in ARGUMENT_HINTS:
+                assert "argument-hint:" in frontmatter, (
+                    f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
+                )
+                assert "argument-hint:" not in body, (
+                    f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
+                )
+            else:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
 
     def test_hint_appears_after_description(self, tmp_path):
         """argument-hint must immediately follow the description line."""
@@ -394,6 +424,14 @@ class TestClaudeArgumentHints:
         for f in skill_files:
             content = f.read_text(encoding="utf-8")
             lines = content.splitlines()
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem not in ARGUMENT_HINTS:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
+                continue
             found_description = False
             for idx, line in enumerate(lines):
                 if line.startswith("description:"):
@@ -487,8 +525,8 @@ class TestClaudeDisableModelInvocation:
         assert "disable-model-invocation" not in fm
         assert "user-invocable" not in fm
 
-    def test_skills_default_post_process_is_identity(self, tmp_path):
-        """SkillsIntegration agents without an override leave content unchanged."""
+    def test_skills_default_post_process_preserves_content_without_hooks(self, tmp_path):
+        """SkillsIntegration agents without an override preserve non-hook content."""
         # ``agy`` is a plain SkillsIntegration with no post-process override,
         # so it stands in for the base-class default behavior.
         agy = get_integration("agy")
@@ -498,6 +536,102 @@ class TestClaudeDisableModelInvocation:
         assert agy.post_process_skill_content(content) == content
 
 
+class TestClaudeForkContext:
+    """Verify context: fork is injected only for commands listed in FORK_CONTEXT_COMMANDS."""
+
+    def test_analyze_skill_runs_in_forked_subagent(self, tmp_path):
+        """speckit-analyze must opt into context: fork + agent."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        i.setup(tmp_path, m, script_type="sh")
+        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
+        assert analyze_skill.exists()
+        content = analyze_skill.read_text(encoding="utf-8")
+        parts = content.split("---", 2)
+        parsed = yaml.safe_load(parts[1])
+        assert parsed.get("context") == "fork"
+        assert parsed.get("agent") == "general-purpose"
+
+    def test_other_skills_do_not_fork(self, tmp_path):
+        """Skills not in FORK_CONTEXT_COMMANDS must not get context: fork."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        created = i.setup(tmp_path, m, script_type="sh")
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        for f in skill_files:
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-"):]
+            if stem in FORK_CONTEXT_COMMANDS:
+                continue
+            content = f.read_text(encoding="utf-8")
+            parts = content.split("---", 2)
+            parsed = yaml.safe_load(parts[1])
+            assert "context" not in parsed, (
+                f"{f.parent.name}: must not have context frontmatter"
+            )
+            assert "agent" not in parsed, (
+                f"{f.parent.name}: must not have agent frontmatter"
+            )
+
+    def test_fork_flags_inside_frontmatter(self, tmp_path):
+        """context/agent must appear in the frontmatter, not in the body."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        i.setup(tmp_path, m, script_type="sh")
+        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
+        content = analyze_skill.read_text(encoding="utf-8")
+        parts = content.split("---", 2)
+        assert len(parts) >= 3
+        frontmatter = parts[1]
+        body = parts[2]
+        assert "context: fork" in frontmatter
+        assert "agent: general-purpose" in frontmatter
+        assert "context: fork" not in body
+        assert "agent: general-purpose" not in body
+
+    def test_fork_injection_idempotent(self, tmp_path):
+        """Re-running setup must not duplicate the fork frontmatter keys."""
+        i = get_integration("claude")
+        m = IntegrationManifest("claude", tmp_path)
+        i.setup(tmp_path, m, script_type="sh")
+        i.setup(tmp_path, m, script_type="sh")
+        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
+        content = analyze_skill.read_text(encoding="utf-8")
+        assert content.count("context: fork") == 1
+        assert content.count("agent: general-purpose") == 1
+
+    def test_fork_context_injected_via_post_process(self):
+        """Preset/extension generators call post_process_skill_content directly,
+        bypassing setup(); fork context must be injected there too."""
+        i = get_integration("claude")
+        content = '---\nname: "speckit-analyze"\ndescription: "x"\n---\n\nBody\n'
+        result = i.post_process_skill_content(content)
+        parsed = yaml.safe_load(result.split("---", 2)[1])
+        assert parsed.get("context") == "fork"
+        assert parsed.get("agent") == "general-purpose"
+        assert parsed.get("argument-hint") == ARGUMENT_HINTS["analyze"]
+
+    def test_post_process_no_fork_for_other_skills(self):
+        """Skills not in FORK_CONTEXT_COMMANDS must not gain context/agent."""
+        i = get_integration("claude")
+        content = '---\nname: "speckit-plan"\ndescription: "x"\n---\n\nBody\n'
+        result = i.post_process_skill_content(content)
+        parsed = yaml.safe_load(result.split("---", 2)[1])
+        assert "context" not in parsed
+        assert "agent" not in parsed
+
+    def test_post_process_fork_idempotent(self):
+        """Re-running post_process must not duplicate fork frontmatter keys."""
+        i = get_integration("claude")
+        content = '---\nname: "speckit-analyze"\ndescription: "x"\n---\n\nBody\n'
+        once = i.post_process_skill_content(content)
+        twice = i.post_process_skill_content(once)
+        assert once == twice
+        assert twice.count("context: fork") == 1
+        assert twice.count("agent: general-purpose") == 1
+
+
 class TestClaudeHookCommandNote:
     """Verify dot-to-hyphen normalization note is injected in hook sections."""
 
@@ -505,7 +639,7 @@ class TestClaudeHookCommandNote:
         """Skills that have hook sections should get the normalization note."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
+        i.setup(tmp_path, m, script_type="sh")
         specify_skill = tmp_path / ".claude/skills/speckit-specify/SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
@@ -516,35 +650,54 @@ class TestClaudeHookCommandNote:
 
     def test_hook_note_not_in_skills_without_hooks(self, tmp_path):
         """Skills without hook sections should not get the note."""
-        from specify_cli.integrations.claude import ClaudeIntegration
-
         content = "---\nname: test\ndescription: test\n---\n\nNo hooks here.\n"
-        result = ClaudeIntegration._inject_hook_command_note(content)
+        result = SkillsIntegration._inject_hook_command_note(content)
         assert "replace dots" not in result
 
     def test_hook_note_idempotent(self, tmp_path):
         """Injecting the note twice should not duplicate it."""
-        from specify_cli.integrations.claude import ClaudeIntegration
-
         content = (
             "---\nname: test\n---\n\n"
             "- For each executable hook, output the following based on its flag:\n"
         )
-        once = ClaudeIntegration._inject_hook_command_note(content)
-        twice = ClaudeIntegration._inject_hook_command_note(once)
+        once = SkillsIntegration._inject_hook_command_note(content)
+        twice = SkillsIntegration._inject_hook_command_note(once)
         assert once == twice, "Hook note injection should be idempotent"
+
+    def test_hook_note_fills_missing_repeated_instructions(self, tmp_path):
+        """Already-noted hook sections should not suppress later sections."""
+        from specify_cli.integrations.base import _HOOK_COMMAND_NOTE
+
+        content = (
+            "---\nname: test\n---\n\n"
+            f"{_HOOK_COMMAND_NOTE}"
+            "- For each executable hook, output the following based on its flag:\n"
+            "\n"
+            "  - For each executable hook, output the following based on its flag:\n"
+        )
+        result = SkillsIntegration._inject_hook_command_note(content)
+        assert result.count("replace dots (`.`) with hyphens") == 2
+
+    def test_hook_note_not_suppressed_by_unrelated_phrase(self, tmp_path):
+        """Unrelated text should not trip the hook-note idempotence guard."""
+        content = (
+            "---\nname: test\n---\n\n"
+            "This paragraph says replace dots in a different context.\n"
+            "- For each executable hook, output the following based on its flag:\n"
+        )
+        result = SkillsIntegration._inject_hook_command_note(content)
+        assert "This paragraph says replace dots in a different context." in result
+        assert result.count("replace dots (`.`) with hyphens") == 1
 
     def test_hook_note_preserves_indentation(self, tmp_path):
         """The injected note should match the indentation of the target line."""
-        from specify_cli.integrations.claude import ClaudeIntegration
-
         content = (
             "---\nname: test\n---\n\n"
             "   - For each executable hook, output the following\n"
         )
-        result = ClaudeIntegration._inject_hook_command_note(content)
+        result = SkillsIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
-        note_line = [l for l in lines if "replace dots" in l][0]
+        note_line = [line for line in lines if "replace dots" in line][0]
         assert note_line.startswith("   "), "Note should preserve indentation"
 
     def test_post_process_injects_all_claude_flags(self):
@@ -558,3 +711,204 @@ class TestClaudeHookCommandNote:
         assert "user-invocable: true" in result
         assert "disable-model-invocation: false" in result
         assert "replace dots" in result
+
+
+class TestSpeckitManifestRecordsSkippedFiles:
+    """Regression test for issue #2107.
+
+    ``install_shared_infra`` must record every shared-infrastructure file
+    under ``.specify/`` in ``speckit.manifest.json``, including files that
+    were *skipped* because they already existed on disk and ``force=False``.
+
+    Before the fix, the skip branches in the scripts and templates loops
+    appended to ``skipped_files`` without calling ``manifest.record_existing``.
+    So when ``install_shared_infra`` ran with a fresh (or lost) manifest
+    against an already-populated ``.specify/`` tree, every file went down the
+    skip path, ``planned_copies`` and ``planned_templates`` stayed empty, and
+    ``manifest.save()`` wrote an empty ``files`` field — leaving the
+    integration believing nothing was installed.
+
+    Reproduction (without the fix) using ``install_shared_infra`` directly:
+
+        install_shared_infra(p, "sh", ..., force=False)   # 1st run → 10 files
+        (p / ".specify/integrations/speckit.manifest.json").unlink()
+        install_shared_infra(p, "sh", ..., force=False)   # 2nd run → 0 files
+                                                          # ^^ BUG: empty
+    """
+
+    def _read_manifest_files(self, project_path: Path) -> dict:
+        manifest_path = (
+            project_path / ".specify" / "integrations" / "speckit.manifest.json"
+        )
+        assert manifest_path.exists(), (
+            f"speckit.manifest.json not written at {manifest_path}"
+        )
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        # ``IntegrationManifest.save`` serialises a ``files`` dict — assert
+        # the schema explicitly so a regression to a different key (e.g.
+        # the internal ``_files`` attribute name) fails loudly instead of
+        # being masked by a silent fallback.
+        assert isinstance(data, dict), (
+            f"manifest root is not a dict, got {type(data).__name__}"
+        )
+        assert "files" in data, (
+            f"manifest missing 'files' key, got keys: {sorted(data.keys())}"
+        )
+        files = data["files"]
+        assert isinstance(files, dict), (
+            f"manifest 'files' is not a dict, got {type(files).__name__}"
+        )
+        return files
+
+    def test_install_shared_infra_records_skipped_files(self, tmp_path):
+        """With ``force=False`` and ``.specify/`` already populated, the
+        manifest must still record every file — the skip branches are not
+        allowed to drop files from the manifest."""
+        from rich.console import Console
+        from specify_cli.shared_infra import install_shared_infra
+
+        # Resolve the project's own packaged sources by walking up from this
+        # test file to the repo root (which contains ``scripts/`` and
+        # ``templates/`` that ``shared_scripts_source`` looks for).
+        repo_root = Path(__file__).resolve().parents[2]
+        console = Console(quiet=True)
+
+        # First run — fresh project, manifest gets populated normally.
+        install_shared_infra(
+            tmp_path,
+            "sh",
+            version="0.0.0",
+            core_pack=None,
+            repo_root=repo_root,
+            console=console,
+            force=False,
+        )
+        first_files = self._read_manifest_files(tmp_path)
+        assert first_files, "first install produced an empty manifest"
+
+        # Simulate a lost manifest while ``.specify/`` is still on disk
+        # (e.g. the manifest was deleted, corrupted, or the layout was
+        # extracted out-of-band).
+        manifest_path = (
+            tmp_path / ".specify" / "integrations" / "speckit.manifest.json"
+        )
+        manifest_path.unlink()
+
+        # Second run — every file already exists, so every iteration takes
+        # the skip branch. With the fix, those files are still recorded.
+        install_shared_infra(
+            tmp_path,
+            "sh",
+            version="0.0.0",
+            core_pack=None,
+            repo_root=repo_root,
+            console=console,
+            force=False,
+        )
+        second_files = self._read_manifest_files(tmp_path)
+        assert second_files, (
+            "speckit.manifest.json files dict is empty after install with "
+            "skipped files (issue #2107) — every file went down the skip "
+            "branch but none were recorded"
+        )
+
+        # The recovered manifest must cover everything the first run tracked.
+        missing = set(first_files) - set(second_files)
+        assert not missing, (
+            f"these files were tracked on the first install but missing after "
+            f"the skipped-files re-install: {sorted(missing)[:5]}"
+        )
+
+    def test_install_shared_infra_handles_directory_at_script_destination(
+        self, tmp_path
+    ):
+        """A non-file (directory) at a script's destination must NOT crash
+        ``install_shared_infra`` and must NOT be recorded in the manifest —
+        the path still appears in the user-visible skipped-paths warning.
+        """
+        from io import StringIO
+        from rich.console import Console
+        from specify_cli.shared_infra import install_shared_infra
+
+        repo_root = Path(__file__).resolve().parents[2]
+        output = StringIO()
+        console = Console(file=output, force_terminal=False, width=200)
+
+        # Pre-create the .specify/scripts/bash tree, then plant a directory
+        # where a script file is expected so the skip branch hits a
+        # non-regular-file path.
+        bash_dir = tmp_path / ".specify" / "scripts" / "bash"
+        bash_dir.mkdir(parents=True)
+        (bash_dir / "common.sh").mkdir()  # collision: dir where file expected
+
+        # Must not crash.
+        install_shared_infra(
+            tmp_path,
+            "sh",
+            version="0.0.0",
+            core_pack=None,
+            repo_root=repo_root,
+            console=console,
+            force=False,
+        )
+
+        files = self._read_manifest_files(tmp_path)
+        assert ".specify/scripts/bash/common.sh" not in files, (
+            "directory at script dst must not be recorded in the manifest"
+        )
+        text = output.getvalue()
+        assert "common.sh" in text, (
+            "directory-at-script-dst path must surface in the skipped warning"
+        )
+
+    def test_install_shared_infra_handles_directory_at_template_destination(
+        self, tmp_path
+    ):
+        """Symmetric coverage for the templates loop: a directory at a
+        template's destination must NOT crash install nor be recorded."""
+        from io import StringIO
+        from rich.console import Console
+        from specify_cli.shared_infra import install_shared_infra
+
+        repo_root = Path(__file__).resolve().parents[2]
+        output = StringIO()
+        console = Console(file=output, force_terminal=False, width=200)
+
+        templates_dir = tmp_path / ".specify" / "templates"
+        templates_dir.mkdir(parents=True)
+
+        src_templates = repo_root / "templates"
+        real_template = next(
+            (
+                p.name
+                for p in src_templates.iterdir()
+                if p.is_file()
+                and not p.name.startswith(".")
+                and p.name != "vscode-settings.json"
+            ),
+            None,
+        )
+        assert real_template, (
+            "no real template found in repo to collide against"
+        )
+        (templates_dir / real_template).mkdir()  # collision
+
+        install_shared_infra(
+            tmp_path,
+            "sh",
+            version="0.0.0",
+            core_pack=None,
+            repo_root=repo_root,
+            console=console,
+            force=False,
+        )
+
+        files = self._read_manifest_files(tmp_path)
+        template_rel = f".specify/templates/{real_template}"
+        assert template_rel not in files, (
+            "directory at template dst must not be recorded in manifest"
+        )
+        text = output.getvalue()
+        assert real_template in text, (
+            "directory-at-template-dst path must surface in the skipped warning"
+        )

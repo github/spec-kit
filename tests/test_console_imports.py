@@ -2,12 +2,7 @@
 from specify_cli import (
     console,
     StepTracker,
-    get_key,
     select_with_arrows,
-    BannerGroup,
-    show_banner,
-    BANNER,
-    TAGLINE,
 )
 
 

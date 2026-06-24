@@ -137,7 +137,7 @@ class TestKimiNextSteps:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "kimi", "--no-git",
+                "init", "--here", "--integration", "kimi",
                 "--ignore-agent-tools", "--script", "sh",
             ], catch_exceptions=False)
         finally:

@@ -4,7 +4,8 @@ emoji: "🧩"
 
 on:
   issues:
-    types: [opened, edited, labeled]
+    types: [labeled]
+    names: [extension-submission]
   skip-bots: [github-actions, copilot, dependabot]
 
 tools:
@@ -12,6 +13,7 @@ tools:
   bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "python3", "jq", "date"]
   github:
     toolsets: [issues, repos]
+    min-integrity: none
   web-fetch:
 
 permissions:
@@ -22,6 +24,8 @@ checkout:
   fetch-depth: 0
 
 safe-outputs:
+  noop:
+    report-as-issue: false
   create-pull-request:
     title-prefix: "[extension] "
     labels: [extension-submission, automated]
@@ -47,14 +51,11 @@ or update entries in the community extension catalog.
 
 ## Triggering Conditions
 
-This workflow triggers on issue events. **Only process the issue if ALL of these
-conditions are met:**
-
-1. The issue has the `extension-submission` label
-2. The issue title starts with `[Extension]:`
-
-If the issue does not meet these conditions, add a brief comment explaining that
-this workflow only processes extension submission issues, then stop.
+This workflow is triggered by any `issues: labeled` event, but a job-level
+condition gates the agent run so it only proceeds when the label that was just
+added is `extension-submission`. By the time you run, that condition has already
+passed. Before processing, verify that the issue title starts with `[Extension]:`.
+If it does not, stop without commenting.
 
 ## Step 1 — Read and Parse the Issue
 
