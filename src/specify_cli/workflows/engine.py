@@ -52,9 +52,18 @@ class WorkflowDefinition:
         if not isinstance(self.default_options, dict):
             self.default_options = {}
 
-        # Requirements (declared but not yet enforced at runtime;
-        # enforcement is a planned enhancement)
-        self.requires: dict[str, Any] = data.get("requires", {})
+        # Advisory pre-conditions (spec-kit version / integrations a workflow
+        # expects). Validated by ``validate_workflow`` (recognized keys only;
+        # see ``_RECOGNIZED_REQUIRES_KEYS``) but NOT enforced at run time — they
+        # are not a security boundary. In particular there is no
+        # ``requires.permissions`` capability gate: shell steps always run with
+        # the user's privileges.
+        #
+        # Holds the raw parsed value, so before ``validate_workflow`` runs it may
+        # be a non-mapping (``None`` for a bare ``requires:``, a list for
+        # ``requires: []``, etc.); typed ``Any`` rather than ``dict[str, Any]``
+        # to avoid implying it is always a mapping at this point.
+        self.requires: Any = data.get("requires", {})
 
         # Inputs
         self.inputs: dict[str, Any] = data.get("inputs", {})
@@ -86,6 +95,15 @@ class WorkflowDefinition:
 
 # ID format: lowercase alphanumeric with hyphens
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$")
+
+# Keys accepted under a workflow's ``requires`` block: the advisory
+# pre-conditions documented for workflows (``speckit_version`` and
+# ``integrations``). This is the *workflow* schema only — the bundle manifest's
+# ``requires`` (see ``bundler/models/manifest.py``) is a separate schema that
+# also carries ``tools``/``mcp``; those are not workflow ``requires`` keys.
+# Any other key — notably ``permissions`` — is rejected by ``validate_workflow``
+# so it is never mistaken for an enforced runtime control.
+_RECOGNIZED_REQUIRES_KEYS = frozenset({"speckit_version", "integrations"})
 
 # Valid step types (matching STEP_REGISTRY keys)
 def _get_valid_step_types() -> set[str]:
@@ -176,6 +194,36 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
                     errors.append(
                         f"Input {input_name!r} has invalid default: {exc}"
                     )
+
+    # -- Requires ---------------------------------------------------------
+    # ``requires`` declares advisory pre-conditions (the spec-kit version and
+    # integrations a workflow expects). Only a fixed set of keys is recognized;
+    # reject anything else so authoring typos surface here instead of being
+    # silently ignored at runtime. In particular ``requires.permissions`` is
+    # rejected explicitly: it reads like a runtime capability gate, but no such
+    # gate exists — a ``shell`` step always runs with the user's privileges, so
+    # declaring it would give a false sense of sandboxing.
+    #
+    # Mirror ``inputs`` validation: an omitted block defaults to ``{}`` and is
+    # valid, but any present-but-non-mapping value — ``requires:`` (YAML null),
+    # ``requires: []`` or ``requires: ''`` — is an authoring error and must
+    # surface here rather than be silently ignored at runtime.
+    if not isinstance(definition.requires, dict):
+        errors.append("'requires' must be a mapping (or omitted).")
+    else:
+        for key in definition.requires:
+            if key == "permissions":
+                errors.append(
+                    "'requires.permissions' is not a recognized or "
+                    "enforced capability gate — shell steps always run "
+                    "with the user's privileges. Remove it and gate "
+                    "sensitive steps with a 'gate' step instead."
+                )
+            elif key not in _RECOGNIZED_REQUIRES_KEYS:
+                errors.append(
+                    f"Unknown 'requires' key {key!r}. Recognized keys: "
+                    f"{', '.join(sorted(_RECOGNIZED_REQUIRES_KEYS))}."
+                )
 
     # -- Steps ------------------------------------------------------------
     if not isinstance(definition.steps, list):

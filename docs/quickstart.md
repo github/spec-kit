@@ -13,10 +13,10 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 After installing Spec Kit and defining your project constitution, quick experiments can use the lean feature path: `/speckit.specify` -> `/speckit.plan` -> `/speckit.tasks` -> `/speckit.implement`. For production features or any work with meaningful ambiguity, treat `/speckit.clarify`, `/speckit.checklist`, and `/speckit.analyze` as regular quality gates:
 
 ```text
-/speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.checklist -> /speckit.plan -> /speckit.tasks -> /speckit.analyze -> /speckit.implement
+/speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.plan -> /speckit.checklist -> /speckit.tasks -> /speckit.analyze -> /speckit.implement
 ```
 
-Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` to validate requirements quality before planning, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts. You can repeat `/speckit.analyze` after implementation as an extra review, but keep the first analysis before `/speckit.implement` so gaps are caught while the plan and tasks can still be adjusted.
+Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` (after `/speckit.plan`) to generate quality checklists that validate requirements completeness, clarity, and consistency, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts. You can repeat `/speckit.analyze` after implementation as an extra review, but keep the first analysis before `/speckit.implement` so gaps are caught while the plan and tasks can still be adjusted.
 
 ### Step 1: Install Specify
 
@@ -75,18 +75,18 @@ uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME
 /speckit.clarify Focus on security and performance requirements.
 ```
 
-Then validate the requirements with `/speckit.checklist` before creating the technical plan:
-
-```bash
-/speckit.checklist
-```
-
 ### Step 5: Create a Technical Implementation Plan
 
 **In the chat**, use the `/speckit.plan` slash command to provide your tech stack and architecture choices.
 
 ```markdown
 /speckit.plan The application uses Vite with minimal number of libraries. Use vanilla HTML, CSS, and JavaScript as much as possible. Images are not uploaded anywhere and metadata is stored in a local SQLite database.
+```
+
+Then generate quality checklists with `/speckit.checklist` once the plan exists:
+
+```bash
+/speckit.checklist
 ```
 
 ### Step 6: Break Down, Analyze, and Implement
@@ -150,20 +150,20 @@ You can continue to refine the spec with more details using `/speckit.clarify`:
 /speckit.clarify When you first launch Taskify, it's going to give you a list of the five users to pick from. There will be no password required. When you click on a user, you go into the main view, which displays the list of projects. When you click on a project, you open the Kanban board for that project. You're going to see the columns. You'll be able to drag and drop cards back and forth between different columns. You will see any cards that are assigned to you, the currently logged in user, in a different color from all the other ones, so you can quickly see yours. You can edit any comments that you make, but you can't edit comments that other people made. You can delete any comments that you made, but you can't delete comments anybody else made.
 ```
 
-### Step 4: Validate the Spec
-
-Validate the specification checklist using the `/speckit.checklist` command:
-
-```bash
-/speckit.checklist
-```
-
-### Step 5: Generate Technical Plan with `/speckit.plan`
+### Step 4: Generate Technical Plan with `/speckit.plan`
 
 Be specific about your tech stack and technical requirements:
 
 ```bash
 /speckit.plan We are going to generate this using .NET Aspire, using Postgres as the database. The frontend should use Blazor server with drag-and-drop task boards, real-time updates. There should be a REST API created with a projects API, tasks API, and a notifications API.
+```
+
+### Step 5: Validate the Spec
+
+Generate quality checklists to validate the specification using the `/speckit.checklist` command:
+
+```bash
+/speckit.checklist
 ```
 
 ### Step 6: Define Tasks

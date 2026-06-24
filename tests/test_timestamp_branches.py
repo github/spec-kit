@@ -869,6 +869,52 @@ class TestPowerShellDryRun:
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
 
 
+# ── Short-Word / Acronym Branch-Name Tests ──────────────────────────────────
+
+
+def _branch_from_output(stdout: str) -> str | None:
+    for line in stdout.splitlines():
+        if line.startswith("BRANCH_NAME:"):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
+SHORT_WORD_CASES = [
+    # description, expected branch — "go" (lowercase short word) is dropped,
+    # "AI" (uppercase short word / acronym) is kept, "now" (>=3 chars) is kept.
+    ("go AI now", "001-ai-now"),
+    # A short word that is lowercase everywhere is dropped entirely.
+    ("go to the pub", "001-pub"),
+]
+
+
+@requires_bash
+class TestShortWordRetentionBash:
+    """A short word is kept only when it appears in uppercase (an acronym)."""
+
+    @pytest.mark.parametrize("description,expected", SHORT_WORD_CASES)
+    def test_short_word_retention(self, git_repo: Path, description: str, expected: str):
+        result = run_script(git_repo, "--dry-run", description)
+        assert result.returncode == 0, result.stderr
+        assert _branch_from_output(result.stdout) == expected
+
+
+@pytest.mark.skipif(not _has_pwsh(), reason="pwsh not available")
+class TestShortWordRetentionPowerShell:
+    """PowerShell must match bash: a short word is kept only when uppercase.
+
+    Regression guard for the `-match` (case-insensitive) vs `-cmatch`
+    (case-sensitive) divergence — with `-match`, every short non-stop word
+    leaked into the branch name even when it was lowercase.
+    """
+
+    @pytest.mark.parametrize("description,expected", SHORT_WORD_CASES)
+    def test_short_word_retention(self, ps_git_repo: Path, description: str, expected: str):
+        result = run_ps_script(ps_git_repo, "-DryRun", description)
+        assert result.returncode == 0, result.stderr
+        assert _branch_from_output(result.stdout) == expected
+
+
 # ── GIT_BRANCH_NAME Override Tests ──────────────────────────────────────────
 
 
