@@ -1,62 +1,45 @@
 <div align="center">
     <img src="./media/logo_large.webp" alt="Spec Kit Logo" width="180" height="180"/>
-    <h1>Spec Kit</h1>
-    <h3><em>用规格驱动 AI 编码，而不是靠一次性提示词碰运气。</em></h3>
+    <h1>Spec Kit Local Extensions</h1>
+    <h3><em>面向本地增强工作流的 Spec Kit 分发版。</em></h3>
 </div>
 
 <p align="center">
-    <strong>Spec Kit 帮你把想法拆成原则、规格、计划、任务和实现，让 AI 编码助手按可追踪的工程流程工作。</strong>
-</p>
-
-<p align="center">
-    <a href="https://github.com/bigsmartben/spec-kit/releases"><img src="https://img.shields.io/github/v/release/bigsmartben/spec-kit" alt="Latest Release"/></a>
-    <a href="https://github.com/bigsmartben/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/bigsmartben/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/bigsmartben/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/bigsmartben/spec-kit" alt="License"/></a>
+    <strong>这个仓库的重点不是复述基础用法，而是打包一组本地扩展和预设，让规格、架构、证据、预览、治理和多 agent 实现流程连成一条可审查的链路。</strong>
 </p>
 
 ---
 
-## 这是什么
+## 本地定位
 
-Spec Kit 是一套面向使用者的 Spec-Driven Development 工具链。你先把项目目标写成清楚的规格，再让 AI 编码助手根据规格生成技术计划、任务列表并执行实现。
+这个 checkout 是一个带本地增强能力的 Spec Kit 仓库。它保留核心 `specify` 工作流，同时默认安装一组本地扩展和一个默认预设。
 
-它适合这些场景：
+本 README 只介绍仓库中实际存在的本地内容：
 
-- 从零开始做一个新功能或新项目。
-- 给已有仓库补一套规格、架构记忆和实现流程。
-- 让 AI agent 在改代码前先澄清需求、留下计划和可审查的任务。
-- 团队希望统一不同 AI 编码助手的工作方式。
+- `extensions/` 下的本地扩展。
+- `presets/` 下的本地预设。
+- `specify init` 默认会安装的增强能力。
+- 需要手动安装的可选能力。
+- 扩展和预设运行后会写入的主要产物。
 
-核心思路很直接：先讲清楚“要做什么”和“为什么”，再决定“怎么做”，最后按任务执行。
+如果你只是想知道这个仓库相比基础流程多了什么，可以先看这三件事：
+
+- 默认扩展：`arch`、`discovery`、`intake`、`preview`、`repository-governance`。
+- 默认预设：`workflow-preset`。
+- 自动上下文扩展：`agent-context`。
 
 ## 快速开始
 
-### 1. 安装
-
-推荐使用 [uv](https://docs.astral.sh/uv/)。最近已发布的固定内部版本安装命令如下：
-
-```bash
-uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git@bigsmartben-v0.8.14-community.5
-```
-
-如果你要跟随当前分支安装，包括本仓库源码中已集成的默认增强能力，可以使用：
-
-```bash
-uv tool install specify-cli --from git+https://github.com/bigsmartben/spec-kit.git
-```
-
-本地开发这个仓库时，可以从当前目录安装：
+在本仓库开发或试用时，优先从当前目录安装 CLI：
 
 ```bash
 uv tool install --force ./
 ```
 
-### 2. 初始化项目
-
-选择你正在使用的 AI 编码助手。下面以 Claude Code 为例：
+初始化一个项目：
 
 ```bash
-specify init my-project --integration claude
+specify init my-project --integration codex
 cd my-project
 ```
 
@@ -66,253 +49,342 @@ cd my-project
 specify init . --integration codex --force
 ```
 
-如果你的 agent 工具没有安装，但你只想先生成文件：
+如果当前机器没有对应 agent CLI，但你只想生成文件：
 
 ```bash
-specify init my-project --integration copilot --ignore-agent-tools
+specify init my-project --integration codex --ignore-agent-tools
 ```
 
-Codex 和部分 agent 支持 skills 模式：
+初始化完成后，本地默认能力会被复制到项目的 `.specify/` 目录，并注册到所选 agent 的命令或 skill 目录中。
 
-```bash
-specify init my-project --integration codex --integration-options="--skills"
-```
+## 默认安装内容
 
-查看当前安装支持哪些集成：
+`specify init` 当前默认安装这些本地扩展和预设：
 
-```bash
-specify integration list
-```
-
-### 3. 开始一次规格驱动流程
-
-进入项目目录，打开你的 AI 编码助手，然后按顺序使用 Spec Kit 命令。
-
-```text
-/speckit.constitution
-```
-
-先建立项目原则，例如代码质量、测试要求、用户体验、性能边界和架构约束。
-
-```text
-/speckit.specify Build a photo album app. Users can create albums, group photos by date, reorder albums by drag and drop, and preview photos as tiles.
-```
-
-创建功能规格。这里重点写“用户需要什么”和“为什么需要”，不要过早指定技术栈。
-
-```text
-/speckit.clarify
-```
-
-让 agent 追问缺失或含糊的需求，并把答案写回规格。
-
-```text
-/speckit.plan Use Vite, TypeScript, SQLite, and a minimal dependency set. Store metadata locally and do not upload images.
-```
-
-生成技术计划。这里再说明框架、数据库、部署方式、约束和工程偏好。
-
-```text
-/speckit.tasks
-```
-
-把规格和计划拆成可执行任务。
-
-```text
-/speckit.analyze
-```
-
-在实现前检查规格、计划和任务之间是否有冲突或遗漏。
-
-```text
-/speckit.implement
-```
-
-让 agent 按任务实现，并在任务文件中记录进度。
-
-## 常用命令
-
-| 命令 | 作用 |
-| --- | --- |
-| `/speckit.constitution` | 创建或更新项目原则，后续规格、计划和实现都会引用它。 |
-| `/speckit.specify` | 写功能规格，关注需求、用户故事和验收标准。 |
-| `/speckit.clarify` | 追问需求缺口，降低计划和实现阶段返工。 |
-| `/speckit.plan` | 根据规格和你的技术约束生成实现计划。 |
-| `/speckit.tasks` | 生成按依赖排序的任务清单。 |
-| `/speckit.checklist` | 生成质量检查清单，用来审查规格完整性。 |
-| `/speckit.analyze` | 检查规格、计划、任务之间的一致性和覆盖度。 |
-| `/speckit.taskstoissues` | 把任务转换成 GitHub issues。 |
-| `/speckit.implement` | 按任务执行实现。 |
-
-某些集成使用 skills 而不是 slash commands。命令名通常会对应为 `speckit-<name>` skill，例如 `speckit-specify`、`speckit-plan`。
-
-## 本仓库增强能力
-
-这个仓库保留 Spec Kit 的核心链路，同时默认集成一组面向真实仓库协作的增强能力：架构 SSOT、仓库治理、BDD readiness、UI/UX 行为规格、实现期 subagent handoff 和最终 code review receipt。
-
-扩展用于新增命令、hook 或额外工作流；预设用于改变核心命令和模板的行为。普通项目通常直接使用 `specify init` 的默认安装即可，小项目可以切换到 `lean` 预设降低仪式感。
-
-| 能力 | 来源 | 关键命令或产物 | 解决什么问题 |
+| 类型 | ID | 来源目录 | 作用 |
 | --- | --- | --- | --- |
-| ARCH SSOT | `arch` 扩展 | `/speckit.arch.scenario-generate`、`/speckit.arch.logical-generate`、`/speckit.arch.*-reverse`、`.specify/memory/architecture*.md` | 把项目级 4+1 架构视图沉淀为稳定记忆，避免每个 feature 重新猜边界、约束和部署假设。 |
-| Intake 证据归一化 | `intake` 扩展 | `/speckit.intake.visual-design`、`/speckit.intake.prd`、`/speckit.intake.test-cases` | 把 PRD、设计和测试用例证据整理成 SDD 可消费的 intake artifact，再进入 specify/plan。 |
-| 仓库治理规范 | `repository-governance` 扩展 | `/speckit.repository-governance.refresh`、受管 `SPECKIT GOVERNANCE` 段 | 统一 agent 的 SSOT 读取顺序、目录责任、平台适配和仓库事实证据。 |
-| UI/UX 需求规格 | `workflow-preset` + `preview` 扩展 | `spec.md` 用户旅程、`behavior/uif.intent.json`、`contracts/uif/`、`/speckit.preview.mid-html` | 先把界面状态、断点、用户路径和交互假设写成规格/契约，再生成可打开的预览产物评审。 |
-| BDD 引入 | `workflow-preset` | `/speckit.checklist`、`checklists/behavior-testability.md`、`contracts/bdd/` | 在规划前检查 Given/When/Then、可观察结果、边界和 NFR 声明，避免不可验证需求进入实现。 |
-| 任务期验证策略 | `workflow-preset` | `/speckit.tasks`、`tasks.md` 内联测试层级和证据要求 | 从 BDD、UIF、行为契约、接口契约、`research.md`、`quickstart.md` 派生验证任务，不再依赖散落的测试策略说明。 |
-| imp subagent 矩阵 | `workflow-preset` | `/speckit.implement`、Core/Vertical Planner/Worker、`handoffs/implement/<run-id>/` | 把大实现拆成按 vertical capability 隔离的 handoff，让 Codex、Claude、Gemini、Copilot 等 runtime 使用各自 subagent/worker 模式执行。 |
-| code review task | `workflow-preset` | `task_type: code_review` receipt、`review_conclusion.checked_sources`、`data_side_effect_review` | 在任务提交前审查设计、sequence、contract、quickstart 和真实 diff 的数据副作用；可授权修复写入 receipt，真实 e2e 缺口写入 todo。 |
-| Git 工作流 | `git` 扩展 | feature branch、remote 检测、可选自动提交 | 让 Spec Kit feature 与分支、提交和 issue 跟踪保持一致。 |
+| 自动扩展 | `agent-context` | `extensions/agent-context` | 维护 AGENTS、CLAUDE、Copilot 等 agent context 文件里的 Spec Kit 受管段。 |
+| 默认扩展 | `arch` | `extensions/arch` | 生成或反向生成项目级 4+1 架构视图，形成架构 SSOT。 |
+| 默认扩展 | `discovery` | `extensions/discovery` | 在正式计划前做可行性、技术选型、旧代码评估、接口理解、PoC 和场景化技术决策。 |
+| 默认扩展 | `intake` | `extensions/intake` | 把 PRD、设计稿、Figma、测试用例等来源归一化为 SDD 可消费的证据包。 |
+| 默认扩展 | `preview` | `extensions/preview` | 从规格和计划生成低、中、高保真 Markdown 或自包含 HTML 预览。 |
+| 默认扩展 | `repository-governance` | `extensions/repository-governance` | 生成仓库治理 SSOT，帮助 agent 明确目录责任、读取顺序和事实证据。 |
+| 默认预设 | `workflow-preset` | `presets/workflow-preset` | 强化 BDD、NFR、UIF、设计产物、任务验证策略和 implement handoff 编排。 |
 
-### 内置扩展
+默认扩展列表在 `src/specify_cli/commands/init.py` 的 `DEFAULT_BUNDLED_EXTENSIONS` 中维护。默认预设列表在同文件的 `DEFAULT_BUNDLED_PRESETS` 中维护。
 
-| 扩展 | 默认状态 | 你会用它做什么 |
-| --- | --- | --- |
-| `arch` | `specify init` 默认安装 | 生成或反向生成项目级 4+1 架构视图，形成 `.specify/memory/architecture*.md` 架构记忆。 |
-| `intake` | `specify init` 默认安装 | 归一化 PRD、视觉设计和测试用例证据，生成下游 SDD 命令可读取的 intake artifact。 |
-| `preview` | `specify init` 默认安装 | 根据当前 feature 的规格和计划生成低/中/高保真 Markdown wireflow 或自包含 HTML 预览，用于实现前验证 UI 和交互假设。 |
-| `repository-governance` | `specify init` 默认安装 | 生成 Repository Governance Framework 治理说明，包含垂直 SSOT 注册、读取顺序、缺失 SSOT 处理和仓库事实证据。 |
-| `git` | 初始化时默认安装，传 `--no-git` 可跳过 | 初始化 Git、创建 feature branch、校验分支、检测 remote，并可配置自动提交。 |
-| `template` | 开发模板 | 给扩展作者复制使用，不是普通项目必装扩展。 |
-| `selftest` | 测试工具 | 用于验证扩展目录和 catalog 生命周期，主要服务仓库维护。 |
+## 默认扩展
 
-手动安装或重新安装扩展示例：
+### `arch`
 
-```bash
-specify extension add arch
-specify extension add intake
-specify extension add preview
-specify extension add repository-governance
-specify extension add git
-```
+`arch` 给项目补一层架构记忆。它不是 feature 计划，也不是实现设计；它负责把项目级边界、运行时职责、部署假设、约束和架构缺口写成稳定 SSOT。
 
-查看扩展：
-
-```bash
-specify extension search
-specify extension info arch
-```
-
-扩展命令示例：
+常用命令：
 
 ```text
 /speckit.arch.scenario-generate
 /speckit.arch.logical-generate
+/speckit.arch.process-generate
+/speckit.arch.development-generate
+/speckit.arch.physical-generate
 /speckit.arch.scenario-reverse
-/speckit.intake.visual-design
+/speckit.arch.logical-reverse
+/speckit.arch.process-reverse
+/speckit.arch.development-reverse
+/speckit.arch.physical-reverse
+```
+
+主要产物：
+
+```text
+.specify/memory/architecture.md
+.specify/memory/architecture-scenario-view.md
+.specify/memory/architecture-logical-view.md
+.specify/memory/architecture-process-view.md
+.specify/memory/architecture-development-view.md
+.specify/memory/architecture-physical-view.md
+.specify/memory/architecture-repo-facts.md
+```
+
+使用建议：
+
+- 新项目先跑 `*-generate`，把目标架构讲清楚。
+- 旧仓库先跑 `*-reverse`，从真实文件、入口、配置、测试和部署线索反推架构事实。
+- 五个视图都足够具体后，再让 `architecture.md` 成为后续规划的架构摘要。
+
+### `discovery`
+
+`discovery` 放在 `/speckit.plan` 之前，用来处理“不确定能不能做、怎么做更稳、旧代码到底长什么样”这类问题。
+
+常用命令：
+
+```text
+/speckit.discovery.feasibility
+/speckit.discovery.techselect
+/speckit.discovery.decision
+/speckit.discovery.codebase
+/speckit.discovery.codebase-api-imp
+/speckit.discovery.poc
+```
+
+适合场景：
+
+- 需要做 go/no-go 可行性判断。
+- 需要比较多个技术方案。
+- 需要在 API、性能、迁移、UX、兼容性之间做场景化决策。
+- 接手旧代码，需要先评估风险、复用资产和集成边界。
+- 需要解释一个已实现 API、SDK 方法、CLI 命令、消息 topic 或内部能力的真实执行路径。
+- 静态判断不够，需要一个有边界的 PoC。
+
+典型产物会写在当前 feature 的 discovery 相关文件中，例如 feasibility、tech-selection、legacy codebase risk、PoC plan/result 或 API implementation overview。
+
+### `intake`
+
+`intake` 负责把外部输入变成可追踪证据，而不是直接替你生成需求。它的重点是保留来源、标记不确定性、做结构化归一化，让后续 `/speckit.specify`、`/speckit.plan` 能带着证据继续工作。
+
+常用命令：
+
+```text
 /speckit.intake.prd
+/speckit.intake.visual-design
+/speckit.intake.test-cases
+```
+
+支持来源：
+
+- PRD、产品说明、Markdown、PDF、导出的文档。
+- 图片、线框图、设计 PDF、Figma 文件、Figma 页面或节点。
+- 既有测试、Gherkin、手工测试用例、QA 导出、测试管理表格。
+
+主要产物：
+
+```text
+specs/<feature>/intake/prd/
+specs/<feature>/intake/visual-design/
+specs/<feature>/intake/test-cases/
+```
+
+这些目录中会包含 source manifest、source files、归一化 YAML、evidence packet 和 schema 校验所需材料。
+
+### `preview`
+
+`preview` 在实现前生成评审产物。它不改应用源码，不替代实现；它用当前 feature 的规格、计划和契约生成可以讨论的 wireflow 或 HTML 预览。
+
+常用命令：
+
+```text
 /speckit.preview.low-md
+/speckit.preview.low-html
+/speckit.preview.mid-md
 /speckit.preview.mid-html
+/speckit.preview.high-md
 /speckit.preview.high-html
+```
+
+主要产物：
+
+```text
+specs/<feature>/preview/wireflow-low.md
+specs/<feature>/preview/wireflow-low.html
+specs/<feature>/preview/wireflow-mid.md
+specs/<feature>/preview/wireflow-mid.html
+specs/<feature>/preview/wireflow-high.md
+specs/<feature>/preview/wireflow-high.html
+```
+
+使用建议：
+
+- 需求还早期：用 `low-md` 或 `low-html` 看主路径和分支。
+- 产品、设计和工程需要一起评审：用 `mid-md` 或 `mid-html`。
+- 交互、状态、权限、响应式和错误反馈要确认：用 `high-md` 或 `high-html`。
+
+### `repository-governance`
+
+`repository-governance` 生成 agent 可读的仓库治理说明。它把目录职责、SSOT 读取顺序、工具链证据、agent 平台适配和仓库事实投影到当前 agent 的上下文文件中。
+
+常用命令：
+
+```text
 /speckit.repository-governance.refresh
 ```
 
-### 内置预设
+它也注册了 hook，可在 constitution、plan、tasks 之后提示刷新治理内容。
 
-| 预设 | 默认状态 | 你会用它做什么 |
-| --- | --- | --- |
-| `workflow-preset` | `specify init` 默认安装 | 增加 BDD readiness gate、Phase 0 行为投影、设计产物和任务期验证策略派生，并把 `/speckit.implement` 改成 Core/Vertical Planner/Worker 三层 handoff 编排流程。 |
-| `lean` | 手动安装 | 用更短的核心命令模板产出规格、计划、任务和实现，适合小功能、实验和低仪式感项目。 |
-| `scaffold` | 开发模板 | 给预设作者复制使用，不是普通项目必装预设。 |
-| `self-test` | 测试工具 | 用于验证预设覆盖和模板解析，主要服务仓库维护。 |
+主要产物：
 
-手动安装预设：
+```text
+.specify/memory/repository-governance.md
+```
+
+以及当前集成对应的 agent context 文件中的受管治理段。
+
+使用建议：
+
+- 多 agent 协作时使用。
+- 新人或新 agent 接手仓库时使用。
+- 仓库目录结构、构建工具、SSOT 或平台适配规则变化后使用。
+
+### `agent-context`
+
+`agent-context` 是上下文维护扩展。它读取集成元数据，并更新当前 agent 的说明文件，例如 `AGENTS.md`、`CLAUDE.md` 或 `.github/copilot-instructions.md`。
+
+常用命令：
+
+```text
+/speckit.agent-context.update
+```
+
+它主要维护受管 Spec Kit 段，不应覆盖用户在标记之外手写的内容。
+
+## 默认预设
+
+### `workflow-preset`
+
+`workflow-preset` 是这个本地分发版的核心增强预设。它包装或替换核心命令，让规格驱动流程更适合复杂功能和多 agent 实现。
+
+它会增强这些命令：
+
+```text
+/speckit.specify
+/speckit.clarify
+/speckit.checklist
+/speckit.constitution
+/speckit.analyze
+/speckit.plan
+/speckit.tasks
+/speckit.implement
+```
+
+主要增强：
+
+- `/speckit.checklist` 增加 BDD、NFR、视觉保真 readiness gate。
+- `/speckit.constitution` 增加 Change Scope Granularity 治理。
+- `/speckit.plan` 增加 Phase 0 行为投影、BDD/UIF/data fixture intent 和可选设计产物。
+- `/speckit.tasks` 从行为契约、接口契约、`research.md`、`quickstart.md` 派生验证策略。
+- `/speckit.implement` 使用 Core Agent、Vertical Planner、Worker 的 handoff 编排。
+- 最终实现阶段包含 code review receipt，记录 checked sources、数据副作用审查、授权修复和延期验证 todo。
+
+典型产物：
+
+```text
+specs/<feature>/contracts/bdd/
+specs/<feature>/contracts/uif/
+specs/<feature>/contracts/behavior/
+specs/<feature>/handoffs/implement/<run-id>/
+```
+
+实现 handoff 相关 schema 由 `presets/workflow-preset/schemas/` 提供。
+
+## 可选本地扩展
+
+### `bug`
+
+`bug` 提供三段式 bug 工作流：评估、修复、验证。
+
+命令：
+
+```text
+/speckit.bug.assess
+/speckit.bug.fix
+/speckit.bug.test
+```
+
+主要产物：
+
+```text
+.specify/bugs/<slug>/assessment.md
+.specify/bugs/<slug>/fix.md
+.specify/bugs/<slug>/test.md
+```
+
+安装：
+
+```bash
+specify extension add bug
+```
+
+### `git`
+
+`git` 是内置可选扩展，不在当前默认扩展列表中。它负责 Git 初始化、feature branch、branch validation、remote 检测和可配置自动提交。
+
+命令：
+
+```text
+/speckit.git.initialize
+/speckit.git.feature
+/speckit.git.validate
+/speckit.git.remote
+/speckit.git.commit
+```
+
+配置文件：
+
+```text
+.specify/extensions/git/git-config.yml
+```
+
+安装：
+
+```bash
+specify extension add git
+```
+
+## 可选本地预设
+
+### `lean`
+
+`lean` 把核心流程压缩成更轻量的命令，适合小功能、实验、低仪式感任务。
+
+它覆盖这些命令：
+
+```text
+/speckit.constitution
+/speckit.specify
+/speckit.plan
+/speckit.tasks
+/speckit.implement
+```
+
+安装：
 
 ```bash
 specify preset add lean
-specify preset add workflow-preset
 ```
 
-查看预设：
+### `arch-governance`
+
+`arch-governance` 位于：
+
+```text
+extensions/arch/presets/arch-governance/
+```
+
+它包装 `/speckit.plan`，让规划阶段显式读取 `arch` 扩展产出的架构 SSOT。适合已经用 `arch` 维护架构记忆，并希望每次 feature plan 都检查架构边界的项目。
+
+从本地目录安装：
 
 ```bash
-specify preset search
-specify preset info workflow-preset
+specify preset add --dev .specify/extensions/arch/presets/arch-governance
 ```
 
-### 什么时候用这些能力
-
-- 新项目或架构正在变化：按 scenario/logical/process/development/physical 顺序跑 `/speckit.arch.*-generate`，让后续计划有稳定架构上下文。
-- 接手旧仓库：按 scenario/logical/process/development/physical 顺序跑 `/speckit.arch.*-reverse`，先从仓库事实反推架构记忆。
-- 已有 PRD、设计稿或测试用例：先跑 `/speckit.intake.prd`、`/speckit.intake.visual-design` 或 `/speckit.intake.test-cases`，把外部证据归一化后再进入 `/speckit.specify`。
-- 团队使用多个 agent 或新人频繁接手：跑 `/speckit.repository-governance.refresh`，把目录责任、SSOT 边界和 agent 执行规则写入上下文。
-- 希望引入 BDD：保留默认 `workflow-preset`，让 `/speckit.checklist` 在规划前检查 BDD readiness，让 `/speckit.plan` 生成 BDD/UIF/fixture 行为草稿和正式契约。
-- 做前端或交互功能：在 `/speckit.specify` 或 `/speckit.plan` 后跑 `/speckit.preview.mid-html` 或对应保真的 `*-md`/`*-html` 命令，先看预览再实现。
-- 中大型实现或跨模块改动：使用默认 `/speckit.implement`，让 Core Agent 生成 handoff manifest，Vertical Planner 拆分能力维度，Worker 按允许路径执行并写 receipt。
-- 需要实现后复核：保留 Final Code Review task，要求 code review receipt 检查设计、sequence、contract、quickstart 和数据副作用。
-- 希望 feature 分支和提交更规范：保留 `git` 扩展，按需要配置 `.specify/extensions/git/git-config.yml`。
-
-### 默认工作流预设带来的变化
-
-默认 `workflow-preset` 会保留 Spec Kit 的核心路径，但让复杂实现更容易拆分：
-
-- `/speckit.checklist` 会在规划前检查 BDD readiness，缺口回到 clarify/specify。
-- `/speckit.constitution` 会补充 Change Scope Granularity 治理，把 R/M/U/O 粒度约束写入项目原则。
-- `/speckit.plan` 通过 Phase 0 把已通过质量门禁的需求投影为 BDD、UIF intent 和 fixture intent 草稿。
-- `/speckit.plan` 可以补充对象设计和服务时序等设计产物。
-- `/speckit.tasks` 不再要求独立测试策略文件，而是从行为契约、接口契约、`research.md` 和 `quickstart.md` 派生测试层级、fixture/mock/sandbox 策略和验证证据要求。
-- `/speckit.implement` 会生成 handoff manifest、Vertical Planner 输出、worker handoff、context digest 和 receipt，让多 agent 或多阶段实现更可审查。
-- `/speckit.implement` 会追加 Final Code Review 阶段，要求 `task_type: code_review` receipt 记录已检查的设计、sequence、contract、quickstart 来源；授权范围内的一致性修复写入 `consistency_repairs`，真实 e2e 环境缺口写入 `deferred_validation_todos`。
-
-如果你的项目很小，可以安装 `lean`，用更轻量的规格到实现流程。
-
-## 支持的 AI 编码助手
-
-当前仓库通过 integration registry 支持多种 CLI 和 IDE agent。常用 key 包括：
-
-```text
-agy, amp, auggie, bob, claude, codebuddy, codex, copilot,
-cursor-agent, devin, forge, gemini, generic, goose, iflow,
-junie, kilocode, kimi, kiro-cli, lingma, opencode, pi,
-qodercli, qwen, roo, shai, tabnine, trae, vibe, windsurf
-```
-
-初始化时用 `--integration <key>` 指定。CLI 型集成会检查对应工具是否存在；IDE 型集成会写入该工具需要的命令、规则或上下文文件。
-
-如果你的工具不在列表里，可以使用 generic 集成并指定命令目录：
+如果是在这个仓库源码中测试，可使用源码路径：
 
 ```bash
-specify init my-project --integration generic --integration-options="--commands-dir .my-agent/commands"
+specify preset add --dev extensions/arch/presets/arch-governance
 ```
 
-## 初始化后会生成什么
+## 开发和测试用本地包
 
-一个典型项目会包含：
+这些目录主要服务扩展/预设作者或测试，不建议作为普通项目主流程：
 
-```text
-.specify/
-  memory/
-    constitution.md
-    architecture.md
-  templates/
-  scripts/
-  extensions/
-  presets/
-  workflows/
-specs/
-  001-your-feature/
-    spec.md
-    plan.md
-    tasks.md
-```
+| 类型 | ID | 来源目录 | 用途 |
+| --- | --- | --- | --- |
+| 扩展模板 | `template` | `extensions/template` | 新扩展作者复制和改造的起始模板。 |
+| 扩展测试 | `selftest` | `extensions/selftest` | 验证扩展发现、安装和注册生命周期。 |
+| 预设模板 | `scaffold` | `presets/scaffold` | 新预设作者复制和改造的起始模板。 |
+| 预设测试 | `self-test` | `presets/self-test` | 覆盖核心模板和命令，用于测试 preset 解析与组合。 |
 
-agent 集成还会创建对应工具的命令目录和上下文文件，例如：
-
-```text
-.claude/skills/
-CLAUDE.md
-
-.github/agents/
-.github/prompts/
-.github/copilot-instructions.md
-
-.agents/skills/
-AGENTS.md
-```
-
-实际路径取决于你选择的 `--integration`。
-
-## 推荐使用顺序
+## 推荐使用路径
 
 ### 新项目
 
@@ -325,8 +397,9 @@ AGENTS.md
 /speckit.arch.physical-generate
 /speckit.specify
 /speckit.clarify
-/speckit.preview.mid-html
+/speckit.discovery.feasibility
 /speckit.plan
+/speckit.preview.mid-html
 /speckit.tasks
 /speckit.analyze
 /speckit.implement
@@ -336,6 +409,7 @@ AGENTS.md
 
 ```text
 /speckit.constitution
+/speckit.discovery.codebase
 /speckit.arch.scenario-reverse
 /speckit.arch.logical-reverse
 /speckit.arch.process-reverse
@@ -343,11 +417,42 @@ AGENTS.md
 /speckit.arch.physical-reverse
 /speckit.repository-governance.refresh
 /speckit.specify
-/speckit.clarify
 /speckit.plan
 /speckit.tasks
-/speckit.analyze
 /speckit.implement
+```
+
+### 已有 PRD、设计或测试用例
+
+```text
+/speckit.intake.prd
+/speckit.intake.visual-design
+/speckit.intake.test-cases
+/speckit.specify
+/speckit.clarify
+/speckit.plan
+```
+
+### 前端和交互功能
+
+```text
+/speckit.intake.visual-design
+/speckit.specify
+/speckit.preview.low-md
+/speckit.plan
+/speckit.preview.mid-html
+/speckit.tasks
+/speckit.implement
+```
+
+### 大型或跨模块实现
+
+保留默认 `workflow-preset`，让 `/speckit.implement` 生成 handoff manifest、context digest、worker handoff 和 receipt。
+
+重点查看：
+
+```text
+specs/<feature>/handoffs/implement/<run-id>/
 ```
 
 ### 小功能或实验
@@ -356,7 +461,7 @@ AGENTS.md
 specify preset add lean
 ```
 
-然后使用核心链路：
+然后使用轻量核心链路：
 
 ```text
 /speckit.specify
@@ -365,31 +470,81 @@ specify preset add lean
 /speckit.implement
 ```
 
-## 常见操作
-
-升级 CLI：
+### Bug 修复
 
 ```bash
-uv tool upgrade specify-cli
+specify extension add bug
 ```
 
-卸载某个集成：
+然后：
 
-```bash
-specify integration uninstall <key>
+```text
+/speckit.bug.assess
+/speckit.bug.fix
+/speckit.bug.test
 ```
 
-升级当前项目里的集成文件：
+## 产物地图
+
+| 目录或文件 | 来源 | 含义 |
+| --- | --- | --- |
+| `.specify/memory/architecture*.md` | `arch` | 4+1 架构视图和综合架构 SSOT。 |
+| `.specify/memory/architecture-repo-facts.md` | `arch` reverse 命令 | 从既有仓库提取的架构事实。 |
+| `.specify/memory/repository-governance.md` | `repository-governance` | 内部仓库治理 SSOT。 |
+| `specs/<feature>/intake/` | `intake` | PRD、视觉设计、测试用例的结构化证据包。 |
+| `specs/<feature>/preview/` | `preview` | Markdown wireflow 和自包含 HTML 预览。 |
+| `specs/<feature>/contracts/bdd/` | `workflow-preset` | BDD 行为契约。 |
+| `specs/<feature>/contracts/uif/` | `workflow-preset` | UI flow / interface fidelity 契约。 |
+| `specs/<feature>/contracts/behavior/` | `workflow-preset` | 行为场景、fixture、assertion 等正式契约。 |
+| `specs/<feature>/handoffs/implement/<run-id>/` | `workflow-preset` | implement 阶段多 agent handoff、context digest、receipt。 |
+| `.specify/bugs/<slug>/` | `bug` | 单个 bug 的 assess/fix/test 报告。 |
+| `.specify/extensions/git/git-config.yml` | `git` | Git 分支和自动提交配置。 |
+
+## 本地安装和管理
+
+查看已安装扩展：
 
 ```bash
-specify integration upgrade
+specify extension list
+```
+
+安装本地内置扩展：
+
+```bash
+specify extension add bug
+specify extension add git
+```
+
+从本地源码目录安装扩展：
+
+```bash
+specify extension add --dev extensions/preview
+specify extension add --dev extensions/intake
+```
+
+查看已安装预设：
+
+```bash
+specify preset list
+```
+
+安装本地内置预设：
+
+```bash
+specify preset add lean
+```
+
+从本地源码目录安装预设：
+
+```bash
+specify preset add --dev presets/workflow-preset
 ```
 
 禁用或启用扩展：
 
 ```bash
-specify extension disable git
-specify extension enable git
+specify extension disable preview
+specify extension enable preview
 ```
 
 移除预设：
@@ -398,28 +553,9 @@ specify extension enable git
 specify preset remove lean
 ```
 
-## 使用建议
+## 开发验证
 
-- 写 `/speckit.specify` 时只写需求和业务规则，技术栈留给 `/speckit.plan`。
-- 在 `/speckit.plan` 前运行 `/speckit.clarify`，可以减少实现阶段反复改规格。
-- 对 UI 或流程不确定的功能，先用 `/speckit.preview.low-md`、`/speckit.preview.mid-html` 或 `/speckit.preview.high-html` 看一个保真度合适的预览。
-- 对中大型功能，保留默认 `workflow-preset`，让任务和实现阶段通过验证证据、handoff 和 receipt 留下可审查记录。
-- 对非常小的实验，使用 `lean`，减少模板负担。
-- 如果 agent 生成了你没要求的复杂设计，让它回到 `spec.md`、`plan.md` 和 `.specify/memory/constitution.md` 逐条解释依据。
-
-## 更多文档
-
-- [完整方法论](./spec-driven.md)
-- [安装指南](./docs/installation.md)
-- [快速开始](./docs/quickstart.md)
-- [扩展系统](./extensions/README.md)
-- [预设系统](./presets/README.md)
-- [集成 catalog](./integrations/README.md)
-- [本地开发](./docs/local-development.md)
-
-## 开发和验证
-
-本仓库本身是 Python 项目。常用验证命令：
+本仓库是 Python 项目。常用验证命令：
 
 ```bash
 uv run pytest
@@ -431,17 +567,22 @@ uv run pytest
 uv run pytest tests/integrations -v
 ```
 
-验证某个扩展或预设时，优先在临时项目中安装本地目录：
+验证本地扩展或预设时，优先在临时项目中使用 `--dev` 安装源码目录：
 
 ```bash
-specify extension add --dev ./extensions/preview
-specify preset add --dev ./presets/workflow-preset
+specify extension add --dev extensions/preview
+specify extension add --dev extensions/intake
+specify preset add --dev presets/workflow-preset
 ```
+
+## 维护提示
+
+- README 中的默认扩展和默认预设必须与 `src/specify_cli/commands/init.py` 保持一致。
+- 扩展命令清单应以各自 `extension.yml` 为准。
+- 预设覆盖关系应以各自 `preset.yml` 为准。
+- `git` 是本地内置可选扩展，不应写成默认安装。
+- `template`、`selftest`、`scaffold`、`self-test` 是开发/测试用途，不应包装成普通用户主路径。
 
 ## 许可证
 
 本项目使用 MIT License。详见 [LICENSE](./LICENSE)。
-
-## 致谢
-
-本仓库维护了面向当前使用场景的 Spec Kit 分发、扩展和预设。
