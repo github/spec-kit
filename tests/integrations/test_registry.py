@@ -48,6 +48,11 @@ def _multi_install_safe_pairs() -> list[tuple[str, str]]:
     ]
 
 
+def _multi_install_safe_orders() -> list[list[str]]:
+    safe_keys = _multi_install_safe_keys()
+    return [safe_keys, list(reversed(safe_keys))]
+
+
 def _posix_path(value: str | None) -> str | None:
     if not value:
         return None
@@ -230,60 +235,62 @@ class TestMultiInstallSafeContracts:
             f"commands directory {_integration_commands_dir(first)!r}"
         )
 
-    @pytest.mark.parametrize(("first", "second"), _multi_install_safe_pairs())
+    @pytest.mark.parametrize(
+        "ordered_keys",
+        _multi_install_safe_orders(),
+        ids=["forward", "reverse"],
+    )
     def test_safe_integrations_have_disjoint_manifests(
         self,
         tmp_path,
-        first,
-        second,
+        ordered_keys,
     ):
-        for initial, additional in ((first, second), (second, first)):
-            project_root = tmp_path / f"project-{initial}-{additional}"
-            project_root.mkdir()
-            runner = CliRunner()
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        runner = CliRunner()
 
-            original_cwd = os.getcwd()
-            try:
-                os.chdir(project_root)
-                init_result = runner.invoke(
-                    app,
-                    [
-                        "init",
-                        "--here",
-                        "--integration",
-                        initial,
-                        "--script",
-                        "sh",
-                        "--ignore-agent-tools",
-                    ],
-                    catch_exceptions=False,
-                )
-                assert init_result.exit_code == 0, init_result.output
+        # Install every safe integration once per order, then assert pairwise
+        # manifest isolation from the resulting manifests.
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_root)
+            init_result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    ordered_keys[0],
+                    "--script",
+                    "sh",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+            assert init_result.exit_code == 0, init_result.output
 
+            for key in ordered_keys[1:]:
                 install_result = runner.invoke(
                     app,
-                    ["integration", "install", additional, "--script", "sh"],
+                    ["integration", "install", key, "--script", "sh"],
                     catch_exceptions=False,
                 )
                 assert install_result.exit_code == 0, install_result.output
-            finally:
-                os.chdir(original_cwd)
+        finally:
+            os.chdir(original_cwd)
 
-            initial_manifest = json.loads(
+        manifests = {}
+        for key in ordered_keys:
+            manifest = json.loads(
                 (
-                    project_root / ".specify" / "integrations" / f"{initial}.manifest.json"
+                    project_root / ".specify" / "integrations" / f"{key}.manifest.json"
                 ).read_text(encoding="utf-8")
             )
-            additional_manifest = json.loads(
-                (
-                    project_root / ".specify" / "integrations" / f"{additional}.manifest.json"
-                ).read_text(encoding="utf-8")
-            )
+            manifests[key] = set(manifest.get("files", {}))
 
-            initial_files = set(initial_manifest.get("files", {}))
-            additional_files = set(additional_manifest.get("files", {}))
-
-            assert initial_files.isdisjoint(additional_files), (
-                f"{initial} and {additional} are declared multi-install safe but both manage "
-                f"these files: {sorted(initial_files & additional_files)}"
+        for first, second in _multi_install_safe_pairs():
+            overlap = manifests[first] & manifests[second]
+            assert not overlap, (
+                f"{first} and {second} are declared multi-install safe but both manage "
+                f"these files: {sorted(overlap)}"
             )
