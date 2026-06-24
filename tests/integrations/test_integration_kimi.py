@@ -8,6 +8,7 @@ from specify_cli.integrations import get_integration
 from specify_cli.integrations.kimi import (
     _migrate_legacy_kimi_context_file,
     _migrate_legacy_kimi_dotted_skills,
+    _migrate_legacy_kimi_skills_dir,
 )
 from specify_cli.integrations.manifest import IntegrationManifest
 
@@ -491,6 +492,35 @@ class TestKimiLegacySymlinkSafety:
 
         # Nothing was written into the unintended `./skills` location.
         assert not (project / "skills").exists()
+
+    def test_migrate_skips_symlinked_target_dir(self, tmp_path):
+        # The destination `.kimi-code/skills/speckit-foo` already exists but is
+        # a symlink to a directory outside the project. Migration compares
+        # SKILL.md bytes to decide whether to drop the legacy copy; it must not
+        # follow the symlinked target dir to read SKILL.md from outside.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text("# shared\n")
+
+        project = tmp_path / "project"
+        legacy = project / ".kimi" / "skills" / "speckit-foo"
+        legacy.mkdir(parents=True)
+        # Identical bytes: without the symlink guard the legacy dir would be
+        # removed after following the link out of the project.
+        (legacy / "SKILL.md").write_text("# shared\n")
+
+        target = project / ".kimi-code" / "skills" / "speckit-foo"
+        target.parent.mkdir(parents=True)
+        _symlink_or_skip(target, outside, target_is_directory=True)
+
+        _migrate_legacy_kimi_skills_dir(
+            project / ".kimi" / "skills", project / ".kimi-code" / "skills"
+        )
+
+        # Legacy copy is preserved (migration refused to follow the symlink),
+        # and the outside target is untouched.
+        assert (legacy / "SKILL.md").exists()
+        assert (outside / "SKILL.md").exists()
 
     def test_context_migration_does_not_write_through_symlinked_agents_md(
         self, tmp_path

@@ -276,23 +276,25 @@ def _migrate_legacy_kimi_skills_dir(
             continue
 
         # Target exists — only remove legacy if SKILL.md is identical.
-        # Skip when the target SKILL.md is a symlink so the byte comparison
-        # never follows it outside the project. (legacy_skill is already
-        # guaranteed to be a real file by the guard above.)
-        target_skill = target_dir / "SKILL.md"
-        if target_skill.is_symlink():
+        # Skip when the target dir or its SKILL.md is a symlink (or the dir is
+        # not a real directory) so the byte comparison never follows a link
+        # outside the project. (legacy_skill is already guaranteed to be a real
+        # file by the guard above.)
+        if target_dir.is_symlink() or not target_dir.is_dir():
             continue
-        if target_skill.is_file():
-            try:
-                if target_skill.read_bytes() == legacy_skill.read_bytes():
-                    has_extra = any(
-                        child.name != "SKILL.md" for child in legacy_dir.iterdir()
-                    )
-                    if not has_extra:
-                        shutil.rmtree(legacy_dir)
-                        removed_count += 1
-            except OSError:
-                pass
+        target_skill = target_dir / "SKILL.md"
+        if target_skill.is_symlink() or not target_skill.is_file():
+            continue
+        try:
+            if target_skill.read_bytes() == legacy_skill.read_bytes():
+                has_extra = any(
+                    child.name != "SKILL.md" for child in legacy_dir.iterdir()
+                )
+                if not has_extra:
+                    shutil.rmtree(legacy_dir)
+                    removed_count += 1
+        except OSError:
+            pass
 
     # Remove the legacy skills directory if it is now empty.
     try:
