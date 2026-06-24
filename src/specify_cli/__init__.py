@@ -39,6 +39,7 @@ import typer
 from rich.panel import Panel
 from rich.align import Align
 from rich.table import Table
+from rich.markup import escape as _rich_escape_markup
 from .shared_infra import (
     install_shared_infra as _install_shared_infra_impl,
     refresh_shared_templates as _refresh_shared_templates_impl,
@@ -962,9 +963,6 @@ def _print_dry_run_previews(state: Any) -> None:
         console.print(f"  [cyan][{step_id_display}][/cyan] {preview_escaped}")
 
 
-from rich.markup import escape as _rich_escape_markup
-
-
 def _escape_markup(text: str) -> str:
     """Escape Rich markup characters so user-controlled text can be
     printed safely. Delegates to ``rich.markup.escape`` for canonical
@@ -1004,13 +1002,15 @@ def workflow_resume(
         console.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
     except ValueError as exc:
-        if getattr(state, "dry_run", False) and not json_output:
-            _print_dry_run_previews(getattr(exc, "partial_state", None))
+        partial = getattr(exc, "partial_state", None)
+        if getattr(partial, "dry_run", False) and not json_output:
+            _print_dry_run_previews(partial)
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
-        if getattr(state, "dry_run", False) and not json_output:
-            _print_dry_run_previews(getattr(exc, "partial_state", None))
+        partial = getattr(exc, "partial_state", None)
+        if getattr(partial, "dry_run", False) and not json_output:
+            _print_dry_run_previews(partial)
         console.print(f"[red]Resume failed:[/red] {exc}")
         raise typer.Exit(1)
 

@@ -173,18 +173,19 @@ class CopilotIntegration(IntegrationBase):
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
         """Build the native invocation for a Copilot command.
 
-        Default mode: agents are not slash-commands — return args as prompt.
-        Skills mode: ``/speckit-<stem>`` slash-command dispatch.
+        Default mode: ``speckit.<stem> <args>`` (agent name + args).
+        Skills mode: ``/speckit-<stem> <args>`` (slash-command dispatch).
         """
+        stem = command_name
+        if stem.startswith("speckit."):
+            stem = stem[len("speckit."):]
         if self._skills_mode:
-            stem = command_name
-            if stem.startswith("speckit."):
-                stem = stem[len("speckit."):]
             invocation = "/speckit-" + stem.replace(".", "-")
-            if args:
-                invocation = f"{invocation} {args}"
-            return invocation
-        return args or ""
+        else:
+            invocation = f"speckit.{stem}"
+        if args:
+            invocation = f"{invocation} {args}"
+        return invocation
 
     def dispatch_command(
         self,
