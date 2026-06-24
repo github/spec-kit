@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## [2.0.6] - 2026-06-24
+
+### Fixed
+
+- Keep spec-kit integration PR validation aligned with current spec-kit test node names.
+
 ## [2.0.5] - 2026-06-24
 
 ### Fixed

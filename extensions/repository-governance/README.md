@@ -26,7 +26,7 @@ Generate the active Repository Governance Framework SSOT section.
 ## Install
 
 ```bash
-specify extension add repository-governance --from https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v2.0.5.zip
+specify extension add repository-governance --from https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v2.0.6.zip
 ```
 
 Local development:
