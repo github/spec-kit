@@ -26,6 +26,7 @@ class CodexIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
+    dev_no_symlink = True
     multi_install_safe = True
 
     def build_exec_args(

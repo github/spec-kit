@@ -113,6 +113,16 @@ uv pip install -e ".[test]"
 > `specify_cli` to this checkout's `src/`. This matches the gotcha documented in
 > `AGENTS.md` (Common Pitfalls).
 
+#### Shell scripts
+
+```bash
+git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error
+```
+
+The CI `lint.yml` `shellcheck` job currently reports and blocks only
+error-severity findings. Warnings such as SC2155 are intentionally outside this
+job until a follow-up cleanup tightens the threshold.
+
 ### Manual testing
 
 #### Testing setup
@@ -167,7 +177,7 @@ the command templates in templates/commands/ to understand what each command
 invokes. Use these mapping rules:
 
 - templates/commands/X.md → the command it defines
-- scripts/bash/Y.sh or scripts/powershell/Y.ps1 → every command that invokes that script (grep templates/commands/ for the script name). Also check transitive dependencies: if the changed script is sourced by other scripts (e.g., common.sh is sourced by create-new-feature.sh, check-prerequisites.sh, setup-plan.sh, update-agent-context.sh), then every command invoking those downstream scripts is also affected
+- scripts/bash/Y.sh or scripts/powershell/Y.ps1 → every command that invokes that script (grep templates/commands/ for the script name). Also check transitive dependencies: if the changed script is sourced by other scripts (e.g., common.sh is sourced by create-new-feature.sh, check-prerequisites.sh, setup-plan.sh), then every command invoking those downstream scripts is also affected
 - templates/Z-template.md → every command that consumes that template during execution
 - src/specify_cli/*.py → CLI commands (`specify init`, `specify check`, `specify extension *`, `specify preset *`); test the affected CLI command and, for init/scaffolding changes, at minimum test /speckit.specify
 - extensions/X/commands/* → the extension command it defines

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-22T00:00:00Z",
+  "updated_at": "2026-06-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -187,10 +187,10 @@
     "arch": {
       "name": "Architecture Workflow",
       "id": "arch",
-      "description": "Generate or reverse project-level 4+1 architecture view artifacts and synthesis",
+      "description": "Generate or reverse project-level 4+1 architecture views as separate commands",
       "author": "bigsmartben",
-      "version": "1.1.0",
-      "download_url": "https://github.com/bigsmartben/spec-kit-arch/archive/refs/tags/v1.1.0.zip",
+      "version": "1.2.1",
+      "download_url": "https://github.com/bigsmartben/spec-kit-arch/archive/refs/tags/v1.2.1.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-arch",
       "homepage": "https://github.com/bigsmartben/spec-kit-arch",
       "documentation": "https://github.com/bigsmartben/spec-kit-arch/blob/main/README.md",
@@ -202,7 +202,7 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 2,
+        "commands": 10,
         "hooks": 0
       },
       "tags": [
@@ -215,7 +215,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-14T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "architect-preview": {
       "name": "Architect Impact Previewer",
@@ -1001,13 +1001,47 @@
       "created_at": "2026-04-08T00:00:00Z",
       "updated_at": "2026-04-08T00:00:00Z"
     },
+    "discovery": {
+      "name": "Spec Kit Discovery Extension",
+      "id": "discovery",
+      "description": "Run technical discovery commands for feasibility, technology selection, scenario-specific technical decisions, legacy codebase assessment, implementation understanding, and proof-of-concept validation.",
+      "author": "bigsmartben",
+      "version": "0.2.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-discovery/archive/refs/tags/v0.2.0.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-discovery",
+      "homepage": "https://github.com/bigsmartben/spec-kit-discovery",
+      "documentation": "https://github.com/bigsmartben/spec-kit-discovery/blob/main/docs/usage.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-discovery/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 6,
+        "hooks": 0
+      },
+      "tags": [
+        "discovery",
+        "workflow",
+        "validation",
+        "feasibility",
+        "decision"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-23T00:00:00Z",
+      "updated_at": "2026-06-23T00:00:00Z"
+    },
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
       "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise.",
       "author": "raccioly",
-      "version": "0.27.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.27.0/spec-kit-docguard-v0.27.0.zip",
+      "version": "0.28.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.28.0/spec-kit-docguard-v0.28.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1043,7 +1077,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-06-22T00:00:00Z"
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1293,6 +1327,39 @@
       "created_at": "2026-04-12T15:30:00Z",
       "updated_at": "2026-04-13T14:39:00Z"
     },
+    "golden-demo": {
+      "name": "Golden Demo",
+      "id": "golden-demo",
+      "description": "Extracts acceptance criteria from specs, builds test vectors, and produces a behavioral drift report — complementary to Architecture Guard and CDD.",
+      "author": "jasstt",
+      "version": "0.1.1",
+      "download_url": "https://github.com/jasstt/spec-kit-golden-demo/archive/refs/tags/v0.1.1.zip",
+      "repository": "https://github.com/jasstt/spec-kit-golden-demo",
+      "homepage": "https://github.com/jasstt/spec-kit-golden-demo",
+      "documentation": "https://github.com/jasstt/spec-kit-golden-demo",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "testing",
+        "drift-detection",
+        "behavioral-oracle",
+        "tdd",
+        "quality"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-24T00:00:00Z",
+      "updated_at": "2026-06-24T00:00:00Z"
+    },
     "harness": {
       "name": "Research Harness",
       "id": "harness",
@@ -1369,6 +1436,46 @@
       "stars": 0,
       "created_at": "2026-06-16T00:00:00Z",
       "updated_at": "2026-06-16T00:00:00Z"
+    },
+    "intake": {
+      "name": "Intake",
+      "id": "intake",
+      "description": "Normalize PRD, design, and test-case evidence into SDD-ready intake artifacts.",
+      "author": "bigsmartben",
+      "version": "0.1.2",
+      "download_url": "https://github.com/bigsmartben/spec-kit-intake/archive/refs/tags/v0.1.2.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-intake",
+      "homepage": "https://github.com/bigsmartben/spec-kit-intake",
+      "documentation": "https://github.com/bigsmartben/spec-kit-intake/blob/main/README.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-intake/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.8.10.dev0",
+        "tools": [
+          {
+            "name": "figma-mcp",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "intake",
+        "sdd",
+        "requirements",
+        "validation",
+        "figma"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-23T00:00:00Z",
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "issue": {
       "name": "GitHub Issues Integration 2",
@@ -1474,25 +1581,34 @@
       "id": "jira-sync",
       "description": "An idempotent, drift-aware, fail-closed reconcile engine that mirrors spec-kit specs into Jira (Epic per repo, Story per spec, Subtask per phase).",
       "author": "Ash Brener",
-      "version": "0.2.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-jira-sync/archive/refs/tags/v0.2.0.zip",
+      "version": "0.4.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-jira-sync/archive/refs/tags/v0.4.0.zip",
       "repository": "https://github.com/ashbrener/spec-kit-jira-sync",
       "homepage": "https://github.com/ashbrener/spec-kit-jira-sync",
       "documentation": "https://github.com/ashbrener/spec-kit-jira-sync/blob/main/README.md",
-      "changelog": "https://github.com/ashbrener/spec-kit-jira-sync/releases",
+      "changelog": "https://github.com/ashbrener/spec-kit-jira-sync/blob/main/CHANGELOG.md",
       "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "bash", "version": ">=4.4", "required": true },
+          { "name": "git", "required": true },
+          { "name": "curl", "required": true },
+          { "name": "jq", "required": true },
+          { "name": "gitleaks", "required": false },
+          { "name": "trufflehog", "required": false }
+        ]
       },
       "provides": {
-        "commands": 2,
+        "commands": 4,
         "hooks": 0
       },
       "tags": [
         "issue-tracking",
         "jira",
         "tasks-sync",
-        "lifecycle-mirror",
         "reconcile",
         "drift-aware"
       ],
@@ -1500,7 +1616,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-08T00:00:00Z",
-      "updated_at": "2026-06-08T00:00:00Z"
+      "updated_at": "2026-06-24T00:00:00Z"
     },
     "learn": {
       "name": "Learning Extension",
@@ -2347,12 +2463,12 @@
       "updated_at": "2026-03-18T00:00:00Z"
     },
     "preview": {
-      "name": "Interactive HTML Preview",
+      "name": "Spec Kit Preview",
       "id": "preview",
-      "description": "Generate self-contained interactive HTML prototypes from Spec Kit artifacts",
+      "description": "Generate evidence-backed low, mid, or high fidelity previews from Spec Kit artifacts as Markdown or self-contained HTML",
       "author": "bigsmartben",
-      "version": "1.0.0",
-      "download_url": "https://github.com/bigsmartben/spec-kit-preview/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/bigsmartben/spec-kit-preview/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-preview",
       "homepage": "https://github.com/bigsmartben/spec-kit-preview",
       "documentation": "https://github.com/bigsmartben/spec-kit-preview/blob/main/README.md",
@@ -2364,20 +2480,21 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 1,
+        "commands": 6,
         "hooks": 0
       },
       "tags": [
         "preview",
         "prototype",
         "html",
+        "markdown",
         "ux"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-15T00:00:00Z",
-      "updated_at": "2026-05-15T00:00:00Z"
+      "updated_at": "2026-06-23T00:00:00Z"
     },
     "product": {
       "name": "Product Spec Extension",
@@ -2886,6 +3003,40 @@
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-20T00:00:00Z"
+    },
+    "roadmap": {
+      "name": "Spec Roadmap",
+      "id": "roadmap",
+      "description": "Capture a durable spec roadmap after the constitution, then review specs against it before and after implementation so spec-specific decisions, outcomes, and constraints are never lost.",
+      "author": "srobroek",
+      "version": "0.1.0",
+      "download_url": "https://github.com/srobroek/speckit-roadmap/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/srobroek/speckit-roadmap",
+      "homepage": "https://github.com/srobroek/speckit-roadmap",
+      "documentation": "https://github.com/srobroek/speckit-roadmap/blob/main/README.md",
+      "changelog": "https://github.com/srobroek/speckit-roadmap/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.11.6"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "roadmap",
+        "planning",
+        "governance",
+        "review",
+        "spec-alignment"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-24T00:00:00Z",
+      "updated_at": "2026-06-24T00:00:00Z"
     },
     "schedule": {
       "name": "Spec Kit Schedule — CP-SAT Agent Orchestrator",

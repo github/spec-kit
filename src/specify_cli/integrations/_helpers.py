@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import typer
 
@@ -335,6 +335,93 @@ def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:
     except _SharedTemplateRefreshError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Extension (un)registration helpers (shared by use / switch / upgrade)
+# ---------------------------------------------------------------------------
+
+def _best_effort_extension_op(
+    project_root: Path,
+    agent_key: str,
+    op: Callable[[Any, str], None],
+    *,
+    phase: str,
+    continuing: str,
+) -> None:
+    """Run a best-effort ``ExtensionManager`` operation for ``agent_key``.
+
+    ``op`` receives the ``ExtensionManager`` and ``agent_key``. Any failure is
+    surfaced as a warning via ``_print_cli_warning`` and never aborts the
+    surrounding integration operation. ``continuing`` describes what already
+    succeeded so the warning makes the partial outcome clear.
+    """
+    try:
+        from ..extensions import ExtensionManager
+
+        ext_mgr = ExtensionManager(project_root)
+        op(ext_mgr, agent_key)
+    except Exception as ext_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(phase, "integration", agent_key, ext_err, continuing=continuing)
+
+
+def _register_extensions_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Register all enabled extensions' commands/skills for ``agent_key``.
+
+    ``use`` / ``switch`` re-register enabled extensions for the agent they
+    activate; ``upgrade`` backfills them for the refreshed agent. Plain
+    ``install`` deliberately does not call this helper so adding a secondary
+    integration has no extension side effects until it is selected or upgraded.
+    See issue #2886.
+
+    Known limitation: extension *skill* rendering is scoped to the active
+    agent (init-options track a single ``ai`` / ``ai_skills`` pair). A
+    skills-mode agent registered while it is *not* the active agent (e.g.
+    Copilot ``--skills`` registered while non-active) therefore
+    receives command files rather than skills here — matching ``extension
+    add``'s multi-agent behavior. ``use`` / ``switch`` avoid this because they
+    make the target the active agent first. Per-agent skills parity is tracked in
+    #2948.
+
+    Best-effort: never aborts the surrounding integration operation. Callers
+    invoke it *after* the use/upgrade/switch transaction has committed so a
+    failure here cannot trigger a rollback.
+    """
+    _best_effort_extension_op(
+        project_root,
+        agent_key,
+        lambda mgr, key: mgr.register_enabled_extensions_for_agent(key),
+        phase="register extension artifacts for",
+        continuing=continuing,
+    )
+
+
+def _unregister_extensions_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Best-effort removal of ``agent_key``'s extension artifacts.
+
+    Used by ``switch`` when uninstalling the previous integration so its
+    extension command/skill files don't linger as orphans in the old agent's
+    directory.
+    """
+    _best_effort_extension_op(
+        project_root,
+        agent_key,
+        lambda mgr, key: mgr.unregister_agent_artifacts(key),
+        phase="clean up extension artifacts for",
+        continuing=continuing,
+    )
 
 
 # ---------------------------------------------------------------------------

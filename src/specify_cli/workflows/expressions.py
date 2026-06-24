@@ -146,6 +146,40 @@ def _build_namespace(context: Any) -> dict[str, Any]:
     return ns
 
 
+def _split_top_level_commas(text: str) -> list[str]:
+    """Split *text* on commas that are not inside quotes or nested brackets.
+
+    Used for list-literal elements so a quoted element containing a comma
+    (e.g. ``["a, b", "c"]``) is not split mid-string, and nested lists/calls
+    (e.g. ``[[1, 2], 3]``) are kept intact.
+    """
+    parts: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    depth = 0
+    for ch in text:
+        if quote is not None:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+        elif ch in "([{":
+            depth += 1
+            buf.append(ch)
+        elif ch in ")]}":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    parts.append("".join(buf))
+    return parts
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -291,7 +325,10 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         inner = expr[1:-1].strip()
         if not inner:
             return []
-        items = [_evaluate_simple_expression(i.strip(), namespace) for i in inner.split(",")]
+        items = [
+            _evaluate_simple_expression(i.strip(), namespace)
+            for i in _split_top_level_commas(inner)
+        ]
         return items
 
     # Variable reference (dot-path)

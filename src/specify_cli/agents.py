@@ -37,6 +37,8 @@ def _build_agent_configs() -> dict[str, Any]:
             # when register_commands() resolves __SPECKIT_COMMAND_*__ tokens.
             if "invoke_separator" not in config:
                 config["invoke_separator"] = integration.invoke_separator
+            if integration.dev_no_symlink:
+                config["dev_no_symlink"] = True
             configs[key] = config
     return configs
 
@@ -234,9 +236,14 @@ class CommandRegistrar:
         toml_lines.append(f"# Source: {source_id}")
         toml_lines.append("")
 
-        # Keep TOML output valid even when body contains triple-quote delimiters.
-        # Prefer multiline forms, then fall back to escaped basic string.
-        if '"""' not in body:
+        # Keep TOML output valid even when body contains triple-quote delimiters
+        # or backslashes. Prefer multiline forms, then fall back to escaped basic
+        # string. A multiline *basic* string ("""...""") processes backslash escape
+        # sequences, so a body containing a backslash (e.g. a Windows path
+        # ``C:\\Users\\...`` whose ``\\U`` reads as an invalid unicode escape) would
+        # produce unparseable TOML — route those to the *literal* form ('''...'''),
+        # which does not process escapes, or to the escaped basic string.
+        if '"""' not in body and "\\" not in body:
             toml_lines.append('prompt = """')
             toml_lines.append(body)
             toml_lines.append('"""')
@@ -683,6 +690,7 @@ class CommandRegistrar:
                 output_name,
                 agent_config["extension"],
                 link_outputs,
+                agent_config,
             )
 
             if agent_name == "copilot":
@@ -757,6 +765,7 @@ class CommandRegistrar:
                     alias_output_name,
                     agent_config["extension"],
                     link_outputs,
+                    agent_config,
                 )
                 if agent_name == "copilot":
                     self.write_copilot_prompt(project_root, alias)
@@ -773,9 +782,12 @@ class CommandRegistrar:
         output_name: str,
         extension: str,
         link_outputs: bool,
+        agent_config: dict[str, Any] | None = None,
     ) -> None:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
-        if not link_outputs:
+        if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
+            if dest_file.is_symlink():
+                dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
             return
 
@@ -896,6 +908,16 @@ class CommandRegistrar:
             self._active_skills_agent(project_root)
             if create_missing_active_skills_dir else None
         )
+        active_skills_dir: Optional[Path] = None
+        if active_skills_agent:
+            active_skills_config = self.AGENT_CONFIGS.get(active_skills_agent)
+            if (
+                active_skills_config
+                and active_skills_config.get("extension") == "/SKILL.md"
+            ):
+                active_skills_dir = self._resolve_agent_dir(
+                    active_skills_agent, active_skills_config, project_root,
+                )
         active_created_skills_dir: Optional[Path] = None
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
             active_skills_output = (
@@ -927,6 +949,14 @@ class CommandRegistrar:
             agent_dir = self._resolve_agent_dir(
                 agent_name, agent_config, project_root,
             )
+            shares_active_skills_dir = (
+                active_skills_dir is not None
+                and agent_name != active_skills_agent
+                and agent_config.get("extension") == "/SKILL.md"
+                and self._same_lexical_path(agent_dir, active_skills_dir)
+            )
+            if shares_active_skills_dir:
+                continue
 
             agent_dir_existed = agent_dir.is_dir()
             register_missing_active_skills_agent = (
