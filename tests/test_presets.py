@@ -2079,6 +2079,30 @@ class TestPresetCatalog:
             with pytest.raises(PresetError, match="[Ii]ntegrity"):
                 catalog.download_pack("test-pack", target_dir=project_dir)
 
+    def test_download_pack_without_sha256_skips_verification(self, project_dir):
+        """A catalog entry with no ``sha256`` keeps working: verification is
+        opt-in, so the backwards-compatible path (``pack_info.get("sha256")``
+        is ``None``) must download without aborting — mirrors the extensions
+        coverage so the helper never silently becomes mandatory for presets.
+        """
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
     def test_download_pack_accepts_direct_github_rest_asset_url(self, project_dir, monkeypatch):
         """download_pack can use a GitHub REST release asset URL directly."""
         from unittest.mock import patch, MagicMock
