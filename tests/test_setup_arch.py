@@ -24,6 +24,9 @@ ARCH_TEMPLATES = [
     "architecture-development-template.md",
     "architecture-physical-template.md",
 ]
+ARCH_SCHEMAS = [
+    "architecture-artifacts.schema.json",
+]
 
 HAS_PWSH = shutil.which("pwsh") is not None
 _POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
@@ -46,6 +49,13 @@ def _install_templates(repo: Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     for name in ARCH_TEMPLATES:
         shutil.copy(ARCHITECTURE_EXTENSION / "templates" / name, d / name)
+
+
+def _install_schemas(repo: Path) -> None:
+    d = repo / ".specify" / "extensions" / "arch" / "schemas"
+    d.mkdir(parents=True, exist_ok=True)
+    for name in ARCH_SCHEMAS:
+        shutil.copy(ARCHITECTURE_EXTENSION / "schemas" / name, d / name)
 
 
 def _clean_env() -> dict[str, str]:
@@ -92,6 +102,7 @@ def arch_repo(tmp_path: Path) -> Path:
     repo.mkdir()
     (repo / ".specify").mkdir()
     _install_templates(repo)
+    _install_schemas(repo)
     _install_bash_scripts(repo)
     _install_ps_scripts(repo)
     return repo
@@ -109,6 +120,8 @@ def _assert_arch_json(repo: Path, data: dict[str, str], *, exact_paths: bool = T
     expected = {
         "ARCH_FILE": repo / ".specify" / "memory" / "architecture.md",
         "ARCH_DIR": repo / ".specify" / "memory",
+        "SCHEMA_DIR": repo / ".specify" / "extensions" / "arch" / "schemas",
+        "ARCH_SCHEMA_FILE": repo / ".specify" / "extensions" / "arch" / "schemas" / "architecture-artifacts.schema.json",
         "REPO_FACTS_FILE": repo / ".specify" / "memory" / "architecture-repo-facts.md",
         "SCENARIO_VIEW": repo / ".specify" / "memory" / "architecture-scenario-view.md",
         "LOGICAL_VIEW": repo / ".specify" / "memory" / "architecture-logical-view.md",
@@ -123,7 +136,7 @@ def _assert_arch_json(repo: Path, data: dict[str, str], *, exact_paths: bool = T
         else:
             normalized = data[key].replace("\\", "/")
             assert normalized.endswith(path.relative_to(repo).as_posix())
-        assert path.is_file() if key != "ARCH_DIR" else path.is_dir()
+        assert path.is_dir() if key in {"ARCH_DIR", "SCHEMA_DIR"} else path.is_file()
 
 
 @requires_bash

@@ -67,9 +67,7 @@ def test_architecture_synthesis_references_five_view_files():
     ]:
         assert f".specify/memory/{filename}" in content
     assert "Cross-View Architecture Model" in content
-    assert "normalizes the 4+1 design results into the architecture SSOT" in content
-    assert "This is architecture design synthesis, not tracking or audit" in content
-    assert "Do not treat view-specific concepts as equivalent or interchangeable" in content
+    assert "Cross-view mappings between view-specific concepts" in content
     assert "Key Architecture Conclusions" in content
     for section in [
         "Architecture Intent",
@@ -100,16 +98,21 @@ def test_view_templates_define_inputs_and_reject_implementation_detail():
     development = _read_template("architecture-development-template.md")
     physical = _read_template("architecture-physical-template.md")
 
-    assert "Produce the UC semantics" in scenario
-    assert "Do not write architecture components" in scenario
+    assert "Use-case semantics for the architecture workflow" in scenario
+    assert "Actors and Participants" in scenario
+    assert "Acceptance Semantics" in scenario
     assert "**Input**: `.specify/memory/architecture-scenario-view.md`" in logical
-    assert "Do not write classes, DTOs, database tables" in logical
+    assert "Capability Boundaries" in logical
+    assert "Domain Objects and Relationships" in logical
     assert "**Input**: `.specify/memory/architecture-scenario-view.md`, `.specify/memory/architecture-logical-view.md`" in process
-    assert "Do not write call stacks, queue names, retry counts" in process
+    assert "Main Runtime Links" in process
+    assert "Failure, Degradation, and Closure" in process
     assert "**Input**: `.specify/memory/architecture-logical-view.md`, `.specify/memory/architecture-process-view.md`" in development
-    assert "Do not write source file paths, concrete package trees" in development
+    assert "Architecture-Level Components" in development
+    assert "Dependency Rules" in development
     assert "**Input**: `.specify/memory/architecture-process-view.md`, `.specify/memory/architecture-development-view.md`" in physical
-    assert "Do not write Kubernetes YAML, cloud resource manifests" in physical
+    assert "Deployment and Hosting Boundaries" in physical
+    assert "Operations and Release Boundaries" in physical
 
     for content in [scenario, logical, process, development, physical]:
         for section in [
