@@ -245,12 +245,25 @@ class TestMultiInstallSafeContracts:
         tmp_path,
         ordered_keys,
     ):
+        # The pairwise disjointness contract is only meaningful with at least
+        # two safe integrations. Guard so a shrunken registry fails loudly here
+        # rather than passing vacuously (or tripping over ordered_keys[0] below).
+        assert len(ordered_keys) >= 2, (
+            f"expected at least two multi-install-safe integrations, got {ordered_keys}"
+        )
+
         project_root = tmp_path / "project"
         project_root.mkdir()
         runner = CliRunner()
 
-        # Install every safe integration once per order, then assert pairwise
-        # manifest isolation from the resulting manifests.
+        # Install every safe integration once into a single project, then assert
+        # pairwise manifest isolation. Each safe integration writes only to its
+        # own (disjoint) directories and always records what it writes, so a
+        # manifest's contents are independent of install order and of which other
+        # integrations are co-installed. The two parametrized orders therefore
+        # produce the same manifests; their purpose is to route a different
+        # integration through the `init` path versus `integration install`
+        # (forward installs the first key via init, reverse the last).
         original_cwd = os.getcwd()
         try:
             os.chdir(project_root)
@@ -279,14 +292,15 @@ class TestMultiInstallSafeContracts:
         finally:
             os.chdir(original_cwd)
 
-        manifests = {}
-        for key in ordered_keys:
-            manifest = json.loads(
-                (
-                    project_root / ".specify" / "integrations" / f"{key}.manifest.json"
-                ).read_text(encoding="utf-8")
+        integrations_dir = project_root / ".specify" / "integrations"
+        manifests = {
+            key: set(
+                json.loads(
+                    (integrations_dir / f"{key}.manifest.json").read_text(encoding="utf-8")
+                ).get("files", {})
             )
-            manifests[key] = set(manifest.get("files", {}))
+            for key in ordered_keys
+        }
 
         for first, second in _multi_install_safe_pairs():
             overlap = manifests[first] & manifests[second]
