@@ -152,7 +152,7 @@ specify preset add --from https://github.com/your-org/spec-kit-preset-your-prese
 The catalog `documentation` field must point at a README that explains how to use
 **this preset** — not a product pitch for a broader framework or a separate CLI.
 
-The submission workflow **mechanically enforces** that the linked README: is a GitHub-hosted
+The submission workflow **mechanically enforces** that the linked README is a GitHub-hosted
 URL whose path ends with `README.md`, resolves to a readable file, and contains at least one
 valid `specify preset add ...` command. The remaining items (preferring a preset-scoped README
 in monorepos, covering the minimum structure) are expectations a human reviewer checks —
