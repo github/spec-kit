@@ -119,7 +119,9 @@ uv pip install -e ".[test]"
 git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error
 ```
 
-The CI `lint.yml` `shellcheck` job blocks at `--severity=error` to catch real bugs while leaving stylistic warnings (SC2155 etc.) advisory.
+The CI `lint.yml` `shellcheck` job currently reports and blocks only
+error-severity findings. Warnings such as SC2155 are intentionally outside this
+job until a follow-up cleanup tightens the threshold.
 
 ### Manual testing
 

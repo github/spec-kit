@@ -11,6 +11,7 @@ WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 # Match both the dedicated-step form (`        uses: x@sha`) and the
 # inline shorthand (`      - uses: x@sha`) used in catalog-assign.yml.
 USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<ref>\S+)", re.MULTILINE)
+PINNED_SHA_RE = re.compile(r"@[0-9a-f]{40}$", re.IGNORECASE)
 
 
 def test_github_actions_are_pinned_to_full_commit_shas():
@@ -27,8 +28,14 @@ def test_github_actions_are_pinned_to_full_commit_shas():
             uses_ref = match.group("ref")
             if uses_ref.startswith(("./", "../")):
                 continue
-            if re.search(r"@[0-9a-f]{40}$", uses_ref):
+            if PINNED_SHA_RE.search(uses_ref):
                 continue
             unpinned_refs.append(f"{workflow.relative_to(REPO_ROOT)}: {uses_ref}")
 
     assert unpinned_refs == []
+
+
+def test_pinned_action_ref_accepts_uppercase_hex_sha():
+    assert PINNED_SHA_RE.search(
+        "actions/example@0123456789ABCDEF0123456789ABCDEF01234567"
+    )
