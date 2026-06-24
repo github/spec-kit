@@ -878,7 +878,7 @@ def test_check_dir_bash_counts_subdir_only_contracts(tasks_repo: Path) -> None:
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
-def test_test_dir_has_files_ps_counts_subdir_only_contracts(tasks_repo: Path) -> None:
+def test_dir_has_files_ps_counts_subdir_only_contracts(tasks_repo: Path) -> None:
     """Test-DirHasFiles must match bash: a subdir-only dir counts as non-empty."""
     contracts = tasks_repo / "contracts" / "v1"
     contracts.mkdir(parents=True)
