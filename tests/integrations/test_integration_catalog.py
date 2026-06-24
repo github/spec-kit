@@ -984,7 +984,7 @@ class TestCatalogSourceManagement:
         ("bad_url", "reason"),
         [
             ("http://insecure.example.com/catalog.json", "HTTPS"),
-            (123, "HTTPS"),
+            (123, "valid URL with a host"),
         ],
     )
     def test_add_catalog_rejects_existing_entry_with_bad_url(
