@@ -590,12 +590,25 @@ _register_integration_cmds(app)
 # Re-exported from integrations/_helpers.py to preserve the public import surface.
 from .integrations._helpers import (  # noqa: E402
     _clear_init_options_for_integration as _clear_init_options_for_integration,
+    _resolve_init_dir_override as _resolve_init_dir_override,
     _update_init_options_for_integration as _update_init_options_for_integration,
 )
 
 
 def _require_specify_project() -> Path:
-    """Return the current project root if it is a spec-kit project, else exit."""
+    """Return the project root if it is a spec-kit project, else exit.
+
+    Honors the ``SPECIFY_INIT_DIR`` override (same validation rules as the shell
+    scripts) so a member project can be targeted from a monorepo root without
+    ``cd``. This is the resolution chokepoint for *every* project-scoped
+    subcommand — ``integration``, ``extension``, ``workflow``, ``preset``, and the
+    rest that operate on an existing ``.specify/`` project — so the override
+    applies to all of them uniformly. When the override is unset, the project is
+    the current directory, as before.
+    """
+    override = _resolve_init_dir_override()
+    if override is not None:
+        return override
     project_root = Path.cwd()
     if (project_root / ".specify").is_dir():
         return project_root
@@ -819,12 +832,18 @@ def workflow_run(
     is_file_source = source_path.suffix.lower() in (".yml", ".yaml") and source_path.is_file()
 
     if is_file_source:
-        # When running a YAML file directly, use cwd as project root
-        # without requiring a .specify/ project directory.
-        project_root = Path.cwd()
+        # When running a YAML file directly, use cwd as project root without
+        # requiring a .specify/ project directory — unless SPECIFY_INIT_DIR
+        # explicitly names a project, in which case the strict override applies.
+        # Either way, refuse a symlinked .specify (a planted-symlink guard): the
+        # override resolver follows symlinks via is_dir(), so re-check here so the
+        # override path is as strict as the cwd path.
+        override = _resolve_init_dir_override()
+        project_root = override if override is not None else Path.cwd()
         specify_dir = project_root / ".specify"
         if specify_dir.is_symlink():
-            console.print("[red]Error:[/red] Refusing to use symlinked .specify path in current directory")
+            where = " in current directory" if override is None else f": {specify_dir}"
+            console.print(f"[red]Error:[/red] Refusing to use symlinked .specify path{where}")
             raise typer.Exit(1)
         if specify_dir.exists() and not specify_dir.is_dir():
             console.print("[red]Error:[/red] .specify path exists but is not a directory")

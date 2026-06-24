@@ -2,6 +2,8 @@
 
 <!-- insert new changelog below this comment -->
 
+- feat(cli): the `specify` CLI now honors `SPECIFY_INIT_DIR` for every project-scoped subcommand (`integration`, `extension`, `workflow`, `preset`, …) and `workflow run <file>`, applying the same validation rules as the shell resolver, so they can target a member project from a monorepo root without `cd` (#3186)
+
 ## [0.11.9] - 2026-06-26
 
 ### Changed
