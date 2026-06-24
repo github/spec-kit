@@ -300,7 +300,7 @@ class TestCreateFeatureBash:
 
     def test_branch_name_short_word_case_sensitivity(self, tmp_path: Path):
         """A short word is dropped from the derived branch name unless it appears
-        as an UPPERCASE acronym in the description (case-sensitive, must match the
+        as an acronym in UPPERCASE in the description (case-sensitive, must match the
         PowerShell twin)."""
         project = _setup_project(tmp_path)
         # lowercase "go" (<3 chars, not an uppercase acronym) is dropped
@@ -446,7 +446,7 @@ class TestCreateFeaturePowerShell:
 
     def test_branch_name_short_word_case_sensitivity(self, tmp_path: Path):
         """PowerShell must match the bash twin: a short word is dropped unless it
-        appears as an UPPERCASE acronym (case-sensitive -cmatch, not -match)."""
+        appears as an acronym in UPPERCASE (case-sensitive -cmatch, not -match)."""
         project = _setup_project(tmp_path)
         r1 = _run_pwsh(
             "create-new-feature-branch.ps1", project, "-Json", "-DryRun", "Add go support",

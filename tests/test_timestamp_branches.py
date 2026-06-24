@@ -242,7 +242,7 @@ class TestSequentialBranch:
 
     def test_branch_name_short_word_case_sensitivity(self, git_repo: Path):
         """A short word is dropped from the derived branch name unless it appears
-        as an UPPERCASE acronym in the description. The PowerShell twin must use
+        as an acronym in UPPERCASE in the description. The PowerShell twin must use
         case-sensitive -cmatch to produce the same result."""
         r1 = run_script(git_repo, "--json", "--dry-run", "Add go support")
         assert r1.returncode == 0, r1.stderr
@@ -286,7 +286,7 @@ class TestSequentialBranchPowerShell:
     @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
     def test_branch_name_short_word_case_sensitivity(self, ps_git_repo: Path):
         """Core create-new-feature.ps1 must drop a short word unless it appears as
-        an UPPERCASE acronym (case-sensitive -cmatch), matching the bash twin."""
+        an acronym in UPPERCASE (case-sensitive -cmatch), matching the bash twin."""
         script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
 
         def _run(desc: str) -> subprocess.CompletedProcess:
