@@ -152,11 +152,11 @@ specify preset add --from https://github.com/your-org/spec-kit-preset-your-prese
 The catalog `documentation` field must point at a README that explains how to use
 **this preset** — not a product pitch for a broader framework or a separate CLI.
 
-The submission workflow **mechanically enforces** two of these requirements: the linked
-README must resolve to a readable file, and it must contain at least one valid
-`specify preset add ...` command. The remaining items (preferring a preset-scoped README,
-covering the minimum structure) are expectations a human reviewer checks — follow them so
-your submission isn't sent back for changes.
+The submission workflow **mechanically enforces** that the linked README: is a GitHub-hosted
+URL whose path ends with `README.md`, resolves to a readable file, and contains at least one
+valid `specify preset add ...` command. The remaining items (preferring a preset-scoped README
+in monorepos, covering the minimum structure) are expectations a human reviewer checks —
+follow them so your submission isn't sent back for changes.
 
 - **Point `documentation` at the preset-scoped README.** In a monorepo where the preset
   lives in a subdirectory (e.g. `presets/<id>/`), link the README inside that directory
@@ -285,7 +285,7 @@ git push origin add-your-preset
 
 ### Checklist
 - [ ] Valid preset.yml manifest
-- [ ] Preset-scoped README with a valid `specify preset add ...` command, linked from `documentation`
+- [ ] Usage README with a valid `specify preset add ...` command, linked from `documentation` (preset-scoped README recommended for monorepos)
 - [ ] LICENSE file included
 - [ ] GitHub release created
 - [ ] Preset tested with `specify preset add --dev`
