@@ -51,6 +51,122 @@ CONTEXT_FILES = {
     "windsurf": ".windsurf/rules/specify-rules.md",
 }
 
+README_FILES = ["README.md", "README.markdown", "README.txt"]
+PROJECT_DOC_FILES = [
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+    "ARCHITECTURE.md",
+    "ROADMAP.md",
+]
+PROJECT_DOC_DIRS = ["docs", "adr", "adrs", "specs"]
+PACKAGE_MANIFESTS = [
+    "package.json",
+    "pyproject.toml",
+    "Cargo.toml",
+    "go.mod",
+    "Gemfile",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "composer.json",
+    "requirements.txt",
+    "setup.py",
+    "setup.cfg",
+]
+LOCKFILES = [
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lockb",
+    "uv.lock",
+    "poetry.lock",
+    "Pipfile.lock",
+    "Cargo.lock",
+    "go.sum",
+    "Gemfile.lock",
+    "composer.lock",
+]
+TASK_RUNNERS = ["Makefile", "Taskfile.yml", "Taskfile.yaml", "justfile", "Brewfile"]
+SOURCE_DIRS = ["src", "app", "lib", "services", "packages", "apps", "cmd", "internal", "scripts", "commands", "templates"]
+TEST_DIRS = ["test", "tests", "spec", "specs", "e2e"]
+REPOSITORY_POLICY_FILES = [
+    "LICENSE",
+    "CODEOWNERS",
+    ".github/CODEOWNERS",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+]
+EXTENSION_ASSET_FILES = ["extension.yml", ".extensionignore"]
+EXTENSION_ASSET_DIRS = ["commands", "templates"]
+EXTENSION_CONTRACT_FILES = [
+    "commands/speckit.repository-governance.refresh.md",
+    "templates/repository-governance-template.md",
+    "docs/extension-governance.md",
+]
+API_CONTRACT_FILES = [
+    "openapi.yaml",
+    "openapi.yml",
+    "openapi.json",
+    "api.yaml",
+    "api.yml",
+    "schema.graphql",
+    "buf.yaml",
+]
+ARCHITECTURE_DIRS = ["infra", "deploy", "deployment", "k8s", "helm", "terraform"]
+BUILD_CONFIG_FILES = [
+    "tsconfig.json",
+    "jsconfig.json",
+    "vite.config.js",
+    "vite.config.ts",
+    "next.config.js",
+    "next.config.mjs",
+    "webpack.config.js",
+    "rollup.config.js",
+    "turbo.json",
+    "nx.json",
+    "pnpm-workspace.yaml",
+    "lerna.json",
+]
+CODE_STYLE_FILES = [
+    ".editorconfig",
+    ".prettierrc",
+    ".prettierrc.json",
+    ".prettierrc.yml",
+    "prettier.config.js",
+    "prettier.config.cjs",
+    "eslint.config.js",
+    "eslint.config.mjs",
+    ".eslintrc",
+    ".eslintrc.json",
+    "biome.json",
+    "ruff.toml",
+    ".ruff.toml",
+    "pyproject.toml",
+    "mypy.ini",
+    "pytest.ini",
+    "tox.ini",
+    "vitest.config.js",
+    "vitest.config.ts",
+    "jest.config.js",
+    "playwright.config.ts",
+]
+RUNTIME_CONFIG_FILES = [
+    ".env.example",
+    ".env.sample",
+    "Dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+    "Procfile",
+    "vercel.json",
+    "netlify.toml",
+    "fly.toml",
+]
+SPEC_KIT_METADATA = [".specify/integration.json", ".specify/init-options.json", ".specify/extensions.yml"]
+
 
 def main() -> int:
     root = Path.cwd()
@@ -150,19 +266,21 @@ def repository_evidence_summary(root: Path, state: dict[str, Any], init_options:
 
 def repository_evidence_lines(root: Path, state: dict[str, Any], init_options: dict[str, Any]) -> list[str]:
     lines = [
-        evidence_line("README", existing_paths(root, ["README.md", "README.markdown", "README.txt"])),
-        evidence_line(
-            "Package manifest",
-            existing_paths(root, ["package.json", "pyproject.toml", "Cargo.toml", "go.mod", "Gemfile", "pom.xml", "build.gradle", "build.gradle.kts"]),
-        ),
-        evidence_line(
-            "Lockfiles",
-            existing_paths(root, ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock", "Cargo.lock", "go.sum", "Gemfile.lock"]),
-        ),
-        evidence_line("Task runners", existing_paths(root, ["Makefile", "Taskfile.yml", "Taskfile.yaml", "justfile"])),
+        evidence_line("README", existing_paths(root, README_FILES)),
+        evidence_line("Project docs", unique_ordered([*existing_paths(root, PROJECT_DOC_FILES), *existing_dirs(root, PROJECT_DOC_DIRS)])),
+        evidence_line("Repository policy", existing_paths(root, REPOSITORY_POLICY_FILES)),
+        evidence_line("Spec Kit metadata", existing_paths(root, SPEC_KIT_METADATA)),
+        evidence_line("Extension assets", extension_asset_paths(root)),
+        evidence_line("Package manifest", package_manifest_paths(root)),
+        evidence_line("Lockfiles", lockfile_paths(root)),
+        evidence_line("Task runners", existing_paths(root, TASK_RUNNERS)),
         evidence_line("CI workflows", directory_files(root, ".github/workflows")),
-        evidence_line("Source paths", existing_dirs(root, ["src", "app", "lib", "scripts", "commands", "templates"])),
-        evidence_line("Test paths", existing_dirs(root, ["test", "tests", "spec", "specs"])),
+        evidence_line("Source paths", source_paths(root)),
+        evidence_line("Test paths", test_paths(root)),
+        evidence_line("Feature specs", scan_feature_specs(root)),
+        evidence_line("API contracts", api_contract_paths(root)),
+        evidence_line("Build config", build_config_paths(root)),
+        evidence_line("Runtime config", runtime_config_paths(root)),
         evidence_line("Repository areas", repository_area_paths(root)),
         evidence_line("Existing agent context files", existing_context_files(root, init_options, state)),
         evidence_line("Repository-local skills", scan_skills(root)),
@@ -187,10 +305,10 @@ def vertical_ssot_evidence_lines(root: Path, state: dict[str, Any], init_options
 def architecture_evidence(root: Path) -> list[str]:
     return unique_ordered(
         [
-            *existing_dirs(root, ["src", "app", "lib", "services", "packages"]),
+            *source_paths(root),
             *route_files(root),
-            *existing_paths(root, ["openapi.yaml", "openapi.yml", "openapi.json", "api.yaml", "api.yml", "schema.graphql"]),
-            *existing_dirs(root, ["infra", "deploy", "k8s", "helm"]),
+            *api_contract_paths(root),
+            *existing_dirs(root, ARCHITECTURE_DIRS),
         ]
     )
 
@@ -199,8 +317,10 @@ def engineering_evidence(root: Path) -> list[str]:
     return unique_ordered(
         [
             *directory_files(root, ".github/workflows"),
-            *existing_paths(root, ["CHANGELOG.md", "RELEASE.md", "VERSION", "package.json", "pyproject.toml", "Cargo.toml", "go.mod"]),
-            *existing_paths(root, ["Makefile", "Taskfile.yml", "Taskfile.yaml", "justfile"]),
+            *existing_paths(root, ["CHANGELOG.md", "RELEASE.md", "VERSION"]),
+            *existing_paths(root, EXTENSION_CONTRACT_FILES),
+            *package_manifest_paths(root),
+            *existing_paths(root, TASK_RUNNERS),
         ]
     )
 
@@ -208,26 +328,9 @@ def engineering_evidence(root: Path) -> list[str]:
 def code_style_evidence(root: Path) -> list[str]:
     return unique_ordered(
         [
-            *existing_paths(
-                root,
-                [
-                    ".editorconfig",
-                    ".prettierrc",
-                    ".prettierrc.json",
-                    ".prettierrc.yml",
-                    "prettier.config.js",
-                    "eslint.config.js",
-                    ".eslintrc",
-                    ".eslintrc.json",
-                    "ruff.toml",
-                    ".ruff.toml",
-                    "pyproject.toml",
-                    "mypy.ini",
-                    "pytest.ini",
-                    "tox.ini",
-                ],
-            ),
-            *existing_dirs(root, ["test", "tests", "spec", "specs"]),
+            *existing_paths(root, CODE_STYLE_FILES),
+            *existing_top_level_globs(root, ["*.prettierrc.*", "eslint.config.*", "jest.config.*", "playwright.config.*", "vitest.config.*"]),
+            *test_paths(root),
         ]
     )
 
@@ -239,33 +342,25 @@ def directory_structure_evidence(root: Path) -> list[str]:
 def toolchain_evidence(root: Path) -> list[str]:
     return unique_ordered(
         [
-            *existing_paths(
-                root,
-                [
-                    "package.json",
-                    "pyproject.toml",
-                    "Cargo.toml",
-                    "go.mod",
-                    "Gemfile",
-                    "pom.xml",
-                    "build.gradle",
-                    "build.gradle.kts",
-                    "Dockerfile",
-                    "docker-compose.yml",
-                    "docker-compose.yaml",
-                    "Makefile",
-                    "Taskfile.yml",
-                    "Taskfile.yaml",
-                    "justfile",
-                ],
-            ),
-            *existing_paths(root, ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock", "Cargo.lock", "go.sum", "Gemfile.lock"]),
+            *package_manifest_paths(root),
+            *lockfile_paths(root),
+            *existing_paths(root, TASK_RUNNERS),
+            *extension_asset_paths(root),
+            *build_config_paths(root),
+            *runtime_config_paths(root),
         ]
     )
 
 
 def agent_harness_evidence(root: Path, init_options: dict[str, Any], state: dict[str, Any]) -> list[str]:
-    return unique_ordered([*existing_context_files(root, init_options, state), *scan_skills(root), *scan_mcp_configs(root)])
+    return unique_ordered(
+        [
+            *existing_context_files(root, init_options, state),
+            *existing_paths(root, SPEC_KIT_METADATA),
+            *scan_skills(root),
+            *scan_mcp_configs(root),
+        ]
+    )
 
 
 def evidence_line(label: str, values: list[str]) -> str:
@@ -293,6 +388,67 @@ def existing_paths(root: Path, names: list[str]) -> list[str]:
 
 def existing_dirs(root: Path, names: list[str]) -> list[str]:
     return [f"{name}/" for name in names if (root / name).is_dir()]
+
+
+def existing_top_level_globs(root: Path, patterns: list[str]) -> list[str]:
+    matches: list[str] = []
+    for pattern in patterns:
+        for path in sorted(root.glob(pattern)):
+            if path.is_file():
+                matches.append(rel(root, path))
+    return unique_ordered(matches)
+
+
+def package_manifest_paths(root: Path) -> list[str]:
+    return unique_ordered(
+        [
+            *existing_paths(root, PACKAGE_MANIFESTS),
+            *existing_top_level_globs(root, ["requirements*.txt"]),
+        ]
+    )
+
+
+def lockfile_paths(root: Path) -> list[str]:
+    return existing_paths(root, LOCKFILES)
+
+
+def source_paths(root: Path) -> list[str]:
+    return existing_dirs(root, SOURCE_DIRS)
+
+
+def test_paths(root: Path) -> list[str]:
+    return existing_dirs(root, TEST_DIRS)
+
+
+def api_contract_paths(root: Path) -> list[str]:
+    return unique_ordered(
+        [
+            *existing_paths(root, API_CONTRACT_FILES),
+            *existing_top_level_globs(root, ["*.proto", "*.graphql"]),
+        ]
+    )
+
+
+def build_config_paths(root: Path) -> list[str]:
+    return unique_ordered(
+        [
+            *existing_paths(root, BUILD_CONFIG_FILES),
+            *existing_top_level_globs(root, ["tsconfig*.json", "vite.config.*", "next.config.*", "webpack.config.*"]),
+        ]
+    )
+
+
+def extension_asset_paths(root: Path) -> list[str]:
+    return unique_ordered([*existing_paths(root, EXTENSION_ASSET_FILES), *existing_dirs(root, EXTENSION_ASSET_DIRS)])
+
+
+def runtime_config_paths(root: Path) -> list[str]:
+    return unique_ordered(
+        [
+            *existing_paths(root, RUNTIME_CONFIG_FILES),
+            *existing_dirs(root, ARCHITECTURE_DIRS),
+        ]
+    )
 
 
 def directory_files(root: Path, directory: str) -> list[str]:
@@ -369,6 +525,10 @@ def development_command_lines(root: Path) -> list[str]:
     if commands:
         commands.append("- manifest commands over ad hoc equivalents")
         return commands
+    commands = python_project_command_lines(root)
+    if commands:
+        commands.append("- project commands over ad hoc equivalents")
+        return commands
     return ["- none detected"]
 
 
@@ -386,6 +546,15 @@ def package_script_lines(root: Path) -> list[str]:
         command = f"npm {name}" if name in {"start", "stop", "test", "restart"} else f"npm run {name}"
         result.append(f"- `{command}` -> `{value.strip()}`")
     return result
+
+
+def python_project_command_lines(root: Path) -> list[str]:
+    if not (root / "pyproject.toml").is_file():
+        return []
+    if not (test_paths(root) or existing_paths(root, ["pytest.ini", "tox.ini"])):
+        return []
+    prefix = "uv run --locked" if (root / "uv.lock").is_file() else "uv run"
+    return [f"- `{prefix} pytest -q` -> pytest suite"]
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -764,15 +933,15 @@ def handoff_default(style: str) -> list[str]:
     return ["- changed files", "- commands run", "- validation result", "- unresolved risks"]
 
 
-def scan_feature_specs(root: Path) -> str:
+def scan_feature_specs(root: Path) -> list[str]:
     specs = root / "specs"
     if not specs.is_dir():
-        return "none"
-    entries = []
+        return []
+    entries: list[str] = []
     for feature in sorted(path for path in specs.iterdir() if path.is_dir()):
         statuses = [f"{name}:{'present' if (feature / name).exists() else 'missing'}" for name in ("spec.md", "plan.md", "tasks.md")]
         entries.append(f"{rel(root, feature)} ({', '.join(statuses)})")
-    return ", ".join(entries) if entries else "none"
+    return entries
 
 
 def scan_skills(root: Path) -> list[str]:
