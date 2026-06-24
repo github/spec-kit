@@ -53,6 +53,8 @@
       href: local-development.md
     - name: Evolving Specs
       href: guides/evolving-specs.md
+    - name: Monorepos
+      href: guides/monorepo.md
 
 # Community
 - name: Community

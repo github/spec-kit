@@ -342,6 +342,73 @@ class TestExpressions:
                     "{{ steps.emit.output.stdout | " + bad + " }}", ctx
                 )
 
+    def test_filter_unknown_name_raises(self):
+        # An unregistered filter name must fail loudly rather than silently
+        # returning the unfiltered value (which hides a typo / unsupported
+        # filter as a wrong result).
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": [1, 2, 3]})
+        with pytest.raises(ValueError, match="unknown filter 'length'"):
+            evaluate_expression("{{ inputs.items | length }}", ctx)
+
+    def test_filter_unknown_name_with_args_raises(self):
+        # The unknown-filter path must also catch the `name(arg)` form, which
+        # otherwise falls through the recognized-args branch silently.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"text": "hello"})
+        with pytest.raises(ValueError, match="unknown filter 'upper'"):
+            evaluate_expression("{{ inputs.text | upper('x') }}", ctx)
+
+    def test_registered_filters_unaffected(self):
+        # Regression: all five registered filters keep working unchanged.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "tags": ["a", "b", "c"],
+                "text": "hello world",
+                "missing": "",
+                "rows": [{"id": "a"}, {"id": "b"}],
+            },
+            steps={"emit": {"output": {"stdout": '{"n": 1}'}}},
+        )
+        assert (
+            evaluate_expression("{{ inputs.missing | default('fb') }}", ctx) == "fb"
+        )
+        assert evaluate_expression("{{ inputs.tags | join(', ') }}", ctx) == "a, b, c"
+        assert evaluate_expression("{{ inputs.rows | map('id') }}", ctx) == ["a", "b"]
+        assert (
+            evaluate_expression("{{ inputs.text | contains('world') }}", ctx) is True
+        )
+        assert evaluate_expression(
+            "{{ steps.emit.output.stdout | from_json }}", ctx
+        ) == {"n": 1}
+
+    def test_registered_filter_unsupported_form_raises(self):
+        # A *registered* filter used in an unsupported form (e.g. `| join` with
+        # no argument) must fail loudly with a message that names it as a known
+        # filter misused, not as an "unknown filter".
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"tags": ["a", "b", "c"]})
+        with pytest.raises(
+            ValueError, match="filter 'join' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.tags | join }}", ctx)
+        with pytest.raises(
+            ValueError, match="filter 'map' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.tags | map }}", ctx)
+
     def test_condition_evaluation(self):
         from specify_cli.workflows.expressions import evaluate_condition
         from specify_cli.workflows.base import StepContext
@@ -5341,3 +5408,234 @@ steps:
         assert resumed.exit_code == 1, resumed.stdout
         payload = _json.loads(resumed.stdout)
         assert payload["status"] == "failed"
+
+
+class TestWorkflowRunGateOutcomeJson:
+    """CLI-level tests: the --json payload surfaces gate pauses."""
+
+    _WF_GATE = """
+schema_version: "1.0"
+workflow:
+  id: "gate-json"
+  name: "Gate JSON"
+  version: "1.0.0"
+steps:
+  - id: review
+    type: gate
+    message: "Approve the thing?"
+    options: ["approve", "reject"]
+"""
+
+    _WF_PLAIN = """
+schema_version: "1.0"
+workflow:
+  id: "plain-json"
+  name: "Plain JSON"
+  version: "1.0.0"
+steps:
+  - id: fine
+    type: shell
+    run: "exit 0"
+"""
+
+    def _run_json(self, tmp_path, monkeypatch, content, *, expected_exit=0):
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        path = tmp_path / "wf.yml"
+        path.write_text(content, encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(app, ["workflow", "run", str(path), "--json"])
+        # Assert the expected exit code before parsing so a real failure
+        # surfaces the actual output instead of an opaque JSON decode error.
+        # A terminal run still emits its JSON payload, then exits non-zero on
+        # ``failed``/``aborted`` (see ``_run_outcome_exit_code``), so callers
+        # pass the expected code. Use ``result.output`` for the message:
+        # under ``--json`` step output is redirected off stdout, so the useful
+        # diagnostics live there.
+        assert result.exit_code == expected_exit, result.output
+        return _json.loads(result.stdout)
+
+    def test_gate_pause_carries_gate_block(self, tmp_path, monkeypatch):
+        # CliRunner stdin is not a TTY, so the gate pauses for resume.
+        payload = self._run_json(tmp_path, monkeypatch, self._WF_GATE)
+        assert payload["status"] == "paused"
+        assert payload["gate"] == {
+            "step_id": "review",
+            "message": "Approve the thing?",
+            "options": ["approve", "reject"],
+            "choice": None,
+        }
+
+    def test_completed_run_has_no_gate_block(self, tmp_path, monkeypatch):
+        payload = self._run_json(tmp_path, monkeypatch, self._WF_PLAIN)
+        assert payload["status"] == "completed"
+        assert "gate" not in payload
+
+    def test_gate_abort_carries_gate_block(self, tmp_path, monkeypatch):
+        # An interactive gate the operator rejects ends the run as `aborted`
+        # (on_reject defaults to abort), not `paused`. The JSON surface must
+        # still carry the gate block with the recorded choice so an
+        # orchestrator can see *why* the run stopped. A gate abort emits the
+        # payload and then exits non-zero (aborted → exit 1), so the helper
+        # is told to expect exit code 1.
+        from specify_cli.workflows.steps.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(lambda _msg, _opts: "reject")
+        )
+        payload = self._run_json(
+            tmp_path, monkeypatch, self._WF_GATE, expected_exit=1
+        )
+        assert payload["status"] == "aborted"
+        assert payload["gate"] == {
+            "step_id": "review",
+            "message": "Approve the thing?",
+            "options": ["approve", "reject"],
+            "choice": "reject",
+        }
+
+    def test_gate_block_emitted_only_when_run_rests_at_gate(self):
+        # A run rests *on* a gate only while `paused` (awaiting a decision) or
+        # `aborted` (gate rejected with on_reject: abort). current_step_id is
+        # not cleared afterwards, so a `completed`/`failed` run whose last
+        # executed step was a gate must NOT surface a stale gate block.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        gate_step = {
+            "type": "gate",
+            "output": {
+                "message": "m",
+                "options": ["approve", "reject"],
+                "choice": "reject",
+            },
+        }
+
+        def _state(status):
+            return SimpleNamespace(
+                status=SimpleNamespace(value=status),
+                current_step_id="review",
+                step_results={"review": gate_step},
+            )
+
+        assert _gate_outcome(_state("completed")) is None
+        assert _gate_outcome(_state("failed")) is None
+        assert _gate_outcome(_state("paused")) is not None
+        assert _gate_outcome(_state("aborted")) is not None
+
+    def test_gate_block_message_coerced_to_string(self):
+        # message may be a non-string YAML literal (e.g. a number); the JSON
+        # surface normalises it so the emitted schema stays stable.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="review",
+            step_results={
+                "review": {
+                    "type": "gate",
+                    "output": {"message": 12.5, "options": ["ok"], "choice": None},
+                }
+            },
+        )
+        assert _gate_outcome(state)["message"] == "12.5"
+
+    def test_gate_block_options_coerced_to_strings(self):
+        # options may be non-string / non-list literals in an unvalidated
+        # workflow; the JSON surface always normalises them to list[str] | None
+        # so the emitted schema is stable regardless of the input shape.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        def _options_payload(options):
+            state = SimpleNamespace(
+                status=SimpleNamespace(value="paused"),
+                current_step_id="review",
+                step_results={
+                    "review": {
+                        "type": "gate",
+                        "output": {
+                            "message": "m",
+                            "options": options,
+                            "choice": None,
+                        },
+                    }
+                },
+            )
+            return _gate_outcome(state)["options"]
+
+        assert _options_payload([1, 2.5]) == ["1", "2.5"]  # list
+        assert _options_payload(("approve", "reject")) == ["approve", "reject"]  # tuple
+        assert _options_payload("approve") == ["approve"]  # bare scalar, not iterated
+        assert _options_payload(7) == ["7"]  # numeric scalar
+        assert _options_payload(None) is None  # absent stays absent
+
+    def test_gate_block_choice_coerced_to_string(self):
+        # An unvalidated gate can record a non-string choice; the JSON
+        # surface normalises it to str (and keeps None = no decision yet),
+        # consistent with the message/options normalization.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        def _choice_payload(choice):
+            state = SimpleNamespace(
+                status=SimpleNamespace(value="paused"),
+                current_step_id="review",
+                step_results={
+                    "review": {
+                        "type": "gate",
+                        "output": {"message": "m", "options": ["ok"], "choice": choice},
+                    }
+                },
+            )
+            return _gate_outcome(state)["choice"]
+
+        assert _choice_payload(None) is None  # no decision yet
+        assert _choice_payload("reject") == "reject"  # normal string passes through
+        assert _choice_payload(2) == "2"  # non-string coerced
+
+    def test_gate_block_detected_without_type_field(self):
+        # A run paused by an older version has no persisted step `type`. The
+        # gate is still detected by its unique output signature (`on_reject`),
+        # so resume surfaces the gate block instead of silently dropping it.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="review",
+            step_results={
+                "review": {
+                    # no "type" key — pre-dates the field being persisted
+                    "output": {
+                        "message": "Approve?",
+                        "options": ["approve", "reject"],
+                        "on_reject": "abort",
+                        "choice": None,
+                    },
+                }
+            },
+        )
+        gate = _gate_outcome(state)
+        assert gate is not None
+        assert gate["step_id"] == "review"
+        assert gate["options"] == ["approve", "reject"]
+
+    def test_non_gate_step_without_type_is_not_a_gate(self):
+        # A typeless record lacking the gate signature must NOT be mistaken for
+        # a gate (the fallback keys off `on_reject`, which only GateStep writes).
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="run-tests",
+            step_results={
+                "run-tests": {"output": {"exit_code": 0, "stdout": "ok"}},
+            },
+        )
+        assert _gate_outcome(state) is None

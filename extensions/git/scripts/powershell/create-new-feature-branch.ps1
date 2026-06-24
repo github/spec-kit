@@ -88,7 +88,7 @@ function Get-HighestNumberFromBranches {
         $branches = git branch -a 2>$null
         if ($LASTEXITCODE -eq 0 -and $branches) {
             $cleanNames = $branches | ForEach-Object {
-                $_.Trim() -replace '^\*?\s+', '' -replace '^remotes/[^/]+/', ''
+                $_.Trim() -replace '^[+*]?\s+', '' -replace '^remotes/[^/]+/', ''
             }
             return Get-HighestNumberFromNames -Names $cleanNames
         }
@@ -197,7 +197,16 @@ if (-not $commonLoaded) {
     throw "Unable to locate common script file. Please ensure the Specify core scripts are installed."
 }
 
-# Resolve repository root
+# SPECIFY_INIT_DIR is resolved (and validated) by the core resolver. If only the
+# minimal git-common.ps1 was loaded, or an older core common.ps1 without the
+# resolver was loaded, refuse rather than silently falling back to the wrong root.
+if ($env:SPECIFY_INIT_DIR -and -not (Get-Command Resolve-SpecifyInitDir -CommandType Function -ErrorAction SilentlyContinue)) {
+    throw "SPECIFY_INIT_DIR requires updated Spec Kit core scripts (common.ps1 with Resolve-SpecifyInitDir), which were not found."
+}
+
+# Resolve repository root. When the core scripts are present, Get-RepoRoot
+# honors SPECIFY_INIT_DIR (the explicit project override for non-interactive /
+# CI use) and hard-fails on an invalid value with no silent fallback.
 if (Get-Command Get-RepoRoot -ErrorAction SilentlyContinue) {
     $repoRoot = Get-RepoRoot
 } elseif ($projectRoot) {

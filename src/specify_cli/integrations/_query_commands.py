@@ -17,6 +17,7 @@ from ..integration_state import (
 from ._commands import integration_app, integration_catalog_app
 from ._helpers import (
     _read_integration_json,
+    _register_extensions_for_agent,
     _resolve_integration_options,
     _set_default_integration_or_exit,
 )
@@ -241,6 +242,11 @@ def integration_use(
             "To overwrite customizations, re-run with "
             f"[cyan]specify integration use {key} --force[/cyan]."
         ),
+    )
+    _register_extensions_for_agent(
+        project_root,
+        key,
+        continuing="The integration was selected, but installed extensions may need re-registration.",
     )
     console.print(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")
 

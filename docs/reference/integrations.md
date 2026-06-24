@@ -15,6 +15,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Codex CLI](https://github.com/openai/codex)                                         | `codex`          | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
 | [Cursor](https://cursor.sh/)                                                         | `cursor-agent`   |                                                                                                                                           |
 | [Devin for Terminal](https://cli.devin.ai/docs)                                      | `devin`          | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
+| [Firebender](https://firebender.com/)                                                | `firebender`     | IDE-based agent for Android Studio / IntelliJ                                                                                             |
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
 | [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        |                                                                                                                                           |
@@ -38,6 +39,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | `tabnine`        |                                                                                                                                           |
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
 | [Windsurf](https://windsurf.com/)                                                    | `windsurf`       |                                                                                                                                           |
+| [ZCode](https://zcode.z.ai/)                                                         | `zcode`          | Skills-based integration; installs skills into `.zcode/skills/` and invokes them as `$speckit-<command>`                                  |
 | [Zed](https://zed.dev/)                                                              | `zed`            | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                  |
 | Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above     |
 
@@ -184,6 +186,7 @@ The currently declared multi-install safe integrations are:
 | `codebuddy` | `.codebuddy/commands`, `CODEBUDDY.md` |
 | `codex` | `.agents/skills`, `AGENTS.md` |
 | `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
+| `firebender` | `.firebender/commands`, `.firebender/rules/specify-rules.mdc` |
 | `gemini` | `.gemini/commands`, `GEMINI.md` |
 | `iflow` | `.iflow/commands`, `IFLOW.md` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |

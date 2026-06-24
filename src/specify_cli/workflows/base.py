@@ -47,9 +47,10 @@ class StepContext:
     #: Resolved workflow inputs (from user prompts / defaults).
     inputs: dict[str, Any] = field(default_factory=dict)
 
-    #: Accumulated step results keyed by step ID.
-    #: Each entry is ``{"integration": ..., "model": ..., "options": ...,
-    #:   "input": ..., "output": ...}``.
+    #: Accumulated step results keyed by step ID. Each entry is the dict the
+    #: engine persists per step:
+    #: ``{"type": ..., "integration": ..., "model": ..., "options": ...,
+    #:   "input": ..., "output": ..., "status": ...}``.
     steps: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     #: Current fan-out item (set only inside fan-out iterations).
