@@ -194,7 +194,7 @@ jobs:
                 test -f .claude/skills/speckit-intake-visual-design/SKILL.md
                 test -f .claude/skills/speckit-intake-prd/SKILL.md
                 test -f .claude/skills/speckit-intake-test-cases/SKILL.md
-                grep -q "visual design evidence" .claude/skills/speckit-intake-visual-design/SKILL.md
+                grep -q "visual design intake" .claude/skills/speckit-intake-visual-design/SKILL.md
                 ;;
               repository-governance)
                 test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md

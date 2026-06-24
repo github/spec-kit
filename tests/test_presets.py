@@ -4572,6 +4572,10 @@ class TestBundledPresetLocator:
             'test -f .claude/skills/speckit-intake-visual-design/SKILL.md'
             in verify_run
         )
+        assert (
+            'grep -q "visual design intake" .claude/skills/speckit-intake-visual-design/SKILL.md'
+            in verify_run
+        )
         assert "specify extension add discovery" in verify_run
         assert (
             'test -f .claude/skills/speckit-discovery-decision/SKILL.md'
