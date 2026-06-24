@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import yaml
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.alquimia_ai import ARGUMENT_HINTS
+from specify_cli.integrations.alquimia import ARGUMENT_HINTS
 from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
 from specify_cli.integrations.manifest import IntegrationManifest
 
@@ -434,7 +434,7 @@ class TestAlquimiaArgumentHints:
 
     def test_inject_argument_hint_only_in_frontmatter(self):
         """inject_argument_hint must not modify description: lines in the body."""
-        from specify_cli.integrations.alquimia_ai import AlquimiaAIIntegration
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
 
         content = (
             "---\ndescription: My command\n---\n\ndescription: this is body text\n"
@@ -448,7 +448,7 @@ class TestAlquimiaArgumentHints:
 
     def test_inject_argument_hint_skips_if_already_present(self):
         """inject_argument_hint must not duplicate if argument-hint already exists."""
-        from specify_cli.integrations.alquimia_ai import AlquimiaAIIntegration
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
 
         content = (
             "---\n"
@@ -535,7 +535,7 @@ class TestAlquimiaHookCommandNote:
 
     def test_hook_note_not_in_skills_without_hooks(self, tmp_path):
         """Skills without hook sections should not get the note."""
-        from specify_cli.integrations.alquimia_ai import AlquimiaAIIntegration
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
 
         content = "---\nname: test\ndescription: test\n---\n\nNo hooks here.\n"
         result = SkillsIntegration._inject_hook_command_note(content)
@@ -543,7 +543,7 @@ class TestAlquimiaHookCommandNote:
 
     def test_hook_note_idempotent(self, tmp_path):
         """Injecting the note twice should not duplicate it."""
-        from specify_cli.integrations.alquimia_ai import AlquimiaAIIntegration
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
 
         content = (
             "---\nname: test\n---\n\n"
@@ -555,7 +555,7 @@ class TestAlquimiaHookCommandNote:
 
     def test_hook_note_preserves_indentation(self, tmp_path):
         """The injected note should match the indentation of the target line."""
-        from specify_cli.integrations.alquimia_ai import AlquimiaAIIntegration
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
 
         content = (
             "---\nname: test\n---\n\n"
