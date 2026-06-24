@@ -323,8 +323,6 @@ def _run_powershell_agent_context_script_with_env(
     )
 
 
-
-
 class TestBundledUpdaterPathValidation:
     def test_bundled_script_env_makes_yaml_importable(self, tmp_path):
         env = _bundled_script_env(tmp_path)
@@ -685,6 +683,121 @@ class TestExtensionSelfSeed:
 
         assert result.returncode == 0, result.stderr + result.stdout
         assert "nothing to do" in (result.stderr + result.stdout)
+
+
+_MDC_CONTEXT_FILE = ".cursor/rules/specify-rules.mdc"
+
+
+class TestMdcFrontmatter:
+    """Cursor-style ``.mdc`` targets must carry ``alwaysApply: true`` frontmatter
+    so the rule file is auto-loaded; non-``.mdc`` targets must not gain any."""
+
+    @requires_bash
+    def test_bash_script_prepends_mdc_frontmatter(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / _MDC_CONTEXT_FILE).read_text(encoding="utf-8")
+        assert text.startswith("---\nalwaysApply: true\n---\n")
+        assert "<!-- SPECKIT START -->" in text
+
+    @requires_bash
+    def test_bash_script_mdc_frontmatter_is_idempotent(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+
+        _run_bash_agent_context_script(project)
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / _MDC_CONTEXT_FILE).read_text(encoding="utf-8")
+        assert text.count("alwaysApply: true") == 1
+
+    @requires_bash
+    def test_bash_script_repairs_existing_mdc_frontmatter(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+        target = project / _MDC_CONTEXT_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "---\ndescription: My rules\nalwaysApply: false\n---\n\nUser notes\n",
+            encoding="utf-8",
+        )
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = target.read_text(encoding="utf-8")
+        assert "alwaysApply: true" in text
+        assert "alwaysApply: false" not in text
+        assert "description: My rules" in text
+        assert "User notes" in text
+
+    @requires_bash
+    def test_bash_script_skips_frontmatter_for_non_mdc(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file="AGENTS.md")
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / "AGENTS.md").read_text(encoding="utf-8")
+        assert "alwaysApply" not in text
+        assert text.startswith("<!-- SPECKIT START -->")
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_prepends_mdc_frontmatter(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / _MDC_CONTEXT_FILE).read_text(encoding="utf-8")
+        assert text.startswith("---\nalwaysApply: true\n---\n")
+        assert "<!-- SPECKIT START -->" in text
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_repairs_existing_mdc_frontmatter(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+        target = project / _MDC_CONTEXT_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "---\ndescription: My rules\nalwaysApply: false\n---\n\nUser notes\n",
+            encoding="utf-8",
+        )
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = target.read_text(encoding="utf-8")
+        assert "alwaysApply: true" in text
+        assert "alwaysApply: false" not in text
+        assert "description: My rules" in text
+        assert "User notes" in text
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_skips_frontmatter_for_non_mdc(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file="AGENTS.md")
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / "AGENTS.md").read_text(encoding="utf-8")
+        assert "alwaysApply" not in text
+        assert text.startswith("<!-- SPECKIT START -->")
 
 
 _LEGACY_CONTEXT = (

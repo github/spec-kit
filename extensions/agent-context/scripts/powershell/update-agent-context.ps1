@@ -16,6 +16,55 @@ param(
     [string]$PlanPath
 )
 
+function Add-MdcFrontmatter {
+    <#
+        Ensure .mdc content has YAML frontmatter with alwaysApply: true.
+
+        Cursor only auto-loads .mdc rule files that carry frontmatter with
+        alwaysApply: true. Prepend it when missing, or repair the value while
+        preserving any existing frontmatter comments/formatting.
+    #>
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content)
+
+    $leading = ''
+    $stripped = $Content
+    $m = [regex]::Match($Content, '^\s*')
+    if ($m.Success) {
+        $leading = $m.Value
+        $stripped = $Content.Substring($m.Length)
+    }
+
+    if (-not $stripped.StartsWith('---')) {
+        return "---`nalwaysApply: true`n---`n`n" + $Content
+    }
+
+    $fm = [regex]::Match($stripped, '^(---[ \t]*\r?\n)(.*?)(\r?\n---[ \t]*)(\r?\n|$)(.*)', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if (-not $fm.Success) {
+        return "---`nalwaysApply: true`n---`n`n" + $Content
+    }
+
+    $opening = $fm.Groups[1].Value
+    $fmText  = $fm.Groups[2].Value
+    $closing = $fm.Groups[3].Value
+    $sep     = $fm.Groups[4].Value
+    $rest    = $fm.Groups[5].Value
+    $newline = if ($opening.Contains("`r`n")) { "`r`n" } else { "`n" }
+
+    if ([regex]::IsMatch($fmText, '(?m)^[ \t]*alwaysApply[ \t]*:[ \t]*true[ \t]*(?:#.*)?$')) {
+        return $Content
+    }
+
+    if ([regex]::IsMatch($fmText, '(?m)^[ \t]*alwaysApply[ \t]*:')) {
+        $fmText = [regex]::Replace($fmText, '(?m)^([ \t]*)alwaysApply[ \t]*:.*?([ \t]*(?:#.*)?)$', '${1}alwaysApply: true${2}', 1)
+    } elseif ($fmText.Trim()) {
+        $fmText = $fmText + $newline + 'alwaysApply: true'
+    } else {
+        $fmText = 'alwaysApply: true'
+    }
+
+    return "$leading$opening$fmText$closing$sep$rest"
+}
+
 function Get-ConfigValue {
     param(
         [AllowNull()][object]$Object,
@@ -384,6 +433,9 @@ foreach ($ContextFile in $ContextFiles) {
     }
 
     $newContent = $newContent.Replace("`r`n", "`n").Replace("`r", "`n")
+    if ($ContextFile -match '\.mdc$') {
+        $newContent = Add-MdcFrontmatter -Content $newContent
+    }
     [System.IO.File]::WriteAllText($CtxPath, $newContent, (New-Object System.Text.UTF8Encoding($false)))
 
     Write-Host "agent-context: updated $ContextFile"

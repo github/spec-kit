@@ -280,10 +280,57 @@ for CONTEXT_FILE in "${CONTEXT_FILES[@]}"; do
   mkdir -p "$(dirname "$CTX_PATH")"
 
   "$_python" - "$CTX_PATH" "$MARKER_START" "$MARKER_END" "$TMP_SECTION" <<'PY'
-import sys, os
+import os
+import re
+import sys
+
 ctx_path, start, end, section_path = sys.argv[1:5]
 with open(section_path, "r", encoding="utf-8") as fh:
     section = fh.read().rstrip("\n") + "\n"
+
+
+def ensure_mdc_frontmatter(content):
+    """Ensure ``.mdc`` content has YAML frontmatter with ``alwaysApply: true``.
+
+    Cursor only auto-loads ``.mdc`` rule files that carry frontmatter with
+    ``alwaysApply: true``. Prepend it when missing, or repair the value while
+    preserving any existing frontmatter comments/formatting.
+    """
+    leading_ws = len(content) - len(content.lstrip())
+    leading = content[:leading_ws]
+    stripped = content[leading_ws:]
+
+    if not stripped.startswith("---"):
+        return "---\nalwaysApply: true\n---\n\n" + content
+
+    match = re.match(
+        r"^(---[ \t]*\r?\n)(.*?)(\r?\n---[ \t]*)(\r?\n|$)(.*)",
+        stripped,
+        re.DOTALL,
+    )
+    if not match:
+        return "---\nalwaysApply: true\n---\n\n" + content
+
+    opening, fm_text, closing, sep, rest = match.groups()
+    newline = "\r\n" if "\r\n" in opening else "\n"
+
+    if re.search(r"(?m)^[ \t]*alwaysApply[ \t]*:[ \t]*true[ \t]*(?:#.*)?$", fm_text):
+        return content
+
+    if re.search(r"(?m)^[ \t]*alwaysApply[ \t]*:", fm_text):
+        fm_text = re.sub(
+            r"(?m)^([ \t]*)alwaysApply[ \t]*:.*?([ \t]*(?:#.*)?)$",
+            r"\1alwaysApply: true\2",
+            fm_text,
+            count=1,
+        )
+    elif fm_text.strip():
+        fm_text = fm_text + newline + "alwaysApply: true"
+    else:
+        fm_text = "alwaysApply: true"
+
+    return f"{leading}{opening}{fm_text}{closing}{sep}{rest}"
+
 
 if os.path.exists(ctx_path):
     with open(ctx_path, "r", encoding="utf-8-sig") as fh:
@@ -314,6 +361,8 @@ else:
     new_content = section
 
 new_content = new_content.replace("\r\n", "\n").replace("\r", "\n")
+if ctx_path.endswith(".mdc"):
+    new_content = ensure_mdc_frontmatter(new_content)
 with open(ctx_path, "wb") as fh:
     fh.write(new_content.encode("utf-8"))
 PY
