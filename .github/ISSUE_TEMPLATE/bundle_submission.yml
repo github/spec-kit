@@ -1,7 +1,7 @@
 name: Bundle Submission
 description: Submit your bundle for community review
 title: "[Bundle]: Add "
-labels: ["enhancement"]
+labels: ["enhancement", "needs-triage"]
 body:
   - type: markdown
     attributes:
