@@ -55,7 +55,8 @@ function Add-MdcFrontmatter {
     }
 
     if ([regex]::IsMatch($fmText, '(?m)^[ \t]*alwaysApply[ \t]*:')) {
-        $fmText = [regex]::Replace($fmText, '(?m)^([ \t]*)alwaysApply[ \t]*:.*?([ \t]*(?:#.*)?)$', '${1}alwaysApply: true${2}', 1)
+        $alwaysApplyRegex = [regex]'(?m)^([ \t]*)alwaysApply[ \t]*:.*?([ \t]*(?:#.*)?)$'
+        $fmText = $alwaysApplyRegex.Replace($fmText, '${1}alwaysApply: true${2}', 1)
     } elseif ($fmText.Trim()) {
         $fmText = $fmText + $newline + 'alwaysApply: true'
     } else {
@@ -304,7 +305,7 @@ if ($ContextFiles.Count -eq 0) {
                     $defaults = Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json -ErrorAction Stop
                     $derived = $null
                     if ($defaults.PSObject.Properties['agents'] -and $defaults.agents.PSObject.Properties[$integrationKey]) {
-                        $derived = [string]$defaults.agents.$integrationKey
+                        $derived = [string]$defaults.agents.PSObject.Properties[$integrationKey].Value
                     }
                     if ($derived -and -not [string]::IsNullOrWhiteSpace($derived)) {
                         $ContextFiles += $derived.Trim()
