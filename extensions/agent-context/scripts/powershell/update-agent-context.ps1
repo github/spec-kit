@@ -321,8 +321,7 @@ if (-not $PlanPath) {
                     $resolvedDir  = [System.IO.Path]::GetDirectoryName($resolvedPlan)
                     $normRoot = $ProjectRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
                     $normDir  = $resolvedDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-                    if ($null -ne $IsWindows) { $onWin = $IsWindows } else { $onWin = $true }
-                    $cmp = if ($onWin) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+                    $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
                     if ($normDir.StartsWith($normRoot, $cmp)) {
                         $relDir = $normDir.Substring($normRoot.Length).TrimEnd('\', '/')
                         $PlanPath = $relDir.Replace('\', '/') + '/plan.md'
@@ -350,8 +349,7 @@ if (-not $PlanPath) {
                 # Use case-insensitive comparison on Windows only (matches common.ps1 pattern).
                 $fullPath = $candidate.FullName.Replace('\', '/')
                 $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
-                if ($null -ne $IsWindows) { $onWin = $IsWindows } else { $onWin = $true }
-                $cmp = if ($onWin) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
                 if ($fullPath.StartsWith($normRoot, $cmp)) {
                     $PlanPath = $fullPath.Substring($normRoot.Length)
                 } else {
