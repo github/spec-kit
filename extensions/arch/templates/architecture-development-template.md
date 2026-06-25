@@ -1,8 +1,8 @@
 # Development View
 
-**Input**: `.specify/memory/architecture-logical-view.md`, `.specify/memory/architecture-process-view.md`
+**Input**: `.specify/memory/architecture-logical-view.md`, `.specify/memory/architecture-process-view.md`; reverse generation may also use development-owned repository-first dependency matrix summaries
 
-**Purpose**: Architecture-level components, package boundary intent, contract/artifact semantics, and dependency rules from logical and process views.
+**Purpose**: Architecture-level components, package boundary intent, contract/artifact semantics, dependency rules, and a required dependency matrix from logical and process views. Dependency matrix signals belong here as development governance evidence; they are not an independent architecture view.
 
 ## Architecture Intent
 
@@ -60,6 +60,12 @@
 
 | Rule | Allowed Direction | Forbidden Direction | Reason | Risk If Violated |
 |------|-------------------|---------------------|--------|------------------|
+| NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
+
+## Dependency Matrix
+
+| From Boundary / Component | To Boundary / Component | Allowed? | Constraint / Rule Source | Architecture Consequence |
+|---------------------------|-------------------------|----------|--------------------------|--------------------------|
 | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE | NEEDS ARCH UPDATE |
 
 ## Source Traceability

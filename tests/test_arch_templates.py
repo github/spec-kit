@@ -18,6 +18,8 @@ def test_arch_commands_are_split_by_view_and_bootstrap_setup():
     assert [path.name for path in command_files] == [
         "speckit.arch.development-generate.md",
         "speckit.arch.development-reverse.md",
+        "speckit.arch.full-generate.md",
+        "speckit.arch.full-reverse.md",
         "speckit.arch.logical-generate.md",
         "speckit.arch.logical-reverse.md",
         "speckit.arch.physical-generate.md",
@@ -34,8 +36,10 @@ def test_arch_commands_are_split_by_view_and_bootstrap_setup():
         assert ".specify/extensions/arch/scripts/bash/setup-arch.sh --json" in content
         assert ".specify/extensions/arch/scripts/powershell/setup-arch.ps1 -Json" in content
         assert "ARCH_SCHEMA_FILE" in content
+        assert "ARCH_VALIDATOR_FILE" in content
         assert "Synthesis Readiness" in content
-        assert "NEEDS ARCH UPDATE" in content
+        assert "ready_gate" in content
+        assert "BLOCKER" in content
         assert ".specify/memory/architecture/" not in content
         assert "__SPECKIT_COMMAND_UC__" not in content
 

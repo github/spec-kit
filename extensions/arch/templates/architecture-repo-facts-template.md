@@ -68,10 +68,10 @@ Repository-first signals relevant to architecture evidence.
 |-------------|-------------------|---------------------|-------------------------|------------------|
 | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE |
 
-### Dependency Governance Signals
+### Development-Owned Dependency Governance Signals
 
-| Signal Source | Dependency / Concern | Signal Type | Affected Boundary | Architecture Review Trigger |
-|---------------|----------------------|-------------|-------------------|-----------------------------|
+| Signal Source | Dependency / Concern | Signal Type | Development Boundary / Architecture Boundary Meaning | Architecture Review Trigger |
+|---------------|----------------------|-------------|------------------------------------------------------|-----------------------------|
 | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE | NEEDS REPO FACTS UPDATE |
 
 ## Physical / Deployment Clues

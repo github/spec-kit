@@ -99,6 +99,8 @@ jobs:
             speckit-arch-process-generate \
             speckit-arch-development-generate \
             speckit-arch-physical-generate \
+            speckit-arch-full-generate \
+            speckit-arch-full-reverse \
             speckit-arch-scenario-reverse \
             speckit-arch-logical-reverse \
             speckit-arch-process-reverse \
@@ -171,6 +173,8 @@ jobs:
             case "$extension_id" in
               arch)
                 test -f .claude/skills/speckit-arch-scenario-generate/SKILL.md
+                test -f .claude/skills/speckit-arch-full-generate/SKILL.md
+                test -f .claude/skills/speckit-arch-full-reverse/SKILL.md
                 test -f .claude/skills/speckit-arch-scenario-reverse/SKILL.md
                 grep -q "scenario view" .claude/skills/speckit-arch-scenario-generate/SKILL.md
                 ;;

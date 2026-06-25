@@ -6,4 +6,3 @@ __pycache__/
 *.py[cod]
 tests/
 CATALOG-SUBMISSION.md
-presets/

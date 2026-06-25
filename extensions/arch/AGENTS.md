@@ -10,11 +10,10 @@ This repository is a Spec Kit community extension source project for `arch`.
 - `schemas/` contains architecture artifact schemas.
 - `scripts/` contains setup helpers.
 - `tests/repository-first-contract.sh` is the main contract test.
-- `presets/arch-governance/` is a nested source preset owned by this repository.
 
 ## Source Workflow
 
-- Develop extension and nested preset source changes in this repository.
+- Develop extension source changes in this repository.
 - Release versioned source artifacts from this repository.
 - Keep `README.md`, `CHANGELOG.md`, `CATALOG-SUBMISSION.md`, manifests, and tests aligned.
 - Run `bash tests/repository-first-contract.sh` after behavior, command, template, schema, or setup-script changes.

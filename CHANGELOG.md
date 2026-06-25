@@ -6,6 +6,7 @@
 
 ### Changed
 
+- Update Architecture Workflow extension to v1.2.2 with full-workflow commands and readiness validators.
 - Update bundled Repository Governance extension to v2.0.2, including the `/speckit.repository-governance.refresh` command, `.specify/memory/repository-governance.md` internal cache, and default bundled installation behavior.
 - Update bundled Workflow Preset documentation for v1.3.2 Final Code Review task generation and structured code review receipts.
 
