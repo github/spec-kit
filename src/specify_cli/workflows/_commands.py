@@ -47,13 +47,6 @@ workflow_step_catalog_app = typer.Typer(
 workflow_step_app.add_typer(workflow_step_catalog_app, name="catalog")
 
 
-# Root helper re-fetched at call time so test monkeypatching of
-# `specify_cli._require_specify_project` keeps working after the move.
-def _require_specify_project(*args, **kwargs):
-    from .. import _require_specify_project as _f
-    return _f(*args, **kwargs)
-
-
 def _parse_input_values(input_values: list[str] | None) -> dict[str, Any]:
     """Parse repeated ``key=value`` CLI inputs into a dict.
 
@@ -84,6 +77,26 @@ def _reject_unsafe_dir(path: Path, label: str) -> None:
     if path.exists() and not path.is_dir():
         console.print(f"[red]Error:[/red] {label} path exists but is not a directory")
         raise typer.Exit(1)
+
+
+def _reject_unsafe_workflow_storage(project_root: Path) -> None:
+    """Refuse symlinked workflow storage directories before workflow commands run."""
+    _reject_unsafe_dir(project_root / ".specify", ".specify")
+    _reject_unsafe_dir(project_root / ".specify" / "workflows", ".specify/workflows")
+    _reject_unsafe_dir(
+        project_root / ".specify" / "workflows" / "runs",
+        ".specify/workflows/runs",
+    )
+
+
+# Root helper re-fetched at call time so test monkeypatching of
+# `specify_cli._require_specify_project` keeps working after the move.
+def _require_specify_project(*args, **kwargs):
+    from .. import _require_specify_project as _f
+
+    project_root = _f(*args, **kwargs)
+    _reject_unsafe_workflow_storage(project_root)
+    return project_root
 
 
 def _workflow_run_payload(state: Any) -> dict[str, Any]:
@@ -242,7 +255,7 @@ def workflow_run(
         # When running a YAML file directly, use cwd as project root
         # without requiring a .specify/ project directory.
         project_root = Path.cwd()
-        _reject_unsafe_dir(project_root / ".specify", ".specify")
+        _reject_unsafe_workflow_storage(project_root)
     else:
         project_root = _require_specify_project()
 

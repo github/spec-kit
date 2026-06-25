@@ -5337,6 +5337,25 @@ class TestWorkflowAddSymlinkGuard:
         assert result.exit_code != 0
         assert "symlinked .specify/workflows" in result.output
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_list_refuses_symlinked_runs_dir(self, temp_dir, monkeypatch):
+        """workflow commands using the project shim must refuse symlinked run storage."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        outside = temp_dir.parent / "outside-runs-target"
+        outside.mkdir(parents=True, exist_ok=True)
+        (temp_dir / ".specify" / "workflows" / "runs").symlink_to(
+            outside, target_is_directory=True
+        )
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "list"])
+
+        assert result.exit_code != 0
+        assert "symlinked .specify/workflows/runs" in result.output
+
 
 class TestWorkflowStepAddCLI:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
