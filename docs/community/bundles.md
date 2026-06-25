@@ -1,9 +1,9 @@
 # Community Bundles
 
 > [!NOTE]
-> Community bundles are independently created and maintained by their respective authors. Maintainers only verify that submission metadata is complete and correctly formatted - they do **not review, audit, endorse, or support the bundle code or the components it installs**. Review bundle manifests, component catalogs, and source repositories before installation and use at your own discretion.
+> Community bundles are independently created and maintained by their respective authors. Maintainers only verify that submission metadata is complete and correctly formatted — they do **not review, audit, endorse, or support the bundle code or the components it installs**. Review bundle manifests, component catalogs, and source repositories before installation and use at your own discretion.
 
-Bundles compose existing Spec Kit components - extensions, presets, workflows, and steps - into a single role or team stack. They are useful when a user should be able to install a tested set of components together instead of following several separate install commands.
+Bundles compose existing Spec Kit components — extensions, presets, workflows, and steps — into a single role or team stack. They are useful when a user should be able to install a tested set of components together instead of following several separate install commands.
 
 Accepted community bundle entries will be listed here once the community bundle submission path is active. To submit a bundle for review, file a [Bundle Submission](https://github.com/github/spec-kit/issues/new?template=bundle_submission.yml) issue.
 

@@ -179,7 +179,7 @@ body:
           required: true
         - label: Bundle installs successfully from the built artifact
           required: true
-        - label: If submitting a bundle catalog entry, catalog installation by bundle ID was tested from an install-allowed test catalog
+        - label: The submitted distribution path was tested end to end, including bundle-ID installation from an install-allowed catalog when a catalog entry is proposed
           required: true
         - label: Installation was tested in a clean Spec Kit project
           required: true

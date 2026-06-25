@@ -1,6 +1,6 @@
 # Community
 
-The Spec Kit community builds extensions, presets, walkthroughs, and companion projects that expand what you can do with Spec-Driven Development. All community contributions are independently created and maintained by their respective authors.
+The Spec Kit community builds extensions, presets, bundles, walkthroughs, and companion projects that expand what you can do with Spec-Driven Development. All community contributions are independently created and maintained by their respective authors.
 
 ## Extensions
 
