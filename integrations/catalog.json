@@ -4,11 +4,11 @@
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
     "alquimia": {
-      "id": "alquimia_ai",
+      "id": "alquimia",
       "name": "Alquimia AI",
       "version": "1.0.0",
       "description": "Alquimia AI CLI integration",
-      "author": "Alquimia AI team",
+      "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "alquimia"]
     },
