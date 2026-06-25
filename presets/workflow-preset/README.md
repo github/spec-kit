@@ -2,7 +2,7 @@
 
 This Spec Kit community preset combines behavior-first specification, design-aware planning, scoped change governance, and agent-native handoff orchestration.
 
-It wraps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.constitution`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` with BDD, NFR, and applicable Visual Fidelity readiness gates, Change Scope Granularity governance, Phase 0 behavior projection, optional design artifacts for internal object design and service sequencing, visual restoration traceability, and task-time validation strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
+It wraps `/speckit.specify`, `/speckit.clarify`, `/speckit.checklist`, `/speckit.constitution`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.analyze` with BDD, NFR, and applicable Visual Fidelity readiness gates, Change Scope Granularity and Architecture SSOT governance, Phase 0 behavior projection, optional design artifacts for internal object design and service sequencing, visual restoration traceability, and task-time validation strategy derivation. It replaces `/speckit.implement` with a Core Agent, Vertical Planner Agent, and Worker Agent orchestration contract that writes handoffs to disk.
 
 ## Goal
 
@@ -48,8 +48,10 @@ Requirement capabilities:
 
 Governance capabilities:
 
-- Wraps `/speckit.constitution` and the constitution template with Change Scope Granularity governance.
-- Defines the R/M/U/O model: Repository or Workspace as environment context, Module or Capability as the hard outer boundary, Unit or Design Object as the primary planning boundary, and Operation or Detail as execution detail.
+- Wraps `/speckit.constitution` and the constitution template with Change Scope Granularity and Architecture SSOT governance.
+- Defines the fixed R/M/U/O model: R is Repository / Workspace, M is Module / Capability, U is Unit / Design Object, and O is Operation / Detail. These letters must not be renamed or expanded with alternate nouns.
+- Blocks constitution writes when a generated draft changes the fixed R/M/U/O mapping.
+- Routes architecture decisions, domain facts, object design, flows, and interface contracts to architecture SSOT artifacts instead of embedding concrete implementation content in ratified constitution principles.
 - Requires planning to lock M + U before execution maps units to concrete paths.
 - Treats unresolved U -> path mapping as a context gap instead of widening execution to repository-wide or broad module scope.
 
@@ -119,7 +121,7 @@ Context-load controls:
 
 ## Workflow
 
-1. `/speckit.constitution` preserves Change Scope Granularity when the project constitution is created or updated.
+1. `/speckit.constitution` preserves Change Scope Granularity and Architecture SSOT governance when the project constitution is created or updated.
 2. `/speckit.specify` keeps the core requirements output in `spec.md`.
 3. `/speckit.clarify` resolves requirement ambiguity in `spec.md`.
 4. `/speckit.checklist` checks BDD, NFR, and applicable Visual Fidelity readiness directly from `spec.md` and blocks planning when readiness gaps remain.
@@ -149,7 +151,7 @@ Context-load controls:
 Release install:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.10/spec-kit-workflow-preset-v1.3.10.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.11/spec-kit-workflow-preset-v1.3.11.zip
 ```
 
 Local development install:
@@ -477,7 +479,7 @@ Release install smoke validation is intentionally owned by GitHub Actions, not b
 After tagging a release, validate archive installation:
 
 ```bash
-specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.10/spec-kit-workflow-preset-v1.3.10.zip
+specify preset add workflow-preset --from https://github.com/bigsmartben/spec-kit-workflow-preset/releases/download/v1.3.11/spec-kit-workflow-preset-v1.3.11.zip
 ```
 
 ## Source Rationale

@@ -24,6 +24,21 @@ This repository is a Spec Kit community preset named `workflow-preset`.
 - Validation strategy is derived by `/speckit.tasks` from behavior contracts, interface contracts, `research.md`, and `quickstart.md`; do not add standalone `test-plan.md` without intentionally updating the preset contract.
 - Do not move product requirements out of `spec.md`, domain model details out of `data-model.md`, interface schemas out of `contracts/`, or validation run guidance out of `quickstart.md`.
 
+## Integration Boundary
+
+- This repository owns the `workflow-preset` source, tests, release artifact,
+  and source documentation.
+- Do not open pull requests from this repository directly to `github/spec-kit`.
+- Do not push branches to `github/spec-kit` or add workflow automation that
+  targets `github/spec-kit` for pull requests, repository dispatches, or direct
+  writes.
+- If a Spec Kit catalog or bundled snapshot update is needed, target the
+  `bigsmartben/spec-kit` integration fork first. The integration fork owns any
+  downstream pull request to `github/spec-kit`.
+- Source releases must provide source-backed metadata for the integration fork:
+  repository URL, release version, source commit SHA, download URL, and
+  validation evidence.
+
 ## Handoff Boundaries
 
 When working from a generated handoff JSON:
