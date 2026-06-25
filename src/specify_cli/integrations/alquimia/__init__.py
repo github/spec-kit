@@ -34,7 +34,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
         "folder": ".alquimia/",
         "commands_subdir": "skills",
         "install_url": "https://docs.alquimia.ai",
-        "requires_cli": True,
+        "requires_cli": False,
     }
     registrar_config = {
         "dir": ".alquimia/skills",
