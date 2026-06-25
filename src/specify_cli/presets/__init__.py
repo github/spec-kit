@@ -31,6 +31,7 @@ from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priorit
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter
+from ..shared_infra import verify_archive_sha256
 
 
 def _substitute_core_template(
@@ -2565,6 +2566,10 @@ class PresetCatalog:
         try:
             with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
                 zip_data = response.read()
+
+            verify_archive_sha256(
+                zip_data, pack_info.get("sha256"), pack_id, PresetError
+            )
 
             zip_path.write_bytes(zip_data)
             return zip_path

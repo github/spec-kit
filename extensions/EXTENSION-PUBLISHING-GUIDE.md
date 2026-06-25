@@ -323,6 +323,7 @@ A: Extensions should be free and open-source. Commercial support/services are al
   "author": "string (required)",
   "version": "string (required, semver)",
   "download_url": "string (required, valid URL)",
+  "sha256": "string (optional, SHA-256 hex digest of the archive at download_url; verified before install)",
   "repository": "string (required, valid URL)",
   "homepage": "string (optional, valid URL)",
   "documentation": "string (optional, valid URL)",
