@@ -101,7 +101,7 @@ section_exists() {
     local section_id="$2"
     local heading
     heading="$(section_heading "$section_id")"
-    grep -Eq "^##[[:space:]]+$heading[[:space:]]*$" "$file"
+    grep -Eq "^##[[:space:]]+${heading}[[:space:]]*$" "$file"
 }
 
 section_has_content() {
