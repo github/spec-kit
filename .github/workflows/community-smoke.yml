@@ -119,7 +119,7 @@ jobs:
           test -f .claude/skills/speckit-intake-visual-design/SKILL.md
           test -f .claude/skills/speckit-intake-prd/SKILL.md
           test -f .claude/skills/speckit-intake-test-cases/SKILL.md
-          test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
+          test -f .claude/skills/speckit-repository-governance-generate/SKILL.md
           test -f .claude/skills/speckit-specify/SKILL.md
           test -f .claude/skills/speckit-clarify/SKILL.md
           test -f .claude/skills/speckit-checklist/SKILL.md
@@ -161,7 +161,7 @@ jobs:
                 test "$(find .claude/skills -maxdepth 1 -type d -name 'speckit-intake-*' | wc -l)" -eq 0
                 ;;
               repository-governance)
-                test ! -d .claude/skills/speckit-repository-governance-refresh
+                test ! -d .claude/skills/speckit-repository-governance-generate
                 ;;
             esac
           done
@@ -197,8 +197,8 @@ jobs:
                 grep -q "visual design intake" .claude/skills/speckit-intake-visual-design/SKILL.md
                 ;;
               repository-governance)
-                test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md
-                grep -q "Repository Governance Generate/Update" .claude/skills/speckit-repository-governance-refresh/SKILL.md
+                test -f .claude/skills/speckit-repository-governance-generate/SKILL.md
+                grep -q "Project Governance Projection Generation" .claude/skills/speckit-repository-governance-generate/SKILL.md
                 ;;
             esac
           done

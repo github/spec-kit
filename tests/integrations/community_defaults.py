@@ -36,7 +36,7 @@ DEFAULT_EXTENSION_COMMANDS = (
     "speckit.preview.mid-html",
     "speckit.preview.high-md",
     "speckit.preview.high-html",
-    "speckit.repository-governance.refresh",
+    "speckit.repository-governance.generate",
 )
 DEFAULT_PRESET_ID = "workflow-preset"
 DEFAULT_PRESET_COMMANDS = (

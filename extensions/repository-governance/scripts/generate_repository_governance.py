@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate or refresh Spec Kit repository governance for the current project."""
+"""Generate Spec Kit project-governance projections."""
 
 from __future__ import annotations
 
@@ -10,13 +10,27 @@ from pathlib import Path
 from typing import Any
 
 
-MEMORY_PATH = Path(".specify/memory/repository-governance.md")
-TEMPLATE_PATH = Path(".specify/extensions/repository-governance/templates/repository-governance-template.md")
 INTEGRATION_JSON = Path(".specify/integration.json")
 INIT_OPTIONS_JSON = Path(".specify/init-options.json")
 
-MARKER_START = "<!-- SPECKIT GOVERNANCE START -->"
-MARKER_END = "<!-- SPECKIT GOVERNANCE END -->"
+MARKER_START = "<!-- PROJECT GOVERNANCE START -->"
+MARKER_END = "<!-- PROJECT GOVERNANCE END -->"
+LEGACY_MARKER_START = "<!-- SPECKIT GOVERNANCE START -->"
+LEGACY_MARKER_END = "<!-- SPECKIT GOVERNANCE END -->"
+GENERIC_INTEGRATION = "generic"
+CONTEXT_FILE_SUFFIXES = {".md", ".mdc", ".txt"}
+CONTEXT_FILE_NAME_PATTERN = re.compile(r"(agent|agents|rule|rules|instruction|instructions|governance)", re.IGNORECASE)
+PROTECTED_CUSTOM_CONTEXT_ROOTS = {
+    ".github",
+    ".git",
+    "scripts",
+    "src",
+    "tests",
+    "test",
+    "spec",
+    "specs",
+}
+MCP_CONFIG_NAMES = {".mcp.json", "mcp.json", "mcp.yml", "mcp.yaml", "mcp.config.json"}
 
 CONTEXT_FILES = {
     "agy": "AGENTS.md",
@@ -101,7 +115,7 @@ REPOSITORY_POLICY_FILES = [
 EXTENSION_ASSET_FILES = ["extension.yml", ".extensionignore"]
 EXTENSION_ASSET_DIRS = ["commands", "templates"]
 EXTENSION_CONTRACT_FILES = [
-    "commands/speckit.repository-governance.refresh.md",
+    "commands/speckit.repository-governance.generate.md",
     "templates/repository-governance-template.md",
     "docs/extension-governance.md",
 ]
@@ -176,86 +190,17 @@ def main() -> int:
 
     state = read_json(root / INTEGRATION_JSON)
     init_options = read_json(root / INIT_OPTIONS_JSON)
-    created_memory = ensure_memory(root)
     target = resolve_target(root, state, init_options)
-    projection = render_projection(root, target, state, created_memory)
-    evidence_summary = repository_evidence_summary(root, state, init_options) if created_memory else ""
+    projection = render_projection(root, target, state, init_options)
+    evidence_summary = repository_evidence_summary(root, state, init_options)
     action = write_projection(target, projection)
-    remove_stale_sections(root, target, init_options, state)
+    remove_stale_sections(root, target, init_options)
 
-    print(f"Target governance file: {rel(root, target)}")
-    print(f"Governance file: {action}")
+    print(f"Target agent platform file: {rel(root, target)}")
+    print(f"Project-governance projection: {action}")
     print(f"Review target: {rel(root, target)}")
-    print(f"Internal initialization cache: {MEMORY_PATH.as_posix()} ({'created' if created_memory else 'existing'})")
-    if created_memory:
-        print(f"Repository evidence: {evidence_summary}")
+    print(f"Repository evidence: {evidence_summary}")
     return 0
-
-
-def ensure_memory(root: Path) -> bool:
-    memory = root / MEMORY_PATH
-    if memory.exists():
-        return False
-    template = root / TEMPLATE_PATH
-    if not template.exists():
-        raise SystemExit(f"Error: template not found: {TEMPLATE_PATH.as_posix()}")
-    memory.parent.mkdir(parents=True, exist_ok=True)
-    memory.write_text(render_initial_memory(root, template.read_text(encoding="utf-8-sig")), encoding="utf-8")
-    return True
-
-
-def render_initial_memory(root: Path, template: str) -> str:
-    content = normalize_newlines(template)
-    state = read_json(root / INTEGRATION_JSON)
-    init_options = read_json(root / INIT_OPTIONS_JSON)
-    content = replace_sync_report(content, root, state)
-    evidence = "\n".join(
-        [
-            "## Repository Evidence",
-            "",
-            *repository_evidence_lines(root, state, init_options),
-            "",
-            "## Vertical SSOT Evidence",
-            "",
-            *vertical_ssot_evidence_lines(root, state, init_options),
-            "",
-            "## Repository Areas",
-            "",
-            *repository_area_lines(root),
-            "",
-            "## Development Commands",
-            "",
-            *development_command_lines(root),
-            "",
-        ]
-    )
-    marker = "\n## Scope\n"
-    if marker in content:
-        content = content.replace(marker, f"\n{evidence}{marker}", 1)
-    else:
-        content = content.rstrip() + "\n\n" + evidence
-    return content
-
-
-def replace_sync_report(content: str, root: Path, state: dict[str, Any]) -> str:
-    report = "\n".join(
-        [
-            "<!--",
-            "Sync Impact Report",
-            f"- Active Integration: {default_integration(state) or 'unknown'}",
-            f"- Installed Integrations: {', '.join(installed_integrations(state)) or 'none'}",
-            f"- Skills Scanned: {len(scan_skills(root))}",
-            f"- MCP Config Files Scanned: {', '.join(scan_mcp_configs(root)) or 'none'}",
-            f"- Extension Config Status: .specify/extensions.yml ({extensions_status(root)})",
-        "- Sections Changed: initialized repository evidence, vertical SSOT registry, and development commands",
-            "- Flow: generate missing target governance files; update existing target governance files",
-            "-->",
-        ]
-    )
-    pattern = re.compile(r"<!--\nSync Impact Report\n.*?\n-->", re.DOTALL)
-    if pattern.search(content):
-        return pattern.sub(report, content, count=1)
-    return content
 
 
 def repository_evidence_summary(root: Path, state: dict[str, Any], init_options: dict[str, Any]) -> str:
@@ -286,7 +231,7 @@ def repository_evidence_lines(root: Path, state: dict[str, Any], init_options: d
         evidence_line("Repository-local skills", scan_skills(root)),
         evidence_line("MCP configs", scan_mcp_configs(root)),
         f"- Active integration: `{default_integration(state) or 'unknown'}`",
-        f"- Resolved context file: `{rel(root, resolve_target(root, state, init_options))}`",
+        f"- Resolved agent platform target: `{rel(root, resolve_target(root, state, init_options))}`",
     ]
     return lines
 
@@ -297,7 +242,6 @@ def vertical_ssot_evidence_lines(root: Path, state: dict[str, Any], init_options
         evidence_line("Engineering evidence", engineering_evidence(root)),
         evidence_line("Code Style evidence", code_style_evidence(root)),
         evidence_line("Directory Structure evidence", directory_structure_evidence(root)),
-        evidence_line("Toolchain evidence", toolchain_evidence(root)),
         evidence_line("Agent Harness evidence", agent_harness_evidence(root, init_options, state)),
     ]
 
@@ -320,7 +264,11 @@ def engineering_evidence(root: Path) -> list[str]:
             *existing_paths(root, ["CHANGELOG.md", "RELEASE.md", "VERSION"]),
             *existing_paths(root, EXTENSION_CONTRACT_FILES),
             *package_manifest_paths(root),
+            *lockfile_paths(root),
             *existing_paths(root, TASK_RUNNERS),
+            *extension_asset_paths(root),
+            *build_config_paths(root),
+            *runtime_config_paths(root),
         ]
     )
 
@@ -337,19 +285,6 @@ def code_style_evidence(root: Path) -> list[str]:
 
 def directory_structure_evidence(root: Path) -> list[str]:
     return repository_area_paths(root)
-
-
-def toolchain_evidence(root: Path) -> list[str]:
-    return unique_ordered(
-        [
-            *package_manifest_paths(root),
-            *lockfile_paths(root),
-            *existing_paths(root, TASK_RUNNERS),
-            *extension_asset_paths(root),
-            *build_config_paths(root),
-            *runtime_config_paths(root),
-        ]
-    )
 
 
 def agent_harness_evidence(root: Path, init_options: dict[str, Any], state: dict[str, Any]) -> list[str]:
@@ -507,17 +442,19 @@ def repository_area_paths(root: Path) -> list[str]:
 
 
 def existing_context_files(root: Path, init_options: dict[str, Any], state: dict[str, Any]) -> list[str]:
-    paths: set[Path] = {root / "AGENTS.md"}
+    paths = known_context_paths(root, init_options)
+    resolved = resolve_target(root, state, init_options)
+    paths.add(resolved)
+    return sorted(rel(root, path) for path in paths if path.exists())
+
+
+def known_context_paths(root: Path, init_options: dict[str, Any]) -> set[Path]:
+    paths: set[Path] = set()
     for value in CONTEXT_FILES.values():
         target = safe_project_path(root, value)
         if target is not None:
             paths.add(target)
-    init_target = safe_project_path(root, init_options.get("context_file"))
-    if init_target is not None:
-        paths.add(init_target)
-    resolved = resolve_target(root, state, init_options)
-    paths.add(resolved)
-    return sorted(rel(root, path) for path in paths if path.exists())
+    return paths
 
 
 def development_command_lines(root: Path) -> list[str]:
@@ -561,34 +498,69 @@ def read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
 
 
 def resolve_target(root: Path, state: dict[str, Any], init_options: dict[str, Any]) -> Path:
-    for value in (
-        init_options.get("context_file"),
-        CONTEXT_FILES.get(default_integration(state) or ""),
-        "AGENTS.md",
-    ):
+    init_target = safe_context_file_path(root, init_options.get("context_file"))
+    if init_target is not None:
+        return init_target
+    for value in (CONTEXT_FILES.get(default_integration(state) or ""), CONTEXT_FILES.get(GENERIC_INTEGRATION)):
         target = safe_project_path(root, value)
         if target is not None:
             return target
-    return root / "AGENTS.md"
+    return root / CONTEXT_FILES[GENERIC_INTEGRATION]
 
 
 def safe_project_path(root: Path, value: Any) -> Path | None:
     if not isinstance(value, str) or not value.strip():
         return None
     raw = Path(value.strip())
+    if raw.is_absolute():
+        return None
     candidate = raw if raw.is_absolute() else root / raw
     try:
         candidate.resolve(strict=False).relative_to(root.resolve())
     except (OSError, ValueError):
         return None
     return candidate
+
+
+def safe_context_file_path(root: Path, value: Any) -> Path | None:
+    target = safe_project_path(root, value)
+    if target is None:
+        return None
+    if is_known_context_target(root, target):
+        return target
+    if target.suffix.lower() not in CONTEXT_FILE_SUFFIXES:
+        return None
+    if not CONTEXT_FILE_NAME_PATTERN.search(target.name):
+        return None
+    if is_protected_custom_context_target(root, target):
+        return None
+    return target
+
+
+def is_known_context_target(root: Path, target: Path) -> bool:
+    target_text = rel(root, target)
+    return target_text in set(CONTEXT_FILES.values())
+
+
+def is_protected_custom_context_target(root: Path, target: Path) -> bool:
+    target_text = rel(root, target)
+    parts = Path(target_text).parts
+    if not parts:
+        return True
+    if parts[0] in PROTECTED_CUSTOM_CONTEXT_ROOTS:
+        return True
+    if target.name in MCP_CONFIG_NAMES:
+        return True
+    if target.name.startswith(".env"):
+        return True
+    return any(part.lower() in {"secret", "secrets", "permission", "permissions"} for part in parts)
 
 
 def default_integration(state: dict[str, Any]) -> str | None:
@@ -622,23 +594,25 @@ def installed_integrations(state: dict[str, Any]) -> list[str]:
     return result
 
 
-def render_projection(root: Path, target: Path, state: dict[str, Any], created_memory: bool) -> str:
-    source_text, source_label = governance_source(root, target)
+def render_projection(root: Path, target: Path, state: dict[str, Any], init_options: dict[str, Any]) -> str:
     default_key = default_integration(state) or "unknown"
     installed = installed_integrations(state)
     style = projection_style(target)
     lines = [
-        MARKER_START,
-        "## Repository Governance",
-        "- SSOT: this managed section.",
-        "- Framework: Repository Governance Framework.",
+        "# Project Governance Projection",
+        "- Projection: active agent platform target file.",
+        "- Domain: project-governance.",
+        "- Framework: Project Governance Projection Framework.",
+        "- Extension identity: repository-governance.",
         f"- Target: {rel(root, target)}",
         f"- Active integration: {default_key}",
-        f"- Refresh source: {source_label}",
-        f"- Cache: {MEMORY_PATH.as_posix()} ({'created' if created_memory else 'present'})",
+        "- Projection source: current repository scan.",
         "",
         "## Scope",
-        "- Repository Governance Framework",
+        "- Project-governance projection for the active agent platform target",
+        "- Review and report only the active agent platform target",
+        "- Legacy managed-section cleanup limited to non-active context files enumerated by `CONTEXT_FILES`",
+        "- Spec Kit extension routing and target resolution",
         "- top-level SSOT registry and routing",
         "- vertical SSOT discovery and read order",
         "- missing SSOT handling from repository evidence",
@@ -646,7 +620,7 @@ def render_projection(root: Path, target: Path, state: dict[str, Any], created_m
         "- architecture methodology: owned by Architecture SSOT",
         "",
         "## Vertical SSOT Registry",
-        *section_or_default(source_text, ["## Vertical SSOT Registry"], vertical_ssot_registry_default()),
+        *vertical_ssot_registry_default(),
         "",
         "## Context",
         f"- Installed integrations: {', '.join(installed) if installed else 'none'}",
@@ -661,57 +635,40 @@ def render_projection(root: Path, target: Path, state: dict[str, Any], created_m
         *capability_index_lines(root),
         "",
         "## Repository Evidence",
-        *section_or_default(source_text, ["## Repository Evidence"], repository_evidence_default()),
+        *repository_evidence_lines(root, state, init_options),
         "",
         "## Vertical SSOT Evidence",
-        *section_or_default(source_text, ["## Vertical SSOT Evidence"], vertical_ssot_evidence_default()),
+        *vertical_ssot_evidence_lines(root, state, init_options),
         "",
         "## Repository Areas",
-        *section_or_default(source_text, ["## Repository Areas"], repository_areas_default()),
+        *repository_area_lines(root),
         "",
         "## Directory Governance",
-        *section_or_default(source_text, ["## Directory Governance"], directory_governance_default()),
+        *directory_governance_default(),
         "",
         "## Development Commands",
-        *section_or_default(source_text, ["## Development Commands"], development_commands_default()),
+        *development_command_lines(root),
         "",
         "## Missing SSOT Handling",
-        *section_or_default(source_text, ["## Missing SSOT Handling"], missing_ssot_handling_default()),
+        *missing_ssot_handling_default(),
         "",
         "## Authority",
-        "1. Current user instruction",
-        "2. Safety and permission constraints",
-        "3. Active `SPECKIT GOVERNANCE` section",
-        "4. Vertical SSOT documents",
-        "5. Current repository code and configuration facts",
-        "6. Tests and CI results",
-        "7. Historical documents",
-        "8. Agent inference",
+        *authority_default(),
         "",
         "## Repository Workflow",
-        "- Classify task type before changing files.",
-        "- Route task to relevant vertical SSOT entries.",
-        "- Read: Repository Evidence",
-        "- Run: Development Commands",
-        "- Scope: active task only",
-        "- Preserve: user-authored edits",
-        "- Protected files: implementation, CI, MCP config, secrets, permissions, tool settings",
-        "- Protected-file writes: explicit user request only",
-        "- External writes: authorized target and action only",
-        "- Handoff: changed files, commands, validation, risks",
+        *repository_workflow_default(),
         "",
         "## Write Boundaries",
-        *section_or_default(source_text, ["## Write Boundaries"], write_boundary_default(style)),
+        *write_boundary_default(style),
         "",
         "## MCP And External Tools",
-        *section_or_default(source_text, ["## MCP And External Tools", "## MCP And External Tool Policy", "## MCP Policy"], mcp_default(style)),
+        *mcp_default(style),
         "",
         "## Skills",
-        *section_or_default(source_text, ["## Skills", "## Skill Usage Policy", "## Skill Contract"], skill_default(style)),
+        *skill_default(style),
         "",
         "## Handoff",
-        *section_or_default(source_text, ["## Handoff", "## Required Handoff Report", "## Validation"], handoff_default(style)),
-        MARKER_END,
+        *handoff_default(style),
         "",
     ]
     return "\n".join(lines)
@@ -719,8 +676,7 @@ def render_projection(root: Path, target: Path, state: dict[str, Any], created_m
 
 def write_projection(target: Path, projection: str) -> str:
     existed = target.exists()
-    existing = target.read_text(encoding="utf-8-sig") if target.exists() else ""
-    updated = upsert_section(existing, projection)
+    updated = projection
     if target.suffix == ".mdc":
         updated = ensure_mdc_frontmatter(updated)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -728,30 +684,8 @@ def write_projection(target: Path, projection: str) -> str:
     return "updated" if existed else "generated"
 
 
-def upsert_section(content: str, projection: str) -> str:
-    start = content.find(MARKER_START)
-    end = content.find(MARKER_END, start if start != -1 else 0)
-    if start != -1 and end != -1 and end > start:
-        end += len(MARKER_END)
-        if end < len(content) and content[end] == "\r":
-            end += 1
-        if end < len(content) and content[end] == "\n":
-            end += 1
-        return content[:start] + projection + content[end:]
-    if content and not content.endswith("\n"):
-        content += "\n"
-    return content + ("\n" if content else "") + projection
-
-
-def remove_stale_sections(root: Path, active: Path, init_options: dict[str, Any], state: dict[str, Any]) -> None:
-    paths = {root / "AGENTS.md"}
-    for value in CONTEXT_FILES.values():
-        target = safe_project_path(root, value)
-        if target is not None:
-            paths.add(target)
-    init_target = safe_project_path(root, init_options.get("context_file"))
-    if init_target is not None:
-        paths.add(init_target)
+def remove_stale_sections(root: Path, active: Path, init_options: dict[str, Any]) -> None:
+    paths = known_context_paths(root, init_options)
     for path in paths:
         if same_path(path, active):
             continue
@@ -762,16 +696,10 @@ def remove_section(path: Path) -> None:
     if not path.exists():
         return
     content = path.read_text(encoding="utf-8-sig")
-    start = content.find(MARKER_START)
-    end = content.find(MARKER_END, start if start != -1 else 0)
-    if start == -1 or end == -1 or end <= start:
+    managed_range = find_managed_range(content)
+    if managed_range is None:
         return
-    removal_end = end + len(MARKER_END)
-    if removal_end < len(content) and content[removal_end] == "\r":
-        removal_end += 1
-    if removal_end < len(content) and content[removal_end] == "\n":
-        removal_end += 1
-    removal_start = start
+    removal_start, removal_end = managed_range
     if removal_start > 1 and content[removal_start - 1] == "\n" and content[removal_start - 2] == "\n":
         removal_start -= 1
     updated = normalize_newlines(content[:removal_start] + content[removal_end:])
@@ -779,44 +707,6 @@ def remove_section(path: Path) -> None:
         path.unlink()
     else:
         path.write_text(updated, encoding="utf-8")
-
-
-def governance_source(root: Path, target: Path) -> tuple[str, str]:
-    managed = extract_managed_section(target)
-    if managed:
-        return managed, "active generated section"
-    memory = root / MEMORY_PATH
-    try:
-        return normalize_newlines(memory.read_text(encoding="utf-8-sig")), "initialization cache"
-    except (OSError, UnicodeDecodeError):
-        return "", "built-in defaults"
-
-
-def section_or_default(source_text: str, headings: list[str], default: list[str]) -> list[str]:
-    for heading in headings:
-        section = extract_section_from_text(source_text, heading)
-        if section:
-            return section
-    return default
-
-
-def repository_evidence_default() -> list[str]:
-    return ["- none captured"]
-
-
-def vertical_ssot_evidence_default() -> list[str]:
-    return [
-        "- Architecture evidence: none detected",
-        "- Engineering evidence: none detected",
-        "- Code Style evidence: none detected",
-        "- Directory Structure evidence: none detected",
-        "- Toolchain evidence: none detected",
-        "- Agent Harness evidence: none detected",
-    ]
-
-
-def repository_areas_default() -> list[str]:
-    return ["- none detected"]
 
 
 def directory_governance_default() -> list[str]:
@@ -836,10 +726,9 @@ def development_commands_default() -> list[str]:
 def vertical_ssot_registry_default() -> list[str]:
     return [
         "- Architecture SSOT: owns architecture boundaries, interfaces, dependencies, runtime constraints, deployment assumptions, and scenario-level architecture decisions.",
-        "- Engineering SSOT: owns branch, version, release, CI/CD, and collaboration process.",
+        "- Engineering SSOT: owns branch, version, release, CI/CD, collaboration process, standard tools, command entrypoints, configuration templates, and execution constraints.",
         "- Code Style SSOT: owns naming, formatting, comments, error handling, logging, tests, and quality standards.",
         "- Directory Structure SSOT: owns directory layout, file placement, module organization, and configuration locations.",
-        "- Toolchain SSOT: owns standard tools, command entrypoints, configuration templates, and execution constraints.",
         "- Agent Harness SSOT: owns agent task boundaries, tool usage, permissions, audit, validation, and failure handling.",
     ]
 
@@ -853,38 +742,51 @@ def missing_ssot_handling_default() -> list[str]:
     ]
 
 
-def extract_section(path: Path, heading: str) -> list[str]:
-    try:
-        return extract_section_from_text(path.read_text(encoding="utf-8-sig"), heading)
-    except (OSError, UnicodeDecodeError):
-        return []
+def authority_default() -> list[str]:
+    return [
+        "1. Current user instruction",
+        "2. Safety and permission constraints",
+        "3. Vertical SSOT documents",
+        "4. Current repository code and configuration facts",
+        "5. Active `PROJECT GOVERNANCE` projection",
+        "6. Tests and CI results",
+        "7. Historical documents",
+        "8. Agent inference",
+        "- Active projection is generated routing guidance and is subordinate to explicit vertical SSOT documents or source-backed repository facts on substantive conflicts.",
+    ]
 
 
-def extract_managed_section(path: Path) -> str:
-    try:
-        content = normalize_newlines(path.read_text(encoding="utf-8-sig"))
-    except (OSError, UnicodeDecodeError):
-        return ""
-    start = content.find(MARKER_START)
-    end = content.find(MARKER_END, start if start != -1 else 0)
-    if start == -1 or end == -1 or end <= start:
-        return ""
-    return content[start + len(MARKER_START) : end]
+def repository_workflow_default() -> list[str]:
+    return [
+        "- Classify task type before changing files.",
+        "- Route task to relevant vertical SSOT entries.",
+        "- Read: Repository Evidence",
+        "- Run: Development Commands",
+        "- Scope: active task only",
+        "- Preserve: user-authored edits.",
+        "- Protected files: implementation paths, CI configuration, MCP configuration, secrets, permissions, tool settings, and arbitrary repository paths outside the resolved write surface.",
+        "- Protected-file writes: explicit user request, named matching contract or regression test, and passing validation commands.",
+        "- External writes: authorized target and action only.",
+        "- Handoff: changed files, commands, validation, risks.",
+    ]
 
 
-def extract_section_from_text(text: str, heading: str) -> list[str]:
-    lines = normalize_newlines(text).splitlines()
-    capture = False
-    result: list[str] = []
-    for line in lines:
-        if line.strip() == heading:
-            capture = True
+def find_managed_range(content: str) -> tuple[int, int] | None:
+    for start_marker, end_marker in (
+        (MARKER_START, MARKER_END),
+        (LEGACY_MARKER_START, LEGACY_MARKER_END),
+    ):
+        start = content.find(start_marker)
+        end = content.find(end_marker, start if start != -1 else 0)
+        if start == -1 or end == -1 or end <= start:
             continue
-        if capture and line.startswith("## "):
-            break
-        if capture and line.strip():
-            result.append(line)
-    return result
+        removal_end = end + len(end_marker)
+        if removal_end < len(content) and content[removal_end] == "\r":
+            removal_end += 1
+        if removal_end < len(content) and content[removal_end] == "\n":
+            removal_end += 1
+        return start, removal_end
+    return None
 
 
 def projection_style(path: Path) -> str:
@@ -908,24 +810,31 @@ def write_boundary_default(style: str) -> list[str]:
     if style == "rule":
         return [
             "- Stay inside the active task scope.",
-            "- Preserve user-authored edits.",
-            "- Preserve managed markers verbatim: `<!-- SPECKIT GOVERNANCE START -->` and `<!-- SPECKIT GOVERNANCE END -->`.",
+            "- The active agent platform target is generated output and may be overwritten.",
+            "- Legacy managed-section cleanup is limited to non-active context files enumerated by `CONTEXT_FILES`.",
+            "- Protected-file writes require explicit user request, a named matching contract or regression test, and passing validation commands.",
         ]
     return [
-        "- Keep edits inside the active task scope and preserve user changes.",
-        "- Preserve managed markers verbatim: `<!-- SPECKIT GOVERNANCE START -->` and `<!-- SPECKIT GOVERNANCE END -->`.",
+        "- Keep edits inside the active task scope.",
+        "- The active agent platform target is generated output and may be overwritten.",
+        "- Legacy managed-section cleanup is limited to non-active context files enumerated by `CONTEXT_FILES`.",
+        "- Protected-file writes require explicit user request, a named matching contract or regression test, and passing validation commands.",
     ]
 
 
 def mcp_default(style: str) -> list[str]:
-    return ["- Read-only unless the user authorizes mutation.", "- External writes: target, action, expected effect."]
+    return [
+        "- Read-only unless the user authorizes mutation.",
+        "- Mutation: explicit user intent with target, action, and expected effect.",
+        "- External writes: target, action, expected effect.",
+    ]
 
 
 def skill_default(style: str) -> list[str]:
     return [
         "- Use active skill `SKILL.md`.",
         "- Write scope: declared skill paths only.",
-        "- Repository-local skill specs should declare purpose, trigger, allowed read paths, allowed write paths, forbidden paths, outputs, and validation command.",
+        "- Repository-local skill specs should declare name, description or trigger, allowed read paths, allowed write paths, forbidden paths, outputs, and validation command.",
     ]
 
 
@@ -959,6 +868,7 @@ def skill_capability_lines(root: Path) -> list[str]:
             [
                 f"- Repository capability: {name}",
                 f"  - Scenario: {description}",
+                *([f"  - Trigger: {fields['trigger']}"] if fields.get("trigger") else []),
                 f"  - Source: `{path_text}`.",
                 "  - Runtime action: read matching skill before planning or editing.",
             ]
@@ -982,7 +892,7 @@ def skill_frontmatter(path: Path) -> dict[str, str]:
             continue
         key = key.strip()
         value = value.strip().strip("'\"")
-        if key in {"name", "description"} and value:
+        if key in {"name", "description", "trigger"} and value:
             fields[key] = value
     return fields
 
@@ -1010,7 +920,7 @@ def agent_adapter_lines(root: Path, target: Path, integration: str) -> list[str]
     lines = [
         "- Repository Capability layer: abstract repository-local abilities and evidence independent of agent runtime.",
         "- Agent Adapter layer: translate repository capabilities into platform-specific discovery and activation rules.",
-        "- Platform Projection layer: render the active context target without claiming unavailable platform support.",
+        "- Platform Projection layer: render the active agent platform target without claiming unavailable platform support.",
         f"- Active integration: {integration}",
         f"- Context target: {rel(root, target)}",
     ]
@@ -1032,11 +942,10 @@ def agent_adapter_lines(root: Path, target: Path, integration: str) -> list[str]
 
 
 def scan_mcp_configs(root: Path) -> list[str]:
-    names = {".mcp.json", "mcp.json", "mcp.yml", "mcp.yaml", "mcp.config.json"}
     return sorted(
         rel(root, path)
         for path in root.rglob("*")
-        if path.is_file() and not ignored(path) and path.name in names
+        if path.is_file() and not ignored(path) and path.name in MCP_CONFIG_NAMES
     )
 
 
