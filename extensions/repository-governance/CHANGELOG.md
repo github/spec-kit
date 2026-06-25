@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Changed
+
+- Merge Toolchain SSOT coverage into Engineering SSOT to remove overlapping vertical ownership.
+- Remove the cache/managed-section model; generation now overwrites the active agent platform target from the current repository scan.
+- Make generated projections subordinate to vertical SSOT documents and source-backed repository facts on substantive conflicts.
+- Preserve `SKILL.md` trigger metadata in the scenario capability index.
+- Restrict custom `context_file` projection targets to safe agent/rules/instructions context paths.
+- Tighten generated write-boundary instructions around cache-free active-target generation, `CONTEXT_FILES` legacy cleanup, and protected-write validation gates.
+- Rename the public command and packaged script from `refresh` to `generate`.
+
+## [3.0.0] - 2026-06-25
+
+### Changed
+
+- Reposition generated output as project-governance projections for Spec Kit supported agent platform targets while keeping the `repository-governance` extension identity and runtime filenames.
+- Replace generated `SPECKIT GOVERNANCE` managed markers with `PROJECT GOVERNANCE` markers and treat legacy Speckit markers as migration cleanup targets.
+- Normalize legacy initialization cache wording during refresh so old cache sections cannot reintroduce `SPECKIT GOVERNANCE` markers or weaker protected-write rules.
+- Resolve missing or unknown integration metadata through the explicit `generic` entry in `CONTEXT_FILES`.
+
 ## [2.0.6] - 2026-06-24
 
 ### Fixed
