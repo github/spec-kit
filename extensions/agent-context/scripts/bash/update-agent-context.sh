@@ -237,7 +237,7 @@ from pathlib import Path, PurePosixPath
 root = Path(sys.argv[1]).resolve()
 cand = Path(sys.argv[2]).resolve()
 try:
-    print(str(PurePosixPath(cand.relative_to(root))))
+    print(cand.relative_to(root).as_posix())
 except ValueError:
     # Outside project root: use the bash-side path (already forward-slash
     # normalised via tr), not cand which may be a WindowsPath with backslashes.
@@ -264,7 +264,7 @@ plans = sorted(
 )
 if plans:
     try:
-        print(str(PurePosixPath(plans[0].relative_to(root))))
+        print(plans[0].relative_to(root).as_posix())
     except ValueError:
         print("")
 else:
