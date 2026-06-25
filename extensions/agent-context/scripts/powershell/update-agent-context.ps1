@@ -315,19 +315,20 @@ if (-not $PlanPath) {
                     $candidatePlan = Join-Path (Join-Path $ProjectRoot $featureDir) 'plan.md'
                 }
                 if (Test-Path -LiteralPath $candidatePlan) {
-                    # Normalize absolute feature paths to project-relative (mirrors bash behavior).
-                    # Use case-insensitive comparison on Windows only (matches common.ps1 pattern).
-                    $relDir = $featureDir
-                    if ([System.IO.Path]::IsPathRooted($featureDir)) {
-                        $normRoot = $ProjectRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-                        $normDir  = $featureDir.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
-                        if ($null -ne $IsWindows) { $onWin = $IsWindows } else { $onWin = $true }
-                        $cmp = if ($onWin) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
-                        if ($normDir.StartsWith($normRoot, $cmp)) {
-                            $relDir = $normDir.Substring($normRoot.Length)
-                        }
+                    # Resolve ./ .. segments before relativizing (mirrors bash Path.resolve()).
+                    # GetFullPath is available in .NET Framework 4.x (PS 5.1 compatible).
+                    $resolvedPlan = [System.IO.Path]::GetFullPath($candidatePlan)
+                    $resolvedDir  = [System.IO.Path]::GetDirectoryName($resolvedPlan)
+                    $normRoot = $ProjectRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+                    $normDir  = $resolvedDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+                    if ($null -ne $IsWindows) { $onWin = $IsWindows } else { $onWin = $true }
+                    $cmp = if ($onWin) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+                    if ($normDir.StartsWith($normRoot, $cmp)) {
+                        $relDir = $normDir.Substring($normRoot.Length).TrimEnd('\', '/')
+                        $PlanPath = $relDir.Replace('\', '/') + '/plan.md'
+                    } else {
+                        $PlanPath = $resolvedPlan.Replace('\', '/')
                     }
-                    $PlanPath = $relDir.Replace('\', '/') + '/plan.md'
                 }
             }
         } catch {
