@@ -815,12 +815,12 @@ def workflow_run(
         False,
         "--dry-run",
         help=(
-            "Preview the workflow without dispatching any AI or shell "
-            "commands for built-in command, prompt, and gate steps. "
-            "Those steps emit a synthetic preview message; the run is "
-            "persisted so it can be inspected but not resumed to a "
-            "real run. Other step types (e.g. init, shell) may still "
-            "perform their normal work during dry-run."
+            "Preview the workflow without dispatching built-in command, "
+            "prompt, and gate steps. Those steps emit a synthetic preview "
+            "message instead of executing; the run is persisted for "
+            "inspection but cannot be resumed as a real run. Note: other "
+            "step types (e.g. init, shell) are NOT short-circuited and "
+            "may still perform their normal work during dry-run."
         ),
     ),
 ):
@@ -950,6 +950,14 @@ def _print_dry_run_previews(state: Any) -> None:
     step_results = getattr(state, "step_results", None) or {}
     if not step_results:
         return
+    # Only print the header when at least one step actually produced
+    # a dry-run preview — an empty section is confusing.
+    has_dry_run = any(
+        isinstance(r, dict) and (r.get("output") or {}).get("dry_run")
+        for r in step_results.values()
+    )
+    if not has_dry_run:
+        return
     console.print("\n[bold yellow]DRY RUN previews:[/bold yellow]")
     for step_id, result in step_results.items():
         if not isinstance(result, dict):
@@ -999,18 +1007,37 @@ def workflow_resume(
         with _stdout_to_stderr_when(json_output):
             state = engine.resume(run_id, inputs or None)
     except FileNotFoundError:
+        if json_output:
+            _emit_workflow_json({"error": "Run not found", "run_id": run_id})
+            raise typer.Exit(1)
         console.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
     except ValueError as exc:
         partial = getattr(exc, "partial_state", None)
         if getattr(partial, "dry_run", False) and not json_output:
             _print_dry_run_previews(partial)
+        if json_output:
+            if partial:
+                _emit_workflow_json(_workflow_run_payload(partial))
+            raise typer.Exit(
+                _run_outcome_exit_code(
+                    partial.status.value if partial else "failed"
+                )
+            )
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
         partial = getattr(exc, "partial_state", None)
         if getattr(partial, "dry_run", False) and not json_output:
             _print_dry_run_previews(partial)
+        if json_output:
+            if partial:
+                _emit_workflow_json(_workflow_run_payload(partial))
+            raise typer.Exit(
+                _run_outcome_exit_code(
+                    partial.status.value if partial else "failed"
+                )
+            )
         console.print(f"[red]Resume failed:[/red] {exc}")
         raise typer.Exit(1)
 
