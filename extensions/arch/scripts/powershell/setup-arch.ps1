@@ -83,7 +83,10 @@ function Convert-ToPlainPath {
 $repoRoot = Convert-ToPlainPath (Get-RepoRoot)
 $archDir = Join-Path $repoRoot ".specify/memory"
 $schemaDir = Join-Path $repoRoot ".specify/extensions/arch/schemas"
+$scriptDir = Join-Path $repoRoot ".specify/extensions/arch/scripts"
 $archSchemaFile = Join-Path $schemaDir "architecture-artifacts.schema.json"
+$archValidatorFile = Join-Path $scriptDir "bash/validate-arch-artifacts.sh"
+$archValidatorPsFile = Join-Path $scriptDir "powershell/validate-arch-artifacts.ps1"
 $archFile = Join-Path $archDir "architecture.md"
 $repoFactsFile = Join-Path $archDir "architecture-repo-facts.md"
 $scenarioView = Join-Path $archDir "architecture-scenario-view.md"
@@ -132,6 +135,8 @@ if ($Json) {
         ARCH_DIR = $archDir
         SCHEMA_DIR = $schemaDir
         ARCH_SCHEMA_FILE = $archSchemaFile
+        ARCH_VALIDATOR_FILE = $archValidatorFile
+        ARCH_VALIDATOR_PS_FILE = $archValidatorPsFile
         REPO_FACTS_FILE = $repoFactsFile
         SCENARIO_VIEW = $scenarioView
         LOGICAL_VIEW = $logicalView
@@ -144,6 +149,8 @@ if ($Json) {
     Write-Output "ARCH_DIR: $archDir"
     Write-Output "SCHEMA_DIR: $schemaDir"
     Write-Output "ARCH_SCHEMA_FILE: $archSchemaFile"
+    Write-Output "ARCH_VALIDATOR_FILE: $archValidatorFile"
+    Write-Output "ARCH_VALIDATOR_PS_FILE: $archValidatorPsFile"
     Write-Output "REPO_FACTS_FILE: $repoFactsFile"
     Write-Output "SCENARIO_VIEW: $scenarioView"
     Write-Output "LOGICAL_VIEW: $logicalView"

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-23T00:00:00Z",
+  "updated_at": "2026-06-25T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json",
   "extensions": {
     "agent-context": {
@@ -20,8 +20,8 @@
     "arch": {
       "name": "Architecture Workflow",
       "id": "arch",
-      "version": "1.2.1",
-      "description": "Generate or reverse project-level 4+1 architecture views as separate commands",
+      "version": "1.2.2",
+      "description": "Generate or reverse project-level 4+1 architecture views with per-view and full-workflow commands",
       "author": "bigsmartben",
       "repository": "https://github.com/bigsmartben/spec-kit-arch",
       "license": "MIT",
@@ -30,7 +30,7 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 10
+        "commands": 12
       },
       "tags": [
         "architecture",

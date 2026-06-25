@@ -15,9 +15,12 @@ from tests.conftest import requires_bash
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ARCHITECTURE_EXTENSION = PROJECT_ROOT / "extensions" / "arch"
 SETUP_ARCH_SH = ARCHITECTURE_EXTENSION / "scripts" / "bash" / "setup-arch.sh"
+VALIDATE_ARCH_SH = ARCHITECTURE_EXTENSION / "scripts" / "bash" / "validate-arch-artifacts.sh"
 SETUP_ARCH_PS = ARCHITECTURE_EXTENSION / "scripts" / "powershell" / "setup-arch.ps1"
+VALIDATE_ARCH_PS = ARCHITECTURE_EXTENSION / "scripts" / "powershell" / "validate-arch-artifacts.ps1"
 ARCH_TEMPLATES = [
     "architecture-template.md",
+    "architecture-repo-facts-template.md",
     "architecture-scenario-template.md",
     "architecture-logical-template.md",
     "architecture-process-template.md",
@@ -36,12 +39,14 @@ def _install_bash_scripts(repo: Path) -> None:
     d = repo / ".specify" / "extensions" / "arch" / "scripts" / "bash"
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(SETUP_ARCH_SH, d / "setup-arch.sh")
+    shutil.copy(VALIDATE_ARCH_SH, d / "validate-arch-artifacts.sh")
 
 
 def _install_ps_scripts(repo: Path) -> None:
     d = repo / ".specify" / "extensions" / "arch" / "scripts" / "powershell"
     d.mkdir(parents=True, exist_ok=True)
     shutil.copy(SETUP_ARCH_PS, d / "setup-arch.ps1")
+    shutil.copy(VALIDATE_ARCH_PS, d / "validate-arch-artifacts.ps1")
 
 
 def _install_templates(repo: Path) -> None:
@@ -122,6 +127,8 @@ def _assert_arch_json(repo: Path, data: dict[str, str], *, exact_paths: bool = T
         "ARCH_DIR": repo / ".specify" / "memory",
         "SCHEMA_DIR": repo / ".specify" / "extensions" / "arch" / "schemas",
         "ARCH_SCHEMA_FILE": repo / ".specify" / "extensions" / "arch" / "schemas" / "architecture-artifacts.schema.json",
+        "ARCH_VALIDATOR_FILE": repo / ".specify" / "extensions" / "arch" / "scripts" / "bash" / "validate-arch-artifacts.sh",
+        "ARCH_VALIDATOR_PS_FILE": repo / ".specify" / "extensions" / "arch" / "scripts" / "powershell" / "validate-arch-artifacts.ps1",
         "REPO_FACTS_FILE": repo / ".specify" / "memory" / "architecture-repo-facts.md",
         "SCENARIO_VIEW": repo / ".specify" / "memory" / "architecture-scenario-view.md",
         "LOGICAL_VIEW": repo / ".specify" / "memory" / "architecture-logical-view.md",

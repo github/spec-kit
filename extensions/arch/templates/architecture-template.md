@@ -14,7 +14,7 @@
 | Scenario | `.specify/memory/architecture-scenario-view.md` | Use-case actor, path, branch, and acceptance semantics | NEEDS ARCH UPDATE |
 | Logical | `.specify/memory/architecture-logical-view.md` | Capability boundaries, domain objects, states, and invariants | NEEDS ARCH UPDATE |
 | Process | `.specify/memory/architecture-process-view.md` | Runtime links, handoffs, approvals, receipts, failure closure | NEEDS ARCH UPDATE |
-| Development | `.specify/memory/architecture-development-view.md` | Architecture-level components, package boundaries, contracts, dependencies | NEEDS ARCH UPDATE |
+| Development | `.specify/memory/architecture-development-view.md` | Architecture-level components, package boundaries, contracts, dependencies, dependency matrix | NEEDS ARCH UPDATE |
 | Physical | `.specify/memory/architecture-physical-view.md` | Deployment, external systems, fact sources, observability, operations | NEEDS ARCH UPDATE |
 
 ## Architecture Intent

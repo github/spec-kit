@@ -9,7 +9,8 @@
     "project",
     "sections",
     "traceability",
-    "gaps"
+    "gaps",
+    "readiness"
   ],
   "properties": {
     "artifactType": {
@@ -54,8 +55,327 @@
       "items": {
         "$ref": "#/$defs/gap"
       }
+    },
+    "readiness": {
+      "$ref": "#/$defs/readiness"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "artifactType": {
+            "const": "architecture-synthesis"
+          }
+        },
+        "required": [
+          "artifactType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/section-view-index"
+              },
+              {
+                "$ref": "#/$defs/section-architecture-intent"
+              },
+              {
+                "$ref": "#/$defs/section-central-design-forces"
+              },
+              {
+                "$ref": "#/$defs/section-primary-tradeoffs"
+              },
+              {
+                "$ref": "#/$defs/section-stable-boundaries"
+              },
+              {
+                "$ref": "#/$defs/section-change-axes"
+              },
+              {
+                "$ref": "#/$defs/section-anti-patterns"
+              },
+              {
+                "$ref": "#/$defs/section-cross-view-architecture-model"
+              },
+              {
+                "$ref": "#/$defs/section-key-architecture-conclusions"
+              },
+              {
+                "$ref": "#/$defs/section-cross-cutting-constraints"
+              },
+              {
+                "$ref": "#/$defs/section-open-risks-and-review-triggers"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifactType": {
+            "const": "repo-facts"
+          }
+        },
+        "required": [
+          "artifactType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/section-repository-identity"
+              },
+              {
+                "$ref": "#/$defs/section-entry-points"
+              },
+              {
+                "$ref": "#/$defs/section-user-visible-behaviors"
+              },
+              {
+                "$ref": "#/$defs/section-system-boundaries"
+              },
+              {
+                "$ref": "#/$defs/section-data-and-state-clues"
+              },
+              {
+                "$ref": "#/$defs/section-runtime-and-process-clues"
+              },
+              {
+                "$ref": "#/$defs/section-development-structure-clues"
+              },
+              {
+                "$ref": "#/$defs/section-repository-first-projection"
+              },
+              {
+                "$ref": "#/$defs/section-physical-deployment-clues"
+              },
+              {
+                "$ref": "#/$defs/section-git-history-signals"
+              },
+              {
+                "$ref": "#/$defs/section-evidence-gaps"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifactType": {
+            "const": "scenario-view"
+          }
+        },
+        "required": [
+          "artifactType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/view-common-sections"
+              },
+              {
+                "$ref": "#/$defs/section-actors-and-participants"
+              },
+              {
+                "$ref": "#/$defs/section-use-cases"
+              },
+              {
+                "$ref": "#/$defs/section-scenario-paths"
+              },
+              {
+                "$ref": "#/$defs/section-acceptance-semantics"
+              },
+              {
+                "$ref": "#/$defs/section-source-traceability"
+              },
+              {
+                "$ref": "#/$defs/section-scenario-gaps"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifactType": {
+            "const": "logical-view"
+          }
+        },
+        "required": [
+          "artifactType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/view-common-sections"
+              },
+              {
+                "$ref": "#/$defs/section-capability-boundaries"
+              },
+              {
+                "$ref": "#/$defs/section-domain-objects-and-relationships"
+              },
+              {
+                "$ref": "#/$defs/section-state-and-lifecycle"
+              },
+              {
+                "$ref": "#/$defs/section-logical-decisions"
+              },
+              {
+                "$ref": "#/$defs/section-source-traceability"
+              },
+              {
+                "$ref": "#/$defs/section-logical-gaps"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifactType": {
+            "const": "process-view"
+          }
+        },
+        "required": [
+          "artifactType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/view-common-sections"
+              },
+              {
+                "$ref": "#/$defs/section-main-runtime-links"
+              },
+              {
+                "$ref": "#/$defs/section-handoffs-and-approvals"
+              },
+              {
+                "$ref": "#/$defs/section-receipts-and-user-participation"
+              },
+              {
+                "$ref": "#/$defs/section-failure-degradation-and-closure"
+              },
+              {
+                "$ref": "#/$defs/section-source-traceability"
+              },
+              {
+                "$ref": "#/$defs/section-process-gaps"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifactType": {
+            "const": "development-view"
+          }
+        },
+        "required": [
+          "artifactType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/view-common-sections"
+              },
+              {
+                "$ref": "#/$defs/section-architecture-level-components"
+              },
+              {
+                "$ref": "#/$defs/section-package-boundary-intent"
+              },
+              {
+                "$ref": "#/$defs/section-contracts-and-artifacts"
+              },
+              {
+                "$ref": "#/$defs/section-dependency-rules"
+              },
+              {
+                "$ref": "#/$defs/section-dependency-matrix"
+              },
+              {
+                "$ref": "#/$defs/section-source-traceability"
+              },
+              {
+                "$ref": "#/$defs/section-development-view-gaps"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "artifactType": {
+            "const": "physical-view"
+          }
+        },
+        "required": [
+          "artifactType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "sections": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/view-common-sections"
+              },
+              {
+                "$ref": "#/$defs/section-deployment-and-hosting-boundaries"
+              },
+              {
+                "$ref": "#/$defs/section-external-system-collaboration"
+              },
+              {
+                "$ref": "#/$defs/section-fact-sources-and-observability"
+              },
+              {
+                "$ref": "#/$defs/section-operations-and-release-boundaries"
+              },
+              {
+                "$ref": "#/$defs/section-source-traceability"
+              },
+              {
+                "$ref": "#/$defs/section-physical-view-gaps"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "section": {
       "type": "object",
@@ -79,22 +399,23 @@
           "items": {
             "type": "object",
             "additionalProperties": {
-              "type": [
-                "string",
-                "number",
-                "boolean",
-                "array",
-                "object",
-                "null"
-              ]
-            },
-            "not": {
-              "required": [
-                "NEEDS ARCH UPDATE"
-              ]
+              "$ref": "#/$defs/recordValue"
             }
           }
         }
+      }
+    },
+    "recordValue": {
+      "type": [
+        "string",
+        "number",
+        "boolean",
+        "array",
+        "object",
+        "null"
+      ],
+      "not": {
+        "const": "NEEDS ARCH UPDATE"
       }
     },
     "trace": {
@@ -147,6 +468,112 @@
         }
       }
     },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "readyGate",
+        "blockers"
+      ],
+      "properties": {
+        "readyGate": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "BLOCKED"
+          ]
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/blocker"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "readyGate": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "readyGate"
+            ]
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "readyGate": {
+                "const": "BLOCKED"
+              }
+            },
+            "required": [
+              "readyGate"
+            ]
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/blockerCode"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sectionId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        }
+      }
+    },
+    "blockerCode": {
+      "type": "string",
+      "enum": [
+        "ARCH_ARTIFACT_MISSING",
+        "ARCH_PLACEHOLDER_PRESENT",
+        "ARCH_REQUIRED_SECTION_MISSING",
+        "ARCH_REQUIRED_SECTION_EMPTY",
+        "ARCH_TRACEABILITY_MISSING",
+        "ARCH_DEPENDENCY_MATRIX_MISSING",
+        "ARCH_DEPENDENCY_MATRIX_EMPTY",
+        "ARCH_SOURCE_MISSING",
+        "ARCH_USER_INPUT_ONLY",
+        "ARCH_REPO_FIRST_MATRIX_MISUSED",
+        "ARCH_GIT_HISTORY_ONLY",
+        "ARCH_BOUNDARY_NONRESPONSIBILITY_MISSING",
+        "ARCH_UNSUPPORTED_CONCLUSION"
+      ]
+    },
     "confidence": {
       "type": "string",
       "enum": [
@@ -154,6 +581,878 @@
         "Medium",
         "Low"
       ]
+    },
+    "contains-section": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "view-common-sections": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/section-architecture-intent"
+        },
+        {
+          "$ref": "#/$defs/section-core-tensions"
+        },
+        {
+          "$ref": "#/$defs/section-stable-boundaries"
+        },
+        {
+          "$ref": "#/$defs/section-change-axes"
+        },
+        {
+          "$ref": "#/$defs/section-invariants"
+        },
+        {
+          "$ref": "#/$defs/section-non-goals-anti-patterns"
+        }
+      ]
+    },
+    "section-view-index": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "view-index"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-architecture-intent": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "architecture-intent"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-central-design-forces": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "central-design-forces"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-primary-tradeoffs": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "primary-tradeoffs"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-stable-boundaries": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "stable-boundaries"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-change-axes": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "change-axes"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-anti-patterns": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "anti-patterns"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-core-tensions": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "core-tensions"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-invariants": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "invariants"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-non-goals-anti-patterns": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "non-goals-anti-patterns"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-cross-view-architecture-model": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "cross-view-architecture-model"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-key-architecture-conclusions": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "key-architecture-conclusions"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-cross-cutting-constraints": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "cross-cutting-constraints"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-open-risks-and-review-triggers": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "open-risks-and-review-triggers"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-source-traceability": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "source-traceability"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-repository-identity": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "repository-identity"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-entry-points": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "entry-points"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-user-visible-behaviors": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "user-visible-behaviors"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-system-boundaries": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "system-boundaries"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-data-and-state-clues": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "data-and-state-clues"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-runtime-and-process-clues": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "runtime-and-process-clues"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-development-structure-clues": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "development-structure-clues"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-repository-first-projection": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "repository-first-projection"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-physical-deployment-clues": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "physical-deployment-clues"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-git-history-signals": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "git-history-signals"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-evidence-gaps": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "evidence-gaps"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-actors-and-participants": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "actors-and-participants"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-use-cases": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "use-cases"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-scenario-paths": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "scenario-paths"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-acceptance-semantics": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "acceptance-semantics"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-scenario-gaps": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "scenario-gaps"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-capability-boundaries": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "capability-boundaries"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-domain-objects-and-relationships": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "domain-objects-and-relationships"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-state-and-lifecycle": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "state-and-lifecycle"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-logical-decisions": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "logical-decisions"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-logical-gaps": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "logical-gaps"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-main-runtime-links": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "main-runtime-links"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-handoffs-and-approvals": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "handoffs-and-approvals"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-receipts-and-user-participation": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "receipts-and-user-participation"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-failure-degradation-and-closure": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "failure-degradation-and-closure"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-process-gaps": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "process-gaps"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-architecture-level-components": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "architecture-level-components"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-package-boundary-intent": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "package-boundary-intent"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-contracts-and-artifacts": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "contracts-and-artifacts"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-dependency-rules": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "dependency-rules"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-dependency-matrix": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "required": [
+              "records"
+            ],
+            "properties": {
+              "id": {
+                "const": "dependency-matrix"
+              },
+              "records": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-development-view-gaps": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "development-view-gaps"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-deployment-and-hosting-boundaries": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "deployment-and-hosting-boundaries"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-external-system-collaboration": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "external-system-collaboration"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-fact-sources-and-observability": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "fact-sources-and-observability"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-operations-and-release-boundaries": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "operations-and-release-boundaries"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "section-physical-view-gaps": {
+      "contains": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/contains-section"
+          },
+          {
+            "properties": {
+              "id": {
+                "const": "physical-view-gaps"
+              }
+            }
+          }
+        ]
+      }
     }
   }
 }

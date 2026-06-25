@@ -16,6 +16,8 @@ DEFAULT_EXTENSION_COMMANDS = (
     "speckit.arch.process-generate",
     "speckit.arch.development-generate",
     "speckit.arch.physical-generate",
+    "speckit.arch.full-generate",
+    "speckit.arch.full-reverse",
     "speckit.arch.scenario-reverse",
     "speckit.arch.logical-reverse",
     "speckit.arch.process-reverse",
