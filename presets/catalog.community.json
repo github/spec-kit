@@ -567,11 +567,11 @@
     "sicario-core": {
       "name": "SicarioSpec Core",
       "id": "sicario-core",
-      "version": "0.4.0",
-      "description": "Evidence-first security operations governance that maps feature risk to controls, gates, evidence, owners, approval, and accepted-risk decisions.",
+      "version": "0.5.1",
+      "description": "Baseline secure-by-default Spec Kit governance profile.",
       "author": "SicarioSpec Contributors",
       "repository": "https://github.com/dfirs1car1o/sicario-spec",
-      "download_url": "https://github.com/dfirs1car1o/sicario-spec/releases/download/v0.4.0/sicario-core-0.4.0.zip",
+      "download_url": "https://github.com/dfirs1car1o/sicario-spec/releases/download/v0.5.1/sicario-core-0.5.1.zip",
       "homepage": "https://github.com/dfirs1car1o/sicario-spec",
       "documentation": "https://github.com/dfirs1car1o/sicario-spec/blob/main/presets/sicario-core/README.md",
       "license": "MIT",
@@ -583,7 +583,6 @@
         "commands": 0
       },
       "tags": [
-        "security",
         "governance",
         "security-ops",
         "secure-by-default",
