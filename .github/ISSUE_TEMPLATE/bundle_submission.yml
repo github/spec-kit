@@ -1,12 +1,12 @@
 name: Bundle Submission
-description: Submit your bundle for community review
+description: Submit your bundle metadata for community catalog validation
 title: "[Bundle]: Add "
 labels: ["enhancement", "needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for contributing a bundle! This template helps you submit a role or team stack for community review.
+        Thanks for contributing a bundle! This template captures metadata for maintainers to validate formatting, links, component resolution, and installation evidence. Maintainers do not audit, endorse, or support bundle code or installed components.
 
         **Before submitting:**
         - Review the [Bundles reference](https://github.com/github/spec-kit/blob/main/docs/reference/bundles.md)
@@ -20,7 +20,7 @@ body:
     id: bundle-id
     attributes:
       label: Bundle ID
-      description: Unique bundle identifier (lowercase slug; letters, digits, dots, underscores, and hyphens only)
+      description: Unique bundle identifier; must start and end with a lowercase letter or digit and may contain lowercase letters, digits, dots, underscores, and hyphens between
       placeholder: "e.g., security-governance-stack"
     validations:
       required: true
