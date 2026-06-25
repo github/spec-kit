@@ -139,7 +139,7 @@ catalogs:
 
 Presets can provide command files, template files (like `plan-template.md`), and script files. Template and script files are looked up independently through the runtime stack, so different files can come from different layers.
 
-By default, files use a **replace** strategy: the first match in the priority stack wins and is used entirely. Templates can also use composition strategies: **prepend** places preset content before lower-priority content, **append** places it after lower-priority content, and **wrap** replaces `{CORE_TEMPLATE}` with lower-priority content. Commands support the same composition strategies during preset install, before they are registered with detected agents. Scripts support **replace** and **wrap**; script wrappers use `$CORE_SCRIPT` as the placeholder.
+By default, files use a **replace** strategy: the first match in the priority stack wins and is used entirely. Templates and commands can also use composition strategies: **prepend** places preset content before lower-priority content, **append** places it after lower-priority content, and **wrap** replaces `{CORE_TEMPLATE}` with lower-priority content. Scripts support **replace** and **wrap**; script wrappers use `$CORE_SCRIPT` as the placeholder.
 
 The resolution stack, from highest to lowest precedence:
 
@@ -148,7 +148,7 @@ The resolution stack, from highest to lowest precedence:
 3. **Installed extensions** — sorted by priority
 4. **Spec Kit core** — `.specify/templates/`
 
-Commands are registered at install time, not resolved through the stack at runtime after registration.
+Commands use the same stack order for composition, but the effective command content is written into detected agent directories during preset install and post-install/post-removal reconciliation. Agents do not re-resolve the stack each time they run a command.
 
 ### Resolution Stack
 
