@@ -112,10 +112,15 @@ def resolve_github_release_asset_api_url(
             and segments[3:5] == ["releases", "assets"]
         )
 
-    # Already a REST API asset URL — use it directly.
+    # Already a REST API asset URL — use it directly. Pure passthrough induces
+    # no new request: the caller fetches this same URL regardless, so it is
+    # gated on path shape alone rather than the GHES allowlist. The token stays
+    # independently gated by auth.json in the download helper, and only the
+    # resolving path below (which issues a tag-lookup request) needs the
+    # allowlist as its anti-SSRF gate.
     if hostname == "api.github.com" and _is_asset_path(parts):
         return download_url
-    if is_ghes and parts[:2] == ["api", "v3"] and _is_asset_path(parts[2:]):
+    if hostname and parts[:2] == ["api", "v3"] and _is_asset_path(parts[2:]):
         return download_url
 
     # Determine the REST API base for browser release-download URLs.

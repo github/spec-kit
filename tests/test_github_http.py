@@ -233,6 +233,27 @@ class TestResolveGitHubReleaseAssetApiUrl:
         assert result is None
         assert called == []
 
+    def test_passthrough_for_unlisted_ghes_api_asset_url(self):
+        """A direct GHES /api/v3 asset URL passes through even when the host is
+        not allowlisted: passthrough issues no API request, and the download
+        helper gates the token independently, so octet-stream resolution must
+        not be withheld."""
+        called = []
+
+        @contextmanager
+        def recording_open(url, timeout=None, extra_headers=None):
+            called.append(url)
+            resp = MagicMock()
+            resp.read.return_value = b"{}"
+            yield resp
+
+        url = "https://ghes.example/api/v3/repos/o/r/releases/assets/7"
+        result = resolve_github_release_asset_api_url(
+            url, recording_open, github_hosts=("other.example",)
+        )
+        assert result == url
+        assert called == []
+
     def test_ghes_api_base_preserves_scheme_and_port(self):
         """The GHES API base mirrors the URL scheme and keeps a non-standard port."""
         captured = []
