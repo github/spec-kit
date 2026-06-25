@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-22T00:00:00Z",
+  "updated_at": "2026-06-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
     "claude": {
@@ -251,6 +251,15 @@
       "name": "Pi Coding Agent",
       "version": "1.0.0",
       "description": "Pi terminal coding agent prompt-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "omp": {
+      "id": "omp",
+      "name": "Oh My Pi",
+      "version": "1.0.0",
+      "description": "Oh My Pi (omp) terminal coding agent prompt-based integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]

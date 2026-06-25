@@ -113,6 +113,16 @@ uv pip install -e ".[test]"
 > `specify_cli` to this checkout's `src/`. This matches the gotcha documented in
 > `AGENTS.md` (Common Pitfalls).
 
+#### Shell scripts
+
+```bash
+git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error
+```
+
+The CI `lint.yml` `shellcheck` job currently reports and blocks only
+error-severity findings. Warnings such as SC2155 are intentionally outside this
+job until a follow-up cleanup tightens the threshold.
+
 ### Manual testing
 
 #### Testing setup

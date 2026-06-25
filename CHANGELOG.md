@@ -10,6 +10,36 @@
 - Update bundled Repository Governance extension to v2.0.2, including the `/speckit.repository-governance.refresh` command, `.specify/memory/repository-governance.md` internal cache, and default bundled installation behavior.
 - Update bundled Workflow Preset documentation for v1.3.2 Final Code Review task generation and structured code review receipts.
 
+## [0.11.8] - 2026-06-24
+
+### Changed
+
+- docs: add SpecKit Assistant npm package to Community Friends (#3142)
+- Require preset-usage README with Spec Kit CLI syntax in preset submissions (#3104)
+- [extension] Update Jira Integration (Sync Engine) extension to v0.4.0 (#3152)
+- Add Spec Roadmap extension to community catalog (#3153)
+- feat(integration): update Kimi integration for Kimi Code CLI (#2979)
+- [extension] Add Golden Demo extension to community catalog (#3151)
+- docs: run /speckit.checklist after /speckit.plan in quickstart (#3108)
+- fix(workflows): preserve commas inside quoted list-literal elements (#3134)
+- ci: pin actions to commit SHAs and add shellcheck (#3126)
+- chore: release 0.11.7, begin 0.11.8.dev0 development (#3154)
+
+## [0.11.7] - 2026-06-24
+
+### Changed
+
+- feat(extensions): verify catalog archive sha256 before install (#3080)
+- fix(workflows): validate requires keys and reject phantom permissions gate (#3079)
+- fix(scripts): use case-sensitive match for acronym retention in PS branch names (#3130)
+- feat(integrations): add omp support (#3107)
+- fix: render valid TOML when a command body contains backslashes (#3135)
+- harden: reject shell=True in run_command (#3132)
+- docs: add monorepo guide (#3084)
+- fix(scripts): send check-prerequisites.ps1 errors to stderr (#3123)
+- fix: write Codex dev skills as files (#2988)
+- chore: release 0.11.6, begin 0.11.7.dev0 development (#3121)
+
 ## [0.11.6] - 2026-06-23
 
 ### Changed

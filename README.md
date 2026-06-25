@@ -205,10 +205,10 @@ specs/<feature>/preview/wireflow-high.html
 常用命令：
 
 ```text
-/speckit.repository-governance.refresh
+/speckit.repository-governance.generate
 ```
 
-它也注册了 hook，可在 constitution、plan、tasks 之后提示刷新治理内容。
+它也注册了 hook，可在 constitution、plan、tasks 之后提示生成或更新治理内容。
 
 主要产物：
 
@@ -415,7 +415,7 @@ specify preset add --dev extensions/arch/presets/arch-governance
 /speckit.arch.process-reverse
 /speckit.arch.development-reverse
 /speckit.arch.physical-reverse
-/speckit.repository-governance.refresh
+/speckit.repository-governance.generate
 /speckit.specify
 /speckit.plan
 /speckit.tasks

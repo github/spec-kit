@@ -2019,6 +2019,90 @@ class TestPresetCatalog:
         assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[1].get_header("Accept") == "application/octet-stream"
 
+    def _pack_zip_and_response(self):
+        """Build a minimal preset ZIP and a context-manager mock response."""
+        from unittest.mock import MagicMock
+        import io
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        resp = MagicMock()
+        resp.read.return_value = zip_bytes
+        # Configure the context-manager protocol explicitly so `with resp`
+        # yields `resp` itself, independent of how the protocol is invoked.
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return zip_bytes, resp
+
+    def test_download_pack_accepts_matching_sha256(self, project_dir):
+        """A catalog ``sha256`` that matches the preset archive is accepted."""
+        import hashlib
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_pack_rejects_sha256_mismatch(self, project_dir):
+        """A catalog ``sha256`` that does not match the archive aborts install."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        _zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": "0" * 64,  # deliberately wrong
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            with pytest.raises(PresetError, match="[Ii]ntegrity"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
+
+    def test_download_pack_without_sha256_skips_verification(self, project_dir):
+        """A catalog entry with no ``sha256`` keeps working: verification is
+        opt-in, so the backwards-compatible path (``pack_info.get("sha256")``
+        is ``None``) must download without aborting — mirrors the extensions
+        coverage so the helper never silently becomes mandatory for presets.
+        """
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
     def test_download_pack_accepts_direct_github_rest_asset_url(self, project_dir, monkeypatch):
         """download_pack can use a GitHub REST release asset URL directly."""
         from unittest.mock import patch, MagicMock
@@ -3679,12 +3763,16 @@ class TestPresetSkills:
         assert note_file.read_text(encoding="utf-8") == "user content"
 
     def test_kimi_legacy_dotted_skill_override_still_applies(self, project_dir, temp_dir):
-        """Preset overrides should still target legacy dotted Kimi skill directories."""
+        """Preset overrides should still target legacy dotted-named skill dirs.
+
+        This exercises legacy *naming* (``speckit.specify``) under the current
+        ``.kimi-code/`` base — distinct from the legacy ``.kimi/`` *location*.
+        """
         self._write_init_options(project_dir, ai="kimi")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit.specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3701,10 +3789,10 @@ class TestPresetSkills:
     def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi presets should still propagate command overrides to existing skills."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3721,7 +3809,7 @@ class TestPresetSkills:
     def test_kimi_new_skill_created_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi native skills should still receive brand-new preset commands."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-new-skill"
@@ -3770,9 +3858,9 @@ class TestPresetSkills:
     def test_kimi_preset_skill_override_resolves_script_placeholders(self, project_dir, temp_dir):
         """Kimi preset skill overrides should resolve placeholders and rewrite project paths."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False, script="sh")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-placeholder-override"
         preset_dir.mkdir()

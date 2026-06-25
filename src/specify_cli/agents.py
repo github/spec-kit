@@ -236,9 +236,14 @@ class CommandRegistrar:
         toml_lines.append(f"# Source: {source_id}")
         toml_lines.append("")
 
-        # Keep TOML output valid even when body contains triple-quote delimiters.
-        # Prefer multiline forms, then fall back to escaped basic string.
-        if '"""' not in body:
+        # Keep TOML output valid even when body contains triple-quote delimiters
+        # or backslashes. Prefer multiline forms, then fall back to escaped basic
+        # string. A multiline *basic* string ("""...""") processes backslash escape
+        # sequences, so a body containing a backslash (e.g. a Windows path
+        # ``C:\\Users\\...`` whose ``\\U`` reads as an invalid unicode escape) would
+        # produce unparseable TOML — route those to the *literal* form ('''...'''),
+        # which does not process escapes, or to the escaped basic string.
+        if '"""' not in body and "\\" not in body:
             toml_lines.append('prompt = """')
             toml_lines.append(body)
             toml_lines.append('"""')

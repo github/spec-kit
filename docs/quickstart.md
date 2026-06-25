@@ -19,7 +19,7 @@
 /speckit.arch.process-generate
 /speckit.arch.development-generate
 /speckit.arch.physical-generate
-/speckit.repository-governance.refresh
+/speckit.repository-governance.generate
 /speckit.specify
 /speckit.clarify
 /speckit.checklist
@@ -110,10 +110,10 @@ specify integration list
 /speckit.constitution This project uses behavior-first requirements, keeps architecture decisions explicit, and requires validation evidence before tasks are marked complete.
 ```
 
-刷新仓库治理规范：
+生成或更新仓库治理规范：
 
 ```text
-/speckit.repository-governance.refresh
+/speckit.repository-governance.generate
 ```
 
 治理命令会生成或更新当前 integration 对应的 agent 上下文文件中的受管段，并维护内部治理记忆：

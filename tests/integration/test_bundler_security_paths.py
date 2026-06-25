@@ -14,6 +14,13 @@ from specify_cli.bundler import BundlerError
 from specify_cli.bundler.lib.yamlio import ensure_within, is_safe_relpath
 
 
+def symlink_or_skip(link_path: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    try:
+        link_path.symlink_to(target, target_is_directory=target_is_directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation is unavailable in this environment: {exc}")
+
+
 def test_ensure_within_allows_child(tmp_path: Path):
     root = tmp_path / "bundle"
     root.mkdir()
@@ -103,7 +110,7 @@ def test_load_records_refuses_symlinked_specify_escape(tmp_path: Path):
     (outside / "bundle-records.json").write_text(
         '{"schema_version": "1.0", "bundles": []}', encoding="utf-8"
     )
-    (project / ".specify").symlink_to(outside, target_is_directory=True)
+    symlink_or_skip(project / ".specify", outside, target_is_directory=True)
 
     with pytest.raises(BundlerError, match="escapes the allowed root"):
         load_records(project)
@@ -121,7 +128,7 @@ def test_active_integration_refuses_symlinked_specify_escape(tmp_path: Path):
     (outside / "integration.json").write_text(
         '{"integration": "leaked"}', encoding="utf-8"
     )
-    (project / ".specify").symlink_to(outside, target_is_directory=True)
+    symlink_or_skip(project / ".specify", outside, target_is_directory=True)
 
     assert active_integration(project) is None
 
@@ -136,7 +143,7 @@ def test_read_catalog_config_refuses_symlinked_specify_escape(tmp_path: Path):
     (outside / "bundle-catalogs.yml").write_text(
         "schema_version: '1.0'\ncatalogs: []\n", encoding="utf-8"
     )
-    (project / ".specify").symlink_to(outside, target_is_directory=True)
+    symlink_or_skip(project / ".specify", outside, target_is_directory=True)
 
     with pytest.raises(BundlerError, match="escapes the allowed root"):
         cc._read(project)

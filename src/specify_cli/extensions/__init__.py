@@ -31,6 +31,7 @@ from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
+from ..shared_infra import verify_archive_sha256
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset(
     {
@@ -2620,6 +2621,10 @@ class ExtensionCatalog(CatalogStackBase):
                 download_url, timeout=60, extra_headers=extra_headers
             ) as response:
                 zip_data = response.read()
+
+            verify_archive_sha256(
+                zip_data, ext_info.get("sha256"), extension_id, ExtensionError
+            )
 
             zip_path.write_bytes(zip_data)
             return zip_path

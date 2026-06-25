@@ -47,6 +47,14 @@ def project_dir(temp_dir):
     return temp_dir
 
 
+def symlink_or_skip(link_path: Path, target: Path, *, target_is_directory: bool = False) -> None:
+    """Create a symlink, or skip when the local platform denies symlink creation."""
+    try:
+        link_path.symlink_to(target, target_is_directory=target_is_directory)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable in this environment: {exc}")
+
+
 @pytest.fixture
 def sample_workflow_yaml():
     """Return a valid minimal workflow YAML string."""
@@ -267,6 +275,24 @@ class TestExpressions:
 
         ctx = StepContext(inputs={"a": False, "b": True})
         assert evaluate_expression("{{ inputs.a or inputs.b }}", ctx) is True
+
+    def test_list_literal_preserves_quoted_commas(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        # commas inside a double-quoted element must not split it
+        assert evaluate_expression('{{ ["a, b", "c"] }}', ctx) == ["a, b", "c"]
+        assert evaluate_expression('{{ ["x, y, z"] }}', ctx) == ["x, y, z"]
+        # single-quoted elements are handled the same way
+        assert evaluate_expression("{{ ['a, b', 'c'] }}", ctx) == ["a, b", "c"]
+        assert evaluate_expression("{{ ['p, q, r'] }}", ctx) == ["p, q, r"]
+        # plain and empty lists still parse correctly
+        assert evaluate_expression("{{ [1, 2, 3] }}", ctx) == [1, 2, 3]
+        assert evaluate_expression("{{ [] }}", ctx) == []
+        # nested lists (commas inside the inner brackets) stay intact
+        assert evaluate_expression('{{ [["a", "b"], "c"] }}', ctx) == [["a", "b"], "c"]
+        assert evaluate_expression("{{ [[1, 2], [3, 4]] }}", ctx) == [[1, 2], [3, 4]]
 
     def test_filter_default(self):
         from specify_cli.workflows.expressions import evaluate_expression
@@ -2114,6 +2140,148 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("invalid type" in e.lower() for e in errors)
+
+    def test_requires_with_recognized_keys_is_valid(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  speckit_version: ">=0.7.2"
+  integrations:
+    any: ["claude", "gemini"]
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert errors == []
+
+    def test_requires_must_be_mapping(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires: "claude"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_unknown_key_is_rejected(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  speckit_version: ">=0.7.2"
+  typo_key: true
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("typo_key" in e and "requires" in e for e in errors)
+
+    def test_requires_permissions_is_rejected_as_not_enforced(self):
+        """A `requires.permissions` block looks like a runtime capability gate
+        but no such gate exists — shell steps always run with the user's
+        privileges. Reject it explicitly so authors are not misled into
+        believing the declaration sandboxes execution.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  permissions:
+    shell: true
+steps:
+  - id: run
+    type: shell
+    run: "echo hi"
+""")
+        errors = validate_workflow(definition)
+        # Assert on specific markers from the intended message (the offending
+        # key and the `gate` remediation) so the test fails if the validation
+        # path or wording drifts, rather than passing on any error that merely
+        # happens to contain "permissions" and "not".
+        assert any("requires.permissions" in e and "gate" in e for e in errors)
+
+    def test_requires_empty_sequence_is_rejected_as_non_mapping(self):
+        """A non-mapping ``requires`` (e.g. an empty list) is an authoring
+        error. Mirroring ``inputs``, validation checks ``isinstance(..., dict)``
+        so ``requires: []`` surfaces instead of silently passing.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires: []
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_yaml_null_is_rejected_as_non_mapping(self):
+        """A bare ``requires:`` parses as YAML null. Like ``inputs``, a present
+        block must be a mapping, so YAML null is rejected as an authoring error
+        rather than being silently treated as an omitted block. (A truly
+        omitted ``requires`` defaults to ``{}`` and stays valid.)
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_omitted_is_valid(self):
+        """A workflow with no ``requires`` block at all defaults to ``{}`` and
+        must validate cleanly — only a present-but-non-mapping value is an
+        error (guards against over-correcting YAML-null rejection into also
+        flagging the omitted case).
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert not any("requires" in e for e in errors)
 
 
 # ===== Workflow Engine Tests =====
@@ -4089,7 +4257,7 @@ class TestStepRegistryCustom:
             encoding="utf-8",
         )
         steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(steps_link, outside, target_is_directory=True)
 
         registry = StepRegistry(project_dir)
         assert registry.list() == {}
@@ -4102,7 +4270,7 @@ class TestStepRegistryCustom:
         outside = project_dir.parent / "outside-steps-save"
         outside.mkdir(parents=True, exist_ok=True)
         steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(steps_link, outside, target_is_directory=True)
 
         registry = StepRegistry(project_dir)
         with pytest.raises(StepValidationError, match="symlinked path"):
@@ -4469,8 +4637,8 @@ class TestCustomStep(StepBase):
         init_target = outside / "__init__.py"
         init_target.write_text("# external code", encoding="utf-8")
 
-        (step_dir / "step.yml").symlink_to(step_yml_target)
-        (step_dir / "__init__.py").symlink_to(init_target)
+        symlink_or_skip(step_dir / "step.yml", step_yml_target)
+        symlink_or_skip(step_dir / "__init__.py", init_target)
 
         loaded = load_custom_steps(project_dir)
         assert "bad-symlinked-files" not in loaded
@@ -4672,7 +4840,7 @@ class TestWorkflowStepRemoveCLI:
         outside = project_dir.parent / "outside-steps"
         outside.mkdir(parents=True, exist_ok=True)
         steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(steps_link, outside, target_is_directory=True)
 
         runner = CliRunner()
         result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
@@ -4692,7 +4860,7 @@ class TestWorkflowStepAddCLI:
         outside = project_dir.parent / "outside-steps"
         outside.mkdir(parents=True, exist_ok=True)
         steps_link = project_dir / ".specify" / "workflows" / "steps"
-        steps_link.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(steps_link, outside, target_is_directory=True)
 
         def _fake_get_step_info(self, step_id):
             return {

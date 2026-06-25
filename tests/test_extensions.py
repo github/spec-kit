@@ -1702,6 +1702,47 @@ $ARGUMENTS
 
         assert parsed["description"] == "first line\nsecond line\n"
 
+    def test_render_toml_command_preserves_backslashes_in_body(self):
+        """A backslash in the body (e.g. a Windows path) must not break TOML.
+
+        A multiline basic string ("\"\"\"") processes backslash escapes, so
+        ``C:\\Users`` (``\\U``) would render as invalid TOML; the body must
+        round-trip with backslashes intact.
+        """
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "x"},
+            r"Run C:\Users\dev\tool.exe then report.",
+            "extension:test-ext",
+        )
+        parsed = tomllib.loads(output)  # must not raise
+        assert parsed["prompt"].strip() == r"Run C:\Users\dev\tool.exe then report."
+
+    def test_render_toml_command_handles_trailing_backslash(self):
+        """A body ending in a backslash must round-trip without corruption."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        output = registrar.render_toml_command(
+            {"description": "x"},
+            "path ends with sep\\",
+            "extension:test-ext",
+        )
+        parsed = tomllib.loads(output)
+        assert parsed["prompt"].strip() == "path ends with sep\\"
+
+    def test_render_toml_command_backslash_with_both_triple_quotes_escapes(self):
+        """Body with a backslash and both triple-quote styles → escaped basic string."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        body = "a \\ b\nc \"\"\" d\ne ''' f"
+        output = registrar.render_toml_command({"description": "x"}, body, "extension:test-ext")
+        parsed = tomllib.loads(output)
+        assert parsed["prompt"] == body
+
     def test_register_commands_for_claude(self, extension_dir, project_dir):
         """Test registering commands for Claude agent."""
         # Create .claude directory
@@ -1929,7 +1970,7 @@ Agent __AGENT__
 
     @pytest.mark.parametrize("agent_name,skills_path", [
         ("codex", ".agents/skills"),
-        ("kimi", ".kimi/skills"),
+        ("kimi", ".kimi-code/skills"),
         ("claude", ".claude/skills"),
         ("cursor-agent", ".cursor/skills"),
         ("trae", ".trae/skills"),
@@ -3792,6 +3833,89 @@ class TestExtensionCatalog:
         assert captured[1].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[1].get_header("Accept") == "application/octet-stream"
+
+    def _make_zip_bytes(self):
+        """Build a minimal valid extension ZIP in memory for download tests."""
+        import zipfile
+        import io
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("extension.yml", "id: test-ext\nname: Test\nversion: 1.0.0\n")
+        return buf.getvalue()
+
+    def _mock_response(self, data):
+        """Build a context-manager mock HTTP response returning ``data``."""
+        from unittest.mock import MagicMock
+
+        resp = MagicMock()
+        resp.read.return_value = data
+        # Configure the context-manager protocol explicitly so `with resp`
+        # yields `resp` itself, independent of how the protocol is invoked.
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return resp
+
+    def test_download_extension_accepts_matching_sha256(self, temp_dir):
+        """A catalog ``sha256`` that matches the archive is accepted."""
+        import hashlib
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        zip_bytes = self._make_zip_bytes()
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=self._mock_response(zip_bytes)):
+            zip_path = catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_extension_rejects_sha256_mismatch(self, temp_dir):
+        """A catalog ``sha256`` that does not match the downloaded archive
+        aborts the install — a tampered or swapped archive is rejected.
+        """
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        zip_bytes = self._make_zip_bytes()
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+            "sha256": "0" * 64,  # deliberately wrong
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=self._mock_response(zip_bytes)):
+            with pytest.raises(ExtensionError, match="[Ii]ntegrity"):
+                catalog.download_extension("test-ext", target_dir=temp_dir)
+
+    def test_download_extension_without_sha256_still_succeeds(self, temp_dir):
+        """Entries without ``sha256`` keep working (backwards compatible)."""
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        zip_bytes = self._make_zip_bytes()
+        ext_info = {
+            "id": "test-ext",
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-ext.zip",
+        }
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", return_value=self._mock_response(zip_bytes)):
+            zip_path = catalog.download_extension("test-ext", target_dir=temp_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
 
     def test_download_extension_accepts_direct_github_rest_asset_url(self, temp_dir, monkeypatch):
         """download_extension can use a GitHub REST release asset URL directly."""

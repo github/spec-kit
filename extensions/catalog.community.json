@@ -1291,6 +1291,39 @@
       "created_at": "2026-04-12T15:30:00Z",
       "updated_at": "2026-04-13T14:39:00Z"
     },
+    "golden-demo": {
+      "name": "Golden Demo",
+      "id": "golden-demo",
+      "description": "Extracts acceptance criteria from specs, builds test vectors, and produces a behavioral drift report — complementary to Architecture Guard and CDD.",
+      "author": "jasstt",
+      "version": "0.1.1",
+      "download_url": "https://github.com/jasstt/spec-kit-golden-demo/archive/refs/tags/v0.1.1.zip",
+      "repository": "https://github.com/jasstt/spec-kit-golden-demo",
+      "homepage": "https://github.com/jasstt/spec-kit-golden-demo",
+      "documentation": "https://github.com/jasstt/spec-kit-golden-demo",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "testing",
+        "drift-detection",
+        "behavioral-oracle",
+        "tdd",
+        "quality"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-24T00:00:00Z",
+      "updated_at": "2026-06-24T00:00:00Z"
+    },
     "harness": {
       "name": "Research Harness",
       "id": "harness",
@@ -1512,25 +1545,34 @@
       "id": "jira-sync",
       "description": "An idempotent, drift-aware, fail-closed reconcile engine that mirrors spec-kit specs into Jira (Epic per repo, Story per spec, Subtask per phase).",
       "author": "Ash Brener",
-      "version": "0.2.0",
-      "download_url": "https://github.com/ashbrener/spec-kit-jira-sync/archive/refs/tags/v0.2.0.zip",
+      "version": "0.4.0",
+      "download_url": "https://github.com/ashbrener/spec-kit-jira-sync/archive/refs/tags/v0.4.0.zip",
       "repository": "https://github.com/ashbrener/spec-kit-jira-sync",
       "homepage": "https://github.com/ashbrener/spec-kit-jira-sync",
       "documentation": "https://github.com/ashbrener/spec-kit-jira-sync/blob/main/README.md",
-      "changelog": "https://github.com/ashbrener/spec-kit-jira-sync/releases",
+      "changelog": "https://github.com/ashbrener/spec-kit-jira-sync/blob/main/CHANGELOG.md",
       "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0"
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "bash", "version": ">=4.4", "required": true },
+          { "name": "git", "required": true },
+          { "name": "curl", "required": true },
+          { "name": "jq", "required": true },
+          { "name": "gitleaks", "required": false },
+          { "name": "trufflehog", "required": false }
+        ]
       },
       "provides": {
-        "commands": 2,
+        "commands": 4,
         "hooks": 0
       },
       "tags": [
         "issue-tracking",
         "jira",
         "tasks-sync",
-        "lifecycle-mirror",
         "reconcile",
         "drift-aware"
       ],
@@ -1538,7 +1580,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-08T00:00:00Z",
-      "updated_at": "2026-06-08T00:00:00Z"
+      "updated_at": "2026-06-24T00:00:00Z"
     },
     "learn": {
       "name": "Learning Extension",
@@ -2964,6 +3006,40 @@
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
       "updated_at": "2026-04-20T00:00:00Z"
+    },
+    "roadmap": {
+      "name": "Spec Roadmap",
+      "id": "roadmap",
+      "description": "Capture a durable spec roadmap after the constitution, then review specs against it before and after implementation so spec-specific decisions, outcomes, and constraints are never lost.",
+      "author": "srobroek",
+      "version": "0.1.0",
+      "download_url": "https://github.com/srobroek/speckit-roadmap/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/srobroek/speckit-roadmap",
+      "homepage": "https://github.com/srobroek/speckit-roadmap",
+      "documentation": "https://github.com/srobroek/speckit-roadmap/blob/main/README.md",
+      "changelog": "https://github.com/srobroek/speckit-roadmap/blob/main/CHANGELOG.md",
+      "license": "Apache-2.0",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.11.6"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 3
+      },
+      "tags": [
+        "roadmap",
+        "planning",
+        "governance",
+        "review",
+        "spec-alignment"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-24T00:00:00Z",
+      "updated_at": "2026-06-24T00:00:00Z"
     },
     "schedule": {
       "name": "Spec Kit Schedule — CP-SAT Agent Orchestrator",
