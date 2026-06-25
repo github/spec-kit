@@ -239,7 +239,9 @@ cand = Path(sys.argv[2]).resolve()
 try:
     print(str(PurePosixPath(cand.relative_to(root))))
 except ValueError:
-    print(str(PurePosixPath(cand)))
+    # Outside project root: use the bash-side path (already forward-slash
+    # normalised via tr), not cand which may be a WindowsPath with backslashes.
+    print(sys.argv[2])
 PY
 )"
       fi
