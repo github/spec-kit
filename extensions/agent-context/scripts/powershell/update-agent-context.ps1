@@ -324,7 +324,7 @@ if (-not $PlanPath) {
                     $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
                     if ($normDir.StartsWith($normRoot, $cmp)) {
                         $relDir = $normDir.Substring($normRoot.Length).TrimEnd('\', '/')
-                        $PlanPath = $relDir.Replace('\', '/') + '/plan.md'
+                        $PlanPath = if ($relDir) { $relDir.Replace('\', '/') + '/plan.md' } else { 'plan.md' }
                     } else {
                         $PlanPath = $resolvedPlan.Replace('\', '/')
                     }
