@@ -16,8 +16,10 @@ import platform
 import tempfile
 import shutil
 import tomllib
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 from tests.conftest import strip_ansi
 from specify_cli.extensions import (
@@ -7280,3 +7282,36 @@ class TestExtensionForceCLI:
             )
             assert result2.exit_code == 0, strip_ansi(result2.output)
             assert "installed" in strip_ansi(result2.output)
+
+
+def test_extension_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monkeypatch):
+    """End-to-end wiring: auth.json github host → GHES asset resolution."""
+    from specify_cli.authentication import http as _auth_http
+    from specify_cli.authentication.config import AuthConfigEntry
+    from specify_cli.extensions import ExtensionCatalog
+
+    monkeypatch.setattr(_auth_http, "_config_override", [
+        AuthConfigEntry(hosts=("ghes.example",), provider="github",
+                        auth="bearer", token="t"),
+    ])
+    catalog = ExtensionCatalog(tmp_path)
+
+    captured = []
+
+    @contextmanager
+    def fake_open(url, timeout=None, extra_headers=None):
+        captured.append(url)
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({
+            "assets": [{"name": "ext.zip",
+                        "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/7"}]
+        }).encode()
+        yield resp
+
+    monkeypatch.setattr(catalog, "_open_url", fake_open)
+
+    resolved = catalog._resolve_github_release_asset_api_url(
+        "https://ghes.example/o/r/releases/download/v1/ext.zip"
+    )
+    assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/7"
+    assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v1"]

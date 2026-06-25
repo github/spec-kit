@@ -17,9 +17,11 @@ import tempfile
 import shutil
 import warnings
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import yaml
 
@@ -6021,3 +6023,36 @@ def _create_pack(temp_dir, valid_pack_data, pack_id, content,
         (subdir / f"{template_name}.md").write_text(content)
 
     return pack_dir
+
+
+def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monkeypatch):
+    """End-to-end wiring for presets: auth.json github host → GHES asset resolution."""
+    from specify_cli.authentication import http as _auth_http
+    from specify_cli.authentication.config import AuthConfigEntry
+    from specify_cli.presets import PresetCatalog
+
+    monkeypatch.setattr(_auth_http, "_config_override", [
+        AuthConfigEntry(hosts=("ghes.example",), provider="github",
+                        auth="bearer", token="t"),
+    ])
+    catalog = PresetCatalog(tmp_path)
+
+    captured = []
+
+    @contextmanager
+    def fake_open(url, timeout=None, extra_headers=None):
+        captured.append(url)
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({
+            "assets": [{"name": "pack.zip",
+                        "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/9"}]
+        }).encode()
+        yield resp
+
+    monkeypatch.setattr(catalog, "_open_url", fake_open)
+
+    resolved = catalog._resolve_github_release_asset_api_url(
+        "https://ghes.example/o/r/releases/download/v2/pack.zip"
+    )
+    assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/9"
+    assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v2"]

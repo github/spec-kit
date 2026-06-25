@@ -1892,10 +1892,19 @@ class PresetCatalog:
         download_url: str,
         timeout: int = 60,
     ) -> Optional[str]:
-        """Resolve a GitHub release asset URL to its REST API asset URL."""
+        """Resolve a GitHub release asset URL to its REST API asset URL.
+
+        Passes the ``github`` provider hosts from ``auth.json`` so GitHub
+        Enterprise Server release assets resolve via ``/api/v3``.
+        """
         from specify_cli._github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.http import github_provider_hosts
+
         return resolve_github_release_asset_api_url(
-            download_url, self._open_url, timeout=timeout
+            download_url,
+            self._open_url,
+            timeout=timeout,
+            github_hosts=github_provider_hosts(),
         )
 
     def _validate_catalog_payload(self, catalog_data: Any, url: str) -> None:
