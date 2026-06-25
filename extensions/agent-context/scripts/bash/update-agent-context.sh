@@ -222,7 +222,8 @@ PY
     if [[ -n "$_feature_dir" ]]; then
       # feature_directory may be relative or absolute (absolute paths outside PROJECT_ROOT
       # are preserved as-is by _persist_feature_json in common.sh).
-      if [[ "$_feature_dir" == /* ]]; then
+      # Also match drive-qualified paths (C:/...) written by PowerShell on Windows.
+      if [[ "$_feature_dir" == /* ]] || [[ "$_feature_dir" =~ ^[A-Za-z]:/ ]]; then
         _candidate="$_feature_dir/plan.md"
       else
         _candidate="$PROJECT_ROOT/$_feature_dir/plan.md"
