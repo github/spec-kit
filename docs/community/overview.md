@@ -14,6 +14,12 @@ Presets customize how Spec Kit behaves — overriding templates, commands, and t
 
 [Browse community presets →](presets.md)
 
+## Bundles
+
+Bundles compose extensions, presets, workflows, and steps into role or team stacks that can be installed together.
+
+[Browse community bundles →](bundles.md)
+
 ## Walkthroughs
 
 Step-by-step guides that show Spec-Driven Development in action across different scenarios, languages, and frameworks.
