@@ -4772,7 +4772,7 @@ class TestPresetAddFromUrlResolution:
             "requires": {"speckit_version": ">=0.1.0"},
             "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
         })
-        zip_buf = __import__("io").BytesIO()
+        zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w") as zf:
             zf.writestr("preset.yml", manifest_content)
         zip_bytes = zip_buf.getvalue()
