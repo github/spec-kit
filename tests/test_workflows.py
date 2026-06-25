@@ -5477,6 +5477,137 @@ steps:
         assert len(asset_calls) >= 1
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
+    def test_workflow_add_from_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'workflow add <ghes-release-url>' resolves via GHES /api/v3 endpoint."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data, url=None):
+                self._data = data
+                self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"
+
+            def read(self):
+                return self._data
+
+            def geturl(self):
+                return self._url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "workflow.yml", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "workflow", "add",
+                "https://ghes.example/org/repo/releases/download/v1.0/workflow.yml",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # Tag lookup must use the GHES /api/v3 endpoint
+        assert any("ghes.example/api/v3/repos/org/repo/releases/tags/v1.0" in url for url, _ in captured_urls)
+        # Asset download must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_workflow_add_catalog_based_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'workflow add <id>' with a GHES catalog URL resolves via /api/v3."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data, url=None):
+                self._data = data
+                self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"
+
+            def read(self):
+                return self._data
+
+            def geturl(self):
+                return self._url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        ghes_wf_yaml = """
+schema_version: "1.0"
+workflow:
+  id: "my-wf"
+  name: "My GHES Workflow"
+  version: "1.0.0"
+  description: "A GHES catalog workflow"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo hello"
+"""
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "workflow.yml", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"}]
+                }).encode())
+            return FakeResponse(ghes_wf_yaml.encode())
+
+        fake_catalog_info = {
+            "id": "my-wf",
+            "name": "My GHES Workflow",
+            "version": "1.0.0",
+            "url": "https://ghes.example/org/repo/releases/download/v2.0/workflow.yml",
+            "_install_allowed": True,
+        }
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
+             patch("specify_cli.workflows.catalog.WorkflowCatalog.get_workflow_info", return_value=fake_catalog_info):
+            result = runner.invoke(app, ["workflow", "add", "my-wf"])
+
+        assert result.exit_code == 0, result.output
+        # Tag lookup must use GHES /api/v3
+        tag_calls = [url for url, _ in captured_urls if "releases/tags/" in url]
+        assert len(tag_calls) == 1
+        assert "ghes.example/api/v3/repos/org/repo/releases/tags/v2.0" in tag_calls[0]
+        # Asset download must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
 
 class TestWorkflowRunExitCodes:
     """CLI-level tests for the run/resume process exit codes."""

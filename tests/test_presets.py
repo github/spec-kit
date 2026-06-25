@@ -4754,6 +4754,69 @@ class TestPresetAddFromUrlResolution:
         assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
         assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
 
+    def test_preset_add_from_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'preset add --from <ghes-release-url>' resolves via GHES /api/v3 endpoint."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = __import__("io").BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "preset.zip", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://ghes.example/org/repo/releases/download/v1.0/preset.zip",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # The tag-lookup call must use the GHES /api/v3 endpoint
+        assert any("ghes.example/api/v3/repos/org/repo/releases/tags/v1.0" in url for url, _ in captured_urls)
+        # The asset download call must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
 
 class TestWrapStrategy:
     """Tests for strategy: wrap preset command substitution."""
