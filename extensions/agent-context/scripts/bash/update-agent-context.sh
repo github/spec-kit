@@ -126,7 +126,8 @@ if not context_files:
         ) as fh:
             opts = json.load(fh)
         if isinstance(opts, dict):
-            integration_key = opts.get("integration") or opts.get("ai") or ""
+            value = opts.get("integration") or opts.get("ai") or ""
+            integration_key = value if isinstance(value, str) else ""
     except Exception:
         integration_key = ""
     if integration_key:
@@ -137,7 +138,9 @@ if not context_files:
         mapping = {}
         try:
             with open(defaults_path, "r", encoding="utf-8") as fh:
-                mapping = (json.load(fh) or {}).get("agents", {})
+                loaded = json.load(fh)
+            agents = loaded.get("agents", {}) if isinstance(loaded, dict) else {}
+            mapping = agents if isinstance(agents, dict) else {}
         except Exception:
             print(
                 "agent-context: unable to read %s; cannot self-seed the context "
