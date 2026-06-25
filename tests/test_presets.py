@@ -4657,7 +4657,7 @@ class TestBundledPresetLocator:
             assert f'test -f ".claude/skills/$preview_skill/SKILL.md"' in verify_run
         assert 'grep -q "evidence-backed" ".claude/skills/$preview_skill/SKILL.md"' in verify_run
         assert (
-            "test ! -d .claude/skills/speckit-repository-governance-refresh"
+            "test ! -d .claude/skills/speckit-repository-governance-generate"
             in verify_run
         )
         assert (
@@ -4686,7 +4686,7 @@ class TestBundledPresetLocator:
             in verify_run
         )
         assert (
-            'test -f .claude/skills/speckit-repository-governance-refresh/SKILL.md'
+            'test -f .claude/skills/speckit-repository-governance-generate/SKILL.md'
             in verify_run
         )
 
