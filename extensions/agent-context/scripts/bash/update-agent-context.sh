@@ -229,12 +229,19 @@ PY
         _candidate="$PROJECT_ROOT/$_feature_dir/plan.md"
       fi
       if [[ -f "$_candidate" ]]; then
-        # Emit a PROJECT_ROOT-relative path when possible, otherwise use the absolute path.
-        if [[ "$_candidate" == "$PROJECT_ROOT/"* ]]; then
-          PLAN_PATH="${_candidate#"$PROJECT_ROOT/"}"
-        else
-          PLAN_PATH="$_candidate"
-        fi
+        # Resolve symlinks before comparing so paths like /var/… vs /private/var/…
+        # (macOS) are treated as equivalent. Mirrors the mtime-fallback approach.
+        PLAN_PATH="$("$_python" - "$PROJECT_ROOT" "$_candidate" <<'PY'
+import sys
+from pathlib import Path, PurePosixPath
+root = Path(sys.argv[1]).resolve()
+cand = Path(sys.argv[2]).resolve()
+try:
+    print(str(PurePosixPath(cand.relative_to(root))))
+except ValueError:
+    print(str(PurePosixPath(cand)))
+PY
+)"
       fi
     fi
   fi

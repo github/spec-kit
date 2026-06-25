@@ -130,7 +130,7 @@ if (-not (Test-Path -LiteralPath $ExtConfig)) {
 $Options = $null
 if (Get-Command ConvertFrom-Yaml -ErrorAction SilentlyContinue) {
     try {
-        $Options = Get-Content -LiteralPath $ExtConfig -Raw | ConvertFrom-Yaml -ErrorAction Stop
+        $Options = Get-Content -LiteralPath $ExtConfig -Raw -Encoding UTF8 | ConvertFrom-Yaml -ErrorAction Stop
     } catch {
         # fall through to Python fallback
     }
