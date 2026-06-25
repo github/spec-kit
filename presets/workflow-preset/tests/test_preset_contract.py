@@ -577,7 +577,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("1.0", data["schema_version"])
         self.assertEqual("workflow-preset", data["preset"]["id"])
         self.assertEqual("Workflow Preset", data["preset"]["name"])
-        self.assertEqual("1.3.10", data["preset"]["version"])
+        self.assertEqual("1.3.11", data["preset"]["version"])
         self.assertEqual(
             "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
             data["preset"]["description"],
@@ -696,11 +696,11 @@ class PresetContractTests(unittest.TestCase):
             self.assertEqual("wrap", command["strategy"])
 
         self.assertEqual(
-            "Wrap core constitution updates with change scope granularity governance",
+            "Wrap core constitution updates with change scope granularity and architecture SSOT governance",
             entries["speckit.constitution"]["description"],
         )
         self.assertEqual(
-            "Add change scope granularity governance to the constitution template",
+            "Add change scope granularity and architecture SSOT governance to the constitution template",
             entries["constitution-template"]["description"],
         )
 
@@ -833,15 +833,49 @@ class PresetContractTests(unittest.TestCase):
             self.assertIn("contracts formalize visual interaction and state constraints", document)
             self.assertIn("contracts/sequences.md records visual state flow only when it affects cross-boundary sequencing", document)
 
+        self.assertIn(
+            "fixed R/M/U/O model: R is Repository / Workspace, M is Module / Capability, U is Unit / Design Object, and O is Operation / Detail",
+            readme,
+        )
+        self.assertIn(
+            "Blocks constitution writes when a generated draft changes the fixed R/M/U/O mapping",
+            readme,
+        )
+        self.assertIn(
+            "Routes architecture decisions, domain facts, object design, flows, and interface contracts to architecture SSOT artifacts instead of embedding concrete implementation content in ratified constitution principles",
+            readme,
+        )
+
     def test_constitution_change_scope_granularity_contract(self) -> None:
         command = CONSTITUTION_COMMAND_PATH.read_text(encoding="utf-8")
         template = CONSTITUTION_TEMPLATE_PATH.read_text(encoding="utf-8")
+
+        exact_mapping = [
+            "R: Repository / Workspace. Environment only; too broad for scoped changes.",
+            "M: Module / Capability. Hard outer boundary.",
+            "U: Unit / Design Object. Primary planning boundary.",
+            "O: Operation / Detail. Execution detail.",
+        ]
+        forbidden_mapping_drift = [
+            "R, Requirement",
+            "R: Requirement",
+            "M, Model",
+            "M: Model",
+            "U, User/API Interface",
+            "U: User/API Interface",
+            "O, Operations",
+            "O: Operations",
+        ]
 
         for document in (command, template):
             self.assertIn("{CORE_TEMPLATE}", document)
             self.assertIn("Change Scope Granularity", document)
             self.assertIn("R/M/U/O", document)
             self.assertIn("Planning locks M + U", document)
+            for mapping in exact_mapping:
+                self.assertIn(mapping, document)
+            for forbidden in forbidden_mapping_drift:
+                self.assertNotIn(forbidden, document)
 
         self.assertIn("strategy: wrap", command)
         self.assertIn("Spec Kit planning and execution MUST use R/M/U/O scope granularity", template)
@@ -849,6 +883,64 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Requirement specification, clarification, and checklist readiness MUST NOT infer M/U/O boundaries", template)
         self.assertIn("preserve the Change Scope Granularity principle", command)
         self.assertIn("must not remove, weaken, or contradict", command)
+        self.assertIn("The R/M/U/O letter mapping is fixed and MUST remain exact", command)
+        self.assertIn("preserves the exact R/M/U/O letter mapping", command)
+        self.assertIn("CONSTITUTION_RMUO_MAPPING_DRIFT", command)
+        self.assertIn("CONSTITUTION_TEMPLATE_STATUS_UNCHECKED", command)
+        self.assertIn("do not report it as missing", command)
+        self.assertIn("do not treat that as the workflow-preset template being absent", command)
+        self.assertIn("Architecture SSOT Boundary", command)
+        self.assertIn("Architecture SSOT Compliance", command)
+        self.assertIn("Ratified constitution principles must be durable governance rules, not architecture fact storage", command)
+        self.assertIn(
+            "Architecture decisions, domain facts, object design, flows, and interface contracts belong in their architecture SSOT artifacts",
+            command,
+        )
+        self.assertIn("specs/<feature>/data-model.md", command)
+        self.assertIn("specs/<feature>/class-diagram.md", command)
+        self.assertIn("specs/<feature>/contracts/sequences.md", command)
+        self.assertIn("specs/<feature>/contracts/", command)
+        self.assertIn("specs/<feature>/research.md", command)
+        self.assertIn(
+            "MUST NOT capture, discover, extract, migrate, store, validate, or repair architecture facts",
+            command,
+        )
+        self.assertIn("do not embed them in ratified principles", command)
+        self.assertIn("name the responsible workflow-preset SSOT artifact type", command)
+        self.assertIn("Do not write concrete `specs/<feature>/...` paths", command)
+        self.assertIn("check those paths", command)
+        self.assertIn("create or update those artifacts", command)
+        self.assertIn("CONSTITUTION_ARCH_SSOT_GAP", command)
+        self.assertIn("copy concrete implementation facts", command)
+        self.assertIn("Planning outputs MUST comply with existing Architecture SSOT artifacts", command)
+        self.assertIn("MUST NOT contradict, relocate, weaken, or silently replace architecture SSOT content", command)
+        self.assertIn("requires planning outputs to comply with existing Architecture SSOT artifacts", command)
+        self.assertIn(
+            "routes architecture decisions, domain facts, object design, flows, and interface contracts to workflow-preset SSOT artifact types",
+            command,
+        )
+        self.assertNotIn("unless the current Spec Kit context already provides an existing feature path", command)
+        self.assertNotIn("required existing SSOT path is absent", command)
+        self.assertIn("The R/M/U/O letter mapping is fixed", template)
+        self.assertIn("Architecture SSOT Boundary", template)
+        self.assertIn("Architecture SSOT Compliance", template)
+        self.assertIn("Ratified constitution principles are durable governance rules, not architecture fact storage", template)
+        self.assertIn(
+            "Architecture decisions, domain facts, object design, flows, and interface contracts belong in their architecture SSOT artifacts",
+            template,
+        )
+        self.assertIn("specs/<feature>/data-model.md", template)
+        self.assertIn("specs/<feature>/class-diagram.md", template)
+        self.assertIn("specs/<feature>/contracts/sequences.md", template)
+        self.assertIn("specs/<feature>/contracts/", template)
+        self.assertIn("specs/<feature>/research.md", template)
+        self.assertIn("may reference these SSOT artifact types", template)
+        self.assertIn(
+            "must not copy concrete implementation facts, temporary repository observations, or module responsibility inventories",
+            template,
+        )
+        self.assertIn("Planning outputs MUST comply with existing Architecture SSOT artifacts", template)
+        self.assertIn("Planning MUST NOT contradict, relocate, weaken, or silently replace architecture SSOT content", template)
 
     def test_change_scope_granularity_stage_references(self) -> None:
         plan = PLAN_COMMAND_PATH.read_text(encoding="utf-8")
@@ -859,6 +951,8 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Apply the constitution's Change Scope Granularity principle.", plan)
         self.assertIn("During planning, lock the change scope to `M + U`", plan)
         self.assertIn("Do not lock operation-level implementation details or concrete write paths.", plan)
+        self.assertNotIn("Architecture SSOT Compliance", plan)
+        self.assertNotIn("PLANNING_ARCH_SSOT_CONFLICT", plan)
 
         self.assertIn("Preserve the planned `M + U` scope", tasks)
         self.assertIn("Do not generate execution metadata or write-path fields.", tasks)
@@ -4270,6 +4364,7 @@ class PresetContractTests(unittest.TestCase):
             'PATH="${GITHUB_WORKSPACE}/.venv-specify-smoke/bin:${PATH}"',
             'project_dir="$(mktemp -d "${RUNNER_TEMP}/workflow-preset-smoke.XXXXXX")"',
             'resolve_out="${RUNNER_TEMP}/plan-template-resolve.txt"',
+            'constitution_resolve_out="${RUNNER_TEMP}/constitution-template-resolve.txt"',
             "PIP_CONFIG_FILE: /dev/null",
             'PYTEST_ADDOPTS: ""',
             'export TMPDIR="${RUNNER_TEMP}"',
@@ -4279,6 +4374,11 @@ class PresetContractTests(unittest.TestCase):
             "specify preset remove workflow-preset",
             "specify preset add --dev",
             "specify preset resolve plan-template",
+            "specify preset resolve constitution-template",
+            "R: Repository / Workspace",
+            "M: Module / Capability",
+            "U: Unit / Design Object",
+            "O: Operation / Detail",
             ".claude/skills/speckit-implement/SKILL.md",
             "SPEC_KIT_FORK_PR_TOKEN",
             "bigsmartben/spec-kit",
@@ -4286,6 +4386,10 @@ class PresetContractTests(unittest.TestCase):
             "gh pr create",
             "gh pr edit",
             "WORKFLOW_PRESET_DOWNLOAD_URL",
+            "presets/catalog.community.json",
+            "community_catalog_path",
+            "community_catalog",
+            "download_url",
             'assert entry\\["version"\\] == "[0-9]+\\.[0-9]+\\.[0-9]+"',
             "tests/test_presets.py",
             "tests/contracts/speckit-cross-agent-subagents.md",
