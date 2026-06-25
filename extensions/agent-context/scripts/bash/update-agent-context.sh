@@ -364,7 +364,7 @@ else:
     new_content = section
 
 new_content = new_content.replace("\r\n", "\n").replace("\r", "\n")
-if ctx_path.endswith(".mdc"):
+if ctx_path.casefold().endswith(".mdc"):
     new_content = ensure_mdc_frontmatter(new_content)
 with open(ctx_path, "wb") as fh:
     fh.write(new_content.encode("utf-8"))
