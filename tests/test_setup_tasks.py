@@ -873,8 +873,9 @@ def test_check_dir_bash_counts_subdir_only_contracts(tasks_repo: Path) -> None:
     contracts.mkdir(parents=True)
     (contracts / "openapi.yaml").write_text("openapi: 3.0\n", encoding="utf-8")
     result = _run_bash_check_dir(tasks_repo, tasks_repo / "contracts")
-    assert result.returncode == 0, result.stderr
-    assert "✓" in result.stdout and "✗" not in result.stdout
+    # check_dir always exits 0 (it echoes ✓/✗ instead of setting an exit code),
+    # so the ✓ marker in stdout — not the return code — is what proves non-emptiness.
+    assert "✓" in result.stdout and "✗" not in result.stdout, result.stderr + result.stdout
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
@@ -884,5 +885,7 @@ def test_dir_has_files_ps_counts_subdir_only_contracts(tasks_repo: Path) -> None
     contracts.mkdir(parents=True)
     (contracts / "openapi.yaml").write_text("openapi: 3.0\n", encoding="utf-8")
     result = _run_powershell_test_dir(tasks_repo, tasks_repo / "contracts")
-    assert result.returncode == 0, result.stderr
-    assert "[OK]" in result.stdout and "[FAIL]" not in result.stdout
+    # Test-DirHasFiles returns a boolean and pwsh still exits 0 when it returns
+    # $false, so the [OK] marker in stdout — not the return code — is what proves
+    # non-emptiness.
+    assert "[OK]" in result.stdout and "[FAIL]" not in result.stdout, result.stderr + result.stdout
