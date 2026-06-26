@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Spec Kit plugin lifecycle hook.
 #
-# Fires (via UserPromptExpansion, matcher "speckit") just before a `/speckit:*`
-# command expands into a prompt. When the speckit skills are installed globally
-# as a plugin, the per-project `.specify/` runtime state may be absent — this
-# hook provisions it on first use so the command's scripts and templates
-# resolve. It is idempotent, never blocks the command, and only acts when a
-# speckit command is actually being invoked.
+# Fires (via the Claude hooks.json UserPromptExpansion matcher "speckit") just
+# before a `/speckit:*` command expands. When the speckit skills are installed
+# globally as a plugin, the per-project `.specify/` runtime state may be absent —
+# this hook provisions it on first use so the command's scripts and templates
+# resolve. Idempotent, never blocks the command.
+#
+# Cross-agent routing is adg's responsibility: adg references this same file for
+# each runtime it supports (and lints events a target can't fire). We author one
+# base hook in Claude's native format and leave platform mapping to adg.
 
 set -u
 

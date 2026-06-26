@@ -1,6 +1,7 @@
 """Unit tests for the adg CLI bridge."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -35,22 +36,38 @@ def _fake_run(captured, output=""):
     return _run
 
 
-def test_has_global_plugin_parses_list(monkeypatch):
+def test_has_global_plugin_uses_json(monkeypatch):
     captured: list[list[str]] = []
     runner = _fake_run(captured)
-    runner.output = (
-        "apple-skills@1.12.0   …/apple-skills  Agents: Claude\n"
-        "speckit@0.11.4        …/speckit       Agents: Claude, Codex\n"
+    runner.output = json.dumps(
+        {"plugins": [{"name": "apple-skills"}, {"name": "speckit"}]}
     )
     monkeypatch.setattr(adg_bridge, "_run", runner)
     assert adg_bridge.has_global_plugin("speckit", adg="/x/adg") is True
     assert adg_bridge.has_global_plugin("nope", adg="/x/adg") is False
-    assert captured[0] == ["/x/adg", "plugins", "list", "--global"]
+    # Prefers the stable --json contract.
+    assert captured[0] == ["/x/adg", "plugins", "list", "--global", "--json"]
+
+
+def test_has_global_plugin_text_fallback(monkeypatch):
+    # Older adg: --json call fails; must fall back to text parsing.
+    calls: list[list[str]] = []
+
+    def _run(adg, args):
+        calls.append([adg, *args])
+        if "--json" in args:
+            raise adg_bridge.AdgCommandError([adg, *args], 1, "Unknown option '--json'")
+        return "design@1.2.0   …\nspeckit@0.11.4   …\n"
+
+    monkeypatch.setattr(adg_bridge, "_run", _run)
+    assert adg_bridge.has_global_plugin("speckit", adg="/x/adg") is True
+    assert calls[0][-1] == "--json"  # tried json first
+    assert calls[1] == ["/x/adg", "plugins", "list", "--global"]  # then text
 
 
 def test_has_global_plugin_false_when_absent(monkeypatch):
     runner = _fake_run([])
-    runner.output = "design@1.2.0   …/design  Agents: Claude\n"
+    runner.output = json.dumps({"plugins": [{"name": "design"}]})
     monkeypatch.setattr(adg_bridge, "_run", runner)
     assert adg_bridge.has_global_plugin("speckit", adg="/x/adg") is False
 

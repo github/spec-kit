@@ -12,6 +12,7 @@ adg's ``.agents/.plugin.json`` schema, keeping the two tools decoupled.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -93,16 +94,22 @@ def _run(adg: str, args: list[str]) -> str:
 def has_global_plugin(name: str = PLUGIN_NAME, *, adg: str | None = None) -> bool:
     """Return True when a plugin named *name* is installed in the global store.
 
-    Parses ``adg plugins list --global`` text output (no ``--json`` support);
-    each plugin line begins with ``<name>@<version>``.
+    Prefers the stable ``adg plugins list --global --json`` contract; falls back
+    to parsing the human text output for older adg versions without ``--json``
+    (where each plugin line begins with ``<name>@<version>``).
     """
     adg = adg or require_adg()
-    out = _run(adg, ["plugins", "list", "--global"])
-    prefix = f"{name}@"
-    for line in out.splitlines():
-        if line.strip().startswith(prefix):
-            return True
-    return False
+    try:
+        data = json.loads(_run(adg, ["plugins", "list", "--global", "--json"]))
+        plugins = data.get("plugins", []) if isinstance(data, dict) else []
+        return any(
+            isinstance(p, dict) and p.get("name") == name for p in plugins
+        )
+    except (AdgCommandError, ValueError, TypeError):
+        # Older adg: --json rejected (non-zero) or non-JSON output → text scrape.
+        out = _run(adg, ["plugins", "list", "--global"])
+        prefix = f"{name}@"
+        return any(line.strip().startswith(prefix) for line in out.splitlines())
 
 
 def add_plugin(

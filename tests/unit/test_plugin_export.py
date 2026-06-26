@@ -72,7 +72,7 @@ def test_build_plugin_full_tree(tmp_path):
     # semver-valid version
     assert to_semver(manifest["version"]) == manifest["version"]
 
-    # Hook authored in Claude's native format (adg's adopted de-facto standard).
+    # One base hook in Claude's native format; adg routes it to each runtime.
     hooks = json.loads((out / "hooks" / "hooks.json").read_text())
     assert "UserPromptExpansion" in hooks["hooks"]
     cmd = hooks["hooks"]["UserPromptExpansion"][0]["hooks"][0]["command"]
