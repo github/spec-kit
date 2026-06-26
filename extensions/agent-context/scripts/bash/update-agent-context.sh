@@ -233,7 +233,7 @@ PY
         # (macOS) are treated as equivalent. Mirrors the mtime-fallback approach.
         PLAN_PATH="$("$_python" - "$PROJECT_ROOT" "$_candidate" <<'PY'
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 cand = Path(sys.argv[2]).resolve()
 try:
@@ -254,7 +254,7 @@ PY
   if [[ -z "$PLAN_PATH" ]]; then
     _plan_rel="$("$_python" - "$PROJECT_ROOT" <<'PY'
 import sys
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 specs = root / "specs"
 plans = sorted(

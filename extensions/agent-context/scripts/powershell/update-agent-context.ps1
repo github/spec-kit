@@ -132,7 +132,7 @@ if (Get-Command ConvertFrom-Yaml -ErrorAction SilentlyContinue) {
     try {
         $Options = Get-Content -LiteralPath $ExtConfig -Raw -Encoding UTF8 | ConvertFrom-Yaml -ErrorAction Stop
     } catch {
-        # fall through to Python fallback
+        # fall through to ConvertFrom-Json fallback
     }
 }
 
