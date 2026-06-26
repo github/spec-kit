@@ -5,7 +5,7 @@
 
 Bundles compose existing Spec Kit components — extensions, presets, workflows, and steps — into a single role or team stack. They are useful when a user should be able to install a tested set of components together instead of following several separate install commands.
 
-Accepted community bundle entries will be listed here once the community bundle submission path is active. To submit a bundle for review, file a [Bundle Submission](https://github.com/github/spec-kit/issues/new?template=bundle_submission.yml) issue.
+Accepted community bundle entries will be listed here once a community bundle catalog is available. To submit a bundle for review, file a [Bundle Submission](https://github.com/github/spec-kit/issues/new?template=bundle_submission.yml) issue.
 
 ## What to Submit
 
