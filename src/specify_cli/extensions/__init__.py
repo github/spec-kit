@@ -1292,7 +1292,6 @@ class ExtensionManager:
                 f"but {speckit_version} is installed.\n"
                 f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
             )
-            raise CompatibilityError(f"Invalid version specifier: {required}")
 
         return True
 
