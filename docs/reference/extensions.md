@@ -25,6 +25,7 @@ specify extension add <name>
 | Option          | Description                                              |
 | --------------- | -------------------------------------------------------- |
 | `--dev`         | Install from a local directory (for development)         |
+| `--force`       | Overwrite if already installed                           |
 | `--from <url>`  | Install from a custom URL instead of the catalog         |
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
