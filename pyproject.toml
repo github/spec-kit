@@ -45,6 +45,8 @@ packages = ["src/specify_cli"]
 "extensions/bug" = "specify_cli/core_pack/extensions/bug"
 # Bundled workflows (auto-installed during `specify init`)
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
+
+"plugin/hooks" = "specify_cli/core_pack/plugin/hooks"
 # Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
 "presets/lean" = "specify_cli/core_pack/presets/lean"
 

@@ -32,6 +32,27 @@ def _repo_root() -> Path:
     return Path(__file__).parent.parent.parent
 
 
+def _locate_plugin_hooks() -> Path | None:
+    """Return the path to the bundled plugin ``hooks/`` directory, or None.
+
+    Holds the Claude-native ``hooks.json`` (adg 0.4.0-beta.5+ adopts Claude's
+    hook format as the de-facto standard and routes it to Codex/Antigravity)
+    plus the hook script(s). Checks the wheel's core_pack first, then falls
+    back to the source-checkout ``plugin/hooks/`` directory.
+    """
+    core = _locate_core_pack()
+    if core is not None:
+        candidate = core / "plugin" / "hooks"
+        if (candidate / "hooks.json").is_file():
+            return candidate
+
+    candidate = _repo_root() / "plugin" / "hooks"
+    if (candidate / "hooks.json").is_file():
+        return candidate
+
+    return None
+
+
 def _locate_bundled_extension(extension_id: str) -> Path | None:
     """Return the path to a bundled extension, or None.
 

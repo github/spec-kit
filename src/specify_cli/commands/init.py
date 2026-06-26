@@ -31,6 +31,115 @@ def _stdin_is_interactive() -> bool:
     return sys.stdin.isatty()
 
 
+def _maybe_install_adg(*, yes: bool) -> bool:
+    """Offer to install the adg CLI via npm. Return True if adg is available
+    afterwards.
+
+    Interactive (TTY) prompts for consent unless *yes* forces it. Non-interactive
+    without *yes* declines silently. Needs npm; failures degrade gracefully.
+    """
+    import shutil as _shutil
+    import subprocess as _subprocess
+
+    from .. import adg_bridge
+
+    if not yes and not _stdin_is_interactive():
+        return False
+    if not yes:
+        try:
+            if not typer.confirm(
+                f"adg CLI not found. Install it now via `{adg_bridge.ADG_INSTALL_HINT}`?",
+                default=False,
+            ):
+                return False
+        except Exception:
+            return False
+    if not _shutil.which("npm"):
+        console.print("[yellow]npm not found — cannot auto-install adg.[/yellow]")
+        return False
+    console.print(f"[cyan]Installing adg…[/cyan] ({adg_bridge.ADG_INSTALL_HINT})")
+    try:
+        _subprocess.run(["npm", "install", "-g", "@rbbtsn0w/adg"], check=True)
+    except _subprocess.CalledProcessError:
+        console.print("[yellow]adg install failed.[/yellow]")
+        return False
+    return bool(adg_bridge.find_adg())
+
+
+def _provision_plugin_skills(
+    script_type: str,
+    tracker: "StepTracker",
+    *,
+    out_dir: Path | None = None,
+    adg_available: bool = True,
+) -> bool:
+    """Manage core speckit skills as a global adg plugin (plugin mode).
+
+    With adg: stateful — consume the existing global plugin, else author it
+    (``build_plugin`` → ``adg plugins add`` → ``link``). Without adg (degrade):
+    write the plugin source to *out_dir* and tell the user to finish with adg.
+    *out_dir*, when given, is a persistent target instead of a throwaway temp.
+
+    Returns True when the degraded (no-adg) path was taken.
+    """
+    import tempfile
+
+    from .. import adg_bridge
+    from ..plugin_export import PLUGIN_NAME, build_plugin
+
+    def _link_into_runtimes(adg: str) -> str:
+        """Register the global plugin into each runtime (esp. Claude).
+
+        ``adg plugins add`` adapts manifests but does not reliably register a
+        ``[local]`` plugin into Claude, so ``link`` must follow. Idempotent, so
+        it also self-heals an earlier author that never reached Claude. Failure
+        is non-fatal — .specify/ provisioning below must still proceed.
+        """
+        try:
+            adg_bridge.link([PLUGIN_NAME], target="all", as_global=True, adg=adg)
+            return ""
+        except adg_bridge.AdgCommandError:
+            return (
+                " (runtime link failed — run "
+                "`adg plugins sync --target claude speckit` manually)"
+            )
+
+    # Degrade path: no adg — produce the source tree for later pickup.
+    if not adg_available:
+        dest = out_dir.resolve()
+        build_plugin(dest, script_type)
+        tracker.complete(
+            "integration",
+            f"plugin written to {dest} — finish: adg plugins add {dest} --global",
+        )
+        return True
+
+    adg = adg_bridge.require_adg()
+    if adg_bridge.has_global_plugin(adg=adg):
+        note = _link_into_runtimes(adg)
+        tracker.complete(
+            "integration", f"skills via global adg plugin (consumed){note}"
+        )
+        return False
+
+    if out_dir is not None:
+        plugin_dir = out_dir.resolve()
+        build_plugin(plugin_dir, script_type)
+        adg_bridge.add_plugin(plugin_dir, as_global=True, adg=adg)
+        note = _link_into_runtimes(adg)
+        tracker.complete(
+            "integration", f"authored global adg plugin (source: {plugin_dir}){note}"
+        )
+    else:
+        with tempfile.TemporaryDirectory() as tmp:
+            plugin_dir = Path(tmp) / "speckit-plugin"
+            build_plugin(plugin_dir, script_type)
+            adg_bridge.add_plugin(plugin_dir, as_global=True, adg=adg)
+        note = _link_into_runtimes(adg)
+        tracker.complete("integration", f"authored global adg plugin{note}")
+    return False
+
+
 def ensure_constitution_from_template(
     project_path: Path, tracker: StepTracker | None = None
 ) -> None:
@@ -133,6 +242,27 @@ def register(app: typer.Typer) -> None:
             None,
             "--integration-options",
             help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")',
+        ),
+        plugin: bool = typer.Option(
+            False,
+            "--plugin",
+            help="Manage the core speckit skills as a global adg plugin instead of "
+            "writing them into the project. Lays down .specify/ as usual; on first "
+            "use it authors the global plugin via adg, afterwards it consumes it. "
+            "Requires the 'adg' CLI.",
+        ),
+        plugin_out: Path = typer.Option(
+            None,
+            "--plugin-out",
+            help="With --plugin: also write the ADG plugin source tree to this "
+            "directory. If 'adg' is unavailable, the tree is still produced here "
+            "for a later 'adg plugins add <dir> --global' (CI/offline friendly).",
+        ),
+        yes: bool = typer.Option(
+            False,
+            "--yes",
+            "-y",
+            help="Assume 'yes' for prompts (e.g. installing the adg CLI for --plugin).",
         ),
     ):
         """
@@ -268,6 +398,37 @@ def register(app: typer.Typer) -> None:
                     console.print(error_panel)
                     raise typer.Exit(1)
 
+        # --plugin needs the external adg CLI. Resolve availability up front:
+        # try an (interactive/--yes) install, then either degrade (--plugin-out)
+        # or fail fast with guidance.
+        plugin_adg_available = True
+        if plugin:
+            from .. import adg_bridge
+
+            plugin_adg_available = bool(adg_bridge.find_adg())
+            if not plugin_adg_available:
+                plugin_adg_available = _maybe_install_adg(yes=yes)
+            if not plugin_adg_available and plugin_out is None:
+                console.print()
+                console.print(
+                    Panel(
+                        "[bold]--plugin[/bold] manages the core Spec Kit skills as a global "
+                        "[cyan]adg[/cyan] plugin (shared across all your projects) instead of "
+                        "writing them into this project.\n"
+                        "It needs the [cyan]adg[/cyan] CLI, which was [red]not found[/red].\n\n"
+                        f"[bold]Install[/bold]      [cyan]{adg_bridge.ADG_INSTALL_HINT}[/cyan]  "
+                        "[dim](requires Node ≥ 22)[/dim]\n"
+                        "[bold]Or produce[/bold]    re-run with [cyan]--plugin-out <dir>[/cyan] to "
+                        "write the plugin for a later [cyan]adg plugins add[/cyan].\n"
+                        "[bold]Or skip[/bold]       re-run [cyan]specify init[/cyan] [bold]without[/bold] "
+                        "--plugin to install the skills into this project directly.",
+                        title="[yellow]adg CLI required for --plugin[/yellow]",
+                        border_style="yellow",
+                        padding=(1, 2),
+                    )
+                )
+                raise typer.Exit(1)
+
         if integration:
             if integration not in AGENT_CONFIG:
                 console.print(
@@ -275,6 +436,11 @@ def register(app: typer.Typer) -> None:
                 )
                 raise typer.Exit(1)
             selected_ai = integration
+        elif plugin:
+            # In plugin mode the runtime skills come from the adapted global
+            # plugin; the integration here only drives .specify/ provisioning.
+            # Default to claude (adg's canonical target) without prompting.
+            selected_ai = "claude"
         elif not _stdin_is_interactive():
             console.print(
                 f"[dim]Non-interactive session detected: defaulting to '{DEFAULT_INIT_INTEGRATION}'. "
@@ -407,14 +573,27 @@ def register(app: typer.Typer) -> None:
                     if extra:
                         integration_parsed_options.update(extra)
 
-                resolved_integration.setup(
-                    project_path,
-                    manifest,
-                    parsed_options=integration_parsed_options or None,
-                    script_type=selected_script,
-                    raw_options=integration_options,
-                )
-                manifest.save()
+                if plugin:
+                    # Plugin mode: do NOT write skills into the project. The core
+                    # speckit skills are managed as a global adg plugin instead.
+                    # On first use, author it; afterwards, consume it. Everything
+                    # else (.specify/, constitution, workflow, init-options) still
+                    # runs below exactly as usual.
+                    plugin_degraded = _provision_plugin_skills(
+                        selected_script,
+                        tracker,
+                        out_dir=plugin_out,
+                        adg_available=plugin_adg_available,
+                    )
+                else:
+                    resolved_integration.setup(
+                        project_path,
+                        manifest,
+                        parsed_options=integration_parsed_options or None,
+                        script_type=selected_script,
+                        raw_options=integration_options,
+                    )
+                    manifest.save()
 
                 integration_settings = _with_integration_setting(
                     {},
@@ -675,6 +854,47 @@ def register(app: typer.Typer) -> None:
                 )
                 console.print()
                 console.print(security_notice)
+
+        if plugin:
+            plugin_lines: list[str] = []
+            if not here:
+                plugin_lines.append(
+                    f"1. Go to the project folder: [cyan]cd {project_path.name}[/cyan]"
+                )
+            if plugin_degraded:
+                plugin_lines.append(
+                    "[yellow]adg was not available[/yellow], so the skills are [bold]not[/bold] "
+                    "installed yet — the plugin source was written to "
+                    f"[cyan]{plugin_out}[/cyan]."
+                )
+                plugin_lines.append(
+                    "Finish on a machine with adg: "
+                    f"[cyan]adg plugins add {plugin_out} --global[/cyan]"
+                )
+            else:
+                plugin_lines.append(
+                    "Core Spec Kit skills are managed as a global [cyan]adg[/cyan] plugin — "
+                    "they are [bold]not[/bold] copied into this project."
+                )
+                plugin_lines.append(
+                    "Invoke them in your coding agent as "
+                    "[cyan]/speckit:specify[/], [cyan]/speckit:plan[/], "
+                    "[cyan]/speckit:tasks[/], [cyan]/speckit:implement[/] …"
+                )
+            plugin_lines.append(
+                "This project's [cyan].specify/[/] runtime state is ready; "
+                "[cyan]specs/[/] is created on the first [cyan]/speckit:specify[/]."
+            )
+            console.print()
+            console.print(
+                Panel(
+                    "\n".join(plugin_lines),
+                    title="Next Steps (plugin mode)",
+                    border_style="cyan",
+                    padding=(1, 2),
+                )
+            )
+            return
 
         steps_lines = []
         if not here:

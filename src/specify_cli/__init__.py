@@ -488,6 +488,16 @@ def check():
     tracker.add("code-insiders", "Visual Studio Code Insiders")
     check_tool("code-insiders", tracker=tracker)
 
+    # Optional: adg CLI — only needed for `specify init --plugin` (manage core
+    # skills as a global adg plugin). Not having it is fine for normal usage.
+    from .adg_bridge import find_adg
+
+    tracker.add("adg", "adg CLI (optional — for 'init --plugin')")
+    if find_adg():
+        tracker.complete("adg", "available")
+    else:
+        tracker.skip("adg", "not installed — needed only for 'init --plugin'")
+
     console.print(tracker.render())
 
     console.print("\n[bold green]Specify CLI is ready to use![/bold green]")

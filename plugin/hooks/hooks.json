@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptExpansion": [
+      {
+        "matcher": "speckit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/ensure-specify.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
