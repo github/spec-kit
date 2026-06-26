@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ._assets import _repo_root
+from ._assets import ROOT_DIR
 from .catalog_docs import (
     escape_markdown_link_text,
     escape_url_for_markdown_link,
@@ -15,7 +15,6 @@ from .catalog_docs import (
 )
 
 
-ROOT_DIR = _repo_root()
 COMMUNITY_CATALOG_PATH = ROOT_DIR / "extensions" / "catalog.community.json"
 
 

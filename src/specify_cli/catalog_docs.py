@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ._assets import _repo_root
+from ._assets import ROOT_DIR
 
-ROOT_DIR = _repo_root()
 INTEGRATIONS_REFERENCE_PATH = ROOT_DIR / "docs" / "reference" / "integrations.md"
 
 

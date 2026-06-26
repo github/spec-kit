@@ -20,7 +20,7 @@ from specify_cli.catalog_docs import (
 from specify_cli import app
 
 
-runner = CliRunner()
+runner = CliRunner(mix_stderr=False)
 
 
 @contextmanager
