@@ -784,7 +784,7 @@
       "category": "visibility",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.9.5.dev0",
+        "speckit_version": ">=0.9.5",
         "tools": [
           { "name": "python3", "required": false }
         ]
