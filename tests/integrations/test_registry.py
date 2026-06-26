@@ -50,7 +50,15 @@ def _multi_install_safe_pairs() -> list[tuple[str, str]]:
 
 def _multi_install_safe_orders() -> list[list[str]]:
     safe_keys = _multi_install_safe_keys()
-    return [safe_keys, list(reversed(safe_keys))]
+    if len(safe_keys) < 2:
+        return [safe_keys]
+    return [safe_keys[index:] + safe_keys[:index] for index in range(len(safe_keys))]
+
+
+def _multi_install_safe_order_id(ordered_keys: list[str]) -> str:
+    if not ordered_keys:
+        return "no-safe-integrations"
+    return f"init-{ordered_keys[0]}"
 
 
 def _posix_path(value: str | None) -> str | None:
@@ -238,7 +246,7 @@ class TestMultiInstallSafeContracts:
     @pytest.mark.parametrize(
         "ordered_keys",
         _multi_install_safe_orders(),
-        ids=["forward", "reverse"],
+        ids=_multi_install_safe_order_id,
     )
     def test_safe_integrations_have_disjoint_manifests(
         self,
@@ -260,10 +268,9 @@ class TestMultiInstallSafeContracts:
         # pairwise manifest isolation. Each safe integration writes only to its
         # own (disjoint) directories and always records what it writes, so a
         # manifest's contents are independent of install order and of which other
-        # integrations are co-installed. The two parametrized orders therefore
-        # produce the same manifests; their purpose is to route a different
-        # integration through the `init` path versus `integration install`
-        # (forward installs the first key via init, reverse the last).
+        # integrations are co-installed. The parametrized rotations keep the
+        # aggregate setup while placing each safe integration first once, so each
+        # one still exercises the `specify init --integration ...` path.
         original_cwd = os.getcwd()
         try:
             os.chdir(project_root)
