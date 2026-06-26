@@ -184,6 +184,7 @@ The currently declared multi-install safe integrations are:
 | --- | --------- |
 | `auggie` | `.augment/commands`, `.augment/rules/specify-rules.md` |
 | `claude` | `.claude/skills`, `CLAUDE.md` |
+| `cline` | `.clinerules/workflows`, `.clinerules/specify-rules.md` |
 | `codebuddy` | `.codebuddy/commands`, `CODEBUDDY.md` |
 | `codex` | `.agents/skills`, `AGENTS.md` |
 | `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
@@ -199,6 +200,7 @@ The currently declared multi-install safe integrations are:
 | `tabnine` | `.tabnine/agent/commands`, `TABNINE.md` |
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
 | `windsurf` | `.windsurf/workflows`, `.windsurf/rules/specify-rules.md` |
+| `zcode` | `.zcode/skills`, `ZCODE.md` |
 
 Integrations that share a context file or command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
 
