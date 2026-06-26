@@ -9,6 +9,7 @@ import typer
 
 from .._agent_config import SCRIPT_TYPE_CHOICES
 from .._console import console
+from .._project import _resolve_init_dir_override as _resolve_init_dir_override  # noqa: F401
 from ..integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -32,47 +33,6 @@ def _get_speckit_version() -> str:
     """
     from . import _commands  # noqa: PLC0415 — intentional late import to avoid circular + enable patching
     return _commands.get_speckit_version()
-
-
-def _resolve_init_dir_override() -> Path | None:
-    """Resolve the ``SPECIFY_INIT_DIR`` project override for the Python CLI.
-
-    Applies the same validation rules as the shell resolver
-    (``resolve_specify_init_dir`` in ``scripts/bash/common.sh``): the value names
-    the project root — the directory *containing* ``.specify/`` — and is strict.
-    Relative paths resolve against the current directory; the path must exist and
-    contain ``.specify/``, otherwise this hard-errors with no fallback to cwd
-    (which would silently operate on the wrong project's files). The error strings
-    match the shell resolver so the two surfaces read consistently.
-
-    Returns the validated absolute project root, or ``None`` when the variable is
-    unset/empty, in which case callers keep their existing cwd-based behavior.
-
-    Note: this canonicalizes symlinks via :meth:`Path.resolve` (physical path),
-    whereas the shell ``cd -- "$X" && pwd`` keeps the logical path. The two agree
-    for non-symlinked paths; a symlinked ``SPECIFY_INIT_DIR`` can resolve to
-    different strings across the surfaces. The canonical form is the safer choice
-    here (a stable project identity), so this is a deliberate, documented variance,
-    not a parity guarantee on the resolved string.
-    """
-    raw = os.environ.get("SPECIFY_INIT_DIR", "")
-    if not raw:
-        return None
-    # Relative values resolve against cwd; an absolute value stands alone (Path's
-    # `/` drops the left operand when the right is absolute). resolve() also
-    # collapses a trailing slash and canonicalizes symlinks.
-    init_root = (Path.cwd() / raw).resolve()
-    if not init_root.is_dir():
-        console.print(
-            f"[red]Error:[/red] SPECIFY_INIT_DIR does not point to an existing directory: {raw}"
-        )
-        raise typer.Exit(1)
-    if not (init_root / ".specify").is_dir():
-        console.print(
-            f"[red]Error:[/red] SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): {init_root}"
-        )
-        raise typer.Exit(1)
-    return init_root
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..._project import _resolve_init_dir_override
 from .. import BundlerError
 from .yamlio import ensure_within, load_json
 
@@ -16,6 +17,11 @@ def find_project_root(start: Path | None = None) -> Path | None:
     could read/write outside the intended tree, and other CLI surfaces refuse
     it for the same reason.
     """
+    if start is None:
+        override = _resolve_init_dir_override()
+        if override is not None:
+            return override
+
     current = Path(start or Path.cwd()).resolve()
     for candidate in (current, *current.parents):
         marker = candidate / ".specify"
