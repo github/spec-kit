@@ -62,24 +62,42 @@ body:
       label: AI Agent
       description: Which AI agent are you using?
       options:
+        - Amp
+        - Antigravity
+        - Auggie CLI
         - Claude Code
+        - Cline
+        - CodeBuddy
+        - Codex CLI
+        - Cursor
+        - Devin for Terminal
+        - Firebender
+        - Forge
         - Gemini CLI
         - GitHub Copilot
-        - Cursor
-        - Qwen Code
-        - opencode
-        - Codex CLI
-        - Windsurf
-        - Kilo Code
-        - Auggie CLI
-        - Roo Code
-        - CodeBuddy
-        - Qoder CLI
-        - Kiro CLI
-        - Amp
-        - SHAI
+        - Goose
+        - Hermes Agent
         - IBM Bob
-        - Antigravity
+        - iFlow CLI
+        - Junie
+        - Kilo Code
+        - Kimi Code
+        - Kiro CLI
+        - Lingma
+        - Mistral Vibe
+        - Oh My Pi
+        - opencode
+        - Pi Coding Agent
+        - Qoder CLI
+        - Qwen Code
+        - Roo Code
+        - RovoDev ACLI
+        - SHAI
+        - Tabnine CLI
+        - Trae
+        - Windsurf
+        - ZCode
+        - Zed
         - Not applicable
     validations:
       required: true

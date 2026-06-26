@@ -15,19 +15,22 @@ from tests.conftest import strip_ansi
 runner = CliRunner()
 
 
-def _init_project(tmp_path, integration="copilot"):
+def _init_project(tmp_path, integration="copilot", integration_options=None):
     """Helper: init a spec-kit project with the given integration."""
     project = tmp_path / "proj"
     project.mkdir()
+    args = [
+        "init", "--here",
+        "--integration", integration,
+        "--script", "sh",
+        "--ignore-agent-tools",
+    ]
+    if integration_options:
+        args += ["--integration-options", integration_options]
     old_cwd = os.getcwd()
     try:
         os.chdir(project)
-        result = runner.invoke(app, [
-            "init", "--here",
-            "--integration", integration,
-            "--script", "sh",
-            "--ignore-agent-tools",
-        ], catch_exceptions=False)
+        result = runner.invoke(app, args, catch_exceptions=False)
     finally:
         os.chdir(old_cwd)
     assert result.exit_code == 0, f"init failed: {result.output}"
@@ -120,6 +123,7 @@ class TestIntegrationList:
         # Should show multiple integrations
         assert "claude" in result.output
         assert "gemini" in result.output
+        assert "zed" in result.output
 
     def test_list_shows_multi_install_safe_status(self, tmp_path):
         project = _init_project(tmp_path, "claude")
@@ -1236,6 +1240,137 @@ class TestIntegrationInstall:
         assert "/speckit-specify" in script_content
         assert "/speckit.specify" not in script_content
 
+    def test_install_defers_extension_commands_until_use(self, tmp_path):
+        """Installing a second integration does not register enabled extensions.
+
+        Maintainer-requested behavior for #2886: extension command back-fill is
+        limited to ``integration use`` / ``switch`` / ``upgrade``. Plain
+        ``install`` only adds the integration; selecting it with ``use`` then
+        registers the enabled extensions for that agent.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered
+        assert "codex" not in registered, "precondition: codex not yet installed"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Install alone does not back-fill the git extension for the secondary
+        # agent.
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered, "existing agent registration preserved"
+        assert "codex" not in registered
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, "use should register extension commands (#2886)"
+        assert (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_install_does_not_register_disabled_extensions(self, tmp_path):
+        """A disabled extension must not be registered for a newly installed agent."""
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, ["extension", "disable", "git"])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        git_meta = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]
+        assert git_meta["enabled"] is False
+        assert "codex" not in git_meta["registered_commands"]
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_install_skills_mode_secondary_agent_defers_extension_artifacts(self, tmp_path):
+        """A non-active skills-mode agent gets extension artifacts only on use.
+
+        Plain ``install`` has no extension side effects. Once the secondary
+        Copilot ``--skills`` integration is selected with ``use``, it becomes the
+        active agent and receives extension skills.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        # Copilot is not multi_install_safe, so --force is required to add it
+        # alongside the existing default integration.
+        result = _run_in_project(project, [
+            "integration", "install", "copilot",
+            "--script", "sh",
+            "--integration-options", "--skills",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Precondition that makes --skills load-bearing: copilot IS in skills
+        # mode, so its own core commands are scaffolded as skills.
+        assert (
+            project / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        ).exists(), "precondition: copilot installed in skills mode"
+
+        # The git extension is not registered for the non-active copilot agent
+        # during install.
+        git_meta = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )["extensions"]["git"]
+        assert "copilot" not in git_meta["registered_commands"]
+        assert not (
+            project / ".github" / "agents" / "speckit.git.feature.agent.md"
+        ).exists()
+        assert not (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+        result = _run_in_project(project, ["integration", "use", "copilot"])
+        assert result.exit_code == 0, result.output
+
+        git_meta = json.loads(
+            (project / ".specify" / "extensions" / ".registry").read_text(encoding="utf-8")
+        )["extensions"]["git"]
+        # `use` makes copilot active, so extension artifacts follow copilot's
+        # skills-mode layout.
+        assert "copilot" not in git_meta["registered_commands"]
+        assert "speckit-git-feature" in git_meta["registered_skills"]
+        assert not (
+            project / ".github" / "agents" / "speckit.git.feature.agent.md"
+        ).exists()
+        assert (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 
@@ -1677,7 +1812,7 @@ class TestIntegrationSwitch:
         assert result.exit_code == 0, f"extension add failed: {result.output}"
 
         # Verify git extension skills exist for kimi
-        kimi_git_feature = project / ".kimi" / "skills" / "speckit-git-feature" / "SKILL.md"
+        kimi_git_feature = project / ".kimi-code" / "skills" / "speckit-git-feature" / "SKILL.md"
         assert kimi_git_feature.exists(), "Git extension skill should exist for kimi"
 
         result = _run_in_project(project, [
@@ -1722,6 +1857,40 @@ class TestIntegrationSwitch:
         registered_commands = registry["extensions"]["git"]["registered_commands"]
         assert "claude" in registered_commands
         assert "opencode" not in registered_commands
+
+    def test_switch_installed_target_backfills_extension_commands(self, tmp_path):
+        """Switching to an already-installed agent should register extensions."""
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered
+        assert "codex" not in registered, "precondition: codex not yet installed"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        codex_git_feature = (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        )
+        assert not codex_git_feature.exists()
+
+        result = _run_in_project(project, ["integration", "switch", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered
+        assert codex_git_feature.exists()
 
     def test_switch_migrates_copilot_skills_extension_commands(self, tmp_path):
         """Copilot --skills should receive extension skills, not .agent.md files."""
@@ -2269,6 +2438,145 @@ class TestIntegrationUpgrade:
         assert len(core_remaining) == 0, (
             f"Legacy .opencode/command/ should have no core speckit files after upgrade, "
             f"found: {[f.name for f in core_remaining]}"
+        )
+
+    def test_upgrade_preserves_existing_vscode_settings(self, tmp_path):
+        """Regression: copilot upgrade must not stale-delete .vscode/settings.json.
+
+        On init the file is created and recorded in the manifest. On upgrade,
+        setup() merges into the now-existing file and intentionally stops
+        tracking it, so without ``stale_cleanup_exclusions()`` the Phase 2
+        stale cleanup would delete it (destroying the user's settings).
+        """
+        project = _init_project(tmp_path, "copilot")
+        settings = project / ".vscode" / "settings.json"
+        assert settings.is_file(), "init should create .vscode/settings.json"
+        before = json.loads(settings.read_text(encoding="utf-8"))
+        assert before, "settings.json should contain managed defaults"
+
+        # Simulate a user editing their settings: add a custom key that the
+        # integration does not manage.  It must survive the upgrade.
+        before["editor.fontSize"] = 17
+        settings.write_text(json.dumps(before), encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert settings.is_file(), ".vscode/settings.json must survive upgrade"
+        after = json.loads(settings.read_text(encoding="utf-8"))
+        assert after.get("editor.fontSize") == 17, (
+            "user-defined settings must be preserved after upgrade"
+        )
+
+    def test_upgrade_restores_executable_bit_on_shared_scripts(self, tmp_path):
+        """Regression: scripts refreshed by the managed-refresh step stay +x."""
+        if os.name == "nt":
+            pytest.skip("POSIX execute bits are not meaningful on Windows")
+        project = _init_project(tmp_path, "copilot")
+        script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+        assert script.is_file()
+        # Simulate a perms-losing install (e.g. wheel extraction dropping +x).
+        script.chmod(0o644)
+        assert not (script.stat().st_mode & 0o111)
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "copilot",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert script.stat().st_mode & 0o111, (
+            "shared .sh scripts must be executable after upgrade"
+        )
+
+    def test_upgrade_backfills_extension_commands_for_agent(self, tmp_path):
+        """Upgrade re-registers enabled extensions for the upgraded agent.
+
+        Regression for #2886: agents installed before extension back-fill
+        existed (or whose extension artifacts went missing) should regain the
+        enabled extensions' commands on ``upgrade``, reaching parity with
+        ``switch``.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Simulate a project created before the install/upgrade back-fill: drop
+        # codex's extension registration and its rendered artifacts.
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        registry["extensions"]["git"]["registered_commands"].pop("codex", None)
+        registry_path.write_text(json.dumps(registry), encoding="utf-8")
+        agents_skills = project / ".agents" / "skills"
+        for skill_dir in agents_skills.glob("speckit-git-*"):
+            shutil.rmtree(skill_dir)
+
+        # Precondition: codex is now missing the git extension.
+        assert "codex" not in json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert not (agents_skills / "speckit-git-feature" / "SKILL.md").exists()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Upgrade back-filled the git extension for codex.
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, "upgrade should re-register extension commands (#2886)"
+        assert (agents_skills / "speckit-git-feature" / "SKILL.md").exists()
+
+    def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
+        """Upgrading a non-active agent must not touch the active agent's skills.
+
+        Regression for the #2886 wiring: extension skill rendering is
+        active-agent-scoped, so routing upgrade of a *secondary* agent through
+        ``register_enabled_extensions_for_agent`` used to re-render the
+        *active* skills-mode agent's extension skills as a side effect —
+        resurrecting skill files the user had deliberately deleted. The skills
+        pass is now gated on the target being the active agent. (Skills parity
+        for non-active agents is tracked separately in #2948.)
+        """
+        # Active agent: copilot in skills mode → git extension renders as skills.
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert skill.exists(), "precondition: active copilot has the git extension skill"
+
+        # Add a secondary (non-active) agent; copilot is not multi_install_safe.
+        result = _run_in_project(project, [
+            "integration", "install", "codex", "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # The user deliberately removes the active agent's git skill.
+        shutil.rmtree(skill.parent)
+        assert not skill.exists()
+
+        # Upgrading the *non-active* agent must not re-render copilot's skills.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "codex", "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+        assert not skill.exists(), (
+            "upgrading a non-active agent must not resurrect the active agent's "
+            "deleted extension skill (#2886)"
         )
 
 

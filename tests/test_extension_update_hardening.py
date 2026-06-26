@@ -107,3 +107,51 @@ def test_extension_update_rollback_corrupted_config(project_dir, monkeypatch):
     assert isinstance(restored_config, dict)
     assert "hooks" in restored_config
     assert restored_config["hooks"] == {}
+
+
+def test_extension_update_skills_backup_no_collision(project_dir, monkeypatch):
+    """Regression: skills agents name every command file SKILL.md (one per
+    command subdirectory). Backup must keep the per-command path so rollback
+    restores each skill's own content instead of overwriting them onto a
+    single backup path."""
+    monkeypatch.chdir(project_dir)
+
+    config_path = project_dir / ".specify" / "extensions.yml"
+    config_path.write_text(yaml.dump({"installed": ["test-ext"], "hooks": {}}))
+
+    # Two skill command files with DISTINCT content, mirroring the claude
+    # skills layout (.claude/skills/<name>/SKILL.md).
+    skills_root = project_dir / ".claude" / "skills"
+    plan_file = skills_root / "speckit-plan" / "SKILL.md"
+    tasks_file = skills_root / "speckit-tasks" / "SKILL.md"
+    plan_file.parent.mkdir(parents=True)
+    tasks_file.parent.mkdir(parents=True)
+    plan_file.write_text("PLAN CONTENT")
+    tasks_file.write_text("TASKS CONTENT")
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [{"id": "test-ext", "name": "Test Ext", "version": "1.0.0"}])
+    monkeypatch.setattr(ExtensionRegistry, "get", lambda self, ext_id: {
+        "version": "1.0.0",
+        "enabled": True,
+        "registered_commands": {"claude": ["speckit.plan", "speckit.tasks"]},
+    })
+    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: {"id": "test-ext", "name": "Test Ext", "version": "1.1.0", "download_url": "https://example.com/ext.zip"})
+
+    # Fail at download (step 5, after the command backup in step 3). Delete the
+    # originals first to simulate an install clobbering them, forcing rollback
+    # to rely entirely on the backups.
+    def mock_download_fail(self, ext_id):
+        plan_file.unlink()
+        tasks_file.unlink()
+        raise Exception("Download failed")
+
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", mock_download_fail)
+    monkeypatch.setattr("typer.confirm", lambda _: True)
+
+    result = runner.invoke(app, ["extension", "update", "test-ext"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 1
+    # Rollback must restore EACH skill's own content, not a single collided copy.
+    assert plan_file.exists() and tasks_file.exists()
+    assert plan_file.read_text() == "PLAN CONTENT"
+    assert tasks_file.read_text() == "TASKS CONTENT"

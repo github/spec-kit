@@ -17,9 +17,11 @@ import tempfile
 import shutil
 import warnings
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import yaml
 
@@ -1033,6 +1035,32 @@ class TestPresetResolver:
         result = resolver.resolve("hidden-template")
         assert result is None
 
+    def test_collect_all_layers_finds_bundled_core_without_specify_commands(
+        self, project_dir
+    ):
+        """Tier-5 fallback locates the bundled core command when
+        .specify/templates/commands/ has no matching file.
+
+        Regression test for #3086: a stale ``.parent`` chain made the
+        source-checkout fallback resolve to ``src/templates/...`` (which does
+        not exist), so ``wrap`` presets found no base layer. The fallback must
+        resolve against the real repo-root ``templates/commands`` tree.
+        """
+        # project_dir's commands dir is empty, so tier-4 cannot satisfy this.
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.implement", "command")
+        assert layers, "expected a bundled core base layer to be found"
+        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
+
+    def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
+        """resolve() tier-5 returns the bundled core command when
+        .specify/templates/commands/ lacks it (regression for #3086)."""
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("speckit.implement", "command")
+        assert result is not None
+        assert result.parts[-2:] == ("commands", "implement.md")
+
 
 class TestResolveCore:
     """Test PresetResolver.resolve_core() skips the installed-presets tier."""
@@ -1992,6 +2020,90 @@ class TestPresetCatalog:
         assert captured[1].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
         assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
         assert captured[1].get_header("Accept") == "application/octet-stream"
+
+    def _pack_zip_and_response(self):
+        """Build a minimal preset ZIP and a context-manager mock response."""
+        from unittest.mock import MagicMock
+        import io
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        resp = MagicMock()
+        resp.read.return_value = zip_bytes
+        # Configure the context-manager protocol explicitly so `with resp`
+        # yields `resp` itself, independent of how the protocol is invoked.
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return zip_bytes, resp
+
+    def test_download_pack_accepts_matching_sha256(self, project_dir):
+        """A catalog ``sha256`` that matches the preset archive is accepted."""
+        import hashlib
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_pack_rejects_sha256_mismatch(self, project_dir):
+        """A catalog ``sha256`` that does not match the archive aborts install."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        _zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": "0" * 64,  # deliberately wrong
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            with pytest.raises(PresetError, match="[Ii]ntegrity"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
+
+    def test_download_pack_without_sha256_skips_verification(self, project_dir):
+        """A catalog entry with no ``sha256`` keeps working: verification is
+        opt-in, so the backwards-compatible path (``pack_info.get("sha256")``
+        is ``None``) must download without aborting — mirrors the extensions
+        coverage so the helper never silently becomes mandatory for presets.
+        """
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
 
     def test_download_pack_accepts_direct_github_rest_asset_url(self, project_dir, monkeypatch):
         """download_pack can use a GitHub REST release asset URL directly."""
@@ -2997,6 +3109,84 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" in metadata.get("registered_skills", [])
 
+    def _install_arg_hint_preset(self, project_dir, temp_dir, ai, skills_dir, description, arg_hint):
+        """Install a preset whose command declares argument-hint; return the SKILL.md path."""
+        self._write_init_options(project_dir, ai=ai)
+        self._create_skill(skills_dir, "speckit-hinttest-cmd")
+        (project_dir / ".specify" / "extensions" / "hinttest").mkdir(parents=True, exist_ok=True)
+
+        preset_dir = temp_dir / f"hint-preset-{ai}"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.hinttest.cmd.md").write_text(
+            "---\n"
+            f'description: "{description}"\n'
+            f'argument-hint: "{arg_hint}"\n'
+            "---\n\n"
+            "Preset command body.\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": f"hint-preset-{ai}",
+                "name": "Hint Preset",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.hinttest.cmd",
+                        "file": "commands/speckit.hinttest.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        return skills_dir / "speckit-hinttest-cmd" / "SKILL.md"
+
+    def test_argument_hint_preserved_for_preset_command(self, project_dir, temp_dir):
+        """argument-hint from a preset command must survive into the SKILL.md.
+
+        Follow-up to #2903/#2916 for the preset skill generator. The
+        description is long enough to fold across lines when serialized,
+        guarding against an in-place string injection that would split the
+        folded scalar into invalid YAML.
+        """
+        long_description = (
+            "Build and maintain a lean, static context/ knowledge folder so "
+            "coding agents load only what is relevant and save tokens"
+        )
+        arg_hint = "<init | update | list | check> [area] [slug] [-- notes]"
+        skills_dir = project_dir / ".claude" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "claude", skills_dir, long_description, arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert parsed["argument-hint"] == arg_hint
+        assert parsed["description"] == long_description
+
+    def test_argument_hint_not_added_for_non_claude_preset_command(self, project_dir, temp_dir):
+        """Non-Claude skills agents must not receive argument-hint in preset skills."""
+        arg_hint = "<init | update | list | check> [area]"
+        skills_dir = project_dir / ".agents" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "codex", skills_dir, "Build context", arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert "argument-hint" not in parsed
+
     def test_register_skills_resolves_command_refs(self, project_dir, temp_dir):
         """Preset skill overrides must resolve __SPECKIT_COMMAND_*__ tokens (issue #2717).
 
@@ -3575,12 +3765,16 @@ class TestPresetSkills:
         assert note_file.read_text(encoding="utf-8") == "user content"
 
     def test_kimi_legacy_dotted_skill_override_still_applies(self, project_dir, temp_dir):
-        """Preset overrides should still target legacy dotted Kimi skill directories."""
+        """Preset overrides should still target legacy dotted-named skill dirs.
+
+        This exercises legacy *naming* (``speckit.specify``) under the current
+        ``.kimi-code/`` base — distinct from the legacy ``.kimi/`` *location*.
+        """
         self._write_init_options(project_dir, ai="kimi")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit.specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3597,10 +3791,10 @@ class TestPresetSkills:
     def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi presets should still propagate command overrides to existing skills."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -3617,7 +3811,7 @@ class TestPresetSkills:
     def test_kimi_new_skill_created_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi native skills should still receive brand-new preset commands."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-new-skill"
@@ -3666,9 +3860,9 @@ class TestPresetSkills:
     def test_kimi_preset_skill_override_resolves_script_placeholders(self, project_dir, temp_dir):
         """Kimi preset skill overrides should resolve placeholders and rewrite project paths."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False, script="sh")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-placeholder-override"
         preset_dir.mkdir()
@@ -4262,7 +4456,7 @@ class TestBundledPresetLocator:
     def test_preset_add_from_url_rejects_insecure_redirect(self, project_dir, monkeypatch):
         """URL installs reject redirects from HTTPS to non-loopback HTTP."""
         import typer
-        from specify_cli import preset_add
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __enter__(self):
@@ -4317,7 +4511,7 @@ class TestBundledPresetLocator:
     def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
         """Redirect rejection message covers hostless HTTPS, not only non-HTTPS URLs."""
         import typer
-        from specify_cli import preset_add
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __enter__(self):
@@ -4347,7 +4541,7 @@ class TestBundledPresetLocator:
 
     def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
         """URL installs stream response bytes to disk before installing the ZIP."""
-        from specify_cli import preset_add
+        from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
             def __init__(self, data):
@@ -4559,6 +4753,69 @@ class TestPresetAddFromUrlResolution:
         assert len(captured_urls) == 1
         assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
         assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_preset_add_from_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'preset add --from <ghes-release-url>' resolves via GHES /api/v3 endpoint."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "preset.zip", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://ghes.example/org/repo/releases/download/v1.0/preset.zip",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # The tag-lookup call must use the GHES /api/v3 endpoint
+        assert any("ghes.example/api/v3/repos/org/repo/releases/tags/v1.0" in url for url, _ in captured_urls)
+        # The asset download call must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
 
 class TestWrapStrategy:
@@ -5829,3 +6086,36 @@ def _create_pack(temp_dir, valid_pack_data, pack_id, content,
         (subdir / f"{template_name}.md").write_text(content)
 
     return pack_dir
+
+
+def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monkeypatch):
+    """End-to-end wiring for presets: auth.json github host → GHES asset resolution."""
+    from specify_cli.authentication import http as _auth_http
+    from specify_cli.authentication.config import AuthConfigEntry
+    from specify_cli.presets import PresetCatalog
+
+    monkeypatch.setattr(_auth_http, "_config_override", [
+        AuthConfigEntry(hosts=("ghes.example",), provider="github",
+                        auth="bearer", token="t"),
+    ])
+    catalog = PresetCatalog(tmp_path)
+
+    captured = []
+
+    @contextmanager
+    def fake_open(url, timeout=None, extra_headers=None):
+        captured.append(url)
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({
+            "assets": [{"name": "pack.zip",
+                        "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/9"}]
+        }).encode()
+        yield resp
+
+    monkeypatch.setattr(catalog, "_open_url", fake_open)
+
+    resolved = catalog._resolve_github_release_asset_api_url(
+        "https://ghes.example/o/r/releases/download/v2/pack.zip"
+    )
+    assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/9"
+    assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v2"]

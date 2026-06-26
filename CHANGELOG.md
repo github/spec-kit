@@ -2,6 +2,172 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.11.8] - 2026-06-24
+
+### Changed
+
+- docs: add SpecKit Assistant npm package to Community Friends (#3142)
+- Require preset-usage README with Spec Kit CLI syntax in preset submissions (#3104)
+- [extension] Update Jira Integration (Sync Engine) extension to v0.4.0 (#3152)
+- Add Spec Roadmap extension to community catalog (#3153)
+- feat(integration): update Kimi integration for Kimi Code CLI (#2979)
+- [extension] Add Golden Demo extension to community catalog (#3151)
+- docs: run /speckit.checklist after /speckit.plan in quickstart (#3108)
+- fix(workflows): preserve commas inside quoted list-literal elements (#3134)
+- ci: pin actions to commit SHAs and add shellcheck (#3126)
+- chore: release 0.11.7, begin 0.11.8.dev0 development (#3154)
+
+## [0.11.7] - 2026-06-24
+
+### Changed
+
+- feat(extensions): verify catalog archive sha256 before install (#3080)
+- fix(workflows): validate requires keys and reject phantom permissions gate (#3079)
+- fix(scripts): use case-sensitive match for acronym retention in PS branch names (#3130)
+- feat(integrations): add omp support (#3107)
+- fix: render valid TOML when a command body contains backslashes (#3135)
+- harden: reject shell=True in run_command (#3132)
+- docs: add monorepo guide (#3084)
+- fix(scripts): send check-prerequisites.ps1 errors to stderr (#3123)
+- fix: write Codex dev skills as files (#2988)
+- chore: release 0.11.6, begin 0.11.7.dev0 development (#3121)
+
+## [0.11.6] - 2026-06-23
+
+### Changed
+
+- [extension] Update Spec Kit Preview extension to v1.1.0 and sync Firebender agent lists (#3116)
+- Add Spec Kit Discovery Extension to community catalog (#3119)
+- Update Architecture Workflow extension to v1.2.1 (#3118)
+- docs: clarify project-defined constitution articles (#2994)
+- Add Intake extension to community catalog (#3117)
+- feat: add Firebender integration (Android Studio / IntelliJ) (#3077)
+- Update DocGuard — CDD Enforcement extension to v0.28.0 (#3115)
+- chore: sync issue template agent lists (#3052)
+- fix(shared-infra): remove stale managed scripts the core no longer ships (#3076) (#3098)
+- chore: release 0.11.5, begin 0.11.6.dev0 development (#3105)
+
+## [0.11.5] - 2026-06-22
+
+### Changed
+
+- fix: register enabled extensions for agent on integration use/upgrade (#2949)
+- Add SicarioSpec Core preset to community catalog (#3102)
+- Update Game Narrative Writing preset to v1.1.0 (#3099)
+- feat: add PyPI publishing workflow and readme metadata (#2915)
+- refactor: move extension command handlers to extensions/_commands.py (PR-7/8) (#3014)
+- feat: add ZCode (Z.AI) integration (#3063)
+- fix(agent-context): support multiple context files safely (#2969)
+- Update DocGuard — CDD Enforcement extension to v0.27.0 (#3094)
+- fix(presets): use _repo_root() for bundled-core source-checkout fallback (#3086) (#3091)
+- chore: release 0.11.4, begin 0.11.5.dev0 development (#3092)
+
+## [0.11.4] - 2026-06-22
+
+### Changed
+
+- [extension] Add Tasks to GitHub Project extension to community catalog (#3090)
+- Update Linear Integration extension to v0.7.0 (#3089)
+- fix: fail loudly on an unknown workflow expression filter (#3074)
+- fix: anchor lib/ and lib64/ patterns to repo root in .gitignore (#3083)
+- fix(build): include specify_cli.bundler.lib in built distribution (#3085)
+- Harden command registration path handling (#3088)
+- fix(presets): preserve argument-hint in preset SKILL.md generation (#2978)
+- feat: surface gate detail in the workflow run/resume --json payload (#2965)
+- feat: add `specify bundle` command (#3070)
+- chore: release 0.11.3, begin 0.11.4.dev0 development (#3072)
+
+## [0.11.3] - 2026-06-19
+
+### Changed
+
+- docs: strengthen agent disclosure to cover commits and per-round comments (#3071)
+- fix: isolate per-extension failures so one bad extension can't drop the rest (#2951)
+- fix(taskstoissues): skip tasks that already have a GitHub issue (#2992)
+- feat(scripts): add SPECIFY_INIT_DIR to target a member project from the repo root (#2892)
+- Update Multi-Model Review extension to v0.1.2 (#3066)
+- chore(deps): bump actions/checkout from 6.0.3 to 7.0.0 (#3064)
+- feat(claude): run /analyze in a forked subagent (#2511)
+- fix: count worktree branches in git extension numbering (#3054)
+- Add Token Economy extension to community catalog (#3049)
+- chore: release 0.11.2, begin 0.11.3.dev0 development (#3059)
+
+## [0.11.2] - 2026-06-18
+
+### Changed
+
+- Update Linear Integration extension to v0.6.0 (#3047)
+- fix: align community submission workflows with bug-assess label trigger (#3046)
+- fix(bug-assess): recompile lock so github guard repos is 'all' (#3036)
+- fix(bug-assess): set min-integrity: none to allow reading external user issues (#3030)
+- feat: add bug-assess agentic workflow (#3023)
+- feat: add /speckit.converge command (#3001)
+- fix: preserve .vscode/settings.json and script +x bit on integration upgrade (#3020)
+- feat(workflows): add from_json expression filter (#2961)
+- Add `init` workflow step to bootstrap projects like `specify init` (#2838)
+- chore: release 0.11.1, begin 0.11.2.dev0 development (#3022)
+
+## [0.11.1] - 2026-06-17
+
+### Changed
+
+- chore: ignore Copilot dogfooding scaffolding in .gitignore (#3019)
+- docs: clarify Taskify specify command (#3016)
+- docs: document evolving specs in existing projects (#2902)
+- feat(workflows): opt-in output_format: json exposes parsed shell stdout as output.data (#2963)
+- fix: non-zero exit code when a workflow run ends failed or aborted (#2959)
+- fix(skills): preserve non-ASCII characters in skill frontmatter (#2917)
+- fix: prevent extension self-install from deleting source dir (#2990) (#2991)
+- fix: disable Rich Live transient mode on Windows to prevent PS 5.1 hang (#2938)
+- Update a11y-governance preset to v0.4.0 (#2981)
+- chore: release 0.11.0, begin 0.11.1.dev0 development (#3012)
+
+## [0.11.0] - 2026-06-16
+
+### Changed
+
+- Add workflow step catalog — community-installable step types (#2394)
+- feat(dev): add integration scaffolder (#2685)
+- Add Command Density preset to community catalog (#3006)
+- fix(tests): don't run PowerShell tests via WSL-interop powershell.exe (#2971)
+- Add Zed integration (#2780)
+- Update architecture-governance preset to v0.5.0 (#2929)
+- Update Superpowers Implementation Bridge extension to v1.1.0 (#3011)
+- Update isaqb-architecture-governance preset to v0.2.0 (#2984)
+- Update security-governance preset to v0.6.0 (#2932)
+- chore: update CITATION.cff to v0.10.2 (2026-06-11) (#2966)
+- chore: release 0.10.4, begin 0.10.5.dev0 development (#3010)
+
+## [0.10.4] - 2026-06-16
+
+### Changed
+
+- fix: fail loudly when a fan-out 'items' expression does not resolve to a list (#2957)
+- refactor: move preset command handlers to presets/_commands.py (PR-6/8) (#2826)
+- Update agent-parity-governance preset to v0.3.0 (#2982)
+- Update cross-platform-governance preset to v0.2.0 (#2983)
+- Add Data Model Diagram extension to community catalog (#2922)
+- Add Spec Kit TLDR extension to community catalog (#3007)
+- docs: add guide for handling complex features (#3004)
+- Add Loop Engineering extension to community catalog (#3002)
+- Update MemoryLint extension to v1.5.1 (#3000)
+- chore: release 0.10.3, begin 0.10.4.dev0 development (#2999)
+
+## [0.10.3] - 2026-06-16
+
+### Changed
+
+- Update Superpowers Bridge extension to v1.6.0 (#2998)
+- Add Improve Extension to community catalog (#2997)
+- Update Product Forge extension to v1.7.0 (#2996)
+- Update Linear Integration extension to v0.5.0 (#2995)
+- Update Superpowers Implementation Bridge extension to v1.0.3 (#2993)
+- Update Ralph community extension to v1.1.1 (#2861)
+- Update Linear Integration extension to v0.4.0 (#2942)
+- Update DocGuard — CDD Enforcement to v0.26.0 (#2941)
+- Add SpecKit Companion extension to community catalog (#2937)
+- chore: release 0.10.2, begin 0.10.3.dev0 development (#2936)
+
 ## [0.10.2] - 2026-06-11
 
 ### Changed
@@ -1747,4 +1913,3 @@
 ### Changed
 
 - Update release.yml
-

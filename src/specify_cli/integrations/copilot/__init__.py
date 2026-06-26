@@ -282,6 +282,17 @@ class CopilotIntegration(IntegrationBase):
         """Copilot commands use ``.agent.md`` extension."""
         return f"speckit.{template_name}.agent.md"
 
+    def stale_cleanup_exclusions(self) -> set[str]:
+        """Protect ``.vscode/settings.json`` from upgrade stale-deletion.
+
+        ``setup()`` records this file in the manifest only when it creates it;
+        when it already exists the file is merged and intentionally left
+        untracked.  On upgrade the untracked-but-existing file would otherwise
+        be flagged stale and deleted, destroying user settings (and the file
+        the integration still manages).
+        """
+        return {".vscode/settings.json"}
+
     def post_process_skill_content(self, content: str) -> str:
         """Inject shared hook guidance into Copilot skill content.
 
@@ -343,13 +354,14 @@ class CopilotIntegration(IntegrationBase):
 
         script_type = opts.get("script_type", "sh")
         arg_placeholder = self.registrar_config.get("args", "$ARGUMENTS")
+        context_file_display = self._context_file_display(project_root)
 
         # 1. Process and write command files as .agent.md
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
+                context_file=context_file_display,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(

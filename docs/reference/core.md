@@ -50,7 +50,11 @@ specify init my-project --integration copilot --preset compliance
 
 | Variable          | Description                                                              |
 | ----------------- | ------------------------------------------------------------------------ |
+| `SPECIFY_INIT_DIR` | Target a member project from outside its directory (e.g. a monorepo root) without `cd`, for non-interactive / CI use. Set it to the **project root** — the directory *containing* `.specify/` (relative paths resolve against the current directory). The path must exist and contain `.specify/`, otherwise the command errors and does **not** fall back to the current directory. Resolved once in the core root helper (`get_repo_root` in Bash, `Get-RepoRoot` in PowerShell), so it is honored by the core feature scripts (`/speckit.plan`, `/speckit.tasks`, …) and the Git extension's feature-branch creation, which inherit it. When unset, the project is detected by searching upward from the current directory as before. |
+| `SPECIFY_FEATURE_DIRECTORY` | Override the active feature directory *within* the resolved project (takes precedence over `.specify/feature.json`). Relative paths resolve under the project root. Combine with `SPECIFY_INIT_DIR` to pick both the project and the feature non-interactively. |
 | `SPECIFY_FEATURE` | Override feature detection for non-Git repositories. Set to the feature directory name (e.g., `001-photo-albums`) to work on a specific feature when not using Git branches. Must be set in the context of the agent prior to using `/speckit.plan` or follow-up commands. |
+
+> **Two resolution axes.** `SPECIFY_INIT_DIR` selects the **project** (which directory contains `.specify/`); `SPECIFY_FEATURE_DIRECTORY` / `.specify/feature.json` select the **feature** within that project. They are independent — project first, then feature.
 
 ## Check Installed Tools
 

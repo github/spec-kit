@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-import yaml
-
 from ..base import SkillsIntegration
-from ..manifest import IntegrationManifest
+from ..._utils import dump_frontmatter
 
 # Mapping of command template stem → argument-hint text shown inline
 # when a user invokes the slash command in Claude Code.
@@ -22,6 +19,15 @@ ARGUMENT_HINTS: dict[str, str] = {
     "constitution": "Principles or values for the project constitution",
     "checklist": "Domain or focus area for the checklist",
     "taskstoissues": "Optional filter or label for GitHub issues",
+}
+
+# Per-command frontmatter overrides for skills that should run in a forked
+# subagent context. Read-only analysis commands are good candidates: the
+# heavy reads (spec/plan/tasks artefacts) collapse to a short summary,
+# so isolating them keeps the main conversation context clean.
+# See https://code.claude.com/docs/en/skills#run-skills-in-a-subagent
+FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {
+    "analyze": {"context": "fork", "agent": "general-purpose"},
 }
 
 
@@ -103,7 +109,7 @@ class ClaudeIntegration(SkillsIntegration):
         skill_frontmatter = self._build_skill_fm(
             skill_name, description, f"templates/commands/{template_name}.md"
         )
-        frontmatter_text = yaml.safe_dump(skill_frontmatter, sort_keys=False).strip()
+        frontmatter_text = dump_frontmatter(skill_frontmatter)
         return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
 
     def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
@@ -149,50 +155,47 @@ class ClaudeIntegration(SkillsIntegration):
             out.append(line)
         return "".join(out)
 
+    @staticmethod
+    def _skill_stem_from_content(content: str) -> str | None:
+        """Derive the command stem (e.g. ``analyze``) from a skill's frontmatter.
+
+        Reads the ``name:`` field of the first frontmatter block and strips
+        the ``speckit-`` prefix. Returns ``None`` when no name is present.
+        """
+        dash_count = 0
+        for line in content.splitlines():
+            stripped = line.rstrip("\r\n")
+            if stripped == "---":
+                dash_count += 1
+                if dash_count == 2:
+                    break
+                continue
+            if dash_count == 1 and stripped.startswith("name:"):
+                name = stripped[len("name:"):].strip().strip('"').strip("'")
+                if name.startswith("speckit-"):
+                    return name[len("speckit-"):]
+                return name or None
+        return None
+
     def post_process_skill_content(self, content: str) -> str:
-        """Inject Claude-specific frontmatter flags and hook notes."""
+        """Inject Claude-specific frontmatter flags, hook notes, and any
+        per-command frontmatter.
+
+        Applied by every skill-generation path (setup, presets, extensions),
+        so command-specific frontmatter (argument-hint, fork context) stays
+        consistent however the SKILL.md was produced.
+        """
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
         updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
-        return updated
 
-    def setup(
-        self,
-        project_root: Path,
-        manifest: IntegrationManifest,
-        parsed_options: dict[str, Any] | None = None,
-        **opts: Any,
-    ) -> list[Path]:
-        """Install Claude skills, then inject argument-hints."""
-        created = super().setup(project_root, manifest, parsed_options, **opts)
-
-        skills_dir = self.skills_dest(project_root).resolve()
-
-        for path in created:
-            # Only touch SKILL.md files under the skills directory
-            try:
-                path.resolve().relative_to(skills_dir)
-            except ValueError:
-                continue
-            if path.name != "SKILL.md":
-                continue
-
-            content_bytes = path.read_bytes()
-            content = content_bytes.decode("utf-8")
-
-            updated = content
-
-            # Inject argument-hint if available for this skill
-            skill_dir_name = path.parent.name  # e.g. "speckit-plan"
-            stem = skill_dir_name
-            if stem.startswith("speckit-"):
-                stem = stem[len("speckit-"):]
+        stem = self._skill_stem_from_content(updated)
+        if stem:
             hint = ARGUMENT_HINTS.get(stem, "")
             if hint:
                 updated = self.inject_argument_hint(updated, hint)
-
-            if updated != content:
-                path.write_bytes(updated.encode("utf-8"))
-                self.record_file_in_manifest(path, project_root, manifest)
-
-        return created
+            fork_config = FORK_CONTEXT_COMMANDS.get(stem)
+            if fork_config:
+                for key, value in fork_config.items():
+                    updated = self._inject_frontmatter_flag(updated, key, value)
+        return updated

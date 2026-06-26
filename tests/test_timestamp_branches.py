@@ -240,6 +240,17 @@ class TestSequentialBranch:
         assert branch is not None
         assert re.match(r"^\d{3,}-new-feat$", branch), f"unexpected branch: {branch}"
 
+    def test_branch_name_short_word_case_sensitivity(self, git_repo: Path):
+        """A short word is dropped from the derived branch name unless it appears
+        as an acronym in UPPERCASE in the description. The PowerShell twin must use
+        case-sensitive -cmatch to produce the same result."""
+        r1 = run_script(git_repo, "--json", "--dry-run", "Add go support")
+        assert r1.returncode == 0, r1.stderr
+        assert json.loads(r1.stdout)["BRANCH_NAME"] == "001-support"
+        r2 = run_script(git_repo, "--json", "--dry-run", "Use GO now")
+        assert r2.returncode == 0, r2.stderr
+        assert json.loads(r2.stdout)["BRANCH_NAME"] == "001-use-go-now"
+
     def test_sequential_ignores_timestamp_dirs(self, git_repo: Path):
         """Sequential numbering skips timestamp dirs when computing next number."""
         (git_repo / "specs" / "002-first-feat").mkdir(parents=True)
@@ -271,6 +282,25 @@ class TestSequentialBranchPowerShell:
         content = CREATE_FEATURE_PS.read_text(encoding="utf-8")
         assert "[long]::TryParse($matches[1], [ref]$num)" in content
         assert "$num = [int]$matches[1]" not in content
+
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_branch_name_short_word_case_sensitivity(self, ps_git_repo: Path):
+        """Core create-new-feature.ps1 must drop a short word unless it appears as
+        an acronym in UPPERCASE (case-sensitive -cmatch), matching the bash twin."""
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+
+        def _run(desc: str) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                ["pwsh", "-NoProfile", "-File", str(script), "-Json", "-DryRun", desc],
+                cwd=ps_git_repo, capture_output=True, text=True,
+            )
+
+        r1 = _run("Add go support")
+        assert r1.returncode == 0, r1.stderr
+        assert json.loads(r1.stdout)["BRANCH_NAME"] == "001-support"
+        r2 = _run("Use GO now")
+        assert r2.returncode == 0, r2.stderr
+        assert json.loads(r2.stdout)["BRANCH_NAME"] == "001-use-go-now"
 
 
 # ── check_feature_branch Tests ───────────────────────────────────────────────
@@ -867,6 +897,52 @@ class TestPowerShellDryRun:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert "DRY_RUN" not in data, f"DRY_RUN should not be in normal JSON: {data}"
+
+
+# ── Short-Word / Acronym Branch-Name Tests ──────────────────────────────────
+
+
+def _branch_from_output(stdout: str) -> str | None:
+    for line in stdout.splitlines():
+        if line.startswith("BRANCH_NAME:"):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
+SHORT_WORD_CASES = [
+    # description, expected branch — "go" (lowercase short word) is dropped,
+    # "AI" (uppercase short word / acronym) is kept, "now" (>=3 chars) is kept.
+    ("go AI now", "001-ai-now"),
+    # A short word that is lowercase everywhere is dropped entirely.
+    ("go to the pub", "001-pub"),
+]
+
+
+@requires_bash
+class TestShortWordRetentionBash:
+    """A short word is kept only when it appears in uppercase (an acronym)."""
+
+    @pytest.mark.parametrize("description,expected", SHORT_WORD_CASES)
+    def test_short_word_retention(self, git_repo: Path, description: str, expected: str):
+        result = run_script(git_repo, "--dry-run", description)
+        assert result.returncode == 0, result.stderr
+        assert _branch_from_output(result.stdout) == expected
+
+
+@pytest.mark.skipif(not _has_pwsh(), reason="pwsh not available")
+class TestShortWordRetentionPowerShell:
+    """PowerShell must match bash: a short word is kept only when uppercase.
+
+    Regression guard for the `-match` (case-insensitive) vs `-cmatch`
+    (case-sensitive) divergence — with `-match`, every short non-stop word
+    leaked into the branch name even when it was lowercase.
+    """
+
+    @pytest.mark.parametrize("description,expected", SHORT_WORD_CASES)
+    def test_short_word_retention(self, ps_git_repo: Path, description: str, expected: str):
+        result = run_ps_script(ps_git_repo, "-DryRun", description)
+        assert result.returncode == 0, result.stderr
+        assert _branch_from_output(result.stdout) == expected
 
 
 # ── GIT_BRANCH_NAME Override Tests ──────────────────────────────────────────

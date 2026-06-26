@@ -8,7 +8,8 @@ import shutil
 import stat
 import subprocess
 import tempfile
-from pathlib import Path
+import yaml
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from ._console import console
 
@@ -16,14 +17,79 @@ CLAUDE_LOCAL_PATH = Path.home() / ".claude" / "local" / "claude"
 CLAUDE_NPM_LOCAL_PATH = Path.home() / ".claude" / "local" / "node_modules" / ".bin" / "claude"
 
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> str | None:
-    """Run a shell command and optionally capture output."""
+def relative_extension_path_violation(value: Any) -> str | None:
+    """Return why ``value`` is unsafe as an extension-relative ``file`` path.
+
+    Single source of truth for the path-safety policy shared by
+    ``ExtensionManifest._validate()`` (manifest-load validation) and
+    ``CommandRegistrar.register_commands()`` (runtime guard), so the two cannot
+    drift. Returns a human-readable reason string when ``value`` is unsafe, or
+    ``None`` when it is an acceptable relative path within the extension
+    directory.
+
+    Policy: the value must be a non-empty string with no leading/trailing
+    whitespace, no absolute/anchored form, and no ``..`` traversal. The value is
+    evaluated under both POSIX and Windows path semantics because a native
+    ``Path`` is OS-dependent (a ``PurePosixPath`` on POSIX does not interpret
+    Windows drive/UNC forms, and ``C:foo`` is anchored but not ``is_absolute()``
+    yet resolves against the CWD on its drive). Rejecting any non-empty anchor
+    covers POSIX-absolute (``/abs``), Windows drive-relative (``C:foo``), Windows
+    absolute (``C:\\foo``), and UNC/rooted forms.
+    """
+    if not isinstance(value, str) or not value:
+        return "must be a non-empty string"
+    if value.strip() != value:
+        return "must not have leading or trailing whitespace"
+    posix_path = PurePosixPath(value)
+    win_path = PureWindowsPath(value)
+    if (
+        posix_path.anchor
+        or win_path.anchor
+        or ".." in posix_path.parts
+        or ".." in win_path.parts
+    ):
+        return (
+            "must be a relative path within the extension directory "
+            "(no absolute paths, drive letters, or '..' segments)"
+        )
+    return None
+
+
+def dump_frontmatter(data: dict[str, Any]) -> str:
+    """Serialize skill/command frontmatter to a YAML string.
+
+    Centralizes the dump options used for SKILL.md frontmatter: ``allow_unicode``
+    preserves Unicode descriptions and ``sort_keys=False`` keeps key order, so no
+    call site can silently drop either.
+    """
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True).strip()
+
+
+def run_command(
+    cmd: list[str],
+    check_return: bool = True,
+    capture: bool = False,
+    shell: bool = False,
+) -> str | None:
+    """Run a command without invoking a shell and optionally capture output.
+
+    The ``shell`` parameter is kept in the signature so existing keyword
+    callers (and the re-export from ``specify_cli``) don't raise ``TypeError``,
+    but only the default ``shell=False`` is honoured. ``shell=True`` is
+    rejected with ``ValueError`` rather than silently ignored, so the
+    unsupported mode fails loudly instead of running with a different meaning.
+    """
+    if shell:
+        raise ValueError(
+            "run_command() does not support shell=True; pass argv as a list"
+        )
+
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
+            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True)
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return, shell=shell)
+            subprocess.run(cmd, check=check_return)
             return None
     except subprocess.CalledProcessError as e:
         if check_return:

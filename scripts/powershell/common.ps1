@@ -24,9 +24,51 @@ function Find-SpecifyRoot {
     }
 }
 
+# Resolve an explicit SPECIFY_INIT_DIR project override (the directory that
+# *contains* .specify/), for non-interactive / CI use -- e.g. running a Spec Kit
+# command against a member project from a monorepo root without cd.
+#
+# Precondition: $env:SPECIFY_INIT_DIR is set. Returns the validated project root,
+# or writes an error and exits 1. Strict by design: the path must exist and
+# contain .specify/, with no silent fallback. (An empty string is falsy, so the
+# caller's `if ($env:SPECIFY_INIT_DIR)` guard treats empty as unset.)
+#
+# This is the single resolver: bundled extensions inherit it by sourcing core
+# (e.g. the git extension's create-new-feature-branch) rather than duplicating it.
+function Resolve-SpecifyInitDir {
+    $initDir = $env:SPECIFY_INIT_DIR
+    # Normalize: relative paths resolve against the current directory.
+    if (-not [System.IO.Path]::IsPathRooted($initDir)) {
+        $initDir = Join-Path (Get-Location).Path $initDir
+    }
+    $resolved = Resolve-Path -LiteralPath $initDir -ErrorAction SilentlyContinue
+    # Resolve-Path also succeeds for files, so check the resolved path is a
+    # directory; otherwise a file value would slip through to the less accurate
+    # "not a Spec Kit project" error below.
+    if (-not $resolved -or -not (Test-Path -LiteralPath $resolved.Path -PathType Container)) {
+        [Console]::Error.WriteLine("ERROR: SPECIFY_INIT_DIR does not point to an existing directory: $($env:SPECIFY_INIT_DIR)")
+        exit 1
+    }
+    # Resolve-Path echoes back any trailing separator from the input; trim it so
+    # the returned root matches the bash resolver, whose `cd && pwd` never yields
+    # one. TrimEndingDirectorySeparator is a no-op on a bare root and on a path
+    # that already has no trailing separator.
+    $initRoot = [System.IO.Path]::TrimEndingDirectorySeparator($resolved.Path)
+    if (-not (Test-Path -LiteralPath (Join-Path $initRoot '.specify') -PathType Container)) {
+        [Console]::Error.WriteLine("ERROR: SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): $initRoot")
+        exit 1
+    }
+    return $initRoot
+}
+
 # Get repository root, prioritizing .specify directory
 # This prevents using a parent repository when spec-kit is initialized in a subdirectory
 function Get-RepoRoot {
+    # Explicit project override wins (see Resolve-SpecifyInitDir).
+    if ($env:SPECIFY_INIT_DIR) {
+        return (Resolve-SpecifyInitDir)
+    }
+
     # First, look for .specify directory (spec-kit's own marker)
     $specifyRoot = Find-SpecifyRoot
     if ($specifyRoot) {

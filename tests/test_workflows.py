@@ -32,7 +32,10 @@ def temp_dir():
     """Create a temporary directory for tests."""
     tmpdir = tempfile.mkdtemp()
     yield Path(tmpdir)
-    shutil.rmtree(tmpdir)
+    # On Windows, file handles from dynamic imports or registry access may
+    # still be held briefly after the test. Use ignore_errors to avoid
+    # flaky teardown failures (WinError 32).
+    shutil.rmtree(tmpdir, ignore_errors=(sys.platform == "win32"))
 
 
 @pytest.fixture
@@ -101,7 +104,7 @@ class TestStepRegistry:
 
         expected = {
             "command", "shell", "prompt", "gate", "if", "switch",
-            "while", "do-while", "fan-out", "fan-in",
+            "while", "do-while", "fan-out", "fan-in", "init",
         }
         assert expected.issubset(set(STEP_REGISTRY.keys()))
 
@@ -265,6 +268,24 @@ class TestExpressions:
         ctx = StepContext(inputs={"a": False, "b": True})
         assert evaluate_expression("{{ inputs.a or inputs.b }}", ctx) is True
 
+    def test_list_literal_preserves_quoted_commas(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        # commas inside a double-quoted element must not split it
+        assert evaluate_expression('{{ ["a, b", "c"] }}', ctx) == ["a, b", "c"]
+        assert evaluate_expression('{{ ["x, y, z"] }}', ctx) == ["x, y, z"]
+        # single-quoted elements are handled the same way
+        assert evaluate_expression("{{ ['a, b', 'c'] }}", ctx) == ["a, b", "c"]
+        assert evaluate_expression("{{ ['p, q, r'] }}", ctx) == ["p, q, r"]
+        # plain and empty lists still parse correctly
+        assert evaluate_expression("{{ [1, 2, 3] }}", ctx) == [1, 2, 3]
+        assert evaluate_expression("{{ [] }}", ctx) == []
+        # nested lists (commas inside the inner brackets) stay intact
+        assert evaluate_expression('{{ [["a", "b"], "c"] }}', ctx) == [["a", "b"], "c"]
+        assert evaluate_expression("{{ [[1, 2], [3, 4]] }}", ctx) == [[1, 2], [3, 4]]
+
     def test_filter_default(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -285,6 +306,126 @@ class TestExpressions:
 
         ctx = StepContext(inputs={"text": "hello world"})
         assert evaluate_expression("{{ inputs.text | contains('world') }}", ctx) is True
+
+    def test_filter_from_json_parses_object(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            steps={"emit": {"output": {"stdout": '{"items": [1, 2, 3]}'}}}
+        )
+        result = evaluate_expression("{{ steps.emit.output.stdout | from_json }}", ctx)
+        assert result == {"items": [1, 2, 3]}
+
+    def test_filter_from_json_invalid_json_raises(self):
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(steps={"emit": {"output": {"stdout": "not json"}}})
+        with pytest.raises(ValueError, match="from_json: invalid JSON"):
+            evaluate_expression("{{ steps.emit.output.stdout | from_json }}", ctx)
+
+    def test_filter_from_json_non_string_raises(self):
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(steps={"emit": {"output": {"exit_code": 0}}})
+        with pytest.raises(ValueError, match="expected a JSON string"):
+            evaluate_expression("{{ steps.emit.output.exit_code | from_json }}", ctx)
+
+    def test_filter_from_json_rejects_malformed_forms(self):
+        # `from_json` is strict: no arguments and no trailing tokens. Every
+        # mis-wired form — parenthesized, accidental arg, or trailing
+        # garbage — must raise rather than silently fall through to the
+        # unknown-filter path and return the unparsed value.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(steps={"emit": {"output": {"stdout": '{"a": 1}'}}})
+        bad_forms = (
+            "from_json()",
+            "from_json('x')",
+            "from_json ()",
+            "from_json ('x')",
+            "from_json)",
+            "from_json extra",
+            "from_json 'x'",
+        )
+        for bad in bad_forms:
+            with pytest.raises(ValueError, match="from_json: expected"):
+                evaluate_expression(
+                    "{{ steps.emit.output.stdout | " + bad + " }}", ctx
+                )
+
+    def test_filter_unknown_name_raises(self):
+        # An unregistered filter name must fail loudly rather than silently
+        # returning the unfiltered value (which hides a typo / unsupported
+        # filter as a wrong result).
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"items": [1, 2, 3]})
+        with pytest.raises(ValueError, match="unknown filter 'length'"):
+            evaluate_expression("{{ inputs.items | length }}", ctx)
+
+    def test_filter_unknown_name_with_args_raises(self):
+        # The unknown-filter path must also catch the `name(arg)` form, which
+        # otherwise falls through the recognized-args branch silently.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"text": "hello"})
+        with pytest.raises(ValueError, match="unknown filter 'upper'"):
+            evaluate_expression("{{ inputs.text | upper('x') }}", ctx)
+
+    def test_registered_filters_unaffected(self):
+        # Regression: all five registered filters keep working unchanged.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "tags": ["a", "b", "c"],
+                "text": "hello world",
+                "missing": "",
+                "rows": [{"id": "a"}, {"id": "b"}],
+            },
+            steps={"emit": {"output": {"stdout": '{"n": 1}'}}},
+        )
+        assert (
+            evaluate_expression("{{ inputs.missing | default('fb') }}", ctx) == "fb"
+        )
+        assert evaluate_expression("{{ inputs.tags | join(', ') }}", ctx) == "a, b, c"
+        assert evaluate_expression("{{ inputs.rows | map('id') }}", ctx) == ["a", "b"]
+        assert (
+            evaluate_expression("{{ inputs.text | contains('world') }}", ctx) is True
+        )
+        assert evaluate_expression(
+            "{{ steps.emit.output.stdout | from_json }}", ctx
+        ) == {"n": 1}
+
+    def test_registered_filter_unsupported_form_raises(self):
+        # A *registered* filter used in an unsupported form (e.g. `| join` with
+        # no argument) must fail loudly with a message that names it as a known
+        # filter misused, not as an "unknown filter".
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"tags": ["a", "b", "c"]})
+        with pytest.raises(
+            ValueError, match="filter 'join' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.tags | join }}", ctx)
+        with pytest.raises(
+            ValueError, match="filter 'map' used in an unsupported form"
+        ):
+            evaluate_expression("{{ inputs.tags | map }}", ctx)
 
     def test_condition_evaluation(self):
         from specify_cli.workflows.expressions import evaluate_condition
@@ -909,6 +1050,17 @@ class TestPromptStep:
 class TestShellStep:
     """Test the shell step type."""
 
+    @staticmethod
+    def _python_run(tmp_path, body):
+        """A portable shell ``run`` that executes ``body`` with the current
+        interpreter, avoiding non-portable shell quoting (e.g. Windows
+        ``cmd.exe`` keeping single quotes) in the output_format tests."""
+        import sys
+
+        script = tmp_path / "emit.py"
+        script.write_text(body, encoding="utf-8")
+        return f'"{sys.executable}" "{script}"'
+
     def test_execute_echo(self):
         from specify_cli.workflows.steps.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -940,6 +1092,62 @@ class TestShellStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'run'" in e for e in errors)
 
+
+    def test_output_format_json_exposes_data(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {
+            "id": "emit",
+            "run": self._python_run(
+                tmp_path, 'import json; print(json.dumps({"items": [1, 2]}))\n'
+            ),
+            "output_format": "json",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["data"] == {"items": [1, 2]}
+        assert result.output["exit_code"] == 0  # raw keys still present
+
+    def test_output_format_json_invalid_stdout_fails(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {
+            "id": "emit",
+            "run": self._python_run(tmp_path, "print('not-json')\n"),
+            "output_format": "json",
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "output_format: json" in (result.error or "")
+
+    def test_no_output_format_keeps_raw_output_only(self, tmp_path):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = ShellStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        config = {
+            "id": "emit",
+            "run": self._python_run(
+                tmp_path, 'import json; print(json.dumps({"items": []}))\n'
+            ),
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert "data" not in result.output
+
+    def test_validate_rejects_unknown_output_format(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        errors = step.validate({"id": "emit", "run": "exit 0", "output_format": "yaml"})
+        assert any("'output_format' must be 'json'" in e for e in errors)
 
 class _StubStdin:
     """Stdin stub exposing only a fixed ``isatty`` result.
@@ -977,6 +1185,171 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
     from specify_cli.workflows.steps import gate as gate_module
 
     monkeypatch.setattr(gate_module, "sys", _FakeSys(tty=tty))
+
+
+class TestInitStep:
+    """Test the init step type."""
+
+    def test_builds_here_argv_and_bootstraps(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        config = {"id": "bootstrap", "here": True, "script": "sh"}
+        result = step.execute(config, ctx)
+
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["exit_code"] == 0
+        argv = result.output["argv"]
+        assert argv[0] == "init"
+        assert "--here" in argv
+        assert "--integration" in argv and "copilot" in argv
+        assert "--ignore-agent-tools" in argv
+        assert (tmp_path / ".specify").is_dir()
+
+    def test_default_integration_falls_back_to_workflow_default(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"}, ctx
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["integration"] == "copilot"
+
+    def test_project_name_creates_subdirectory(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "project": "demo",
+                "script": "sh",
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert (tmp_path / "demo" / ".specify").is_dir()
+
+    def test_invalid_integration_fails(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(project_root=str(tmp_path))
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "integration": "no-such-agent",
+                "script": "sh",
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert result.output["exit_code"] != 0
+        assert result.error is not None
+
+    def test_non_empty_current_dir_without_force_fails_fast(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        (tmp_path / "existing.txt").write_text("data")
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"},
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "force: true" in (result.error or "")
+        assert not (tmp_path / ".specify").exists()
+
+    def test_engine_owned_dirs_do_not_trigger_non_empty_check(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Simulate the engine creating its run-state directory before steps run
+        (tmp_path / ".specify" / "workflows" / "runs" / "abc123").mkdir(
+            parents=True
+        )
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"},
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        # Verify --force was implicitly added
+        assert "--force" in result.output["argv"]
+
+    def test_default_integration_when_none_provided(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        # No default_integration on context either
+        ctx = StepContext(project_root=str(tmp_path))
+        result = step.execute(
+            {"id": "bootstrap", "here": True, "script": "sh"},
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["integration"] == "copilot"
+
+    def test_integration_options_passed_through(self, tmp_path):
+        from specify_cli.workflows.steps.init import InitStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = InitStep()
+        ctx = StepContext(
+            project_root=str(tmp_path), default_integration="copilot"
+        )
+        result = step.execute(
+            {
+                "id": "bootstrap",
+                "here": True,
+                "script": "sh",
+                "integration": "copilot",
+                "integration_options": "--skills",
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert "--integration-options" in result.output["argv"]
+        assert "--skills" in result.output["argv"]
+        assert result.output["integration_options"] == "--skills"
+
+    def test_validate_rejects_bad_script(self):
+        from specify_cli.workflows.steps.init import InitStep
+
+        step = InitStep()
+        errors = step.validate({"id": "bootstrap", "script": "bogus"})
+        assert any("'script' must be 'sh' or 'ps'" in e for e in errors)
+
+    def test_validate_accepts_valid(self):
+        from specify_cli.workflows.steps.init import InitStep
+
+        step = InitStep()
+        assert step.validate({"id": "bootstrap", "script": "sh"}) == []
 
 
 class TestGateStep:
@@ -1475,9 +1848,9 @@ class TestFanOutStep:
         assert result.output["item_count"] == 2
         assert result.output["max_concurrency"] == 3
 
-    def test_execute_non_list_items_resolves_empty(self):
+    def test_execute_non_list_items_fails_loudly(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
-        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.base import StepContext, StepStatus
 
         step = FanOutStep()
         ctx = StepContext()
@@ -1487,8 +1860,24 @@ class TestFanOutStep:
             "step": {"id": "impl", "command": "speckit.implement"},
         }
         result = step.execute(config, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "'items' must resolve to a list" in (result.error or "")
         assert result.output["item_count"] == 0
-        assert result.output["items"] == []
+
+    def test_execute_empty_list_items_is_valid(self):
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanOutStep()
+        ctx = StepContext(steps={"tasks": {"output": {"task_list": []}}})
+        config = {
+            "id": "parallel",
+            "items": "{{ steps.tasks.output.task_list }}",
+            "step": {"id": "impl", "command": "speckit.implement"},
+        }
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["item_count"] == 0
 
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
@@ -1743,6 +2132,148 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("invalid type" in e.lower() for e in errors)
+
+    def test_requires_with_recognized_keys_is_valid(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  speckit_version: ">=0.7.2"
+  integrations:
+    any: ["claude", "gemini"]
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert errors == []
+
+    def test_requires_must_be_mapping(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires: "claude"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_unknown_key_is_rejected(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  speckit_version: ">=0.7.2"
+  typo_key: true
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("typo_key" in e and "requires" in e for e in errors)
+
+    def test_requires_permissions_is_rejected_as_not_enforced(self):
+        """A `requires.permissions` block looks like a runtime capability gate
+        but no such gate exists — shell steps always run with the user's
+        privileges. Reject it explicitly so authors are not misled into
+        believing the declaration sandboxes execution.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+  permissions:
+    shell: true
+steps:
+  - id: run
+    type: shell
+    run: "echo hi"
+""")
+        errors = validate_workflow(definition)
+        # Assert on specific markers from the intended message (the offending
+        # key and the `gate` remediation) so the test fails if the validation
+        # path or wording drifts, rather than passing on any error that merely
+        # happens to contain "permissions" and "not".
+        assert any("requires.permissions" in e and "gate" in e for e in errors)
+
+    def test_requires_empty_sequence_is_rejected_as_non_mapping(self):
+        """A non-mapping ``requires`` (e.g. an empty list) is an authoring
+        error. Mirroring ``inputs``, validation checks ``isinstance(..., dict)``
+        so ``requires: []`` surfaces instead of silently passing.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires: []
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_yaml_null_is_rejected_as_non_mapping(self):
+        """A bare ``requires:`` parses as YAML null. Like ``inputs``, a present
+        block must be a mapping, so YAML null is rejected as an authoring error
+        rather than being silently treated as an omitted block. (A truly
+        omitted ``requires`` defaults to ``{}`` and stays valid.)
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+requires:
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'requires' must be a mapping" in e for e in errors)
+
+    def test_requires_omitted_is_valid(self):
+        """A workflow with no ``requires`` block at all defaults to ``{}`` and
+        must validate cleanly — only a present-but-non-mapping value is an
+        error (guards against over-correcting YAML-null rejection into also
+        flagging the omitted case).
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert not any("requires" in e for e in errors)
 
 
 # ===== Workflow Engine Tests =====
@@ -3297,9 +3828,11 @@ class TestWorkflowRegistry:
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
 
-    def test_default_catalogs(self, project_dir):
+    def test_default_catalogs(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
+        monkeypatch.setattr(Path, "home", lambda: project_dir)
+        monkeypatch.delenv("SPECKIT_WORKFLOW_CATALOG_URL", raising=False)
         catalog = WorkflowCatalog(project_dir)
         entries = catalog.get_active_catalogs()
         assert len(entries) == 2
@@ -3401,6 +3934,78 @@ class TestWorkflowCatalog:
         assert configs[0]["name"] == "default"
         assert isinstance(configs[0]["install_allowed"], bool)
 
+    def test_load_catalog_config_non_dict_yaml_raises(self, project_dir):
+        """A YAML catalog config that is a list (not a mapping) must raise WorkflowValidationError."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text("- item1\n- item2\n", encoding="utf-8")
+
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
+            catalog.get_active_catalogs()
+
+    def test_add_catalog_malformed_yaml_raises(self, project_dir):
+        """A malformed YAML config file must raise WorkflowValidationError when adding a catalog."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(": invalid: yaml: {\n", encoding="utf-8")
+
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
+            catalog.add_catalog("https://example.com/new.json")
+
+    def test_remove_catalog_malformed_yaml_raises(self, project_dir):
+        """A malformed YAML config file must raise WorkflowValidationError when removing a catalog."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog("https://example.com/c1.json", "first")
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(": bad: yaml: {\n", encoding="utf-8")
+
+        with pytest.raises(WorkflowValidationError, match="unreadable or malformed"):
+            catalog.remove_catalog(0)
+
+    def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
+        """An OSError on write must be wrapped as WorkflowValidationError."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        import builtins
+
+        catalog = WorkflowCatalog(project_dir)
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == config_path and "w" in mode:
+                raise OSError("simulated write failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
+            catalog.add_catalog("https://example.com/new-catalog.json", "my-catalog")
+
+    def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
+        """An OSError on write must be wrapped as WorkflowValidationError."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+        import builtins
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog("https://example.com/c1.json", "first")
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == config_path and "w" in mode:
+                raise OSError("simulated write failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(WorkflowValidationError, match="Failed to write catalog config"):
+            catalog.remove_catalog(0)
+
 
 # ===== Integration Test =====
 
@@ -3495,6 +4100,933 @@ steps:
         assert state.status == RunStatus.COMPLETED
         assert "do-plan" in state.step_results
         assert "do-specify" not in state.step_results
+
+
+# ===== Step Registry Tests =====
+
+class TestStepRegistryCustom:
+    """Test StepRegistry operations for custom step types."""
+
+    def test_add_and_get(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.add("deploy", {"name": "Deploy", "version": "1.0.0", "type_key": "deploy"})
+
+        entry = registry.get("deploy")
+        assert entry is not None
+        assert entry["name"] == "Deploy"
+        assert "installed_at" in entry
+
+    def test_add_does_not_mutate_input_metadata(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        metadata = {
+            "name": "Deploy",
+            "type_key": "deploy",
+            "nested": {"key": "original"},
+        }
+
+        registry.add("deploy", metadata)
+
+        assert "installed_at" not in metadata
+        assert "updated_at" not in metadata
+        metadata["nested"]["key"] = "changed-after-add"
+        assert registry.get("deploy")["nested"]["key"] == "original"
+
+    def test_remove(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+        assert registry.is_installed("deploy")
+
+        registry.remove("deploy")
+        assert not registry.is_installed("deploy")
+
+    def test_remove_missing_returns_false(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        removed = registry.remove("nonexistent")
+        assert removed is False
+
+    def test_list(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.add("step-a", {"name": "A", "type_key": "step-a"})
+        registry.add("step-b", {"name": "B", "type_key": "step-b"})
+
+        installed = registry.list()
+        assert "step-a" in installed
+        assert "step-b" in installed
+
+    def test_is_installed(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        assert not registry.is_installed("missing")
+
+        registry.add("exists", {"name": "Exists", "type_key": "exists"})
+        assert registry.is_installed("exists")
+
+    def test_persistence(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry1 = StepRegistry(project_dir)
+        registry1.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+
+        registry2 = StepRegistry(project_dir)
+        assert registry2.is_installed("deploy")
+
+    def test_corrupted_registry_resets(self, project_dir):
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.steps_dir.mkdir(parents=True, exist_ok=True)
+        registry.registry_path.write_text("not json", encoding="utf-8")
+
+        # Loading again should reset
+        registry2 = StepRegistry(project_dir)
+        assert registry2.list() == {}
+
+    def test_registry_missing_steps_key_resets(self, project_dir):
+        """Valid JSON but missing 'steps' key should not crash add/get."""
+        from specify_cli.workflows.catalog import StepRegistry
+        import json as _json
+
+        registry = StepRegistry(project_dir)
+        registry.steps_dir.mkdir(parents=True, exist_ok=True)
+        # Valid JSON but 'steps' is not a dict
+        registry.registry_path.write_text(
+            _json.dumps({"schema_version": "1.0", "steps": "bad"}),
+            encoding="utf-8",
+        )
+
+        registry2 = StepRegistry(project_dir)
+        # Should be safe to call add/get without KeyError
+        assert registry2.list() == {}
+        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+        assert registry2.is_installed("deploy")
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod not reliable on Windows")
+    def test_registry_unreadable_file_resets(self, project_dir):
+        """OSError reading the registry file should fall back to default."""
+        from specify_cli.workflows.catalog import StepRegistry
+        import json as _json
+
+        registry = StepRegistry(project_dir)
+        registry.steps_dir.mkdir(parents=True, exist_ok=True)
+        # Write valid registry first
+        registry.registry_path.write_text(
+            _json.dumps({"schema_version": "1.0", "steps": {"existing": {}}}),
+            encoding="utf-8",
+        )
+        # Make it unreadable
+        registry.registry_path.chmod(0o000)
+        try:
+            registry2 = StepRegistry(project_dir)
+            assert registry2.list() == {}
+        finally:
+            registry.registry_path.chmod(0o644)
+
+        # After restoring permissions the registry is fully functional
+        registry2.add("deploy", {"name": "Deploy", "type_key": "deploy"})
+        assert registry2.is_installed("deploy")
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_registry_load_refuses_symlinked_steps_dir(self, project_dir):
+        """A symlinked steps directory must not be read from (defense-in-depth)."""
+        from specify_cli.workflows.catalog import StepRegistry
+        import json as _json
+
+        outside = project_dir.parent / "outside-steps"
+        outside.mkdir(parents=True, exist_ok=True)
+        (outside / "step-registry.json").write_text(
+            _json.dumps({"schema_version": "1.0", "steps": {"evil": {}}}),
+            encoding="utf-8",
+        )
+        steps_link = project_dir / ".specify" / "workflows" / "steps"
+        steps_link.symlink_to(outside, target_is_directory=True)
+
+        registry = StepRegistry(project_dir)
+        assert registry.list() == {}
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_registry_save_refuses_symlinked_steps_dir(self, project_dir):
+        """save() must refuse symlinked registry paths (defense-in-depth)."""
+        from specify_cli.workflows.catalog import StepRegistry, StepValidationError
+
+        outside = project_dir.parent / "outside-steps-save"
+        outside.mkdir(parents=True, exist_ok=True)
+        steps_link = project_dir / ".specify" / "workflows" / "steps"
+        steps_link.symlink_to(outside, target_is_directory=True)
+
+        registry = StepRegistry(project_dir)
+        with pytest.raises(StepValidationError, match="symlinked path"):
+            registry.save()
+
+
+# ===== Step Catalog Tests =====
+
+class TestStepCatalog:
+    """Test StepCatalog catalog resolution."""
+
+    def test_default_catalogs(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        monkeypatch.setattr(Path, "home", lambda: project_dir)
+        monkeypatch.delenv("SPECKIT_STEP_CATALOG_URL", raising=False)
+        catalog = StepCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+        assert len(entries) == 2
+        assert entries[0].name == "default"
+        assert entries[1].name == "community"
+
+    def test_env_var_override(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        monkeypatch.setenv("SPECKIT_STEP_CATALOG_URL", "https://example.com/step-catalog.json")
+        catalog = StepCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+        assert len(entries) == 1
+        assert entries[0].name == "env-override"
+        assert entries[0].url == "https://example.com/step-catalog.json"
+
+    def test_project_level_config(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "custom",
+                "url": "https://example.com/step-catalog.json",
+                "priority": 1,
+                "install_allowed": True,
+            }]
+        }))
+
+        catalog = StepCatalog(project_dir)
+        entries = catalog.get_active_catalogs()
+        assert len(entries) == 1
+        assert entries[0].name == "custom"
+
+    def test_validate_url_http_rejected(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="HTTPS"):
+            catalog._validate_catalog_url("http://evil.com/step-catalog.json")
+
+    def test_validate_url_localhost_http_allowed(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        # Should not raise
+        catalog._validate_catalog_url("http://localhost:8080/step-catalog.json")
+
+    def test_add_catalog(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        assert config_path.exists()
+        data = yaml.safe_load(config_path.read_text())
+        assert len(data["catalogs"]) == 1
+        assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
+
+    def test_add_catalog_empty_yaml_file(self, project_dir):
+        """An empty YAML config file should be treated as empty, not corrupted."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text("", encoding="utf-8")
+
+        catalog = StepCatalog(project_dir)
+        # Should not raise StepValidationError "corrupted"
+        catalog.add_catalog("https://example.com/steps.json", "my-steps")
+
+        data = yaml.safe_load(config_path.read_text())
+        assert len(data["catalogs"]) == 1
+        assert data["catalogs"][0]["url"] == "https://example.com/steps.json"
+
+    def test_add_catalog_duplicate_rejected(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/steps.json")
+
+        with pytest.raises(StepValidationError, match="already configured"):
+            catalog.add_catalog("https://example.com/steps.json")
+
+    def test_remove_catalog(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/s1.json", "first")
+        catalog.add_catalog("https://example.com/s2.json", "second")
+
+        removed = catalog.remove_catalog(0)
+        assert removed == "first"
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text())
+        assert len(data["catalogs"]) == 1
+
+    def test_remove_catalog_invalid_index(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/s1.json")
+
+        with pytest.raises(StepValidationError, match="out of range"):
+            catalog.remove_catalog(5)
+
+    def test_remove_catalog_no_config(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="No step catalog config file found"):
+            catalog.remove_catalog(0)
+
+    def test_add_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        import builtins
+
+        catalog = StepCatalog(project_dir)
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == config_path and "w" in mode:
+                raise OSError("simulated write failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(StepValidationError, match="Failed to write catalog config"):
+            catalog.add_catalog("https://example.com/new-steps.json", "my-steps")
+
+    def test_remove_catalog_wraps_write_oserror(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+        import builtins
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://example.com/s1.json", "first")
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == config_path and "w" in mode:
+                raise OSError("simulated write failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(StepValidationError, match="Failed to write catalog config"):
+            catalog.remove_catalog(0)
+
+    def test_get_catalog_configs(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        configs = catalog.get_catalog_configs()
+        assert len(configs) == 2
+        assert configs[0]["name"] == "default"
+        assert isinstance(configs[0]["install_allowed"], bool)
+
+    def test_search_with_mock_catalog(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        mock_data = {
+            "schema_version": "1.0",
+            "steps": {
+                "deploy": {
+                    "id": "deploy",
+                    "name": "Deploy Step",
+                    "description": "Deploy to production",
+                    "version": "1.0.0",
+                },
+                "notify": {
+                    "id": "notify",
+                    "name": "Notify Step",
+                    "description": "Send notifications",
+                    "version": "1.0.0",
+                },
+            },
+        }
+
+        catalog = StepCatalog(project_dir)
+        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
+            "deploy": dict(mock_data["steps"]["deploy"], _catalog_name="test", _install_allowed=True),
+            "notify": dict(mock_data["steps"]["notify"], _catalog_name="test", _install_allowed=True),
+        })
+
+        results = catalog.search()
+        assert len(results) == 2
+
+        results = catalog.search(query="deploy")
+        assert len(results) == 1
+        assert results[0]["id"] == "deploy"
+
+    def test_search_with_non_string_fields(self, project_dir, monkeypatch):
+        """Non-string catalog fields (e.g. integer id) must not raise TypeError."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
+            "42": {
+                "id": 42,
+                "name": None,
+                "description": 99,
+                "_catalog_name": "test",
+                "_install_allowed": True,
+            },
+        })
+
+        results = catalog.search()
+        assert len(results) == 1
+
+        results = catalog.search(query="42")
+        assert len(results) == 1
+
+        results = catalog.search(query="missing")
+        assert len(results) == 0
+
+    def test_get_merged_steps_normalizes_list_ids_to_strings(self, project_dir, monkeypatch):
+        """List-based catalog entries with non-string ids must be normalized."""
+        from specify_cli.workflows.catalog import StepCatalog, StepCatalogEntry
+
+        catalog = StepCatalog(project_dir)
+        entry = StepCatalogEntry(
+            name="test",
+            url="https://example.com/steps.json",
+            priority=1,
+            install_allowed=True,
+        )
+        monkeypatch.setattr(catalog, "get_active_catalogs", lambda: [entry])
+        monkeypatch.setattr(
+            catalog,
+            "_fetch_single_catalog",
+            lambda _entry, _force_refresh=False: {
+                "steps": [{"id": 42, "name": "Integer ID"}]
+            },
+        )
+
+        merged = catalog._get_merged_steps()
+        assert "42" in merged
+        assert 42 not in merged
+        assert merged["42"]["id"] == "42"
+
+    def test_get_step_info_returns_entry_or_none(self, project_dir, monkeypatch):
+        """get_step_info returns matching entry or None for missing ids."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        monkeypatch.setattr(catalog, "_get_merged_steps", lambda **kw: {
+            "deploy": {
+                "id": "deploy",
+                "name": "Deploy Step",
+                "version": "1.0.0",
+                "_catalog_name": "test",
+                "_install_allowed": True,
+            },
+        })
+
+        info = catalog.get_step_info("deploy")
+        assert info is not None
+        assert info["name"] == "Deploy Step"
+
+        missing = catalog.get_step_info("nonexistent")
+        assert missing is None
+
+
+# ===== Load Custom Steps Tests =====
+
+class TestLoadCustomSteps:
+    """Test dynamic loading of custom step types from the filesystem."""
+
+    def test_empty_steps_dir(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        loaded = load_custom_steps(project_dir)
+        assert loaded == []
+
+    def test_no_steps_dir(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        # .specify/workflows/steps does not exist
+        loaded = load_custom_steps(project_dir)
+        assert loaded == []
+
+    def test_load_valid_custom_step(self, project_dir):
+        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "test-custom"
+        step_dir.mkdir(parents=True)
+
+        step_yml = """
+schema_version: "1.0"
+step:
+  type_key: "test-custom"
+  name: "Test Custom Step"
+  version: "1.0.0"
+  author: "test"
+  description: "A test custom step"
+"""
+        (step_dir / "step.yml").write_text(step_yml, encoding="utf-8")
+
+        init_py = """
+from specify_cli.workflows.base import StepBase, StepResult
+
+class TestCustomStep(StepBase):
+    type_key = "test-custom"
+
+    def execute(self, config, context):
+        return StepResult()
+"""
+        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "test-custom" in loaded
+        assert "test-custom" in STEP_REGISTRY
+
+    def test_skip_missing_step_yml(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "__init__.py").write_text("# no step.yml", encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "bad-step" not in loaded
+
+    def test_skip_missing_init_py(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-step2"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: bad-step2\n", encoding="utf-8"
+        )
+
+        loaded = load_custom_steps(project_dir)
+        assert "bad-step2" not in loaded
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_skip_symlinked_step_files(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "bad-symlinked-files"
+        step_dir.mkdir(parents=True)
+
+        outside = project_dir.parent / "outside-step-files"
+        outside.mkdir(parents=True, exist_ok=True)
+        step_yml_target = outside / "step.yml"
+        step_yml_target.write_text("step:\n  type_key: bad-symlinked-files\n", encoding="utf-8")
+        init_target = outside / "__init__.py"
+        init_target.write_text("# external code", encoding="utf-8")
+
+        (step_dir / "step.yml").symlink_to(step_yml_target)
+        (step_dir / "__init__.py").symlink_to(init_target)
+
+        loaded = load_custom_steps(project_dir)
+        assert "bad-symlinked-files" not in loaded
+
+    def test_skip_already_registered(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        # "command" is already registered as a built-in step
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "command"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: command\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        # Should not raise KeyError; just skip
+        loaded = load_custom_steps(project_dir)
+        assert "command" not in loaded
+
+    def test_skip_broken_init_py(self, project_dir):
+        from specify_cli.workflows import load_custom_steps
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "broken-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: broken-step\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text(
+            "raise RuntimeError('broken')", encoding="utf-8"
+        )
+
+        # Should not propagate exception
+        loaded = load_custom_steps(project_dir)
+        assert "broken-step" not in loaded
+
+    def test_module_name_sanitized_for_hyphenated_type_key(self, project_dir):
+        """type_key values with hyphens produce valid Python module identifiers."""
+        import hashlib
+        import sys
+        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-hyphen-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: my-hyphen-step\n  name: Hyphen Step\n",
+            encoding="utf-8",
+        )
+
+        init_py = """
+from specify_cli.workflows.base import StepBase, StepResult
+
+class HyphenStep(StepBase):
+    type_key = "my-hyphen-step"
+
+    def execute(self, config, context):
+        return StepResult()
+"""
+        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "my-hyphen-step" in loaded
+        assert "my-hyphen-step" in STEP_REGISTRY
+        # Synthetic module name must be a valid identifier (hyphens → underscores)
+        # and include a collision-resistant hash suffix.
+        key_hash = hashlib.sha256(b"my-hyphen-step").hexdigest()[:8]
+        module_name = f"_speckit_custom_step_my_hyphen_step_{key_hash}"
+        assert module_name in sys.modules
+
+    def test_package_relative_import(self, project_dir):
+        """Steps can use relative imports to access sibling modules."""
+        import hashlib
+        import sys
+        from specify_cli.workflows import load_custom_steps, STEP_REGISTRY
+
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "pkg-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: pkg-step\n  name: Package Step\n",
+            encoding="utf-8",
+        )
+        # Helper module that the step will import relatively
+        (step_dir / "helpers.py").write_text(
+            "HELPER_VALUE = 'hello'\n", encoding="utf-8"
+        )
+        init_py = """
+from specify_cli.workflows.base import StepBase, StepResult
+from .helpers import HELPER_VALUE
+
+class PkgStep(StepBase):
+    type_key = "pkg-step"
+    helper = HELPER_VALUE
+
+    def execute(self, config, context):
+        return StepResult()
+"""
+        (step_dir / "__init__.py").write_text(init_py, encoding="utf-8")
+
+        loaded = load_custom_steps(project_dir)
+        assert "pkg-step" in loaded
+        assert "pkg-step" in STEP_REGISTRY
+        # Verify the relative import actually resolved; module name includes hash suffix.
+        key_hash = hashlib.sha256(b"pkg-step").hexdigest()[:8]
+        module_name = f"_speckit_custom_step_pkg_step_{key_hash}"
+        assert module_name in sys.modules
+        assert sys.modules[module_name].PkgStep.helper == "hello"
+
+    def test_module_name_collision_resistance(self, project_dir):
+        """'a-b' and 'a_b' produce different module names despite the same sanitized form."""
+        import hashlib
+
+        # Simulate the module name generation for two type_keys that sanitize the same way
+        def make_module_name(type_key: str) -> str:
+            import re
+            safe_key = re.sub(r"[^A-Za-z0-9_]", "_", type_key)
+            key_hash = hashlib.sha256(type_key.encode()).hexdigest()[:8]
+            return f"_speckit_custom_step_{safe_key}_{key_hash}"
+
+        name_a = make_module_name("a-b")
+        name_b = make_module_name("a_b")
+        assert name_a != name_b, "Module names for 'a-b' and 'a_b' must differ"
+
+
+# ===== CLI Step Remove Tests =====
+
+class TestWorkflowStepRemoveCLI:
+    """Test the 'specify workflow step remove' CLI command edge cases."""
+
+    def test_remove_orphaned_directory(self, project_dir, monkeypatch):
+        """step remove works when directory exists but registry entry is missing.
+
+        This covers the case where the registry was reset due to corruption.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+
+        # Create an orphaned step directory (no registry entry)
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "orphan-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: orphan-step\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "orphan-step"])
+
+        assert result.exit_code == 0, result.output
+        assert not step_dir.exists()
+        # Warning should be printed about missing registry entry
+        assert "Warning" in result.output or "warning" in result.output.lower()
+
+    def test_remove_not_installed(self, project_dir, monkeypatch):
+        """step remove fails cleanly when neither directory nor registry entry exist."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "ghost-step"])
+
+        assert result.exit_code != 0
+        assert "not installed" in result.output
+
+    def test_remove_registered_step(self, project_dir, monkeypatch):
+        """step remove works normally when both directory and registry entry exist."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepRegistry
+
+        monkeypatch.chdir(project_dir)
+
+        # Set up a registered step with a directory
+        registry = StepRegistry(project_dir)
+        registry.add("my-step", {"name": "My Step", "type_key": "my-step", "version": "1.0.0"})
+        step_dir = project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        step_dir.mkdir(parents=True)
+        (step_dir / "step.yml").write_text(
+            "step:\n  type_key: my-step\n", encoding="utf-8"
+        )
+        (step_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
+
+        assert result.exit_code == 0, result.output
+        assert not step_dir.exists()
+        registry2 = StepRegistry(project_dir)
+        assert not registry2.is_installed("my-step")
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_remove_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        outside = project_dir.parent / "outside-steps"
+        outside.mkdir(parents=True, exist_ok=True)
+        steps_link = project_dir / ".specify" / "workflows" / "steps"
+        steps_link.symlink_to(outside, target_is_directory=True)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "remove", "my-step"])
+
+        assert result.exit_code != 0
+        assert "Refusing to use symlinked step directory" in result.output
+
+
+class TestWorkflowStepAddCLI:
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+
+        monkeypatch.chdir(project_dir)
+        outside = project_dir.parent / "outside-steps"
+        outside.mkdir(parents=True, exist_ok=True)
+        steps_link = project_dir / ".specify" / "workflows" / "steps"
+        steps_link.symlink_to(outside, target_is_directory=True)
+
+        def _fake_get_step_info(self, step_id):
+            return {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+            }
+
+        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert "Refusing to use symlinked step directory" in result.output
+
+    def test_add_rejects_non_string_extra_files_key(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+
+        def _fake_get_step_info(self, step_id):
+            return {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+                "extra_files": {
+                    123: "https://example.com/helper.py",
+                },
+            }
+
+        class _FakeResponse:
+            def __init__(self, url: str):
+                self.url = url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                if self.url.endswith("/step.yml"):
+                    return b"step:\n  type_key: my-step\n"
+                return b""
+
+            def geturl(self):
+                return self.url
+
+        def _fake_open_url(url, timeout=30):
+            return _FakeResponse(url)
+
+        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
+        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert "non-string path key" in result.output
+
+    @pytest.mark.parametrize(
+        "rel_path,expected",
+        [
+            ("", "empty or non-string path key"),
+            (".", "not a valid relative file path"),
+            ("..", "not a valid relative file path"),
+            ("sub/../x", "not a valid relative file path"),
+        ],
+    )
+    def test_add_rejects_invalid_extra_files_path(
+        self, project_dir, monkeypatch, rel_path, expected
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+
+        def _fake_get_step_info(self, step_id):
+            return {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+                "extra_files": {rel_path: "https://example.com/helper.py"},
+            }
+
+        class _FakeResponse:
+            def __init__(self, url: str):
+                self.url = url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                if self.url.endswith("/step.yml"):
+                    return b"step:\n  type_key: my-step\n"
+                return b""
+
+            def geturl(self):
+                return self.url
+
+        def _fake_open_url(url, timeout=30):
+            return _FakeResponse(url)
+
+        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
+        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert expected in result.output
+
+    def test_add_rejects_non_string_extra_files_url(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+
+        def _fake_get_step_info(self, step_id):
+            return {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+                "extra_files": {"helper.py": None},
+            }
+
+        class _FakeResponse:
+            def __init__(self, url: str):
+                self.url = url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                if self.url.endswith("/step.yml"):
+                    return b"step:\n  type_key: my-step\n"
+                return b""
+
+            def geturl(self):
+                return self.url
+
+        def _fake_open_url(url, timeout=30):
+            return _FakeResponse(url)
+
+        monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
+        monkeypatch.setattr(auth_http, "open_url", _fake_open_url)
+
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "step", "add", "my-step"])
+
+        assert result.exit_code != 0
+        assert "empty or non-string URL" in result.output
 
 
 class TestWorkflowJsonOutput:
@@ -3944,3 +5476,457 @@ steps:
         asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
         assert len(asset_calls) >= 1
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_workflow_add_from_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'workflow add <ghes-release-url>' resolves via GHES /api/v3 endpoint."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data, url=None):
+                self._data = data
+                self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"
+
+            def read(self):
+                return self._data
+
+            def geturl(self):
+                return self._url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "workflow.yml", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "workflow", "add",
+                "https://ghes.example/org/repo/releases/download/v1.0/workflow.yml",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # Tag lookup must use the GHES /api/v3 endpoint
+        assert any("ghes.example/api/v3/repos/org/repo/releases/tags/v1.0" in url for url, _ in captured_urls)
+        # Asset download must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_workflow_add_catalog_based_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'workflow add <id>' with a GHES catalog URL resolves via /api/v3."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data, url=None):
+                self._data = data
+                self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"
+
+            def read(self):
+                return self._data
+
+            def geturl(self):
+                return self._url
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        ghes_wf_yaml = """
+schema_version: "1.0"
+workflow:
+  id: "my-wf"
+  name: "My GHES Workflow"
+  version: "1.0.0"
+  description: "A GHES catalog workflow"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo hello"
+"""
+
+        def fake_open_url(url, timeout=None, extra_headers=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "workflow.yml", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"}]
+                }).encode())
+            return FakeResponse(ghes_wf_yaml.encode())
+
+        fake_catalog_info = {
+            "id": "my-wf",
+            "name": "My GHES Workflow",
+            "version": "1.0.0",
+            "url": "https://ghes.example/org/repo/releases/download/v2.0/workflow.yml",
+            "_install_allowed": True,
+        }
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
+             patch("specify_cli.workflows.catalog.WorkflowCatalog.get_workflow_info", return_value=fake_catalog_info):
+            result = runner.invoke(app, ["workflow", "add", "my-wf"])
+
+        assert result.exit_code == 0, result.output
+        # Tag lookup must use GHES /api/v3
+        tag_calls = [url for url, _ in captured_urls if "releases/tags/" in url]
+        assert len(tag_calls) == 1
+        assert "ghes.example/api/v3/repos/org/repo/releases/tags/v2.0" in tag_calls[0]
+        # Asset download must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+
+class TestWorkflowRunExitCodes:
+    """CLI-level tests for the run/resume process exit codes."""
+
+    _WF_OK = """
+schema_version: "1.0"
+workflow:
+  id: "exit-ok"
+  name: "Exit OK"
+  version: "1.0.0"
+steps:
+  - id: fine
+    type: shell
+    run: "exit 0"
+"""
+
+    _WF_FAIL = """
+schema_version: "1.0"
+workflow:
+  id: "exit-fail"
+  name: "Exit Fail"
+  version: "1.0.0"
+steps:
+  - id: boom
+    type: shell
+    run: "exit 1"
+"""
+
+    def _write(self, tmp_path, content):
+        path = tmp_path / "wf.yml"
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_run_completed_exits_zero(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "run", str(self._write(tmp_path, self._WF_OK))])
+        assert result.exit_code == 0
+        assert "Status: completed" in result.stdout
+
+    def test_run_failed_exits_nonzero(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL))])
+        assert "Status: failed" in result.stdout
+        assert result.exit_code == 1
+
+    def test_run_failed_exits_nonzero_with_json(self, tmp_path, monkeypatch):
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
+        )
+        assert result.exit_code == 1, result.stdout
+        payload = _json.loads(result.stdout)
+        assert payload["status"] == "failed"
+
+    def test_resume_failed_run_exits_nonzero(self, tmp_path, monkeypatch):
+        # End-to-end coverage for the `workflow resume` exit-code mapping:
+        # resuming a run whose outcome is still `failed` must exit non-zero,
+        # mirroring `workflow run`. Resume re-executes the failed step, which
+        # fails again, so the resumed outcome stays `failed`.
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".specify").mkdir()  # `workflow resume` requires a project
+        runner = CliRunner()
+        run = runner.invoke(
+            app,
+            ["workflow", "run", str(self._write(tmp_path, self._WF_FAIL)), "--json"],
+        )
+        assert run.exit_code == 1, run.stdout
+        run_id = _json.loads(run.stdout)["run_id"]
+
+        resumed = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+        assert resumed.exit_code == 1, resumed.stdout
+        payload = _json.loads(resumed.stdout)
+        assert payload["status"] == "failed"
+
+
+class TestWorkflowRunGateOutcomeJson:
+    """CLI-level tests: the --json payload surfaces gate pauses."""
+
+    _WF_GATE = """
+schema_version: "1.0"
+workflow:
+  id: "gate-json"
+  name: "Gate JSON"
+  version: "1.0.0"
+steps:
+  - id: review
+    type: gate
+    message: "Approve the thing?"
+    options: ["approve", "reject"]
+"""
+
+    _WF_PLAIN = """
+schema_version: "1.0"
+workflow:
+  id: "plain-json"
+  name: "Plain JSON"
+  version: "1.0.0"
+steps:
+  - id: fine
+    type: shell
+    run: "exit 0"
+"""
+
+    def _run_json(self, tmp_path, monkeypatch, content, *, expected_exit=0):
+        import json as _json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        path = tmp_path / "wf.yml"
+        path.write_text(content, encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(app, ["workflow", "run", str(path), "--json"])
+        # Assert the expected exit code before parsing so a real failure
+        # surfaces the actual output instead of an opaque JSON decode error.
+        # A terminal run still emits its JSON payload, then exits non-zero on
+        # ``failed``/``aborted`` (see ``_run_outcome_exit_code``), so callers
+        # pass the expected code. Use ``result.output`` for the message:
+        # under ``--json`` step output is redirected off stdout, so the useful
+        # diagnostics live there.
+        assert result.exit_code == expected_exit, result.output
+        return _json.loads(result.stdout)
+
+    def test_gate_pause_carries_gate_block(self, tmp_path, monkeypatch):
+        # CliRunner stdin is not a TTY, so the gate pauses for resume.
+        payload = self._run_json(tmp_path, monkeypatch, self._WF_GATE)
+        assert payload["status"] == "paused"
+        assert payload["gate"] == {
+            "step_id": "review",
+            "message": "Approve the thing?",
+            "options": ["approve", "reject"],
+            "choice": None,
+        }
+
+    def test_completed_run_has_no_gate_block(self, tmp_path, monkeypatch):
+        payload = self._run_json(tmp_path, monkeypatch, self._WF_PLAIN)
+        assert payload["status"] == "completed"
+        assert "gate" not in payload
+
+    def test_gate_abort_carries_gate_block(self, tmp_path, monkeypatch):
+        # An interactive gate the operator rejects ends the run as `aborted`
+        # (on_reject defaults to abort), not `paused`. The JSON surface must
+        # still carry the gate block with the recorded choice so an
+        # orchestrator can see *why* the run stopped. A gate abort emits the
+        # payload and then exits non-zero (aborted → exit 1), so the helper
+        # is told to expect exit code 1.
+        from specify_cli.workflows.steps.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(lambda _msg, _opts: "reject")
+        )
+        payload = self._run_json(
+            tmp_path, monkeypatch, self._WF_GATE, expected_exit=1
+        )
+        assert payload["status"] == "aborted"
+        assert payload["gate"] == {
+            "step_id": "review",
+            "message": "Approve the thing?",
+            "options": ["approve", "reject"],
+            "choice": "reject",
+        }
+
+    def test_gate_block_emitted_only_when_run_rests_at_gate(self):
+        # A run rests *on* a gate only while `paused` (awaiting a decision) or
+        # `aborted` (gate rejected with on_reject: abort). current_step_id is
+        # not cleared afterwards, so a `completed`/`failed` run whose last
+        # executed step was a gate must NOT surface a stale gate block.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        gate_step = {
+            "type": "gate",
+            "output": {
+                "message": "m",
+                "options": ["approve", "reject"],
+                "choice": "reject",
+            },
+        }
+
+        def _state(status):
+            return SimpleNamespace(
+                status=SimpleNamespace(value=status),
+                current_step_id="review",
+                step_results={"review": gate_step},
+            )
+
+        assert _gate_outcome(_state("completed")) is None
+        assert _gate_outcome(_state("failed")) is None
+        assert _gate_outcome(_state("paused")) is not None
+        assert _gate_outcome(_state("aborted")) is not None
+
+    def test_gate_block_message_coerced_to_string(self):
+        # message may be a non-string YAML literal (e.g. a number); the JSON
+        # surface normalises it so the emitted schema stays stable.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="review",
+            step_results={
+                "review": {
+                    "type": "gate",
+                    "output": {"message": 12.5, "options": ["ok"], "choice": None},
+                }
+            },
+        )
+        assert _gate_outcome(state)["message"] == "12.5"
+
+    def test_gate_block_options_coerced_to_strings(self):
+        # options may be non-string / non-list literals in an unvalidated
+        # workflow; the JSON surface always normalises them to list[str] | None
+        # so the emitted schema is stable regardless of the input shape.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        def _options_payload(options):
+            state = SimpleNamespace(
+                status=SimpleNamespace(value="paused"),
+                current_step_id="review",
+                step_results={
+                    "review": {
+                        "type": "gate",
+                        "output": {
+                            "message": "m",
+                            "options": options,
+                            "choice": None,
+                        },
+                    }
+                },
+            )
+            return _gate_outcome(state)["options"]
+
+        assert _options_payload([1, 2.5]) == ["1", "2.5"]  # list
+        assert _options_payload(("approve", "reject")) == ["approve", "reject"]  # tuple
+        assert _options_payload("approve") == ["approve"]  # bare scalar, not iterated
+        assert _options_payload(7) == ["7"]  # numeric scalar
+        assert _options_payload(None) is None  # absent stays absent
+
+    def test_gate_block_choice_coerced_to_string(self):
+        # An unvalidated gate can record a non-string choice; the JSON
+        # surface normalises it to str (and keeps None = no decision yet),
+        # consistent with the message/options normalization.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        def _choice_payload(choice):
+            state = SimpleNamespace(
+                status=SimpleNamespace(value="paused"),
+                current_step_id="review",
+                step_results={
+                    "review": {
+                        "type": "gate",
+                        "output": {"message": "m", "options": ["ok"], "choice": choice},
+                    }
+                },
+            )
+            return _gate_outcome(state)["choice"]
+
+        assert _choice_payload(None) is None  # no decision yet
+        assert _choice_payload("reject") == "reject"  # normal string passes through
+        assert _choice_payload(2) == "2"  # non-string coerced
+
+    def test_gate_block_detected_without_type_field(self):
+        # A run paused by an older version has no persisted step `type`. The
+        # gate is still detected by its unique output signature (`on_reject`),
+        # so resume surfaces the gate block instead of silently dropping it.
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="review",
+            step_results={
+                "review": {
+                    # no "type" key — pre-dates the field being persisted
+                    "output": {
+                        "message": "Approve?",
+                        "options": ["approve", "reject"],
+                        "on_reject": "abort",
+                        "choice": None,
+                    },
+                }
+            },
+        )
+        gate = _gate_outcome(state)
+        assert gate is not None
+        assert gate["step_id"] == "review"
+        assert gate["options"] == ["approve", "reject"]
+
+    def test_non_gate_step_without_type_is_not_a_gate(self):
+        # A typeless record lacking the gate signature must NOT be mistaken for
+        # a gate (the fallback keys off `on_reject`, which only GateStep writes).
+        from types import SimpleNamespace
+        from specify_cli import _gate_outcome
+
+        state = SimpleNamespace(
+            status=SimpleNamespace(value="paused"),
+            current_step_id="run-tests",
+            step_results={
+                "run-tests": {"output": {"exit_code": 0, "stdout": "ok"}},
+            },
+        )
+        assert _gate_outcome(state) is None

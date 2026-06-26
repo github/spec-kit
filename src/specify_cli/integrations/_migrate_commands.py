@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import PurePath
 
 import typer
 
@@ -26,12 +27,14 @@ from ._helpers import (
     _get_speckit_version,
     _read_integration_json,
     _refresh_init_options_speckit_version,
+    _register_extensions_for_agent,
     _remove_integration_json,
     _resolve_integration_options,
     _resolve_integration_script_type,
     _resolve_script_type,
     _set_default_integration,
     _set_default_integration_or_exit,
+    _unregister_extensions_for_agent,
     _update_init_options_for_integration,
     _write_integration_json,
 )
@@ -119,6 +122,14 @@ def integration_switch(
             parsed_options=parsed_options,
             refresh_templates_force=force,
         )
+        _register_extensions_for_agent(
+            project_root,
+            target,
+            continuing=(
+                "The integration switch succeeded, but installed extensions may "
+                "need re-registration."
+            ),
+        )
         console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
@@ -170,19 +181,11 @@ def integration_switch(
 
         # Unregister extension commands for the old agent so they don't
         # remain as orphans in the old agent's directory.
-        try:
-            from ..extensions import ExtensionManager
-
-            ext_mgr = ExtensionManager(project_root)
-            ext_mgr.unregister_agent_artifacts(installed_key)
-        except Exception as ext_err:
-            _print_cli_warning(
-                "clean up extension artifacts for",
-                "integration",
-                installed_key,
-                ext_err,
-                continuing="Continuing with integration switch; old extension artifacts may need manual cleanup.",
-            )
+        _unregister_extensions_for_agent(
+            project_root,
+            installed_key,
+            continuing="Continuing with integration switch; old extension artifacts may need manual cleanup.",
+        )
 
         # Clear metadata so a failed Phase 2 doesn't leave stale references
         installed_keys = [installed for installed in installed_keys if installed != installed_key]
@@ -269,22 +272,6 @@ def integration_switch(
             parsed_options=parsed_options,
         )
 
-        # Re-register extension commands for the new agent so that
-        # previously-installed extensions are available in the new integration.
-        try:
-            from ..extensions import ExtensionManager
-
-            ext_mgr = ExtensionManager(project_root)
-            ext_mgr.register_enabled_extensions_for_agent(target)
-        except Exception as ext_err:
-            _print_cli_warning(
-                "register extension artifacts for",
-                "integration",
-                target,
-                ext_err,
-                continuing="The integration switch succeeded, but installed extensions may need re-registration.",
-            )
-
     except Exception as exc:
         # Attempt rollback of any files written by setup
         try:
@@ -331,6 +318,15 @@ def integration_switch(
             f"during switch: {_cli_error_detail(exc)}"
         )
         raise typer.Exit(1)
+
+    # Re-register extension commands for the new agent so previously-installed
+    # extensions are available in it. Done after the try/except (the switch has
+    # committed) so this best-effort step can never trigger the rollback above.
+    _register_extensions_for_agent(
+        project_root,
+        target,
+        continuing="The integration switch succeeded, but installed extensions may need re-registration.",
+    )
 
     name = (target_integration.config or {}).get("name", target)
     console.print(f"\n[green]✓[/green] Switched to integration '{name}'")
@@ -461,6 +457,9 @@ def integration_upgrade(
                 raise _SharedTemplateRefreshError(
                     f"Failed to refresh shared infrastructure for '{key}': {exc}"
                 ) from exc
+            if os.name != "nt":
+                from .. import ensure_executable_scripts
+                ensure_executable_scripts(project_root)
         new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:
@@ -478,13 +477,31 @@ def integration_upgrade(
     # Phase 2: Remove stale files from old manifest that are not in the new one
     old_files = old_manifest.files
     new_files = new_manifest.files
-    stale_keys = set(old_files) - set(new_files)
+    # Exclude integration-declared paths that use conditional manifest tracking
+    # (e.g. merge targets like .vscode/settings.json) so they are never deleted
+    # as "stale" while still being actively managed.  Manifest keys are stored
+    # in POSIX form, so normalize the exclusions the same way before subtracting
+    # (an integration may build paths with os.path.join / backslashes).
+    exclusions = {PurePath(p).as_posix() for p in integration.stale_cleanup_exclusions()}
+    stale_keys = (set(old_files) - set(new_files)) - exclusions
     if stale_keys:
         stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
         stale_manifest._files = {k: old_files[k] for k in stale_keys}
         stale_removed, _ = stale_manifest.uninstall(project_root, force=True)
         if stale_removed:
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
+
+    # Re-register enabled extensions for the upgraded agent so its extension
+    # commands are (re)created — including agents installed before this
+    # back-fill existed. Mirrors switch for command registration; see #2886.
+    # Done after the upgrade has fully settled (Phase 2 included) and outside
+    # the try/except above so this best-effort step cannot affect upgrade
+    # success.
+    _register_extensions_for_agent(
+        project_root,
+        key,
+        continuing="The integration was upgraded, but installed extensions may need re-registration.",
+    )
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")
