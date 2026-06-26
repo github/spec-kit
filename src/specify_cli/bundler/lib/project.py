@@ -45,7 +45,13 @@ def find_project_root(start: Path | None = None) -> Path | None:
 
 
 def require_project_root(start: Path | None = None) -> Path:
-    """Return the Spec Kit project root or raise an actionable error."""
+    """Return the Spec Kit project root or raise an actionable error.
+
+    Inherits :func:`find_project_root`'s override behavior: when *start* is
+    ``None``, a set-but-invalid ``SPECIFY_INIT_DIR`` raises ``typer.Exit`` and a
+    symlinked ``.specify`` raises ``BundlerError`` before this returns. A missing
+    project (no override) raises ``BundlerError``.
+    """
     root = find_project_root(start)
     if root is None:
         raise BundlerError(
