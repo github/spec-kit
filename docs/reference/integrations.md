@@ -147,6 +147,7 @@ specify integration upgrade [<key>]
 | `--force`                | Overwrite files even if they have been modified                          |
 | `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
 | `--integration-options`  | Options for the integration                                              |
+| `--refresh-shared-infra` | Also refresh shared infrastructure files                                 |
 
 Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.
 
@@ -271,6 +272,7 @@ The currently declared multi-install safe integrations are:
 | `shai` | `.shai/commands`, `SHAI.md` |
 | `tabnine` | `.tabnine/agent/commands`, `TABNINE.md` |
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
+| `windsurf` | `.windsurf/workflows`, `.windsurf/rules/specify-rules.md` |
 | `zcode` | `.zcode/skills`, `ZCODE.md` |
 
 Integrations that share a context file or command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
