@@ -708,8 +708,8 @@ def extension_search(
         False,
         "--markdown",
         help=(
-            "Output the full community catalog as a markdown table "
-            "(ignores query/tag/author/verified filters)"
+            "Contributor-only utility to output the full community catalog "
+            "as a markdown table (cannot be used with filters)"
         ),
     ),
 ):
@@ -717,9 +717,10 @@ def extension_search(
     if markdown:
         if query or tag or author or verified:
             console.print(
-                "[yellow]Warning:[/yellow] --markdown outputs the full community catalog "
-                "and ignores filters (query, --tag, --author, --verified)."
+                "[red]Error:[/red] The --markdown flag outputs the full community catalog "
+                "and cannot be used with filters (query, --tag, --author, --verified)."
             )
+            raise typer.Exit(1)
         from ..community_catalog_docs import render_community_extensions_table
 
         try:
