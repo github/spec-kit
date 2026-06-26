@@ -825,15 +825,21 @@ def _download_remote_manifest(entry_id: str, url: str):
     except BundlerError:
         raise
     except Exception as exc:  # noqa: BLE001
-        raise BundlerError(f"Failed to download bundle '{entry_id}' from {effective_url}: {exc}") from exc
+        # Report the original catalog URL so users know which entry to fix,
+        # and include the resolved URL when it differs for easier debugging.
+        if effective_url != url:
+            msg = f"Failed to download bundle '{entry_id}' from {url} (resolved to {effective_url}): {exc}"
+        else:
+            msg = f"Failed to download bundle '{entry_id}' from {url}: {exc}"
+        raise BundlerError(msg) from exc
 
     # A .zip artifact is written to a temp file and parsed via the local-source
     # path (which extracts bundle.yml); any other payload is treated as YAML.
     # Detection uses the original catalog URL's extension when available (browser
-    # release URLs carry the filename), and falls back to the ZIP magic bytes for
-    # direct REST API asset URLs which have no file extension in their path.
-    _ZIP_MAGIC = b"PK\x03\x04"
-    if url.lower().endswith(".zip") or raw[:4] == _ZIP_MAGIC:
+    # release URLs carry the filename), and falls back to the ZIP magic bytes
+    # (``PK`` prefix) for direct REST API asset URLs which have no file extension.
+    # All valid ZIP variants start with ``PK`` (local-file, empty-archive, split).
+    if url.lower().endswith(".zip") or raw[:2] == b"PK":
         with tempfile.TemporaryDirectory() as tmp:
             artifact = Path(tmp) / "bundle.zip"
             artifact.write_bytes(raw)

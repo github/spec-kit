@@ -511,7 +511,7 @@ def test_bundle_info_passes_through_api_asset_url(project: Path):
     assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
 
-def test_bundle_info_resolves_github_browser_release_url_zip(project: Path, tmp_path: Path):
+def test_bundle_info_resolves_github_browser_release_url_zip(project: Path):
     """bundle info resolves a browser release URL for a .zip artifact and extracts bundle.yml."""
     import io
     import zipfile
