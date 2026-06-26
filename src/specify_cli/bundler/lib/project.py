@@ -20,6 +20,12 @@ def find_project_root(start: Path | None = None) -> Path | None:
     if start is None:
         override = _resolve_init_dir_override()
         if override is not None:
+            # Match the loop guard below: a symlinked .specify is not accepted
+            # as a project root (following it could read/write outside the tree).
+            # _resolve_init_dir_override validates .specify with is_dir(), which
+            # follows symlinks, so re-check here.
+            if (override / ".specify").is_symlink():
+                return None
             return override
 
     current = Path(start or Path.cwd()).resolve()
