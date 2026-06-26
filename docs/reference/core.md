@@ -56,6 +56,8 @@ specify init my-project --integration copilot --preset compliance
 
 > **Two resolution axes.** `SPECIFY_INIT_DIR` selects the **project** (which directory contains `.specify/`); `SPECIFY_FEATURE_DIRECTORY` / `.specify/feature.json` select the **feature** within that project. They are independent — project first, then feature.
 
+> **Symlinked project roots.** A symlinked `.specify/` at the target is followed by `integration`, `extension`, and `workflow` (matching the shell resolver, which follows symlinks), but refused by `bundle` and `workflow run <file>`, which require an unsymlinked root for write confinement.
+
 ## Check Installed Tools
 
 ```bash
