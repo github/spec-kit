@@ -37,8 +37,8 @@ from specify_cli.extensions import (
     ValidationError,
     CompatibilityError,
     normalize_priority,
-    version_satisfies,
 )
+from specify_cli._utils import version_satisfies
 
 
 def can_create_symlink(tmp_path: Path) -> bool:
@@ -2634,8 +2634,10 @@ class TestVersionSatisfies:
         assert not version_satisfies("1.0.3", ">=1.0.0,!=1.0.3")
 
     def test_version_satisfies_prerelease(self):
-        """Prerelease builds should satisfy compatible lower bounds."""
+        """Prerelease builds should satisfy compatible lower bounds, but not higher bounds."""
         assert version_satisfies("0.8.8.dev0", ">=0.2.0")
+        assert not version_satisfies("0.2.0.dev0", ">=0.2.0")
+        assert not version_satisfies("0.8.7.dev1", ">=0.8.8")
 
     def test_version_satisfies_invalid(self):
         """Test invalid version strings."""

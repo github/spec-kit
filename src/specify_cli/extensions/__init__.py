@@ -28,7 +28,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
-from .._utils import dump_frontmatter, relative_extension_path_violation
+from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
 from ..shared_infra import verify_archive_sha256
@@ -1279,18 +1279,19 @@ class ExtensionManager:
             CompatibilityError: If extension is incompatible
         """
         required = manifest.requires_speckit_version
-        current = pkg_version.Version(speckit_version)
 
         # Parse version specifier (e.g., ">=0.1.0,<2.0.0")
         try:
-            specifier = SpecifierSet(required)
-            if not specifier.contains(current, prereleases=True):
-                raise CompatibilityError(
-                    f"Extension requires spec-kit {required}, "
-                    f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
-                )
+            SpecifierSet(required)  # Just to validate
         except InvalidSpecifier:
+            raise CompatibilityError(f"Invalid version specifier: {required}")
+
+        if not version_satisfies(speckit_version, required):
+            raise CompatibilityError(
+                f"Extension requires spec-kit {required}, "
+                f"but {speckit_version} is installed.\n"
+                f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
+            )
             raise CompatibilityError(f"Invalid version specifier: {required}")
 
         return True
@@ -1871,22 +1872,6 @@ class ExtensionManager:
             return None
 
 
-def version_satisfies(current: str, required: str) -> bool:
-    """Check if current version satisfies required version specifier.
-
-    Args:
-        current: Current version (e.g., "0.1.5")
-        required: Required version specifier (e.g., ">=0.1.0,<2.0.0")
-
-    Returns:
-        True if version satisfies requirement
-    """
-    try:
-        current_ver = pkg_version.Version(current)
-        specifier = SpecifierSet(required)
-        return specifier.contains(current_ver, prereleases=True)
-    except (pkg_version.InvalidVersion, InvalidSpecifier):
-        return False
 
 
 class CommandRegistrar:
