@@ -113,6 +113,15 @@ def escape_markdown_link_text(text: str) -> str:
     return text.replace("[", "\\[").replace("]", "\\]")
 
 
+def render_code_span(value: str) -> str:
+    """Safely render a value as an inline markdown code span.
+    
+    Replaces internal backticks with single quotes to prevent breaking the code span.
+    """
+    safe_value = value.replace("`", "'")
+    return f"`{safe_value}`"
+
+
 def _get_integration_registry() -> dict[str, Any]:
     from specify_cli.integrations import INTEGRATION_REGISTRY
 
@@ -195,7 +204,7 @@ def render_integrations_table() -> str:
             if safe_url
             else safe_label
         )
-        table_rows.append([agent, f"`{key}`", safe_notes])
+        table_rows.append([agent, render_code_span(key), safe_notes])
 
     headers = ("Agent", "Key", "Notes")
 

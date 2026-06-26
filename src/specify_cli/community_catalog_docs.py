@@ -11,6 +11,7 @@ from .catalog_docs import (
     escape_markdown_link_text,
     escape_url_for_markdown_link,
     render_cell,
+    render_code_span,
 )
 
 
@@ -23,7 +24,7 @@ def _format_tags(tags: Any) -> str:
         return "—"
     # Clean first, then filter: a tag of "  |  " would pass str(tag).strip() but produce
     # an empty backtick span after pipe removal, so filter on the cleaned value.
-    cleaned = [f"`{c}`" for tag in tags if (c := str(tag).replace("|", "").strip())]
+    cleaned = [render_code_span(c) for tag in tags if (c := str(tag).replace("|", "").strip())]
     return ", ".join(cleaned) if cleaned else "—"
 
 
@@ -84,7 +85,7 @@ def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> st
         table_rows.append(
             [
                 link,
-                f"`{render_cell(row['id'])}`",
+                render_code_span(render_cell(row['id'])),
                 render_cell(row["description"]),
                 _format_tags(row["tags"]),
                 row["verified"],
