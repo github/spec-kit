@@ -139,3 +139,11 @@ def test_non_list_tags_renders_em_dash(tmp_path: Path) -> None:
     })
     table = render_community_extensions_table(path=f)
     assert "—" in table
+
+def test_community_extensions_markdown_rejects_filters() -> None:
+    from typer.testing import CliRunner
+    from specify_cli import app
+    runner = CliRunner()
+    result = runner.invoke(app, ["extension", "search", "--markdown", "--tag", "foo"])
+    assert result.exit_code == 1
+    assert "The --markdown flag outputs the full community catalog" in result.stdout
