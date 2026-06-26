@@ -40,6 +40,7 @@ INTEGRATION_DOC_URLS: dict[str, str | None] = {
     "trae": "https://www.trae.ai/",
     "vibe": "https://github.com/mistralai/mistral-vibe",
     "windsurf": "https://windsurf.com/",
+    "zed": "https://zed.dev/",
 }
 
 INTEGRATION_LABEL_OVERRIDES: dict[str, str] = {
@@ -181,7 +182,10 @@ def list_integrations_for_docs(
         if not isinstance(config, dict):
             config = {}
         label = INTEGRATION_LABEL_OVERRIDES.get(key, str(config.get("name") or key))
-        url = INTEGRATION_DOC_URLS.get(key)  # None if not in map
+        if key in INTEGRATION_DOC_URLS:
+            url = INTEGRATION_DOC_URLS[key]
+        else:
+            url = config.get("install_url")
         notes = INTEGRATION_NOTES.get(key, "")
         rows.append((key, label, url, notes))
 
