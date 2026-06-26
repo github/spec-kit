@@ -1286,8 +1286,8 @@ class ExtensionManager:
             specifier = SpecifierSet(required)
             # Intentionally allow prereleases only for source/dev spec-kit installs
             # so they can satisfy extension compatibility checks, while still
-            # rejecting RC/beta builds per normal PEP 440 rules.
-            if not specifier.contains(current, prereleases=current.is_devrelease):
+            # preserving normal PEP 440 rules for RC/beta builds.
+            if not specifier.contains(current, prereleases=True if current.is_devrelease else None):
                 raise CompatibilityError(
                     f"Extension requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"

@@ -160,8 +160,19 @@ def test_docs_extensions_md_is_up_to_date() -> None:
     
     generated_table = render_community_extensions_table()
     
-    # Assert that the exact generated table is embedded in the markdown file
-    assert generated_table in docs_content, (
+    # Extract the block between markers and compare it exactly
+    start_marker = "<!-- BEGIN GENERATED TABLE -->\n"
+    end_marker = "<!-- END GENERATED TABLE -->"
+    
+    start_idx = docs_content.find(start_marker)
+    end_idx = docs_content.find(end_marker)
+    
+    assert start_idx != -1, f"Missing '{start_marker.strip()}' in docs/community/extensions.md"
+    assert end_idx != -1, f"Missing '{end_marker}' in docs/community/extensions.md"
+    
+    actual_table = docs_content[start_idx + len(start_marker):end_idx]
+    
+    assert actual_table.strip() == generated_table.strip(), (
         "docs/community/extensions.md is out of sync with catalog.community.json. "
         "Please run `specify extension search --markdown` and update the docs file."
     )
