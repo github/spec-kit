@@ -20,12 +20,13 @@ def find_project_root(start: Path | None = None) -> Path | None:
     if start is None:
         override = _resolve_init_dir_override()
         if override is not None:
-            # Match the loop guard below: a symlinked .specify is not accepted
-            # as a project root (following it could read/write outside the tree).
-            # _resolve_init_dir_override validates .specify with is_dir(), which
-            # follows symlinks, so re-check here.
+            # An explicit override is strict: do not return None here, because
+            # bundle install treats None as "init the current directory".
             if (override / ".specify").is_symlink():
-                return None
+                raise BundlerError(
+                    "SPECIFY_INIT_DIR is not a safe Spec Kit project "
+                    f"(symlinked .specify/ directory is not allowed): {override}"
+                )
             return override
 
     current = Path(start or Path.cwd()).resolve()

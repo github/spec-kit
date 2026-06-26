@@ -173,7 +173,7 @@ def test_find_project_root_ignores_symlinked_specify(tmp_path: Path):
     assert find_project_root(project) is None
 
 
-def test_find_project_root_override_ignores_symlinked_specify(tmp_path: Path, monkeypatch):
+def test_find_project_root_override_errors_on_symlinked_specify(tmp_path: Path, monkeypatch):
     """The SPECIFY_INIT_DIR override path refuses a symlinked .specify too,
     matching the cwd loop path (regression: the override returned early and
     skipped the symlink guard)."""
@@ -188,4 +188,5 @@ def test_find_project_root_override_ignores_symlinked_specify(tmp_path: Path, mo
     except (OSError, NotImplementedError):
         pytest.skip("symlinks not supported on this platform")
     monkeypatch.setenv("SPECIFY_INIT_DIR", str(project))
-    assert find_project_root(None) is None
+    with pytest.raises(BundlerError, match="symlinked \\.specify"):
+        find_project_root(None)
