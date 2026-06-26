@@ -576,6 +576,9 @@ class PresetManager:
 
         try:
             specifier = SpecifierSet(required)
+            # Intentionally allow prereleases so source/dev spec-kit installs
+            # can satisfy preset compatibility checks; the same rationale
+            # applies to the analogous prerelease handling in extensions.py.
             if not specifier.contains(current, prereleases=True):
                 raise PresetCompatibilityError(
                     f"Preset requires spec-kit {required}, "
