@@ -239,9 +239,9 @@ cand = Path(sys.argv[2]).resolve()
 try:
     print(cand.relative_to(root).as_posix())
 except ValueError:
-    # Outside project root: use the bash-side path (already forward-slash
-    # normalised via tr), not cand which may be a WindowsPath with backslashes.
-    print(sys.argv[2])
+    # Outside project root: emit the resolved path in POSIX form.
+    # as_posix() converts backslashes correctly on native Windows Python.
+    print(cand.as_posix())
 PY
 )"
       fi
