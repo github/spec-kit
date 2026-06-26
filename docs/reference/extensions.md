@@ -25,8 +25,8 @@ specify extension add <name>
 | Option          | Description                                              |
 | --------------- | -------------------------------------------------------- |
 | `--dev`         | Install from a local directory (for development)         |
-| `--force`       | Overwrite if already installed                           |
 | `--from <url>`  | Install from a custom URL instead of the catalog         |
+| `--force`       | Overwrite if already installed                           |
 | `--priority <N>`| Resolution priority (default: 10; lower = higher precedence) |
 
 Installs an extension from the catalog, a URL, or a local directory. Extension commands are automatically registered with the currently installed AI coding agent integration.
