@@ -147,3 +147,21 @@ def test_community_extensions_markdown_rejects_filters() -> None:
     result = runner.invoke(app, ["extension", "search", "--markdown", "--tag", "foo"])
     assert result.exit_code == 1
     assert "The --markdown flag outputs the full community catalog" in result.stdout
+
+def test_docs_extensions_md_is_up_to_date() -> None:
+    from pathlib import Path
+    from specify_cli.community_catalog_docs import render_community_extensions_table
+    
+    root_dir = Path(__file__).resolve().parents[1]
+    docs_path = root_dir / "docs" / "community" / "extensions.md"
+    
+    assert docs_path.exists(), "docs/community/extensions.md not found"
+    docs_content = docs_path.read_text(encoding="utf-8")
+    
+    generated_table = render_community_extensions_table()
+    
+    # Assert that the exact generated table is embedded in the markdown file
+    assert generated_table in docs_content, (
+        "docs/community/extensions.md is out of sync with catalog.community.json. "
+        "Please run `specify extension search --markdown` and update the docs file."
+    )

@@ -1298,9 +1298,10 @@ class ExtensionManager:
         # Parse version specifier (e.g., ">=0.1.0,<2.0.0")
         try:
             specifier = SpecifierSet(required)
-            # Intentionally allow prereleases so source/dev spec-kit installs
-            # can satisfy extension compatibility checks.
-            if not specifier.contains(current, prereleases=True):
+            # Intentionally allow prereleases only for source/dev spec-kit installs
+            # so they can satisfy extension compatibility checks, while still
+            # rejecting RC/beta builds per normal PEP 440 rules.
+            if not specifier.contains(current, prereleases=current.is_devrelease):
                 raise CompatibilityError(
                     f"Extension requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"
