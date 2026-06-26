@@ -4730,9 +4730,14 @@ class TestPresetAddFromUrlResolution:
         class FakeResponse:
             def __init__(self, data):
                 self._data = data
+                self._pos = 0
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def __enter__(self):
                 return self
@@ -4787,9 +4792,14 @@ class TestPresetAddFromUrlResolution:
         class FakeResponse:
             def __init__(self, data):
                 self._data = data
+                self._pos = 0
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def __enter__(self):
                 return self
@@ -6111,10 +6121,10 @@ def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monke
     def fake_open(url, timeout=None, extra_headers=None):
         captured.append(url)
         resp = MagicMock()
-        resp.read.return_value = json.dumps({
+        resp.read.side_effect = io.BytesIO(json.dumps({
             "assets": [{"name": "pack.zip",
                         "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/9"}]
-        }).encode()
+        }).encode()).read
         yield resp
 
     monkeypatch.setattr(catalog, "_open_url", fake_open)
