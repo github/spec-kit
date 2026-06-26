@@ -18,8 +18,10 @@ def _resolve_init_dir_override() -> Path | None:
     the project root — the directory *containing* ``.specify/`` — and is strict.
     Relative paths resolve against the current directory; the path must exist and
     contain ``.specify/``, otherwise this hard-errors with no fallback to cwd
-    (which would silently operate on the wrong project's files). The error strings
-    match the shell resolver so the two surfaces read consistently.
+    (which would silently operate on the wrong project's files). The error
+    messages mirror the shell resolver's wording (rendered here as a Rich
+    ``Error:`` line, plain ``ERROR:`` in the shell) so the two surfaces read
+    consistently.
 
     Returns the validated absolute project root, or ``None`` when the variable is
     unset/empty, in which case callers keep their existing cwd-based behavior.
