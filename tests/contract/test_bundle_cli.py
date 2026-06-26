@@ -509,3 +509,102 @@ def test_bundle_info_passes_through_api_asset_url(project: Path):
     assert len(asset_calls) == 1
     assert asset_calls[0][0] == api_asset_url
     assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+
+def test_bundle_info_resolves_github_browser_release_url_zip(project: Path, tmp_path: Path):
+    """bundle info resolves a browser release URL for a .zip artifact and extracts bundle.yml."""
+    import io
+    import zipfile
+
+    browser_url = "https://github.com/org/repo/releases/download/v2.0/bundle.zip"
+    api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/88"
+
+    # Build a minimal in-memory ZIP containing bundle.yml
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict()))
+    zip_bytes = buf.getvalue()
+
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "releases/tags/" in url:
+            return FakeBundleResponse(
+                json.dumps({
+                    "assets": [{"name": "bundle.zip", "url": api_asset_url}]
+                }).encode(),
+                url=url,
+            )
+        return FakeBundleResponse(zip_bytes, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    # tags API lookup must have fired
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 1
+    assert "releases/tags/v2.0" in tag_calls[0]
+
+    # Asset download uses octet-stream
+    asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
+    assert len(asset_calls) >= 1
+    assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    # Manifest was successfully parsed from the ZIP
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"
+
+
+def test_bundle_info_api_asset_url_zip_detected_by_magic_bytes(project: Path):
+    """bundle info correctly handles a direct API asset URL that serves ZIP bytes."""
+    import io
+    import zipfile
+
+    api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/55"
+
+    # Build a minimal in-memory ZIP containing bundle.yml
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict()))
+    zip_bytes = buf.getvalue()
+
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        return FakeBundleResponse(zip_bytes, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=api_asset_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    # No tags API call — URL was already a REST asset URL
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 0
+
+    # Download used octet-stream header
+    asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
+    assert len(asset_calls) == 1
+    assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    # ZIP bytes were detected by magic and bundle.yml extracted correctly
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"

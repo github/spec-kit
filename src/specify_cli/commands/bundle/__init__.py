@@ -829,9 +829,11 @@ def _download_remote_manifest(entry_id: str, url: str):
 
     # A .zip artifact is written to a temp file and parsed via the local-source
     # path (which extracts bundle.yml); any other payload is treated as YAML.
-    # Use the original catalog URL (``url``) to determine the artifact format
-    # since the resolved API URL does not carry the file extension.
-    if url.lower().endswith(".zip"):
+    # Detection uses the original catalog URL's extension when available (browser
+    # release URLs carry the filename), and falls back to the ZIP magic bytes for
+    # direct REST API asset URLs which have no file extension in their path.
+    _ZIP_MAGIC = b"PK\x03\x04"
+    if url.lower().endswith(".zip") or raw[:4] == _ZIP_MAGIC:
         with tempfile.TemporaryDirectory() as tmp:
             artifact = Path(tmp) / "bundle.zip"
             artifact.write_bytes(raw)
