@@ -210,7 +210,7 @@ function Test-FileExists {
 function Test-DirHasFiles {
     param([string]$Path, [string]$Description)
     # A directory counts as non-empty when Get-ChildItem returns any entry
-    # (files or subdirectories) — matching the JSON contracts checks in
+    # (files or subdirectories) -- matching the JSON contracts checks in
     # check-prerequisites.ps1 / setup-tasks.ps1, and treating a directory whose
     # only contents are subdirectories (e.g. contracts/v1/openapi.yaml) as
     # non-empty like bash check_dir. Filtering out subdirectories would
