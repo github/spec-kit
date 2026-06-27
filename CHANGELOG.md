@@ -2,6 +2,8 @@
 
 <!-- insert new changelog below this comment -->
 
+- fix(scripts): use a portable uppercase (`tr`) for branch-name acronym retention instead of `${word^^}`, which is bash 4+ only and broke acronym/short-word retention on macOS's default bash 3.2
+
 ## [0.11.9] - 2026-06-26
 
 ### Changed
