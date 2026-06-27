@@ -286,6 +286,42 @@ class TestExpressions:
         assert evaluate_expression('{{ [["a", "b"], "c"] }}', ctx) == [["a", "b"], "c"]
         assert evaluate_expression("{{ [[1, 2], [3, 4]] }}", ctx) == [[1, 2], [3, 4]]
 
+    def test_operator_splitting_is_quote_aware(self):
+        from specify_cli.workflows.expressions import (
+            evaluate_condition,
+            evaluate_expression,
+        )
+        from specify_cli.workflows.base import StepContext
+
+        # An 'and'/'or'/'in' keyword INSIDE a quoted operand must not be treated
+        # as a boolean/membership operator: the comparison applies to the whole
+        # string literal.
+        ctx = StepContext(inputs={"mode": "read and write"})
+        assert evaluate_expression("{{ inputs.mode == 'read and write' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.mode == 'read or write' }}", ctx) is False
+        # ...also when the quoted literal is on the left of the operator.
+        left_ctx = StepContext(inputs={"x": "approve or reject"})
+        assert evaluate_expression("{{ 'approve or reject' == inputs.x }}", left_ctx) is True
+        # membership against a literal that contains a keyword
+        assert evaluate_expression("{{ 'cat' in 'cat and dog' }}", StepContext()) is True
+
+        # Literal-vs-literal equality no longer mis-strips to a garbage string
+        # (previously `'done' == 'failed'` short-circuited to the truthy string
+        # "done' == 'failed").
+        assert evaluate_condition("{{ 'done' == 'failed' }}", StepContext()) is False
+        assert evaluate_condition("{{ 'done' == 'done' }}", StepContext()) is True
+
+        # A single quoted literal that itself contains operator text is preserved.
+        assert evaluate_expression("{{ 'a == b' }}", StepContext()) == "a == b"
+        assert evaluate_expression("{{ 'x and y' }}", StepContext()) == "x and y"
+
+        # Regression: ordinary (unquoted-keyword) parsing still works.
+        plain = StepContext(inputs={"a": 1, "b": 2, "mode": "read"})
+        assert evaluate_expression("{{ inputs.mode == 'read' }}", plain) is True
+        assert evaluate_expression("{{ inputs.a == 1 and inputs.b == 2 }}", plain) is True
+        assert evaluate_expression("{{ inputs.a == 9 or inputs.b == 2 }}", plain) is True
+        assert evaluate_expression("{{ inputs.missing | default('a and b') }}", plain) == "a and b"
+
     def test_filter_default(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
