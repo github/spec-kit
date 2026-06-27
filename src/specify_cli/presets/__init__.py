@@ -576,7 +576,10 @@ class PresetManager:
 
         try:
             specifier = SpecifierSet(required)
-            if current not in specifier:
+            # Intentionally allow prereleases only for source/dev spec-kit installs
+            # so they can satisfy preset compatibility checks, while still
+            # preserving normal PEP 440 rules for RC/beta builds.
+            if not specifier.contains(current, prereleases=True if current.is_devrelease else None):
                 raise PresetCompatibilityError(
                     f"Preset requires spec-kit {required}, "
                     f"but {speckit_version} is installed.\n"
