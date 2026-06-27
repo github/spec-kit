@@ -30,7 +30,7 @@ fi
 cd "$CWD" 2>/dev/null || exit 0
 
 if command -v specify >/dev/null 2>&1; then
-    if ! specify init --here --plugin --force >&2 2>&1; then
+    if ! specify init --here --plugin --force >/dev/null 2>&1; then
         echo "Spec Kit: could not provision .specify/. Run: specify init --here --plugin" >&2
     fi
 else

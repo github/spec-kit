@@ -106,6 +106,8 @@ def _provision_plugin_skills(
 
     # Degrade path: no adg — produce the source tree for later pickup.
     if not adg_available:
+        if out_dir is None:
+            raise ValueError("out_dir must be provided when adg is not available")
         dest = out_dir.resolve()
         build_plugin(dest, script_type)
         tracker.complete(

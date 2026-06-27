@@ -102,6 +102,8 @@ def has_global_plugin(name: str = PLUGIN_NAME, *, adg: str | None = None) -> boo
     try:
         data = json.loads(_run(adg, ["plugins", "list", "--global", "--json"]))
         plugins = data.get("plugins", []) if isinstance(data, dict) else []
+        if not isinstance(plugins, list):
+            plugins = []
         return any(
             isinstance(p, dict) and p.get("name") == name for p in plugins
         )
