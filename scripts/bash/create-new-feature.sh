@@ -152,10 +152,10 @@ generate_branch_name() {
         if ! echo "$word" | grep -qiE "$stop_words"; then
             if [ ${#word} -ge 3 ]; then
                 meaningful_words+=("$word")
-            # Keep short words if they appear as uppercase in original (likely acronyms).
-            # Uppercase via tr (portable) rather than ${word^^}, which is bash 4+ only
-            # and breaks on macOS's default bash 3.2 ("bad substitution").
-            elif echo "$description" | grep -q "\b$(printf '%s' "$word" | tr '[:lower:]' '[:upper:]')\b"; then
+            # Keep short words that appear as an uppercase acronym in the original.
+            # Uppercase via tr and match with grep -w (both portable) rather than
+            # bash's 4+ "^^" case expansion (breaks on macOS bash 3.2) and \b (non-POSIX).
+            elif echo "$description" | grep -qw -- "$(printf '%s' "$word" | tr '[:lower:]' '[:upper:]')"; then
                 meaningful_words+=("$word")
             fi
         fi

@@ -288,8 +288,8 @@ generate_branch_name() {
         if ! echo "$word" | grep -qiE "$stop_words"; then
             if [ ${#word} -ge 3 ]; then
                 meaningful_words+=("$word")
-            # Uppercase via tr (portable) rather than ${word^^}, which is bash 4+
-            # only and breaks on macOS's default bash 3.2 ("bad substitution").
+            # Uppercase via tr (portable) rather than bash's 4+ "^^" case
+            # expansion, which breaks on macOS's default bash 3.2 (bad substitution).
             elif echo "$description" | grep -qw -- "$(printf '%s' "$word" | tr '[:lower:]' '[:upper:]')"; then
                 meaningful_words+=("$word")
             fi
