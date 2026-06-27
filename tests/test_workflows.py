@@ -2810,6 +2810,47 @@ steps:
         errors = validate_workflow(definition)
         assert any("invalid default" in e for e in errors), errors
 
+    def test_coerce_number_input_rejects_infinity_cleanly(self):
+        """An infinite float must surface as a clean ValueError (like NaN), not
+        let ``int(inf)``'s OverflowError escape: ``int()`` of an infinity raises
+        OverflowError, which is not ValueError/TypeError.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        for value in (float("inf"), float("-inf"), "inf", "Infinity", "-inf"):
+            with pytest.raises(ValueError, match="expected a number"):
+                WorkflowEngine._coerce_input("count", value, {"type": "number"})
+        # Finite values still coerce (whole floats normalize to int).
+        assert WorkflowEngine._coerce_input("count", 5.0, {"type": "number"}) == 5
+        assert WorkflowEngine._coerce_input("count", 3.5, {"type": "number"}) == 3.5
+
+    def test_validate_workflow_rejects_infinite_default_for_number_type(self):
+        """``type: number`` with an infinite default (YAML ``.inf``) must be
+        reported as an error, not raise. ``int(inf)`` raises OverflowError during
+        coercion, which previously escaped validate_workflow's ValueError handler
+        and broke its "return a list of errors" contract.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "inf-as-number"
+  name: "Inf As Number"
+  version: "1.0.0"
+inputs:
+  count:
+    type: number
+    default: .inf
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid default" in e for e in errors), errors
+
     def test_validate_workflow_rejects_non_string_default_for_string_type(self):
         """``type: string`` must require an actual string — a numeric YAML
         default like ``5`` would otherwise slip through unvalidated.
