@@ -165,7 +165,7 @@ function Get-FeaturePathsEnv {
             $featureDir = Join-Path $repoRoot $featureDir
         }
         # Persist to feature.json so future sessions without the env var still
-        # work — unless the caller opted out for read-only resolution (#3025).
+        # work - unless the caller opted out for read-only resolution (#3025).
         if (-not $NoPersist) {
             Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
         }
