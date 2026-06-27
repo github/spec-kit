@@ -124,10 +124,10 @@ class TestDependencyAuditWorkflow:
         assert "uv.lock" not in protection_text
         assert "/tmp/" not in protection_text
 
-    def test_dependency_audit_checkout_fetches_previous_commit(self):
+    def test_dependency_audit_checkout_fetches_full_history_for_diff_base(self):
         checkout = _step("dependency-audit", "Checkout")
 
-        assert checkout["with"]["fetch-depth"] == 2
+        assert checkout["with"]["fetch-depth"] == 0
 
     def test_security_workflow_triggers(self):
         triggers = _workflow_triggers()
@@ -252,6 +252,22 @@ class TestDependencyAuditWorkflow:
         assert WORKFLOW_SYNC_COMPILE_TEST_EXTRA_DEPS in compile_command
         assert "--output-file" in compile_commands[0]
         assert str(generated_requirements) in compile_commands[0]
+
+    def test_sync_script_reports_missing_generated_requirements_env(
+        self, monkeypatch, capsys
+    ):
+        sync_script = _load_sync_script()
+        monkeypatch.delenv("GENERATED_REQUIREMENTS", raising=False)
+
+        def fake_run(command, **_kwargs):
+            if command[0] == "git":
+                return subprocess.CompletedProcess(command, 0, stdout="pyproject.toml\n", stderr="")
+            raise AssertionError("compile should not run without GENERATED_REQUIREMENTS")
+
+        monkeypatch.setattr(sync_script.subprocess, "run", fake_run)
+
+        assert sync_script.main() == 1
+        assert "GENERATED_REQUIREMENTS must be set" in capsys.readouterr().err
 
     def test_sync_script_fails_when_generated_requirements_differ(
         self, monkeypatch, tmp_path, capsys

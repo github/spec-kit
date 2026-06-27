@@ -67,7 +67,15 @@ def main() -> int:
     if not _dependency_inputs_changed():
         return 0
 
-    generated_requirements = Path(os.environ["GENERATED_REQUIREMENTS"])
+    generated_requirements_env = os.environ.get("GENERATED_REQUIREMENTS", "").strip()
+    if not generated_requirements_env:
+        print(
+            "GENERATED_REQUIREMENTS must be set to the temporary output file path.",
+            file=sys.stderr,
+        )
+        return 1
+
+    generated_requirements = Path(generated_requirements_env)
     generated_requirements.parent.mkdir(parents=True, exist_ok=True)
 
     subprocess.run(
