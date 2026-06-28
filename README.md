@@ -409,6 +409,12 @@ The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, op
 specify init <project_name> --integration copilot --ignore-agent-tools
 ```
 
+If you are working across multiple projects and want to avoid duplicate skill files, you can use the global plugin mode (requires the `adg` CLI):
+
+```bash
+specify init <project_name> --integration claude --plugin
+```
+
 ### **STEP 1:** Establish project principles
 
 Go to the project folder and run your coding agent. In our example, we're using `claude`.

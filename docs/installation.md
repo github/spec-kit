@@ -79,6 +79,33 @@ If you prefer to get the templates without checking for the right tools:
 specify init <project_name> --integration claude --ignore-agent-tools
 ```
 
+### Global Plugin Mode (ADG Plugin)
+
+By default, Spec Kit copies all core skills and templates into the project's local agent folder (e.g. `.claude/skills/`). For developers working across multiple projects, this can result in duplicate files.
+
+Spec Kit supports an opt-in **Global Plugin Mode** using the external [Agent Directory Group (adg)](https://github.com/rbbtsn0w/adg) CLI to manage core skills as a single, global plugin:
+
+1. **Install the `adg` CLI** globally:
+   ```bash
+   npm install -g @rbbtsn0w/adg
+   ```
+
+2. **Initialize a project** with the `--plugin` flag:
+   ```bash
+   specify init <PROJECT_NAME> --integration claude --plugin
+   ```
+   On first use, Spec Kit will bundle and register the core skills globally under `~/.agents/plugins/` using `adg`, then configure your coding agent runtime to consume the global plugin.
+
+3. **Offline / CI Environments (Degraded Mode)**:
+   If `adg` is not installed on the system (e.g., in a CI pipeline or offline environment), you can combine the `--plugin` flag with `--plugin-out <dir>` to build the plugin source tree without linking:
+   ```bash
+   specify init <PROJECT_NAME> --integration claude --plugin --plugin-out ./my-plugin-source
+   ```
+   You can later register the plugin globally once the `adg` tool is available:
+   ```bash
+   adg plugins add ./my-plugin-source --global
+   ```
+
 ## Verification
 
 After installation, run the following command to confirm the correct version is installed:
