@@ -121,6 +121,45 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
+    def test_init_plugin_defaults_to_codex(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        called_provision = False
+
+        def mock_provision(script_type, tracker, **kwargs):
+            nonlocal called_provision
+            called_provision = True
+            tracker.complete("integration", "mocked global plugin")
+            return False
+
+        monkeypatch.setattr(init_mod, "_provision_plugin_skills", mock_provision)
+
+        runner = CliRunner()
+        project = tmp_path / "plugin-default-test"
+        result = runner.invoke(app, [
+            "init", str(project), "--plugin", "--script", "sh", "--ignore-agent-tools",
+        ], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert called_provision is True
+
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
+        assert data["integration"] == "codex"
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts["integration"] == "codex"
+        assert opts["ai"] == "codex"
+
+        import yaml as _yaml
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        assert ext_cfg_path.exists()
+        ext_cfg = _yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8"))
+        assert ext_cfg["context_file"] == "AGENTS.md"
+
+        assert "Core Spec Kit skills are managed as a global adg plugin" in result.output
+
     def test_integration_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app

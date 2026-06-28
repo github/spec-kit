@@ -470,8 +470,9 @@ def register(app: typer.Typer) -> None:
         elif plugin:
             # In plugin mode the runtime skills come from the adapted global
             # plugin; the integration here only drives .specify/ provisioning.
-            # Default to claude (adg's canonical target) without prompting.
-            selected_ai = "claude"
+            # Default to codex (which uses the generic AGENTS.md context file)
+            # without prompting.
+            selected_ai = "codex"
         elif not _stdin_is_interactive():
             console.print(
                 f"[dim]Non-interactive session detected: defaulting to '{DEFAULT_INIT_INTEGRATION}'. "

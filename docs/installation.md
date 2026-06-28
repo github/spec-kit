@@ -92,14 +92,16 @@ Spec Kit supports an opt-in **Global Plugin Mode** using the external [Agent Dir
 
 2. **Initialize a project** with the `--plugin` flag:
    ```bash
-   specify init <PROJECT_NAME> --integration claude --plugin
+   specify init <PROJECT_NAME> --plugin
    ```
+   *Note: Without `--integration`, plugin mode defaults to the generic `codex` integration. This sets up an agent-agnostic `AGENTS.md` context file in your project root, while the global `adg` plugin handles routing skills to your actual active agent.*
+
    On first use, Spec Kit will bundle and register the core skills globally under `~/.agents/plugins/` using `adg`, then configure your coding agent runtime to consume the global plugin.
 
 3. **Offline / CI Environments (Degraded Mode)**:
    If `adg` is not installed on the system (e.g., in a CI pipeline or offline environment), you can combine the `--plugin` flag with `--plugin-out <dir>` to build the plugin source tree without linking:
    ```bash
-   specify init <PROJECT_NAME> --integration claude --plugin --plugin-out ./my-plugin-source
+   specify init <PROJECT_NAME> --plugin --plugin-out ./my-plugin-source
    ```
    You can later register the plugin globally once the `adg` tool is available:
    ```bash

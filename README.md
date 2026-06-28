@@ -412,7 +412,7 @@ specify init <project_name> --integration copilot --ignore-agent-tools
 If you are working across multiple projects and want to avoid duplicate skill files, you can use the global plugin mode (requires the `adg` CLI):
 
 ```bash
-specify init <project_name> --integration claude --plugin
+specify init <project_name> --plugin
 ```
 
 ### **STEP 1:** Establish project principles
