@@ -315,6 +315,35 @@ def register(app: typer.Typer) -> None:
             _write_integration_json,
         )
 
+        # Clean Typer OptionInfo default values when called programmatically
+        from typer.models import OptionInfo
+        if isinstance(ignore_agent_tools, OptionInfo):
+            ignore_agent_tools = False
+        if isinstance(here, OptionInfo):
+            here = False
+        if isinstance(force, OptionInfo):
+            force = False
+        if isinstance(skip_tls, OptionInfo):
+            skip_tls = False
+        if isinstance(debug, OptionInfo):
+            debug = False
+        if isinstance(github_token, OptionInfo):
+            github_token = None
+        if isinstance(offline, OptionInfo):
+            offline = False
+        if isinstance(preset, OptionInfo):
+            preset = None
+        if isinstance(integration, OptionInfo):
+            integration = None
+        if isinstance(integration_options, OptionInfo):
+            integration_options = None
+        if isinstance(plugin, OptionInfo):
+            plugin = False
+        if isinstance(plugin_out, OptionInfo):
+            plugin_out = None
+        if isinstance(yes, OptionInfo):
+            yes = False
+
         show_banner()
 
         from ..integrations import INTEGRATION_REGISTRY, get_integration

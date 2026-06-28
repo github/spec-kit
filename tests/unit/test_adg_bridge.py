@@ -18,6 +18,8 @@ def test_find_adg_missing_returns_none(monkeypatch, tmp_path):
     monkeypatch.setattr(adg_bridge.shutil, "which", lambda _: None)
     # Point HOME at an empty dir so the nvm/homebrew fallbacks miss too.
     monkeypatch.setattr(adg_bridge.Path, "home", staticmethod(lambda: tmp_path))
+    # Mock Path.is_file to simulate candidates missing as well.
+    monkeypatch.setattr(adg_bridge.Path, "is_file", lambda self: False)
     assert adg_bridge.find_adg() is None
 
 
