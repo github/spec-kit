@@ -12,11 +12,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Run git diff --check
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "+${PR_BASE_SHA}:refs/checks/pr-base"
+            git diff --check refs/checks/pr-base HEAD
+          elif [ "$PUSH_BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            git diff-tree --check --no-commit-id --root -r "$GITHUB_SHA"
+          else
+            git fetch --no-tags --depth=1 origin "+${PUSH_BEFORE_SHA}:refs/checks/push-before"
+            git diff --check refs/checks/push-before HEAD
+          fi
 
       - name: Run markdownlint-cli2
-        uses: DavidAnson/markdownlint-cli2-action@ce4853d43830c74c1753b39f3cf40f71c2031eb9 # v23
+        uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23
         with:
           globs: |
             '**/*.md'
             !extensions/**/*.md
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # shellcheck is preinstalled on ubuntu-latest runners.
+      # Start at --severity=error to block real bugs without flagging style
+      # (notably SC2155). Tighten in a follow-up after cleanup.
+      - name: Run shellcheck on shell scripts
+        run: git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=error

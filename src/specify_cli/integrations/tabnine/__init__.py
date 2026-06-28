@@ -19,3 +19,4 @@ class TabnineIntegration(TomlIntegration):
         "extension": ".toml",
     }
     context_file = "TABNINE.md"
+    multi_install_safe = True

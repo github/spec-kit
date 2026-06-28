@@ -11,12 +11,17 @@ Tests cover:
 """
 
 import pytest
+import io
 import json
 import tempfile
 import shutil
+import warnings
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import yaml
 
@@ -159,6 +164,38 @@ class TestPresetManifest:
         bad_file.write_text(": invalid: yaml: {{{")
         with pytest.raises(PresetValidationError, match="Invalid YAML"):
             PresetManifest(bad_file)
+
+    def test_utf8_non_ascii_description_loads(self, temp_dir, valid_pack_data):
+        """Regression for #2325: non-ASCII (UTF-8) description loads on any platform.
+
+        On Windows, Python's default text-mode encoding is the locale codepage
+        (e.g. cp1252/GBK), which raises UnicodeDecodeError on UTF-8 bytes
+        outside the ASCII range. The loader must open with encoding='utf-8'.
+        """
+        valid_pack_data["preset"]["description"] = "中文测试 — émojis 🚀"
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_bytes(
+            yaml.safe_dump(valid_pack_data, allow_unicode=True).encode("utf-8")
+        )
+
+        manifest = PresetManifest(manifest_path)
+        assert manifest.description == "中文测试 — émojis 🚀"
+
+    def test_invalid_utf8_bytes_raises_validation_error(self, temp_dir):
+        """Negative case: file containing invalid UTF-8 bytes raises PresetValidationError, not raw UnicodeDecodeError."""
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_bytes(b"\xff\xfe not valid utf-8 \xff\n")
+
+        with pytest.raises(PresetValidationError, match="not valid UTF-8"):
+            PresetManifest(manifest_path)
+
+    def test_non_mapping_yaml_raises_validation_error(self, temp_dir):
+        """Manifest whose YAML root is a scalar or list raises PresetValidationError, not TypeError."""
+        manifest_path = temp_dir / "preset.yml"
+        for bad_content in ("42\n", "[1, 2]\n"):
+            manifest_path.write_text(bad_content, encoding="utf-8")
+            with pytest.raises(PresetValidationError, match="YAML mapping"):
+                PresetManifest(manifest_path)
 
     def test_missing_schema_version(self, temp_dir, valid_pack_data):
         """Test missing schema_version field."""
@@ -998,6 +1035,32 @@ class TestPresetResolver:
         result = resolver.resolve("hidden-template")
         assert result is None
 
+    def test_collect_all_layers_finds_bundled_core_without_specify_commands(
+        self, project_dir
+    ):
+        """Tier-5 fallback locates the bundled core command when
+        .specify/templates/commands/ has no matching file.
+
+        Regression test for #3086: a stale ``.parent`` chain made the
+        source-checkout fallback resolve to ``src/templates/...`` (which does
+        not exist), so ``wrap`` presets found no base layer. The fallback must
+        resolve against the real repo-root ``templates/commands`` tree.
+        """
+        # project_dir's commands dir is empty, so tier-4 cannot satisfy this.
+        resolver = PresetResolver(project_dir)
+        layers = resolver.collect_all_layers("speckit.implement", "command")
+        assert layers, "expected a bundled core base layer to be found"
+        assert layers[-1]["source"] == "core (bundled)"
+        assert layers[-1]["path"].parts[-2:] == ("commands", "implement.md")
+
+    def test_resolve_command_falls_back_to_bundled_core(self, project_dir):
+        """resolve() tier-5 returns the bundled core command when
+        .specify/templates/commands/ lacks it (regression for #3086)."""
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("speckit.implement", "command")
+        assert result is not None
+        assert result.parts[-2:] == ("commands", "implement.md")
+
 
 class TestResolveCore:
     """Test PresetResolver.resolve_core() skips the installed-presets tier."""
@@ -1190,6 +1253,10 @@ class TestExtensionPriorityResolution:
 
 class TestPresetCatalog:
     """Test template catalog functionality."""
+
+    def _inject_github_config(self, monkeypatch, token_env="GH_TOKEN"):
+        from tests.auth_helpers import inject_github_config
+        inject_github_config(monkeypatch, token_env)
 
     def test_default_catalog_url(self, project_dir):
         """Test default catalog URL."""
@@ -1385,6 +1452,7 @@ class TestPresetCatalog:
         """When GITHUB_TOKEN is whitespace-only, GH_TOKEN is used as fallback."""
         monkeypatch.setenv("GITHUB_TOKEN", "   ")
         monkeypatch.setenv("GH_TOKEN", "ghp_fallback")
+        self._inject_github_config(monkeypatch, token_env="GH_TOKEN")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
         assert req.get_header("Authorization") == "Bearer ghp_fallback"
@@ -1393,6 +1461,7 @@ class TestPresetCatalog:
         """GITHUB_TOKEN is attached for raw.githubusercontent.com URLs."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
         monkeypatch.delenv("GH_TOKEN", raising=False)
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://raw.githubusercontent.com/org/repo/main/catalog.json")
         assert req.get_header("Authorization") == "Bearer ghp_testtoken"
@@ -1401,58 +1470,50 @@ class TestPresetCatalog:
         """GH_TOKEN is used when GITHUB_TOKEN is absent."""
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.setenv("GH_TOKEN", "ghp_ghtoken")
+        self._inject_github_config(monkeypatch, token_env="GH_TOKEN")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://github.com/org/repo/releases/download/v1/pack.zip")
         assert req.get_header("Authorization") == "Bearer ghp_ghtoken"
 
-    def test_make_request_github_token_takes_precedence(self, project_dir, monkeypatch):
-        """GITHUB_TOKEN takes precedence over GH_TOKEN when both are set."""
-        monkeypatch.setenv("GITHUB_TOKEN", "ghp_primary")
-        monkeypatch.setenv("GH_TOKEN", "ghp_secondary")
+    def test_make_request_gh_token_takes_precedence(self, project_dir, monkeypatch):
+        """When auth.json uses GH_TOKEN, that token is used regardless of GITHUB_TOKEN."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_secondary")
+        monkeypatch.setenv("GH_TOKEN", "ghp_primary")
+        self._inject_github_config(monkeypatch, token_env="GH_TOKEN")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://api.github.com/repos/org/repo")
         assert req.get_header("Authorization") == "Bearer ghp_primary"
 
     def test_make_request_token_added_for_codeload_github_com(self, project_dir, monkeypatch):
-        """GITHUB_TOKEN is attached for codeload.github.com URLs (GitHub archive redirects)."""
+        """GITHUB_TOKEN is attached for codeload.github.com URLs."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://codeload.github.com/org/repo/zip/refs/tags/v1.0.0")
         assert req.get_header("Authorization") == "Bearer ghp_testtoken"
 
-    def test_make_request_token_not_added_for_non_github_url(self, project_dir, monkeypatch):
-        """Auth header is never attached to non-GitHub URLs to prevent credential leakage."""
+    def test_make_request_no_auth_for_non_matching_host(self, project_dir, monkeypatch):
+        """Auth is NOT attached to hosts not listed in auth.json."""
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = PresetCatalog(project_dir)
         req = catalog._make_request("https://internal.example.com/catalog.json")
         assert "Authorization" not in req.headers
 
-    def test_make_request_token_not_added_for_github_lookalike_host(self, project_dir, monkeypatch):
-        """Auth header is not attached to hosts that include github.com as a suffix."""
-        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+    def test_make_request_no_auth_when_no_config(self, project_dir, monkeypatch):
+        """No auth header when no auth.json config exists."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
         catalog = PresetCatalog(project_dir)
-        req = catalog._make_request("https://github.com.evil.com/org/repo/releases/download/v1/pack.zip")
-        assert "Authorization" not in req.headers
-
-    def test_make_request_token_not_added_for_github_in_path(self, project_dir, monkeypatch):
-        """Auth header is not attached when github.com appears only in the URL path."""
-        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
-        catalog = PresetCatalog(project_dir)
-        req = catalog._make_request("https://evil.example.com/github.com/org/repo/releases/download/v1/pack.zip")
-        assert "Authorization" not in req.headers
-
-    def test_make_request_token_not_added_for_github_in_query(self, project_dir, monkeypatch):
-        """Auth header is not attached when github.com appears only in the query string."""
-        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
-        catalog = PresetCatalog(project_dir)
-        req = catalog._make_request("https://evil.example.com/download?source=https://github.com/org/repo/v1/pack.zip")
+        req = catalog._make_request("https://github.com/org/repo/releases/download/v1/pack.zip")
         assert "Authorization" not in req.headers
 
     def test_fetch_single_catalog_sends_auth_header(self, project_dir, monkeypatch):
-        """_fetch_single_catalog passes Authorization header via opener for GitHub URLs."""
+        """_fetch_single_catalog passes Authorization header when configured."""
         from unittest.mock import patch, MagicMock
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = PresetCatalog(project_dir)
 
         catalog_data = {"schema_version": "1.0", "presets": {}}
@@ -1460,6 +1521,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(catalog_data).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://raw.githubusercontent.com/org/repo/main/presets/catalog.json"
 
         captured = {}
         mock_opener = MagicMock()
@@ -1477,16 +1539,432 @@ class TestPresetCatalog:
             install_allowed=True,
         )
 
-        with patch("urllib.request.build_opener", return_value=mock_opener):
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog._fetch_single_catalog(entry, force_refresh=True)
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # Root is not a JSON object.
+            [],
+            "oops",
+            42,
+            None,
+            # Root is fine but ``presets`` is the wrong type.
+            {"schema_version": "1.0", "presets": []},
+            {"schema_version": "1.0", "presets": "oops"},
+            {"schema_version": "1.0", "presets": None},
+            {"schema_version": "1.0", "presets": 42},
+        ],
+    )
+    def test_fetch_single_catalog_rejects_malformed_payload(self, project_dir, payload):
+        """Malformed catalog payloads raise PresetError, not AttributeError.
+
+        Without this guard, a payload like ``{"presets": []}`` would pass the
+        key-presence check and then crash with ``AttributeError: 'list' object
+        has no attribute 'items'`` deep inside ``_get_merged_packs``. The
+        sibling integration catalog reader already validates both the root
+        object and the nested mapping (see ``integrations/catalog.py``); the
+        preset catalog must stay consistent.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(PresetError, match="Invalid preset catalog format"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    @pytest.mark.parametrize(
+        "cached_payload",
+        [
+            [],
+            "oops",
+            42,
+            None,
+            {"schema_version": "1.0", "presets": []},
+            {"schema_version": "1.0", "presets": "oops"},
+            {"schema_version": "1.0", "presets": None},
+        ],
+    )
+    def test_fetch_single_catalog_rejects_malformed_cached_payload(
+        self, project_dir, cached_payload
+    ):
+        """A poisoned cache silently falls back to the network instead of
+        crashing — cached payloads pass through the same shape validation
+        as freshly-fetched ones.
+
+        Without this, a cache poisoned by an older spec-kit version (or a
+        manual edit, or an upstream that briefly served a bad payload
+        before the network guards landed) would re-crash every invocation
+        of ``_get_merged_packs`` despite the cache being "valid" by age.
+        The recovery contract is: if the cached payload fails validation,
+        drop it and refetch — never propagate ``AttributeError`` to the
+        caller.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+
+        # Poison the default-URL cache. ``DEFAULT_CATALOG_URL`` and
+        # non-default URLs both flow through the same cache-load branch.
+        cache_file, metadata_file = catalog._get_cache_paths(
+            catalog.DEFAULT_CATALOG_URL
+        )
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(cached_payload))
+        metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": catalog.DEFAULT_CATALOG_URL,
+                }
+            )
+        )
+
+        # Network refetch returns a valid payload so the recovery path
+        # can complete.
+        valid = {
+            "schema_version": "1.0",
+            "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL,
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog._fetch_single_catalog(entry, force_refresh=False)
+
+        # The poisoned cache was discarded and the network payload returned.
+        assert result == valid
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            # Root is not a JSON object.
+            [],
+            "oops",
+            42,
+            None,
+            # Root is fine but ``presets`` is the wrong type.
+            {"schema_version": "1.0", "presets": []},
+            {"schema_version": "1.0", "presets": "oops"},
+            {"schema_version": "1.0", "presets": None},
+        ],
+    )
+    def test_fetch_catalog_rejects_malformed_payload(self, project_dir, payload):
+        """Legacy ``fetch_catalog`` reuses the same shape-validation helper.
+
+        Before this change ``fetch_catalog`` only checked key presence —
+        so a payload like ``42`` would crash with
+        ``TypeError: argument of type 'int' is not iterable`` during the
+        ``"schema_version" in catalog_data`` check, and an entry mapping
+        of the wrong type would crash downstream. Reusing
+        ``_validate_catalog_payload`` keeps the network-side behaviour of
+        the legacy single-catalog method consistent with the multi-catalog
+        ``_fetch_single_catalog`` path.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(PresetError, match="Invalid preset catalog format"):
+                catalog.fetch_catalog(force_refresh=True)
+
+    def test_fetch_catalog_recovers_from_unreadable_cache(self, project_dir):
+        """An unreadable / wrong-encoded cache file silently refetches.
+
+        The cache contract is best-effort: a JSON-decode failure, an OS
+        read failure (permissions / disk / handle limit), or an invalid
+        text encoding on a cache file written by an older client must
+        all fall through to the network fetch rather than crash the
+        caller. Covers Copilot's review point that the previous
+        ``except (json.JSONDecodeError, OSError)`` was missing
+        ``UnicodeError``.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        # Invalid UTF-8 bytes so ``read_text`` raises ``UnicodeDecodeError``
+        # (a subclass of ``UnicodeError``).
+        catalog.cache_file.write_bytes(b"\xff\xfe\x00not-utf-8")
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": catalog.get_catalog_url(),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        valid = {
+            "schema_version": "1.0",
+            "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.fetch_catalog(force_refresh=False)
+
+        # Recovered via network rather than crashing on the unreadable cache.
+        assert result == valid
+
+    def test_fetch_catalog_recovers_from_unreadable_metadata(self, project_dir):
+        """A wrongly-encoded metadata file degrades to a cache miss.
+
+        ``is_cache_valid`` is consulted *before* the cache payload is
+        read; if the metadata file itself can't be decoded (e.g. it was
+        written on a host whose default codec isn't UTF-8) the validity
+        check must return ``False`` rather than propagate
+        ``UnicodeDecodeError``. Without that guard, a corrupted metadata
+        file would crash every invocation instead of falling through to
+        a network refetch.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text("{}", encoding="utf-8")
+        # Bytes that are not valid UTF-8 — ``read_text(encoding="utf-8")``
+        # will raise ``UnicodeDecodeError`` (subclass of ``UnicodeError``).
+        catalog.cache_metadata_file.write_bytes(b"\xff\xfe\x00bad")
+
+        # is_cache_valid must absorb the decode failure, not crash.
+        assert catalog.is_cache_valid() is False
+
+        valid = {
+            "schema_version": "1.0",
+            "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            result = catalog.fetch_catalog(force_refresh=False)
+
+        assert result == valid
+
+    @pytest.mark.parametrize(
+        "non_mapping_metadata",
+        [
+            "[]",       # JSON array
+            '"oops"',   # JSON string
+            "42",       # JSON number
+            "true",     # JSON bool
+            "null",     # JSON null
+        ],
+    )
+    def test_is_cache_valid_handles_non_mapping_metadata(
+        self, project_dir, non_mapping_metadata
+    ):
+        """Metadata that parses to a non-mapping degrades to cache-invalid.
+
+        The cache-validity check calls ``metadata.get("cached_at", "")``
+        immediately after ``json.loads``. If the metadata file is valid
+        JSON but parses to a non-mapping (``[]``, ``"oops"``, ``42``,
+        ``true``, ``null``), ``.get`` raises ``AttributeError`` — which
+        previously slipped past the except tuple and crashed the
+        caller. The contract documented on ``is_cache_valid`` says any
+        decode/shape failure should return ``False`` so ``fetch_catalog``
+        falls through to a network refetch. This test pins that
+        contract across every JSON non-mapping root type.
+        """
+        catalog = PresetCatalog(project_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text("{}", encoding="utf-8")
+        catalog.cache_metadata_file.write_text(
+            non_mapping_metadata, encoding="utf-8"
+        )
+
+        # Must not raise — the contract is "any decode/shape failure → False".
+        assert catalog.is_cache_valid() is False
+
+    def test_fetch_catalog_writes_cache_as_utf8(self, project_dir, monkeypatch):
+        """Cache + metadata writes pass ``encoding="utf-8"``, observably.
+
+        The earlier version of this test claimed to assert UTF-8 at the
+        byte level but actually only round-tripped a non-ASCII string
+        through ``json.dumps`` and ``read_text(encoding="utf-8")``.
+        Because ``json.dumps`` defaults to ``ensure_ascii=True``, "café"
+        was serialized as the all-ASCII escape ``caf\\u00e9`` before it
+        ever reached ``write_text`` — the bytes on disk were identical
+        regardless of the encoding kwarg. The drift Copilot's review
+        flagged wasn't actually being caught.
+
+        Fix: directly observe the ``encoding`` argument passed to every
+        ``write_text`` call made against the cache directory. This is
+        the production code's encoding choice, which is exactly what
+        the regression guard cares about.
+        """
+        from unittest.mock import patch, MagicMock
+        from pathlib import Path as _PathCls
+
+        catalog = PresetCatalog(project_dir)
+        payload = {
+            "schema_version": "1.0",
+            "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode("utf-8")
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        # Record every ``write_text`` call's encoding kwarg so the
+        # assertion observes the production writer's argument directly.
+        recorded: list[dict] = []
+        real_write_text = _PathCls.write_text
+
+        def recording_write_text(self, data, *args, **kwargs):
+            recorded.append(
+                {"path": str(self), "encoding": kwargs.get("encoding")}
+            )
+            return real_write_text(self, data, *args, **kwargs)
+
+        monkeypatch.setattr(_PathCls, "write_text", recording_write_text)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            catalog.fetch_catalog(force_refresh=True)
+
+        cache_writes = [
+            r for r in recorded if str(catalog.cache_dir) in r["path"]
+        ]
+        assert cache_writes, "fetch_catalog made no writes to the cache dir"
+        for record in cache_writes:
+            assert record["encoding"] == "utf-8", (
+                f"write_text on {record['path']} used encoding "
+                f"{record['encoding']!r}; expected 'utf-8'"
+            )
+
+    def test_fetch_catalog_survives_unwritable_cache(self, project_dir, monkeypatch):
+        """An unwritable cache dir doesn't fail a successful fetch.
+
+        Cache writes are best-effort, mirroring the read side and the
+        ``integrations/catalog.py`` precedent: if ``mkdir``/``write_text``
+        raises ``OSError`` (read-only checkout, permissions), the
+        already-fetched-and-validated payload must still be returned —
+        not swallowed into the broad except and re-raised as a
+        ``PresetError``.
+        """
+        from unittest.mock import patch, MagicMock
+        from pathlib import Path as _PathCls
+
+        catalog = PresetCatalog(project_dir)
+        valid = {
+            "schema_version": "1.0",
+            "presets": {"foo": {"name": "Foo", "version": "1.0.0"}},
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(valid).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        # Simulate an unwritable cache dir: every write_text under the
+        # cache directory raises PermissionError (an OSError subclass).
+        real_write_text = _PathCls.write_text
+
+        def failing_write_text(self, data, *args, **kwargs):
+            if str(catalog.cache_dir) in str(self):
+                raise PermissionError("cache dir is read-only")
+            return real_write_text(self, data, *args, **kwargs)
+
+        monkeypatch.setattr(_PathCls, "write_text", failing_write_text)
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            # Legacy single-catalog path.
+            assert catalog.fetch_catalog(force_refresh=True) == valid
+
+            # Multi-catalog path.
+            entry = PresetCatalogEntry(
+                url=catalog.DEFAULT_CATALOG_URL,
+                name="default",
+                priority=1,
+                install_allowed=True,
+            )
+            assert (
+                catalog._fetch_single_catalog(entry, force_refresh=True) == valid
+            )
+
+    def test_get_merged_packs_skips_non_mapping_entries(self, project_dir):
+        """Per-entry guard: one malformed entry shouldn't poison the merge.
+
+        ``_fetch_single_catalog`` validates that ``presets`` is a mapping,
+        but it doesn't (and shouldn't) validate every entry inside it — a
+        single bad entry in an otherwise-valid catalog should be skipped,
+        not crash the whole resolve path. Mirrors the per-entry skip in
+        ``integrations/catalog.py``: a malformed entry returns no error,
+        valid entries continue to merge normally.
+        """
+        from unittest.mock import patch, MagicMock
+
+        catalog = PresetCatalog(project_dir)
+        payload = {
+            "schema_version": "1.0",
+            "presets": {
+                "good": {"name": "Good", "version": "1.0.0"},
+                "bad-list": [],
+                "bad-str": "oops",
+            },
+        }
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(payload).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=mock_response), \
+             patch.object(catalog, "get_active_catalogs", return_value=[entry]):
+            merged = catalog._get_merged_packs(force_refresh=True)
+
+        # Only the well-formed entry survives; the two malformed entries are
+        # silently dropped rather than raising or crashing.
+        assert list(merged.keys()) == ["good"]
+
     def test_download_pack_sends_auth_header(self, project_dir, monkeypatch):
-        """download_pack passes Authorization header via opener for GitHub URLs."""
+        """download_pack passes Authorization header when configured."""
         from unittest.mock import patch, MagicMock
 
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
         catalog = PresetCatalog(project_dir)
 
         import io
@@ -1495,17 +1973,33 @@ class TestPresetCatalog:
             zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
         zip_bytes = zip_buf.getvalue()
 
-        mock_response = MagicMock()
-        mock_response.read.return_value = zip_bytes
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
+        release_response = MagicMock()
+        release_response.read.return_value = json.dumps(
+            {
+                "assets": [
+                    {
+                        "name": "test-pack.zip",
+                        "url": "https://api.github.com/repos/org/repo/releases/assets/1",
+                    }
+                ]
+            }
+        ).encode()
+        release_response.__enter__ = lambda s: s
+        release_response.__exit__ = MagicMock(return_value=False)
 
-        captured = {}
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
         mock_opener = MagicMock()
 
         def fake_open(req, timeout=None):
-            captured["req"] = req
-            return mock_response
+            captured.append(req)
+            if req.full_url.endswith("/releases/tags/v1"):
+                return release_response
+            return asset_response
 
         mock_opener.open.side_effect = fake_open
 
@@ -1518,10 +2012,143 @@ class TestPresetCatalog:
         }
 
         with patch.object(catalog, "get_pack_info", return_value=pack_info), \
-             patch("urllib.request.build_opener", return_value=mock_opener):
+             patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             catalog.download_pack("test-pack", target_dir=project_dir)
 
-        assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/tags/v1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[1].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[1].get_header("Accept") == "application/octet-stream"
+
+    def _pack_zip_and_response(self):
+        """Build a minimal preset ZIP and a context-manager mock response."""
+        from unittest.mock import MagicMock
+        import io
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        resp = MagicMock()
+        resp.read.return_value = zip_bytes
+        # Configure the context-manager protocol explicitly so `with resp`
+        # yields `resp` itself, independent of how the protocol is invoked.
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        return zip_bytes, resp
+
+    def test_download_pack_accepts_matching_sha256(self, project_dir):
+        """A catalog ``sha256`` that matches the preset archive is accepted."""
+        import hashlib
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": hashlib.sha256(zip_bytes).hexdigest(),
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_pack_rejects_sha256_mismatch(self, project_dir):
+        """A catalog ``sha256`` that does not match the archive aborts install."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        _zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "sha256": "0" * 64,  # deliberately wrong
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            with pytest.raises(PresetError, match="[Ii]ntegrity"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
+
+    def test_download_pack_without_sha256_skips_verification(self, project_dir):
+        """A catalog entry with no ``sha256`` keeps working: verification is
+        opt-in, so the backwards-compatible path (``pack_info.get("sha256")``
+        is ``None``) must download without aborting — mirrors the extensions
+        coverage so the helper never silently becomes mandatory for presets.
+        """
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        zip_bytes, resp = self._pack_zip_and_response()
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=resp):
+            zip_path = catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert zip_path.read_bytes() == zip_bytes
+
+    def test_download_pack_accepts_direct_github_rest_asset_url(self, project_dir, monkeypatch):
+        """download_pack can use a GitHub REST release asset URL directly."""
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_testtoken")
+        self._inject_github_config(monkeypatch, token_env="GITHUB_TOKEN")
+        catalog = PresetCatalog(project_dir)
+
+        import io
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", "id: test-pack\nname: Test\nversion: 1.0.0\n")
+        zip_bytes = zip_buf.getvalue()
+
+        asset_response = MagicMock()
+        asset_response.read.return_value = zip_bytes
+        asset_response.__enter__ = lambda s: s
+        asset_response.__exit__ = MagicMock(return_value=False)
+
+        captured = []
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=None):
+            captured.append(req)
+            return asset_response
+
+        mock_opener.open.side_effect = fake_open
+
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://api.github.com/repos/org/repo/releases/assets/1",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
+            catalog.download_pack("test-pack", target_dir=project_dir)
+
+        assert len(captured) == 1
+        assert captured[0].full_url == "https://api.github.com/repos/org/repo/releases/assets/1"
+        assert captured[0].get_header("Authorization") == "Bearer ghp_testtoken"
+        assert captured[0].get_header("Accept") == "application/octet-stream"
 
 
 # ===== Integration Tests =====
@@ -1797,6 +2424,31 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="Invalid priority"):
             catalog._load_catalog_config(config_path)
 
+    def test_load_catalog_config_rejects_boolean_priority(self, project_dir):
+        """A YAML ``priority: true`` is a typo, not a request for priority 1.
+
+        ``bool`` is a subclass of ``int`` in Python, so ``int(True)`` silently
+        returns ``1``. Without an explicit guard a malformed config like
+        ``priority: yes`` would be accepted as a valid priority of 1 and
+        silently change catalog ordering. The sibling integration-catalog
+        reader rejects this case (see ``catalogs.py``); the preset catalog
+        reader must stay consistent.
+        """
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [
+                {
+                    "name": "bool-priority",
+                    "url": "https://example.com/catalog.json",
+                    "priority": True,
+                }
+            ]
+        }))
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
+            catalog._load_catalog_config(config_path)
+
     def test_load_catalog_config_install_allowed_string(self, project_dir):
         """Test that install_allowed accepts string values."""
         config_path = project_dir / ".specify" / "preset-catalogs.yml"
@@ -1889,6 +2541,10 @@ class TestPresetCatalogMultiCatalog:
 
 
 SELF_TEST_PRESET_DIR = Path(__file__).parent.parent / "presets" / "self-test"
+SELF_TEST_WRAP_WARNING = (
+    r"Cannot compose command 'speckit\.wrap-test': no base layer\. "
+    r"Stale command files may remain\."
+)
 
 CORE_TEMPLATE_NAMES = [
     "spec-template",
@@ -1899,8 +2555,29 @@ CORE_TEMPLATE_NAMES = [
 ]
 
 
+def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1.5") -> PresetManifest:
+    """Install self-test while filtering its intentionally missing wrap base."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=SELF_TEST_WRAP_WARNING,
+            category=UserWarning,
+            module=r"specify_cli\.presets",
+        )
+        return manager.install_from_directory(SELF_TEST_PRESET_DIR, speckit_version)
+
+
 class TestSelfTestPreset:
-    """Tests using the self-test preset that ships with the repo."""
+    """Tests using the self-test preset that ships with the repo.
+
+    The self-test preset ships a wrap-strategy command (``speckit.wrap-test``)
+    without a corresponding core base layer; reconciliation deliberately
+    surfaces a UserWarning in that case. Tests install via
+    ``install_self_test_preset`` (defined above), which scopes a narrow
+    ``warnings.filterwarnings`` block to that specific message and
+    ``UserWarning`` category — so the expected warning stays quiet without
+    masking unrelated warnings or real reconciliation failures.
+    """
 
     def test_self_test_preset_exists(self):
         """Verify the self-test preset directory and manifest exist."""
@@ -1939,7 +2616,7 @@ class TestSelfTestPreset:
     def test_install_self_test_preset(self, project_dir):
         """Test installing the self-test preset from its directory."""
         manager = PresetManager(project_dir)
-        manifest = manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        manifest = install_self_test_preset(manager)
         assert manifest.id == "self-test"
         assert manager.registry.is_installed("self-test")
 
@@ -1952,7 +2629,7 @@ class TestSelfTestPreset:
 
         # Install self-test preset
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         # Every core template should now resolve from the preset
         resolver = PresetResolver(project_dir)
@@ -1971,7 +2648,7 @@ class TestSelfTestPreset:
             (templates_dir / f"{name}.md").write_text(f"# Core {name}\n")
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         resolver = PresetResolver(project_dir)
         for name in CORE_TEMPLATE_NAMES:
@@ -1988,7 +2665,7 @@ class TestSelfTestPreset:
             (templates_dir / f"{name}.md").write_text(f"# Core {name}\n")
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
         manager.remove("self-test")
 
         resolver = PresetResolver(project_dir)
@@ -2024,7 +2701,7 @@ class TestSelfTestPreset:
         claude_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         # Check the skill was registered
         cmd_file = claude_dir / "speckit-specify" / "SKILL.md"
@@ -2040,7 +2717,7 @@ class TestSelfTestPreset:
         gemini_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         # Check the command was registered in TOML format
         cmd_file = gemini_dir / "speckit.specify.toml"
@@ -2055,7 +2732,7 @@ class TestSelfTestPreset:
         claude_dir.mkdir(parents=True)
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         cmd_file = claude_dir / "speckit-specify" / "SKILL.md"
         assert cmd_file.exists()
@@ -2066,7 +2743,7 @@ class TestSelfTestPreset:
     def test_self_test_no_commands_without_agent_dirs(self, project_dir):
         """Test that no commands are registered when no agent dirs exist."""
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         metadata = manager.registry.get("self-test")
         assert metadata["registered_commands"] == {}
@@ -2172,6 +2849,51 @@ class TestInitOptions:
         assert loaded["ai"] == "claude"
         assert loaded["ai_skills"] is True
 
+    def test_save_and_load_available_from_init_options_module(self, project_dir):
+        from specify_cli._init_options import load_init_options, save_init_options
+
+        opts = {"ai": "codex", "ai_skills": True, "script": "sh"}
+        save_init_options(project_dir, opts)
+
+        assert load_init_options(project_dir) == opts
+
+    def test_save_uses_utf8_encoding(self, project_dir, monkeypatch):
+        from specify_cli import save_init_options
+
+        original_write_text = Path.write_text
+        seen: dict[str, str | None] = {}
+
+        def spy_write_text(path, data, *args, **kwargs):
+            if path == project_dir / ".specify" / "init-options.json":
+                seen["encoding"] = kwargs.get("encoding")
+            return original_write_text(path, data, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", spy_write_text)
+
+        save_init_options(project_dir, {"label": "中文测试"})
+
+        assert seen["encoding"] == "utf-8"
+
+    def test_load_uses_utf8_encoding(self, project_dir, monkeypatch):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text('{"ai": "codex"}', encoding="utf-8")
+
+        original_read_text = Path.read_text
+        seen: dict[str, str | None] = {}
+
+        def spy_read_text(path, *args, **kwargs):
+            if path == opts_file:
+                seen["encoding"] = kwargs.get("encoding")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", spy_read_text)
+
+        assert load_init_options(project_dir) == {"ai": "codex"}
+        assert seen["encoding"] == "utf-8"
+
     def test_load_returns_empty_when_missing(self, project_dir):
         from specify_cli import load_init_options
 
@@ -2186,9 +2908,138 @@ class TestInitOptions:
 
         assert load_init_options(project_dir) == {}
 
+    @pytest.mark.parametrize(
+        "value",
+        ["名前-プロジェクト", "café-résumé", "Ωmega-Δelta", "🚀-launch"],
+    )
+    def test_save_load_round_trip_preserves_non_ascii(self, project_dir, value):
+        """Non-ASCII values round-trip via explicit UTF-8 encoding.
+
+        ``Path.write_text`` / ``Path.read_text`` default to the system
+        locale codec on Windows (cp1252 / gb2312 / cp932). Without
+        ``encoding="utf-8"`` pinned on both ends, a project name like
+        ``café`` written on a UTF-8 host becomes garbled or unreadable on
+        a cp1252 host (and vice versa). Pin UTF-8 explicitly so init
+        options round-trip across machines and CI.
+
+        Note: this test only meaningfully exercises the encoding pin
+        because ``save_init_options`` now writes JSON with
+        ``ensure_ascii=False`` — otherwise ``json.dumps`` would output
+        ASCII-only ``\\uXXXX`` escapes and the encoding pin would be a
+        no-op for any value here. ``test_save_writes_real_utf8_bytes``
+        below asserts that contract directly.
+        """
+        from specify_cli import save_init_options, load_init_options
+
+        save_init_options(project_dir, {"ai": "claude", "project_name": value})
+
+        loaded = load_init_options(project_dir)
+        assert loaded["project_name"] == value
+
+    def test_save_writes_real_utf8_bytes(self, project_dir):
+        """The on-disk file contains real UTF-8 bytes, not ``\\uXXXX`` escapes.
+
+        Pinning ``encoding="utf-8"`` on ``write_text`` only makes a
+        difference when the serialiser actually emits non-ASCII
+        characters. With ``ensure_ascii=False`` on ``json.dumps`` the
+        non-ASCII bytes hit the file, so the encoding pin is the thing
+        that decides between cp1252 garbage and clean UTF-8 on Windows.
+
+        This test pins that behaviour: the on-disk bytes are valid UTF-8
+        and contain the multi-byte encoding of ``café``, not its
+        ``\\u00e9`` escape form. Reviewers can verify that removing
+        ``ensure_ascii=False`` or ``encoding="utf-8"`` from the writer
+        breaks this test, which is what Copilot's review pointed out the
+        original round-trip test failed to do.
+        """
+        from specify_cli import save_init_options
+
+        save_init_options(project_dir, {"project_name": "café"})
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        raw = opts_file.read_bytes()
+        # 'café' in UTF-8 ends with bytes 0xC3 0xA9 ('é'). The cp1252
+        # encoding of 'é' is the single byte 0xE9. The JSON-escape form
+        # would be the 6-byte literal '\\u00e9'. We assert the UTF-8 form
+        # is present so the test pins the actual contract.
+        assert b"caf\xc3\xa9" in raw, (
+            "Expected UTF-8 bytes for 'café' in the on-disk file, "
+            f"got: {raw!r}"
+        )
+        # And the whole file decodes cleanly as UTF-8.
+        raw.decode("utf-8")
+
+    def test_load_returns_empty_on_locale_corrupted_file(self, project_dir):
+        """A file written in a non-UTF-8 codec falls back to {}, not crash.
+
+        Simulates a file produced by an old client (or by a peer machine
+        with a different default locale) that contains bytes invalid as
+        UTF-8. ``load_init_options`` should fall back to ``{}`` per the
+        existing contract — never propagate a raw ``UnicodeDecodeError``
+        to the CLI surface.
+        """
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        # 0xE9 is 'é' in cp1252 but an invalid lead byte in UTF-8.
+        opts_file.write_bytes(b'{"project_name": "caf\xe9"}')
+
+        assert load_init_options(project_dir) == {}
+
+    @pytest.mark.parametrize("payload", ["[]", '"value"', "42", "true", "null"])
+    def test_load_returns_empty_on_non_object_json(self, project_dir, payload):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text(payload, encoding="utf-8")
+
+        assert load_init_options(project_dir) == {}
+
+    def test_load_returns_empty_on_unicode_decode_error(self, project_dir, monkeypatch):
+        from specify_cli import load_init_options
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_bytes(b"{}")
+
+        original_read_text = Path.read_text
+
+        def raise_decode_error(path, *args, **kwargs):
+            if path == opts_file:
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", raise_decode_error)
+
+        assert load_init_options(project_dir) == {}
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (True, True),
+            (False, False),
+            ("true", False),
+            ("false", False),
+            (1, False),
+            (0, False),
+            (None, False),
+        ],
+    )
+    def test_is_ai_skills_enabled_requires_boolean_true(self, value, expected):
+        from specify_cli._init_options import is_ai_skills_enabled
+
+        assert is_ai_skills_enabled({"ai_skills": value}) is expected
+
 
 class TestPresetSkills:
-    """Tests for preset skill registration and unregistration."""
+    """Tests for preset skill registration and unregistration.
+
+    Tests that install the self-test preset use ``install_self_test_preset``
+    which scopes a narrow filter to the expected wrap-strategy warning.
+    Reconciliation failures remain audible so real regressions surface.
+    """
 
     def _write_init_options(self, project_dir, ai="claude", ai_skills=True, script="sh"):
         from specify_cli import save_init_options
@@ -2203,9 +3054,40 @@ class TestPresetSkills:
         )
         return skill_dir
 
+    def _create_command_preset(self, temp_dir, preset_id, command_name, description, body):
+        preset_dir = temp_dir / preset_id
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        command_file = f"{command_name}.md"
+        (preset_dir / "commands" / command_file).write_text(
+            f"---\ndescription: {description}\n---\n\n{body}\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": command_name,
+                        "file": f"commands/{command_file}",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return preset_dir
+
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
-        """When --ai-skills was used, a preset command override should update the skill."""
-        # Simulate --ai-skills having been used: write init-options + create skill
+        """When skills mode was used, a preset command override should update the skill."""
+        # Simulate skills mode having been used: write init-options + create skill
         self._write_init_options(project_dir, ai="claude")
         skills_dir = project_dir / ".claude" / "skills"
         self._create_skill(skills_dir, "speckit-specify")
@@ -2215,8 +3097,7 @@ class TestPresetSkills:
 
         # Install self-test preset (has a command override for speckit.specify)
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         assert skill_file.exists()
@@ -2228,15 +3109,354 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" in metadata.get("registered_skills", [])
 
+    def _install_arg_hint_preset(self, project_dir, temp_dir, ai, skills_dir, description, arg_hint):
+        """Install a preset whose command declares argument-hint; return the SKILL.md path."""
+        self._write_init_options(project_dir, ai=ai)
+        self._create_skill(skills_dir, "speckit-hinttest-cmd")
+        (project_dir / ".specify" / "extensions" / "hinttest").mkdir(parents=True, exist_ok=True)
+
+        preset_dir = temp_dir / f"hint-preset-{ai}"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.hinttest.cmd.md").write_text(
+            "---\n"
+            f'description: "{description}"\n'
+            f'argument-hint: "{arg_hint}"\n'
+            "---\n\n"
+            "Preset command body.\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": f"hint-preset-{ai}",
+                "name": "Hint Preset",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.hinttest.cmd",
+                        "file": "commands/speckit.hinttest.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        return skills_dir / "speckit-hinttest-cmd" / "SKILL.md"
+
+    def test_argument_hint_preserved_for_preset_command(self, project_dir, temp_dir):
+        """argument-hint from a preset command must survive into the SKILL.md.
+
+        Follow-up to #2903/#2916 for the preset skill generator. The
+        description is long enough to fold across lines when serialized,
+        guarding against an in-place string injection that would split the
+        folded scalar into invalid YAML.
+        """
+        long_description = (
+            "Build and maintain a lean, static context/ knowledge folder so "
+            "coding agents load only what is relevant and save tokens"
+        )
+        arg_hint = "<init | update | list | check> [area] [slug] [-- notes]"
+        skills_dir = project_dir / ".claude" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "claude", skills_dir, long_description, arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert parsed["argument-hint"] == arg_hint
+        assert parsed["description"] == long_description
+
+    def test_argument_hint_not_added_for_non_claude_preset_command(self, project_dir, temp_dir):
+        """Non-Claude skills agents must not receive argument-hint in preset skills."""
+        arg_hint = "<init | update | list | check> [area]"
+        skills_dir = project_dir / ".agents" / "skills"
+
+        skill_file = self._install_arg_hint_preset(
+            project_dir, temp_dir, "codex", skills_dir, "Build context", arg_hint
+        )
+        assert skill_file.exists()
+        parsed = yaml.safe_load(skill_file.read_text(encoding="utf-8").split("---", 2)[1])
+        assert "argument-hint" not in parsed
+
+    def test_register_skills_resolves_command_refs(self, project_dir, temp_dir):
+        """Preset skill overrides must resolve __SPECKIT_COMMAND_*__ tokens (issue #2717).
+
+        ``_register_skills()`` previously ran only ``resolve_skill_placeholders()``,
+        so command cross-references leaked into SKILL.md as raw placeholders
+        instead of rendering as ``/speckit-<cmd>`` like the command layer.
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "cmdref-install",
+            "speckit.specify",
+            "Override specify",
+            "Run `__SPECKIT_COMMAND_SPECIFY__` then `__SPECKIT_COMMAND_PLAN__`.\n",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked into SKILL.md"
+        # Claude's invoke_separator is "-", so tokens render as /speckit-<cmd>.
+        assert "/speckit-specify" in content
+        assert "/speckit-plan" in content
+
+    def test_restore_skill_resolves_command_refs(self, project_dir, temp_dir):
+        """Skill restore on preset removal must also resolve command tokens (issue #2717)."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\n"
+            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "cmdref-restore",
+            "speckit.specify",
+            "Override specify",
+            "Override body\n",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("cmdref-restore")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on restore"
+        assert "/speckit-plan" in content
+
+    def test_reconcile_override_skill_resolves_command_refs(self, project_dir, temp_dir):
+        """Reconcile's project-override restore must resolve command tokens (issue #2717).
+
+        When a preset that overrode a command is removed and a project override
+        becomes the winning layer, ``_reconcile_skills`` rewrites the skill from
+        the override body — which must also render ``__SPECKIT_COMMAND_*__`` tokens.
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # Project override wins once the preset is removed; its body carries a
+        # command cross-reference token. No core template exists for "specify",
+        # so the skill is restored exclusively via the reconcile override branch.
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\n"
+            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "cmdref-reconcile",
+            "speckit.specify",
+            "Preset specify",
+            "Preset body\n",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("cmdref-reconcile")
+
+        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+        assert "override:speckit.specify" in content, "skill should be restored from the project override"
+        assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on reconcile"
+        assert "/speckit-plan" in content
+
+    def test_extension_restore_resolves_command_refs(self, project_dir, temp_dir):
+        """Extension-backed skill restore must resolve command tokens (issue #2717).
+
+        When a preset override is removed and the skill is restored from an
+        extension command body, ``__SPECKIT_COMMAND_*__`` tokens in that body
+        must render as slash-command invocations like the core-template path.
+        """
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-fakeext-cmd", body="original extension skill")
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "cmdref-ext-restore",
+            "speckit.fakeext.cmd",
+            "Override fakeext cmd",
+            "Override body\n",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("cmdref-ext-restore")
+
+        content = (skills_dir / "speckit-fakeext-cmd" / "SKILL.md").read_text()
+        assert "source: extension:fakeext" in content, "skill should be restored from the extension"
+        assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on extension restore"
+        assert "/speckit-plan" in content
+
+    def test_core_command_override_skill_uses_preset_command_description(self, project_dir, temp_dir):
+        """Preset skill overrides for core commands should keep preset frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        preset_dir = temp_dir / "taskstoissues-description"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.repro.taskstoissues.md").write_text(
+            "---\n"
+            "description: COMMAND-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "# Repro command body\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "taskstoissues-description",
+                "name": "Taskstoissues Description",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.taskstoissues",
+                        "file": "commands/speckit.repro.taskstoissues.md",
+                        "description": "MANIFEST-DESCRIPTION",
+                        "replaces": "speckit.taskstoissues",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: COMMAND-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: preset:taskstoissues-description" in content
+
+    def test_core_skill_restore_uses_core_command_description(self, project_dir, temp_dir):
+        """Core skill restore should keep core command frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "taskstoissues.md").write_text(
+            "---\n"
+            "description: CORE-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "core taskstoissues body\n"
+        )
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "taskstoissues-restore",
+            "speckit.taskstoissues",
+            "PRESET-FRONTMATTER-DESCRIPTION",
+            "preset taskstoissues body\n",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.remove("taskstoissues-restore")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: CORE-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: templates/commands/taskstoissues.md" in content
+        assert "core taskstoissues body" in content
+
+    def test_override_skill_reconcile_uses_override_command_description(self, project_dir, temp_dir):
+        """Override skill reconciliation should keep override frontmatter descriptions."""
+        self._write_init_options(project_dir, ai="claude")
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-taskstoissues")
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.taskstoissues.md").write_text(
+            "---\n"
+            "description: OVERRIDE-FRONTMATTER-DESCRIPTION\n"
+            "---\n\n"
+            "override taskstoissues body\n"
+        )
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "taskstoissues-reconcile",
+            "speckit.taskstoissues",
+            "PRESET-FRONTMATTER-DESCRIPTION",
+            "preset taskstoissues body\n",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-taskstoissues" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "description: OVERRIDE-FRONTMATTER-DESCRIPTION" in content
+        assert "Convert tasks from tasks.md into GitHub issues." not in content
+        assert "source: override:speckit.taskstoissues" in content
+        assert "override taskstoissues body" in content
+
     def test_skill_not_updated_when_ai_skills_disabled(self, project_dir, temp_dir):
-        """When --ai-skills was NOT used, preset install should not touch skills."""
+        """When skills mode was NOT used, preset install should not touch skills."""
         self._write_init_options(project_dir, ai="qwen", ai_skills=False)
         skills_dir = project_dir / ".qwen" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         content = skill_file.read_text()
@@ -2268,8 +3488,7 @@ class TestPresetSkills:
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         file_content = skill_file.read_text()
@@ -2289,8 +3508,7 @@ class TestPresetSkills:
         (core_cmds / "specify.md").write_text("---\ndescription: Core specify command\n---\n\nCore specify body\n")
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         # Verify preset content is in the skill
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
@@ -2326,8 +3544,7 @@ class TestPresetSkills:
         )
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
         manager.remove("self-test")
 
         content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
@@ -2343,8 +3560,7 @@ class TestPresetSkills:
         (skills_dir / "speckit-specify").write_text("not-a-directory")
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         assert (skills_dir / "speckit-specify").is_file()
         metadata = manager.registry.get("self-test")
@@ -2353,11 +3569,10 @@ class TestPresetSkills:
     def test_no_skills_registered_when_no_skill_dir_exists(self, project_dir, temp_dir):
         """Skills should not be created when no existing skill dir is found."""
         self._write_init_options(project_dir, ai="claude")
-        # Don't create skills dir — simulate --ai-skills never created them
+        # Don't create skills dir — simulate skills mode never created them
 
         manager = PresetManager(project_dir)
-        SELF_TEST_DIR = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(SELF_TEST_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         metadata = manager.registry.get("self-test")
         assert metadata.get("registered_skills", []) == []
@@ -2550,16 +3765,19 @@ class TestPresetSkills:
         assert note_file.read_text(encoding="utf-8") == "user content"
 
     def test_kimi_legacy_dotted_skill_override_still_applies(self, project_dir, temp_dir):
-        """Preset overrides should still target legacy dotted Kimi skill directories."""
+        """Preset overrides should still target legacy dotted-named skill dirs.
+
+        This exercises legacy *naming* (``speckit.specify``) under the current
+        ``.kimi-code/`` base — distinct from the legacy ``.kimi/`` *location*.
+        """
         self._write_init_options(project_dir, ai="kimi")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit.specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
-        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(self_test_dir, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit.specify" / "SKILL.md"
         assert skill_file.exists()
@@ -2573,14 +3791,13 @@ class TestPresetSkills:
     def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi presets should still propagate command overrides to existing skills."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         manager = PresetManager(project_dir)
-        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(self_test_dir, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         assert skill_file.exists()
@@ -2594,7 +3811,7 @@ class TestPresetSkills:
     def test_kimi_new_skill_created_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi native skills should still receive brand-new preset commands."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-new-skill"
@@ -2643,9 +3860,9 @@ class TestPresetSkills:
     def test_kimi_preset_skill_override_resolves_script_placeholders(self, project_dir, temp_dir):
         """Kimi preset skill overrides should resolve placeholders and rewrite project paths."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False, script="sh")
-        skills_dir = project_dir / ".kimi" / "skills"
+        skills_dir = project_dir / ".kimi-code" / "skills"
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
-        (project_dir / ".kimi" / "commands").mkdir(parents=True, exist_ok=True)
+        (project_dir / ".kimi-code" / "commands").mkdir(parents=True, exist_ok=True)
 
         preset_dir = temp_dir / "kimi-placeholder-override"
         preset_dir.mkdir()
@@ -2759,8 +3976,7 @@ class TestPresetSkills:
         self._create_skill(skills_dir, "speckit-specify", body="untouched")
 
         manager = PresetManager(project_dir)
-        self_test_dir = Path(__file__).parent.parent / "presets" / "self-test"
-        manager.install_from_directory(self_test_dir, "0.1.5")
+        install_self_test_preset(manager)
 
         skill_content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
         assert "untouched" in skill_content
@@ -3237,6 +4453,141 @@ class TestBundledPresetLocator:
         assert "Lean Workflow" in result.output
         assert "installed" in result.output.lower()
 
+    def test_preset_add_from_url_rejects_insecure_redirect(self, project_dir, monkeypatch):
+        """URL installs reject redirects from HTTPS to non-loopback HTTP."""
+        import typer
+        from specify_cli.presets._commands import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "http://example.com/preset.zip"
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            assert redirect_validator is not None
+            redirect_validator(url, "http://example.com/preset.zip")
+            return FakeResponse(b"zip")
+
+        monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+
+        installed = False
+
+        def fake_install_from_zip(self, zip_path, speckit_version, priority=10):
+            nonlocal installed
+            installed = True
+
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=10)
+
+        assert exc_info.value.exit_code == 1
+        assert installed is False
+
+    def test_preset_add_from_url_rejects_hostless_https_url(self, project_dir):
+        """URL installs reject HTTPS URLs without a hostname before downloading."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(app, ["preset", "add", "--from", "https:///preset.zip"])
+
+        assert result.exit_code == 1
+        output = strip_ansi(result.output)
+        assert "URL must use HTTPS with a hostname" in output
+        assert "got https://" not in output
+        open_url.assert_not_called()
+
+    def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
+        """Redirect rejection message covers hostless HTTPS, not only non-HTTPS URLs."""
+        import typer
+        from specify_cli.presets._commands import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https:///preset.zip"
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None, redirect_validator=None: FakeResponse(b"zip"),
+        )
+        monkeypatch.setattr(PresetManager, "install_from_zip", lambda *args, **kwargs: None)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=10)
+
+        assert exc_info.value.exit_code == 1
+        output = strip_ansi(capsys.readouterr().out)
+        assert "redirected to a disallowed URL" in output
+        assert "must use HTTPS with a hostname" in output
+
+    def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
+        """URL installs stream response bytes to disk before installing the ZIP."""
+        from specify_cli.presets._commands import preset_add
+
+        class FakeResponse(io.BytesIO):
+            def __init__(self, data):
+                super().__init__(data)
+                self.read_sizes = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://example.com/preset.zip"
+
+            def read(self, size=-1):
+                assert size not in (-1, None)
+                self.read_sizes.append(size)
+                return super().read(size)
+
+        response = FakeResponse(b"zip-bytes")
+        installed = {}
+
+        def fake_install_from_zip(self, zip_path, speckit_version, priority=10):
+            installed["zip_bytes"] = Path(zip_path).read_bytes()
+            installed["speckit_version"] = speckit_version
+            installed["priority"] = priority
+            return SimpleNamespace(name="Test Preset", version="1.0.0")
+
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None, redirect_validator=None: response,
+        )
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        preset_add(preset_id=None, from_url="https://example.com/preset.zip", dev=None, priority=7)
+
+        assert response.read_sizes
+        assert installed == {
+            "zip_bytes": b"zip-bytes",
+            "speckit_version": "0.6.0",
+            "priority": 7,
+        }
+
     def test_bundled_preset_in_catalog(self):
         """Verify the lean preset is listed in catalog.json with bundled marker."""
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
@@ -3289,6 +4640,182 @@ class TestBundledPresetLocator:
         output = strip_ansi(result.output).lower()
         assert "bundled" in output, result.output
         assert "reinstall" in output, result.output
+
+
+class TestPresetAddFromUrlResolution:
+    """CLI-level tests for preset add --from <url> GitHub release resolution."""
+
+    def test_preset_add_from_github_release_url_resolves_and_downloads(self, project_dir):
+        """'preset add --from <github-release-url>' resolves to API asset URL."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = __import__("io").BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "preset.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://github.com/org/repo/releases/download/v1.0/preset.zip",
+            ])
+
+        assert result.exit_code == 0, result.output
+        assert "My Preset" in result.output
+        # First call should resolve the release tag
+        assert any("releases/tags/v1.0" in url for url, _ in captured_urls)
+        # Second call should download from the resolved asset URL with octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_preset_add_from_direct_api_asset_url_passes_through(self, project_dir):
+        """'preset add --from <api-asset-url>' uses URL directly with octet-stream."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = __import__("io").BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured_urls.append((url, extra_headers))
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://api.github.com/repos/org/repo/releases/assets/42",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # Should go directly to the asset URL with Accept header
+        assert len(captured_urls) == 1
+        assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
+        assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
+
+    def test_preset_add_from_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'preset add --from <ghes-release-url>' resolves via GHES /api/v3 endpoint."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "preset.zip", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://ghes.example/org/repo/releases/download/v1.0/preset.zip",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # The tag-lookup call must use the GHES /api/v3 endpoint
+        assert any("ghes.example/api/v3/repos/org/repo/releases/tags/v1.0" in url for url, _ in captured_urls)
+        # The asset download call must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
 
 class TestWrapStrategy:
@@ -3405,7 +4932,7 @@ class TestWrapStrategy:
             "---\ndescription: core wrap-test\n---\n\n# Core Wrap-Test Body\n"
         )
 
-        # Set up skills dir (simulating --ai claude)
+        # Set up skills dir (simulating --integration claude)
         skills_dir = project_dir / ".claude" / "skills"
         skills_dir.mkdir(parents=True, exist_ok=True)
         skill_subdir = skills_dir / "speckit-wrap-test"
@@ -3419,7 +4946,7 @@ class TestWrapStrategy:
         )
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         written = (skill_subdir / "SKILL.md").read_text()
         assert "{CORE_TEMPLATE}" not in written
@@ -3471,7 +4998,7 @@ class TestWrapStrategy:
         )
 
         manager = PresetManager(project_dir)
-        manager.install_from_directory(SELF_TEST_PRESET_DIR, "0.1.5")
+        install_self_test_preset(manager)
 
         written = (skill_subdir / "SKILL.md").read_text()
         # {SCRIPT} should have been resolved (not left as a literal placeholder)
@@ -4559,3 +6086,36 @@ def _create_pack(temp_dir, valid_pack_data, pack_id, content,
         (subdir / f"{template_name}.md").write_text(content)
 
     return pack_dir
+
+
+def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monkeypatch):
+    """End-to-end wiring for presets: auth.json github host → GHES asset resolution."""
+    from specify_cli.authentication import http as _auth_http
+    from specify_cli.authentication.config import AuthConfigEntry
+    from specify_cli.presets import PresetCatalog
+
+    monkeypatch.setattr(_auth_http, "_config_override", [
+        AuthConfigEntry(hosts=("ghes.example",), provider="github",
+                        auth="bearer", token="t"),
+    ])
+    catalog = PresetCatalog(tmp_path)
+
+    captured = []
+
+    @contextmanager
+    def fake_open(url, timeout=None, extra_headers=None):
+        captured.append(url)
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({
+            "assets": [{"name": "pack.zip",
+                        "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/9"}]
+        }).encode()
+        yield resp
+
+    monkeypatch.setattr(catalog, "_open_url", fake_open)
+
+    resolved = catalog._resolve_github_release_asset_api_url(
+        "https://ghes.example/o/r/releases/download/v2/pack.zip"
+    )
+    assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/9"
+    assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v2"]

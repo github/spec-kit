@@ -1,7 +1,7 @@
 name: Preset Submission
 description: Submit your preset to the Spec Kit preset catalog
 title: "[Preset]: Add "
-labels: ["preset-submission", "enhancement", "needs-triage"]
+labels: ["enhancement", "needs-triage"]
 body:
   - type: markdown
     attributes:
@@ -78,6 +78,18 @@ body:
       required: true
 
   - type: input
+    id: documentation
+    attributes:
+      label: Documentation URL
+      description: |
+        Link to the README that explains how to use **this preset** (not a general product/framework pitch).
+        Prefer the preset-scoped README (e.g. `presets/<id>/README.md` in a monorepo) over the repository root README.
+        It must contain at least one valid `specify preset add ...` install command — ideally `specify preset add --from <download-url>` using the exact Download URL above (other forms such as `specify preset add <preset-id>` or `specify preset add --dev <path>` are also accepted).
+      placeholder: "https://github.com/your-org/spec-kit-presets/blob/main/presets/your-preset/README.md"
+    validations:
+      required: true
+
+  - type: input
     id: license
     attributes:
       label: License
@@ -95,11 +107,18 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: required-extensions
+    attributes:
+      label: Required Extensions (optional)
+      description: Comma-separated list of required extension IDs (e.g., aide)
+      placeholder: "e.g., aide, canon"
+
   - type: textarea
     id: templates-provided
     attributes:
       label: Templates Provided
-      description: List the template overrides your preset provides
+      description: List the template overrides your preset provides (enter "None" if command-only)
       placeholder: |
         - spec-template.md — adds compliance section
         - plan-template.md — includes audit checkpoints
@@ -110,10 +129,19 @@ body:
   - type: textarea
     id: commands-provided
     attributes:
-      label: Commands Provided (optional)
-      description: List any command overrides your preset provides
+      label: Commands Provided
+      description: List the command overrides your preset provides (enter "None" if template-only)
       placeholder: |
         - speckit.specify.md — customized for compliance workflows
+    validations:
+      required: true
+
+  - type: input
+    id: scripts-count
+    attributes:
+      label: Number of Scripts (optional)
+      description: How many scripts does your preset provide? (leave empty if none)
+      placeholder: "e.g., 1"
 
   - type: textarea
     id: tags
@@ -159,7 +187,7 @@ body:
       options:
         - label: Valid `preset.yml` manifest included
           required: true
-        - label: README.md with description and usage instructions
+        - label: Linked README (Documentation URL) explains how to use this preset and includes a valid `specify preset add ...` command (preferably `specify preset add --from <download-url>` using the exact download URL)
           required: true
         - label: LICENSE file included
           required: true

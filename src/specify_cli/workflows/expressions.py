@@ -1,13 +1,28 @@
 """Sandboxed expression evaluator for workflow templates.
 
 Provides a safe Jinja2 subset for evaluating expressions in workflow YAML.
-No file I/O, no imports, no arbitrary code execution.
+Templates cannot perform file I/O, import modules, or run arbitrary code —
+the evaluator only walks the namespace and applies a fixed set of filters.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
+
+
+# The filters the expression evaluator recognizes. Used to tell a
+# *registered* filter used in an unsupported form (e.g. `| join` with no
+# argument) apart from a genuinely unknown filter name, so each raises an
+# error that names the real problem.
+_REGISTERED_FILTERS: tuple[str, ...] = (
+    "default",
+    "join",
+    "map",
+    "contains",
+    "from_json",
+)
 
 
 # -- Custom filters -------------------------------------------------------
@@ -57,6 +72,23 @@ def _filter_contains(value: Any, substring: str) -> bool:
     return False
 
 
+def _filter_from_json(value: Any) -> Any:
+    """Parse a JSON string into a typed value (list/dict/scalar).
+
+    Raises ``ValueError`` on non-string input or invalid JSON — a parse
+    failure here means the pipeline wiring is wrong, and silently
+    passing the unparsed value through would hide it.
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            f"from_json: expected a JSON string, got {type(value).__name__}"
+        )
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"from_json: invalid JSON: {exc}") from exc
+
+
 # -- Expression resolution ------------------------------------------------
 
 _EXPR_PATTERN = re.compile(r"\{\{(.+?)\}\}")
@@ -102,7 +134,50 @@ def _build_namespace(context: Any) -> dict[str, Any]:
         ns["item"] = context.item
     if hasattr(context, "fan_in"):
         ns["fan_in"] = context.fan_in or {}
+    # Engine-managed runtime metadata. Always present (even outside a
+    # run) so templates referencing it never error: `run_id` falls back
+    # to an empty string when no run is active (dry-run, validation,
+    # ad-hoc evaluator usage). The value is the same one Spec Kit
+    # prints as `Run ID:` at the end of `workflow run` — auto-generated
+    # runs use an 8-character uuid4 hex; operator-supplied ids may be
+    # any alphanumeric string with hyphens or underscores.
+    run_id = getattr(context, "run_id", None) or ""
+    ns["context"] = {"run_id": run_id}
     return ns
+
+
+def _split_top_level_commas(text: str) -> list[str]:
+    """Split *text* on commas that are not inside quotes or nested brackets.
+
+    Used for list-literal elements so a quoted element containing a comma
+    (e.g. ``["a, b", "c"]``) is not split mid-string, and nested lists/calls
+    (e.g. ``[[1, 2], 3]``) are kept intact.
+    """
+    parts: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    depth = 0
+    for ch in text:
+        if quote is not None:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+        elif ch in "([{":
+            depth += 1
+            buf.append(ch)
+        elif ch in ")]}":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    parts.append("".join(buf))
+    return parts
 
 
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
@@ -113,7 +188,7 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     - Comparisons: ``==``, ``!=``, ``>``, ``<``, ``>=``, ``<=``
     - Boolean operators: ``and``, ``or``, ``not``
     - ``in``, ``not in``
-    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| map('...')``
+    - Pipe filters: ``| default('...')``, ``| join(', ')``, ``| contains('...')``, ``| from_json``, ``| map('...')``
     - String and numeric literals
     """
     expr = expr.strip()
@@ -130,6 +205,22 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         parts = expr.split("|", 1)
         value = _evaluate_simple_expression(parts[0].strip(), namespace)
         filter_expr = parts[1].strip()
+
+        # `from_json` is strict: it takes no arguments and tolerates no
+        # trailing tokens. Match on the leading filter name and require the
+        # whole filter to be exactly `from_json`, so every mis-wired form
+        # (`from_json()`, `from_json('x')`, `from_json)`, `from_json extra`)
+        # fails loudly instead of silently falling through to the
+        # unknown-filter path and returning the unparsed value. (filter_expr
+        # is already stripped above.)
+        leading = re.match(r"\w+", filter_expr)
+        if leading and leading.group(0) == "from_json":
+            if filter_expr != "from_json":
+                raise ValueError(
+                    "from_json: expected '| from_json' with no arguments or "
+                    f"trailing tokens, got '| {filter_expr}'"
+                )
+            return _filter_from_json(value)
 
         # Parse filter name and argument
         filter_match = re.match(r"(\w+)\((.+)\)", filter_expr)
@@ -148,7 +239,27 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         filter_name = filter_expr.strip()
         if filter_name == "default":
             return _filter_default(value)
-        return value
+        # No recognized filter matched. Fail loudly rather than silently
+        # returning the unfiltered value: a passthrough turns a mis-typed or
+        # unsupported filter into a wrong result with no signal. Mirrors the
+        # strict `from_json` handling above. Distinguish a *registered* filter
+        # used in an unsupported form (e.g. `| join` or `| map` with no
+        # argument) from a genuinely unknown filter name, so the message names
+        # the real problem instead of calling a known filter "unknown".
+        leading_name = re.match(r"\w+", filter_expr)
+        name = leading_name.group(0) if leading_name else filter_expr
+        expected = (
+            "expected one of default or default('x'), join('sep'), "
+            "map('attr'), contains('s'), or from_json"
+        )
+        if name in _REGISTERED_FILTERS:
+            raise ValueError(
+                f"filter '{name}' used in an unsupported form (got "
+                f"'| {filter_expr}'): {expected}"
+            )
+        raise ValueError(
+            f"unknown filter '{name}': {expected} (got '| {filter_expr}')"
+        )
 
     # Boolean operators — parse 'or' first (lower precedence) so that
     # 'a or b and c' is evaluated as 'a or (b and c)'.
@@ -214,7 +325,10 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         inner = expr[1:-1].strip()
         if not inner:
             return []
-        items = [_evaluate_simple_expression(i.strip(), namespace) for i in inner.split(",")]
+        items = [
+            _evaluate_simple_expression(i.strip(), namespace)
+            for i in _split_top_level_commas(inner)
+        ]
         return items
 
     # Variable reference (dot-path)

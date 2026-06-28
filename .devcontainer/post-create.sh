@@ -88,9 +88,9 @@ fi
 run_command "$kiro_binary --help > /dev/null"
 echo "✅ Done"
 
-echo -e "\n🤖 Installing Kimi CLI..."
+echo -e "\n🤖 Installing Kimi Code CLI..."
 # https://code.kimi.com
-run_command "pipx install kimi-cli"
+run_command "npm install -g @moonshot-ai/kimi-code@latest"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing CodeBuddy CLI..."

@@ -206,9 +206,12 @@ Available hook points:
 - `before_constitution` / `after_constitution`: Before/after constitution update
 - `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion
 
+Each event accepts a single hook object or a list of hook objects (multiple commands on one event).
+
 Hook object:
 
 - `command`: Command to execute (typically from `provides.commands`, but can reference any registered command)
+- `priority`: Run order within the event (integer ≥ 1, default 10; lower runs first; equal priorities keep authoring order)
 - `optional`: If true, prompt user before executing
 - `prompt`: Prompt text for optional hooks
 - `description`: Hook description
@@ -528,11 +531,9 @@ specify extension add <extension-name> --from https://github.com/.../spec-kit-my
 
 Submit to the community catalog for public discovery:
 
-1. **Fork** spec-kit repository
-2. **Add entry** to `extensions/catalog.community.json`
-3. **Update** the Community Extensions table in `README.md` with your extension
-4. **Create PR** following the [Extension Publishing Guide](EXTENSION-PUBLISHING-GUIDE.md)
-5. **After merge**, your extension becomes available:
+1. **Create a GitHub release** for your extension
+2. **File an issue** using the [Extension Submission](https://github.com/github/spec-kit/issues/new?template=extension_submission.yml) template
+3. **After review**, a maintainer updates the catalog and your extension becomes available:
    - Users can browse `catalog.community.json` to discover your extension
    - Users copy the entry to their own `catalog.json`
    - Users install with: `specify extension add my-ext` (from their catalog)
@@ -657,6 +658,23 @@ hooks:
     description: "Analyze tasks after generation"
 ```
 
+Multiple commands on one event, ordered by `priority` (lower runs first):
+
+```yaml
+# extension.yml
+hooks:
+  after_plan:
+    - command: "speckit.my-ext.verify"
+      priority: 5
+      optional: false
+      description: "Verify the plan"
+    - command: "speckit.my-ext.report"
+      priority: 10
+      optional: true
+      prompt: "Generate the report?"
+      description: "Generate a report from the plan"
+```
+
 ---
 
 ## Troubleshooting
@@ -669,7 +687,7 @@ hooks:
 
 **Error**: `Extension requires spec-kit >=0.2.0`
 
-- **Fix**: Update spec-kit with `uv tool install specify-cli --force`
+- **Fix**: Update spec-kit with `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git`. The bare `specify-cli` package on PyPI is a different, unrelated project — installing it without `--from git+...` will give you a stub CLI that does not include `extension`, `preset`, or other spec-kit commands.
 
 **Error**: `Command file not found`
 

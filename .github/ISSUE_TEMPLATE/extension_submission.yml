@@ -1,7 +1,7 @@
 name: Extension Submission
 description: Submit your extension to the Spec Kit catalog
 title: "[Extension]: Add "
-labels: ["extension-submission", "enhancement", "needs-triage"]
+labels: ["enhancement", "needs-triage"]
 body:
   - type: markdown
     attributes:

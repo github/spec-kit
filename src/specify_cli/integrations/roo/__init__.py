@@ -19,3 +19,4 @@ class RooIntegration(MarkdownIntegration):
         "extension": ".md",
     }
     context_file = ".roo/rules/specify-rules.md"
+    multi_install_safe = True

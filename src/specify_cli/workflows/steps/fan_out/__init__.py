@@ -22,11 +22,27 @@ class FanOutStep(StepBase):
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         items_expr = config.get("items", "[]")
         items = evaluate_expression(items_expr, context)
-        if not isinstance(items, list):
-            items = []
-
         max_concurrency = config.get("max_concurrency", 1)
         step_template = config.get("step", {})
+
+        if not isinstance(items, list):
+            # A non-list here is a wiring error (the expression did not
+            # resolve to a collection); silently fanning out over zero
+            # items hides it. An explicit empty list remains valid input.
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Fan-out step {config.get('id', '?')!r}: 'items' must "
+                    f"resolve to a list, got {type(items).__name__} from "
+                    f"{items_expr!r}."
+                ),
+                output={
+                    "items": [],
+                    "max_concurrency": max_concurrency,
+                    "step_template": step_template,
+                    "item_count": 0,
+                },
+            )
 
         return StepResult(
             status=StepStatus.COMPLETED,

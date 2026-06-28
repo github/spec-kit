@@ -121,6 +121,11 @@ class TestBasePrimitives:
         assert len(templates) > 0
         assert all(t.suffix == ".md" for t in templates)
 
+    def test_list_command_templates_keeps_checklist_after_plan(self):
+        i = StubIntegration()
+        stems = [template.stem for template in i.list_command_templates()]
+        assert stems.index("plan") < stems.index("checklist")
+
     def test_command_filename_default(self):
         i = StubIntegration()
         assert i.command_filename("plan") == "speckit.plan.md"

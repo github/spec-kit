@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-04-08T00:00:00Z",
+  "updated_at": "2026-06-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
     "claude": {
@@ -11,6 +11,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "anthropic"]
+    },
+    "cline": {
+      "id": "cline",
+      "name": "Cline",
+      "version": "1.0.0",
+      "description": "Cline IDE integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
     },
     "copilot": {
       "id": "copilot",
@@ -66,6 +75,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills"]
     },
+    "devin": {
+      "id": "devin",
+      "name": "Devin for Terminal",
+      "version": "1.0.0",
+      "description": "Devin for Terminal CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
+    },
     "qwen": {
       "id": "qwen",
       "name": "Qwen Code",
@@ -83,6 +101,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
+    },
+    "firebender": {
+      "id": "firebender",
+      "name": "Firebender",
+      "version": "1.0.0",
+      "description": "Firebender IDE integration for Android Studio / IntelliJ",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
     },
     "forge": {
       "id": "forge",
@@ -156,6 +183,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["ide"]
     },
+    "rovodev": {
+      "id": "rovodev",
+      "name": "RovoDev ACLI",
+      "version": "1.0.0",
+      "description": "Atlassian RovoDev integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "atlassian"]
+    },
     "bob": {
       "id": "bob",
       "name": "IBM Bob",
@@ -201,11 +237,29 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills"]
     },
+    "lingma": {
+      "id": "lingma",
+      "name": "Lingma",
+      "version": "1.0.0",
+      "description": "Lingma IDE skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "skills"]
+    },
     "pi": {
       "id": "pi",
       "name": "Pi Coding Agent",
       "version": "1.0.0",
       "description": "Pi terminal coding agent prompt-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli"]
+    },
+    "omp": {
+      "id": "omp",
+      "name": "Oh My Pi",
+      "version": "1.0.0",
+      "description": "Oh My Pi (omp) terminal coding agent prompt-based integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
@@ -241,7 +295,7 @@
       "id": "generic",
       "name": "Generic (bring your own agent)",
       "version": "1.0.0",
-      "description": "Generic integration for any agent via --ai-commands-dir",
+      "description": "Generic integration for any agent via --integration-options=\"--commands-dir <dir>\"",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["generic"]
@@ -254,6 +308,24 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
+    },
+    "hermes": {
+      "id": "hermes",
+      "name": "Hermes Agent",
+      "version": "1.0.0",
+      "description": "Hermes Agent skills-based integration by Nous Research",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills"]
+    },
+    "zcode": {
+      "id": "zcode",
+      "name": "ZCode",
+      "version": "1.0.0",
+      "description": "Z.AI ZCode CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills", "z-ai"]
     }
   }
 }

@@ -27,6 +27,7 @@ class TraeIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     context_file = ".trae/rules/project_rules.md"
+    multi_install_safe = True
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
