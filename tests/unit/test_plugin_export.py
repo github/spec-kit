@@ -58,7 +58,7 @@ def test_skill_content_is_project_relative_not_plugin_root(tmp_path):
 def test_plugin_passes_upstream_skill_names_through(tmp_path):
     # The producer must NOT rewrite the upstream skill name/content contract.
     skills_dir = produce_core_skills(tmp_path, "sh")
-    md = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
+    md = (skills_dir / "speckit-specify" / "SKILL.md").read_text(encoding="utf-8")
     assert 'name: "speckit-specify"' in md
 
 
@@ -81,7 +81,9 @@ def test_build_plugin_full_tree(tmp_path):
 
     hook = out / "hooks" / "ensure-specify.sh"
     assert hook.is_file()
-    assert hook.stat().st_mode & 0o111  # executable bit preserved
+    import sys
+    if sys.platform != "win32":
+        assert hook.stat().st_mode & 0o111  # executable bit preserved
 
     names = {p.name for p in (out / "skills").iterdir() if p.is_dir()}
     assert names == CORE_SKILLS
