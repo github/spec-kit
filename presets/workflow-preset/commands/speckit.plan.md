@@ -9,6 +9,31 @@ Apply the constitution's Change Scope Granularity principle.
 
 During planning, lock the change scope to `M + U`: module/capability plus design object. Do not lock operation-level implementation details or concrete write paths.
 
+## Plan Agent Topology
+
+Use stage-local subagents to reduce planning context load when the runtime supports delegated agents. This topology is an instruction-level coordination pattern only: do not create persistent orchestration files, schemas, scripts, manifests, or worker dispatch artifacts for planning.
+
+Plan Core Agent is the planning orchestrator. It owns checklist preflight, an in-memory input index, subagent dispatch, conflict resolution, and final writes to planning artifacts. It may read the required planning inputs and the subagent drafts, but it must consume subagent outputs as bounded drafts and summaries rather than subagent conversation history.
+
+Each subagent payload must declare:
+
+- `assigned_scope`: the artifact family, scenario group, visual item refs, or design concern assigned to the subagent.
+- `allowed_read_paths`: the exact existing paths or path families the subagent may inspect.
+- `allowed_sections`: the headings, IDs, case IDs, Visual Item IDs, or contract refs the subagent may use from those paths.
+- `output_contract`: the draft artifact path or summary shape the subagent must return.
+
+Subagents must return only artifact-local summaries, draft content, source refs, blockers, and `context_gaps`. They must not return copied full-source documents. If a required decision cannot be made from the assigned inputs, the subagent records `context_gaps` instead of expanding its read scope. Each `context_gaps` entry must include blocker code `PLANNING_CONTEXT_GAP`, the missing source, affected artifact, assigned scope, and blocker reason.
+
+Planning subagent roles:
+
+- Behavior Projection Agent: reads only accepted behavior-relevant `spec.md` sections and behavior-testability checklist case rows assigned by Plan Core Agent; drafts BDD, structured behavior scenarios, UIF intent, and fixture intent. It does not formalize contracts or choose validation strategy.
+- Formal Contract Agent: reads behavior projection drafts and assigned interface or UIF refs; drafts formal BDD, Expected UIF, and behavior contract updates. It records `case_coverage_blockers` when Required cases cannot be formalized.
+- Design Artifact Agent: reads only assigned design concerns and writes draft content for `class-diagram.md` and `contracts/sequences.md` when trigger conditions are met.
+- Validation Planning Agent: reads assigned behavior contract refs, interface refs, `research.md` decision slots, and `quickstart.md` validation path slots; drafts validation decisions and executable validation guidance without creating a standalone validation artifact.
+- Visual Planning Agent: reads only assigned Visual Fidelity Evidence Matrix rows with status `Required` or accepted exception refs, plus cited visual proof refs. It carries forward Visual Item IDs and refs rather than copying the full matrix.
+
+When runtime subagents are unavailable, Plan Core Agent must emulate this topology sequentially by processing one assigned scope at a time and preserving the same payload boundaries, `context_gaps`, and final-write ownership.
+
 ## Design Artifact Policy
 
 Core planning remains authoritative. Optional design artifacts carry structured details that do not belong in `plan.md`.

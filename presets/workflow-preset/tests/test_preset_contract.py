@@ -645,6 +645,26 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("validation decisions belong in `research.md`", command)
         self.assertIn("executable validation paths belong in `quickstart.md`", command)
         self.assertIn("final report must list generated artifacts", command)
+        self.assertIn("Plan Agent Topology", command)
+        self.assertIn("Use stage-local subagents to reduce planning context load", command)
+        self.assertIn("Plan Core Agent", command)
+        for agent_role in (
+            "Behavior Projection Agent",
+            "Formal Contract Agent",
+            "Design Artifact Agent",
+            "Validation Planning Agent",
+            "Visual Planning Agent",
+        ):
+            self.assertIn(agent_role, command)
+        for payload_field in (
+            "`assigned_scope`",
+            "`allowed_read_paths`",
+            "`allowed_sections`",
+            "`output_contract`",
+        ):
+            self.assertIn(payload_field, command)
+        self.assertIn("rather than subagent conversation history", command)
+        self.assertIn("PLANNING_CONTEXT_GAP", command)
         self.assertNotIn("speckit.tasks", command)
         self.assertNotIn("speckit.implement", command)
 
@@ -859,6 +879,28 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("`/speckit.tasks` owns implementation, validation, and review task definition in `tasks.md`", tasks)
         self.assertIn("must not invent validation strategy", tasks)
         self.assertIn("change requirements, update contracts, or widen scope", tasks)
+        self.assertIn("Task-Derivation Subagents", tasks)
+        self.assertIn("context-reduced multi-subagent derivation model", tasks)
+        self.assertIn("derivation-time partitioning rule only", tasks)
+        self.assertIn("do not create implementation transfer artifacts", tasks)
+        self.assertIn("Tasks Core Agent", tasks)
+        for agent_role in (
+            "Story Task Agent",
+            "Contract Validation Agent",
+            "Visual Task Agent",
+            "Review Task Agent",
+        ):
+            self.assertIn(agent_role, tasks)
+        for payload_field in (
+            "`assigned_scope`",
+            "`allowed_read_paths`",
+            "`allowed_sections`",
+            "`output_contract`",
+        ):
+            self.assertIn(payload_field, tasks)
+        self.assertIn("TASK_DERIVATION_CONTEXT_GAP", tasks)
+        self.assertIn("must not consume full conversation history", tasks)
+        self.assertIn("Split checklist items only when the validation level, implementation owner, dependency order, evidence source, or review scope differs", tasks)
         self.assertIn("Planning Input Taxonomy", tasks)
         self.assertIn("validation level taxonomy", tasks)
         self.assertIn("fixture strategy and external-system execution mode taxonomy", tasks)
