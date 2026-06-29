@@ -322,6 +322,27 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.a == 9 or inputs.b == 2 }}", plain) is True
         assert evaluate_expression("{{ inputs.missing | default('a and b') }}", plain) == "a and b"
 
+    def test_pipe_detection_is_quote_aware(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        # A literal '|' inside a quoted operand must not be treated as a filter
+        # pipe: the comparison applies to the whole string.
+        ctx = StepContext(inputs={"x": "a|b"})
+        assert evaluate_expression("{{ inputs.x == 'a|b' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.x == 'a|b' }}", StepContext(inputs={"x": "z"})) is False
+        # membership against a literal containing a pipe
+        assert evaluate_expression("{{ 'a|b' in inputs.s }}", StepContext(inputs={"s": "x a|b y"})) is True
+        # a single quoted literal containing pipes is preserved
+        assert evaluate_expression("{{ 'a|b|c' }}", StepContext()) == "a|b|c"
+
+        # Regression: real filters still work, including a pipe inside a filter arg.
+        ctx2 = StepContext(inputs={"items": ["a", "b"], "s": "xabz"})
+        assert evaluate_expression("{{ inputs.missing | default('y') }}", ctx2) == "y"
+        assert evaluate_expression('{{ inputs.items | join("-") }}', ctx2) == "a-b"
+        assert evaluate_expression("{{ inputs.s | contains('ab') }}", ctx2) is True
+        assert evaluate_expression("{{ inputs.missing | default('a|b') }}", ctx2) == "a|b"
+
     def test_filter_default(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext

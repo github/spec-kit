@@ -230,11 +230,13 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     if expr[:1] in ("'", '"') and expr.find(expr[0], 1) == len(expr) - 1:
         return expr[1:-1]
 
-    # Handle pipe filters
-    if "|" in expr:
-        parts = expr.split("|", 1)
-        value = _evaluate_simple_expression(parts[0].strip(), namespace)
-        filter_expr = parts[1].strip()
+    # Handle pipe filters. Detect the pipe at the top level only, so a literal
+    # '|' inside a quoted operand (e.g. `inputs.x == 'a|b'`) or nested brackets is
+    # not mistaken for a filter separator — mirroring the operator parsing below.
+    pipe_idx = _find_top_level(expr, "|")
+    if pipe_idx != -1:
+        value = _evaluate_simple_expression(expr[:pipe_idx].strip(), namespace)
+        filter_expr = expr[pipe_idx + 1:].strip()
 
         # `from_json` is strict: it takes no arguments and tolerates no
         # trailing tokens. Match on the leading filter name and require the
