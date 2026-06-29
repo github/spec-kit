@@ -227,19 +227,21 @@ def register(app: typer.Typer) -> None:
                     console.print(
                         "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                     )
-                elif not _stdin_is_interactive():
-                    # No TTY to confirm on: fail fast with actionable guidance
-                    # instead of blocking on typer.confirm (which would read EOF
-                    # and abort unhelpfully). Mirrors the named-project path,
-                    # which already errors and points to --force.
-                    console.print(
-                        "[red]Error:[/red] Current directory is not empty and no "
-                        "interactive terminal is available to confirm. Re-run with "
-                        "[bold]--force[/bold] to merge into it."
-                    )
-                    raise typer.Exit(1)
                 else:
-                    response = typer.confirm("Do you want to continue?")
+                    try:
+                        response = typer.confirm("Do you want to continue?")
+                    except (typer.Abort, EOFError):
+                        # No confirmation input available (non-interactive session
+                        # with empty stdin): fail fast with actionable guidance
+                        # instead of the bare "Aborted." Piped input (e.g. "y") is
+                        # still honored above. Mirrors the named-project path,
+                        # which already points to --force.
+                        console.print(
+                            "[red]Error:[/red] Current directory is not empty and no "
+                            "confirmation input is available. Re-run with "
+                            "[bold]--force[/bold] to merge into it."
+                        )
+                        raise typer.Exit(1) from None
                     if not response:
                         console.print("[yellow]Operation cancelled[/yellow]")
                         raise typer.Exit(0)
