@@ -22,41 +22,6 @@ SHARD_ID_PATTERN = re.compile(
 )
 CASE_TYPES = {"positive", "negative", "boundary", "permission", "validation", "state_conflict"}
 FAILURE_CASE_TYPES = {"negative", "permission", "validation", "state_conflict"}
-EXPLICIT_COMPONENT_USE_CONSTRAINTS = {
-    "visual-reference-only",
-    "must-reuse-existing",
-    "figma-export-required",
-}
-EXPLICIT_COPY_CONSTRAINTS = {
-    "no-new-copy",
-    "figma-copy-required",
-    "product-copy-required",
-}
-EXPLICIT_DRAWING_CONSTRAINTS = {
-    "no-self-draw",
-    "figma-export-required",
-    "existing-asset-required",
-}
-PROVIDER_MATRIX_COPY_KEYS = {
-    "figma_frame_node_refs",
-    "requirement_target",
-    "layout_facts",
-    "typography_facts",
-    "color_token_facts",
-    "effect_facts",
-    "variant_state_evidence",
-    "visual_proof_level",
-    "spec_requirement_target",
-}
-FULL_PROVIDER_MATRIX_KEYS = {
-    "source",
-    "readiness",
-    "visual_items",
-    "visual_item_matrix",
-    "provider_visual_item_matrix",
-}
-
-
 def _duplicate_ids(items: list[dict[str, Any]], *, key: str, context: str) -> set[str]:
     seen: set[str] = set()
     duplicates: set[str] = set()
@@ -315,78 +280,7 @@ def validate_behavior_case_coverage(
             raise ValueError(f"Required case {context} missing quickstart.md evidence")
 
 
-def validate_visual_item_matrix_contract(matrix: dict[str, Any]) -> None:
-    readiness = matrix.get("readiness", {})
-    if readiness.get("status") == "PASS":
-        if readiness.get("raw_metadata_complete") is not True:
-            raise ValueError("visual item matrix PASS requires raw_metadata_complete")
-        if readiness.get("node_inventory_coverage") != 100:
-            raise ValueError("visual item matrix PASS requires node_inventory_coverage 100")
-        if readiness.get("parity_passed") is not True:
-            raise ValueError("visual item matrix PASS requires parity_passed")
-        if readiness.get("blocker_lint_errors"):
-            raise ValueError("visual item matrix PASS requires no blocker_lint_errors")
-
-    visual_items = matrix.get("visual_items", [])
-    if not visual_items:
-        raise ValueError("visual item matrix must include visual_items")
-    _duplicate_ids(visual_items, key="id", context="visual item matrix")
-
-    for item in visual_items:
-        item_id = item.get("id", "<unknown>")
-        explicit_component = item.get("component_use_constraint") in EXPLICIT_COMPONENT_USE_CONSTRAINTS
-        explicit_copy = item.get("copy_content_constraint") in EXPLICIT_COPY_CONSTRAINTS
-        explicit_drawing = item.get("drawing_asset_constraint") in EXPLICIT_DRAWING_CONSTRAINTS
-        if (explicit_component or explicit_copy or explicit_drawing) and not item.get(
-            "constraint_source_refs"
-        ):
-            raise ValueError(
-                f"visual item {item_id} explicit constraints require constraint_source_refs"
-            )
-
-        if item.get("fidelity_scope") in {"pixel-perfect", "brand-critical"}:
-            if item.get("visual_proof_level") != "L3":
-                raise ValueError(
-                    f"visual item {item_id} pixel-perfect or brand-critical requires L3 proof"
-                )
-            if not item.get("screenshot_refs"):
-                raise ValueError(
-                    f"visual item {item_id} pixel-perfect or brand-critical requires screenshot_refs"
-                )
-
-
-def validate_design_requirement_intake_trace_contract(intake: dict[str, Any]) -> None:
-    rows = intake.get("visual_restoration_trace", [])
-    if rows in (None, []):
-        return
-    if not isinstance(rows, list):
-        raise ValueError("visual restoration trace must be a list")
-
-    _duplicate_ids(rows, key="visual_item_id", context="visual restoration trace")
-
-    for row in rows:
-        item_id = row.get("visual_item_id", "<unknown>")
-        copied_structures = FULL_PROVIDER_MATRIX_KEYS.intersection(row)
-        if copied_structures:
-            raise ValueError(
-                f"visual restoration trace {item_id} must not copy full provider Visual Item Matrix"
-            )
-
-        copied_provider_fields = PROVIDER_MATRIX_COPY_KEYS.intersection(row)
-        if len(copied_provider_fields) >= 3:
-            raise ValueError(
-                f"visual restoration trace {item_id} must record only requirement-level facts"
-            )
-
-        if not row.get("requirement_id") and not row.get("spec_requirement_ref"):
-            raise ValueError(f"visual restoration trace {item_id} missing requirement reference")
-        if not row.get("supporting_evidence_refs") and not row.get("provider_source_refs"):
-            raise ValueError(
-                f"visual restoration trace {item_id} missing supporting evidence refs"
-            )
-
-
-def _handoff_has_behavior_contract_context(handoff: dict[str, Any]) -> bool:
+def _handoff_requires_traceable_validation_evidence(handoff: dict[str, Any]) -> bool:
     markers = (
         "contracts/bdd/",
         "contracts/uif/",
@@ -394,6 +288,19 @@ def _handoff_has_behavior_contract_context(handoff: dict[str, Any]) -> bool:
         "BehaviorScenarioInstance",
         "BDD scenario",
         "behavior assertion",
+        "Visual Item ID",
+        "Requirement Status",
+        "visual_setup",
+        "visual_validation",
+        "visual_implementation",
+        "visual_evidence",
+        "ui_acceptance",
+        "visual_verification",
+        "asset_binding",
+        "final_visual_review",
+        "screenshot ref",
+        "visual proof ref",
+        "Client Asset Contract",
     )
     values: list[str] = []
     for key in ("allowed_read_paths", "allowed_write_paths", "task_text"):
@@ -404,11 +311,20 @@ def _handoff_has_behavior_contract_context(handoff: dict[str, Any]) -> bool:
     return any(marker in haystack for marker in markers)
 
 
-def _receipt_references_behavior_evidence(receipt: dict[str, Any]) -> bool:
+def _receipt_references_traceable_validation_evidence(receipt: dict[str, Any]) -> bool:
     markers = (
         "SCN-",
         "AST-",
         "BDD",
+        "UIF-",
+        "Visual Item ID",
+        "Requirement Status",
+        "screenshot ref",
+        "screenshot refs",
+        "visual proof ref",
+        "visual proof refs",
+        "Client Asset Contract",
+        "quickstart validation",
         "contracts/bdd/",
         "contracts/uif/",
         "contracts/behavior/",
@@ -817,12 +733,14 @@ def validate_receipt_contract(
 
     if not receipt.get("validation_evidence"):
         raise ValueError("receipt validation_evidence must not be empty")
-    if _handoff_has_behavior_contract_context(
+    if _handoff_requires_traceable_validation_evidence(
         handoff
-    ) and not _receipt_references_behavior_evidence(receipt):
+    ) and not _receipt_references_traceable_validation_evidence(receipt):
         raise ValueError(
             "receipt validation_evidence must reference relevant BDD scenario, "
-            "behavior assertion, API contract, or quickstart path"
+            "behavior assertion, API contract, UIF path, Visual Item ID, "
+            "screenshot ref, visual proof ref, Client Asset Contract entry, "
+            "or quickstart path"
         )
 
     for path in receipt.get("changed_paths", []):

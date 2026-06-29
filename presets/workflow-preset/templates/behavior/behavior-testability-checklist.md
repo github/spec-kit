@@ -57,23 +57,28 @@ For each user story or capability, record one row per story or capability case t
 - [ ] Unknown NFR entries that affect downstream design are listed as blocking items.
 
 ## Visual Fidelity Readiness
-- [ ] Apply this section when `spec.md` contains design-derived requirements, a design source, provider evidence blockers, or provider-specific design evidence requests. Also apply it when `spec.md` contains product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements.
+- [ ] Apply this section when `spec.md` contains `Visual & UI Specification`, visual requirements, visual SSOT refs, external intake refs, provider evidence blockers, or provider-specific evidence requests. Also apply it when `spec.md` contains product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements.
+- [ ] `Visual & UI Specification` exists when a visual or UI surface applies; otherwise `spec.md` records a Not Applicable rationale.
+- [ ] Every identified visual/UI requirement uses status `Required`, `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`.
+- [ ] Unknown visual/UI coverage status appears in Blocking Items when it affects downstream behavior projection or design.
+- [ ] Required visual/UI requirements have observable requirement text in `spec.md`.
 - [ ] Design-derived requirements identify the design source, provider source refs, and required fidelity.
-- [ ] Design-derived requirements record provider readiness status, evidence refs, and blockers when provider evidence is required.
+- [ ] Visual requirements record external intake readiness status when cited, evidence refs, visual SSOT refs, and blockers when provider evidence is required.
 - [ ] Visual Fidelity Evidence Matrix rows cite source `spec.md` sections, evidence refs, required screenshot level, blocking item IDs, and accepted exception rules.
 - [ ] Visual Fidelity Evidence Matrix is the only artifact that decides visual planning readiness, proof level sufficiency, screenshot sufficiency, accepted exception rules, Gate Status, and Blocking Items.
-- [ ] Visual Fidelity Evidence Matrix reads visual facts from `spec.md` and evidence refs; it does not call Figma, re-extract provider evidence, rebuild provider matrices, or create another visual readiness path.
+- [ ] Visual Fidelity Evidence Matrix reads visual facts from `spec.md` and evidence refs; it does not call provider tools, re-extract external intake evidence, parse HTML SSOT bundles, rebuild provider matrices, or create another visual readiness path.
 - [ ] Use one Visual Fidelity Evidence Matrix as the single visual readiness record; do not duplicate visual evidence decisions outside the matrix and Blocking Items.
 - [ ] Do not add historical visual rules or alternate visual decision paths.
 
 ## Visual Fidelity Evidence Matrix
 
-| Visual Item ID | Source `spec.md` section | Fidelity Scope | Screenshot Level | Evidence Refs | Visual Proof Required | Blocking Item ID | Exception Rule |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| VIS-001 | `spec.md#...` | functional-equivalent|design-system-faithful|pixel-perfect|brand-critical|responsive-visual | L0|L1|L2|L3 | provider/screenshot refs or none | yes|no | BI-... or none | EX-... or none |
+| Visual Item ID | Source `spec.md` section | Requirement Status | Fidelity Scope | Screenshot Level | Evidence Refs | Visual Proof Required | Blocking Item ID | Exception Rule |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| VIS-001 | `spec.md#...` | Required|Not Applicable|Unknown|[BLOCKED: PROVIDER_EVIDENCE] | functional-equivalent|design-system-faithful|pixel-perfect|brand-critical|responsive-visual | L0|L1|L2|L3 | provider/screenshot refs or none | yes|no | BI-... or none | EX-... or none |
 
+- [ ] Requirement Status is declared for each visual requirement or visual proof obligation.
 - [ ] Screenshot evidence level is declared when screenshots are required: L0|L1|L2|L3.
-- [ ] visual proof refs point to provider evidence or screenshot sources.
+- [ ] visual proof refs point to visual SSOT evidence, external intake evidence, or screenshot sources.
 - [ ] declared visual proof required is recorded when `spec.md` makes screenshot-backed visual proof mandatory.
 - [ ] Ordinary UI visual requirements may use L1 Key Screenshots; `spec.md` visual proof requirements require L1 or higher.
 - [ ] L2 State + Viewport Matrix covers key page, state, and viewport combinations for complex UI, responsive, or multi-state requirements.

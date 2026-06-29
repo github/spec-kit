@@ -2,9 +2,8 @@
 ## Purpose
 Reduce implementation-stage context load and reasoning drift by turning broad `/speckit.implement` work into persisted, capability-scoped handoffs. Workers receive only task-local context, allowed paths, validation commands, and receipt obligations.
 ## Files and Schemas
-- `handoffs/implement/<run-id>/handoff-manifest.json`, `planner-outputs/`, `context-index.json`
-- `handoffs/implement/<run-id>/<shard>.json`, `<shard>.context.md`, `results/<shard>.json`
-- `schemas/speckit.implement.manifest.v1.schema.json`, `schemas/speckit.implement.handoff.v2.schema.json`, `schemas/speckit.implement.receipt.v1.schema.json`
+- `handoffs/implement/<run-id>/handoff-manifest.json`, `planner-outputs/`, `context-index.json`, `<shard>.json`, `<shard>.context.md`, `results/<shard>.json`
+- schemas: `schemas/speckit.implement.manifest.v1.schema.json`, `schemas/speckit.implement.handoff.v2.schema.json`, `schemas/speckit.implement.receipt.v1.schema.json`
 - Handoff records `planner_outputs` and `draft_source` fields.
 ## Authority
 - Only Vertical Planner Agents may produce shard plans and digest drafts.
@@ -38,8 +37,7 @@ Use `agent-runtime=<spec-kit-integration-key>` as a prompt hint. The manifest re
 - review receipts
 - commit `tasks.md`
 - during task_commit, mark `[x]` only for receipt completed_task_ids that passed receipt review, required code review, and integration verification with no deferred_validation_todos
-- run integration verification
-- report closeout
+- run integration verification and report closeout
 ## Vertical Planner Agent
 - one `vertical_capability`
 - produce shard plans, handoff drafts, context digest drafts
@@ -56,12 +54,12 @@ Use `agent-runtime=<spec-kit-integration-key>` as a prompt hint. The manifest re
 - Execute only task_ids
 - Read only allowed_read_paths
 - Write only allowed_write_paths
-- write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, or quickstart path
+- write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, quickstart path, Visual Item ID, Requirement Status, UIF path, screenshot ref, visual proof ref, Client Asset Contract entry, quickstart validation path, or captured command output
 - use empty completed_task_ids when the handoff is blocked, validation is deferred, required evidence is missing, or code review status is not approved
 - Code Review Receipts use task_type: code_review, review_conclusion.checked_sources, data_side_effect_review, consistency_repairs, deferred_validation_todos, and quickstart/contract validation command evidence
 - review actual implementation diff data side effects, including runtime database writes and field-level update/delete behavior
 - repair implementation drift against existing design, sequence, or contract constraints, or high-risk data side effects, only inside allowed_write_paths; upstream requirement, contract, checklist, or planning artifact gaps become blockers or todos instead of repair edits; real e2e gaps become todos
-- must not edit tasks.md, create handoffs, dispatch workers
+- must not discover visual requirements, repair Visual Fidelity Readiness evidence, edit `spec.md`, contracts, readiness checklists, or planning artifacts to make visual work executable; must not edit tasks.md, create handoffs, dispatch workers
 ## Worker Prompt
 ```text
 Worker Agent.
@@ -74,9 +72,9 @@ Handoff JSON: <path>
 - Write only allowed_write_paths
 - Do not edit tasks.md
 - Do not dispatch workers
-- Write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, or quickstart path
+- Write receipt_path as speckit.implement.receipt.v1 with validation_evidence references to relevant BDD scenario, behavior assertion, API contract, quickstart path, Visual Item ID, Requirement Status, UIF path, screenshot ref, visual proof ref, Client Asset Contract entry, quickstart validation path, or captured command output
 - Use empty completed_task_ids when the handoff is blocked, validation is deferred, required evidence is missing, or code review status is not approved
-- For Code Review tasks, echo task_type: code_review; add review_conclusion.checked_sources and data_side_effect_review; review actual implementation diff runtime database writes and field-level update/delete behavior; include quickstart/contract validation command evidence; repair only authorized implementation drift; record upstream artifact gaps and real e2e todos
+- For Code Review tasks, echo task_type: code_review; add review_conclusion.checked_sources and data_side_effect_review; review actual implementation diff runtime database writes and field-level update/delete behavior; include quickstart/contract validation command evidence; repair only authorized implementation drift; record upstream artifact gaps and real e2e todos; for final_visual_review tasks, verify implemented UI states, viewport behavior, Visual Fidelity Readiness, UIF paths, screenshot refs, visual proof refs, and Client Asset Contract bindings without changing upstream artifacts
 ```
 ## Planner Prompt
 ```text
@@ -96,6 +94,7 @@ vertical_capability: <capability>
 - one incomplete `tasks.md` checklist item maps to one candidate shard
 - ignore completed `[x]` checklist items
 - preserve `tasks.md` order
+- visual shard candidates must come only from `tasks.md` visual task types `visual_setup`, `visual_validation`, `visual_implementation`, `visual_evidence`, `ui_acceptance`, `visual_verification`, `asset_binding`, or `final_visual_review`; preserve the Visual Fidelity Readiness `Requirement Status` filter from `/speckit.tasks`: only `Required` or `Required` plus an accepted exception is executable; do not create visual shards for `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`; route `Unknown` back to `/speckit.clarify` and `[BLOCKED: PROVIDER_EVIDENCE]` to the external intake extension
 - infer `vertical_capability` from task section heading, task text, referenced paths
 - group candidates only when lifecycle dependencies, vertical_capability, and allowed_write_paths match
 - shard IDs use `S<2-digit-sequence>-<vertical_capability>-<2-digit-sequence>`
@@ -104,8 +103,9 @@ vertical_capability: <capability>
 - include document headings from `context-index.json`
 - include only sections referenced by assigned task paths or vertical_capability
 - include relevant `class-diagram.md`, `contracts/sequences.md`, `contracts/bdd/`, `contracts/uif/`, and `contracts/behavior/` constraints, plus research.md validation decisions and quickstart.md validation paths from `research.md` and `quickstart.md`
-- include behavior contract constraints, visual fidelity requirements, screenshot refs, visual proof refs, Design Requirement trace refs, and Client Asset Contract entries
-- asset binding maps required Client Asset Contract items to local asset paths or code asset mappings; missing required client visual assets, mappings, variants, or fallbacks become `context_gaps`
+- include behavior contract constraints, visual fidelity requirements, Visual Item ID, Requirement Status, accepted exception rule, screenshot refs, visual proof refs, visual SSOT refs, external evidence refs, and Client Asset Contract entries
+- asset binding maps only executable Required or accepted-exception Client Asset Contract items to local asset paths or code asset mappings; missing required client visual assets, mappings, variants, or fallbacks become `context_gaps`
+- visual `Requirement Status` mismatches, `Unknown`, `[BLOCKED: PROVIDER_EVIDENCE]`, missing visual proof refs, missing screenshot refs, missing asset variants, or missing fallback policy become `context_gaps`, not implementation scope
 - record unresolved required context as `context_gaps`
 ## Path Rules
 - derive `allowed_write_paths` from paths referenced by assigned task text, planned `U` design object, and specific source, test, fixture, configuration, or receipt paths
@@ -119,5 +119,6 @@ vertical_capability: <capability>
 - non-empty `completed_task_ids` with `deferred_validation_todos`
 - non-empty `completed_task_ids` on Code Review Receipts whose `review_conclusion.status` is not approved
 - empty `validation_evidence` or missing relevant BDD scenario, behavior assertion, API contract, or quickstart path reference
+- visual handoff receipt missing relevant Visual Item ID, Requirement Status, UIF path, screenshot ref, visual proof ref, Client Asset Contract entry, quickstart validation path, or captured command output
 - receipt 路径不等于 handoff 中声明的 `task_status_update.receipt_path`
 - Code Review Receipts missing `task_type: code_review`, `review_conclusion.checked_sources`, `data_side_effect_review`, quickstart/contract validation command evidence, in-scope `consistency_repairs`, or needed `deferred_validation_todos`

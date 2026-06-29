@@ -44,14 +44,16 @@ Check When readiness from `spec.md`: each trigger is an executable user action, 
 
 Check Then readiness from `spec.md`: each outcome maps to feedback, business state, error semantics, or assertion intent.
 
-Check Visual Fidelity Readiness when `spec.md` contains design-derived requirements, a design source, provider evidence blockers, or provider-specific design evidence requests. Also apply it when `spec.md` contains product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements.
+Check Visual Fidelity Readiness when `spec.md` contains `Visual & UI Specification`, visual requirements, visual SSOT refs, external intake refs, provider evidence blockers, or provider-specific evidence requests. Also apply it when `spec.md` contains product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements.
 Use the behavior-testability checklist template as the visual gate authority.
-Require source traceability, provider readiness status, evidence refs, and blockers, and clear visual requirements for state, responsive, accessibility, component mapping, and accepted exception coverage.
-Build a Visual Fidelity Evidence Matrix with one row per visual requirement or visual proof obligation. Record Screenshot evidence level, declared visual proof required, provider evidence refs or screenshot refs, and any Gate Status: BLOCKED item in Blocking Items.
+Check Visual/UI Coverage from `spec.md`: `Visual & UI Specification` exists when a visual or UI surface applies; otherwise `spec.md` records a Not Applicable rationale. Every identified visual/UI requirement must use status `Required`, `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`.
+Require source traceability, external intake readiness status when cited, evidence refs, and blockers, and clear visual requirements for state, responsive, accessibility, component mapping, and accepted exception coverage.
+Build a Visual Fidelity Evidence Matrix with one row per visual requirement or visual proof obligation. Record requirement status, Screenshot evidence level, declared visual proof required, visual SSOT refs, evidence refs, screenshot refs, and any Gate Status: BLOCKED item in Blocking Items.
 The Visual Fidelity Evidence Matrix alone decides visual planning readiness, proof level sufficiency, screenshot sufficiency, accepted exception rules, Gate Status, and Blocking Items.
 Use one Visual Fidelity Evidence Matrix as the single visual readiness record; do not duplicate visual evidence decisions outside the matrix and Blocking Items.
-Read visual facts from `spec.md` and evidence refs; do not call Figma, re-extract Figma evidence, rebuild provider matrices, or create another visual readiness path.
+Read visual facts from `spec.md` and evidence refs; do not call provider tools, re-extract external intake evidence, parse HTML SSOT bundles, rebuild provider matrices, or create another visual readiness path.
 Do not add historical visual rules or alternate visual decision paths.
+Unknown visual/UI coverage status must appear in Blocking Items and block PASS when it affects downstream behavior projection or design. Required visual/UI requirements without observable requirement text block PASS. `[BLOCKED: PROVIDER_EVIDENCE]` items remain provider evidence blockers and return to the external intake extension.
 Responsive visual requirements block PASS only when they are complex, multi-state, or declare L2 or L3 visual proof; missing viewport-specific evidence then sets Gate Status: BLOCKED and lists the item in Blocking Items.
 Screenshots support visual facts but do not create product semantics.
 
@@ -63,7 +65,7 @@ Treat these NFR readiness gaps as blocking items: Required but missing from `spe
 
 Set `Gate Status: PASS` only when every applicable readiness item is checked and `Blocking Items: none`. Otherwise set `Gate Status: BLOCKED` and list each unchecked readiness item that prevents behavior projection or downstream planning.
 
-Unchecked readiness items that prevent behavior projection or downstream planning are blocking items. Do not proceed to `/speckit.plan`. Requirement ambiguity returns to `/speckit.clarify` or `/speckit.specify` to resolve missing requirements before planning. Provider evidence readiness blockers return to `/speckit.specify` or provider intake, not `/speckit.clarify`.
+Unchecked readiness items that prevent behavior projection or downstream planning are blocking items. Do not proceed to `/speckit.plan`. Requirement ambiguity returns to `/speckit.clarify` or `/speckit.specify` to resolve missing requirements before planning. Provider evidence readiness blockers return to the external intake extension, not `/speckit.clarify`.
 
 {CORE_TEMPLATE}
 

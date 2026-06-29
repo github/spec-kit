@@ -1,11 +1,9 @@
 # Preset Extension Governance
-
 This document is the repository-level rule set for extending `workflow-preset`.
 It exists to keep preset changes aligned with Spec Kit's preset model and this
 repository's contract tests.
 
 ## Source Of Truth
-
 - `preset.yml` declares every packaged command, template, schema, and script.
 - `commands/` contains stage-local LLM instructions.
 - `templates/` contains stable artifact shapes.
@@ -23,15 +21,14 @@ a new capability outside the existing Spec Kit workflow.
 Do not reintroduce Python orchestration, workflow shell dispatch, integration
 adapter scripts, or worker dispatch from scripts.
 
-Evidence templates: packaged evidence templates are allowed preset artifacts.
-Intake contract templates are also allowed when they define input shape,
-completeness gates, and blocker lint rules without executing an external system.
-Design Requirement Intake and Requirement Merge templates may define
-provider-neutral design facts and merge reports. Figma is a provider-specific design source;
-Screenshot is provider evidence and visual proof.
-Screenshots must not become the primary Design Requirement Intake carrier or a source of product semantics.
-Provider evidence artifacts may record screenshot refs, visual proof refs, coverage gaps, and provider evidence blockers as source facts. They must not decide visual planning readiness, proof sufficiency, accepted exception rules, checklist Gate Status, or checklist Blocking Items.
-Figma MCP execution, hooks, adapter scripts, and authentication are external integration concerns and remain outside this preset.
+Source intake artifacts belong in an extension, not this preset. External intake owns source capture, provider evidence, provider metadata, rendered HTML SSOT bundles,
+source-side readiness, and blocker codes. This preset may consume confirmed
+external intake refs, visual SSOT refs, screenshot refs, visual proof refs,
+coverage gaps, and provider blockers already cited in `spec.md`.
+External evidence refs must not decide visual planning readiness, proof sufficiency, accepted exception rules, checklist Gate Status, or checklist
+Blocking Items. Provider tools, provider execution, hooks, adapter scripts,
+and authentication are external integration concerns and remain outside this
+preset.
 
 ## Template And Command Ownership
 
@@ -56,10 +53,10 @@ Stage ownership:
 
 `/speckit.tasks` owns implementation, validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation, and code review task definition in `tasks.md`. `/speckit.implement` may execute those tasks and record receipt evidence, but it must not invent validation strategy, add lifecycle roles, change requirements, update contracts, or widen scope during execution.
 
-When Design Requirement Intake or a Figma Evidence Packet has already been written into `spec.md`, `/speckit.clarify` may clarify those requirement gaps from `spec.md`, but extraction remains outside clarification.
-external design extraction is not a clarification responsibility.
+When external intake evidence or visual SSOT refs have already been projected into `spec.md`, `/speckit.clarify` may clarify those requirement gaps from `spec.md`, but extraction remains outside clarification.
+External design extraction is not a clarification responsibility.
 
-Visual Fidelity readiness applies to design-derived and product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements. The Visual Fidelity Evidence Matrix is the single visual readiness record and uses one row per visual requirement or visual proof obligation with Source `spec.md` section, Fidelity Scope, Screenshot Level, Evidence Refs, Visual Proof Required, Blocking Item ID, and Exception Rule. It is the only artifact that decides visual planning readiness, visual proof level sufficiency, screenshot sufficiency, accepted exception rules, checklist Gate Status, and checklist Blocking Items. Provider source readiness remains separate: provider intake may prove raw metadata completeness, metadata index completeness proof, node inventory parity, and blocker lint errors, but that proof is not the Visual Fidelity readiness gate. Responsive visual requirements block PASS only when they are complex, multi-state, or declare L2 or L3 visual proof.
+Visual Fidelity readiness applies to external-intake-derived and product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements. The Visual Fidelity Evidence Matrix is the single visual readiness record and uses one row per visual requirement or visual proof obligation with Source `spec.md` section, Fidelity Scope, Screenshot Level, Evidence Refs, Visual Proof Required, Blocking Item ID, and Exception Rule. It is the only artifact that decides visual planning readiness, visual proof level sufficiency, screenshot sufficiency, accepted exception rules, checklist Gate Status, and checklist Blocking Items. Source-side intake readiness remains separate: an intake extension may prove raw metadata completeness, source coverage, node inventory parity, HTML SSOT coverage, and blocker lint errors, but that proof is not the Visual Fidelity readiness gate. Responsive visual requirements block PASS only when they are complex, multi-state, or declare L2 or L3 visual proof.
 
 ## Structured Artifact Rules
 
@@ -108,6 +105,7 @@ planning guesses. Keep domain model details in `data-model.md`, interface
 schemas in `contracts/`, and validation run guidance in `quickstart.md`.
 
 For visual planning, research.md records visual validation decisions only and must not duplicate the Visual Fidelity Evidence Matrix; contracts formalize visual interaction and state constraints by referencing accepted visual items, visual proof refs, and accepted exception refs; contracts/sequences.md records visual state flow only when it affects cross-boundary sequencing, async callbacks, retry, rollback, compensation, or error propagation, and must not define visual style, tokens, layout breakpoints, screenshot matrices, or validation commands.
+
 ## Handoff Extension Rules
 
 Handoff extensions must update schema, validator, command, and cross-agent documentation together.

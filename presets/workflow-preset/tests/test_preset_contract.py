@@ -13,8 +13,6 @@ from validators.speckit_implement_contract import (
     validate_behavior_case_coverage,
     validate_behavior_contract_bundle,
     validate_behavior_draft_contract,
-    validate_design_requirement_intake_trace_contract,
-    validate_visual_item_matrix_contract,
     validate_implement_contract,
     validate_handoff_contract,
     validate_manifest_contract,
@@ -39,10 +37,6 @@ TASKS_COMMAND_PATH = REPO_ROOT / "commands" / "speckit.tasks.md"
 IMPLEMENT_COMMAND_PATH = REPO_ROOT / "commands" / "speckit.implement.md"
 CONSTITUTION_TEMPLATE_PATH = REPO_ROOT / "templates" / "constitution-template.md"
 PLAN_TEMPLATE_PATH = REPO_ROOT / "templates" / "plan-template.md"
-FIGMA_EVIDENCE_PACKET_TEMPLATE_PATH = (
-    REPO_ROOT / "templates" / "figma-evidence-packet-template.md"
-)
-
 CANONICAL_RESPONSIVE_VISUAL_RULE = (
     "Responsive visual requirements block PASS only when they are complex, "
     "multi-state, or declare L2 or L3 visual proof"
@@ -60,13 +54,6 @@ FORBIDDEN_VISUAL_COMPAT_TERMS = (
     "旧版兼容",
     "兼容旧版",
     "回退视觉规则",
-)
-FIGMA_INTAKE_CONTRACT_TEMPLATE_PATH = REPO_ROOT / "templates" / "figma-intake-contract.md"
-DESIGN_REQUIREMENT_INTAKE_TEMPLATE_PATH = (
-    REPO_ROOT / "templates" / "design-requirement-intake-template.md"
-)
-REQUIREMENT_MERGE_REPORT_TEMPLATE_PATH = (
-    REPO_ROOT / "templates" / "requirement-merge-report-template.md"
 )
 REQUIREMENTS_DEV_PATH = REPO_ROOT / "requirements-dev.txt"
 MANIFEST_SCHEMA_PATH = REPO_ROOT / "schemas" / "speckit.implement.manifest.v1.schema.json"
@@ -95,9 +82,6 @@ BEHAVIOR_SCHEMA_PATHS = {
     / "schemas"
     / "speckit.behavior.assertions.v1.schema.json",
 }
-VISUAL_ITEM_MATRIX_SCHEMA_PATH = (
-    REPO_ROOT / "schemas" / "speckit.design.visual-item-matrix.v1.schema.json"
-)
 BEHAVIOR_TEMPLATE_PATHS = {
     "behavior-bdd-draft-template": REPO_ROOT / "templates" / "behavior" / "bdd-draft.feature",
     "behavior-scenarios-draft-template": REPO_ROOT
@@ -489,77 +473,6 @@ def minimal_behavior_assertions() -> dict:
     }
 
 
-def minimal_visual_item_matrix() -> dict:
-    return {
-        "contract_type": "speckit.design.visual_item_matrix.v1",
-        "source": {
-            "provider": "figma",
-            "source_refs": ["figma://file/page/frame/node"],
-            "capture_timestamp": "2026-06-22T00:00:00Z",
-        },
-        "readiness": {
-            "status": "PASS",
-            "raw_metadata_complete": True,
-            "node_inventory_coverage": 100,
-            "parity_passed": True,
-            "blocker_lint_errors": [],
-        },
-        "visual_items": [
-            {
-                "id": "VI-001",
-                "source_refs": ["figma://file/page/frame/node"],
-                "requirement_target": "Home screen header",
-                "ui_surface": "HomePage",
-                "fidelity_scope": "design-system-faithful",
-                "layout_facts": ["Header is aligned to the top safe area."],
-                "typography_facts": ["Title uses the observed display style."],
-                "color_token_facts": ["Primary action uses the observed brand token."],
-                "effect_facts": [],
-                "asset_refs": [],
-                "variant_state_evidence": [
-                    {
-                        "variant_ref": "component=Button,state=disabled",
-                        "source_refs": ["figma://component/button-disabled"],
-                        "observed_state_or_role": "disabled",
-                        "confidence": "high",
-                    }
-                ],
-                "component_requirement_role": "primary action",
-                "component_use_constraint": "unspecified",
-                "constraint_source_refs": [],
-                "copy_content_constraint": "unspecified",
-                "drawing_asset_constraint": "unspecified",
-                "required_states": ["default", "disabled"],
-                "required_viewport_coverage": ["desktop"],
-                "screenshot_refs": ["screenshots/home-desktop.png"],
-                "visual_proof_level": "L1",
-                "allowed_deviations": [],
-                "blockers": [],
-                "spec_requirement_target": "spec.md#visual-requirements",
-            }
-        ],
-    }
-
-
-def minimal_design_requirement_intake_trace() -> dict:
-    return {
-        "visual_restoration_trace": [
-            {
-                "visual_item_id": "VI-001",
-                "provider_source_refs": ["figma://file/page/frame/node"],
-                "requirement_id": "FR-001",
-                "ui_surface": "HomePage",
-                "fidelity_scope": "design-system-faithful",
-                "promoted_requirement_facts": [
-                    "Header preserves the accepted hierarchy and primary action role."
-                ],
-                "supporting_evidence_refs": ["figma-evidence-packet.md#VI-001"],
-                "unresolved_gaps": [],
-            }
-        ]
-    }
-
-
 def minimal_exception_behavior_assertions() -> dict:
     return minimal_exception_behavior_assertions_with_intent("state_invariant")
 
@@ -577,7 +490,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("1.0", data["schema_version"])
         self.assertEqual("workflow-preset", data["preset"]["id"])
         self.assertEqual("Workflow Preset", data["preset"]["name"])
-        self.assertEqual("1.3.11", data["preset"]["version"])
+        self.assertEqual("1.3.10", data["preset"]["version"])
         self.assertEqual(
             "Behavior-first specification, design artifacts, and agent-native handoff orchestration",
             data["preset"]["description"],
@@ -595,10 +508,18 @@ class PresetContractTests(unittest.TestCase):
         )
 
         provides = data["provides"]["templates"]
-        self.assertEqual(35, len(provides))
+        self.assertEqual(30, len(provides))
         entries = {entry["name"]: entry for entry in provides}
         self.assertNotIn("behavior-open-questions-template", entries)
         self.assertNotIn("speckit-behavior-open-questions-v1-schema", entries)
+        for migrated_entry in (
+            "provider-evidence-packet-template",
+            "provider-intake-contract-template",
+            "design-requirement" + "-intake-template",
+            "requirement-merge" + "-report-template",
+            "speckit-design-visual" + "-item-matrix-v1-schema",
+        ):
+            self.assertNotIn(migrated_entry, entries)
 
         plan_template = entries["plan-template"]
         self.assertEqual("template", plan_template["type"])
@@ -611,52 +532,6 @@ class PresetContractTests(unittest.TestCase):
         self.assertEqual("templates/constitution-template.md", constitution_template["file"])
         self.assertEqual("constitution-template", constitution_template["replaces"])
         self.assertEqual("wrap", constitution_template["strategy"])
-
-        figma_packet_template = entries["figma-evidence-packet-template"]
-        self.assertEqual("template", figma_packet_template["type"])
-        self.assertEqual(
-            "templates/figma-evidence-packet-template.md",
-            figma_packet_template["file"],
-        )
-        self.assertEqual(
-            "figma-evidence-packet-template",
-            figma_packet_template["replaces"],
-        )
-        self.assertEqual("replace", figma_packet_template["strategy"])
-        self.assertIn("Figma Evidence Packet", figma_packet_template["description"])
-
-        figma_intake_contract = entries["figma-intake-contract-template"]
-        self.assertEqual("template", figma_intake_contract["type"])
-        self.assertEqual("templates/figma-intake-contract.md", figma_intake_contract["file"])
-        self.assertEqual("figma-intake-contract-template", figma_intake_contract["replaces"])
-        self.assertEqual("replace", figma_intake_contract["strategy"])
-        self.assertIn("Figma provider source readiness contract", figma_intake_contract["description"])
-
-        design_intake_template = entries["design-requirement-intake-template"]
-        self.assertEqual("template", design_intake_template["type"])
-        self.assertEqual(
-            "templates/design-requirement-intake-template.md",
-            design_intake_template["file"],
-        )
-        self.assertEqual(
-            "design-requirement-intake-template",
-            design_intake_template["replaces"],
-        )
-        self.assertEqual("replace", design_intake_template["strategy"])
-        self.assertIn("Design Requirement Intake", design_intake_template["description"])
-
-        merge_report_template = entries["requirement-merge-report-template"]
-        self.assertEqual("template", merge_report_template["type"])
-        self.assertEqual(
-            "templates/requirement-merge-report-template.md",
-            merge_report_template["file"],
-        )
-        self.assertEqual(
-            "requirement-merge-report-template",
-            merge_report_template["replaces"],
-        )
-        self.assertEqual("replace", merge_report_template["strategy"])
-        self.assertIn("Requirement Merge", merge_report_template["description"])
 
         for command_name in ("speckit.plan", "speckit.tasks"):
             command = entries[command_name]
@@ -746,16 +621,6 @@ class PresetContractTests(unittest.TestCase):
             self.assertEqual(schema_path.relative_to(REPO_ROOT).as_posix(), schema["file"])
             self.assertEqual(schema_name, schema["replaces"])
             self.assertEqual("replace", schema["strategy"])
-
-        visual_matrix_schema = entries["speckit-design-visual-item-matrix-v1-schema"]
-        self.assertEqual("template", visual_matrix_schema["type"])
-        self.assertEqual(
-            "schemas/speckit.design.visual-item-matrix.v1.schema.json",
-            visual_matrix_schema["file"],
-        )
-        self.assertIn("normalized design visual item matrix", visual_matrix_schema["description"])
-        self.assertEqual("speckit-design-visual-item-matrix-v1-schema", visual_matrix_schema["replaces"])
-        self.assertEqual("replace", visual_matrix_schema["strategy"])
 
         self.assertNotIn("scripts", data["provides"])
         self.assertNotIn("files", data["provides"])
@@ -1077,6 +942,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Preset-added requirement output writes only `spec.md`", specify)
         self.assertIn("Product requirements stay in `spec.md`", specify)
         self.assertIn("non-functional requirements", specify)
+        self.assertIn("visual and UI requirements", specify)
         self.assertIn("report the `spec.md` sections created or updated", specify)
         for term in (
             "Official Style Alignment",
@@ -1088,66 +954,56 @@ class PresetContractTests(unittest.TestCase):
         ):
             self.assertIn(term, specify)
         for term in (
-            "Design Requirement Input Policy",
-            "Stage 0: Product Requirement Intake",
-            "Product intake input",
-            "Product intake output",
-            "Stage 1: Design Requirement Intake",
-            "Design intake input",
-            "Design intake output",
-            "recorded only in `spec.md`",
-            "stable Visual Item ID trace refs",
-            "observed variant/state facts",
-            "provider-neutral design evidence",
+            "confirmed external intake facts",
+            "visual SSOT refs",
+            "evidence refs",
+            "does not perform intake",
+            "call provider tools",
+            "parse HTML bundles",
+            "decide provider source readiness",
+            "generate provider artifact instances",
+            "Specification Projection Policy",
+            "source-backed external intake facts",
+            "Visual Asset Registry",
+            "external source artifact inputs",
+            "visual media inventory",
+            "license status",
+            "Visual & UI Specification",
+            "observable visual and UI requirements",
+            "write a `Visual & UI Specification` section",
+            "Not Applicable rationale",
+            "Every identified visual or UI requirement must be recorded",
+            "`Required`, `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`",
+            "do not silently omit low-evidence visual or UI requirements",
             "source refs",
-            "Stage 2: Requirement Merge",
-            "Merge input",
-            "Merge output",
-            "Design Requirement Promotion Rules",
-            "preserve Visual Item ID trace refs for visual requirements",
-            "conflicts",
-            "provider blockers",
-            "Stage 3: Generate baseline spec.md",
-            "Baseline spec output",
-            "Figma Evidence Packet",
-            "Figma provider source readiness contract",
-            "ready packet is supplied by a runtime agent or external Figma intake that has Figma MCP access",
-            "runtime agent or external Figma intake",
-            "does not call Figma MCP",
-            "preset defines the required design intake and provider readiness artifact structure",
-            "does not generate the artifact instances",
-            "ready gate",
-            "not ready",
-            "do not write design-derived requirements",
-            "metadata index completeness proof",
-            "Provider evidence readiness blockers",
-            "[BLOCKED: PROVIDER_EVIDENCE]",
-            "must not become product `[NEEDS CLARIFICATION]` items",
-            "blocker lint errors",
-            "Observed from Figma",
-            "Inferred from Structure",
-            "Missing / Needs Clarification",
-            "Out of Scope",
-            "[NEEDS CLARIFICATION]",
-            "Screenshots support visual facts only",
-            "screenshots must not create product semantics",
+            "state and viewport refs",
             "Client Asset Contract facts",
             "asset source strategy",
             "required variants",
             "fallback policy",
             "blocker status",
-            "Screenshot-implied business rules",
-            "Do not invent code props, code state names, component reuse decisions, self-drawing bans, or copy restrictions from Figma structure",
-            "Record component use, no-self-draw, and no-new-copy constraints only when product input or qualified provider evidence states them explicitly",
-            "Continue to write only `spec.md`",
-            "stage-wise report",
+            "Promote only source-backed visual, layout, state, interaction, responsive, accessibility, and acceptance facts",
+            "Component State Matrix content as Visual & UI Specification requirements, not visual assets",
+            "observable states, visual feedback, and interaction outcomes",
+            "Product semantics implied only by provider evidence stay `[NEEDS CLARIFICATION]`",
+            "DOM structure",
+            "CSS selectors",
+            "component props",
+            "provider blockers",
+            "[BLOCKED: PROVIDER_EVIDENCE]",
+            "keep explicit visual or UI requirement coverage in `spec.md`",
+            "Functional, non-functional, and visual/UI requirement coverage",
+            "must not become product `[NEEDS CLARIFICATION]` items",
+            "[NEEDS CLARIFICATION]",
+            "visual SSOT refs preserved",
         ):
             self.assertIn(term, specify)
         self.assertLessEqual(len(specify.splitlines()), 70)
         for forbidden in (
             "/speckit.plan",
             "/speckit.checklist",
-            "`[NEEDS CLARIFICATION]` item requesting a filled Figma Evidence Packet",
+            "Visual Fidelity Evidence Matrix",
+            "`[NEEDS CLARIFICATION]` item requesting a filled Provider Evidence Packet",
             "behavior/bdd.draft.feature",
             "behavior/behavior-scenarios.draft.json",
             "behavior/uif.intent.json",
@@ -1161,6 +1017,15 @@ class PresetContractTests(unittest.TestCase):
             "local asset path",
             "asset hash",
             "allowed_write_paths",
+            "Design intake input",
+            "Provider Evidence Packet readiness",
+            "Requirement Merge Report",
+            "raw get_metadata",
+            "Stage 0:",
+            "Stage 1:",
+            "Stage 2:",
+            "Stage 3:",
+            "Observed from provider design",
         ):
             self.assertNotIn(forbidden, specify)
         self.assertNotIn("contracts/bdd/", specify)
@@ -1176,18 +1041,20 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Do not read or update behavior draft artifacts", clarify)
         self.assertIn("Product requirements stay in `spec.md`", clarify)
         self.assertIn("non-functional requirement assumptions", clarify)
+        self.assertIn("visual/UI requirement coverage status", clarify)
         self.assertIn("only after user-provided answers", clarify)
         self.assertIn("Design Requirement Clarification Strategy", clarify)
-        self.assertIn("Design Requirement Intake", clarify)
-        self.assertIn("Figma Evidence Packet", clarify)
-        self.assertIn("provider-specific evidence", clarify)
-        self.assertIn("Missing / Needs Clarification", clarify)
+        self.assertIn("external intake evidence", clarify)
+        self.assertIn("visual SSOT refs", clarify)
+        self.assertIn("evidence-derived gaps", clarify)
+        self.assertIn("visual/UI coverage status `Unknown`", clarify)
         self.assertIn("[NEEDS CLARIFICATION]", clarify)
-        self.assertIn("Inferred from Structure", clarify)
-        self.assertIn("Do not call Figma MCP", clarify)
+        self.assertIn("Do not call provider tools", clarify)
         self.assertIn("Do not re-extract design facts", clarify)
-        self.assertIn("qualified evidence-backed design-derived requirements and trace refs", clarify)
-        self.assertIn("does not write raw Figma evidence into `spec.md`", clarify)
+        self.assertIn("re-parse provider design links", clarify)
+        self.assertIn("parse HTML SSOT bundles", clarify)
+        self.assertIn("External intake owns source capture and provider readiness", clarify)
+        self.assertIn("confirmed evidence-backed requirements and trace refs", clarify)
         self.assertIn("Do not ask the user to fix provider extraction artifacts", clarify)
         self.assertIn("Ask at most 5 high-impact questions", clarify)
         self.assertIn("Present EXACTLY ONE question at a time", clarify)
@@ -1208,6 +1075,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("### Session YYYY-MM-DD", clarify)
         self.assertIn("Q:", clarify)
         self.assertIn("A:", clarify)
+        self.assertIn("provider-specific clarification document", clarify)
         self.assertIn("Validation after each write", clarify)
         self.assertIn("after EACH write plus final pass", clarify)
         self.assertIn("Total asked", clarify)
@@ -1220,6 +1088,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("hooks.after_clarify", clarify)
         self.assertIn("EXECUTE_COMMAND", clarify)
         self.assertIn("Completion Report", clarify)
+        self.assertIn("Visual/UI coverage status: Required, Not Applicable, Unknown, or `[BLOCKED: PROVIDER_EVIDENCE]`", clarify)
         self.assertIn("visual fidelity scope", clarify)
         self.assertIn("missing UI states", clarify)
         self.assertIn("responsive behavior", clarify)
@@ -1227,6 +1096,8 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("data semantics", clarify)
         self.assertIn("acceptance evidence", clarify)
         self.assertIn("write confirmed answers back into `spec.md`", clarify)
+        self.assertIn("Update affected visual/UI coverage status", clarify)
+        self.assertIn("Any answered visual/UI coverage status was updated in `spec.md`", clarify)
         self.assertIn("Do not generate visual restoration checklists", clarify)
         for forbidden in (
             "behavior/bdd.draft.feature",
@@ -1234,10 +1105,13 @@ class PresetContractTests(unittest.TestCase):
             "behavior/uif.intent.json",
             "behavior/data-fixtures.intent.json",
             "behavior/open-questions.json",
-            "use_figma",
+            "use_provider_tool",
             "get_design_context",
-            "fetch Figma URL",
-            "read Figma URL",
+            "fetch provider design URL",
+            "read provider design URL",
+            "Provider Evidence Packet",
+            "Design Requirement" + " Intake",
+            "Inferred from Structure",
             "update checklists/behavior-testability.md",
         ):
             self.assertNotIn(forbidden, clarify)
@@ -1296,12 +1170,22 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Unknown and affects downstream design", checklist)
         for term in (
             "Visual Fidelity Readiness",
-            "design-derived requirements",
-            "design source, provider evidence blockers, or provider-specific design evidence requests",
+            "Visual & UI Specification",
+            "Check Visual/UI Coverage from `spec.md`",
+            "Every identified visual/UI requirement must use status",
+            "`Required`, `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`",
+            "requirement status",
+            "Unknown visual/UI coverage status must appear in Blocking Items",
+            "Required visual/UI requirements without observable requirement text block PASS",
+            "`[BLOCKED: PROVIDER_EVIDENCE]` items remain provider evidence blockers",
+            "visual SSOT refs",
+            "external intake refs",
+            "provider evidence blockers",
             "product-side visual requirements such as pixel-perfect, brand-critical, responsive visual, or UI visual acceptance requirements",
             "Visual Fidelity Evidence Matrix",
             "Use the behavior-testability checklist template as the visual gate authority",
-            "provider readiness status, evidence refs, and blockers",
+            "external intake readiness status when cited",
+            "visual SSOT refs, evidence refs",
             "source traceability",
             "Screenshot evidence level",
             "BDD, NFR, and Visual Fidelity readiness gate",
@@ -1314,7 +1198,7 @@ class PresetContractTests(unittest.TestCase):
         ):
             self.assertIn(term, checklist)
         for term in (
-            "| Visual Item ID | Source `spec.md` section | Fidelity Scope | Screenshot Level | Evidence Refs | Visual Proof Required | Blocking Item ID | Exception Rule |",
+            "| Visual Item ID | Source `spec.md` section | Requirement Status | Fidelity Scope | Screenshot Level | Evidence Refs | Visual Proof Required | Blocking Item ID | Exception Rule |",
             "raw metadata completeness",
             "metadata index completeness proof",
             "node inventory parity",
@@ -1329,7 +1213,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("checklist artifacts only", checklist)
         self.assertIn("BDD, NFR, and Visual Fidelity readiness status", checklist)
         self.assertIn(
-            "Provider evidence readiness blockers return to `/speckit.specify` or provider intake, not `/speckit.clarify`",
+            "Provider evidence readiness blockers return to the external intake extension, not `/speckit.clarify`",
             checklist,
         )
 
@@ -1377,7 +1261,12 @@ class PresetContractTests(unittest.TestCase):
             "visual fidelity scope",
             "screenshot refs",
             "visual proof refs",
-            "Design Requirement trace refs",
+            "external visual SSOT refs",
+            "Visual Fidelity Evidence Matrix `Requirement Status`",
+            "Carry forward only visual rows with status `Required` or an accepted exception rule",
+            "Rows with status `Unknown` or `[BLOCKED: PROVIDER_EVIDENCE]` must already have blocked checklist PASS",
+            "report-only/no-write upstream gate failure",
+            "Do not project `Not Applicable` rows into visual planning outputs",
             "behavior/behavior-scenarios.draft.json",
             "report-only/no-write failure",
             "must not create or update behavior artifacts",
@@ -1401,6 +1290,8 @@ class PresetContractTests(unittest.TestCase):
             "`checklists/behavior-testability.md` Visual Fidelity Readiness",
             "screenshot refs",
             "visual proof refs",
+            "visual SSOT refs",
+            "external evidence refs",
             "visual fidelity requirements",
             "test-first",
             "existing checklist format and user-story organization",
@@ -1436,9 +1327,17 @@ class PresetContractTests(unittest.TestCase):
             "derive asset preparation, binding, implementation, and validation tasks",
             "Missing required client visual assets are readiness blockers",
             "Use Visual Fidelity Readiness as the only visual planning readiness source",
+            "`Requirement Status` as the visual task input filter",
+            "Generate visual tasks only for rows with status `Required` or `Required` plus an accepted exception",
+            "tasks for accepted exceptions must cite the exception rule",
+            "Do not generate implementation, validation, verification, evidence, asset binding, UI acceptance, or review tasks for `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]` rows",
+            "Route `Unknown` rows back to `/speckit.clarify`",
+            "route `[BLOCKED: PROVIDER_EVIDENCE]` rows to the external intake extension",
+            "`/speckit.tasks` must not discover visual requirements or repair evidence",
+            "only decomposes visual specifications that already passed the readiness gate",
             "Do not create a second readiness rule",
-            "Screenshot Coverage Matrix",
-            "Visual Restoration Trace",
+            "HTML SSOT bundles",
+            "external intake artifacts",
             "Do not generate execution metadata or write-path fields.",
             "Missing Required case coverage is a coverage blocker, not silently skipped work",
             "`negative`, `boundary`, `permission`, `validation`, or `state_conflict`",
@@ -1449,9 +1348,19 @@ class PresetContractTests(unittest.TestCase):
             "visual task taxonomy",
             "story-local task granularity",
             "`visual_setup` -> `visual_validation` -> `visual_implementation` -> `visual_evidence`",
+            "`visual_setup` -> `visual_validation` -> `visual_implementation` -> `visual_evidence` -> `final_visual_review`",
+            "`asset_binding`",
+            "`final_visual_review`",
+            "`visual_setup`, `visual_validation`, `visual_implementation`, `visual_evidence`, `ui_acceptance`, `visual_verification`, `asset_binding`, and `final_visual_review` are the only visual task types",
+            "visual regression tests",
+            "screenshot comparison",
+            "accessibility check entrypoints",
+            "empty/error/loading/disabled/hover/focus states",
+            "license or authorization refs",
             "Do not create a separate visual lifecycle phase",
             "Visual tasks must name concrete source, test, fixture, configuration, or asset paths",
             "report a readiness blocker instead of generating an ambiguous visual task",
+            "Do not generate visual tasks for rows with `Requirement Status` `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`",
             "Client Asset Contract bindings, variants, and fallback policy",
             "Review evidence binding",
             "bounded repair permission",
@@ -1486,11 +1395,22 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("visual fidelity requirements", cross_agent)
         self.assertIn("screenshot refs", cross_agent)
         self.assertIn("visual proof refs", cross_agent)
-        self.assertIn("Design Requirement trace refs", cross_agent)
+        self.assertIn("visual SSOT refs", cross_agent)
         self.assertIn("Client Asset Contract", cross_agent)
         self.assertIn("asset binding", cross_agent)
         self.assertIn("local asset paths or code asset mappings", cross_agent)
         self.assertIn("missing required client visual assets", cross_agent)
+        self.assertIn("Visual Item ID", cross_agent)
+        self.assertIn("Requirement Status", cross_agent)
+        self.assertIn("visual shard candidates must come only from `tasks.md` visual task types", cross_agent)
+        self.assertIn("only `Required` or `Required` plus an accepted exception is executable", cross_agent)
+        self.assertIn("do not create visual shards for `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`", cross_agent)
+        self.assertIn("route `Unknown` back to `/speckit.clarify`", cross_agent)
+        self.assertIn("`[BLOCKED: PROVIDER_EVIDENCE]` to the external intake extension", cross_agent)
+        self.assertIn("missing visual proof refs", cross_agent)
+        self.assertIn("missing screenshot refs", cross_agent)
+        self.assertIn("final_visual_review tasks", cross_agent)
+        self.assertIn("must not discover visual requirements, repair Visual Fidelity Readiness evidence", cross_agent)
         self.assertIn("planned `U` design object", cross_agent)
         self.assertIn("specific source, test, fixture, configuration, or receipt paths", cross_agent)
 
@@ -1632,9 +1552,13 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("explicitly declared in `spec.md`", behavior_checklist_template)
         self.assertIn("without prescribing architecture", behavior_checklist_template)
         self.assertIn("Visual Fidelity Readiness", behavior_checklist_template)
+        self.assertIn("Visual & UI Specification", behavior_checklist_template)
+        self.assertIn("Every identified visual/UI requirement uses status", behavior_checklist_template)
+        self.assertIn("Unknown visual/UI coverage status appears in Blocking Items", behavior_checklist_template)
+        self.assertIn("Required visual/UI requirements have observable requirement text", behavior_checklist_template)
         self.assertIn("Design-derived requirements", behavior_checklist_template)
         self.assertIn(
-            "provider readiness status, evidence refs, and blockers",
+            "external intake readiness status when cited, evidence refs, visual SSOT refs, and blockers",
             behavior_checklist_template,
         )
         self.assertNotIn("raw metadata completeness", behavior_checklist_template)
@@ -1644,6 +1568,7 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("component mappings and variant coverage", behavior_checklist_template)
         self.assertIn("responsive behavior is explicit", behavior_checklist_template)
         self.assertIn("accessibility requirements are explicit", behavior_checklist_template)
+        self.assertIn("Requirement Status", behavior_checklist_template)
         self.assertIn("Gate Status: PASS|BLOCKED", behavior_checklist_template)
         self.assertIn("Blocking Items:", behavior_checklist_template)
         self.assertIn("none", behavior_checklist_template)
@@ -1688,228 +1613,6 @@ class PresetContractTests(unittest.TestCase):
         )
         self.assertIn('"intent": "state_invariant"', assertions_template)
 
-    def test_figma_evidence_packet_template_contract(self) -> None:
-        self.assertTrue(FIGMA_EVIDENCE_PACKET_TEMPLATE_PATH.exists())
-        document = FIGMA_EVIDENCE_PACKET_TEMPLATE_PATH.read_text(encoding="utf-8")
-
-        required_terms = [
-            "Figma Evidence Packet",
-            "Figma Source",
-            "Extraction Context",
-            "Screenshot Evidence",
-            "Screenshot Coverage Matrix",
-            "visual proof",
-            "Screenshot evidence must declare L0-L3 coverage and coverage gaps",
-            "not the primary Design Requirement Intake carrier",
-            "Screenshot evidence and the Screenshot Coverage Matrix record coverage facts and gaps only",
-            "must not decide visual planning readiness",
-            "proof sufficiency",
-            "checklist Gate Status",
-            "checklist Blocking Items",
-            "Screenshot level: L0|L1|L2|L3",
-            "L0: no screenshot evidence",
-            "L1: static screenshot reference",
-            "L2: viewport or state screenshot coverage",
-            "L3: visual diff baseline or approved visual proof",
-            "high-fidelity",
-            "pixel-perfect",
-            "brand-critical",
-            "visual regression",
-            "Screenshot refs",
-            "Viewport",
-            "State",
-            "Capture timestamp",
-            "Design version",
-            "Redaction required",
-            "Baseline usage",
-            "Missing coverage",
-            "Blocking item",
-            "Visual baseline usage: none|manual review|visual diff",
-            "Observed from Figma",
-            "Inferred from Structure",
-            "Missing / Needs Clarification",
-            "Out of Scope",
-            "Figma Intake Readiness",
-            "Figma Intake Readiness is provider source readiness only",
-            "separate from Visual Fidelity planning readiness",
-            "Visual Facts for Spec",
-            "Visual Item Matrix",
-            "one row per restorable UI surface, component, state, or visual proof obligation",
-            "provider-normalized visual facts",
-            "provider evidence blockers",
-            "proof level sufficiency",
-            "Visual Item ID",
-            "Figma frame/node refs",
-            "Requirement target",
-            "UI surface",
-            "Required fidelity: functional-equivalent|design-system-faithful|pixel-perfect|brand-critical|responsive-visual",
-            "Layout facts",
-            "Typography facts",
-            "Color/token facts",
-            "Effect facts",
-            "Asset refs",
-            "Variant/state evidence",
-            "Component requirement role",
-            "Component use constraint: visual-reference-only|must-reuse-existing|figma-export-required|unspecified",
-            "Constraint source refs",
-            "Copy/content constraint: no-new-copy|figma-copy-required|product-copy-required|unspecified",
-            "Drawing/asset constraint: no-self-draw|figma-export-required|existing-asset-required|unspecified",
-            "Required states",
-            "Required viewport coverage",
-            "Visual proof level: L0|L1|L2|L3",
-            "Allowed deviations",
-            "Spec requirement target",
-            "Client Asset Inventory",
-            "Asset ID",
-            "Asset role",
-            "Resource type: image|icon|video|lottie|svg|font",
-            "Figma node/component ref",
-            "Asset source strategy: figma_export_required|code_asset|existing_repo_asset|remote_runtime_asset",
-            "Export/use contract",
-            "Required variants",
-            "Fallback policy",
-            "Blocker status",
-            "Component Mapping",
-            "Figma component -> requirement-level component role",
-            "Variant -> observed state or semantic role",
-            "Existing code component constraint, only if explicitly provided",
-            "Visual-reference-only components",
-            "Must-reuse-existing components",
-            "No self-draw / no new copy constraints",
-            "Spec Handoff Notes",
-            "Open Questions",
-            "Frame / Node IDs",
-            "Required fidelity",
-            "[NEEDS CLARIFICATION]",
-        ]
-        for term in required_terms:
-            self.assertIn(term, document)
-
-        forbidden_terms = [
-            "Figma MCP authentication",
-            "run a script",
-            "implementation test",
-            "test-plan.md",
-            "Endpoint / Client Requirements",
-            "Acceptance Criteria",
-        ]
-        for term in forbidden_terms:
-            self.assertNotIn(term, document)
-
-    def test_design_requirement_intake_template_contract(self) -> None:
-        self.assertTrue(DESIGN_REQUIREMENT_INTAKE_TEMPLATE_PATH.exists())
-        document = DESIGN_REQUIREMENT_INTAKE_TEMPLATE_PATH.read_text(encoding="utf-8")
-
-        required_terms = [
-            "Design Requirement Intake",
-            "Design Sources",
-            "Provider Evidence",
-            "Page Inventory",
-            "Page Hierarchy",
-            "User Paths",
-            "Component Inventory",
-            "Existing code constraint, only if explicitly provided",
-            "Component States",
-            "Interaction Rules",
-            "Visual Tokens",
-            "Layout Rules",
-            "Responsive Rules",
-            "Motion Rules",
-            "State Coverage",
-            "Visual Acceptance Requirements",
-            "Visual Restoration Trace",
-            "accepted Visual Item ID",
-            "Do not copy the full provider Visual Item Matrix",
-            "Record only requirement-level facts promoted toward `spec.md`",
-            "must not decide visual planning readiness",
-            "checklist Gate Status",
-            "checklist Blocking Items",
-            "Provider source refs",
-            "Fidelity scope: functional-equivalent|design-system-faithful|pixel-perfect|brand-critical|responsive-visual",
-            "Layout constraints",
-            "Typography constraints",
-            "Color/token constraints",
-            "Effect constraints",
-            "Asset bindings",
-            "Requirement-level component role",
-            "Variant/state coverage",
-            "Component use constraint: visual-reference-only|must-reuse-existing|figma-export-required|unspecified",
-            "Constraint source refs",
-            "Copy/content constraint: no-new-copy|figma-copy-required|product-copy-required|unspecified",
-            "Drawing/asset constraint: no-self-draw|figma-export-required|existing-asset-required|unspecified",
-            "Required viewport coverage",
-            "Client Asset Contract",
-            "Asset ID",
-            "Required resource type",
-            "Asset source strategy",
-            "Required variants",
-            "Fallback policy",
-            "Blocker status",
-            "Screenshot Traceability",
-            "Design Requirement Intake remains provider-neutral",
-            "Visual proof refs",
-            "Supported visual facts",
-            "Unsupported assumptions",
-            "Screenshot-derived visual facts must include screenshot refs",
-            "screenshots must not create product semantics",
-            "Screenshot Traceability records supported facts and unsupported assumptions only",
-            "must not create an independent visual readiness decision",
-            "Traceability",
-            "Visual Item ID",
-            "Source refs",
-            "[NEEDS CLARIFICATION]",
-        ]
-        for term in required_terms:
-            self.assertIn(term, document)
-
-        forbidden_terms = [
-            "Figma MCP authentication",
-            "raw get_metadata",
-            "node coordinate dump",
-            "implementation test",
-            "test-plan.md",
-            "Endpoint / Client Requirements",
-        ]
-        for term in forbidden_terms:
-            self.assertNotIn(term, document)
-
-    def test_requirement_merge_report_template_contract(self) -> None:
-        self.assertTrue(REQUIREMENT_MERGE_REPORT_TEMPLATE_PATH.exists())
-        document = REQUIREMENT_MERGE_REPORT_TEMPLATE_PATH.read_text(encoding="utf-8")
-
-        required_terms = [
-            "Requirement Merge Report",
-            "Product Requirement Inputs",
-            "Design Requirement Inputs",
-            "Merge Rules",
-            "Product Requirement owns",
-            "Design Requirement owns",
-            "Conflict Resolution",
-            "Clarification Outputs",
-            "Baseline Spec Handoff",
-            "Design Requirement Promotion Rules",
-            "Promote screenshot-supported visual facts",
-            "Screenshot-implied business rules",
-            "Promote observed",
-            "Promote confirmed",
-            "Inferred",
-            "Missing",
-            "spec.md",
-            "[NEEDS CLARIFICATION]",
-        ]
-        for term in required_terms:
-            self.assertIn(term, document)
-
-        forbidden_terms = [
-            "Figma-only",
-            "directly call Figma MCP",
-            "generate tasks",
-            "write implementation",
-            "test-plan.md",
-        ]
-        for term in forbidden_terms:
-            self.assertNotIn(term, document)
-
     def test_visual_fidelity_screenshot_evidence_gate_contract(self) -> None:
         command = CHECKLIST_COMMAND_PATH.read_text(encoding="utf-8")
         template = BEHAVIOR_TEMPLATE_PATHS[
@@ -1918,13 +1621,15 @@ class PresetContractTests(unittest.TestCase):
 
         for term in (
             "Use the behavior-testability checklist template as the visual gate authority",
-            "provider readiness status, evidence refs, and blockers",
+            "external intake readiness status when cited",
             "Visual Fidelity Evidence Matrix alone decides visual planning readiness",
             "proof level sufficiency",
             "screenshot sufficiency",
             "accepted exception rules",
             "Read visual facts from `spec.md` and evidence refs",
-            "do not call Figma",
+            "do not call provider tools",
+            "re-extract external intake evidence",
+            "parse HTML SSOT bundles",
             "rebuild provider matrices",
             "another visual readiness path",
             CANONICAL_RESPONSIVE_VISUAL_RULE,
@@ -1934,7 +1639,7 @@ class PresetContractTests(unittest.TestCase):
         ):
             self.assertIn(term, command)
         for term in (
-            "| Visual Item ID | Source `spec.md` section | Fidelity Scope | Screenshot Level | Evidence Refs | Visual Proof Required | Blocking Item ID | Exception Rule |",
+            "| Visual Item ID | Source `spec.md` section | Requirement Status | Fidelity Scope | Screenshot Level | Evidence Refs | Visual Proof Required | Blocking Item ID | Exception Rule |",
             "raw metadata completeness",
             "metadata index completeness proof",
             "node inventory parity",
@@ -1952,8 +1657,9 @@ class PresetContractTests(unittest.TestCase):
             "proof level sufficiency",
             "screenshot sufficiency",
             "accepted exception rules",
-            "does not call Figma",
-            "re-extract provider evidence",
+            "does not call provider tools",
+            "re-extract external intake evidence",
+            "parse HTML SSOT bundles",
             "rebuild provider matrices",
             "another visual readiness path",
             "Missing screenshot evidence sets Gate Status: BLOCKED",
@@ -1962,12 +1668,14 @@ class PresetContractTests(unittest.TestCase):
             CANONICAL_RESPONSIVE_VISUAL_RULE,
             "Visual Fidelity Evidence Matrix",
             "Source `spec.md` section",
+            "Requirement Status",
+            "Requirement Status is declared for each visual requirement or visual proof obligation",
             "Evidence Refs",
             "Exception Rule",
             "lists the item in Blocking Items",
             "Pixel-perfect",
             "Blocking Items",
-            "provider readiness status, evidence refs, and blockers",
+            "external intake readiness status when cited",
             "Use one Visual Fidelity Evidence Matrix as the single visual readiness record",
             "Do not add historical visual rules or alternate visual decision paths",
         ):
@@ -1988,7 +1696,7 @@ class PresetContractTests(unittest.TestCase):
         )
         self.assertEqual(
             template.count(
-                "| Visual Item ID | Source `spec.md` section | Fidelity Scope | Screenshot Level | Evidence Refs | Visual Proof Required | Blocking Item ID | Exception Rule |"
+                "| Visual Item ID | Source `spec.md` section | Requirement Status | Fidelity Scope | Screenshot Level | Evidence Refs | Visual Proof Required | Blocking Item ID | Exception Rule |"
             ),
             1,
         )
@@ -2012,69 +1720,6 @@ class PresetContractTests(unittest.TestCase):
             lowered = document.lower()
             for forbidden in FORBIDDEN_VISUAL_COMPAT_TERMS:
                 self.assertNotIn(forbidden, lowered)
-
-    def test_figma_intake_contract_metadata_lint_rules(self) -> None:
-        self.assertTrue(FIGMA_INTAKE_CONTRACT_TEMPLATE_PATH.exists())
-        document = FIGMA_INTAKE_CONTRACT_TEMPLATE_PATH.read_text(encoding="utf-8")
-
-        required_sections = [
-            "## Raw Metadata Shards",
-            "## Metadata Index Completeness",
-            "## Node Inventory Parity",
-            "## Evidence Readiness Gate",
-            "## Normalized Visual Item Matrix",
-            "## Blocker Lint Errors",
-            "## Gap Rules",
-            "## Preset Boundary",
-        ]
-        for section in required_sections:
-            self.assertIn(section, document)
-
-        metadata_fields = [
-            "figma-metadata.part-*.xml",
-            "figma-metadata.index.yaml",
-            "figma-node-inventory.yaml",
-            "raw get_metadata",
-            "byte_size",
-            "sha256",
-            "selected_subtree_complete",
-            "raw_metadata_complete",
-            "expected_root_node_ids",
-            "captured_root_node_ids",
-            "missing_root_node_ids",
-            "inventory_node_count + excluded_node_count + missing_node_count == raw_node_count",
-            "duplicate_node_count == 0",
-            "missing_node_count == 0",
-            "truncated_raw_evidence == false",
-            "node_inventory_coverage: 100%",
-            "parity_passed: true",
-            "provider source readiness only",
-            "Visual Fidelity planning readiness",
-            "proof sufficiency",
-            "checklist Gate Status",
-            "checklist Blocking Items",
-            "FIGMA_RAW_METADATA_MISSING",
-            "FIGMA_RAW_METADATA_SUMMARY_SUBSTITUTION",
-            "FIGMA_RAW_METADATA_TRUNCATED",
-            "FIGMA_SELECTED_SUBTREE_INCOMPLETE",
-            "FIGMA_METADATA_INDEX_MISSING",
-            "FIGMA_METADATA_PARITY_FAILED",
-            "FIGMA_READY_WITHOUT_COMPLETENESS_PROOF",
-            "speckit.design.visual_item_matrix.v1",
-            "schemas/speckit.design.visual-item-matrix.v1.schema.json",
-            "must not replace raw provider evidence",
-            "provider evidence blockers, not checklist Blocking Items",
-            "must not create a second visual readiness gate",
-            "observed variant/state evidence",
-            "requirement-level component roles",
-            "Explicit constraints such as must-reuse-existing, no-self-draw, or no-new-copy",
-            "constraint source refs",
-            "Required Figma intake artifacts and readiness gates",
-            "must not call Figma MCP",
-            "must not generate artifact instances",
-        ]
-        for field in metadata_fields:
-            self.assertIn(field, document)
 
     def test_implement_command_is_agent_native_handoff_orchestrator(self) -> None:
         command = IMPLEMENT_COMMAND_PATH.read_text(encoding="utf-8")
@@ -2114,6 +1759,15 @@ class PresetContractTests(unittest.TestCase):
             "context_gaps",
             "task_status_update",
             "Do not edit `tasks.md`",
+            "Visual Implementation Boundary",
+            "visual task input filter",
+            "Visual Fidelity Readiness `Requirement Status` is `Required` or `Required` plus an accepted exception",
+            "Do not create handoffs or worker instructions for visual rows",
+            "`Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`",
+            "Route `Unknown` visual rows back to `/speckit.clarify`",
+            "route `[BLOCKED: PROVIDER_EVIDENCE]` visual rows to the external intake extension",
+            "`/speckit.implement` must not discover visual requirements, repair Visual Fidelity Readiness evidence",
+            "Visual worker receipts must reference the relevant Visual Item ID",
         ]
         for term in command_terms:
             self.assertIn(term, command)
@@ -2277,87 +1931,6 @@ class PresetContractTests(unittest.TestCase):
             self.assertIn("properties", schema)
             self.assertEqual(contract_type, schema["properties"]["contract_type"]["const"])
             Draft202012Validator(schema).validate(examples[contract_type])
-
-    def test_visual_item_matrix_schema_accepts_minimal_example(self) -> None:
-        schema = json.loads(VISUAL_ITEM_MATRIX_SCHEMA_PATH.read_text(encoding="utf-8"))
-
-        self.assertEqual("object", schema["type"])
-        self.assertIn("required", schema)
-        self.assertIn("properties", schema)
-        self.assertEqual(
-            "speckit.design.visual_item_matrix.v1",
-            schema["properties"]["contract_type"]["const"],
-        )
-        self.assertIn("visual_items", schema["required"])
-        Draft202012Validator(schema).validate(minimal_visual_item_matrix())
-
-    def test_visual_item_matrix_schema_rejects_missing_source_refs(self) -> None:
-        schema = json.loads(VISUAL_ITEM_MATRIX_SCHEMA_PATH.read_text(encoding="utf-8"))
-        matrix = minimal_visual_item_matrix()
-        matrix["visual_items"][0]["source_refs"] = []
-
-        with self.assertRaises(ValidationError):
-            Draft202012Validator(schema).validate(matrix)
-
-    def test_visual_item_matrix_schema_accepts_responsive_visual_scope(self) -> None:
-        schema = json.loads(VISUAL_ITEM_MATRIX_SCHEMA_PATH.read_text(encoding="utf-8"))
-        matrix = minimal_visual_item_matrix()
-        matrix["visual_items"][0]["fidelity_scope"] = "responsive-visual"
-
-        Draft202012Validator(schema).validate(matrix)
-
-    def test_visual_item_matrix_validator_enforces_readiness_gate(self) -> None:
-        matrix = minimal_visual_item_matrix()
-        validate_visual_item_matrix_contract(matrix)
-
-        matrix["readiness"]["node_inventory_coverage"] = 99
-        with self.assertRaisesRegex(ValueError, "node_inventory_coverage 100"):
-            validate_visual_item_matrix_contract(matrix)
-
-    def test_visual_item_matrix_validator_requires_sources_for_explicit_constraints(self) -> None:
-        matrix = minimal_visual_item_matrix()
-        matrix["visual_items"][0]["component_use_constraint"] = "must-reuse-existing"
-
-        with self.assertRaisesRegex(ValueError, "constraint_source_refs"):
-            validate_visual_item_matrix_contract(matrix)
-
-    def test_visual_item_matrix_validator_requires_l3_for_high_fidelity(self) -> None:
-        matrix = minimal_visual_item_matrix()
-        matrix["visual_items"][0]["fidelity_scope"] = "pixel-perfect"
-
-        with self.assertRaisesRegex(ValueError, "requires L3 proof"):
-            validate_visual_item_matrix_contract(matrix)
-
-    def test_design_requirement_intake_trace_validator_accepts_minimal_trace(self) -> None:
-        validate_design_requirement_intake_trace_contract(
-            minimal_design_requirement_intake_trace()
-        )
-
-    def test_design_requirement_intake_trace_validator_rejects_full_provider_matrix_copy(self) -> None:
-        intake = minimal_design_requirement_intake_trace()
-        intake["visual_restoration_trace"][0]["visual_item_matrix"] = minimal_visual_item_matrix()
-
-        with self.assertRaisesRegex(ValueError, "must not copy full provider Visual Item Matrix"):
-            validate_design_requirement_intake_trace_contract(intake)
-
-    def test_design_requirement_intake_trace_validator_rejects_provider_field_copy(self) -> None:
-        intake = minimal_design_requirement_intake_trace()
-        intake["visual_restoration_trace"][0].update(
-            {
-                "layout_facts": ["copied provider layout fact"],
-                "typography_facts": ["copied provider typography fact"],
-                "variant_state_evidence": [
-                    {
-                        "variant_ref": "state=disabled",
-                        "source_refs": ["figma://component/button-disabled"],
-                        "observed_state_or_role": "disabled",
-                    }
-                ],
-            }
-        )
-
-        with self.assertRaisesRegex(ValueError, "must record only requirement-level facts"):
-            validate_design_requirement_intake_trace_contract(intake)
 
     def test_behavior_draft_schema_rejects_empty_given_when_then(self) -> None:
         schema = json.loads(
@@ -3904,6 +3477,65 @@ class PresetContractTests(unittest.TestCase):
             RECEIPT_PATH,
         )
 
+    def test_validate_receipt_contract_rejects_generic_visual_evidence(self) -> None:
+        handoff = minimal_handoff(
+            shard_id="S01-ui-01",
+            vertical_capability="ui",
+            allowed_write_paths=[f"{FEATURE_PATH}/src/ui/refund.tsx", f"{HANDOFF_DIR}/results/S01-ui-01.json"],
+        )
+        handoff["allowed_read_paths"] = [
+            TASKS_PATH,
+            f"{FEATURE_PATH}/checklists/behavior-testability.md",
+            f"{FEATURE_PATH}/contracts/uif/refund.json",
+            f"{FEATURE_PATH}/quickstart.md",
+        ]
+        handoff["task_text"] = [
+            "T010 visual_verification for Visual Item ID VUI-001 with Requirement Status Required"
+        ]
+        receipt_path = f"{HANDOFF_DIR}/results/S01-ui-01.json"
+        handoff["task_status_update"]["receipt_path"] = receipt_path
+
+        with self.assertRaisesRegex(ValueError, "Visual Item ID"):
+            validate_receipt_contract(
+                handoff,
+                minimal_receipt(
+                    shard_id="S01-ui-01",
+                    changed_paths=[f"{FEATURE_PATH}/src/ui/refund.tsx"],
+                    validation_evidence=["unit tests passed"],
+                ),
+                receipt_path,
+            )
+
+    def test_validate_receipt_contract_accepts_visual_evidence_references(self) -> None:
+        handoff = minimal_handoff(
+            shard_id="S01-ui-01",
+            vertical_capability="ui",
+            allowed_write_paths=[f"{FEATURE_PATH}/src/ui/refund.tsx", f"{HANDOFF_DIR}/results/S01-ui-01.json"],
+        )
+        handoff["allowed_read_paths"] = [
+            TASKS_PATH,
+            f"{FEATURE_PATH}/checklists/behavior-testability.md",
+            f"{FEATURE_PATH}/contracts/uif/refund.json",
+            f"{FEATURE_PATH}/quickstart.md",
+        ]
+        handoff["task_text"] = [
+            "T010 visual_verification for Visual Item ID VUI-001 with Requirement Status Required"
+        ]
+        receipt_path = f"{HANDOFF_DIR}/results/S01-ui-01.json"
+        handoff["task_status_update"]["receipt_path"] = receipt_path
+
+        validate_receipt_contract(
+            handoff,
+            minimal_receipt(
+                shard_id="S01-ui-01",
+                changed_paths=[f"{FEATURE_PATH}/src/ui/refund.tsx"],
+                validation_evidence=[
+                    "Visual Item ID VUI-001 Requirement Status Required verified with screenshot ref quickstart.md#visual-refund"
+                ],
+            ),
+            receipt_path,
+        )
+
     def test_handoff_schema_rejects_worker_that_can_update_tasks_md(self) -> None:
         schema = json.loads(HANDOFF_SCHEMA_PATH.read_text(encoding="utf-8"))
         handoff = minimal_handoff()
@@ -4021,22 +3653,21 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("BDD readiness gate", readme)
         self.assertIn("NFR readiness", readme)
         self.assertIn("BDD/NFR/applicable Visual Fidelity", readme)
-        self.assertIn("Design Requirement Intake", readme)
-        self.assertIn("Requirement Merge", readme)
-        self.assertIn("Product Requirement + Design Requirement", readme)
-        self.assertIn("rejects full provider Visual Item Matrix copies inside Visual Restoration Trace rows", readme)
-        self.assertIn("stable Visual Item ID", readme)
-        self.assertIn("does not translate Figma variants into code props", readme)
-        self.assertIn("requirement-level component roles", readme)
-        self.assertIn("Visual Restoration Trace rows", readme)
-        self.assertIn("Visual Item Matrix rows", readme)
-        self.assertIn("Figma is a Design Requirement provider", readme)
-        self.assertIn("Figma Evidence Packet", readme)
-        self.assertIn("direct Figma URL input", readme)
-        self.assertIn("runtime agent has Figma MCP access", readme)
+        self.assertIn("External Intake And Visual SSOT", readme)
+        self.assertIn("spec-kit-intake", readme)
+        self.assertIn("external intake evidence + visual SSOT refs -> /speckit.specify -> baseline spec.md", readme)
+        self.assertIn("does not perform intake", readme)
+        self.assertIn("parse HTML SSOT bundles", readme)
+        self.assertIn("decide provider source readiness", readme)
+        self.assertIn("visual SSOT refs", readme)
+        self.assertIn("external evidence refs", readme)
+        self.assertIn("source-backed facts", readme)
+        self.assertIn("Product semantics implied only by provider evidence remain `[NEEDS CLARIFICATION]`", readme)
+        self.assertIn("speckit.intake.visual-design", readme)
+        self.assertIn("speckit.intake.html-ssot", readme)
         self.assertIn("Visual Fidelity readiness gate", readme)
         self.assertIn("Screenshot is evidence, not intake", readme)
-        self.assertIn("optional but strongly recommended provider evidence", readme)
+        self.assertIn("optional but strongly recommended visual evidence", readme)
         self.assertIn("L0 No Screenshot", readme)
         self.assertIn("L1 Key Screenshots", readme)
         self.assertIn("L2 State + Viewport Matrix", readme)
@@ -4054,29 +3685,21 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("Visual Fidelity Evidence Matrix", readme)
         self.assertIn("visual requirement or visual proof obligation", readme)
         self.assertIn("single visual readiness record", readme)
-        self.assertIn("Provider evidence artifacts may record screenshot refs", readme)
         self.assertIn("only the Visual Fidelity Evidence Matrix decides visual planning readiness", readme)
         self.assertIn("proof sufficiency", readme)
         self.assertIn("accepted exception rules", readme)
-        self.assertIn("preset defines the required design intake and provider readiness artifact structure", readme)
-        self.assertIn("runtime agent or external Figma intake", readme)
-        self.assertIn("does not generate the artifact instances", readme)
+        self.assertIn("The intake extension owns source capture", readme)
+        self.assertIn("HTML SSOT bundle contracts", readme)
+        self.assertIn("source-side validators live in the `spec-kit-intake` extension", readme)
         self.assertIn("[BLOCKED: PROVIDER_EVIDENCE]", readme)
-        self.assertIn("Provider evidence blockers do not become `[NEEDS CLARIFICATION]`", readme)
         self.assertNotIn(
             "writes or marks it as `[NEEDS CLARIFICATION]`",
             readme,
         )
-        self.assertIn("raw metadata completeness", readme)
-        self.assertIn("node inventory parity", readme)
-        self.assertIn("speckit.design.visual_item_matrix.v1", readme)
-        self.assertIn("schemas/speckit.design.visual-item-matrix.v1.schema.json", readme)
-        self.assertIn("raw Figma evidence remains the source of truth", readme)
-        self.assertIn("provider-ready", readme)
-        self.assertIn("It does not decide visual planning readiness", readme)
-        self.assertIn("does not provide Figma MCP connection, authentication, or execution", readme)
-        self.assertIn("clarifies design-derived gaps already written in `spec.md`", readme)
-        self.assertIn("does not call Figma", readme)
+        self.assertIn("source-side readiness", readme)
+        self.assertIn("The Visual Fidelity Evidence Matrix remains the only planning readiness gate", readme)
+        self.assertIn("clarifies evidence-derived gaps already written in `spec.md`", readme)
+        self.assertIn("does not call provider tools", readme)
         self.assertIn("explicit non-functional requirement declarations", readme)
         self.assertIn("Required, Not Applicable, or Unknown", readme)
         self.assertIn("missing or unverifiable NFR assumptions", readme)
@@ -4138,7 +3761,8 @@ class PresetContractTests(unittest.TestCase):
         self.assertIn("## 1.0.3", changelog)
         self.assertIn("Final Code Review", changelog)
         self.assertIn("structured code review receipts", changelog)
-        self.assertIn("rejects full provider Visual Item Matrix copies inside Design Requirement Intake Visual Restoration Trace rows", changelog)
+        self.assertIn("Migrated product, design, provider, and HTML intake ownership out of the workflow preset", changelog)
+        self.assertIn("external intake refs and visual SSOT refs", changelog)
         self.assertIn("/speckit.tasks` defines validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation", changelog)
         self.assertIn("/speckit.implement` only executes those tasks and records receipt evidence", changelog)
         self.assertIn("agent-native handoff orchestration", changelog)
@@ -4236,18 +3860,16 @@ class PresetContractTests(unittest.TestCase):
             "structured JSON artifacts require schemas",
             "validators/",
             "Do not put downstream prohibitions in upstream commands",
-            "Design Requirement Intake",
-            "Requirement Merge",
-            "Figma is a provider-specific design source",
+            "Source intake artifacts belong in an extension, not this preset",
+            "External intake owns source capture",
+            "rendered HTML SSOT bundles",
             "Behavior-first extension rule",
             "BDD and UIF artifacts need independent templates",
             "`/speckit.constitution`: constitution governance and project principles only",
             "`/speckit.checklist`: checklist artifacts and BDD/NFR/Visual Fidelity readiness gates only",
-            "Figma Evidence Packet",
-            "Screenshot is provider evidence",
-            "Screenshots must not become the primary Design Requirement Intake carrier",
-            "Provider evidence artifacts may record screenshot refs, visual proof refs",
-            "They must not",
+            "external intake refs",
+            "visual SSOT refs",
+            "External evidence refs must not",
             "decide visual planning readiness",
             "proof sufficiency",
             "Visual Fidelity Evidence Matrix",
@@ -4267,10 +3889,9 @@ class PresetContractTests(unittest.TestCase):
             "accepted exception rules",
             "checklist Gate Status",
             "checklist Blocking Items",
-            "Provider source readiness remains separate",
-            "packaged evidence templates are allowed preset artifacts",
-            "Figma MCP execution, hooks, adapter scripts, and authentication",
-            "external design extraction is not a clarification responsibility",
+            "Source-side intake readiness remains separate",
+            "Provider tools, provider execution, hooks, adapter scripts",
+            "External design extraction is not a clarification responsibility",
             "NFR readiness belongs in `spec.md` product requirements",
             "`/speckit.plan`: Phase 0 behavior projection, planning artifacts, and formal contracts",
             "`/speckit.tasks` owns implementation, validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation, and code review task definition in `tasks.md`",

@@ -4677,7 +4677,7 @@ class TestBundledPresetLocator:
         assert "test -f .specify/templates/tasks-template.md" in workflow_text
         assert (
             "test -f .specify/presets/workflow-preset/schemas/"
-            "speckit.design.visual-item-matrix.v1.schema.json"
+            "speckit.implement.receipt.v1.schema.json"
         ) in workflow_text
 
     def test_community_smoke_checks_wheel_assets_and_extension_dev_reinstall(self):
@@ -4719,7 +4719,7 @@ class TestBundledPresetLocator:
         assert "registry_version == manifest_version" in verify_run
         assert (
             "test -f .specify/presets/workflow-preset/schemas/"
-            "speckit.design.visual-item-matrix.v1.schema.json"
+            "speckit.implement.receipt.v1.schema.json"
         ) in verify_run
         assert (
             'for extension_id in arch discovery intake preview repository-governance; do'
