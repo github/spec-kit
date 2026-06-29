@@ -15,9 +15,9 @@ If any listed file exists under FEATURE_DIR, task generation must consume it as 
 - `contracts/sequences.md`: service, command, event, async, retry, rollback, and failure-path flows.
 - `research.md`: selected validation level, fixture strategy, external-system execution mode, and error-branch validation decisions.
 - `quickstart.md`: executable validation paths and evidence collection guidance.
-- `spec.md` visual acceptance requirements: visual fidelity requirements, screenshot refs, visual proof refs, and Design Requirement trace refs.
+- `spec.md` visual acceptance requirements: visual fidelity requirements, screenshot refs, visual proof refs, visual SSOT refs, and external evidence refs.
 - `spec.md` Client Asset Contract: asset source strategy, required variants, fallback policy, and blocker status.
-- `checklists/behavior-testability.md` Visual Fidelity Readiness: passed visual proof level, blockers, and accepted exceptions.
+- `checklists/behavior-testability.md` Visual Fidelity Readiness: `Requirement Status`, passed visual proof level, blockers, and accepted exceptions.
 - `contracts/bdd/`: formal BDD acceptance contracts.
 - `contracts/uif/`: Expected UIF interaction contracts.
 - `contracts/behavior/`: formal scenario instance, fixture, and assertion contracts.
@@ -29,7 +29,9 @@ Use these inputs to derive implementation, integration, orchestration, failure-h
 
 For Client Asset Contract entries, derive asset preparation, binding, implementation, and validation tasks in dependency order. Missing required client visual assets are readiness blockers.
 
-Use Visual Fidelity Readiness as the only visual planning readiness source. Do not create a second readiness rule from Screenshot Coverage Matrix, Visual Item Matrix, Visual Restoration Trace, or provider evidence artifacts; if required visual evidence is missing, report a readiness blocker instead of deriving complete-looking UI tasks.
+Use Visual Fidelity Readiness as the only visual planning readiness source. Do not create a second readiness rule from screenshot coverage, external intake artifacts, HTML SSOT bundles, or provider evidence artifacts; if required visual evidence is missing, report a readiness blocker instead of deriving complete-looking UI tasks.
+
+Use each Visual Fidelity Readiness row's `Requirement Status` as the visual task input filter. Generate visual tasks only for rows with status `Required` or `Required` plus an accepted exception; tasks for accepted exceptions must cite the exception rule. Do not generate implementation, validation, verification, evidence, asset binding, UI acceptance, or review tasks for `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]` rows. Route `Unknown` rows back to `/speckit.clarify`; route `[BLOCKED: PROVIDER_EVIDENCE]` rows to the external intake extension. `/speckit.tasks` must not discover visual requirements or repair evidence; it only decomposes visual specifications that already passed the readiness gate.
 
 Missing Required case coverage is a coverage blocker, not silently skipped work. If `checklists/behavior-testability.md` marks a case type Required but the matching BDD or behavior contract is absent and no `Not Applicable` rationale or `case_coverage_blockers` entry exists, report the missing case instead of generating a complete-looking task list.
 
@@ -71,16 +73,24 @@ Behavior traceability must be explicit:
 - For each Expected UIF contract step with type `api_call`, create the backend/API or contract task that provides the declared method and path.
 - For each quickstart validation path, create a validation task that can collect evidence for the relevant scenario IDs and assertions.
 
-Use this visual task taxonomy when a user story includes `contracts/uif/`, visual acceptance requirements, Visual Fidelity Readiness rows, or Client Asset Contract entries:
+Use only this visual task taxonomy when a user story includes `contracts/uif/`, visual acceptance requirements, Visual Fidelity Readiness rows, or Client Asset Contract entries:
 
-- Maintain story-local task granularity: `visual_setup` -> `visual_validation` -> `visual_implementation` -> `visual_evidence`. Do not create a separate visual lifecycle phase.
-- `visual_setup`, `visual_validation`, `visual_implementation`, and `visual_evidence` tasks may cover visual fixtures, client assets, viewport/state setup, concrete components, views, interaction paths, visual items, asset variants, fallback behavior, screenshot refs, visual proof refs, command output, or visual diff results.
+- Maintain story-local task granularity: `visual_setup` -> `visual_validation` -> `visual_implementation` -> `visual_evidence` -> `final_visual_review`. Do not create a separate visual lifecycle phase.
+- `visual_setup`: prepare visual fixtures, viewport configuration, screenshot baseline paths, client resource setup, asset variants, fallback policy mapping, and other visual validation prerequisites.
+- `visual_validation`: create or configure the validation path before implementation, including visual regression tests, UI acceptance checks, screenshot comparison, state or viewport coverage validation, and accessibility check entrypoints.
+- `visual_implementation`: implement the visual or UI behavior, including page or component states, interaction feedback, responsive layout, asset binding, empty/error/loading/disabled/hover/focus states, and fallback behavior.
+- `visual_evidence`: collect delivery evidence, including screenshot refs, visual proof refs, command output, visual diff results, and quickstart validation evidence.
+- `ui_acceptance`: verify a user-facing UIF path or BDD scenario, including user action, feedback, page state, and visible result.
+- `visual_verification`: verify visual-spec fidelity by Visual Item ID, `Requirement Status`, viewport/state coverage, proof level, screenshot refs, and visual proof refs.
+- `asset_binding`: when a Client Asset Contract applies, bind source assets, variants, license or authorization refs, fallback policy, code paths, and missing-asset blockers.
+- `final_visual_review`: require final review of implemented UI states, viewport behavior, Visual Fidelity Readiness rows, UIF paths, screenshot refs, visual proof refs, and Client Asset Contract bindings without changing `spec.md`, contracts, readiness checklists, or planning artifacts.
+- `visual_setup`, `visual_validation`, `visual_implementation`, `visual_evidence`, `ui_acceptance`, `visual_verification`, `asset_binding`, and `final_visual_review` are the only visual task types.
 - Visual tasks must name concrete source, test, fixture, configuration, or asset paths when derivable; otherwise report a readiness blocker instead of generating an ambiguous visual task.
 - UI acceptance tasks must verify the same UIF path, Visual Item ID, scenario ID, asset contract entry, or quickstart validation path as the implementation task, including required state and viewport coverage when responsive visual behavior is in scope.
 - UI acceptance evidence must reference at least one relevant UIF path, BDD or behavior scenario, visual proof ref, screenshot ref, quickstart validation path, API contract, or captured command output.
 - Missing visual proof refs, screenshot refs, viewport/state coverage, Client Asset Contract entries, asset variants, or fallback policy are Visual Fidelity Readiness blockers.
 
-For each applicable Visual Fidelity Readiness row, generate a paired visual verification or UI acceptance task unless the row is Not Applicable or blocked.
+For each applicable Visual Fidelity Readiness row with `Requirement Status` `Required` or `Required` plus an accepted exception, generate paired `visual_validation` and `visual_evidence` work; use `ui_acceptance` or `visual_verification` as concrete validation or evidence task types when they best match the UIF path, BDD scenario, or visual item. Do not generate visual tasks for rows with `Requirement Status` `Not Applicable`, `Unknown`, or `[BLOCKED: PROVIDER_EVIDENCE]`.
 
 When an implementation task depends on `contracts/`, include a paired contract validation task that names the contract ref, expected implementation surface, validation command or quickstart path, and evidence requirement. Do not instruct implementers to modify `spec.md`, `contracts/`, readiness checklists, or Visual Fidelity Readiness to make implementation pass; report a blocker if implementation requires requirement or contract changes.
 

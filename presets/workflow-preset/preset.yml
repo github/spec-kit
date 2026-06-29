@@ -25,33 +25,6 @@ provides:
       the constitution template
     replaces: constitution-template
     strategy: wrap
-  - type: template
-    name: figma-evidence-packet-template
-    file: templates/figma-evidence-packet-template.md
-    description: Define the Figma Evidence Packet input format for Figma-derived specifications
-    replaces: figma-evidence-packet-template
-    strategy: replace
-  - type: template
-    name: figma-intake-contract-template
-    file: templates/figma-intake-contract.md
-    description: Define the Figma provider source readiness contract for raw metadata
-      readiness
-    replaces: figma-intake-contract-template
-    strategy: replace
-  - type: template
-    name: design-requirement-intake-template
-    file: templates/design-requirement-intake-template.md
-    description: Define the Design Requirement Intake format for provider-neutral
-      design facts
-    replaces: design-requirement-intake-template
-    strategy: replace
-  - type: template
-    name: requirement-merge-report-template
-    file: templates/requirement-merge-report-template.md
-    description: Define the Requirement Merge report format before baseline spec.md
-      generation
-    replaces: requirement-merge-report-template
-    strategy: replace
   - type: command
     name: speckit.specify
     file: commands/speckit.specify.md
@@ -204,12 +177,6 @@ provides:
     file: schemas/speckit.behavior.assertions.v1.schema.json
     description: Schema for formal behavior assertions
     replaces: speckit-behavior-assertions-v1-schema
-    strategy: replace
-  - type: template
-    name: speckit-design-visual-item-matrix-v1-schema
-    file: schemas/speckit.design.visual-item-matrix.v1.schema.json
-    description: Schema for normalized design visual item matrix intake
-    replaces: speckit-design-visual-item-matrix-v1-schema
     strategy: replace
   - type: template
     name: speckit-implement-manifest-v1-schema

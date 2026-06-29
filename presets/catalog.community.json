@@ -683,7 +683,7 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "templates": 27,
+        "templates": 22,
         "commands": 8
       },
       "tags": [

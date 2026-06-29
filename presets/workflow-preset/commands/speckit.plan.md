@@ -85,13 +85,15 @@ When `plan.md` has a design artifact/navigation section, include links to:
 - Interface contracts: `./contracts/`
 - Validation path: `./quickstart.md`
 
-When visual requirements are in scope, keep `plan.md` navigation linked to visual fidelity scope, screenshot refs, visual proof refs, and Design Requirement trace refs already accepted by `spec.md` and the readiness checklist.
+When visual requirements are in scope, keep `plan.md` navigation linked to visual fidelity scope, screenshot refs, visual proof refs, and external visual SSOT refs already accepted by `spec.md` and the readiness checklist.
 
 ## Visual Planning Responsibilities
 
-When visual requirements are in scope, planning must keep the Visual Fidelity Evidence Matrix as the upstream readiness record and split visual carry-forward across the existing planning outputs:
+When visual requirements are in scope, planning must keep the Visual Fidelity Evidence Matrix as the upstream readiness record and split visual carry-forward across the existing planning outputs.
 
-- `research.md`: add Visual validation decisions for each relevant Visual Item ID. Record selected test level, fixture or asset strategy, viewport/state coverage strategy, visual regression or baseline proof strategy, screenshot refs, visual proof refs, Design Requirement trace refs, related quickstart validation path, and related UIF or behavior contract path. Do not copy the Visual Fidelity Evidence Matrix into `research.md`, do not create new visual requirements, do not call Figma or other provider tools, and do not rebuild provider evidence matrices.
+Use the Visual Fidelity Evidence Matrix `Requirement Status` as the visual planning input filter. Carry forward only visual rows with status `Required` or an accepted exception rule. Rows with status `Unknown` or `[BLOCKED: PROVIDER_EVIDENCE]` must already have blocked checklist PASS; if encountered during planning, stop with a report-only/no-write upstream gate failure and return to `/speckit.checklist`, `/speckit.clarify`, or the external intake extension as appropriate. Do not project `Not Applicable` rows into visual planning outputs.
+
+- `research.md`: add Visual validation decisions for each relevant Visual Item ID or visual SSOT ref. Record selected test level, fixture or asset strategy, viewport/state coverage strategy, visual regression or baseline proof strategy, screenshot refs, visual proof refs, external evidence refs, related quickstart validation path, and related UIF or behavior contract path. Do not copy the Visual Fidelity Evidence Matrix into `research.md`, do not create new visual requirements, do not call provider tools, do not rebuild external intake evidence, and do not rebuild provider evidence matrices.
 - `contracts/uif/` and `contracts/behavior/`: formalize accepted visual interaction and state constraints only when they affect observable behavior. Expected UIF contracts may carry visual_item_refs, viewport_matrix_refs, state_matrix_refs, visual_proof_refs, and accepted_exception_refs. Behavior contracts may reference visual assertion IDs or blockers when a visual state cannot be formalized without inventing requirements. Interface contracts in `contracts/` may model only API or data fields needed to support UI states, assets, or feedback; they must not contain layout rules or screenshot proof decisions.
 - `contracts/sequences.md`: add UI interaction sequence, visual state handoff points, responsive branch trigger refs, and visual proof references only when visual states affect cross-boundary order, async callbacks, retries, rollback, compensation, or error propagation. Keep visual style, tokens, layout breakpoints, screenshot matrices, and validation commands out of `contracts/sequences.md`.
 

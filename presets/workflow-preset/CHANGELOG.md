@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Migrated product, design, provider, and HTML intake ownership out of the workflow preset and into the external `spec-kit-intake` extension; the preset now consumes external intake refs and visual SSOT refs while retaining `spec.md` projection and Visual Fidelity readiness.
 - Added constitution governance coverage for the fixed R/M/U/O mapping and Architecture SSOT boundary, with preset manifest, documentation, contract tests, and install smoke checks aligned to the constitution template.
 - Fixed the preset artifact integration workflow to update both bundled and community catalog metadata before opening the `bigsmartben/spec-kit` fork PR.
 
@@ -17,7 +18,7 @@
 - Hardened implement receipt completion gates so deferred validation or unapproved code review cannot mark `tasks.md` items complete.
 - Added Final Code Review visual consistency checks for implemented UI states, viewport behavior, visual proof evidence, and Client Asset Contract bindings.
 - Clarified that `/speckit.tasks` defines validation, visual verification, contract validation, data-side-effect validation, integration/e2e validation, and scope-aware code review tasks, while `/speckit.implement` only executes those tasks and records receipt evidence without inventing validation strategy or widening scope.
-- Added Visual Item Matrix and Visual Restoration Trace fields so Figma/provider evidence can carry stable UI/UX restoration refs into `spec.md` and Visual Fidelity readiness.
+- Added Visual Item Matrix and Visual Restoration Trace fields so provider evidence can carry stable UI/UX restoration refs into `spec.md` and Visual Fidelity readiness.
 - Added a normalized Visual Item Matrix JSON schema and validator checks for deterministic UI/UX restoration intake.
 - Added validator coverage that rejects full provider Visual Item Matrix copies inside Design Requirement Intake Visual Restoration Trace rows.
 - Clarified that provider evidence artifacts may record screenshot/proof refs and provider blockers, while only the checklist Visual Fidelity Evidence Matrix decides visual planning readiness, proof sufficiency, Gate Status, Blocking Items, and accepted exception rules.
@@ -31,15 +32,15 @@
 
 ## 1.3.7
 
-- Generalized Figma-derived requirement handling into provider-neutral Design Requirement Intake and Requirement Merge templates while keeping Figma MCP execution outside the preset.
+- Generalized provider-derived requirement handling into provider-neutral Design Requirement Intake and Requirement Merge templates while keeping provider tool execution outside the preset.
 - Added a row-per-case Case Coverage Matrix to make positive, negative, boundary, permission, validation, and state_conflict applicability explicit before planning.
 - Hardened failure behavior scenarios so permission, validation, state_conflict, and other error paths require structured request cases, error responses, failure feedback, and assertions before tasks are generated.
 - Hardened UI task generation so UI implementation and acceptance tasks are paired with explicit state coverage, viewport coverage, visual proof refs, screenshot refs, and readiness blockers for missing visual or asset evidence.
 
 ## 1.3.6
 
-- Added a Figma Evidence Packet input template and Figma intake contract for Figma-derived specifications without adding Figma MCP execution to the preset.
-- Hardened Figma intake readiness with raw metadata completeness, metadata index proof, node inventory parity, and blocker lint gates before writing Figma-derived requirements.
+- Added a Provider Evidence Packet input template and provider intake contract for provider-derived specifications without adding provider tool execution to the preset.
+- Hardened provider intake readiness with raw metadata completeness, metadata index proof, node inventory parity, and blocker lint gates before writing provider-derived requirements.
 
 ## 1.3.4
 
