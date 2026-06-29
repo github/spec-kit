@@ -26,6 +26,7 @@ through the standard flow:
 2. Run `/speckit.plan` to define the implementation approach.
 3. Run `/speckit.tasks` to derive the work breakdown.
 4. Run `/speckit.implement` and review the resulting code and artifact diffs.
+5. Run `/speckit.converge` to verify completeness and generate tasks for remaining gaps. If tasks are appended, repeat `/speckit.implement` and `/speckit.converge` until the feature is fully complete.
 
 The previous feature directory remains intact for audit, comparison, or
 explaining how the project reached its current state. Use clear feature names or
@@ -50,6 +51,7 @@ spec:
 5. Run `/speckit.analyze` before implementation resumes to catch gaps between
    the spec, plan, and tasks.
 6. Run `/speckit.implement`, then review the code and artifact diffs together.
+7. Run `/speckit.converge` to assess completion and append any remaining work to `tasks.md`. If tasks are appended, repeat `/speckit.implement` and `/speckit.converge` until the feature is fully complete.
 
 Preserve important implementation rationale before replacing derived artifacts.
 If a plan or task list contains decisions that still matter, carry them forward

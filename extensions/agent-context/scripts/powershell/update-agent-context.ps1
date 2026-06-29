@@ -9,6 +9,10 @@
 #   .specify/extensions/agent-context/agent-context-config.yml
 #
 # Usage: update-agent-context.ps1 [plan_path]
+#
+# When `plan_path` is omitted, the script derives it from `.specify/feature.json`
+# (written by /speckit-specify). Falls back to the most recently modified
+# `specs/*/plan.md` only when feature.json is absent or its plan does not exist yet.
 
 [CmdletBinding()]
 param(
@@ -126,14 +130,26 @@ if (-not (Test-Path -LiteralPath $ExtConfig)) {
 $Options = $null
 if (Get-Command ConvertFrom-Yaml -ErrorAction SilentlyContinue) {
     try {
-        $Options = Get-Content -LiteralPath $ExtConfig -Raw | ConvertFrom-Yaml -ErrorAction Stop
+        $Options = Get-Content -LiteralPath $ExtConfig -Raw -Encoding UTF8 | ConvertFrom-Yaml -ErrorAction Stop
     } catch {
-        # fall through to Python fallback
+        # fall through to ConvertFrom-Json fallback
     }
 }
 
 if ($null -eq $Options) {
-    # ConvertFrom-Yaml unavailable or failed; fall back to Python+PyYAML.
+    # ConvertFrom-Yaml unavailable or failed; try ConvertFrom-Json (no external deps,
+    # works when the config file is valid JSON, which is a subset of YAML).
+    try {
+        $raw = Get-Content -LiteralPath $ExtConfig -Raw -Encoding UTF8
+        $Options = $raw | ConvertFrom-Json -ErrorAction Stop
+        if (-not (Test-ConfigObject -Object $Options)) { $Options = $null }
+    } catch {
+        $Options = $null
+    }
+}
+
+if ($null -eq $Options) {
+    # ConvertFrom-Yaml/Json unavailable or failed; fall back to Python+PyYAML.
     $pythonCmd = $null
     $pythonCandidates = @()
     if ($env:SPECKIT_PYTHON) {
@@ -280,21 +296,69 @@ if ($cm) {
 }
 
 if (-not $PlanPath) {
-    # Discover plan.md exactly one level deep (specs/<feature>/plan.md),
-    # matching the bash glob specs/*/plan.md. Wrap in try/catch so access errors under
-    # $ErrorActionPreference = 'Stop' don't abort the script.
-    try {
-        $specsDir = Join-Path $ProjectRoot 'specs'
-        $candidate = Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |
-            ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'plan.md') -ErrorAction SilentlyContinue } |
-            Where-Object { $_ } |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-        if ($candidate) {
-            $PlanPath = [System.IO.Path]::GetRelativePath($ProjectRoot, $candidate.FullName).Replace('\','/')
+    # Prefer .specify/feature.json (written by /speckit-specify) over mtime heuristic.
+    $FeatureJson = Join-Path $ProjectRoot '.specify/feature.json'
+    if (Test-Path -LiteralPath $FeatureJson) {
+        try {
+            $fj = Get-Content -LiteralPath $FeatureJson -Raw -Encoding UTF8 | ConvertFrom-Json
+            $featureDir = $fj.feature_directory
+            if ($featureDir -isnot [string] -or -not $featureDir) {
+                $featureDir = $null
+            } else {
+                $featureDir = $featureDir.TrimEnd('\', '/')
+            }
+            if ($featureDir) {
+                # Join-Path on Unix does not treat absolute ChildPath as "wins"; check explicitly.
+                if ([System.IO.Path]::IsPathRooted($featureDir)) {
+                    $candidatePlan = Join-Path $featureDir 'plan.md'
+                } else {
+                    $candidatePlan = Join-Path (Join-Path $ProjectRoot $featureDir) 'plan.md'
+                }
+                if (Test-Path -LiteralPath $candidatePlan) {
+                    # Resolve ./ .. segments before relativizing (mirrors bash Path.resolve()).
+                    # GetFullPath is available in .NET Framework 4.x (PS 5.1 compatible).
+                    $resolvedPlan = [System.IO.Path]::GetFullPath($candidatePlan)
+                    $resolvedDir  = [System.IO.Path]::GetDirectoryName($resolvedPlan)
+                    $normRoot = $ProjectRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+                    $normDir  = $resolvedDir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+                    $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+                    if ($normDir.StartsWith($normRoot, $cmp)) {
+                        $relDir = $normDir.Substring($normRoot.Length).TrimEnd('\', '/')
+                        $PlanPath = if ($relDir) { $relDir.Replace('\', '/') + '/plan.md' } else { 'plan.md' }
+                    } else {
+                        $PlanPath = $resolvedPlan.Replace('\', '/')
+                    }
+                }
+            }
+        } catch {
+            # Non-fatal: fall through to mtime heuristic.
         }
-    } catch {
-        # Non-fatal: continue without a plan path.
+    }
+
+    # Fall back to mtime only when feature.json is absent or its plan does not exist yet.
+    if (-not $PlanPath) {
+        try {
+            $specsDir = Join-Path $ProjectRoot 'specs'
+            $candidate = Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |
+                ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'plan.md') -ErrorAction SilentlyContinue } |
+                Where-Object { $_ } |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 1
+            if ($candidate) {
+                # GetRelativePath is .NET 5+ only; strip prefix manually for PS 5.1 compat.
+                # Use case-insensitive comparison on Windows only (matches common.ps1 pattern).
+                $fullPath = $candidate.FullName.Replace('\', '/')
+                $normRoot = $ProjectRoot.Replace('\', '/').TrimEnd('/') + '/'
+                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+                if ($fullPath.StartsWith($normRoot, $cmp)) {
+                    $PlanPath = $fullPath.Substring($normRoot.Length)
+                } else {
+                    $PlanPath = $fullPath
+                }
+            }
+        } catch {
+            # Non-fatal: continue without a plan path.
+        }
     }
 }
 

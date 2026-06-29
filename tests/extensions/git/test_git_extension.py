@@ -298,6 +298,24 @@ class TestCreateFeatureBash:
         assert data["BRANCH_NAME"] == "001-user-auth"
         assert data["FEATURE_NUM"] == "001"
 
+    def test_branch_name_short_word_case_sensitivity(self, tmp_path: Path):
+        """A short word is dropped from the derived branch name unless it appears
+        as an acronym in UPPERCASE in the description (case-sensitive, must match the
+        PowerShell twin)."""
+        project = _setup_project(tmp_path)
+        # lowercase "go" (<3 chars, not an uppercase acronym) is dropped
+        r1 = _run_bash(
+            "create-new-feature-branch.sh", project, "--json", "--dry-run", "Add go support",
+        )
+        assert r1.returncode == 0, r1.stderr
+        assert json.loads(r1.stdout)["BRANCH_NAME"] == "001-support"
+        # uppercase "GO" is kept as an acronym
+        r2 = _run_bash(
+            "create-new-feature-branch.sh", project, "--json", "--dry-run", "Use GO now",
+        )
+        assert r2.returncode == 0, r2.stderr
+        assert json.loads(r2.stdout)["BRANCH_NAME"] == "001-use-go-now"
+
     def test_creates_branch_timestamp(self, tmp_path: Path):
         """Extension create-new-feature-branch.sh creates timestamp branch."""
         project = _setup_project(tmp_path)
@@ -425,6 +443,21 @@ class TestCreateFeaturePowerShell:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "001-user-auth"
+
+    def test_branch_name_short_word_case_sensitivity(self, tmp_path: Path):
+        """PowerShell must match the bash twin: a short word is dropped unless it
+        appears as an acronym in UPPERCASE (case-sensitive -cmatch, not -match)."""
+        project = _setup_project(tmp_path)
+        r1 = _run_pwsh(
+            "create-new-feature-branch.ps1", project, "-Json", "-DryRun", "Add go support",
+        )
+        assert r1.returncode == 0, r1.stderr
+        assert json.loads(r1.stdout)["BRANCH_NAME"] == "001-support"
+        r2 = _run_pwsh(
+            "create-new-feature-branch.ps1", project, "-Json", "-DryRun", "Use GO now",
+        )
+        assert r2.returncode == 0, r2.stderr
+        assert json.loads(r2.stdout)["BRANCH_NAME"] == "001-use-go-now"
 
     def test_dry_run_counts_branches_checked_out_in_worktrees(self, tmp_path: Path):
         """Branches checked out in sibling worktrees still reserve their prefix."""

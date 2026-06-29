@@ -10,9 +10,9 @@
 #
 # Usage: update-agent-context.sh [plan_path]
 #
-# When `plan_path` is omitted, the script picks the most recently modified
-# `specs/*/plan.md` if any exist, otherwise emits the section without a
-# concrete plan path.
+# When `plan_path` is omitted, the script derives it from `.specify/feature.json`
+# (written by /speckit-specify). Falls back to the most recently modified
+# `specs/*/plan.md` only when feature.json is absent or its plan does not exist yet.
 
 set -euo pipefail
 
@@ -202,23 +202,78 @@ unset _cf_parts _seg
 
 PLAN_PATH="${1:-}"
 if [[ -z "$PLAN_PATH" ]]; then
-  # Pick the most recently modified plan.md one level deep (specs/<feature>/plan.md).
-  # Use find + sort by modification time to avoid ls/head fragility with
-  # spaces in paths or SIGPIPE from pipefail.
-  _plan_abs="$("$_python" - "$PROJECT_ROOT" <<'PY'
-import sys, os
+  # Prefer .specify/feature.json (written by /speckit-specify) over mtime heuristic.
+  _feature_json="$PROJECT_ROOT/.specify/feature.json"
+  if [[ -f "$_feature_json" ]]; then
+    _feature_dir="$("$_python" - "$_feature_json" <<'PY'
+import sys, json
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        d = json.load(fh)
+    val = d.get("feature_directory", "")
+    print(val if isinstance(val, str) else "")
+except Exception:
+    print("")
+PY
+)"
+    # Normalize backslashes (written by PS on Windows) to forward slashes before path ops.
+    _feature_dir="$(printf '%s' "$_feature_dir" | tr '\\' '/')"
+    _feature_dir="${_feature_dir%/}"
+    if [[ -n "$_feature_dir" ]]; then
+      # feature_directory may be relative or absolute (absolute paths outside PROJECT_ROOT
+      # are preserved as-is by _persist_feature_json in common.sh).
+      # Also match drive-qualified paths (C:/...) written by PowerShell on Windows.
+      if [[ "$_feature_dir" == /* ]] || [[ "$_feature_dir" =~ ^[A-Za-z]:/ ]]; then
+        _candidate="$_feature_dir/plan.md"
+      else
+        _candidate="$PROJECT_ROOT/$_feature_dir/plan.md"
+      fi
+      if [[ -f "$_candidate" ]]; then
+        # Resolve symlinks before comparing so paths like /var/… vs /private/var/…
+        # (macOS) are treated as equivalent. Mirrors the mtime-fallback approach.
+        PLAN_PATH="$("$_python" - "$PROJECT_ROOT" "$_candidate" <<'PY'
+import sys
 from pathlib import Path
-specs = Path(sys.argv[1]) / "specs"
+root = Path(sys.argv[1]).resolve()
+cand = Path(sys.argv[2]).resolve()
+try:
+    print(cand.relative_to(root).as_posix())
+except ValueError:
+    # Outside project root: emit the resolved path in POSIX form.
+    # as_posix() converts backslashes correctly on native Windows Python.
+    print(cand.as_posix())
+PY
+)"
+      fi
+    fi
+  fi
+
+  # Fall back to mtime only when feature.json is absent or its plan does not exist yet.
+  # Python emits a project-relative POSIX path directly to avoid bash prefix-strip
+  # issues with backslash paths on Windows (Git bash / MSYS2).
+  if [[ -z "$PLAN_PATH" ]]; then
+    _plan_rel="$("$_python" - "$PROJECT_ROOT" <<'PY'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1]).resolve()
+specs = root / "specs"
 plans = sorted(
     specs.glob("*/plan.md"),
     key=lambda p: p.stat().st_mtime,
     reverse=True,
 )
-print(plans[0] if plans else "")
+if plans:
+    try:
+        print(plans[0].relative_to(root).as_posix())
+    except ValueError:
+        print("")
+else:
+    print("")
 PY
 )"
-  if [[ -n "$_plan_abs" ]]; then
-    PLAN_PATH="${_plan_abs#"$PROJECT_ROOT/"}"
+    if [[ -n "$_plan_rel" ]]; then
+      PLAN_PATH="$_plan_rel"
+    fi
   fi
 fi
 

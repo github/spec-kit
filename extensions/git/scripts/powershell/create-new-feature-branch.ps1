@@ -252,7 +252,10 @@ function Get-BranchName {
         if ($stopWords -contains $word) { continue }
         if ($word.Length -ge 3) {
             $meaningfulWords += $word
-        } elseif ($Description -match "\b$($word.ToUpper())\b") {
+        } elseif ($Description -cmatch "\b$($word.ToUpper())\b") {
+            # Case-sensitive (-cmatch) to mirror the bash twin's `grep -qw -- "${word^^}"`:
+            # keep a short word only when its UPPERCASE form appears in the original
+            # (an acronym). -match is case-insensitive and would keep every short word.
             $meaningfulWords += $word
         }
     }

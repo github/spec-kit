@@ -275,6 +275,21 @@ specs/<feature>/handoffs/implement/<run-id>/
 
 实现 handoff 相关 schema 由 `presets/workflow-preset/schemas/` 提供。
 
+## 社区资源
+
+上游文档站收录了社区贡献的扩展、预设、bundle、walkthrough 和相关项目：
+
+- [Extensions](https://github.github.io/spec-kit/community/extensions.html) — commands, hooks, and capabilities
+- [Presets](https://github.github.io/spec-kit/community/presets.html) — template and terminology overrides
+- [Bundles](https://github.github.io/spec-kit/community/bundles.html) — role and team stacks composed from existing components
+- [Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) — end-to-end SDD scenarios
+- [Friends](https://github.github.io/spec-kit/community/friends.html) — projects that extend or build on Spec Kit
+
+贡献扩展、预设或 bundle 时，分别参考 [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md)、[Presets Publishing Guide](presets/PUBLISHING.md) 和 [Community Bundles guide](docs/community/bundles.md)。
+
+> [!NOTE]
+> 社区贡献由各自作者独立创建和维护。安装或使用前请审查来源与代码。
+
 ## 可选本地扩展
 
 ### `bug`
@@ -383,6 +398,43 @@ specify preset add --dev extensions/arch/presets/arch-governance
 | 扩展测试 | `selftest` | `extensions/selftest` | 验证扩展发现、安装和注册生命周期。 |
 | 预设模板 | `scaffold` | `presets/scaffold` | 新预设作者复制和改造的起始模板。 |
 | 预设测试 | `self-test` | `presets/self-test` | 覆盖核心模板和命令，用于测试 preset 解析与组合。 |
+
+## Bundle 能力
+
+Bundle 把一组扩展、预设、步骤和 workflow 打包成一个版本化的角色或团队配置。它适合把产品经理、业务分析、安全研究、开发等 persona 的完整工具栈用一次安装交付给项目。
+
+Bundle 使用手写的 `bundle.yml` manifest，声明组件版本，也可以指定目标 integration。未指定 integration 的 bundle 是 agnostic，会继承项目已有 integration。
+
+常用命令：
+
+```bash
+specify bundle search [<query>]
+specify bundle info <bundle-id>
+specify bundle install <bundle-id>
+specify bundle list
+specify bundle update <bundle-id>     # or --all
+specify bundle remove <bundle-id>
+```
+
+Bundle 从按优先级排列的 catalog stack 解析（project > user > built-in）。catalog source 可以是 `install-allowed` 或 `discovery-only`；后者可搜索和查看，但不能安装。管理 catalog 使用 `specify bundle catalog list|add|remove`。
+
+作者可本地校验并打包 bundle：
+
+```bash
+specify bundle validate --path ./my-bundle
+specify bundle build --path ./my-bundle
+```
+
+可参考 `examples/bundles/` 下的 product manager、business analyst、security researcher 和 developer 示例。
+
+| 目标 | 使用 |
+| --- | --- |
+| 新增一个命令或 workflow | Extension |
+| 自定义 spec、plan 或 tasks 的格式 | Preset |
+| 集成外部工具或服务 | Extension |
+| 强制组织级或合规标准 | Preset |
+| 发布可复用领域模板 | Extension 或 Preset |
+| 一次性安装完整角色工具栈 | Bundle |
 
 ## 推荐使用路径
 

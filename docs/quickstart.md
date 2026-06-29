@@ -22,13 +22,16 @@
 /speckit.repository-governance.generate
 /speckit.specify
 /speckit.clarify
+/speckit.plan
 /speckit.checklist
 /speckit.preview.mid-html
-/speckit.plan
 /speckit.tasks
 /speckit.analyze
 /speckit.implement
+/speckit.converge
 ```
+
+`/speckit.clarify` 用来在规划前降低需求歧义；`/speckit.checklist` 在计划形成后生成质量检查清单；`/speckit.analyze` 在实现前检查 spec、plan 和 tasks 的一致性；`/speckit.converge` 在实现后对照 feature artifacts 检查剩余缺口。如果 converge 追加了新任务，继续运行 `/speckit.implement` 并再次 converge，直到功能收敛。
 
 接手旧仓库时，把五个 `/speckit.arch.*-generate` 换成对应的 `/speckit.arch.*-reverse`，先从仓库事实反向生成架构 SSOT。
 
@@ -265,7 +268,19 @@ specs/<feature>/handoffs/implement/<run-id>/results/<shard>.json
 
 Final Code Review 会以 `task_type: code_review` receipt 记录已检查的设计、sequence、contract、quickstart 来源、数据副作用审查、授权范围内的一致性修复和真实 e2e 缺口。
 
-## 9. 可选：运行带 review gate 的 workflow
+## 9. 收敛验证
+
+实现后运行 converge，检查当前代码是否已经覆盖 feature artifacts，并把未完成工作追加回 `tasks.md`：
+
+```text
+/speckit.converge
+```
+
+如果 converge 追加了新任务，重新运行 `/speckit.implement`，再运行 `/speckit.converge`，直到它报告功能已收敛。
+
+大型项目可以分阶段实现和验证，例如先完成核心结构，再做交互行为，最后补齐评论、权限、分配等垂直切片，避免单次上下文过载。
+
+## 10. 可选：运行带 review gate 的 workflow
 
 如果你想体验可恢复的端到端 workflow：
 
