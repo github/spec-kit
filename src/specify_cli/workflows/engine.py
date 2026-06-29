@@ -307,7 +307,24 @@ def _validate_steps(
             wait_for = step_config.get("wait_for")
             if isinstance(wait_for, list):
                 for wid in wait_for:
-                    if isinstance(wid, str) and wid not in seen_ids:
+                    if not isinstance(wid, str):
+                        # A non-string entry (e.g. YAML `wait_for: [123]`) can
+                        # never match a real step id, so the join is silently
+                        # empty at runtime — surface it as a wiring error.
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' entries must "
+                            f"be step-id strings, got {type(wid).__name__} "
+                            f"({wid!r})."
+                        )
+                    elif wid == step_id:
+                        # The fan-in's own id is already in seen_ids by now, so
+                        # a self-reference would pass the membership check below
+                        # while still producing an empty join at runtime.
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' references "
+                            f"itself; a fan-in cannot wait for its own results."
+                        )
+                    elif wid not in seen_ids:
                         errors.append(
                             f"Fan-in step {step_id!r}: 'wait_for' references "
                             f"unknown or not-yet-declared step id {wid!r}."

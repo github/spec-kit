@@ -2057,6 +2057,41 @@ steps:
             "unknown or not-yet-declared step id 'later'" in e for e in errors
         )
 
+    def test_self_reference_is_rejected(self):
+        # A fan-in's own id is in scope by the time it is validated, so a
+        # self-reference slips past the membership check while still producing
+        # an empty join at runtime.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: collect
+    type: fan-in
+    wait_for: [collect]
+""")
+        assert any(
+            "references itself" in e and "collect" in e for e in errors
+        )
+
+    def test_non_string_wait_for_entry_is_rejected(self):
+        # A non-string entry (e.g. YAML `wait_for: [123]`) can never match a
+        # real step id, so it must be flagged rather than silently ignored.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: collect
+    type: fan-in
+    wait_for: [123]
+""")
+        assert any(
+            "must be step-id strings" in e and "int" in e for e in errors
+        )
+
 
 # ===== Workflow Definition Tests =====
 
