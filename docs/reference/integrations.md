@@ -152,6 +152,47 @@ is `null` when no installed integration set can be evaluated, such as when the
 integration state is missing, unreadable, lacks a valid recorded integration
 list, or records no installed integrations.
 
+## Catalog Management
+
+Integration catalogs control where `search` and `install` look for integrations. Catalogs are checked in priority order.
+
+### List Catalogs
+
+```bash
+specify integration catalog list
+```
+
+Shows the active catalog sources. Project-level sources are removable; built-in sources are shown for reference.
+
+### Add a Catalog
+
+```bash
+specify integration catalog add <url>
+```
+
+| Option          | Description                   |
+| --------------- | ----------------------------- |
+| `--name <name>` | Optional name for the catalog |
+
+Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
+
+### Remove a Catalog
+
+```bash
+specify integration catalog remove <index>
+```
+
+Removes a project catalog source by its 0-based index in `catalog list`.
+
+### Catalog Resolution Order
+
+Catalogs are resolved in this order (first match wins):
+
+1. **Environment variable** — `SPECKIT_INTEGRATION_CATALOG_URL` overrides all catalogs
+2. **Project config** — `.specify/integration-catalogs.yml`
+3. **User config** — `~/.specify/integration-catalogs.yml`
+4. **Built-in defaults** — official catalog + community catalog
+
 ## Integration-Specific Options
 
 Some integrations accept additional options via `--integration-options`:
