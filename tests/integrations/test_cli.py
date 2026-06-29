@@ -115,6 +115,34 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
+    def test_init_here_nonempty_noninteractive_errors_with_force_guidance(self, tmp_path, monkeypatch):
+        """`init --here` on a non-empty directory must not block on a confirmation
+        prompt when there is no interactive terminal: it should fail fast with
+        guidance to use --force, instead of reading EOF and aborting unhelpfully."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.commands import init as init_mod
+
+        # Deterministically exercise the non-interactive branch.
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: False)
+
+        project = tmp_path / "nonempty-here"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "--force" in result.output
+        # Aborted before scaffolding: the pre-existing file is untouched.
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
     def test_integration_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
