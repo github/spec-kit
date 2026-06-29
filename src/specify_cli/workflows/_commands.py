@@ -89,6 +89,35 @@ def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     )
 
 
+def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
+    """Validate the per-id install directory before any write and return it.
+
+    Installs write to ``workflows_dir / <id> / workflow.yml``. The ``<id>``
+    segment comes from a workflow YAML or catalog key, so it must be checked
+    before ``mkdir``/copy/download follows a symlink outside the project root.
+    Rejects, with a clean ``typer.Exit``:
+
+    - an ``<id>`` that escapes ``workflows_dir`` (path traversal);
+    - an ``<id>`` that is a symlink or an existing non-directory
+      (the latter would otherwise make ``mkdir`` raise);
+    - an ``<id>/workflow.yml`` leaf that is a symlink.
+    """
+    dest_dir = workflows_dir / workflow_id
+    try:
+        dest_dir.resolve().relative_to(workflows_dir.resolve())
+    except ValueError:
+        console.print(f"[red]Error:[/red] Invalid workflow ID: {workflow_id!r}")
+        raise typer.Exit(1)
+    _reject_unsafe_dir(dest_dir, f".specify/workflows/{workflow_id}")
+    if (dest_dir / "workflow.yml").is_symlink():
+        console.print(
+            "[red]Error:[/red] Refusing to write through symlinked "
+            f".specify/workflows/{workflow_id}/workflow.yml"
+        )
+        raise typer.Exit(1)
+    return dest_dir
+
+
 # Root helper re-fetched at call time so test monkeypatching of
 # `specify_cli._require_specify_project` keeps working after the move.
 def _require_specify_project(*args, **kwargs):
@@ -528,7 +557,7 @@ def workflow_add(
                 console.print(f"  \u2022 {err}")
             raise typer.Exit(1)
 
-        dest_dir = workflows_dir / definition.id
+        dest_dir = _safe_workflow_id_dir(workflows_dir, definition.id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         import shutil
         shutil.copy2(yaml_path, dest_dir / "workflow.yml")
@@ -658,13 +687,9 @@ def workflow_add(
         )
         raise typer.Exit(1)
 
-    workflow_dir = workflows_dir / source
-    # Validate that source is a safe directory name (no path traversal)
-    try:
-        workflow_dir.resolve().relative_to(workflows_dir.resolve())
-    except ValueError:
-        console.print(f"[red]Error:[/red] Invalid workflow ID: {source!r}")
-        raise typer.Exit(1)
+    # Reject path traversal, symlinked <id>, and a symlinked workflow.yml leaf
+    # before any mkdir/download writes beneath the install directory.
+    workflow_dir = _safe_workflow_id_dir(workflows_dir, source)
     workflow_file = workflow_dir / "workflow.yml"
 
     try:

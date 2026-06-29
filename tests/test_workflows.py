@@ -5338,6 +5338,71 @@ class TestWorkflowAddSymlinkGuard:
         assert "symlinked .specify/workflows" in result.output
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_refuses_symlinked_id_dir(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """A symlinked <id> install dir must not let a copy escape the project root."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        outside = temp_dir.parent / "outside-id-target"
+        outside.mkdir(parents=True, exist_ok=True)
+        # <id> from the YAML below is "test-workflow"; plant it as a symlink.
+        (temp_dir / ".specify" / "workflows" / "test-workflow").symlink_to(
+            outside, target_is_directory=True
+        )
+        src = temp_dir / "incoming.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        # No write-through: the symlink target stays empty.
+        assert not (outside / "workflow.yml").exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_refuses_symlinked_workflow_yml_leaf(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """A symlinked <id>/workflow.yml must not let copy2 write through the link."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        id_dir = temp_dir / ".specify" / "workflows" / "test-workflow"
+        id_dir.mkdir(parents=True)
+        outside_file = temp_dir.parent / "outside-leaf-target.yml"
+        outside_file.write_text("original\n", encoding="utf-8")
+        (id_dir / "workflow.yml").symlink_to(outside_file)
+        src = temp_dir / "incoming.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        # Rich may wrap the message; assert on the unbroken path fragment.
+        assert "test-workflow/workflow.yml" in result.output
+        assert "symlinked" in result.output
+        # The link target content is untouched.
+        assert outside_file.read_text(encoding="utf-8") == "original\n"
+
+    def test_add_refuses_non_directory_id(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """An <id> path that already exists as a file must fail cleanly, not crash."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        wf_dir = temp_dir / ".specify" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "test-workflow").write_text("not a dir", encoding="utf-8")
+        src = temp_dir / "incoming.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        assert "exists but is not a directory" in result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_list_refuses_symlinked_runs_dir(self, temp_dir, monkeypatch):
         """workflow commands using the project shim must refuse symlinked run storage."""
         from typer.testing import CliRunner
