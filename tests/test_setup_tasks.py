@@ -851,7 +851,9 @@ def _run_bash_check_dir(repo: Path, target: Path) -> subprocess.CompletedProcess
     script = repo / ".specify" / "scripts" / "bash" / "common.sh"
     return subprocess.run(
         ["bash", "-c", 'source "$1"; check_dir "$2" "contracts/"', "bash", str(script), str(target)],
-        cwd=repo, capture_output=True, text=True, check=False, env=_clean_env(),
+        # check_dir echoes the non-ASCII markers ✓/✗; decode UTF-8 explicitly so
+        # the result does not depend on the platform locale (e.g. cp1252 on Windows).
+        cwd=repo, capture_output=True, text=True, encoding="utf-8", check=False, env=_clean_env(),
     )
 
 
@@ -862,7 +864,7 @@ def _run_powershell_test_dir(repo: Path, target: Path) -> subprocess.CompletedPr
         [exe, "-NoProfile", "-Command",
          '& { param($common, $dir) . $common; Test-DirHasFiles -Path $dir -Description "contracts/" }',
          str(script), str(target)],
-        cwd=repo, capture_output=True, text=True, check=False, env=_clean_env(),
+        cwd=repo, capture_output=True, text=True, encoding="utf-8", check=False, env=_clean_env(),
     )
 
 
