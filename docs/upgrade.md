@@ -242,7 +242,7 @@ mv /tmp/constitution-backup.md .specify/memory/constitution.md
 
 ### Scenario 3: "I see duplicate slash commands in my IDE"
 
-This happens with IDE-based agents (Kilo Code, Windsurf, Roo Code, etc.).
+This happens with IDE-based agents (Kilo Code, Windsurf, etc.).
 
 ```bash
 # Find the agent folder (example: .kilocode/rules/)
