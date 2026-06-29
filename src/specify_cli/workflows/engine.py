@@ -536,6 +536,10 @@ class WorkflowEngine:
     def __init__(self, project_root: Path | None = None) -> None:
         self.project_root = project_root or Path(".")
         self.on_step_start: Any = None  # Callable[[str, str], None] | None
+        # Serializes on_step_start so a concurrent fan-out can't interleave the
+        # callback's output (the CLI sets it to a console.print lambda). Uncontended
+        # for sequential runs.
+        self._callback_lock = threading.Lock()
 
     def load_workflow(self, source: str | Path) -> WorkflowDefinition:
         """Load a workflow from an installed ID or a local YAML path.
@@ -766,7 +770,8 @@ class WorkflowEngine:
             # otherwise stay silent (library-safe default).
             label = step_config.get("command", "") or step_type
             if self.on_step_start is not None:
-                self.on_step_start(step_id, label)
+                with self._callback_lock:
+                    self.on_step_start(step_id, label)
 
             step_impl = registry.get(step_type)
             if not step_impl:
