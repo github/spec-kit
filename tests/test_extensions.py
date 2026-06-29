@@ -40,6 +40,10 @@ from specify_cli.extensions import (
     version_satisfies,
 )
 
+# Minimal valid ZIP (empty end-of-central-directory record). Passes
+# zipfile.is_zipfile() so --from download tests exercise the content guard.
+_MINIMAL_ZIP_BYTES = b"PK\x05\x06" + b"\x00" * 18
+
 
 def can_create_symlink(tmp_path: Path) -> bool:
     """Return True when the current platform/user can create file symlinks."""
@@ -5378,7 +5382,7 @@ class TestExtensionAddCLI:
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"PK\x03\x04zip-bytes")), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
              patch.object(ExtensionRegistry, "get", return_value={}):
             result = runner.invoke(
@@ -5514,7 +5518,7 @@ class TestExtensionAddCLI:
                 return FakeResponse(body)
             seen["url"] = url
             seen["headers"] = extra_headers
-            return FakeResponse(b"PK\x03\x04payload")
+            return FakeResponse(_MINIMAL_ZIP_BYTES)
 
         def fake_install(self_obj, zip_path, speckit_version, priority=10, force=False):
             return SimpleNamespace(
@@ -5615,7 +5619,7 @@ class TestExtensionAddCLI:
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"PK\x03\x04zip-bytes")), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
             result = runner.invoke(
                 app,
@@ -5624,7 +5628,7 @@ class TestExtensionAddCLI:
             )
 
         assert result.exit_code == 0
-        assert installed["zip_bytes"] == b"PK\x03\x04zip-bytes"
+        assert installed["zip_bytes"] == _MINIMAL_ZIP_BYTES
         assert installed["zip_path"].resolve().is_relative_to(downloads_dir.resolve())
         assert installed["zip_path"].name.startswith("extension-url-download-")
         assert not installed["zip_path"].exists()

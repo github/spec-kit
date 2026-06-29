@@ -482,6 +482,7 @@ def extension_add(
 
             elif from_url:
                 # Install from URL (ZIP file)
+                import io
                 import urllib.error
 
                 console.print(f"Downloading from {safe_url}...")
@@ -515,7 +516,7 @@ def extension_add(
                     ) as response:
                         zip_data = response.read()
 
-                    if not zip_data.startswith(b"PK"):
+                    if not zipfile.is_zipfile(io.BytesIO(zip_data)):
                         console.print(
                             f"[red]Error:[/red] {safe_url} did not return a ZIP archive "
                             f"(got {len(zip_data)} bytes). This usually means the request "
