@@ -10,7 +10,7 @@
       "description": "Alquimia AI CLI integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
-      "tags": ["cli", "alquimia"]
+      "tags": ["alquimia"]
     },
     "claude": {
       "id": "claude",
