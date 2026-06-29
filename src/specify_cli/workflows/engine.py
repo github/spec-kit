@@ -386,6 +386,11 @@ class RunState:
         # mutate the dict while save() is serializing it (which would raise
         # "dictionary changed size during iteration").
         self._lock = threading.Lock()
+        # Serializes append_log's list append + log.jsonl write so concurrent
+        # fan-out workers cannot interleave or corrupt log lines. Kept separate
+        # from _lock so frequent logging never contends with state saves; since
+        # append_log is never called while _lock is held, the two never nest.
+        self._log_lock = threading.Lock()
         self.inputs: dict[str, Any] = {}
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
@@ -506,14 +511,18 @@ class RunState:
         return state
 
     def append_log(self, entry: dict[str, Any]) -> None:
-        """Append a log entry to the run log."""
-        entry["timestamp"] = datetime.now(timezone.utc).isoformat()
-        self.log_entries.append(entry)
+        """Append a log entry to the run log.
 
+        Held under ``_log_lock`` so concurrent fan-out workers serialize their
+        list append and ``log.jsonl`` write rather than interleaving lines.
+        """
+        entry["timestamp"] = datetime.now(timezone.utc).isoformat()
         runs_dir = self.runs_dir
         runs_dir.mkdir(parents=True, exist_ok=True)
-        with open(runs_dir / "log.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        with self._log_lock:
+            self.log_entries.append(entry)
+            with open(runs_dir / "log.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
 
 
 # -- Workflow Engine ------------------------------------------------------
@@ -1001,7 +1010,10 @@ class WorkflowEngine:
             self._execute_steps(
                 [item_step], item_ctx, state, registry, step_offset=-1,
             )
-            return context.steps.get(item_step["id"], {}).get("output", {})
+            # Read back through the context that was actually executed against,
+            # not the outer closure — clearer and robust if StepContext copying
+            # ever stops sharing the steps dict by reference.
+            return item_ctx.steps.get(item_step["id"], {}).get("output", {})
 
         # Sequential path — identical to the historical behavior.
         if workers <= 1:

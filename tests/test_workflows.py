@@ -2055,23 +2055,21 @@ class TestFanOutConcurrency:
         assert completion == list(reversed(range(n)))
 
     def test_concurrency_is_real(self, tmp_path):
-        import time
+        import threading
 
+        # Deterministic proof of real parallelism (no wall-clock threshold to
+        # tune or flake): every item must reach the barrier before any may pass.
+        # Sequential execution would block the first item forever — the barrier
+        # times out, raises BrokenBarrierError, and fails the test.
         n = 4
-        delay = 0.2
+        barrier = threading.Barrier(n, timeout=5)
 
         def on_item(item):
-            time.sleep(delay)
+            barrier.wait()
             return None
 
-        # Monotonic clock (immune to wall-clock adjustments). All n items run
-        # concurrently, so elapsed is ~one delay; a generous bound well under the
-        # serialized baseline keeps a clear gap while tolerating slow/loaded CI.
-        serialized = n * delay
-        t0 = time.monotonic()
-        self._run(tmp_path, list(range(n)), n, on_item)
-        elapsed = time.monotonic() - t0
-        assert elapsed < serialized * 0.6  # serialized would be >= n*delay
+        results, _ = self._run(tmp_path, list(range(n)), n, on_item)
+        assert results == [{"seen": i} for i in range(n)]
 
     @pytest.mark.parametrize("bad", [0, -1, None, "abc", 1.0])
     def test_invalid_max_concurrency_coerces_to_sequential(self, tmp_path, bad):
