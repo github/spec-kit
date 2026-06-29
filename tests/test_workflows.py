@@ -226,6 +226,27 @@ class TestExpressions:
         result = evaluate_expression("Feature: {{ inputs.name }} done", ctx)
         assert result == "Feature: login done"
 
+    def test_multi_expression_no_surrounding_text(self):
+        """Two adjacent expressions with no literal text must interpolate each,
+        not collapse to None via the fullmatch fast path (#3208)."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"issue": "23"}, run_id="47c5eb4b")
+        result = evaluate_expression(
+            "{{ context.run_id }} {{ inputs.issue }}", ctx
+        )
+        assert result == "47c5eb4b 23"
+
+    def test_multi_expression_adjacent_no_separator(self):
+        """Back-to-back expressions with no separator still interpolate (#3208)."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"a": "foo", "b": "bar"})
+        result = evaluate_expression("{{ inputs.a }}{{ inputs.b }}", ctx)
+        assert result == "foobar"
+
     def test_comparison_equals(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext

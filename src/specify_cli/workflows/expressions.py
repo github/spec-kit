@@ -383,10 +383,21 @@ def evaluate_expression(template: str, context: Any) -> Any:
 
     namespace = _build_namespace(context)
 
-    # Single expression: return typed value
-    match = _EXPR_PATTERN.fullmatch(template.strip())
-    if match:
-        return _evaluate_simple_expression(match.group(1).strip(), namespace)
+    # Single expression: return typed value (preserving type).
+    #
+    # Guard the fast path on there being exactly one ``{{`` block. The pattern
+    # uses a non-greedy body ``(.+?)``, but ``fullmatch`` defeats non-greediness:
+    # for ``"{{ a }} {{ b }}"`` it still matches, expanding the body to capture
+    # everything between the first ``{{`` and the last ``}}`` (``"a }} {{ b"``).
+    # That garbage body fails resolution and returns ``None``, bypassing the
+    # ``sub()`` interpolation path that would handle each expression correctly.
+    # Only take the typed fast path for genuine single-expression templates
+    # (issue #3208).
+    stripped = template.strip()
+    if stripped.count("{{") == 1:
+        match = _EXPR_PATTERN.fullmatch(stripped)
+        if match:
+            return _evaluate_simple_expression(match.group(1).strip(), namespace)
 
     # Multi-expression: string interpolation
     def _replacer(m: re.Match[str]) -> str:
