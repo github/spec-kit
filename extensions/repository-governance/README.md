@@ -12,13 +12,15 @@ Generate project-governance projections for the active Spec Kit agent platform t
 - Generate the resolved active agent platform target when missing.
 - Update existing active target project-governance projections.
 - Distill detected repository areas into action rules.
-- Capture repository facts as vertical SSOT evidence.
+- Capture repository facts as vertical SSOT evidence and routing input.
+- Structure generated instructions with Copilot-like repository-wide, path-scope, and agent-harness layers.
 - Project agent platform adapter rules from Spec Kit integration metadata.
 - Build a scenario capability index for repository-local skills and MCP-backed external tool evidence.
 - Analyze repository areas to depth 2 only.
 - Include hidden and cache directories in repository area governance.
 - Enforce one primary responsibility per directory.
 - Overwrite the active agent platform target on generation.
+- Do not generate Copilot `.github/instructions/*.instructions.md` companion files.
 - Generate repository evidence from the current repository state on every run.
 - Review only the active agent platform target.
 - Remove legacy managed sections only from non-active context files enumerated by `CONTEXT_FILES`.
@@ -26,7 +28,7 @@ Generate project-governance projections for the active Spec Kit agent platform t
 ## Install
 
 ```bash
-specify extension add repository-governance --from https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v3.0.0.zip
+specify extension add repository-governance --from https://github.com/bigsmartben/spec-kit-agent-governance/archive/refs/tags/v3.0.1.zip
 ```
 
 Local development:
@@ -67,6 +69,14 @@ uv run python tools/build_repository_governance_zip.py
 - Code Style SSOT evidence from formatter, lint, type-check, and test configuration.
 - Directory Structure SSOT evidence from repository areas scanned to depth 2.
 - Agent Harness SSOT evidence from active agent context files, Spec Kit metadata, repository-local skills, and MCP config candidates.
+
+## Instruction Layers
+
+- Repository-wide instructions summarize authority, active-target scope, write boundaries, validation commands, and handoff expectations.
+- SSOT routing maps task types and path families to Architecture, Engineering, Code Style, Directory Structure, and Agent Harness SSOT entries.
+- Path and task scope rules keep generated guidance deterministic without expanding the write surface.
+- Agent harness instructions cover adapter behavior, repository-local skills, MCP discovery, external tools, permissions, and failure handling.
+- Copilot's instruction model is a structural reference only; this extension still emits one active target file.
 
 ## Evidence Coverage
 
