@@ -36,6 +36,7 @@ Normative authority:
 
 - Preserve original design sources and record checksums before extraction.
 - Extract visual requirements as traceable engineering input, not as unsupported prose summaries or downstream-specific schema projections.
+- Use bounded inference for dirty or incomplete design sources: observed claims are source-backed facts; inferred claims require explicit rules and high confidence; candidate claims are reference-only; unsupported claims must remain blocked.
 - Mark low, medium, or high fidelity explicitly and apply the matching extraction rules.
 - Use stable provider-neutral evidence IDs and source refs. Do not invent downstream-owned item IDs, requirement IDs, schema fields, code component names, or product semantics.
 - Do not mark intake ready unless source integrity, requirement traceability, fidelity proof, and intake parity planning pass.
@@ -82,7 +83,11 @@ Normative authority:
    - figma: complete descendant metadata, node inventory, variables/styles/components, screenshots, and assets
 6. Classify source-domain scenario coverage using `templates/intake-visual-design-contract.md`; do not define additional scenario categories in this command.
 7. Build `visual-requirements.yaml` according to `templates/schemas/visual-requirements.schema.json` and the semantic policies in `templates/intake-visual-design-contract.md`.
-8. For unavailable required evidence, record a structured gap or blocker instead of omitting the field.
+   - Record direct facts as `evidence_type: observed`.
+   - Promote only rule-backed, high-confidence derived claims to `evidence_type: inferred` with `inference_rule`, `confidence_method`, `score_breakdown`, `downstream_use: accepted_claim`, and `blocking_conditions`.
+   - Keep low- or medium-confidence completions as `evidence_type: candidate` with `downstream_use: reference_only` and `missing_evidence`.
+   - Record unsupported or conflicting claims as `evidence_type: unsupported` with `blocker_code`, `reason`, `missing_evidence`, and `blockers`.
+8. For unavailable required evidence, record a structured gap or blocker instead of omitting the field. Do not infer business rules, permissions, form validation, error copy, dynamic states, data sources, analytics, security, or compliance behavior from visual appearance alone.
 9. Create or update `visual-evidence-packet.md` from `templates/intake-visual-design-evidence-packet-template.md` with readiness front matter and human-readable evidence notes; keep structured records in `visual-requirements.yaml`. Preserve an existing `figma-evidence-packet.md` only as a legacy compatibility alias when already configured by the host project.
 10. Add an intake parity plan that records source-side comparison targets, methods, thresholds, accepted exceptions, and blocking difference categories without defining implementation capture artifacts or downstream delivery approval.
 11. Run validation before reporting readiness.

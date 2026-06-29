@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = ROOT / "scripts" / "python" / "validate_visual_design_intake.py"
 PRD_VALIDATOR = ROOT / "scripts" / "python" / "validate_prd_intake.py"
 TEST_CASE_VALIDATOR = ROOT / "scripts" / "python" / "validate_test_cases_intake.py"
+HTML_SSOT_VALIDATOR = ROOT / "scripts" / "python" / "validate_html_ssot.py"
 
 
 def write_visual_intake_fixture(intake: Path, source_type: str, fidelity: str, file_name: str):
@@ -305,6 +306,90 @@ def write_image_visual_intake_fixture(intake: Path):
     write_visual_intake_fixture(intake, "image", "low", "wireframe.png")
 
 
+def write_html_ssot_fixture(html_dir: Path):
+    visual_intake = html_dir.parent
+    write_visual_intake_fixture(visual_intake, "figma", "high", "figma-source.txt")
+    html_dir.mkdir(parents=True, exist_ok=True)
+    screenshots = html_dir / "screenshots"
+    screenshots.mkdir(exist_ok=True)
+    (screenshots / "home-desktop.png").write_bytes(b"fake-png")
+    asset = html_dir / "logo.svg"
+    asset.write_text("<svg></svg>", encoding="utf-8")
+
+    import hashlib
+
+    digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+    (html_dir / "visual-spec.html").write_text(
+        '<main data-figma-node-id="1" data-spec-role="home-page">'
+        '<button data-figma-node-id="2" data-acceptance-unit="component-state">Save</button>'
+        "</main>",
+        encoding="utf-8",
+    )
+    (html_dir / "figma-map.json").write_text(
+        json.dumps(
+            {
+                "source_intake_refs": ["../visual-requirements.yaml#VR-001"],
+                "mappings": [
+                    {
+                        "figma_node_id": "1",
+                        "selector": '[data-figma-node-id="1"]',
+                        "acceptance_unit": "page",
+                        "required": True,
+                        "states": ["default"],
+                        "viewports": ["desktop"],
+                        "content_sample": "Home",
+                        "container_constraint": "page",
+                    },
+                    {
+                        "figma_node_id": "2",
+                        "selector": '[data-figma-node-id="2"]',
+                        "acceptance_unit": "component-state",
+                        "required": True,
+                        "states": ["default"],
+                        "viewports": ["desktop"],
+                        "content_sample": "Save",
+                        "container_constraint": "header",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (html_dir / "assets-manifest.json").write_text(
+        json.dumps(
+            {
+                "assets": [
+                    {
+                        "id": "asset-logo",
+                        "path": "logo.svg",
+                        "role": "brand",
+                        "source_refs": ["figma://node/logo"],
+                        "sha256": digest,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (html_dir / "coverage-report.md").write_text(
+        "---\n"
+        "ready_gate: PASS\n"
+        "blockers: []\n"
+        "required_nodes_total: 2\n"
+        "required_nodes_covered: 2\n"
+        "component_state_coverage_complete: true\n"
+        "page_coverage_complete: true\n"
+        "asset_traceability_complete: true\n"
+        "viewport_capture_complete: true\n"
+        "visual_diff_status: pass\n"
+        "accepted_exceptions: []\n"
+        "---\n"
+        "# Coverage Report\n",
+        encoding="utf-8",
+    )
+    (html_dir / "known-gaps.md").write_text("# Known Gaps\n\nNone.\n", encoding="utf-8")
+
+
 def test_manifest_loads_with_spec_kit_checkout():
     spec_kit_src = ROOT.parent / "spec-kit" / "src"
     if not spec_kit_src.exists():
@@ -318,8 +403,8 @@ def test_manifest_loads_with_spec_kit_checkout():
         "from specify_cli.extensions import ExtensionManifest; "
         "m=ExtensionManifest(Path('extension.yml')); "
         "assert m.id == 'intake'; "
-        "assert len(m.commands) == 3; "
-        "assert {c['name'] for c in m.commands} == {'speckit.intake.visual-design', 'speckit.intake.prd', 'speckit.intake.test-cases'}; "
+        "assert len(m.commands) == 4; "
+        "assert {c['name'] for c in m.commands} == {'speckit.intake.visual-design', 'speckit.intake.figma2htmlssot', 'speckit.intake.prd', 'speckit.intake.test-cases'}; "
         "assert m.hooks"
     )
 
@@ -332,6 +417,21 @@ def test_manifest_loads_with_spec_kit_checkout():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_html_ssot_schema_and_validator_paths_are_declared():
+    extension = ROOT / "extension.yml"
+    config = ROOT / "config-template.yml"
+    for document in (extension.read_text(encoding="utf-8-sig"), config.read_text(encoding="utf-8")):
+        assert "scripts/python/validate_html_ssot.py" in document
+        assert "templates/schemas/figma-map.schema.json" in document
+        assert "templates/schemas/assets-manifest.schema.json" in document
+        assert "templates/schemas/html-ssot-coverage.schema.json" in document
+
+    assert HTML_SSOT_VALIDATOR.exists()
+    assert (ROOT / "templates" / "schemas" / "figma-map.schema.json").exists()
+    assert (ROOT / "templates" / "schemas" / "assets-manifest.schema.json").exists()
+    assert (ROOT / "templates" / "schemas" / "html-ssot-coverage.schema.json").exists()
 
 
 def test_validator_blocks_missing_directory():
@@ -831,6 +931,175 @@ def test_validator_blocks_unsupported_visual_source_type():
     shutil.rmtree(work_dir)
 
 
+def test_visual_validator_blocks_unbounded_inferred_claim():
+    work_dir = ROOT / ".tmp" / "test-validator-unbounded-inference"
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    intake = work_dir / "visual-design"
+    write_visual_intake_fixture(intake, "image", "medium", "wireframe.png")
+
+    text = (intake / "visual-requirements.yaml").read_text(encoding="utf-8")
+    text = text.replace("    evidence_type: observed", "    evidence_type: inferred")
+    (intake / "visual-requirements.yaml").write_text(text, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(VALIDATOR), "--json", str(intake)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert "VISUAL_SCHEMA_INVALID" in payload["blockers"]
+    assert "VISUAL_INFERENCE_CONTRACT_INVALID" in payload["blockers"]
+    assert payload["details"]["visual_requirements"]["evidence_type_counts"]["inferred"] == 1
+
+    shutil.rmtree(work_dir)
+
+
+def test_visual_validator_blocks_candidate_promoted_to_accepted_claim():
+    work_dir = ROOT / ".tmp" / "test-validator-candidate-promoted"
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    intake = work_dir / "visual-design"
+    write_visual_intake_fixture(intake, "image", "medium", "wireframe.png")
+
+    text = (intake / "visual-requirements.yaml").read_text(encoding="utf-8")
+    text = text.replace("    evidence_type: observed", "    evidence_type: candidate")
+    text = text.replace("    confidence: high", "    confidence: medium")
+    text = text.replace(
+        f"    fidelity_level: medium",
+        "\n".join(
+            [
+                "    inference_rule: visual_button_shape + short_text_label",
+                "    confidence_method: rule_score_v1",
+                "    score_breakdown:",
+                "      - signal: visual_button_shape",
+                "        weight: 0.25",
+                "      - signal: short_text_label",
+                "        weight: 0.2",
+                "    downstream_use: accepted_claim",
+                "    missing_evidence:",
+                "      - component_instance",
+                "    blocking_conditions:",
+                "      - promote only after component or prototype evidence exists",
+                "    fidelity_level: medium",
+            ]
+        ),
+    )
+    (intake / "visual-requirements.yaml").write_text(text, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(VALIDATOR), "--json", str(intake)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert "VISUAL_SCHEMA_INVALID" in payload["blockers"]
+    assert "VISUAL_INFERENCE_CONTRACT_INVALID" in payload["blockers"]
+
+    shutil.rmtree(work_dir)
+
+
+def test_visual_validator_blocks_unsupported_claim_even_when_packet_says_pass():
+    work_dir = ROOT / ".tmp" / "test-validator-unsupported-claim"
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    intake = work_dir / "visual-design"
+    write_visual_intake_fixture(intake, "figma", "high", "figma-source.txt")
+
+    text = (intake / "visual-requirements.yaml").read_text(encoding="utf-8")
+    text = text.replace("    evidence_type: observed", "    evidence_type: unsupported")
+    text = text.replace(
+        "    engineering_action: Implement matching hierarchy",
+        "\n".join(
+            [
+                "    blocker_code: FIGMA_UNSUPPORTED_STATE_INFERENCE",
+                "    reason: No variant, prototype state, naming convention, or source note defines loading behavior.",
+                "    downstream_use: blocked",
+                "    missing_evidence:",
+                "      - variant_state",
+                "      - prototype_state",
+                "    blockers:",
+                "      - FIGMA_UNSUPPORTED_STATE_INFERENCE",
+                "    engineering_action: Keep the loading state unresolved",
+            ]
+        ),
+    )
+    (intake / "visual-requirements.yaml").write_text(text, encoding="utf-8")
+
+    metadata = intake / "figma-metadata.part-001.xml"
+    metadata.write_text("<figma><node id=\"1\" name=\"Root\" /></figma>\n", encoding="utf-8")
+
+    import hashlib
+
+    digest = hashlib.sha256(metadata.read_bytes()).hexdigest()
+    (intake / "figma-metadata.index.yaml").write_text(
+        "\n".join(
+            [
+                "file_url: https://www.figma.com/file/example",
+                "file_key: example",
+                "page_id: page-1",
+                "selected_node_ids: ['1']",
+                "captured_at: '2026-06-22T00:00:00Z'",
+                "mcp_tool: get_metadata",
+                "design_version_or_timestamp: '2026-06-22T00:00:00Z'",
+                "selected_subtree_complete: true",
+                "raw_metadata_complete: true",
+                "expected_root_node_ids: ['1']",
+                "captured_root_node_ids: ['1']",
+                "missing_root_node_ids: []",
+                "gap_count: 0",
+                "gaps: []",
+                "shards:",
+                "  - path: figma-metadata.part-001.xml",
+                f"    byte_size: {metadata.stat().st_size}",
+                f"    sha256: {digest}",
+                "    root_node_ids: ['1']",
+                "    node_count: 1",
+                "    truncated: false",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (intake / "figma-node-inventory.yaml").write_text(
+        "\n".join(
+            [
+                "raw_node_count: 1",
+                "inventory_node_count: 1",
+                "excluded_node_count: 0",
+                "missing_node_count: 0",
+                "duplicate_node_count: 0",
+                "truncated_raw_evidence: false",
+                "node_inventory_coverage: 100%",
+                "parity_passed: true",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(VALIDATOR), "--json", str(intake)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert "VISUAL_BLOCKER_LINT_ERRORS" in payload["blockers"]
+    assert "VISUAL_READY_WITHOUT_EVIDENCE" in payload["blockers"]
+    assert payload["details"]["visual_requirements"]["evidence_type_counts"]["unsupported"] == 1
+
+    shutil.rmtree(work_dir)
+
+
 def test_validator_passes_complete_minimal_figma_intake():
     work_dir = ROOT / ".tmp" / "test-validator-pass"
     if work_dir.exists():
@@ -988,5 +1257,156 @@ def test_validator_blocks_legacy_figma_only_without_manifest():
     assert result.returncode == 1
     assert "VISUAL_SOURCE_MANIFEST_MISSING" in result.stdout
     assert "FIGMA_READY_WITHOUT_COMPLETENESS_PROOF" in result.stdout
+
+    shutil.rmtree(work_dir)
+
+
+def test_html_ssot_validator_passes_complete_minimal_bundle():
+    work_dir = ROOT / ".tmp" / "test-html-ssot-validator-pass"
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    html_dir = work_dir / "visual-design" / "figma2htmlssot"
+    write_html_ssot_fixture(html_dir)
+
+    result = subprocess.run(
+        [sys.executable, str(HTML_SSOT_VALIDATOR), str(html_dir)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "HTML SSOT readiness: PASS" in result.stdout
+
+    shutil.rmtree(work_dir)
+
+
+def test_html_ssot_validator_blocks_missing_directory():
+    result = subprocess.run(
+        [sys.executable, str(HTML_SSOT_VALIDATOR), "missing-dir"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "HTML_SSOT_REQUIRED_ARTIFACT_MISSING" in result.stdout
+
+
+def test_html_ssot_validator_blocks_source_intake_blocked():
+    work_dir = ROOT / ".tmp" / "test-html-ssot-source-blocked"
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    html_dir = work_dir / "visual-design" / "figma2htmlssot"
+    write_html_ssot_fixture(html_dir)
+    packet = html_dir.parent / "visual-evidence-packet.md"
+    packet.write_text(
+        "---\n"
+        "ready_gate: BLOCKED\n"
+        "blockers: [VISUAL_REQUIREMENTS_MISSING]\n"
+        "source_ref_count: 1\n"
+        "extracted_item_count: 0\n"
+        "generated_at: '2026-06-23T00:00:00Z'\n"
+        "---\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(HTML_SSOT_VALIDATOR), "--json", str(html_dir)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert "HTML_SSOT_SOURCE_INTAKE_BLOCKED" in payload["blockers"]
+
+    shutil.rmtree(work_dir)
+
+
+def test_html_ssot_validator_reports_schema_errors_in_json():
+    work_dir = ROOT / ".tmp" / "test-html-ssot-schema-error"
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    html_dir = work_dir / "visual-design" / "figma2htmlssot"
+    write_html_ssot_fixture(html_dir)
+    figma_map = json.loads((html_dir / "figma-map.json").read_text(encoding="utf-8"))
+    figma_map["mappings"][0].pop("selector")
+    (html_dir / "figma-map.json").write_text(json.dumps(figma_map), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(HTML_SSOT_VALIDATOR), "--json", str(html_dir)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert "HTML_SSOT_SCHEMA_INVALID" in payload["blockers"]
+    assert payload["details"]["schema_validation"]["figma_map"]["valid"] is False
+
+    shutil.rmtree(work_dir)
+
+
+@pytest.mark.parametrize(
+    ("edit_kind", "expected_blocker"),
+    [
+        ("missing_selector", "HTML_SSOT_FIGMA_NODE_COVERAGE_INCOMPLETE"),
+        ("component_state", "HTML_SSOT_COMPONENT_STATE_COVERAGE_INCOMPLETE"),
+        ("page", "HTML_SSOT_PAGE_COVERAGE_INCOMPLETE"),
+        ("asset", "HTML_SSOT_ASSET_TRACEABILITY_INCOMPLETE"),
+        ("viewport", "HTML_SSOT_VIEWPORT_CAPTURE_INCOMPLETE"),
+        ("visual_diff", "HTML_SSOT_VISUAL_DIFF_BLOCKED"),
+        ("known_gap", "HTML_SSOT_KNOWN_GAP_UNRESOLVED"),
+    ],
+)
+def test_html_ssot_validator_blocks_incomplete_coverage(edit_kind, expected_blocker):
+    work_dir = ROOT / ".tmp" / f"test-html-ssot-{edit_kind}"
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    html_dir = work_dir / "visual-design" / "figma2htmlssot"
+    write_html_ssot_fixture(html_dir)
+
+    if edit_kind == "missing_selector":
+        html = (html_dir / "visual-spec.html").read_text(encoding="utf-8")
+        (html_dir / "visual-spec.html").write_text(html.replace('data-figma-node-id="2"', ""), encoding="utf-8")
+    elif edit_kind == "component_state":
+        coverage = (html_dir / "coverage-report.md").read_text(encoding="utf-8")
+        (html_dir / "coverage-report.md").write_text(
+            coverage.replace("component_state_coverage_complete: true", "component_state_coverage_complete: false"),
+            encoding="utf-8",
+        )
+    elif edit_kind == "page":
+        figma_map = json.loads((html_dir / "figma-map.json").read_text(encoding="utf-8"))
+        figma_map["mappings"] = [item for item in figma_map["mappings"] if item["acceptance_unit"] != "page"]
+        (html_dir / "figma-map.json").write_text(json.dumps(figma_map), encoding="utf-8")
+    elif edit_kind == "asset":
+        assets = json.loads((html_dir / "assets-manifest.json").read_text(encoding="utf-8"))
+        assets["assets"][0]["source_refs"] = []
+        (html_dir / "assets-manifest.json").write_text(json.dumps(assets), encoding="utf-8")
+    elif edit_kind == "viewport":
+        shutil.rmtree(html_dir / "screenshots")
+        (html_dir / "screenshots").mkdir()
+    elif edit_kind == "visual_diff":
+        coverage = (html_dir / "coverage-report.md").read_text(encoding="utf-8")
+        (html_dir / "coverage-report.md").write_text(
+            coverage.replace("visual_diff_status: pass", "visual_diff_status: blocked"),
+            encoding="utf-8",
+        )
+    elif edit_kind == "known_gap":
+        (html_dir / "known-gaps.md").write_text("# Known Gaps\n\nBLOCKED: missing mobile state.\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, str(HTML_SSOT_VALIDATOR), "--json", str(html_dir)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.returncode == 1
+    assert expected_blocker in payload["blockers"]
 
     shutil.rmtree(work_dir)

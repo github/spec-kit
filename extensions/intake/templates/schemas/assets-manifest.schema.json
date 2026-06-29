@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/assets-manifest.schema.json",
+  "title": "HTML SSOT Assets Manifest",
+  "type": "object",
+  "required": ["assets"],
+  "properties": {
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "role", "source_refs", "sha256"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "minLength": 1 },
+          "source_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "sha256": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

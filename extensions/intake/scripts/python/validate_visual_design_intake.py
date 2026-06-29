@@ -37,7 +37,17 @@ BLOCKERS = {
     "VISUAL_READY_WITHOUT_EVIDENCE": "VISUAL_READY_WITHOUT_EVIDENCE",
     "VISUAL_EVIDENCE_PACKET_MISSING": "VISUAL_EVIDENCE_PACKET_MISSING",
     "VISUAL_BLOCKER_LINT_ERRORS": "VISUAL_BLOCKER_LINT_ERRORS",
+    "VISUAL_INFERENCE_CONTRACT_INVALID": "VISUAL_INFERENCE_CONTRACT_INVALID",
     "VISUAL_SCHEMA_INVALID": "VISUAL_SCHEMA_INVALID",
+    "FIGMA_RENDER_NODE_MISMATCH": "FIGMA_RENDER_NODE_MISMATCH",
+    "FIGMA_HIDDEN_LAYER_POLLUTION": "FIGMA_HIDDEN_LAYER_POLLUTION",
+    "FIGMA_NON_INSTANCE_COMPONENT": "FIGMA_NON_INSTANCE_COMPONENT",
+    "FIGMA_PROTOTYPE_METADATA_MISSING": "FIGMA_PROTOTYPE_METADATA_MISSING",
+    "FIGMA_UNSUPPORTED_STATE_INFERENCE": "FIGMA_UNSUPPORTED_STATE_INFERENCE",
+    "FIGMA_BUSINESS_RULE_UNSUPPORTED": "FIGMA_BUSINESS_RULE_UNSUPPORTED",
+    "FIGMA_INTERACTION_CONFLICT": "FIGMA_INTERACTION_CONFLICT",
+    "FIGMA_RESPONSIVE_RULE_MISSING": "FIGMA_RESPONSIVE_RULE_MISSING",
+    "FIGMA_LOW_CONFIDENCE_CANDIDATE": "FIGMA_LOW_CONFIDENCE_CANDIDATE",
     "RAW_METADATA_MISSING": "FIGMA_RAW_METADATA_MISSING",
     "RAW_METADATA_SUMMARY_SUBSTITUTION": "FIGMA_RAW_METADATA_SUMMARY_SUBSTITUTION",
     "RAW_METADATA_TRUNCATED": "FIGMA_RAW_METADATA_TRUNCATED",
@@ -341,7 +351,14 @@ def validate_visual_requirements(
         "acceptance_check",
         "fidelity_level",
     ]
-    allowed_evidence_types = {"observed", "inferred", "missing", "out_of_scope"}
+    allowed_evidence_types = {
+        "observed",
+        "inferred",
+        "candidate",
+        "unsupported",
+        "missing",
+        "out_of_scope",
+    }
     allowed_categories = {
         "layout",
         "spacing",
@@ -361,6 +378,8 @@ def validate_visual_requirements(
     has_missing_required = False
     has_bad_fidelity = False
     has_blocker_lint = isinstance(blocker_lint_errors, list) and len(blocker_lint_errors) > 0
+    has_inference_contract_error = False
+    evidence_type_counts: dict[str, int] = {}
 
     for index, item in enumerate(requirements):
         if not isinstance(item, dict):
@@ -378,9 +397,16 @@ def validate_visual_requirements(
             has_untraceable = True
 
         evidence_type = str(item.get("evidence_type") or "").strip().lower()
+        if evidence_type:
+            evidence_type_counts[evidence_type] = evidence_type_counts.get(evidence_type, 0) + 1
         if evidence_type and evidence_type not in allowed_evidence_types:
             requirement_errors.append({"index": index, "unsupported_evidence_type": evidence_type})
             has_missing_required = True
+        elif evidence_type in {"inferred", "candidate", "unsupported"}:
+            inference_errors = validate_bounded_inference_claim(item, evidence_type)
+            if inference_errors:
+                requirement_errors.append({"index": index, "inference_contract_errors": inference_errors})
+                has_inference_contract_error = True
 
         category = str(item.get("category") or "").strip().lower()
         if category and category not in allowed_categories:
@@ -397,6 +423,7 @@ def validate_visual_requirements(
             has_blocker_lint = True
 
     details["visual_requirements"]["requirement_errors"] = requirement_errors
+    details["visual_requirements"]["evidence_type_counts"] = evidence_type_counts
     details["visual_requirements"]["count_matches_requirements"] = count_matches
 
     if has_missing_required:
@@ -438,6 +465,86 @@ def validate_visual_requirements(
 
     if has_blocker_lint:
         blocker_codes.append(BLOCKERS["VISUAL_BLOCKER_LINT_ERRORS"])
+
+    if has_inference_contract_error:
+        blocker_codes.append(BLOCKERS["VISUAL_INFERENCE_CONTRACT_INVALID"])
+
+
+def validate_bounded_inference_claim(item: dict[str, Any], evidence_type: str) -> list[str]:
+    errors: list[str] = []
+
+    def has_non_empty(field: str) -> bool:
+        value = item.get(field)
+        return value not in (None, "", [], {})
+
+    source_refs = item.get("source_refs")
+    if not isinstance(source_refs, list) or not source_refs:
+        errors.append("non_observed_claim_requires_source_refs")
+
+    if evidence_type == "inferred":
+        required = [
+            "inference_rule",
+            "confidence_method",
+            "score_breakdown",
+            "downstream_use",
+            "blocking_conditions",
+        ]
+        missing = [field for field in required if not has_non_empty(field)]
+        if missing:
+            errors.append(f"inferred_missing_fields:{','.join(missing)}")
+        if item.get("confidence") != "high":
+            errors.append("inferred_claim_requires_high_confidence")
+        if item.get("downstream_use") != "accepted_claim":
+            errors.append("inferred_claim_requires_downstream_use_accepted_claim")
+
+    if evidence_type == "candidate":
+        required = [
+            "inference_rule",
+            "confidence_method",
+            "score_breakdown",
+            "downstream_use",
+            "missing_evidence",
+            "blocking_conditions",
+        ]
+        missing = [field for field in required if not has_non_empty(field)]
+        if missing:
+            errors.append(f"candidate_missing_fields:{','.join(missing)}")
+        if item.get("confidence") not in {"low", "medium"}:
+            errors.append("candidate_claim_requires_low_or_medium_confidence")
+        if item.get("downstream_use") != "reference_only":
+            errors.append("candidate_claim_requires_downstream_use_reference_only")
+
+    if evidence_type == "unsupported":
+        required = ["blocker_code", "reason", "downstream_use", "missing_evidence", "blockers"]
+        missing = [field for field in required if not has_non_empty(field)]
+        if missing:
+            errors.append(f"unsupported_missing_fields:{','.join(missing)}")
+        if item.get("downstream_use") != "blocked":
+            errors.append("unsupported_claim_requires_downstream_use_blocked")
+        blockers = item.get("blockers")
+        blocker_code = item.get("blocker_code")
+        if isinstance(blockers, list) and blocker_code and blocker_code not in blockers:
+            errors.append("unsupported_claim_blocker_code_must_match_blockers")
+
+    score_breakdown = item.get("score_breakdown")
+    if evidence_type in {"inferred", "candidate"}:
+        if not isinstance(score_breakdown, list) or not score_breakdown:
+            errors.append("score_breakdown_requires_at_least_one_signal")
+        else:
+            for signal_index, signal in enumerate(score_breakdown):
+                if not isinstance(signal, dict):
+                    errors.append(f"score_breakdown_signal_{signal_index}_must_be_mapping")
+                    continue
+                if not has_non_empty_in_mapping(signal, "signal"):
+                    errors.append(f"score_breakdown_signal_{signal_index}_missing_signal")
+                if "weight" not in signal:
+                    errors.append(f"score_breakdown_signal_{signal_index}_missing_weight")
+
+    return errors
+
+
+def has_non_empty_in_mapping(value: dict[str, Any], field: str) -> bool:
+    return value.get(field) not in (None, "", [], {})
 
 
 def validate_figma_provider(intake_dir: Path, details: dict[str, Any], blocker_codes: list[str]) -> None:

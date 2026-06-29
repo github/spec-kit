@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.3] - 2026-06-29
+
+### Added
+
+- Added `/speckit.intake.figma2htmlssot` for Figma-derived HTML visual SSOT bundles with component-state, page, asset, viewport, screenshot, and coverage evidence.
+- Added HTML SSOT schemas and `validate_html_ssot.py` for bundle artifact, Figma node, component-state, page, asset, viewport, visual-diff, and known-gap readiness checks.
+- Added bounded visual inference statuses for irregular Figma and visual-design sources, including `candidate` and `unsupported` claim handling.
+- Added readiness blocking for unbounded visual inference and unsupported visual claims.
+
 ## [0.1.2] - 2026-06-23
 
 ### Changed

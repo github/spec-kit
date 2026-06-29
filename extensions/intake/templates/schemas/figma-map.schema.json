@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/figma-map.schema.json",
+  "title": "HTML SSOT Figma Map",
+  "type": "object",
+  "required": ["source_intake_refs", "mappings"],
+  "properties": {
+    "source_intake_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "mappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "figma_node_id",
+          "selector",
+          "acceptance_unit",
+          "required",
+          "states",
+          "viewports",
+          "content_sample",
+          "container_constraint"
+        ],
+        "properties": {
+          "figma_node_id": { "type": "string", "minLength": 1 },
+          "selector": { "type": "string", "minLength": 1 },
+          "acceptance_unit": { "enum": ["component-state", "section", "page"] },
+          "required": { "type": "boolean" },
+          "states": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "viewports": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "content_sample": { "type": "string", "minLength": 1 },
+          "container_constraint": { "type": "string", "minLength": 1 },
+          "accepted_exclusion": { "type": "boolean" },
+          "exclusion_reason": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
