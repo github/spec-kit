@@ -296,6 +296,23 @@ def _validate_steps(
                     f"boolean, got {type(coe).__name__}."
                 )
 
+        # Fan-in: every wait_for id must reference a step declared at or before
+        # this point. An id not yet seen is either a typo (unknown step) or a
+        # forward reference (the target runs after this fan-in, so its results
+        # cannot exist yet) — both are wiring errors that previously surfaced as
+        # a silent empty result + COMPLETED. A step that is declared but only
+        # conditionally executed (e.g. inside an if/switch branch) is still
+        # "seen" here, so a legitimately-empty result at runtime stays valid.
+        if step_type == "fan-in":
+            wait_for = step_config.get("wait_for")
+            if isinstance(wait_for, list):
+                for wid in wait_for:
+                    if isinstance(wid, str) and wid not in seen_ids:
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' references "
+                            f"unknown or not-yet-declared step id {wid!r}."
+                        )
+
         # Recursively validate nested steps
         for nested_key in ("then", "else", "steps"):
             nested = step_config.get(nested_key)

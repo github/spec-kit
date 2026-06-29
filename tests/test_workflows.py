@@ -1971,6 +1971,93 @@ class TestFanInStep:
         assert any("non-empty list" in e for e in errors)
 
 
+class TestFanInWaitForValidation:
+    """fan-in wait_for must reference a declared step (no silent empty join)."""
+
+    @staticmethod
+    def _errors(yaml_text):
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            validate_workflow,
+        )
+
+        return validate_workflow(WorkflowDefinition.from_string(yaml_text))
+
+    def test_unknown_wait_for_id_is_rejected(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: collect
+    type: fan-in
+    wait_for: [ghost]
+""")
+        assert any(
+            "unknown or not-yet-declared step id 'ghost'" in e for e in errors
+        )
+
+    def test_wait_for_declared_earlier_step_passes(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: produce
+    type: command
+    command: speckit.implement
+  - id: collect
+    type: fan-in
+    wait_for: [produce]
+""")
+        assert not any("wait_for" in e for e in errors)
+
+    def test_wait_for_conditionally_declared_step_passes(self):
+        # A step declared inside an if-branch may be skipped at runtime, but it is
+        # still "declared", so referencing it must validate — a legitimately-empty
+        # runtime join stays valid.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: maybe
+    type: if
+    condition: "{{ inputs.flag }}"
+    then:
+      - id: branch_task
+        type: command
+        command: speckit.implement
+  - id: collect
+    type: fan-in
+    wait_for: [branch_task]
+""")
+        assert not any("wait_for" in e for e in errors)
+
+    def test_forward_reference_is_rejected(self):
+        # wait_for points at a step declared AFTER the fan-in; its results cannot
+        # exist when the fan-in runs, so it is flagged.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: collect
+    type: fan-in
+    wait_for: [later]
+  - id: later
+    type: command
+    command: speckit.implement
+""")
+        assert any(
+            "unknown or not-yet-declared step id 'later'" in e for e in errors
+        )
+
+
 # ===== Workflow Definition Tests =====
 
 class TestWorkflowDefinition:
