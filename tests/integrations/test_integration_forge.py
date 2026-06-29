@@ -403,7 +403,7 @@ class TestForgeCommandRegistrar:
             encoding="utf-8"
         )
         
-        # Register with Windsurf (standard markdown agent without inject_name)
+        # Register with Kilo Code (standard markdown agent without inject_name)
         registrar = CommandRegistrar()
         commands = [
             {
@@ -413,22 +413,22 @@ class TestForgeCommandRegistrar:
         ]
         
         registrar.register_commands(
-            "windsurf",
+            "kilocode",
             commands,
             "test-extension",
             ext_dir,
             tmp_path
         )
         
-        # Windsurf uses standard markdown format without name injection.
+        # Kilo Code uses standard markdown format without name injection.
         # The format_name callback should not be invoked for non-Forge agents.
-        windsurf_cmd = tmp_path / ".windsurf" / "workflows" / "speckit.my-extension.example.md"
-        assert windsurf_cmd.exists()
+        kilocode_cmd = tmp_path / ".kilocode" / "workflows" / "speckit.my-extension.example.md"
+        assert kilocode_cmd.exists()
         
-        content = windsurf_cmd.read_text(encoding="utf-8")
-        # Windsurf should NOT have a name field injected
+        content = kilocode_cmd.read_text(encoding="utf-8")
+        # Kilo Code should NOT have a name field injected
         assert "name:" not in content, (
-            "Windsurf should not inject name field - format_name callback should be Forge-only"
+            "Kilo Code should not inject name field - format_name callback should be Forge-only"
         )
 
     def test_git_extension_command_uses_hyphen_notation(self, tmp_path):

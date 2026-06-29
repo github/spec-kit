@@ -650,8 +650,8 @@ class TestBuildExecArgs:
         assert "--yolo" in args
 
     def test_ide_only_returns_none(self):
-        from specify_cli.integrations.windsurf import WindsurfIntegration
-        impl = WindsurfIntegration()
+        from specify_cli.integrations.kilocode import KilocodeIntegration
+        impl = KilocodeIntegration()
         assert impl.build_exec_args("test") is None
 
     def test_no_model_omits_flag(self):

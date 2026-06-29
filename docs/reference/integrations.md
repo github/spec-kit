@@ -38,7 +38,6 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | `shai`           |                                                                                                                                           |
 | [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | `tabnine`        |                                                                                                                                           |
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
-| [Windsurf](https://windsurf.com/)                                                    | `windsurf`       |                                                                                                                                           |
 | [ZCode](https://zcode.z.ai/)                                                         | `zcode`          | Skills-based integration; installs skills into `.zcode/skills/` and invokes them as `$speckit-<command>`                                  |
 | [Zed](https://zed.dev/)                                                              | `zed`            | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                  |
 | Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above     |
@@ -272,7 +271,6 @@ The currently declared multi-install safe integrations are:
 | `shai` | `.shai/commands`, `SHAI.md` |
 | `tabnine` | `.tabnine/agent/commands`, `TABNINE.md` |
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
-| `windsurf` | `.windsurf/workflows`, `.windsurf/rules/specify-rules.md` |
 | `zcode` | `.zcode/skills`, `ZCODE.md` |
 
 Integrations that share a context file or command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
@@ -287,7 +285,7 @@ Run `specify integration list` to see all available integrations with their keys
 
 ### Do I need the AI coding agent installed to use an integration?
 
-CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be installed. IDE-based integrations (like Windsurf, Cursor) work through the IDE itself. Some agents like GitHub Copilot support both IDE and CLI usage. `specify integration list` shows which type each integration is.
+CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be installed. IDE-based integrations (like Cursor) work through the IDE itself. Some agents like GitHub Copilot support both IDE and CLI usage. `specify integration list` shows which type each integration is.
 
 ### When should I use `upgrade` vs `switch`?
 
