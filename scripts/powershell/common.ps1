@@ -187,7 +187,8 @@ function Get-FeaturePathsEnv {
     # directory basename so CURRENT_BRANCH is a usable identifier rather than
     # an empty, misleading value (issue #3026).
     if (-not $currentBranch) {
-        $currentBranch = Split-Path -Leaf $featureDir
+        $featureDirTrimmed = [System.IO.Path]::TrimEndingDirectorySeparator($featureDir)
+        $currentBranch = Split-Path -Leaf $featureDirTrimmed
     }
 
     [PSCustomObject]@{
