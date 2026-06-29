@@ -1434,6 +1434,23 @@ class TestGateStep:
         })
         assert any("on_reject" in e for e in errors)
 
+    def test_validate_non_string_options_does_not_raise(self):
+        """Non-string options with on_reject=abort/retry must be REPORTED as an
+        error, not crash: the reject-choice check calls o.lower() on each option,
+        which previously raised AttributeError on a non-string option and broke
+        validate_workflow's 'return errors, never raise' contract."""
+        from specify_cli.workflows.steps.gate import GateStep
+
+        step = GateStep()
+        # on_reject defaults to "abort", which triggers the option-text check.
+        errors = step.validate({"id": "test", "message": "Review", "options": [123]})
+        assert any("must be strings" in e for e in errors)
+        # also with an explicit retry on_reject
+        errors = step.validate(
+            {"id": "test", "message": "Review", "options": [True], "on_reject": "retry"}
+        )
+        assert any("must be strings" in e for e in errors)
+
     def test_interactive_prompt_renders_show_file(self, tmp_path, monkeypatch, capsys):
         from specify_cli.workflows.steps.gate import GateStep
         from specify_cli.workflows.base import StepContext, StepStatus
