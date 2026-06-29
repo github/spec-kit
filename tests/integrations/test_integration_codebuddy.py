@@ -14,6 +14,7 @@ class TestCodebuddyIntegration(MarkdownIntegrationTests):
 
     def test_install_url_points_to_official_cli_install_docs(self):
         integration = get_integration(self.KEY)
+        assert integration is not None
 
         assert (
             integration.config["install_url"]
