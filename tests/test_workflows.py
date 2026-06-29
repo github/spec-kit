@@ -1971,6 +1971,139 @@ class TestFanInStep:
         assert any("non-empty list" in e for e in errors)
 
 
+class TestFanOutConcurrency:
+    """Fan-out honors max_concurrency (WorkflowEngine._run_fan_out)."""
+
+    @staticmethod
+    def _build(tmp_path, on_item=None):
+        """Wire an engine + run state to a probe step that echoes context.item.
+
+        Per-item output is ``{"seen": <item>}`` so order and per-thread item
+        isolation are checkable. ``on_item(item)`` may run a side effect and
+        optionally return a StepStatus to override COMPLETED (or raise).
+        """
+        from specify_cli.workflows.base import (
+            RunStatus,
+            StepBase,
+            StepContext,
+            StepResult,
+            StepStatus,
+        )
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        class _ProbeStep(StepBase):
+            type_key = "probe"
+
+            def execute(self, config, context):
+                status = StepStatus.COMPLETED
+                if on_item is not None:
+                    override = on_item(context.item)
+                    if override is not None:
+                        status = override
+                return StepResult(status=status, output={"seen": context.item})
+
+        engine = WorkflowEngine(project_root=tmp_path)
+        context = StepContext()
+        state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+        state.status = RunStatus.RUNNING
+        template = {"id": "impl", "type": "probe"}
+        return engine, context, state, {"probe": _ProbeStep()}, template
+
+    def _run(self, tmp_path, items, max_concurrency, on_item=None):
+        engine, context, state, registry, template = self._build(tmp_path, on_item)
+        results = engine._run_fan_out(
+            items, template, "fan", context, state, registry, max_concurrency
+        )
+        return results, state
+
+    def test_sequential_default_preserves_order(self, tmp_path):
+        results, _ = self._run(tmp_path, list(range(5)), 1)
+        assert results == [{"seen": i} for i in range(5)]
+
+    def test_concurrent_runs_all_items_in_item_order(self, tmp_path):
+        results, _ = self._run(tmp_path, list(range(10)), 4)
+        assert results == [{"seen": i} for i in range(10)]
+
+    def test_sequential_and_concurrent_agree(self, tmp_path):
+        items = [{"n": i} for i in range(8)]
+        seq, _ = self._run(tmp_path, items, 1)
+        con, _ = self._run(tmp_path, items, 4)
+        assert seq == con == [{"seen": {"n": i}} for i in range(8)]
+
+    def test_shuffled_completion_preserves_item_order(self, tmp_path):
+        # Determinism keystone: completion order is forced to the exact REVERSE of
+        # item order by an event chain (no sleeps) — item i blocks until item i+1
+        # has finished, so item 0 completes LAST — yet results must still be in
+        # item order. K == len(items) so all workers are in flight together.
+        import threading
+
+        n = 4
+        done = [threading.Event() for _ in range(n)]
+        completion: list[int] = []
+        clock = threading.Lock()
+
+        def on_item(item):
+            if item + 1 < n:
+                assert done[item + 1].wait(2.0), f"item {item + 1} never finished"
+            with clock:
+                completion.append(item)
+            done[item].set()
+            return None
+
+        results, _ = self._run(tmp_path, list(range(n)), n, on_item)
+        assert results == [{"seen": i} for i in range(n)]
+        assert completion == list(reversed(range(n)))
+
+    def test_concurrency_is_real(self, tmp_path):
+        import time
+
+        def on_item(item):
+            time.sleep(0.3)
+            return None
+
+        t0 = time.time()
+        self._run(tmp_path, list(range(4)), 4, on_item)
+        assert time.time() - t0 < 0.6  # serialized would be >= 1.2s
+
+    @pytest.mark.parametrize("bad", [0, -1, None, "abc", 1.0])
+    def test_invalid_max_concurrency_coerces_to_sequential(self, tmp_path, bad):
+        results, _ = self._run(tmp_path, list(range(4)), bad)
+        assert results == [{"seen": i} for i in range(4)]
+
+    def test_string_max_concurrency_is_honored(self, tmp_path):
+        results, _ = self._run(tmp_path, list(range(4)), "2")
+        assert results == [{"seen": i} for i in range(4)]
+
+    def test_context_item_isolation_across_threads(self, tmp_path):
+        items = [{"id": f"x{i}"} for i in range(6)]
+        results, _ = self._run(tmp_path, items, 6)
+        assert [r["seen"]["id"] for r in results] == [f"x{i}" for i in range(6)]
+
+    def test_empty_items(self, tmp_path):
+        results, _ = self._run(tmp_path, [], 4)
+        assert results == []
+
+    def test_halt_on_failure_sequential_returns_prefix(self, tmp_path):
+        from specify_cli.workflows.base import RunStatus, StepStatus
+
+        def on_item(item):
+            return StepStatus.FAILED if item == 2 else None
+
+        results, state = self._run(tmp_path, list(range(5)), 1, on_item)
+        assert len(results) == 3  # items 0,1,2 ran; 3,4 never dispatched
+        assert results[2] == {"seen": 2}
+        assert state.status == RunStatus.FAILED
+
+    def test_first_exception_cancels_and_reraises(self, tmp_path):
+        def on_item(item):
+            if item == 0:
+                raise ValueError("boom")
+            return None
+
+        with pytest.raises(ValueError, match="boom"):
+            self._run(tmp_path, list(range(4)), 2, on_item)
+
+
 # ===== Workflow Definition Tests =====
 
 class TestWorkflowDefinition:
