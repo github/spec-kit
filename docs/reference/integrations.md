@@ -193,7 +193,7 @@ specify integration install generic --integration-options="--commands-dir .myage
 specify integration scaffold <key>
 ```
 
-Creates a minimal built-in integration package and a matching test skeleton, then prints the next steps for wiring it up. The `<key>` must be lowercase kebab-case (for example, `my-agent`).
+Creates a minimal built-in integration package and a matching test skeleton in the Spec Kit repository, then prints the next steps for wiring it up. Run this command from the Spec Kit repository root. The `<key>` must be lowercase kebab-case (for example, `my-agent`).
 
 | Option   | Description                                                       |
 | -------- | ---------------------------------------------------------------- |
