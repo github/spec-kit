@@ -115,16 +115,14 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
-    def test_init_here_nonempty_noninteractive_errors_with_force_guidance(self, tmp_path, monkeypatch):
-        """`init --here` on a non-empty directory must not block on a confirmation
-        prompt when there is no interactive terminal: it should fail fast with
-        guidance to use --force, instead of reading EOF and aborting unhelpfully."""
+    def test_init_here_nonempty_noninteractive_errors_with_force_guidance(self, tmp_path):
+        """`init --here` on a non-empty directory with no confirmation input (empty
+        stdin) must fail fast with guidance to use --force, instead of the bare
+        'Aborted.' from an EOF on typer.confirm. CliRunner with no `input=` provides
+        empty stdin, so typer.confirm raises Abort, which the command converts to the
+        actionable error."""
         from typer.testing import CliRunner
         from specify_cli import app
-        from specify_cli.commands import init as init_mod
-
-        # Deterministically exercise the non-interactive branch.
-        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: False)
 
         project = tmp_path / "nonempty-here"
         project.mkdir()
