@@ -233,9 +233,9 @@ class TestInitializeRepoBash:
         result = _run_bash("initialize-repo.sh", project)
         assert result.returncode == 0, result.stderr
 
-        # Success marker is ASCII "[OK]" (matching the PowerShell twin and the
-        # sibling auto-commit scripts), not a Unicode checkmark.
-        assert "[OK]" in result.stderr
+        # Success marker is the full ASCII "[OK] ..." line (matching the PowerShell
+        # twin and the sibling auto-commit scripts), not a Unicode checkmark.
+        assert "[OK] Git repository initialized" in result.stderr, result.stderr
 
         # Verify git repo exists
         assert (project / ".git").exists()
