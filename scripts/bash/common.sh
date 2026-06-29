@@ -186,6 +186,14 @@ get_feature_paths() {
         return 1
     fi
 
+    # When no branch context exists (no SPECIFY_FEATURE, feature resolved via
+    # SPECIFY_FEATURE_DIRECTORY or feature.json), fall back to the feature
+    # directory basename so CURRENT_BRANCH is a usable identifier rather than
+    # an empty, misleading value (issue #3026).
+    if [[ -z "$current_branch" ]]; then
+        current_branch="${feature_dir##*/}"
+    fi
+
     # Use printf '%q' to safely quote values, preventing shell injection
     # via crafted branch names or paths containing special characters
     printf 'REPO_ROOT=%q\n' "$repo_root"
