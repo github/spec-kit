@@ -9,7 +9,7 @@ class CodebuddyIntegration(MarkdownIntegration):
         "name": "CodeBuddy",
         "folder": ".codebuddy/",
         "commands_subdir": "commands",
-        "install_url": "https://www.codebuddy.ai/cli",
+        "install_url": "https://www.codebuddy.cn/cli",
         "requires_cli": True,
     }
     registrar_config = {
