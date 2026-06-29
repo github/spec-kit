@@ -1424,6 +1424,21 @@ class TestPresetCatalog:
         catalog._validate_catalog_url("http://localhost:8080/catalog.json")
         catalog._validate_catalog_url("http://127.0.0.1:8080/catalog.json")
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://:8080",          # port only, no host
+            "https://:8080/catalog.json",
+            "https://user@",          # userinfo only, no host
+            "https://user:pass@",
+        ],
+    )
+    def test_validate_catalog_url_hostless_rejected(self, project_dir, url):
+        """Host-less URLs (netloc truthy but no host) are rejected (#3209)."""
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="valid URL with a host"):
+            catalog._validate_catalog_url(url)
+
     def test_env_var_catalog_url(self, project_dir, monkeypatch):
         """Test catalog URL from environment variable."""
         monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", "https://custom.example.com/catalog.json")

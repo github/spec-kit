@@ -67,6 +67,20 @@ class TestCatalogURLValidation:
         with pytest.raises(IntegrationCatalogError, match="valid URL"):
             IntegrationCatalog._validate_catalog_url("https:///no-host")
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://:8080",          # port only, no host
+            "https://:8080/catalog.json",
+            "https://user@",          # userinfo only, no host
+            "https://user:pass@",
+        ],
+    )
+    def test_hostless_url_rejected(self, url):
+        """netloc is truthy for these but there is no host (#3209)."""
+        with pytest.raises(IntegrationCatalogError, match="valid URL"):
+            IntegrationCatalog._validate_catalog_url(url)
+
 
 # ---------------------------------------------------------------------------
 # IntegrationCatalog — active catalogs

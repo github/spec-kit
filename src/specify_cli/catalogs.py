@@ -78,7 +78,11 @@ class CatalogStackBase:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.netloc:
+        # Use .hostname (not .netloc) so host-less URLs like "https://:8080"
+        # (port only) or "https://user@" (userinfo only) are rejected: netloc
+        # is truthy for those even though there is no host. This matches the
+        # workflow/step/bundler catalog validators (issue #3209).
+        if not parsed.hostname:
             raise cls._error("Catalog URL must be a valid URL with a host.")
 
     def _load_catalog_config(self, config_path: Path) -> list[CatalogEntry] | None:
