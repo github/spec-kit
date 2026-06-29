@@ -1822,6 +1822,12 @@ class TestWhileStep:
         step = WhileStep()
         errors = step.validate({"id": "test", "condition": "{{ true }}", "max_iterations": 0, "steps": []})
         assert any("must be an integer >= 1" in e for e in errors)
+        # bool is an int subclass; `max_iterations: true` must be rejected, not
+        # silently treated as a single iteration.
+        bool_errors = step.validate(
+            {"id": "test", "condition": "{{ true }}", "max_iterations": True, "steps": []}
+        )
+        assert any("must be an integer >= 1" in e for e in bool_errors)
 
 
 class TestDoWhileStep:
@@ -1860,6 +1866,21 @@ class TestDoWhileStep:
         # Body always executes on first call regardless of condition
         assert len(result.next_steps) == 1
         assert result.output["max_iterations"] == 5
+
+    def test_validate_rejects_bool_max_iterations(self):
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        # bool is an int subclass; `max_iterations: true` must be rejected.
+        errors = step.validate(
+            {"id": "test", "condition": "{{ true }}", "max_iterations": True, "steps": []}
+        )
+        assert any("must be an integer >= 1" in e for e in errors)
+        # a real positive integer is still accepted.
+        ok = step.validate(
+            {"id": "test", "condition": "{{ true }}", "max_iterations": 3, "steps": []}
+        )
+        assert not any("max_iterations" in e for e in ok)
 
     def test_execute_empty_steps(self):
         from specify_cli.workflows.steps.do_while import DoWhileStep
