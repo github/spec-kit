@@ -174,15 +174,6 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["ide"]
     },
-    "roo": {
-      "id": "roo",
-      "name": "Roo Code",
-      "version": "1.0.0",
-      "description": "Roo Code IDE integration",
-      "author": "spec-kit-core",
-      "repository": "https://github.com/github/spec-kit",
-      "tags": ["ide"]
-    },
     "rovodev": {
       "id": "rovodev",
       "name": "RovoDev ACLI",

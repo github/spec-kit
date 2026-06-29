@@ -34,7 +34,6 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Pi Coding Agent](https://pi.dev)                                                    | `pi`             | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
 | [Qoder CLI](https://qoder.com/cli)                                                   | `qodercli`       |                                                                                                                                           |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | `qwen`           |                                                                                                                                           |
-| [Roo Code](https://roocode.com/)                                                     | `roo`            |                                                                                                                                           |
 | [RovoDev](https://www.atlassian.com/software/rovo-dev)                               | `rovodev`        | Generates `.rovodev/skills/`, prompt wrappers, and `prompts.yml`; runtime dispatch uses `acli rovodev`                                   |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | `shai`           |                                                                                                                                           |
 | [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | `tabnine`        |                                                                                                                                           |
@@ -196,7 +195,6 @@ The currently declared multi-install safe integrations are:
 | `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
 | `qodercli` | `.qoder/commands`, `QODER.md` |
 | `qwen` | `.qwen/commands`, `QWEN.md` |
-| `roo` | `.roo/commands`, `.roo/rules/specify-rules.md` |
 | `shai` | `.shai/commands`, `SHAI.md` |
 | `tabnine` | `.tabnine/agent/commands`, `TABNINE.md` |
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
