@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: repository-governance
   name: "Repository Governance"
-  version: "3.0.0"
+  version: "3.0.1"
   description: "Generate project-governance projections from Spec Kit metadata"
   author: "bigben"
   repository: "https://github.com/bigsmartben/spec-kit-agent-governance"

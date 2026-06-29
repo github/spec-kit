@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Restructure generated projections into Copilot-like repository-wide, SSOT routing, path/task scope, and agent harness instruction layers while preserving the single active-target write surface.
 - Merge Toolchain SSOT coverage into Engineering SSOT to remove overlapping vertical ownership.
 - Remove the cache/managed-section model; generation now overwrites the active agent platform target from the current repository scan.
 - Make generated projections subordinate to vertical SSOT documents and source-backed repository facts on substantive conflicts.
