@@ -154,7 +154,7 @@ list, or records no installed integrations.
 
 ## Catalog Management
 
-Integration catalogs control where `search` and `install` look for integrations. Catalogs are checked in priority order.
+Integration catalogs control where the discovery commands (`search` and `info`) look for integrations. Catalogs are checked in priority order.
 
 ### List Catalogs
 
@@ -162,7 +162,7 @@ Integration catalogs control where `search` and `install` look for integrations.
 specify integration catalog list
 ```
 
-Shows the active catalog sources. Project-level sources are removable; built-in sources are shown for reference.
+Shows the active catalog sources. Project-level sources (when configured) are removable by index; otherwise the active sources are shown as non-removable.
 
 ### Add a Catalog
 
