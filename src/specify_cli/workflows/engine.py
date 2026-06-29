@@ -430,11 +430,13 @@ class RunState:
         nor leave a reader observing a half-written file. Racing writers only
         contend to be last; they never corrupt.
         """
-        self.updated_at = datetime.now(timezone.utc).isoformat()
         runs_dir = self.runs_dir
         runs_dir.mkdir(parents=True, exist_ok=True)
 
         with self._lock:
+            # Stamp updated_at inside the lock so the timestamp matches the
+            # snapshot this thread serializes (concurrent savers don't race it).
+            self.updated_at = datetime.now(timezone.utc).isoformat()
             state_data = {
                 "run_id": self.run_id,
                 "workflow_id": self.workflow_id,
@@ -982,8 +984,9 @@ class WorkflowEngine:
         Results are always returned in item order (never completion order). On a
         halt (PAUSED/FAILED/ABORTED) the returned prefix is the items up to and
         including the first item *in item order* whose own execution halted the run
-        — identical to the sequential path — and any later in-flight items are
-        cancelled. Halt is attributed per item from that item's recorded result
+        — identical to the sequential path. Later items that have not yet started
+        are cancelled; any already running are allowed to finish but their outputs
+        are ignored. Halt is attributed per item from that item's recorded result
         (not the shared run status, which a concurrently-running later item may have
         already flipped), so the prefix never drops the actual halting item.
 
