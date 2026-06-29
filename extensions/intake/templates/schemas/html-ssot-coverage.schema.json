@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spec-kit-intake.local/schemas/html-ssot-coverage.schema.json",
+  "title": "HTML SSOT Coverage",
+  "type": "object",
+  "required": [
+    "ready_gate",
+    "blockers",
+    "required_nodes_total",
+    "required_nodes_covered",
+    "component_state_coverage_complete",
+    "page_coverage_complete",
+    "asset_traceability_complete",
+    "viewport_capture_complete",
+    "visual_diff_status",
+    "accepted_exceptions"
+  ],
+  "properties": {
+    "ready_gate": { "enum": ["PASS", "BLOCKED"] },
+    "blockers": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "required_nodes_total": { "type": "integer", "minimum": 0 },
+    "required_nodes_covered": { "type": "integer", "minimum": 0 },
+    "component_state_coverage_complete": { "type": "boolean" },
+    "page_coverage_complete": { "type": "boolean" },
+    "asset_traceability_complete": { "type": "boolean" },
+    "viewport_capture_complete": { "type": "boolean" },
+    "visual_diff_status": { "enum": ["pass", "blocked", "not_applicable"] },
+    "accepted_exceptions": { "type": "array" }
+  },
+  "additionalProperties": true
+}

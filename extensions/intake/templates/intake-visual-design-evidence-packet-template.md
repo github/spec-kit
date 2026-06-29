@@ -92,15 +92,18 @@ This packet is a human-readable readiness summary. Machine-readable visual facts
 - Responsive evidence:
 - Accessibility evidence:
 
-## Derived Assumptions
+## Bounded Inference Summary
 
-- Inferred navigation:
-- Inferred grouping:
-- Inferred content priority:
-- Inferred responsive behavior:
-- Required marker: `evidence_type: inferred`
+- Observed claim count:
+- Inferred claim count:
+- Candidate claim count:
+- Unsupported claim count:
+- Inference rules applied:
+- Confidence methods applied:
+- Candidate claims kept `downstream_use: reference_only`:
+- Unsupported claims with blocker codes:
 - Required clarification or acceptance gap:
-- Confidence notes:
+- Conflict or parity blockers:
 
 ## Missing / Needs Clarification
 

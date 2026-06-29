@@ -3,6 +3,7 @@
 artifacts:
   base_dir: "specs/{feature}/intake"
   visual_design_dir: "visual-design"
+  figma2htmlssot_dir: "figma2htmlssot"
   prd_dir: "prd"
   test_cases_dir: "test-cases"
   prd_source_manifest: "source-manifest.yaml"
@@ -12,6 +13,13 @@ artifacts:
   prd_intake: "prd-intake.yaml"
   visual_requirements: "visual-requirements.yaml"
   test_case_intake: "test-case-intake.yaml"
+  html_ssot: "visual-spec.html"
+  html_ssot_figma_map: "figma-map.json"
+  html_ssot_assets_manifest: "assets-manifest.json"
+  html_ssot_coverage_report: "coverage-report.md"
+  html_ssot_known_gaps: "known-gaps.md"
+  html_ssot_screenshots_dir: "screenshots"
+  html_ssot_validator: "scripts/python/validate_html_ssot.py"
   prd_contract: "templates/intake-prd-contract.md"
   prd_evidence_packet_template: "templates/intake-prd-evidence-packet-template.md"
   visual_design_contract: "templates/intake-visual-design-contract.md"
@@ -27,6 +35,9 @@ artifacts:
   test_case_intake_schema: "templates/schemas/test-case-intake.schema.json"
   figma_metadata_index_schema: "templates/schemas/figma-metadata-index.schema.json"
   figma_node_inventory_schema: "templates/schemas/figma-node-inventory.schema.json"
+  html_ssot_figma_map_schema: "templates/schemas/figma-map.schema.json"
+  html_ssot_assets_manifest_schema: "templates/schemas/assets-manifest.schema.json"
+  html_ssot_coverage_schema: "templates/schemas/html-ssot-coverage.schema.json"
   metadata_glob: "figma-metadata.part-*.xml"
   metadata_index: "figma-metadata.index.yaml"
   node_inventory: "figma-node-inventory.yaml"
@@ -61,6 +72,9 @@ readiness:
   require_selected_subtree_complete_for_figma: true
   require_node_inventory_coverage_for_figma: "100%"
   require_parity_passed_for_figma: true
+  require_bounded_inference_for_visual_claims: true
+  fail_on_unbounded_inference_for_figma: true
+  fail_on_unsupported_visual_claims: true
   fail_on_blocker_lint_errors: true
 
 capture:

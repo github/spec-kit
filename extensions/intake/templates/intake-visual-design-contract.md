@@ -50,13 +50,15 @@ The intake must record `fidelity_rules_applied: true` and explain any accepted g
 
 `visual-requirements.yaml` must normalize extracted visual facts into engineering input. The evidence packet may summarize the same records for human review, but readiness validation uses the standalone machine-readable file.
 
+Visual design intake uses a bounded inference model. Intake may preserve direct observations, rule-backed derived claims, and candidate completions, but it must not smooth missing or contradictory evidence into a confirmed requirement. Every non-observed claim must remain auditable through source refs, inference rules, confidence method, score breakdown, downstream use, and blocking conditions.
+
 Each requirement must include:
 
 - id:
 - category: layout|spacing|sizing|typography|color|asset|component|state|interaction|responsive|accessibility|content
 - requirement:
 - source_refs:
-- evidence_type: observed|inferred|missing|out_of_scope
+- evidence_type: observed|inferred|candidate|unsupported|missing|out_of_scope
 - confidence: low|medium|high
 - confidence_rationale:
 - engineering_action:
@@ -73,6 +75,29 @@ When evidenced by the source, include provider-neutral optional fields:
 - proof_refs:
 - blockers:
 
+Bounded inference statuses:
+
+- `observed`: source-backed fact from Figma metadata, exported/rendered evidence, preserved design files, OCR/text extraction, or prototype metadata.
+- `inferred`: rule-backed derived claim. It is not a source-backed fact. It must use `confidence: high`, `downstream_use: accepted_claim`, and include `inference_rule`, `confidence_method`, `score_breakdown`, and `blocking_conditions`.
+- `candidate`: low- or medium-confidence completion. It must use `downstream_use: reference_only` and include `missing_evidence`. Downstream workflows must not promote it into confirmed requirements without additional source evidence.
+- `unsupported`: rejected or blocked claim. It must use `downstream_use: blocked`, include `blocker_code`, `reason`, `missing_evidence`, and a matching entry in `blockers`.
+- `missing` and `out_of_scope`: explicit gap markers for absent evidence or intentionally excluded surfaces. They must not be rewritten as inferred requirements.
+
+Evidence priority for Figma-derived claims:
+
+1. Component, instance, and variant metadata
+2. Prototype reactions
+3. Variables, styles, and tokens
+4. Auto Layout and constraints
+5. Rendered visual evidence
+6. Layer naming
+7. VLM semantic reading
+8. LLM product-pattern inference
+
+Priority does not resolve conflicts by overwrite. When rendered evidence, node geometry, metadata, naming, or prototype data disagree, preserve the conflicting claims and emit a blocker rather than merging them into a single false certainty.
+
+Suitable automatic completions include visual roles, layout relations, spacing token candidates, color token candidates, typography token candidates, asset usage maps, basic interaction targets, and component grouping candidates. Do not auto-complete business rules, permissions, form validation, error copy, loading or disabled or focus states, complex responsive rules, data sources, backend fields, analytics, security, or compliance logic as confirmed specifications without direct source support.
+
 Readiness requires:
 
 - visual_requirements_complete: true
@@ -80,6 +105,9 @@ Readiness requires:
 - source_refs_complete: true
 - every requirement has the required fields listed above
 - missing_or_uncertain items explicitly recorded instead of silently inferred
+- inferred items satisfy the bounded inference contract
+- candidate items remain `downstream_use: reference_only`
+- unsupported items emit blocker codes and do not pass readiness
 - no unsupported summary substitution for original source evidence
 - no blocker lint errors
 
@@ -170,6 +198,9 @@ Visual design intake is ready only when all conditions pass:
 - visual_requirements_complete: true
 - source_refs_complete: true
 - fidelity_rules_applied: true
+- inferred claims satisfy the bounded inference contract
+- candidate claims remain `downstream_use: reference_only`
+- unsupported claims emit blocker codes and block readiness
 - visual_parity_plan_complete: true and required parity plan fields are present
 - Figma sources also pass raw_metadata_complete, selected_subtree_complete, node_inventory_coverage, and parity_passed
 - No blocker lint errors
@@ -189,7 +220,17 @@ Visual design intake is ready only when all conditions pass:
 - VISUAL_READY_WITHOUT_EVIDENCE
 - VISUAL_EVIDENCE_PACKET_MISSING
 - VISUAL_BLOCKER_LINT_ERRORS
+- VISUAL_INFERENCE_CONTRACT_INVALID
 - VISUAL_SCHEMA_INVALID
+- FIGMA_RENDER_NODE_MISMATCH
+- FIGMA_HIDDEN_LAYER_POLLUTION
+- FIGMA_NON_INSTANCE_COMPONENT
+- FIGMA_PROTOTYPE_METADATA_MISSING
+- FIGMA_UNSUPPORTED_STATE_INFERENCE
+- FIGMA_BUSINESS_RULE_UNSUPPORTED
+- FIGMA_INTERACTION_CONFLICT
+- FIGMA_RESPONSIVE_RULE_MISSING
+- FIGMA_LOW_CONFIDENCE_CANDIDATE
 - FIGMA_RAW_METADATA_MISSING
 - FIGMA_RAW_METADATA_SUMMARY_SUBSTITUTION
 - FIGMA_RAW_METADATA_TRUNCATED
@@ -200,7 +241,7 @@ Visual design intake is ready only when all conditions pass:
 
 ## Gap Rules
 
-Record a gap instead of passing silently when source evidence is missing, summarized, truncated, incomplete, untraceable, missing fidelity proof, missing visual requirements, missing comparison proof, missing Figma parity proof, missing nodes, duplicate nodes, or marked ready without completeness proof.
+Record a gap instead of passing silently when source evidence is missing, summarized, truncated, incomplete, untraceable, missing fidelity proof, missing visual requirements, missing comparison proof, missing Figma parity proof, missing nodes, duplicate nodes, or marked ready without completeness proof. For dirty Figma sources, use blocker codes for hidden-layer pollution, render/node mismatch, non-instance pseudo-components, missing prototype metadata, unsupported state inference, interaction conflicts, and missing responsive evidence.
 
 ## Evidence Packet Metadata
 

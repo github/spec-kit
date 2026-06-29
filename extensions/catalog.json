@@ -72,8 +72,8 @@
     "intake": {
       "name": "Intake",
       "id": "intake",
-      "version": "0.1.2",
-      "description": "Normalize PRD, design, and test-case evidence into SDD-ready intake artifacts",
+      "version": "0.1.3",
+      "description": "Normalize PRD, design, HTML SSOT, and test-case evidence into SDD-ready intake artifacts",
       "author": "bigsmartben",
       "repository": "https://github.com/bigsmartben/spec-kit-intake",
       "license": "MIT",
@@ -82,7 +82,7 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 3,
+        "commands": 4,
         "hooks": 1
       },
       "tags": [
