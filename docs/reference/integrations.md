@@ -73,7 +73,7 @@ Searches the active catalog stack for integrations matching the query. Without a
 specify integration info <integration_id>
 ```
 
-Shows catalog details for a single integration, including its description, type (CLI-based or IDE-based), author, and tags. Must be run inside a Spec Kit project.
+Shows catalog details for a single integration, including its description, author, license, tags, source catalog, repository (when available), and whether it is currently active. Must be run inside a Spec Kit project.
 
 ## Install an Integration
 
