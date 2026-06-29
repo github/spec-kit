@@ -2057,13 +2057,21 @@ class TestFanOutConcurrency:
     def test_concurrency_is_real(self, tmp_path):
         import time
 
+        n = 4
+        delay = 0.2
+
         def on_item(item):
-            time.sleep(0.3)
+            time.sleep(delay)
             return None
 
-        t0 = time.time()
-        self._run(tmp_path, list(range(4)), 4, on_item)
-        assert time.time() - t0 < 0.6  # serialized would be >= 1.2s
+        # Monotonic clock (immune to wall-clock adjustments). All n items run
+        # concurrently, so elapsed is ~one delay; a generous bound well under the
+        # serialized baseline keeps a clear gap while tolerating slow/loaded CI.
+        serialized = n * delay
+        t0 = time.monotonic()
+        self._run(tmp_path, list(range(n)), n, on_item)
+        elapsed = time.monotonic() - t0
+        assert elapsed < serialized * 0.6  # serialized would be >= n*delay
 
     @pytest.mark.parametrize("bad", [0, -1, None, "abc", 1.0])
     def test_invalid_max_concurrency_coerces_to_sequential(self, tmp_path, bad):
@@ -2093,6 +2101,54 @@ class TestFanOutConcurrency:
         assert len(results) == 3  # items 0,1,2 ran; 3,4 never dispatched
         assert results[2] == {"seen": 2}
         assert state.status == RunStatus.FAILED
+
+    def test_halt_on_failure_concurrent_includes_halting_item(self, tmp_path):
+        # The concurrent prefix must match the sequential one: items up to and
+        # INCLUDING the failing item (2), never a short prefix that drops it just
+        # because a later in-flight item flipped the shared run status first.
+        from specify_cli.workflows.base import RunStatus, StepStatus
+
+        def on_item(item):
+            return StepStatus.FAILED if item == 2 else None
+
+        results, state = self._run(tmp_path, list(range(6)), 4, on_item)
+        assert results == [{"seen": 0}, {"seen": 1}, {"seen": 2}]
+        assert state.status == RunStatus.FAILED
+
+    def test_continue_on_error_item_does_not_halt_concurrent(self, tmp_path):
+        # A failing item whose template sets continue_on_error must NOT truncate
+        # the fan-out: every item still runs and is returned in order.
+        from specify_cli.workflows.base import StepStatus
+
+        def on_item(item):
+            return StepStatus.FAILED if item == 2 else None
+
+        engine, context, state, registry, template = self._build(tmp_path, on_item)
+        template["continue_on_error"] = True
+        results = engine._run_fan_out(
+            list(range(5)), template, "fan", context, state, registry, 4
+        )
+        assert results == [{"seen": i} for i in range(5)]
+
+    def test_unknown_template_type_halts_concurrent_like_sequential(self, tmp_path):
+        # A template whose type isn't registered fails fast and records no result;
+        # the concurrent path must still attribute the halt to the first item and
+        # return the same prefix as sequential — never run on as if completed.
+        from specify_cli.workflows.base import RunStatus, StepContext
+        from specify_cli.workflows.engine import RunState, WorkflowEngine
+
+        def fresh():
+            state = RunState(run_id="r", workflow_id="w", project_root=tmp_path)
+            state.status = RunStatus.RUNNING
+            return WorkflowEngine(project_root=tmp_path), StepContext(), state
+
+        template = {"id": "impl", "type": "does-not-exist"}
+        e1, c1, s1 = fresh()
+        seq = e1._run_fan_out(list(range(5)), template, "fan", c1, s1, {}, 1)
+        e2, c2, s2 = fresh()
+        con = e2._run_fan_out(list(range(5)), template, "fan", c2, s2, {}, 4)
+        assert seq == con == [{}]  # halted at the first item; rest never returned
+        assert s1.status == s2.status == RunStatus.FAILED
 
     def test_first_exception_cancels_and_reraises(self, tmp_path):
         def on_item(item):

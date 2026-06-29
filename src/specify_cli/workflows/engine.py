@@ -17,7 +17,7 @@ import re
 import tempfile
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -404,6 +404,18 @@ class RunState:
         """
         with self._lock:
             self.step_results[step_id] = data
+
+    def set_step_output(self, step_id: str, output: Any) -> None:
+        """Replace an already-recorded step's ``output`` under the run lock.
+
+        Fan-out updates its parent step's output after the items have run;
+        routing that nested mutation through the lock keeps it from racing a
+        ``save()`` serializing ``step_results`` — the same invariant
+        ``record_step_result`` provides for the top-level assignment.
+        """
+        with self._lock:
+            if step_id in self.step_results:
+                self.step_results[step_id]["output"] = output
 
     def save(self) -> None:
         """Persist current state to disk.
@@ -927,7 +939,7 @@ class WorkflowEngine:
                     fan_out_output = dict(result.output)
                     fan_out_output["results"] = fan_out_results
                     context.steps[step_id]["output"] = fan_out_output
-                    state.step_results[step_id]["output"] = fan_out_output
+                    state.set_step_output(step_id, fan_out_output)
                     if state.status in (
                         RunStatus.PAUSED,
                         RunStatus.FAILED,
@@ -938,7 +950,7 @@ class WorkflowEngine:
                     # Empty items or no template — normalize output
                     result.output["results"] = []
                     context.steps[step_id]["output"] = result.output
-                    state.step_results[step_id]["output"] = result.output
+                    state.set_step_output(step_id, result.output)
 
     def _run_fan_out(
         self,
@@ -952,13 +964,24 @@ class WorkflowEngine:
     ) -> list[Any]:
         """Run a fan-out template once per item; return per-item outputs in item order.
 
-        ``max_concurrency`` <= 1 (the default) runs items sequentially, identical to
-        the historical fan-out behavior. ``max_concurrency`` > 1 runs up to that many
-        items concurrently on a bounded thread pool. In both modes results are returned
-        in item order (never completion order), and the first item to reach a halting
-        run status (PAUSED/FAILED/ABORTED) stops further dispatch; on halt the
-        contiguous prefix of items that ran is returned. A non-int / 0 / negative /
-        ``None`` ``max_concurrency`` coerces to 1 (sequential).
+        ``max_concurrency`` <= 1 (the default) runs items sequentially, identical
+        to the historical fan-out behavior. ``max_concurrency`` > 1 runs items on a
+        bounded thread pool using a sliding submission window of that size: at most
+        that many items are ever in flight, and no new item is launched once the run
+        has reached a halting status, so a halt cannot keep starting queued work.
+
+        Results are always returned in item order (never completion order). On a
+        halt (PAUSED/FAILED/ABORTED) the returned prefix is the items up to and
+        including the first item *in item order* whose own execution halted the run
+        — identical to the sequential path — and any later in-flight items are
+        cancelled. Halt is attributed per item from that item's recorded result
+        (not the shared run status, which a concurrently-running later item may have
+        already flipped), so the prefix never drops the actual halting item.
+
+        ``max_concurrency`` is coerced with ``int()``; a value that cannot be
+        coerced (``None``, a non-numeric string, …) or that coerces to <= 1 runs
+        sequentially, while a numeric string like ``"4"`` or a float like ``4.0``
+        is honored.
         """
         halting = (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED)
         try:
@@ -966,11 +989,15 @@ class WorkflowEngine:
         except (TypeError, ValueError):
             workers = 1
 
+        base_id = template.get("id", "item")
+
+        def item_id(idx: int) -> str:
+            # Per-item ID grammar: parentId:templateId:index.
+            return f"{step_id}:{base_id}:{idx}"
+
         def run_item(idx: int, item_ctx: StepContext) -> Any:
-            # Per-item ID: parentId:templateId:index
             item_step = dict(template)
-            base_id = item_step.get("id", "item")
-            item_step["id"] = f"{step_id}:{base_id}:{idx}"
+            item_step["id"] = item_id(idx)
             self._execute_steps(
                 [item_step], item_ctx, state, registry, step_offset=-1,
             )
@@ -986,7 +1013,7 @@ class WorkflowEngine:
                     break
             return results
 
-        # Concurrent path — bounded thread pool; results assembled in item order.
+        # Concurrent path — bounded sliding window; results assembled in item order.
         n = len(items)
         slots: list[Any] = [None] * n
 
@@ -996,18 +1023,54 @@ class WorkflowEngine:
             # disjoint parentId:templateId:index key (GIL-safe on distinct keys).
             return run_item(idx, dataclasses.replace(context, item=items[idx]))
 
+        def item_halted(idx: int) -> bool:
+            # Did THIS item's own execution halt the run? Decide from the item's
+            # own recorded result, not the shared run status, so a later item's
+            # concurrent halt is never misattributed here. Mirrors the sequential
+            # break condition: PAUSED halts; FAILED halts unless continue_on_error
+            # routes around it; an abort always halts.
+            rec = context.steps.get(item_id(idx))
+            if rec is None:
+                # Ran but recorded nothing — only happens when the item failed
+                # before record_step_result (e.g. an unknown step type returns
+                # early). Every item runs the same template, so the run status is
+                # this item's own outcome; attribute the halt to it.
+                return state.status in halting
+            status = rec.get("status")
+            if status == StepStatus.PAUSED.value:
+                return True
+            if status == StepStatus.FAILED.value:
+                out = rec.get("output") or {}
+                if out.get("aborted") or template.get("continue_on_error") is not True:
+                    return True
+            return False
+
         first_exc: Exception | None = None
-        ran = 0
+        halted_at: int | None = None
+        collected = 0
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures: dict[Any, int] = {}
+            futures: dict[int, Future] = {}
+            next_submit = 0
             for idx in range(n):
-                if state.status in halting:
+                # Refill the window: keep <= workers in flight, and stop launching
+                # new items once the run is halting so a halt cannot keep starting
+                # queued work. Already-submitted futures are still collected in
+                # item order below.
+                while (
+                    next_submit < n
+                    and len(futures) < workers
+                    and state.status not in halting
+                ):
+                    futures[next_submit] = pool.submit(run_isolated, next_submit)
+                    next_submit += 1
+
+                fut = futures.pop(idx, None)
+                if fut is None:
+                    # Safety net: the window submits indices in order and the loop
+                    # breaks at the first halting item, so every collected index has
+                    # an in-flight future. Stop cleanly rather than raise if a future
+                    # change ever breaks that invariant.
                     break
-                futures[pool.submit(run_isolated, idx)] = idx
-            # Collect in submission (item) order: each .result() blocks on that
-            # item, so slots fill 0,1,2,… and the collected set is a prefix.
-            for fut in list(futures):
-                idx = futures[fut]
                 try:
                     slots[idx] = fut.result()
                 except Exception as exc:
@@ -1016,18 +1079,23 @@ class WorkflowEngine:
                     # outstanding work and re-raise so the engine marks the run
                     # failed instead of reporting a vacuous completion.
                     first_exc = exc
-                    for other in futures:
+                    for other in futures.values():
                         other.cancel()
                     break
-                ran = idx + 1
-                if state.status in halting:
-                    for other in futures:
+                collected = idx + 1
+                if item_halted(idx):
+                    # First halting item in item order: include it (slots[idx] is
+                    # already set), then cancel everything still pending.
+                    halted_at = idx
+                    for other in futures.values():
                         other.cancel()
                     break
 
         if first_exc is not None:
             raise first_exc
-        return slots[:ran] if state.status in halting else slots
+        if halted_at is not None:
+            return slots[: halted_at + 1]
+        return slots[:collected]
 
     def _resolve_inputs(
         self,
