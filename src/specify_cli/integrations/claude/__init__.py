@@ -22,13 +22,17 @@ ARGUMENT_HINTS: dict[str, str] = {
 }
 
 # Per-command frontmatter overrides for skills that should run in a forked
-# subagent context. Read-only analysis commands are good candidates: the
-# heavy reads (spec/plan/tasks artefacts) collapse to a short summary,
-# so isolating them keeps the main conversation context clean.
-# See https://code.claude.com/docs/en/skills#run-skills-in-a-subagent
-FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {
-    "analyze": {"context": "fork", "agent": "general-purpose"},
-}
+# subagent context. See https://code.claude.com/docs/en/skills#run-skills-in-a-subagent
+#
+# This is intentionally empty. ``analyze`` was previously forked (added in
+# #2511) on the assumption that its heavy reads collapse to a short summary,
+# but in practice ``/speckit-analyze`` returns a 300-500 line report that is
+# injected back into the main conversation. In long sessions each subsequent
+# fork inherits that growing context, compounding overhead until the chat
+# freezes (#3185). Until a command genuinely returns a compact result, no
+# command opts into ``context: fork``. The injection mechanism below stays in
+# place so a future command can be added here when that holds true.
+FORK_CONTEXT_COMMANDS: dict[str, dict[str, str]] = {}
 
 
 class ClaudeIntegration(SkillsIntegration):

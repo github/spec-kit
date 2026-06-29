@@ -119,6 +119,12 @@ specify bundle build
 
 Produces a single versioned, distributable `.zip` artifact from a bundle directory. The artifact embeds the manifest and can be installed directly with `specify bundle install <artifact.zip>`.
 
+## Publish a Bundle
+
+Bundle authors validate and package bundles locally, then host the generated artifact and catalog metadata where users can access it. A bundle catalog entry points at the bundle artifact, but the components declared inside `bundle.yml` still resolve through bundled components, installed components, or active extension, preset, workflow, and step catalogs.
+
+If your bundle references components from non-default catalogs, document those catalog URLs and test the install path from a clean project with those catalogs added. Community bundle submissions should include that dependency-resolution evidence in the [Bundle Submission](https://github.com/github/spec-kit/issues/new?template=bundle_submission.yml) issue.
+
 ## Manage Catalog Sources
 
 Bundles are discovered through a priority-ordered stack of catalog sources (project, user, and built-in scopes).

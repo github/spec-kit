@@ -13,10 +13,10 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 After installing Spec Kit and defining your project constitution, quick experiments can use the lean feature path: `/speckit.specify` -> `/speckit.plan` -> `/speckit.tasks` -> `/speckit.implement`. For production features or any work with meaningful ambiguity, treat `/speckit.clarify`, `/speckit.checklist`, and `/speckit.analyze` as regular quality gates:
 
 ```text
-/speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.plan -> /speckit.checklist -> /speckit.tasks -> /speckit.analyze -> /speckit.implement
+/speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.plan -> /speckit.checklist -> /speckit.tasks -> /speckit.analyze -> /speckit.implement -> /speckit.converge
 ```
 
-Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` (after `/speckit.plan`) to generate quality checklists that validate requirements completeness, clarity, and consistency, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts. You can repeat `/speckit.analyze` after implementation as an extra review, but keep the first analysis before `/speckit.implement` so gaps are caught while the plan and tasks can still be adjusted.
+Use `/speckit.clarify` to reduce requirement ambiguity before planning, `/speckit.checklist` (after `/speckit.plan`) to generate quality checklists that validate requirements completeness, clarity, and consistency, and `/speckit.analyze` to check spec/plan/task consistency before implementation starts. You can repeat `/speckit.analyze` after implementation as an extra review, but keep the first analysis before `/speckit.implement` so gaps are caught while the plan and tasks can still be adjusted. Finally, run `/speckit.converge` after implementation to verify all planned work is complete and generate tasks for any remaining gaps. If `/speckit.converge` appends new tasks, run `/speckit.implement` again (and converge again) until it reports that the feature has converged.
 
 ### Step 1: Install Specify
 
@@ -186,6 +186,14 @@ Finally, implement the solution:
 
 ```bash
 /speckit.implement
+```
+
+### Step 8: Converge
+
+Run the `/speckit.converge` command after implementation to assess the current codebase against the feature's artifacts and append any remaining unbuilt work as new tasks to `tasks.md`. If the command appends new tasks, run `/speckit.implement` again to complete them, and repeat the converge step until the feature is fully complete.
+
+```bash
+/speckit.converge
 ```
 
 > [!TIP]

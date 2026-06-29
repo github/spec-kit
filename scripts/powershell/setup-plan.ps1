@@ -40,6 +40,13 @@ if (Test-Path $paths.IMPL_PLAN -PathType Leaf) {
         $content = [System.IO.File]::ReadAllText($template)
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
+        # Emit the copy status like the bash twin (setup-plan.sh); route to stderr
+        # in -Json mode so stdout stays pure JSON, matching the sibling messages.
+        if ($Json) {
+            [Console]::Error.WriteLine("Copied plan template to $($paths.IMPL_PLAN)")
+        } else {
+            Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
+        }
     } else {
         Write-Warning "Plan template not found"
         # Create a basic plan file if template doesn't exist

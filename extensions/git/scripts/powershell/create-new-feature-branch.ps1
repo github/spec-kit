@@ -252,7 +252,10 @@ function Get-BranchName {
         if ($stopWords -contains $word) { continue }
         if ($word.Length -ge 3) {
             $meaningfulWords += $word
-        } elseif ($Description -match "\b$($word.ToUpper())\b") {
+        } elseif ($Description -cmatch "\b$($word.ToUpper())\b") {
+            # Case-sensitive (-cmatch) to mirror the bash twin's `grep -qw -- "${word^^}"`:
+            # keep a short word only when its UPPERCASE form appears in the original
+            # (an acronym). -match is case-insensitive and would keep every short word.
             $meaningfulWords += $word
         }
     }
@@ -397,8 +400,10 @@ if ($Json) {
     $obj = [PSCustomObject]@{
         BRANCH_NAME = $branchName
         FEATURE_NUM = $featureNum
-        HAS_GIT = $hasGit
     }
+    # $hasGit is computed for branch-creation logic only; it is intentionally not
+    # emitted so this output contract matches the bash twin: BRANCH_NAME and
+    # FEATURE_NUM, plus DRY_RUN (added just below) on dry runs.
     if ($DryRun) {
         $obj | Add-Member -NotePropertyName 'DRY_RUN' -NotePropertyValue $true
     }
@@ -406,7 +411,6 @@ if ($Json) {
 } else {
     Write-Output "BRANCH_NAME: $branchName"
     Write-Output "FEATURE_NUM: $featureNum"
-    Write-Output "HAS_GIT: $hasGit"
     if (-not $DryRun) {
         Write-Output "SPECIFY_FEATURE environment variable set to: $branchName"
     }
