@@ -1,4 +1,4 @@
-"""Goose integration — Block's open source AI agent."""
+"""Goose integration — open source AI agent (Agentic AI Foundation)."""
 
 from ..base import YamlIntegration
 
@@ -9,7 +9,7 @@ class GooseIntegration(YamlIntegration):
         "name": "Goose",
         "folder": ".goose/",
         "commands_subdir": "recipes",
-        "install_url": "https://block.github.io/goose/docs/getting-started/installation",
+        "install_url": "https://goose-docs.ai/docs/getting-started/installation",
         "requires_cli": True,
     }
     registrar_config = {
