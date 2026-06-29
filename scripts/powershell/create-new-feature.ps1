@@ -211,6 +211,10 @@ if (-not $DryRun) {
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             [System.IO.File]::WriteAllText($specFile, $content, $utf8NoBom)
         } else {
+            # Match the bash twin (create-new-feature.sh): warn on stderr that no
+            # spec template was found before creating an empty spec file, so the
+            # missing-template signal is not silently swallowed on Windows.
+            [Console]::Error.WriteLine("Warning: Spec template not found; created empty spec file")
             New-Item -ItemType File -Path $specFile -Force | Out-Null
         }
     }
