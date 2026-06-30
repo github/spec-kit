@@ -160,7 +160,7 @@ class CommandStep(StepBase):
             errors.append(
                 f"Command step {config.get('id', '?')!r} is missing 'command' field."
             )
-        # execute() iterates input.items() and options.update(options); a
+        # execute() iterates input.items() and options.update(step_options); a
         # non-mapping here would raise at run time. Validate the shape like the
         # sibling steps (switch 'cases', fan-out 'step') so it is reported, not
         # crashed on.
