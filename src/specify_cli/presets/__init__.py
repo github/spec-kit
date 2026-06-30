@@ -1863,7 +1863,7 @@ class PresetCatalog:
             )
         # Check hostname, not netloc: netloc is truthy for host-less URLs like
         # "https://:8080" or "https://user@", so the host guarantee this error
-        # promises would not actually hold. hostname is None in those cases.
+        # promises would not actually hold. hostname is None in those cases (#3209).
         if not parsed.hostname:
             raise PresetValidationError(
                 "Catalog URL must be a valid URL with a host."

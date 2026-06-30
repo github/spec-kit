@@ -1427,14 +1427,15 @@ class TestPresetCatalog:
     @pytest.mark.parametrize(
         "url",
         [
-            "https://:8080",       # port only, no host
-            "https://:0",          # port only, no host
-            "https://user@",       # userinfo only, no host
-            "https://user:pw@",    # userinfo only, no host
+            "https://:8080",                # port only, no host
+            "https://:8080/catalog.json",   # port only, with path
+            "https://:0",                   # port only, no host
+            "https://user@",                # userinfo only, no host
+            "https://user:pass@",           # userinfo only, no host
         ],
     )
     def test_validate_catalog_url_hostless_rejected(self, project_dir, url):
-        """Reject host-less URLs whose netloc is truthy but hostname is None.
+        """Reject host-less URLs whose netloc is truthy but hostname is None (#3209).
 
         ``urlparse('https://:8080').netloc`` is ``':8080'`` (truthy) but its
         ``hostname`` is ``None``, so a netloc-based check would accept a URL

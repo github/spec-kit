@@ -264,15 +264,6 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
     },
-    "iflow": {
-      "id": "iflow",
-      "name": "iFlow CLI",
-      "version": "1.0.0",
-      "description": "iFlow CLI integration by iflow-ai",
-      "author": "spec-kit-core",
-      "repository": "https://github.com/github/spec-kit",
-      "tags": ["cli"]
-    },
     "vibe": {
       "id": "vibe",
       "name": "Mistral Vibe",

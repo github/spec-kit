@@ -2,7 +2,20 @@
 
 <!-- insert new changelog below this comment -->
 
-- feat(cli): the `specify` CLI now honors `SPECIFY_INIT_DIR` for every project-scoped subcommand (`integration`, `extension`, `workflow`, `preset`, …) and `workflow run <file>`, applying the same validation rules as the shell resolver, so they can target a member project from a monorepo root without `cd` (#3186)
+## [0.12.1] - 2026-06-30
+
+### Changed
+
+- chore: align CI Python matrix with devguide lifecycle + fix bash 3.2 portability (#3244)
+- fix: stop check-prerequisites --paths-only from writing feature.json (#3025) (#3190)
+- docs: document integration catalog subcommands (#3206)
+- fix(scripts): use ASCII [OK] marker in initialize-repo.sh (parity with PowerShell twin) (#3231)
+- docs: document integration `search`/`info`/`scaffold` subcommands (#3174) (#3194)
+- docs: remove Cursor from `specify check` agent list (#3178) (#3193)
+- fix(goose): repoint install_url and docs to goose-docs.ai (#3171) (#3215)
+- fix(scripts): route 'Plan template not found' per --json in setup-plan.ps1 (parity with bash) (#3241)
+- fix(bundle): send command errors to stderr so --json stdout stays parseable (#3235)
+- chore: release 0.12.0, begin 0.12.1.dev0 development (#3243)
 
 ## [0.12.0] - 2026-06-29
 
