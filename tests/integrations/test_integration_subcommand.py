@@ -97,7 +97,7 @@ class TestIntegrationList:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_list_shows_installed(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -167,7 +167,7 @@ class TestIntegrationStatus:
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(app, ["integration", "status"])
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_status_reports_healthy_project(self, copilot_project):
         result = _run_in_project(copilot_project, ["integration", "status"])
@@ -988,7 +988,7 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_install_unknown_integration(self, tmp_path):
         project = _init_project(tmp_path)
@@ -1384,7 +1384,7 @@ class TestIntegrationUninstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_uninstall_no_integration(self, tmp_path):
         project = tmp_path / "proj"
@@ -1687,7 +1687,7 @@ class TestIntegrationSwitch:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_switch_unknown_target(self, tmp_path):
         project = _init_project(tmp_path)

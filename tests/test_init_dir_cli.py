@@ -58,7 +58,7 @@ def _workflow_yaml(wf_id):
 
 def test_override_redirects_to_sibling_from_nonproject_cwd(tmp_path, monkeypatch):
     """A valid SPECIFY_INIT_DIR resolves the target even when cwd is not itself a
-    project — without the override this would error 'Not a spec-kit project'."""
+    project — without the override this would error 'Not a Spec Kit project'."""
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     web = _make_project(tmp_path, "web")
@@ -148,6 +148,18 @@ def test_override_nonexistent_errors_bundle_commands_no_fallback(tmp_path, monke
     assert result.exit_code != 0
     assert "does not point to an existing directory" in result.output
     assert "No bundles installed" not in result.output
+
+
+def test_override_nonexistent_bundle_json_error_stays_off_stdout(tmp_path, monkeypatch):
+    """Invalid override errors must not contaminate JSON stdout."""
+    cwd_proj = _make_project(tmp_path, "cwd")
+    monkeypatch.chdir(cwd_proj)
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(tmp_path / "does_not_exist"))
+
+    result = runner.invoke(app, ["bundle", "list", "--json"])
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert "does not point to an existing directory" in result.stderr
 
 
 def test_override_symlinked_specify_errors_bundle_init_no_fallback(tmp_path, monkeypatch):

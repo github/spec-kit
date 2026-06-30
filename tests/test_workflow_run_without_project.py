@@ -108,7 +108,7 @@ class TestWorkflowRunWithoutProject:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_workflow_run_missing_yaml_file(self, tmp_path):
         """Running a non-existent .yml file should still require a project."""

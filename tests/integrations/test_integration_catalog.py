@@ -590,7 +590,7 @@ class TestIntegrationUpgrade:
         finally:
             os.chdir(old)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_upgrade_no_integration_installed(self, tmp_path):
         from typer.testing import CliRunner

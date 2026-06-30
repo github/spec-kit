@@ -7,7 +7,7 @@ from pathlib import Path
 
 import typer
 
-from ._console import console
+from ._console import err_console
 
 
 def _resolve_init_dir_override() -> Path | None:
@@ -41,12 +41,12 @@ def _resolve_init_dir_override() -> Path | None:
     # collapses a trailing slash and canonicalizes symlinks.
     init_root = (Path.cwd() / raw).resolve()
     if not init_root.is_dir():
-        console.print(
+        err_console.print(
             f"[red]Error:[/red] SPECIFY_INIT_DIR does not point to an existing directory: {raw}"
         )
         raise typer.Exit(1)
     if not (init_root / ".specify").is_dir():
-        console.print(
+        err_console.print(
             f"[red]Error:[/red] SPECIFY_INIT_DIR is not a Spec Kit project (no .specify/ directory): {init_root}"
         )
         raise typer.Exit(1)
