@@ -143,6 +143,13 @@ function Save-FeatureJson {
 }
 
 function Get-FeaturePathsEnv {
+    # Read-only callers (e.g. check-prerequisites.ps1 -PathsOnly) pass -NoPersist
+    # so pure path resolution never writes .specify/feature.json, which would
+    # dirty the working tree or overwrite a pinned value (issue #3025).
+    param(
+        [switch]$NoPersist
+    )
+
     $repoRoot = Get-RepoRoot
     $currentBranch = Get-CurrentBranch
 
@@ -157,8 +164,11 @@ function Get-FeaturePathsEnv {
         if (-not [System.IO.Path]::IsPathRooted($featureDir)) {
             $featureDir = Join-Path $repoRoot $featureDir
         }
-        # Persist to feature.json so future sessions without the env var still work
-        Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
+        # Persist to feature.json so future sessions without the env var still
+        # work - unless the caller opted out for read-only resolution (#3025).
+        if (-not $NoPersist) {
+            Save-FeatureJson -RepoRoot $repoRoot -FeatureDirectory $env:SPECIFY_FEATURE_DIRECTORY
+        }
     } elseif (Test-Path $featureJson) {
         $featureJsonRaw = Get-Content -LiteralPath $featureJson -Raw
         try {

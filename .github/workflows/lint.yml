@@ -61,7 +61,7 @@ jobs:
       # for portable case conversion.
       - name: Reject bash 4+ case-modification expansions
         run: |
-          matches=$(git ls-files -z -- '*.sh' | xargs -0 grep -nE '\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^\^?|,,?|~~?|@[UuLl])' || true)
+          matches=$(git ls-files -z -- '*.sh' | xargs -0 grep -nE '\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(\^\^?|,,?|~~?|@[UuLl])[^}]*\}' || true)
           if [ -n "$matches" ]; then
             echo "Found bash 4+ case-modification expansion(s); use tr for portability (macOS ships bash 3.2):"
             echo "$matches"
