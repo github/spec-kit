@@ -59,7 +59,7 @@ case "$(uname -s 2>/dev/null || true)" in
 esac
 
 # Parse extension config once; emit context files as JSON, followed by marker strings.
-if ! _raw_opts="$("$_python" - "$EXT_CONFIG" "$_case_insensitive_context_files" "$PROJECT_ROOT" <<'PY'
+if ! _raw_opts=$("$_python" - "$EXT_CONFIG" "$_case_insensitive_context_files" "$PROJECT_ROOT" <<'PY'
 import json
 import sys
 try:
@@ -160,7 +160,7 @@ print(json.dumps(context_files))
 print(get_str(data, "context_markers", "start"))
 print(get_str(data, "context_markers", "end"))
 PY
-)"; then
+); then
   echo "agent-context: skipping update (see above for details)." >&2
   exit 0
 fi
@@ -177,7 +177,7 @@ CONTEXT_FILES_JSON="${_opts_lines[0]}"
 MARKER_START="${_opts_lines[1]}"
 MARKER_END="${_opts_lines[2]}"
 
-if ! _context_files_raw="$("$_python" - "$CONTEXT_FILES_JSON" <<'PY'
+if ! _context_files_raw=$("$_python" - "$CONTEXT_FILES_JSON" <<'PY'
 import json
 import sys
 try:
@@ -190,7 +190,7 @@ for value in data:
     if isinstance(value, str) and value:
         print(value)
 PY
-)"; then
+); then
   echo "agent-context: malformed context_files parser output; skipping update." >&2
   exit 0
 fi
@@ -248,7 +248,7 @@ if [[ -z "$PLAN_PATH" ]]; then
   # Prefer .specify/feature.json (written by /speckit-specify) over mtime heuristic.
   _feature_json="$PROJECT_ROOT/.specify/feature.json"
   if [[ -f "$_feature_json" ]]; then
-    _feature_dir="$("$_python" - "$_feature_json" <<'PY'
+    _feature_dir=$("$_python" - "$_feature_json" <<'PY'
 import sys, json
 try:
     with open(sys.argv[1], encoding="utf-8") as fh:
@@ -258,9 +258,9 @@ try:
 except Exception:
     print("")
 PY
-)"
+)
     # Normalize backslashes (written by PS on Windows) to forward slashes before path ops.
-    _feature_dir="$(printf '%s' "$_feature_dir" | tr '\\' '/')"
+    _feature_dir=$(printf '%s' "$_feature_dir" | tr '\\' '/')
     _feature_dir="${_feature_dir%/}"
     if [[ -n "$_feature_dir" ]]; then
       # feature_directory may be relative or absolute (absolute paths outside PROJECT_ROOT
@@ -274,7 +274,7 @@ PY
       if [[ -f "$_candidate" ]]; then
         # Resolve symlinks before comparing so paths like /var/… vs /private/var/…
         # (macOS) are treated as equivalent. Mirrors the mtime-fallback approach.
-        PLAN_PATH="$("$_python" - "$PROJECT_ROOT" "$_candidate" <<'PY'
+        PLAN_PATH=$("$_python" - "$PROJECT_ROOT" "$_candidate" <<'PY'
 import sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
@@ -286,7 +286,7 @@ except ValueError:
     # as_posix() converts backslashes correctly on native Windows Python.
     print(cand.as_posix())
 PY
-)"
+)
       fi
     fi
   fi
@@ -295,7 +295,7 @@ PY
   # Python emits a project-relative POSIX path directly to avoid bash prefix-strip
   # issues with backslash paths on Windows (Git bash / MSYS2).
   if [[ -z "$PLAN_PATH" ]]; then
-    _plan_rel="$("$_python" - "$PROJECT_ROOT" <<'PY'
+    _plan_rel=$("$_python" - "$PROJECT_ROOT" <<'PY'
 import sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
@@ -313,7 +313,7 @@ if plans:
 else:
     print("")
 PY
-)"
+)
     if [[ -n "$_plan_rel" ]]; then
       PLAN_PATH="$_plan_rel"
     fi
