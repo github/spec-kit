@@ -1684,6 +1684,46 @@ class TestIfThenStep:
         errors = step.validate({"id": "test", "then": []})
         assert any("missing 'condition'" in e for e in errors)
 
+    @pytest.mark.parametrize("bad_else", [False, 0, "", {}, 42])
+    def test_validate_rejects_non_list_else(self, bad_else):
+        """A non-list 'else' must be rejected even when it is falsy.
+
+        The original guard used ``if else_branch and ...`` which
+        short-circuits for falsy non-list values (False/0/''/{}), letting a
+        malformed else-branch pass validation only to be silently skipped at
+        runtime. ``then`` is already strictly validated; ``else`` must match.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate(
+            {"id": "i", "condition": "true", "then": [], "else": bad_else}
+        )
+        assert any("'else' must be a list of steps" in e for e in errors)
+
+    @pytest.mark.parametrize("ok_else", [None, [], [{"id": "x", "command": "/y"}]])
+    def test_validate_accepts_valid_else(self, ok_else):
+        """An explicit 'else' of None or a list stays valid.
+
+        ``else`` is set explicitly here (including ``else: None``) so the
+        explicit-None case is exercised, not just the missing-key case.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate(
+            {"id": "i", "condition": "true", "then": [], "else": ok_else}
+        )
+        assert not any("'else'" in e for e in errors)
+
+    def test_validate_accepts_missing_else(self):
+        """A missing 'else' key stays valid (no else branch)."""
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate({"id": "i", "condition": "true", "then": []})
+        assert not any("'else'" in e for e in errors)
+
 
 class TestSwitchStep:
     """Test the switch step type."""
