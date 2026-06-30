@@ -29,10 +29,7 @@ Or install globally:
 import os
 import sys
 import json
-import yaml
 from pathlib import Path
-
-from typing import Any
 
 import typer
 from rich.panel import Panel
