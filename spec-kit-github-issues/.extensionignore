@@ -1,0 +1,43 @@
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Development files
+.git/
+.github/
+.gitignore
+
+# Build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+dist/
+build/
+*.egg-info/
+
+# Documentation source
+docs/source/
+docs/drafts/
+
+# Local config (users should use the template)
+*-config.yml
+!*-config.template.yml
+
+# Temporary files
+*.tmp
+*.bak
+.*.swp
