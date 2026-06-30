@@ -220,29 +220,38 @@ def register(app: typer.Typer) -> None:
                 console.print(
                     f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)"
                 )
-                console.print(
-                    "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
-                )
                 if force:
+                    # Proceeding: the merge/overwrite warning is accurate here.
+                    console.print(
+                        "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
+                    )
                     console.print(
                         "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                     )
                 else:
+                    # Fold the merge/overwrite warning into the confirmation so it
+                    # is shown only when we are actually about to proceed -- not on
+                    # the fail-fast path below, where nothing is merged.
                     try:
-                        response = typer.confirm("Do you want to continue?")
+                        proceed = typer.confirm(
+                            "Template files will be merged with existing content and "
+                            "may overwrite existing files. Continue?"
+                        )
                     except (typer.Abort, EOFError):
-                        # No confirmation input available (non-interactive session
-                        # with empty stdin): fail fast with actionable guidance
-                        # instead of the bare "Aborted." Piped input (e.g. "y") is
-                        # still honored above. Mirrors the named-project path,
-                        # which already points to --force.
+                        if _stdin_is_interactive():
+                            # Interactive cancel (e.g. Ctrl+C): a normal cancellation.
+                            console.print("[yellow]Operation cancelled[/yellow]")
+                            raise typer.Exit(0) from None
+                        # Non-interactive with no confirmation input on stdin: fail
+                        # fast with actionable guidance instead of a bare "Aborted."
+                        # (Piped input such as "y" is still honored above.)
                         console.print(
                             "[red]Error:[/red] Current directory is not empty and no "
                             "confirmation input is available. Re-run with "
                             "[bold]--force[/bold] to merge into it."
                         )
                         raise typer.Exit(1) from None
-                    if not response:
+                    if not proceed:
                         console.print("[yellow]Operation cancelled[/yellow]")
                         raise typer.Exit(0)
         else:
