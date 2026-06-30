@@ -26,7 +26,6 @@ class CodexIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
     dev_no_symlink = True
     multi_install_safe = True
 

@@ -14,7 +14,6 @@ class TestOpencodeIntegration(MarkdownIntegrationTests):
     FOLDER = ".opencode/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".opencode/commands"
-    CONTEXT_FILE = "AGENTS.md"
 
     def test_build_exec_args_uses_run_command_dispatch(self):
         integration = get_integration(self.KEY)

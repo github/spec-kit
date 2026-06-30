@@ -10,7 +10,6 @@ class TestOmpIntegration(MarkdownIntegrationTests):
     FOLDER = ".omp/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".omp/commands"
-    CONTEXT_FILE = "AGENTS.md"
 
     def test_build_exec_args_uses_omp_json_mode(self):
         i = get_integration(self.KEY)

@@ -55,7 +55,6 @@ class TestForgeIntegration:
         assert forge.config["requires_cli"] is True
         assert forge.registrar_config["args"] == "{{parameters}}"
         assert forge.registrar_config["extension"] == ".md"
-        assert forge.context_file == "AGENTS.md"
 
     def test_command_filename_md(self):
         forge = get_integration("forge")
@@ -73,16 +72,15 @@ class TestForgeIntegration:
         for f in command_files:
             assert f.name.endswith(".md")
 
-    def test_setup_upserts_context_section(self, tmp_path):
+    def test_setup_does_not_write_context_section(self, tmp_path):
         from specify_cli.integrations.forge import ForgeIntegration
         forge = ForgeIntegration()
         m = IntegrationManifest("forge", tmp_path)
         forge.setup(tmp_path, m)
-        ctx_path = tmp_path / forge.context_file
-        assert ctx_path.exists()
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "<!-- SPECKIT END -->" in content
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text
 
     def test_all_created_files_tracked_in_manifest(self, tmp_path):
         from specify_cli.integrations.forge import ForgeIntegration
@@ -164,8 +162,9 @@ class TestForgeIntegration:
                 "Forge requires hyphen notation (/speckit-<cmd>) for ZSH compatibility"
             )
 
-    def test_plan_references_correct_context_file(self, tmp_path):
-        """The generated plan command must reference forge's context file."""
+    def test_plan_command_has_no_context_placeholder(self, tmp_path):
+        """The core plan command must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         from specify_cli.integrations.forge import ForgeIntegration
         forge = ForgeIntegration()
         m = IntegrationManifest("forge", tmp_path)
@@ -173,9 +172,6 @@ class TestForgeIntegration:
         plan_file = tmp_path / ".forge" / "commands" / "speckit.plan.md"
         assert plan_file.exists()
         content = plan_file.read_text(encoding="utf-8")
-        assert forge.context_file in content, (
-            f"Plan command should reference {forge.context_file!r}"
-        )
         assert "__CONTEXT_FILE__" not in content
 
     def test_forge_specific_transformations(self, tmp_path):

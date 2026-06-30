@@ -262,6 +262,7 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `command`    | Invoke a Spec Kit command (e.g., `speckit.plan`) |
 | `prompt`     | Send an arbitrary prompt to the AI coding agent  |
 | `shell`      | Execute a shell command and capture output       |
+| `init`       | Bootstrap a project (like `specify init`)        |
 | `gate`       | Pause for human approval before continuing       |
 | `if`         | Conditional branching (then/else)                |
 | `switch`     | Multi-branch dispatch on an expression           |

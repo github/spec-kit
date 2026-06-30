@@ -11,7 +11,6 @@ class TestFirebenderIntegration(MarkdownIntegrationTests):
     FOLDER = ".firebender/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".firebender/commands"
-    CONTEXT_FILE = ".firebender/rules/specify-rules.mdc"
 
     # Firebender reads custom slash commands from ``.firebender/commands/*.mdc``,
     # so this integration uses the ``.mdc`` extension instead of the ``.md``

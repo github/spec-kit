@@ -11,7 +11,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | `auggie`         |                                                                                                                                           |
 | [Claude Code](https://www.anthropic.com/claude-code)                                 | `claude`         | Skills-based integration; installs skills in `.claude/skills`                                                                              |
 | [Cline](https://github.com/cline/cline)                                              | `cline`          | IDE-based agent                                                                                                                           |
-| [CodeBuddy CLI](https://www.codebuddy.cn/cli)                                        | `codebuddy`      |                                                                                                                                           |
+| [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation)                      | `codebuddy`      |                                                                                                                                           |
 | [Codex CLI](https://github.com/openai/codex)                                         | `codex`          | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
 | [Cursor](https://cursor.sh/)                                                         | `cursor-agent`   |                                                                                                                                           |
 | [Devin for Terminal](https://cli.devin.ai/docs)                                      | `devin`          | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
@@ -19,7 +19,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
 | [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        |                                                                                                                                           |
-| [Goose](https://block.github.io/goose/)                                              | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
+| [Goose](https://goose-docs.ai/)                                                      | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
 | [Hermes](https://github.com/NousResearch/hermes-agent)                               | `hermes`         | Skills-based integration; installs skills globally into `~/.hermes/skills/`                                                                |
 | [IBM Bob](https://www.ibm.com/products/bob)                                          | `bob`            | IDE-based agent                                                                                                                           |
 | [iFlow CLI](https://docs.iflow.cn/en/cli/quickstart)                                 | `iflow`          |                                                                                                                                           |
@@ -53,6 +53,27 @@ specify integration list
 Shows all available integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
 When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
 The list also shows whether each built-in integration is declared multi-install safe.
+
+## Search Available Integrations
+
+```bash
+specify integration search [query]
+```
+
+| Option     | Description        |
+| ---------- | ------------------ |
+| `--tag`    | Filter by tag      |
+| `--author` | Filter by author   |
+
+Searches the active catalog stack for integrations matching the query. Without a query, lists all available integrations. Must be run inside a Spec Kit project.
+
+## Integration Info
+
+```bash
+specify integration info <integration_id>
+```
+
+Shows catalog details for a single integration, including its description, author, license, tags, source catalog, repository (when available), and whether it is currently active. Must be run inside a Spec Kit project.
 
 ## Install an Integration
 
@@ -152,6 +173,47 @@ is `null` when no installed integration set can be evaluated, such as when the
 integration state is missing, unreadable, lacks a valid recorded integration
 list, or records no installed integrations.
 
+## Catalog Management
+
+Integration catalogs control where the discovery commands (`search` and `info`) look for integrations. Catalogs are checked in priority order.
+
+### List Catalogs
+
+```bash
+specify integration catalog list
+```
+
+Shows the active catalog sources. Project-level sources (when configured) are removable by index; otherwise the active sources are shown as non-removable.
+
+### Add a Catalog
+
+```bash
+specify integration catalog add <url>
+```
+
+| Option          | Description                   |
+| --------------- | ----------------------------- |
+| `--name <name>` | Optional name for the catalog |
+
+Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
+
+### Remove a Catalog
+
+```bash
+specify integration catalog remove <index>
+```
+
+Removes a project catalog source by its 0-based index in `catalog list`.
+
+### Catalog Resolution Order
+
+Catalogs are resolved in this order (first match wins):
+
+1. **Environment variable** — `SPECKIT_INTEGRATION_CATALOG_URL` overrides all catalogs
+2. **Project config** — `.specify/integration-catalogs.yml`
+3. **User config** — `~/.specify/integration-catalogs.yml`
+4. **Built-in defaults** — official catalog + community catalog
+
 ## Integration-Specific Options
 
 Some integrations accept additional options via `--integration-options`:
@@ -166,6 +228,18 @@ Example:
 ```bash
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
 ```
+
+## Scaffold a New Integration
+
+```bash
+specify integration scaffold <key>
+```
+
+Creates a minimal built-in integration package and a matching test skeleton in the Spec Kit repository, then prints the next steps for wiring it up. Run this command from the Spec Kit repository root. The `<key>` must be lowercase kebab-case (for example, `my-agent`).
+
+| Option   | Description                                                       |
+| -------- | ---------------------------------------------------------------- |
+| `--type` | Scaffold template to use: `markdown` (default), `skills`, `toml`, or `yaml` |
 
 ## FAQ
 

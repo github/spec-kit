@@ -180,6 +180,35 @@ def _split_top_level_commas(text: str) -> list[str]:
     return parts
 
 
+def _find_top_level(text: str, token: str) -> int:
+    """Return the index of the first occurrence of *token* in *text* that lies
+    outside any quoted string or nested bracket, or ``-1`` if there is none.
+
+    Used so operator/keyword splitting (``and``/``or``/``in``/comparisons) does
+    not match a separator that appears *inside* a quoted operand -- e.g. the
+    ``and`` in ``mode == 'read and write'`` or the ``or`` in ``'approve or reject'``.
+    """
+    quote: str | None = None
+    depth = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth = max(0, depth - 1)
+        elif depth == 0 and text.startswith(token, i):
+            return i
+        i += 1
+    return -1
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -193,18 +222,21 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """
     expr = expr.strip()
 
-    # String literal — check before pipes and operators so quoted strings
-    # containing | or operator keywords are not mis-parsed.
-    if (expr.startswith("'") and expr.endswith("'")) or (
-        expr.startswith('"') and expr.endswith('"')
-    ):
+    # String literal — only when the WHOLE expression is one quoted string,
+    # i.e. the opening quote's matching close is the final character. Checking
+    # startswith/endswith alone would also grab `'a' == 'b'` and strip it to the
+    # garbage `a' == 'b`; a genuine single literal short-circuits here so quoted
+    # strings containing `|` or operator keywords are not mis-parsed downstream.
+    if expr[:1] in ("'", '"') and expr.find(expr[0], 1) == len(expr) - 1:
         return expr[1:-1]
 
-    # Handle pipe filters
-    if "|" in expr:
-        parts = expr.split("|", 1)
-        value = _evaluate_simple_expression(parts[0].strip(), namespace)
-        filter_expr = parts[1].strip()
+    # Handle pipe filters. Detect the pipe at the top level only, so a literal
+    # '|' inside a quoted operand (e.g. `inputs.x == 'a|b'`) or nested brackets is
+    # not mistaken for a filter separator — mirroring the operator parsing below.
+    pipe_idx = _find_top_level(expr, "|")
+    if pipe_idx != -1:
+        value = _evaluate_simple_expression(expr[:pipe_idx].strip(), namespace)
+        filter_expr = expr[pipe_idx + 1:].strip()
 
         # `from_json` is strict: it takes no arguments and tolerates no
         # trailing tokens. Match on the leading filter name and require the
@@ -262,29 +294,33 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         )
 
     # Boolean operators — parse 'or' first (lower precedence) so that
-    # 'a or b and c' is evaluated as 'a or (b and c)'.
-    if " or " in expr:
-        parts = expr.split(" or ", 1)
-        left = _evaluate_simple_expression(parts[0].strip(), namespace)
-        right = _evaluate_simple_expression(parts[1].strip(), namespace)
+    # 'a or b and c' is evaluated as 'a or (b and c)'. Splits are quote/bracket
+    # aware so a keyword inside a quoted operand (e.g. the 'and' in
+    # 'read and write') is not mistaken for an operator.
+    or_idx = _find_top_level(expr, " or ")
+    if or_idx != -1:
+        left = _evaluate_simple_expression(expr[:or_idx].strip(), namespace)
+        right = _evaluate_simple_expression(expr[or_idx + 4:].strip(), namespace)
         return bool(left) or bool(right)
 
-    if " and " in expr:
-        parts = expr.split(" and ", 1)
-        left = _evaluate_simple_expression(parts[0].strip(), namespace)
-        right = _evaluate_simple_expression(parts[1].strip(), namespace)
+    and_idx = _find_top_level(expr, " and ")
+    if and_idx != -1:
+        left = _evaluate_simple_expression(expr[:and_idx].strip(), namespace)
+        right = _evaluate_simple_expression(expr[and_idx + 5:].strip(), namespace)
         return bool(left) and bool(right)
 
     if expr.startswith("not "):
         inner = _evaluate_simple_expression(expr[4:].strip(), namespace)
         return not bool(inner)
 
-    # Comparison operators (order matters — check multi-char ops first)
+    # Comparison operators (order matters — check multi-char ops first). Split at
+    # the first top-level occurrence so an operator inside a quoted operand is
+    # ignored.
     for op in ("!=", "==", ">=", "<=", ">", "<", " not in ", " in "):
-        if op in expr:
-            parts = expr.split(op, 1)
-            left = _evaluate_simple_expression(parts[0].strip(), namespace)
-            right = _evaluate_simple_expression(parts[1].strip(), namespace)
+        op_idx = _find_top_level(expr, op)
+        if op_idx != -1:
+            left = _evaluate_simple_expression(expr[:op_idx].strip(), namespace)
+            right = _evaluate_simple_expression(expr[op_idx + len(op):].strip(), namespace)
             if op == "==":
                 return left == right
             if op == "!=":
