@@ -743,6 +743,22 @@ class WorkflowEngine:
         state.save()
         return state
 
+    @staticmethod
+    def _record_result(
+        context: StepContext, state: RunState, step_id: str, data: dict[str, Any]
+    ) -> None:
+        """Record a step result into both the live context and persistent state.
+
+        ``record_step_result`` writes ``state.step_results`` under the run lock.
+        On a resume run ``context.steps`` *is* that same dict, so that locked
+        write is the only one needed; mirror into ``context.steps`` separately
+        only when it is a distinct object (a fresh run), to avoid an unlocked
+        mutation of the shared dict that could race a concurrent ``save()``.
+        """
+        if context.steps is not state.step_results:
+            context.steps[step_id] = data
+        state.record_step_result(step_id, data)
+
     def _execute_steps(
         self,
         steps: list[dict[str, Any]],
@@ -804,8 +820,7 @@ class WorkflowEngine:
                 "output": result.output,
                 "status": result.status.value,
             }
-            context.steps[step_id] = step_data
-            state.record_step_result(step_id, step_data)
+            self._record_result(context, state, step_id, step_data)
 
             state.append_log(
                 {
@@ -932,9 +947,9 @@ class WorkflowEngine:
                             ):
                                 return
                             if orig and ns_copy["id"] in context.steps:
-                                context.steps[orig] = context.steps[ns_copy["id"]]
-                                state.record_step_result(
-                                    orig, context.steps[ns_copy["id"]]
+                                self._record_result(
+                                    context, state, orig,
+                                    context.steps[ns_copy["id"]],
                                 )
 
             # Fan-out: execute the nested step template once per item. Honors
