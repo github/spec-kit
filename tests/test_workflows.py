@@ -2007,14 +2007,25 @@ class TestIfThenStep:
 
     @pytest.mark.parametrize("ok_else", [None, [], [{"id": "x", "command": "/y"}]])
     def test_validate_accepts_valid_else(self, ok_else):
-        """A missing/None/list 'else' stays valid."""
+        """An explicit 'else' of None or a list stays valid.
+
+        ``else`` is set explicitly here (including ``else: None``) so the
+        explicit-None case is exercised, not just the missing-key case.
+        """
         from specify_cli.workflows.steps.if_then import IfThenStep
 
         step = IfThenStep()
-        config = {"id": "i", "condition": "true", "then": []}
-        if ok_else is not None:
-            config["else"] = ok_else
-        errors = step.validate(config)
+        errors = step.validate(
+            {"id": "i", "condition": "true", "then": [], "else": ok_else}
+        )
+        assert not any("'else'" in e for e in errors)
+
+    def test_validate_accepts_missing_else(self):
+        """A missing 'else' key stays valid (no else branch)."""
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate({"id": "i", "condition": "true", "then": []})
         assert not any("'else'" in e for e in errors)
 
 
