@@ -12,7 +12,6 @@ class TestGooseIntegration(YamlIntegrationTests):
     FOLDER = ".goose/"
     COMMANDS_SUBDIR = "recipes"
     REGISTRAR_DIR = ".goose/recipes"
-    CONTEXT_FILE = "AGENTS.md"
 
     def test_setup_declares_args_parameter_for_args_prompt(self, tmp_path):
         # “If a generated Goose recipe uses {{args}} in its prompt, it

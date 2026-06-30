@@ -31,6 +31,7 @@ from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priorit
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter
+from ..shared_infra import verify_archive_sha256
 
 
 def _substitute_core_template(
@@ -1860,7 +1861,10 @@ class PresetCatalog:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.netloc:
+        # Check hostname, not netloc: netloc is truthy for host-less URLs like
+        # "https://:8080" or "https://user@", so the host guarantee this error
+        # promises would not actually hold. hostname is None in those cases.
+        if not parsed.hostname:
             raise PresetValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -1891,10 +1895,19 @@ class PresetCatalog:
         download_url: str,
         timeout: int = 60,
     ) -> Optional[str]:
-        """Resolve a GitHub release asset URL to its REST API asset URL."""
+        """Resolve a GitHub release asset URL to its REST API asset URL.
+
+        Passes the ``github`` provider hosts from ``auth.json`` so GitHub
+        Enterprise Server release assets resolve via ``/api/v3``.
+        """
         from specify_cli._github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.http import github_provider_hosts
+
         return resolve_github_release_asset_api_url(
-            download_url, self._open_url, timeout=timeout
+            download_url,
+            self._open_url,
+            timeout=timeout,
+            github_hosts=github_provider_hosts(),
         )
 
     def _validate_catalog_payload(self, catalog_data: Any, url: str) -> None:
@@ -2504,6 +2517,10 @@ class PresetCatalog:
         try:
             with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
                 zip_data = response.read()
+
+            verify_archive_sha256(
+                zip_data, pack_info.get("sha256"), pack_id, PresetError
+            )
 
             zip_path.write_bytes(zip_data)
             return zip_path

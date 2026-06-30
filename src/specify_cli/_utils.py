@@ -65,14 +65,31 @@ def dump_frontmatter(data: dict[str, Any]) -> str:
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True).strip()
 
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> str | None:
-    """Run a shell command and optionally capture output."""
+def run_command(
+    cmd: list[str],
+    check_return: bool = True,
+    capture: bool = False,
+    shell: bool = False,
+) -> str | None:
+    """Run a command without invoking a shell and optionally capture output.
+
+    The ``shell`` parameter is kept in the signature so existing keyword
+    callers (and the re-export from ``specify_cli``) don't raise ``TypeError``,
+    but only the default ``shell=False`` is honoured. ``shell=True`` is
+    rejected with ``ValueError`` rather than silently ignored, so the
+    unsupported mode fails loudly instead of running with a different meaning.
+    """
+    if shell:
+        raise ValueError(
+            "run_command() does not support shell=True; pass argv as a list"
+        )
+
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
+            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True)
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return, shell=shell)
+            subprocess.run(cmd, check=check_return)
             return None
     except subprocess.CalledProcessError as e:
         if check_return:

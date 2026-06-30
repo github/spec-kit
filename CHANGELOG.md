@@ -2,6 +2,85 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.0] - 2026-06-29
+
+### Changed
+
+- feat: make agent-context extension a full opt-in (#3097)
+- docs(workflows): add the built-in 'init' step type to the Step Types table (#3234)
+- fix(workflows): gate validate() must not crash on non-string options (#3233)
+- fix(workflows): make pipe-filter detection quote-aware in expressions (#3232)
+- fix(workflows): reject a fan-in wait_for that names an unknown step at validation (#3225)
+- fix(scripts): warn when spec template is missing in create-new-feature.ps1 (parity with bash) (#3230)
+- fix(scripts): count subdirectory-only dirs as non-empty in PowerShell (parity with bash) (#3137)
+- fix(scripts): drop HAS_GIT from PowerShell git-extension output (parity with bash) (#3195)
+- Update Product Spec Extension to v1.0.1 (#3226)
+- chore: release 0.11.10, begin 0.11.11.dev0 development (#3240)
+
+## [0.11.10] - 2026-06-29
+
+### Changed
+
+- fix(extensions): apply GHES auth and resolve release assets for `extension add --from` (#3217)
+- fix(pi): repoint install_url to @earendil-works/pi-coding-agent (#3169) (#3214)
+- fix(catalogs): reject host-less catalog URLs in base and preset validators (#3210)
+- fix: update CodeBuddy install docs URL (#3187)
+- fix(workflows): reject infinite number-input default instead of raising OverflowError (#3199)
+- fix(scripts): emit 'Copied plan template' status in setup-plan.ps1 (parity with bash) (#3198)
+- fix(workflows): make expression operator/literal parsing quote-aware (#3197)
+- fix(scripts): honor explicit -Number 0 in PowerShell create-new-feature (parity with bash) (#3196)
+- Add community bundle submission path (#3162)
+- Docs: Document /speckit.converge command (#3181)
+- chore: release 0.11.9, begin 0.11.10.dev0 development (#3189)
+
+## [0.11.9] - 2026-06-26
+
+### Changed
+
+- Docs: add cline and zcode to multi-install-safe table (#3180)
+- Docs: document missing flags --force and --refresh-shared-infra (#3179)
+- fix(claude): stop forking /speckit-analyze to prevent long-session freezes (#3188)
+- fix: derive plan path from feature.json in update-agent-context (#3069)
+- fix(catalog): companion → README docs, version-pinned download URL, v0.11.0, refreshed tags (#2954)
+- chore(deps): bump actions/setup-python from 6.2.0 to 6.3.0 (#3173)
+- Update SicarioSpec Core preset to v0.5.1 (#3165)
+- fix(extensions,presets,workflows): resolve private GHES release assets via /api/v3 (#3157)
+- Update preset composition strategy reference (#3143)
+- fix(scripts): keep PowerShell branch-name acronym match case-sensitive (parity with bash) (#3129)
+- fix(extensions): tell agent to run mandatory hooks, not just emit the directive (#2901)
+- Point sicario-core docs to preset README (#3120)
+- chore: release 0.11.8, begin 0.11.9.dev0 development (#3156)
+
+## [0.11.8] - 2026-06-24
+
+### Changed
+
+- docs: add SpecKit Assistant npm package to Community Friends (#3142)
+- Require preset-usage README with Spec Kit CLI syntax in preset submissions (#3104)
+- [extension] Update Jira Integration (Sync Engine) extension to v0.4.0 (#3152)
+- Add Spec Roadmap extension to community catalog (#3153)
+- feat(integration): update Kimi integration for Kimi Code CLI (#2979)
+- [extension] Add Golden Demo extension to community catalog (#3151)
+- docs: run /speckit.checklist after /speckit.plan in quickstart (#3108)
+- fix(workflows): preserve commas inside quoted list-literal elements (#3134)
+- ci: pin actions to commit SHAs and add shellcheck (#3126)
+- chore: release 0.11.7, begin 0.11.8.dev0 development (#3154)
+
+## [0.11.7] - 2026-06-24
+
+### Changed
+
+- feat(extensions): verify catalog archive sha256 before install (#3080)
+- fix(workflows): validate requires keys and reject phantom permissions gate (#3079)
+- fix(scripts): use case-sensitive match for acronym retention in PS branch names (#3130)
+- feat(integrations): add omp support (#3107)
+- fix: render valid TOML when a command body contains backslashes (#3135)
+- harden: reject shell=True in run_command (#3132)
+- docs: add monorepo guide (#3084)
+- fix(scripts): send check-prerequisites.ps1 errors to stderr (#3123)
+- fix: write Codex dev skills as files (#2988)
+- chore: release 0.11.6, begin 0.11.7.dev0 development (#3121)
+
 ## [0.11.6] - 2026-06-23
 
 ### Changed

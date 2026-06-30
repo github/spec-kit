@@ -41,7 +41,6 @@ class TestKiroCliIntegration(MarkdownIntegrationTests):
     FOLDER = ".kiro/"
     COMMANDS_SUBDIR = "prompts"
     REGISTRAR_DIR = ".kiro/prompts"
-    CONTEXT_FILE = "AGENTS.md"
 
     def test_registrar_config(self):
         """Override base assertion: kiro-cli uses a prose fallback for args

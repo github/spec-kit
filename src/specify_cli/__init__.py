@@ -262,84 +262,8 @@ def ensure_executable_scripts(project_path: Path, tracker: StepTracker | None = 
                 console.print(f"  - {f}")
 
 # ---------------------------------------------------------------------------
-# Agent-context extension config helpers
+# Skills directory helpers
 # ---------------------------------------------------------------------------
-
-_AGENT_CTX_EXT_CONFIG = (
-    Path(".specify") / "extensions" / "agent-context" / "agent-context-config.yml"
-)
-
-
-def _load_agent_context_config(project_root: Path) -> dict[str, Any]:
-    """Load the agent-context extension config, returning defaults on failure."""
-    from .integrations.base import IntegrationBase
-
-    defaults: dict[str, Any] = {
-        "context_file": "",
-        "context_files": [],
-        "context_markers": {
-            "start": IntegrationBase.CONTEXT_MARKER_START,
-            "end": IntegrationBase.CONTEXT_MARKER_END,
-        },
-    }
-    path = project_root / _AGENT_CTX_EXT_CONFIG
-    if not path.exists():
-        return defaults
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, yaml.YAMLError):
-        return defaults
-    if not isinstance(raw, dict):
-        return defaults
-    return raw
-
-
-def _save_agent_context_config(
-    project_root: Path, config: dict[str, Any]
-) -> None:
-    """Persist *config* to the agent-context extension config file."""
-    path = project_root / _AGENT_CTX_EXT_CONFIG
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False), encoding="utf-8")
-
-
-def _update_agent_context_config_file(
-    project_root: Path,
-    context_file: str | None,
-    *,
-    preserve_markers: bool = True,
-    preserve_context_files: bool = True,
-) -> None:
-    """Update the agent-context extension config with *context_file*.
-
-    When *preserve_markers* is True (default), any existing
-    ``context_markers`` values are kept unchanged so user customisations
-    survive integration changes and reinit.  When False, the default
-    markers are written unconditionally.
-
-    When *preserve_context_files* is True (default), an existing
-    ``context_files`` list is kept unchanged, including an empty list.  This
-    lets projects opt into updating multiple agent context files while still
-    preserving the legacy singular ``context_file`` value for compatibility.
-    """
-    from .integrations.base import IntegrationBase
-
-    cfg = _load_agent_context_config(project_root)
-    cfg["context_file"] = context_file or ""
-    existing_context_files = cfg.get("context_files")
-    if preserve_context_files:
-        cfg["context_files"] = (
-            existing_context_files if isinstance(existing_context_files, list) else []
-        )
-    else:
-        cfg.pop("context_files", None)
-    if not preserve_markers or not isinstance(cfg.get("context_markers"), dict):
-        cfg["context_markers"] = {
-            "start": IntegrationBase.CONTEXT_MARKER_START,
-            "end": IntegrationBase.CONTEXT_MARKER_END,
-        }
-    _save_agent_context_config(project_root, cfg)
-
 
 def _get_skills_dir(project_path: Path, selected_ai: str) -> Path:
     """Resolve the agent-specific skills directory.
@@ -1128,9 +1052,10 @@ def workflow_add(
             raise typer.Exit(1)
 
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
+        from specify_cli.authentication.http import github_provider_hosts
 
         _wf_url_extra_headers = None
-        _resolved_wf_url = _resolve_gh_asset(source, _open_url, timeout=30)
+        _resolved_wf_url = _resolve_gh_asset(source, _open_url, timeout=30, github_hosts=github_provider_hosts())
         if _resolved_wf_url:
             source = _resolved_wf_url
             _wf_url_extra_headers = {"Accept": "application/octet-stream"}
@@ -1234,10 +1159,11 @@ def workflow_add(
 
     try:
         from specify_cli.authentication.http import open_url as _open_url
+        from specify_cli.authentication.http import github_provider_hosts
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
 
         _wf_cat_extra_headers = None
-        _resolved_workflow_url = _resolve_gh_asset(workflow_url, _open_url, timeout=30)
+        _resolved_workflow_url = _resolve_gh_asset(workflow_url, _open_url, timeout=30, github_hosts=github_provider_hosts())
         if _resolved_workflow_url:
             workflow_url = _resolved_workflow_url
             _wf_cat_extra_headers = {"Accept": "application/octet-stream"}

@@ -9,7 +9,7 @@ class PiIntegration(MarkdownIntegration):
         "name": "Pi Coding Agent",
         "folder": ".pi/",
         "commands_subdir": "prompts",
-        "install_url": "https://www.npmjs.com/package/@mariozechner/pi-coding-agent",
+        "install_url": "https://www.npmjs.com/package/@earendil-works/pi-coding-agent",
         "requires_cli": True,
     }
     registrar_config = {
@@ -18,4 +18,3 @@ class PiIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "AGENTS.md"

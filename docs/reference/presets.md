@@ -137,9 +137,11 @@ catalogs:
 
 ## File Resolution
 
-Presets can provide command files, template files (like `plan-template.md`), and script files. These are resolved at runtime using a **replace** strategy — the first match in the priority stack wins and is used entirely. Each file is looked up independently, so different files can come from different layers.
+Presets can provide command files, template files (like `plan-template.md`), and script files. Each file name is evaluated independently against the priority stack, so different files can come from different layers.
 
-> **Note:** Additional composition strategies (`append`, `prepend`, `wrap`) are planned for a future release.
+Templates and scripts are looked up from the stack when Spec Kit needs them. Commands use the same stack for replacement and composition, but are materialized into detected agent directories instead of being re-resolved by agents. During preset install, Spec Kit registers command files for the preset being installed; post-install and post-removal reconciliation then recomputes and writes the effective command content for affected command names based on the active stack. Agents do not re-resolve the stack each time they run a command.
+
+By default, files use a **replace** strategy: the first match in the priority stack wins and is used entirely. Templates and commands can also use composition strategies: **prepend** places preset content before lower-priority content, **append** places it after lower-priority content, and **wrap** replaces `{CORE_TEMPLATE}` with lower-priority content. Scripts support **replace** and **wrap**; script wrappers use `$CORE_SCRIPT` as the placeholder.
 
 The resolution stack, from highest to lowest precedence:
 
@@ -147,8 +149,6 @@ The resolution stack, from highest to lowest precedence:
 2. **Installed presets** — sorted by priority (lower = checked first)
 3. **Installed extensions** — sorted by priority
 4. **Spec Kit core** — `.specify/templates/`
-
-Commands are registered at install time (not resolved through the stack at runtime).
 
 ### Resolution Stack
 
@@ -215,7 +215,7 @@ Run `specify preset resolve <name>` to trace the resolution stack and see which 
 
 ### What's the difference between disabling and removing a preset?
 
-**Disabling** (`specify preset disable`) keeps the preset installed but excludes its files from the resolution stack. Commands the preset registered remain available in your AI coding agent. This is useful for temporarily testing behavior without a preset, or comparing output with and without it. Re-enable anytime with `specify preset enable`.
+**Disabling** (`specify preset disable`) keeps the preset installed but excludes it from future template and script resolution. Previously registered commands remain available in your AI coding agent until preset removal, so use removal when you need command changes to stop taking effect. Disabling is useful for temporarily testing template/script behavior without a preset, or comparing template/script output with and without it. Re-enable anytime with `specify preset enable`.
 
 **Removing** (`specify preset remove`) fully uninstalls the preset — deletes its files, unregisters its commands from your AI coding agent, and removes it from the registry.
 

@@ -1,6 +1,6 @@
 # Community
 
-The Spec Kit community builds extensions, presets, walkthroughs, and companion projects that expand what you can do with Spec-Driven Development. All community contributions are independently created and maintained by their respective authors.
+The Spec Kit community builds extensions, presets, bundles, walkthroughs, and companion projects that expand what you can do with Spec-Driven Development. All community contributions are independently created and maintained by their respective authors.
 
 ## Extensions
 
@@ -13,6 +13,12 @@ Extensions add new capabilities to Spec Kit — domain-specific commands, extern
 Presets customize how Spec Kit behaves — overriding templates, commands, and terminology without changing any tooling. Community presets range from language localizations to entirely different development methodologies.
 
 [Browse community presets →](presets.md)
+
+## Bundles
+
+Bundles compose extensions, presets, workflows, and steps into role or team stacks that can be installed together.
+
+[Browse community bundles →](bundles.md)
 
 ## Walkthroughs
 
