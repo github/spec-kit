@@ -78,6 +78,10 @@ When working on spec-kit:
 3. Test script functionality in the `scripts/` directory
 4. Ensure memory files (`memory/constitution.md`) are updated if major process changes are made
 
+The repository constitution lives at `memory/constitution.md`. Consult it when
+deciding whether a change warrants Spec-Driven Development artifacts and when
+making process or governance changes.
+
 ### Recommended validation flow
 
 For the smoothest review experience, validate changes in this order:

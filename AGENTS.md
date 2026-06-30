@@ -8,6 +8,10 @@
 
 The toolkit supports multiple AI coding assistants, allowing teams to use their preferred tools while maintaining consistent project structure and development practices.
 
+Repository governance lives in `memory/constitution.md`. Keep this file focused
+on agent-operational context, conventions, and architecture notes; reference the
+constitution for SDD process rules instead of duplicating them here.
+
 ---
 
 ## Integration Architecture
