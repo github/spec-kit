@@ -224,3 +224,49 @@ def test_ps_setup_plan_preserves_existing_plan(plan_repo: Path) -> None:
     assert "IMPL_PLAN" in data
     # The skip message should be on stderr
     assert "already exists" in result.stderr
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_ps_setup_plan_copied_message_on_stderr_in_json_mode(plan_repo: Path) -> None:
+    """First run in -Json mode must emit 'Copied plan template' on stderr (matching
+    the bash twin) while keeping stdout pure JSON. Before the fix the PowerShell
+    script emitted no copy status at all."""
+    script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json"],
+        cwd=plan_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    assert result.returncode == 0, result.stderr
+    # stdout stays parseable JSON; the status message goes to stderr.
+    data = json.loads(result.stdout)
+    assert "IMPL_PLAN" in data
+    assert "Copied plan template" in result.stderr
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_ps_setup_plan_template_not_found_warning_matches_bash(plan_repo: Path) -> None:
+    """When no plan template resolves, -Json mode must emit 'Warning: Plan template
+    not found' on stderr (matching the bash twin's wording and stream routing) while
+    keeping stdout pure JSON. Before the fix the PowerShell script used Write-Warning,
+    producing a different 'WARNING:' prefix on the warning stream instead."""
+    # Remove the template the fixture installs so resolution finds nothing.
+    (plan_repo / ".specify" / "templates" / "plan-template.md").unlink()
+    script = plan_repo / ".specify" / "scripts" / "powershell" / "setup-plan.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json"],
+        cwd=plan_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_clean_env(),
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert "IMPL_PLAN" in data
+    assert "Warning: Plan template not found" in result.stderr

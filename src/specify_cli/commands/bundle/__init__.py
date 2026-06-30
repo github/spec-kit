@@ -13,7 +13,7 @@ from pathlib import Path
 
 import typer
 
-from ..._console import console
+from ..._console import console, err_console
 from ...bundler import BundlerError
 from ...bundler.lib.project import (
     active_integration,
@@ -41,7 +41,9 @@ bundle_app.add_typer(bundle_catalog_app, name="catalog")
 
 def _fail(message: str) -> None:
     """Print an actionable error to stderr and exit non-zero."""
-    console.print(f"[red]Error:[/red] {message}", style=None)
+    # Use the stderr console so the error never lands on stdout, which under
+    # ``--json`` carries the machine-readable payload and must stay parseable.
+    err_console.print(f"[red]Error:[/red] {message}", style=None)
     raise typer.Exit(code=1)
 
 

@@ -233,6 +233,10 @@ class TestInitializeRepoBash:
         result = _run_bash("initialize-repo.sh", project)
         assert result.returncode == 0, result.stderr
 
+        # Success marker is the full ASCII "[OK] ..." line (matching the PowerShell
+        # twin and the sibling auto-commit scripts), not a Unicode checkmark.
+        assert "[OK] Git repository initialized" in result.stderr, result.stderr
+
         # Verify git repo exists
         assert (project / ".git").exists()
 
@@ -297,6 +301,24 @@ class TestCreateFeatureBash:
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "001-user-auth"
         assert data["FEATURE_NUM"] == "001"
+
+    def test_output_omits_has_git_for_parity(self, tmp_path: Path):
+        """The bash output contract is {BRANCH_NAME, FEATURE_NUM} (+ DRY_RUN) in JSON
+        and a BRANCH_NAME:/FEATURE_NUM: text block -- no HAS_GIT key/line. This pins
+        the canonical contract the PowerShell twin must mirror."""
+        project = _setup_project(tmp_path)
+        rj = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "parity", "Parity feature",
+        )
+        assert rj.returncode == 0, rj.stderr
+        assert "HAS_GIT" not in json.loads(rj.stdout)
+        rt = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--dry-run", "--short-name", "parity", "Parity feature",
+        )
+        assert rt.returncode == 0, rt.stderr
+        assert "HAS_GIT" not in rt.stdout
 
     def test_branch_name_short_word_case_sensitivity(self, tmp_path: Path):
         """A short word is dropped from the derived branch name unless it appears
@@ -443,6 +465,24 @@ class TestCreateFeaturePowerShell:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "001-user-auth"
+
+    def test_output_omits_has_git_to_match_bash(self, tmp_path: Path):
+        """PowerShell must mirror the bash twin's output contract: neither JSON nor
+        text output may include HAS_GIT (it is computed internally for branch-creation
+        logic only). Fails before the fix (PS emitted HAS_GIT), passes after."""
+        project = _setup_project(tmp_path)
+        rj = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "parity", "Parity feature",
+        )
+        assert rj.returncode == 0, rj.stderr
+        assert "HAS_GIT" not in json.loads(rj.stdout)
+        rt = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-DryRun", "-ShortName", "parity", "Parity feature",
+        )
+        assert rt.returncode == 0, rt.stderr
+        assert "HAS_GIT" not in rt.stdout
 
     def test_branch_name_short_word_case_sensitivity(self, tmp_path: Path):
         """PowerShell must match the bash twin: a short word is dropped unless it

@@ -19,7 +19,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
 | [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        |                                                                                                                                           |
-| [Goose](https://block.github.io/goose/)                                              | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
+| [Goose](https://goose-docs.ai/)                                                      | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
 | [Hermes](https://github.com/NousResearch/hermes-agent)                               | `hermes`         | Skills-based integration; installs skills globally into `~/.hermes/skills/`                                                                |
 | [IBM Bob](https://www.ibm.com/products/bob)                                          | `bob`            | IDE-based agent                                                                                                                           |
 | [iFlow CLI](https://docs.iflow.cn/en/cli/quickstart)                                 | `iflow`          |                                                                                                                                           |
@@ -53,6 +53,27 @@ specify integration list
 Shows all available integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
 When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
 The list also shows whether each built-in integration is declared multi-install safe.
+
+## Search Available Integrations
+
+```bash
+specify integration search [query]
+```
+
+| Option     | Description        |
+| ---------- | ------------------ |
+| `--tag`    | Filter by tag      |
+| `--author` | Filter by author   |
+
+Searches the active catalog stack for integrations matching the query. Without a query, lists all available integrations. Must be run inside a Spec Kit project.
+
+## Integration Info
+
+```bash
+specify integration info <integration_id>
+```
+
+Shows catalog details for a single integration, including its description, author, license, tags, source catalog, repository (when available), and whether it is currently active. Must be run inside a Spec Kit project.
 
 ## Install an Integration
 
@@ -166,6 +187,18 @@ Example:
 ```bash
 specify integration install generic --integration-options="--commands-dir .myagent/cmds"
 ```
+
+## Scaffold a New Integration
+
+```bash
+specify integration scaffold <key>
+```
+
+Creates a minimal built-in integration package and a matching test skeleton in the Spec Kit repository, then prints the next steps for wiring it up. Run this command from the Spec Kit repository root. The `<key>` must be lowercase kebab-case (for example, `my-agent`).
+
+| Option   | Description                                                       |
+| -------- | ---------------------------------------------------------------- |
+| `--type` | Scaffold template to use: `markdown` (default), `skills`, `toml`, or `yaml` |
 
 ## FAQ
 

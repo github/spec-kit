@@ -134,13 +134,14 @@ Explore community-contributed resources on the [Spec Kit docs site](https://gith
 
 - [Extensions](https://github.github.io/spec-kit/community/extensions.html) — commands, hooks, and capabilities
 - [Presets](https://github.github.io/spec-kit/community/presets.html) — template and terminology overrides
+- [Bundles](https://github.github.io/spec-kit/community/bundles.html) — role and team stacks composed from existing components
 - [Walkthroughs](https://github.github.io/spec-kit/community/walkthroughs.html) — end-to-end SDD scenarios
 - [Friends](https://github.github.io/spec-kit/community/friends.html) — projects that extend or build on Spec Kit
 
 > [!NOTE]
 > Community contributions are independently created and maintained by their respective authors. Review source code before installation and use at your own discretion.
 
-Want to contribute? See the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md) or the [Presets Publishing Guide](presets/PUBLISHING.md).
+Want to contribute? See the [Extension Publishing Guide](extensions/EXTENSION-PUBLISHING-GUIDE.md), the [Presets Publishing Guide](presets/PUBLISHING.md), or the [Community Bundles guide](docs/community/bundles.md).
 
 ## 🤖 Supported AI Coding Agent Integrations
 
@@ -262,8 +263,10 @@ built-in). Each source carries an install policy: `install-allowed` sources can
 be installed from, while `discovery-only` sources are visible in `search`/`info`
 but refuse installation. Manage the stack with `specify bundle catalog list|add|remove`.
 
-Authors validate and package bundles locally — there is no first-class publish;
-distribution is hosting the built artifact and adding a catalog entry:
+Authors validate and package bundles locally. Distribution is hosting the built
+artifact and adding a catalog source; community bundle submissions use the
+[Bundle Submission](https://github.com/github/spec-kit/issues/new?template=bundle_submission.yml)
+issue template so required component catalogs and install evidence can be reviewed:
 
 ```bash
 specify bundle validate --path ./my-bundle      # structural + reference checks
@@ -403,7 +406,7 @@ specify init . --force --integration copilot
 specify init --here --force --integration copilot
 ```
 
-The CLI will check if you have Claude Code, Gemini CLI, Cursor CLI, Qwen CLI, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi, Oh My Pi, Forge, Goose, Mistral Vibe, or ZCode installed. If you do not, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI will check that your selected agent's CLI tool is installed (for integrations that require a CLI), such as Claude Code, Gemini CLI, Qwen Code, opencode, Codex CLI, Qoder CLI, Tabnine CLI, Kiro CLI, Pi Coding Agent, Oh My Pi, Forge, Goose, Mistral Vibe, or ZCode. If you don't have the required tool installed, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --integration copilot --ignore-agent-tools

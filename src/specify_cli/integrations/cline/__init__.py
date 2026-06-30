@@ -70,7 +70,6 @@ class ClineIntegration(MarkdownIntegration):
         "format_name": format_cline_command_name,
         "invoke_separator": "-",
     }
-    context_file = ".clinerules/specify-rules.md"
     invoke_separator = "-"
     multi_install_safe = True
 

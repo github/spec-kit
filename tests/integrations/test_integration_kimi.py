@@ -6,7 +6,6 @@ import pytest
 
 from specify_cli.integrations import get_integration
 from specify_cli.integrations.kimi import (
-    _migrate_legacy_kimi_context_file,
     _migrate_legacy_kimi_dotted_skills,
     _migrate_legacy_kimi_skills_dir,
 )
@@ -36,7 +35,6 @@ class TestKimiIntegration(SkillsIntegrationTests):
     FOLDER = ".kimi-code/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".kimi-code/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
 
 class TestKimiOptions:
@@ -163,168 +161,6 @@ class TestKimiLegacyMigration:
         assert (new_skills_dir / "speckit-oldcmd" / "SKILL.md").exists()
         # New skills from templates should also exist
         assert (new_skills_dir / "speckit-specify" / "SKILL.md").exists()
-
-
-class TestKimiContextFileMigration:
-    """KIMI.md → AGENTS.md migration under --migrate-legacy."""
-
-    def test_setup_migrate_legacy_moves_kimi_md_user_content(self, tmp_path):
-        i = get_integration("kimi")
-
-        kimi_md = tmp_path / "KIMI.md"
-        kimi_md.write_text(
-            "# Project context\n\n"
-            "<!-- SPECKIT START -->\n"
-            "old managed section\n"
-            "<!-- SPECKIT END -->\n\n"
-            "Keep this user note.\n"
-        )
-
-        m = IntegrationManifest("kimi", tmp_path)
-        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
-
-        agents_md = tmp_path / "AGENTS.md"
-        assert agents_md.exists()
-        content = agents_md.read_text(encoding="utf-8")
-        assert "Keep this user note." in content
-        assert "old managed section" not in content
-        assert "<!-- SPECKIT START -->" in content
-        assert not kimi_md.exists()
-
-    def test_setup_migrate_legacy_removes_empty_kimi_md(self, tmp_path):
-        i = get_integration("kimi")
-
-        kimi_md = tmp_path / "KIMI.md"
-        kimi_md.write_text(
-            "<!-- SPECKIT START -->\n"
-            "only managed section\n"
-            "<!-- SPECKIT END -->\n"
-        )
-
-        m = IntegrationManifest("kimi", tmp_path)
-        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
-
-        assert (tmp_path / "AGENTS.md").exists()
-        assert not kimi_md.exists()
-
-    def test_setup_migrate_legacy_appends_to_existing_agents_md(self, tmp_path):
-        i = get_integration("kimi")
-
-        agents_md = tmp_path / "AGENTS.md"
-        agents_md.write_text("# Existing AGENTS.md\n\nExisting note.\n")
-
-        kimi_md = tmp_path / "KIMI.md"
-        kimi_md.write_text("# Kimi context\n\nKimi-specific note.\n")
-
-        m = IntegrationManifest("kimi", tmp_path)
-        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
-
-        content = agents_md.read_text(encoding="utf-8")
-        assert "Existing note." in content
-        assert "Kimi-specific note." in content
-        assert "<!-- SPECKIT START -->" in content
-        assert not kimi_md.exists()
-
-    def test_setup_migrate_legacy_uses_custom_context_markers(self, tmp_path):
-        """Migration respects context_markers from agent-context extension config."""
-        i = get_integration("kimi")
-
-        config_dir = tmp_path / ".specify" / "extensions" / "agent-context"
-        config_dir.mkdir(parents=True)
-        (config_dir / "agent-context-config.yml").write_text(
-            "context_file: AGENTS.md\n"
-            "context_markers:\n"
-            "  start: '<!-- CUSTOM START -->'\n"
-            "  end: '<!-- CUSTOM END -->'\n"
-        )
-
-        kimi_md = tmp_path / "KIMI.md"
-        kimi_md.write_text(
-            "# Project context\n\n"
-            "<!-- CUSTOM START -->\n"
-            "old managed section\n"
-            "<!-- CUSTOM END -->\n\n"
-            "Keep this user note.\n"
-        )
-
-        m = IntegrationManifest("kimi", tmp_path)
-        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
-
-        agents_md = tmp_path / "AGENTS.md"
-        assert agents_md.exists()
-        content = agents_md.read_text(encoding="utf-8")
-        assert "Keep this user note." in content
-        assert "old managed section" not in content
-        assert "<!-- CUSTOM START -->" in content
-        assert "<!-- CUSTOM END -->" in content
-        assert "<!-- SPECKIT START -->" not in content
-        assert not kimi_md.exists()
-
-    def test_setup_migrate_legacy_skipped_when_agent_context_disabled(
-        self, tmp_path
-    ):
-        """A disabled agent-context extension opts out of KIMI.md migration."""
-        i = get_integration("kimi")
-
-        registry = tmp_path / ".specify" / "extensions" / ".registry"
-        registry.parent.mkdir(parents=True)
-        registry.write_text('{"extensions": {"agent-context": {"enabled": false}}}')
-
-        kimi_md = tmp_path / "KIMI.md"
-        kimi_md.write_text("# Kimi context\n\nKeep this user note.\n")
-
-        m = IntegrationManifest("kimi", tmp_path)
-        i.setup(tmp_path, m, parsed_options={"migrate_legacy": True})
-
-        # Opted-out project: KIMI.md is left untouched and AGENTS.md is not
-        # created/modified by the migration.
-        assert kimi_md.is_file()
-        assert kimi_md.read_text() == "# Kimi context\n\nKeep this user note.\n"
-        assert not (tmp_path / "AGENTS.md").exists()
-
-    def test_context_migration_skips_corrupted_single_marker(self, tmp_path):
-        """A KIMI.md with only a start marker is left untouched (no leak)."""
-        project = tmp_path
-        kimi_md = project / "KIMI.md"
-        kimi_md.write_text(
-            "# Notes\n\n"
-            "<!-- SPECKIT START -->\n"
-            "dangling managed content\n"
-        )
-
-        result = _migrate_legacy_kimi_context_file(project)
-
-        assert result is False
-        # KIMI.md untouched; managed block never copied into AGENTS.md.
-        assert kimi_md.is_file()
-        assert "dangling managed content" in kimi_md.read_text()
-        assert not (project / "AGENTS.md").exists()
-
-    def test_context_migration_skips_unreadable_kimi_md(self, tmp_path):
-        """Non-UTF-8 KIMI.md is skipped instead of raising during setup."""
-        project = tmp_path
-        kimi_md = project / "KIMI.md"
-        kimi_md.write_bytes(b"\xff\xfe invalid utf-8 \xa6\n")
-
-        result = _migrate_legacy_kimi_context_file(project)
-
-        assert result is False
-        assert kimi_md.is_file()
-        assert not (project / "AGENTS.md").exists()
-
-    def test_context_migration_skips_when_agents_md_is_directory(self, tmp_path):
-        """An AGENTS.md that exists as a directory is skipped, not written to."""
-        project = tmp_path
-        (project / "AGENTS.md").mkdir()
-        kimi_md = project / "KIMI.md"
-        kimi_md.write_text("# Notes\n\nKeep this.\n")
-
-        result = _migrate_legacy_kimi_context_file(project)
-
-        assert result is False
-        # KIMI.md is preserved and the directory is untouched.
-        assert kimi_md.is_file()
-        assert (project / "AGENTS.md").is_dir()
 
 
 class TestKimiTeardownLegacyCleanup:
@@ -521,49 +357,6 @@ class TestKimiLegacySymlinkSafety:
         # and the outside target is untouched.
         assert (legacy / "SKILL.md").exists()
         assert (outside / "SKILL.md").exists()
-
-    def test_context_migration_does_not_write_through_symlinked_agents_md(
-        self, tmp_path
-    ):
-        # A sensitive file outside the project that a malicious AGENTS.md
-        # symlink points at. Migration must never overwrite it.
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        secret = outside / "secret.txt"
-        secret.write_text("original secret\n")
-
-        project = tmp_path / "project"
-        project.mkdir()
-        _symlink_or_skip(project / "AGENTS.md", secret)
-        (project / "KIMI.md").write_text("# Notes\n\nKeep this.\n")
-
-        result = _migrate_legacy_kimi_context_file(project)
-
-        # The outside file must not be overwritten through the symlink.
-        assert secret.read_text() == "original secret\n"
-        # KIMI.md is preserved so the user can migrate manually.
-        assert (project / "KIMI.md").is_file()
-        assert result is False
-
-    def test_context_migration_does_not_follow_symlinked_kimi_md(self, tmp_path):
-        # A symlinked KIMI.md (source) must not be followed/consumed.
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        external = outside / "external.md"
-        external.write_text("# external\n")
-
-        project = tmp_path / "project"
-        project.mkdir()
-        _symlink_or_skip(project / "KIMI.md", external)
-
-        result = _migrate_legacy_kimi_context_file(project)
-
-        assert result is False
-        # The external file and the symlink are left intact.
-        assert external.read_text() == "# external\n"
-        assert (project / "KIMI.md").is_symlink()
-        assert not (project / "AGENTS.md").exists()
-
 
 class TestKimiNextSteps:
     """CLI output tests for kimi next-steps display."""
