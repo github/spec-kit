@@ -75,7 +75,6 @@ class KilocodeIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = ".kilocode/rules/specify-rules.md"
 ```
 
 **TOML agent (Gemini):**
