@@ -385,19 +385,24 @@ def evaluate_expression(template: str, context: Any) -> Any:
 
     # Single expression: return typed value (preserving type).
     #
-    # Guard the fast path on there being exactly one ``{{`` block. The pattern
-    # uses a non-greedy body ``(.+?)``, but ``fullmatch`` defeats non-greediness:
-    # for ``"{{ a }} {{ b }}"`` it still matches, expanding the body to capture
-    # everything between the first ``{{`` and the last ``}}`` (``"a }} {{ b"``).
-    # That garbage body fails resolution and returns ``None``, bypassing the
-    # ``sub()`` interpolation path that would handle each expression correctly.
-    # Only take the typed fast path for genuine single-expression templates
-    # (issue #3208).
+    # The fast path must fire only when the whole template is one ``{{ ... }}``
+    # block. ``fullmatch`` cannot decide this: the pattern's non-greedy body
+    # ``(.+?)`` is defeated by ``fullmatch``, so ``"{{ a }} {{ b }}"`` still
+    # matches with the body expanded to ``"a }} {{ b"`` -- garbage that fails
+    # resolution and returns ``None``, bypassing the ``sub()`` interpolation
+    # path that handles each expression correctly (issue #3208).
+    #
+    # Anchor a single match at the start instead and require it to consume the
+    # entire stripped string. The non-greedy body then stops at the first
+    # ``}}``: a genuine two-block template leaves a trailing ``}}`` and fails the
+    # span check, while a lone expression -- even one with a literal ``{{`` in a
+    # string argument such as ``{{ inputs.text | contains('{{') }}`` -- matches
+    # to the end and keeps its typed return value. (Counting ``{{`` would
+    # misclassify that expression as multi-block and coerce it to ``str``.)
     stripped = template.strip()
-    if stripped.count("{{") == 1:
-        match = _EXPR_PATTERN.fullmatch(stripped)
-        if match:
-            return _evaluate_simple_expression(match.group(1).strip(), namespace)
+    match = _EXPR_PATTERN.match(stripped)
+    if match and match.end() == len(stripped):
+        return _evaluate_simple_expression(match.group(1).strip(), namespace)
 
     # Multi-expression: string interpolation
     def _replacer(m: re.Match[str]) -> str:
