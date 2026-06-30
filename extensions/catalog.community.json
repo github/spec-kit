@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-29T00:00:00Z",
+  "updated_at": "2026-06-30T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2827,6 +2827,46 @@
       "stars": 0,
       "created_at": "2026-03-23T13:30:00Z",
       "updated_at": "2026-03-23T13:30:00Z"
+    },
+    "repository-governance": {
+      "name": "Repository Governance",
+      "id": "repository-governance",
+      "description": "Generate project-governance projections from Spec Kit metadata",
+      "author": "bigben",
+      "version": "3.0.1",
+      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/releases/download/v3.0.1/repository-governance-v3.0.1.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "homepage": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "documentation": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/README.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.8.0",
+        "tools": [
+          {
+            "name": "uv",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 3
+      },
+      "tags": [
+        "governance",
+        "repository",
+        "agents",
+        "memory",
+        "context"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-30T00:00:00Z",
+      "updated_at": "2026-06-30T00:00:00Z"
     },
     "reqnroll-bdd": {
       "name": "Reqnroll BDD",
