@@ -1876,11 +1876,11 @@ class TestDoWhileStep:
             {"id": "test", "condition": "{{ true }}", "max_iterations": True, "steps": []}
         )
         assert any("must be an integer >= 1" in e for e in errors)
-        # a real positive integer is still accepted.
+        # a real positive integer is fully valid (no errors at all).
         ok = step.validate(
             {"id": "test", "condition": "{{ true }}", "max_iterations": 3, "steps": []}
         )
-        assert not any("max_iterations" in e for e in ok)
+        assert ok == [], ok
 
     def test_execute_empty_steps(self):
         from specify_cli.workflows.steps.do_while import DoWhileStep
