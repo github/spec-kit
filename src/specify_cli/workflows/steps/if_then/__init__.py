@@ -47,8 +47,8 @@ class IfThenStep(StepBase):
             errors.append(
                 f"If step {config.get('id', '?')!r}: 'then' must be a list of steps."
             )
-        else_branch = config.get("else", [])
-        if else_branch and not isinstance(else_branch, list):
+        else_branch = config.get("else")
+        if else_branch is not None and not isinstance(else_branch, list):
             errors.append(
                 f"If step {config.get('id', '?')!r}: 'else' must be a list of steps."
             )
