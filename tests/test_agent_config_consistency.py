@@ -193,6 +193,19 @@ class TestAgentConfigConsistency:
         assert "sha256sum -c -" in post_create_text
         assert "KIRO_SKIP_KIRO_INSTALLER_VERIFY" not in post_create_text
 
+    def test_devcontainer_kiro_install_is_non_blocking(self):
+        """Kiro install failures should not stop later devcontainer setup steps."""
+        post_create_text = (REPO_ROOT / ".devcontainer" / "post-create.sh").read_text(
+            encoding="utf-8"
+        )
+        kiro_block = post_create_text.split("Installing Kiro CLI...", 1)[1].split(
+            "Installing Kimi CLI...", 1
+        )[0]
+
+        assert "run_optional_command" in kiro_block
+        assert "exit 1" not in kiro_block
+        assert "continuing devcontainer setup" in kiro_block
+
     # --- Tabnine CLI consistency checks ---
 
     def test_runtime_config_includes_tabnine(self):
