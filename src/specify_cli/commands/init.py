@@ -228,28 +228,25 @@ def register(app: typer.Typer) -> None:
                     console.print(
                         "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                     )
-                elif not _stdin_is_interactive():
-                    # No interactive terminal: do NOT prompt. A non-TTY stdin that
-                    # is open but idle (a common CI/agent scenario) would block on
-                    # typer.confirm, so fail fast and require an explicit --force
-                    # for a non-interactive merge. No merge happens here, so no
-                    # merge/overwrite warning is printed.
-                    console.print(
-                        "[red]Error:[/red] Current directory is not empty and no "
-                        "interactive terminal is available to confirm. Re-run with "
-                        "[bold]--force[/bold] to merge into it."
-                    )
-                    raise typer.Exit(1)
                 else:
                     console.print(
                         "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
                     )
+                    # Call typer.confirm normally so piped y/n is honored — e.g.
+                    # `echo y | specify init --here` keeps reaching the
+                    # non-destructive preserve-merge path. Only when no
+                    # confirmation input is available at all (closed/empty stdin
+                    # → EOF/Abort) do we convert it into an actionable error that
+                    # points at --force, rather than blocking or failing opaquely.
                     try:
                         proceed = typer.confirm("Do you want to continue?")
-                    except typer.Abort:
-                        # Interactive cancel (e.g. Ctrl+C): a normal cancellation.
-                        console.print("[yellow]Operation cancelled[/yellow]")
-                        raise typer.Exit(0) from None
+                    except (typer.Abort, EOFError):
+                        console.print(
+                            "[red]Error:[/red] Current directory is not empty and no "
+                            "confirmation input is available. Re-run with "
+                            "[bold]--force[/bold] to merge into it."
+                        )
+                        raise typer.Exit(1) from None
                     if not proceed:
                         console.print("[yellow]Operation cancelled[/yellow]")
                         raise typer.Exit(0)
