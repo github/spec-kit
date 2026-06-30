@@ -5,10 +5,9 @@ Copilot has several unique behaviors compared to standard markdown agents:
 - Each command gets a companion ``.prompt.md`` file in ``.github/prompts/``
 - Installs ``.vscode/settings.json`` with prompt file recommendations
 
-Copilot now defaults to skills mode, scaffolding commands as
-``speckit-<name>/SKILL.md`` directories under ``.github/skills/``.
-The legacy ``.agent.md`` + ``.prompt.md`` layout remains available for
-explicit non-skills installs.
+When ``--skills`` is passed via ``--integration-options``, Copilot scaffolds
+commands as ``speckit-<name>/SKILL.md`` directories under ``.github/skills/``
+instead.  The two modes are mutually exclusive.
 """
 
 from __future__ import annotations
@@ -56,6 +55,17 @@ def _allow_all() -> bool:
         return old_var != "0"
 
     return True
+
+
+def _warn_legacy_markdown_default() -> None:
+    """Warn that Copilot's default markdown scaffold is being phased out."""
+    warnings.warn(
+        "Copilot legacy markdown mode is deprecated and will stop being the "
+        'default in a future Spec Kit release; pass --integration-options "--skills" '
+        "to opt in to Copilot skills mode now.",
+        UserWarning,
+        stacklevel=3,
+    )
 
 
 class _CopilotSkillsHelper(SkillsIntegration):
@@ -127,8 +137,8 @@ class CopilotIntegration(IntegrationBase):
             IntegrationOption(
                 "--skills",
                 is_flag=True,
-                default=True,
-                help="Scaffold commands as agent skills (default for Copilot)",
+                default=False,
+                help="Scaffold commands as agent skills (speckit-<name>/SKILL.md) instead of .agent.md files",
             ),
         ]
 
@@ -309,14 +319,16 @@ class CopilotIntegration(IntegrationBase):
     ) -> list[Path]:
         """Install copilot commands, companion prompts, and VS Code settings.
 
-        Defaults to skills scaffolding (``speckit-<name>/SKILL.md`` under
-        ``.github/skills/``). When ``parsed_options["skills"]`` is falsy,
-        uses the legacy ``.agent.md`` + ``.prompt.md`` layout.
+        When ``parsed_options["skills"]`` is truthy, delegates to skills
+        scaffolding (``speckit-<name>/SKILL.md`` under ``.github/skills/``).
+        Otherwise uses the default ``.agent.md`` + ``.prompt.md`` layout.
         """
         parsed_options = parsed_options or {}
-        self._skills_mode = bool(parsed_options.get("skills", True))
+        self._skills_mode = bool(parsed_options.get("skills"))
         if self._skills_mode:
             return self._setup_skills(project_root, manifest, parsed_options, **opts)
+        if "skills" not in parsed_options:
+            _warn_legacy_markdown_default()
         return self._setup_default(project_root, manifest, parsed_options, **opts)
 
     def _setup_default(

@@ -1794,10 +1794,10 @@ class TestIntegrationSwitch:
         # Old claude files removed
         assert not (project / ".claude" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
-        # New copilot files created in default skills layout
-        assert (project / ".github" / "skills" / "speckit-plan" / "SKILL.md").exists()
-        assert "/speckit-specify" in shared_script.read_text(encoding="utf-8")
-        assert "/speckit.specify" not in shared_script.read_text(encoding="utf-8")
+        # New copilot files created
+        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert "/speckit.specify" in shared_script.read_text(encoding="utf-8")
+        assert "/speckit-specify" not in shared_script.read_text(encoding="utf-8")
 
         # integration.json updated
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
@@ -1973,7 +1973,7 @@ class TestIntegrationSwitch:
         assert "opencode" not in git_meta["registered_commands"]
 
     def test_switch_refreshes_managed_shared_script_refs(self, tmp_path):
-        """Switching to default Copilot keeps managed shared scripts on skills syntax."""
+        """Switching refreshes managed shared scripts to the target command style."""
         project = _init_project(tmp_path, "claude")
         shared_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
         assert shared_script.exists()
@@ -1993,8 +1993,8 @@ class TestIntegrationSwitch:
 
         assert shared_script.exists()
         updated = shared_script.read_text(encoding="utf-8")
-        assert "/speckit-plan" in updated
-        assert "/speckit.plan" not in updated
+        assert "/speckit.plan" in updated
+        assert "/speckit-plan" not in updated
 
     def test_switch_refreshes_stale_managed_shared_infra(self, tmp_path):
         """Regression for #2293: stale managed shared scripts get refreshed on switch."""
@@ -2032,8 +2032,8 @@ class TestIntegrationSwitch:
         # Stale managed file should be replaced by the target integration's rendered version.
         updated = shared_script.read_text(encoding="utf-8")
         assert "# stale vendored copy" not in updated
-        assert "/speckit-plan" in updated
-        assert "/speckit.plan" not in updated
+        assert "/speckit.plan" in updated
+        assert "/speckit-plan" not in updated
 
     def test_switch_preserves_user_customized_shared_infra(self, tmp_path):
         """User customizations (hash divergence from manifest) survive switch without --refresh-shared-infra."""
@@ -2084,8 +2084,8 @@ class TestIntegrationSwitch:
         # Customization is overwritten with the target integration's rendered version.
         updated = shared_script.read_text(encoding="utf-8")
         assert "# user customization" not in updated
-        assert "/speckit-plan" in updated
-        assert "/speckit.plan" not in updated
+        assert "/speckit.plan" in updated
+        assert "/speckit-plan" not in updated
 
     def test_switch_preserves_recovered_files(self, tmp_path):
         """Regression for #2918: files marked recovered in the manifest are not overwritten.
@@ -2344,8 +2344,8 @@ class TestIntegrationUpgrade:
         managed_script = project / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
         customized_script = project / ".specify" / "scripts" / "bash" / "setup-tasks.sh"
 
-        assert "/speckit-plan" in template.read_text(encoding="utf-8")
-        assert "/speckit-specify" in managed_script.read_text(encoding="utf-8")
+        assert "/speckit.plan" in template.read_text(encoding="utf-8")
+        assert "/speckit.specify" in managed_script.read_text(encoding="utf-8")
         customized_before = customized_script.read_text(encoding="utf-8") + "\n# user customization\n"
         customized_script.write_text(customized_before, encoding="utf-8")
 
@@ -2440,18 +2440,36 @@ class TestIntegrationUpgrade:
             f"found: {[f.name for f in core_remaining]}"
         )
 
-    def test_upgrade_default_copilot_does_not_create_vscode_settings(self, tmp_path):
-        """Default Copilot skills mode should keep VS Code settings out of the project."""
+    def test_upgrade_preserves_existing_vscode_settings(self, tmp_path):
+        """Regression: copilot upgrade must not stale-delete .vscode/settings.json.
+
+        On init the file is created and recorded in the manifest. On upgrade,
+        setup() merges into the now-existing file and intentionally stops
+        tracking it, so without ``stale_cleanup_exclusions()`` the Phase 2
+        stale cleanup would delete it (destroying the user's settings).
+        """
         project = _init_project(tmp_path, "copilot")
         settings = project / ".vscode" / "settings.json"
-        assert not settings.exists(), "default Copilot init should not create .vscode/settings.json"
+        assert settings.is_file(), "init should create .vscode/settings.json"
+        before = json.loads(settings.read_text(encoding="utf-8"))
+        assert before, "settings.json should contain managed defaults"
+
+        # Simulate a user editing their settings: add a custom key that the
+        # integration does not manage.  It must survive the upgrade.
+        before["editor.fontSize"] = 17
+        settings.write_text(json.dumps(before), encoding="utf-8")
 
         result = _run_in_project(project, [
             "integration", "upgrade", "copilot",
             "--script", "sh", "--force",
         ])
         assert result.exit_code == 0, result.output
-        assert not settings.exists(), "default Copilot upgrade should not create .vscode/settings.json"
+
+        assert settings.is_file(), ".vscode/settings.json must survive upgrade"
+        after = json.loads(settings.read_text(encoding="utf-8"))
+        assert after.get("editor.fontSize") == 17, (
+            "user-defined settings must be preserved after upgrade"
+        )
 
     def test_upgrade_restores_executable_bit_on_shared_scripts(self, tmp_path):
         """Regression: scripts refreshed by the managed-refresh step stay +x."""
