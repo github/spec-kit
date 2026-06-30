@@ -2,6 +2,22 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.11.10] - 2026-06-29
+
+### Changed
+
+- fix(extensions): apply GHES auth and resolve release assets for `extension add --from` (#3217)
+- fix(pi): repoint install_url to @earendil-works/pi-coding-agent (#3169) (#3214)
+- fix(catalogs): reject host-less catalog URLs in base and preset validators (#3210)
+- fix: update CodeBuddy install docs URL (#3187)
+- fix(workflows): reject infinite number-input default instead of raising OverflowError (#3199)
+- fix(scripts): emit 'Copied plan template' status in setup-plan.ps1 (parity with bash) (#3198)
+- fix(workflows): make expression operator/literal parsing quote-aware (#3197)
+- fix(scripts): honor explicit -Number 0 in PowerShell create-new-feature (parity with bash) (#3196)
+- Add community bundle submission path (#3162)
+- Docs: Document /speckit.converge command (#3181)
+- chore: release 0.11.9, begin 0.11.10.dev0 development (#3189)
+
 ## [0.11.9] - 2026-06-26
 
 ### Changed

@@ -1010,7 +1010,12 @@ class WorkflowEngine:
                 value = float(value)
                 if value == int(value):
                     value = int(value)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
+                # OverflowError: `int(value)` raises it for an infinite float
+                # (e.g. a `default: .inf` authoring mistake), which would
+                # otherwise escape validate_workflow's `except ValueError` and
+                # break its "return errors, never raise" contract. Surface it as
+                # the same clean "expected a number" error as NaN does.
                 msg = f"Input {name!r} expected a number, got {value!r}."
                 raise ValueError(msg) from None
         elif input_type == "boolean":
