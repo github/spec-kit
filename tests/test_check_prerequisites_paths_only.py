@@ -234,14 +234,26 @@ def test_ps_paths_only_succeeds_on_non_spec_branch(prereq_repo: Path) -> None:
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
-@pytest.mark.parametrize("use_env_var", [False, True], ids=["feature_json", "env_var"])
-def test_ps_current_branch_falls_back_to_feature_dir_basename(prereq_repo: Path, use_env_var: bool) -> None:
+@pytest.mark.parametrize(
+    ("use_env_var", "specify_feature", "expected_branch"),
+    [
+        (False, None, "001-my-feature"),
+        (True, None, "001-my-feature"),
+        (False, "my-explicit-branch", "my-explicit-branch"),
+    ],
+    ids=["feature_json", "env_var", "explicit_feature"],
+)
+def test_ps_current_branch_falls_back_to_feature_dir_basename(
+    prereq_repo: Path, use_env_var: bool, specify_feature: str | None, expected_branch: str
+) -> None:
     """With no SPECIFY_FEATURE, BRANCH falls back to the feature directory
     basename (from feature.json or SPECIFY_FEATURE_DIRECTORY) instead of being
-    emitted empty (#3026)."""
+    emitted empty. If SPECIFY_FEATURE is set, it remains authoritative (#3026)."""
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
-    env = _clean_env()  # no SPECIFY_FEATURE
+    env = _clean_env()
+    if specify_feature:
+        env["SPECIFY_FEATURE"] = specify_feature
     if use_env_var:
         env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-my-feature"
     else:
@@ -258,8 +270,7 @@ def test_ps_current_branch_falls_back_to_feature_dir_basename(prereq_repo: Path,
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
-    assert data["BRANCH"] == "001-my-feature"
-
+    assert data["BRANCH"] == expected_branch
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
     """-PathsOnly must also work when feature.json and SPECIFY_FEATURE agree."""
