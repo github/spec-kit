@@ -305,6 +305,7 @@ def _display_project_path(project_root: Path, path: str | Path) -> str:
             return path_obj.as_posix()
     return rel_path.as_posix()
 
+
 def version_satisfies(current: str, required: str) -> bool:
     """Check if current version satisfies required version specifier.
 

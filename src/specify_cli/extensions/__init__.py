@@ -1871,8 +1871,6 @@ class ExtensionManager:
             return None
 
 
-
-
 class CommandRegistrar:
     """Handles registration of extension commands with AI agents.
 
