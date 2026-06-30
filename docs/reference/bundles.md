@@ -51,10 +51,11 @@ If the current directory is not yet a Spec Kit project, `install` initializes on
 specify bundle update [<bundle_id>]
 ```
 
-| Option       | Description                          |
-| ------------ | ------------------------------------ |
-| `--all`      | Update every installed bundle        |
-| `--offline`  | Do not access the network            |
+| Option           | Description                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `--all`          | Update every installed bundle                                                                                         |
+| `--integration`  | Override the integration used when refreshing components; applied only when the project's active integration can't be determined |
+| `--offline`      | Do not access the network                                                                                             |
 
 Re-resolves a bundle and **refreshes** its components through each primitive's update path, bringing already-installed components up to the bundle's newly pinned versions while preserving primitive-level overrides (such as preset priority). Provide a bundle id, or use `--all` to update everything installed.
 
