@@ -1065,7 +1065,6 @@ class WorkflowEngine:
                     return True
             return False
 
-        first_exc: Exception | None = None
         halted_at: int | None = None
         collected = 0
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -1093,15 +1092,16 @@ class WorkflowEngine:
                     break
                 try:
                     slots[idx] = fut.result()
-                except Exception as exc:
+                except Exception:
                     # A genuine exception escaping a step (not a normal step
                     # FAILED, which sets state.status) must not be masked: cancel
-                    # outstanding work and re-raise so the engine marks the run
-                    # failed instead of reporting a vacuous completion.
-                    first_exc = exc
+                    # outstanding work and re-raise — with a bare ``raise`` so the
+                    # original traceback is preserved — so the engine marks the run
+                    # failed instead of reporting a vacuous completion. The pool's
+                    # __exit__ still joins any already-running workers.
                     for other in futures.values():
                         other.cancel()
-                    break
+                    raise
                 collected = idx + 1
                 if item_halted(idx):
                     # First halting item in item order: include it (slots[idx] is
@@ -1111,8 +1111,6 @@ class WorkflowEngine:
                         other.cancel()
                     break
 
-        if first_exc is not None:
-            raise first_exc
         if halted_at is not None:
             return slots[: halted_at + 1]
         return slots[:collected]
