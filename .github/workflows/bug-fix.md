@@ -201,6 +201,8 @@ tree you edited — you do not run `git` yourself.
   #${{ github.event.issue.number }}.
 
   Refs #${{ github.event.issue.number }}
+
+  Assisted-by: GitHub Copilot (model: <name-if-known>, autonomous)
   ```
 
   Use `Refs` (not `Closes`): this is the fix stage; a maintainer still reviews
