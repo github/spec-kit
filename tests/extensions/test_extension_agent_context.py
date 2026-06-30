@@ -13,14 +13,9 @@ import pytest
 import yaml
 
 from specify_cli import (
-    _load_agent_context_config,
-    _save_agent_context_config,
-    load_init_options,
     save_init_options,
 )
 from specify_cli.agents import CommandRegistrar
-from specify_cli.integrations.base import IntegrationBase
-from specify_cli.integrations.claude import ClaudeIntegration
 from tests.conftest import requires_bash
 
 
@@ -33,19 +28,34 @@ POWERSHELL = (
 
 
 def _write_ext_config(project_root: Path, **overrides: object) -> None:
-    """Write a minimal agent-context extension config."""
+    """Write a minimal agent-context extension config directly.
+
+    The CLI no longer owns the extension config — the bundled extension does —
+    so tests write it themselves rather than going through any CLI helper.
+    """
     cfg: dict = {
         "context_file": overrides.get("context_file", ""),
         "context_files": overrides.get("context_files", []),
         "context_markers": overrides.get(
             "context_markers",
             {
-                "start": IntegrationBase.CONTEXT_MARKER_START,
-                "end": IntegrationBase.CONTEXT_MARKER_END,
+                "start": "<!-- SPECKIT START -->",
+                "end": "<!-- SPECKIT END -->",
             },
         ),
     }
-    _save_agent_context_config(project_root, cfg)
+    path = (
+        project_root
+        / ".specify"
+        / "extensions"
+        / "agent-context"
+        / "agent-context-config.yml"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(cfg, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
 
 
 # ── Bundled extension layout ─────────────────────────────────────────────────
@@ -120,19 +130,27 @@ class TestCatalogEntry:
         assert entry["author"] == "spec-kit-core"
 
 
-# ── Marker resolution from extension config ──────────────────────────────────
-
-
-class _CtxIntegration(ClaudeIntegration):
-    """Use Claude as a concrete integration with a context_file."""
-
-
-class _NoContextIntegration(IntegrationBase):
-    """Minimal integration with no context_file for base-class fallback tests."""
 
 
 def _install_agent_context_config(project_root: Path, **overrides: object) -> None:
     _write_ext_config(project_root, **overrides)
+    # Mirror the real install layout: the extension ships its own
+    # agent->context-file defaults map alongside the config. Self-seeding
+    # tests depend on it, so require it to exist and always copy it rather
+    # than silently skipping when it is missing.
+    defaults_src = EXT_DIR / "agent-context-defaults.json"
+    assert defaults_src.is_file(), (
+        f"bundled agent-context defaults map missing: {defaults_src}"
+    )
+    defaults_dst = (
+        project_root
+        / ".specify"
+        / "extensions"
+        / "agent-context"
+        / "agent-context-defaults.json"
+    )
+    defaults_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(defaults_src, defaults_dst)
 
 
 def _bash_posix_path(path: Path) -> str:
@@ -303,484 +321,6 @@ def _run_powershell_agent_context_script_with_env(
         text=True,
         timeout=30,
     )
-
-
-class TestContextMarkerResolution:
-    def test_defaults_when_ext_config_missing(self, tmp_path):
-        i = _CtxIntegration()
-        start, end = i._resolve_context_markers(tmp_path)
-        assert start == IntegrationBase.CONTEXT_MARKER_START
-        assert end == IntegrationBase.CONTEXT_MARKER_END
-
-    def test_defaults_when_markers_field_missing(self, tmp_path):
-        """Config file exists with context_file but no context_markers key."""
-        cfg_path = (
-            tmp_path / ".specify" / "extensions" / "agent-context"
-            / "agent-context-config.yml"
-        )
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text("context_file: CLAUDE.md\n", encoding="utf-8")
-        i = _CtxIntegration()
-        start, end = i._resolve_context_markers(tmp_path)
-        assert start == IntegrationBase.CONTEXT_MARKER_START
-        assert end == IntegrationBase.CONTEXT_MARKER_END
-
-    def test_custom_markers_respected(self, tmp_path):
-        _write_ext_config(
-            tmp_path,
-            context_markers={"start": "<!-- BEGIN -->", "end": "<!-- END -->"},
-        )
-        i = _CtxIntegration()
-        start, end = i._resolve_context_markers(tmp_path)
-        assert start == "<!-- BEGIN -->"
-        assert end == "<!-- END -->"
-
-    def test_partial_override_falls_back_for_missing_side(self, tmp_path):
-        _write_ext_config(tmp_path, context_markers={"start": "<!-- ONLY START -->"})
-        i = _CtxIntegration()
-        start, end = i._resolve_context_markers(tmp_path)
-        assert start == "<!-- ONLY START -->"
-        assert end == IntegrationBase.CONTEXT_MARKER_END
-
-    def test_invalid_markers_fall_back(self, tmp_path):
-        _write_ext_config(tmp_path, context_markers={"start": 42, "end": ""})
-        i = _CtxIntegration()
-        start, end = i._resolve_context_markers(tmp_path)
-        assert start == IntegrationBase.CONTEXT_MARKER_START
-        assert end == IntegrationBase.CONTEXT_MARKER_END
-
-
-# ── upsert_context_section / remove_context_section honor markers ───────────
-
-
-class TestUpsertWithCustomMarkers:
-    def _setup(self, tmp_path: Path, markers: dict | None = None) -> _CtxIntegration:
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            **({"context_markers": markers} if markers is not None else {}),
-        )
-        return _CtxIntegration()
-
-    def test_upsert_uses_default_markers(self, tmp_path):
-        i = self._setup(tmp_path)
-        result = i.upsert_context_section(tmp_path)
-        assert result is not None
-        text = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
-        assert IntegrationBase.CONTEXT_MARKER_START in text
-        assert IntegrationBase.CONTEXT_MARKER_END in text
-
-    def test_upsert_uses_custom_markers(self, tmp_path):
-        i = self._setup(
-            tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"}
-        )
-        i.upsert_context_section(tmp_path)
-        text = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
-        assert "<!-- BEGIN -->" in text
-        assert "<!-- END -->" in text
-        # Defaults must not appear
-        assert IntegrationBase.CONTEXT_MARKER_START not in text
-        assert IntegrationBase.CONTEXT_MARKER_END not in text
-
-    def test_upsert_replaces_existing_custom_section(self, tmp_path):
-        i = self._setup(
-            tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"}
-        )
-        ctx = tmp_path / "CLAUDE.md"
-        ctx.write_text(
-            "# header\n\n<!-- BEGIN -->\nold body\n<!-- END -->\n\nfooter\n",
-            encoding="utf-8",
-        )
-        i.upsert_context_section(tmp_path, plan_path="specs/001-foo/plan.md")
-        text = ctx.read_text(encoding="utf-8")
-        assert "old body" not in text
-        assert "specs/001-foo/plan.md" in text
-        assert text.startswith("# header\n")
-        assert "footer" in text
-
-    def test_upsert_uses_configured_context_files(self, tmp_path):
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_files=["AGENTS.md", "CLAUDE.md"],
-        )
-        i = _CtxIntegration()
-        result = i.upsert_context_section(
-            tmp_path, plan_path="specs/001-foo/plan.md"
-        )
-        assert result == tmp_path / "AGENTS.md"
-        for name in ("AGENTS.md", "CLAUDE.md"):
-            text = (tmp_path / name).read_text(encoding="utf-8")
-            assert IntegrationBase.CONTEXT_MARKER_START in text
-            assert "specs/001-foo/plan.md" in text
-
-    def test_context_files_deduplicate_with_platform_semantics(self, tmp_path):
-        duplicate = "agents.md" if os.name == "nt" else "AGENTS.md"
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_files=["AGENTS.md", "CLAUDE.md", duplicate],
-        )
-
-        files = _CtxIntegration()._resolve_context_files(tmp_path)
-
-        assert files == ["AGENTS.md", "CLAUDE.md"]
-
-    def test_empty_context_files_falls_back_to_config_context_file(self, tmp_path):
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-            context_files=[],
-        )
-
-        files = _CtxIntegration()._resolve_context_files(tmp_path)
-
-        assert files == ["AGENTS.md"]
-
-    def test_config_context_file_takes_precedence_over_class_default(self, tmp_path):
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-        )
-
-        i = _CtxIntegration()
-        result = i.upsert_context_section(
-            tmp_path, plan_path="specs/001-foo/plan.md"
-        )
-
-        assert result == tmp_path / "AGENTS.md"
-        assert (tmp_path / "AGENTS.md").exists()
-        assert not (tmp_path / "CLAUDE.md").exists()
-
-    def test_config_context_file_fallback_rejects_invalid_path(self, tmp_path):
-        _write_ext_config(
-            tmp_path,
-            context_file="../outside.md",
-            context_files=[],
-        )
-
-        with pytest.raises(ValueError, match="project-relative|must not contain"):
-            _CtxIntegration()._resolve_context_files(tmp_path)
-
-    def test_remove_uses_configured_context_files(self, tmp_path):
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_files=["AGENTS.md", "CLAUDE.md"],
-        )
-        i = _CtxIntegration()
-        for name in ("AGENTS.md", "CLAUDE.md"):
-            (tmp_path / name).write_text(
-                f"head\n{IntegrationBase.CONTEXT_MARKER_START}\nbody\n"
-                f"{IntegrationBase.CONTEXT_MARKER_END}\ntail\n",
-                encoding="utf-8",
-            )
-        assert i.remove_context_section(tmp_path) is True
-        for name in ("AGENTS.md", "CLAUDE.md"):
-            text = (tmp_path / name).read_text(encoding="utf-8")
-            assert "body" not in text
-            assert "head" in text
-            assert "tail" in text
-
-    @pytest.mark.parametrize(
-        "bad_path",
-        [
-            "../outside.md",
-            "nested/../../outside.md",
-            "nested\\outside.md",
-            str(Path("/tmp/outside.md")),
-            "C:/tmp/outside.md",
-            "C:tmp/outside.md",
-        ],
-    )
-    def test_upsert_rejects_context_files_outside_project(self, tmp_path, bad_path):
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_files=["AGENTS.md", bad_path],
-        )
-        i = _CtxIntegration()
-        with pytest.raises(ValueError, match="project-relative|must not contain"):
-            i.upsert_context_section(tmp_path)
-
-        assert not (tmp_path / "AGENTS.md").exists()
-        assert not (tmp_path.parent / "outside.md").exists()
-
-    @pytest.mark.parametrize(
-        "bad_path",
-        [
-            "../outside.md",
-            "nested\\outside.md",
-            str(Path("/tmp/outside.md")),
-            "C:/tmp/outside.md",
-            "C:tmp/outside.md",
-        ],
-    )
-    def test_remove_rejects_context_files_outside_project(self, tmp_path, bad_path):
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_files=["AGENTS.md", bad_path],
-        )
-        outside = tmp_path.parent / "outside.md"
-        outside.write_text(
-            f"{IntegrationBase.CONTEXT_MARKER_START}\nbody\n"
-            f"{IntegrationBase.CONTEXT_MARKER_END}\n",
-            encoding="utf-8",
-        )
-        i = _CtxIntegration()
-        with pytest.raises(ValueError, match="project-relative|must not contain"):
-            i.remove_context_section(tmp_path)
-
-        assert "body" in outside.read_text(encoding="utf-8")
-
-    def test_remove_uses_custom_markers(self, tmp_path):
-        i = self._setup(
-            tmp_path, {"start": "<!-- BEGIN -->", "end": "<!-- END -->"}
-        )
-        ctx = tmp_path / "CLAUDE.md"
-        ctx.write_text(
-            "preamble\n\n<!-- BEGIN -->\nbody\n<!-- END -->\nepilogue\n",
-            encoding="utf-8",
-        )
-        removed = i.remove_context_section(tmp_path)
-        assert removed is True
-        remaining = ctx.read_text(encoding="utf-8")
-        assert "<!-- BEGIN -->" not in remaining
-        assert "<!-- END -->" not in remaining
-        assert "body" not in remaining
-        assert "preamble" in remaining
-        assert "epilogue" in remaining
-
-    def test_remove_with_default_markers_unchanged_when_custom_in_file(self, tmp_path):
-        # Extension config absent → default markers used. File contains only
-        # custom markers — nothing should be removed.
-        i = _CtxIntegration()
-        ctx = tmp_path / "CLAUDE.md"
-        original = "x\n<!-- BEGIN -->\nbody\n<!-- END -->\n"
-        ctx.write_text(original, encoding="utf-8")
-        assert i.remove_context_section(tmp_path) is False
-        assert ctx.read_text(encoding="utf-8") == original
-
-
-# ── Extension disabled gates setup/teardown ──────────────────────────────────
-
-
-def _write_registry(project_root: Path, *, enabled: bool) -> None:
-    registry = project_root / ".specify" / "extensions" / ".registry"
-    registry.parent.mkdir(parents=True, exist_ok=True)
-    registry.write_text(
-        json.dumps(
-            {
-                "schema_version": "1.0",
-                "extensions": {
-                    "agent-context": {
-                        "version": "1.0.0",
-                        "enabled": enabled,
-                    }
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
-class TestExtensionEnabledGate:
-    def test_enabled_helper_default_when_no_registry(self, tmp_path):
-        assert IntegrationBase._agent_context_extension_enabled(tmp_path) is True
-
-    def test_enabled_helper_when_entry_present(self, tmp_path):
-        _write_registry(tmp_path, enabled=True)
-        assert IntegrationBase._agent_context_extension_enabled(tmp_path) is True
-
-    def test_disabled_helper_when_entry_disabled(self, tmp_path):
-        _write_registry(tmp_path, enabled=False)
-        assert IntegrationBase._agent_context_extension_enabled(tmp_path) is False
-
-    def test_upsert_skipped_when_disabled(self, tmp_path):
-        _write_registry(tmp_path, enabled=False)
-        i = _CtxIntegration()
-        result = i.upsert_context_section(tmp_path)
-        assert result is None
-        assert not (tmp_path / "CLAUDE.md").exists()
-
-    def test_upsert_disabled_ignores_bad_context_files_config(self, tmp_path):
-        _write_registry(tmp_path, enabled=False)
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_files=["../disabled-upsert-outside.md"],
-        )
-        i = _CtxIntegration()
-        assert i.upsert_context_section(tmp_path) is None
-        assert not (tmp_path.parent / "disabled-upsert-outside.md").exists()
-
-    def test_remove_skipped_when_disabled(self, tmp_path):
-        _write_registry(tmp_path, enabled=False)
-        i = _CtxIntegration()
-        ctx = tmp_path / "CLAUDE.md"
-        original = (
-            f"head\n{IntegrationBase.CONTEXT_MARKER_START}\nbody\n"
-            f"{IntegrationBase.CONTEXT_MARKER_END}\ntail\n"
-        )
-        ctx.write_text(original, encoding="utf-8")
-        assert i.remove_context_section(tmp_path) is False
-        # File must be unchanged when extension is disabled
-        assert ctx.read_text(encoding="utf-8") == original
-
-    def test_remove_disabled_ignores_bad_context_files_config(self, tmp_path):
-        _write_registry(tmp_path, enabled=False)
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_files=["../disabled-remove-outside.md"],
-        )
-        outside = tmp_path.parent / "disabled-remove-outside.md"
-        outside.write_text(
-            f"{IntegrationBase.CONTEXT_MARKER_START}\nbody\n"
-            f"{IntegrationBase.CONTEXT_MARKER_END}\n",
-            encoding="utf-8",
-        )
-        i = _CtxIntegration()
-        assert i.remove_context_section(tmp_path) is False
-        assert "body" in outside.read_text(encoding="utf-8")
-
-    def test_context_file_display_disabled_uses_config_context_file(
-        self, tmp_path
-    ):
-        _write_registry(tmp_path, enabled=False)
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-            context_files=["../outside.md"],
-        )
-        i = _CtxIntegration()
-        assert i._context_file_display(tmp_path) == "AGENTS.md"
-
-    def test_context_file_display_disabled_without_context_file_returns_string(
-        self, tmp_path
-    ):
-        _write_registry(tmp_path, enabled=False)
-        i = _NoContextIntegration()
-        assert i._context_file_display(tmp_path) == ""
-
-
-class TestSkillPlaceholderContextValidation:
-    @pytest.mark.parametrize(
-        "bad_path",
-        [
-            "../outside.md",
-            "nested/../../outside.md",
-            "nested\\outside.md",
-            str(Path("/tmp/outside.md")),
-            "C:/tmp/outside.md",
-            "C:tmp/outside.md",
-        ],
-    )
-    def test_context_files_reject_invalid_config_paths(self, tmp_path, bad_path):
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-            context_files=["AGENTS.md", bad_path],
-        )
-
-        with pytest.raises(ValueError, match="project-relative|must not contain"):
-            CommandRegistrar.resolve_skill_placeholders(
-                "codex",
-                {},
-                "Read __CONTEXT_FILE__",
-                tmp_path,
-            )
-
-    @pytest.mark.parametrize(
-        "bad_path",
-        [
-            "../outside.md",
-            "C:tmp/outside.md",
-        ],
-    )
-    def test_context_file_rejects_invalid_config_path(self, tmp_path, bad_path):
-        _write_ext_config(
-            tmp_path,
-            context_file=bad_path,
-            context_files=[],
-        )
-
-        with pytest.raises(ValueError, match="project-relative|must not contain"):
-            CommandRegistrar.resolve_skill_placeholders(
-                "codex",
-                {},
-                "Read __CONTEXT_FILE__",
-                tmp_path,
-            )
-
-    def test_enabled_extension_rejects_invalid_legacy_init_options_path(
-        self, tmp_path
-    ):
-        save_init_options(tmp_path, {"context_file": "../outside.md"})
-
-        with pytest.raises(ValueError, match="must not contain"):
-            CommandRegistrar.resolve_skill_placeholders(
-                "codex",
-                {},
-                "Read __CONTEXT_FILE__",
-                tmp_path,
-            )
-
-    def test_disabled_extension_ignores_invalid_context_files(self, tmp_path):
-        _write_registry(tmp_path, enabled=False)
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-            context_files=["../outside.md"],
-        )
-        save_init_options(tmp_path, {"context_file": "AGENTS.md"})
-
-        content = CommandRegistrar.resolve_skill_placeholders(
-            "codex",
-            {},
-            "Read __CONTEXT_FILE__",
-            tmp_path,
-        )
-
-        assert content == "Read AGENTS.md"
-
-    def test_disabled_extension_uses_extension_context_file_before_init_options(
-        self, tmp_path
-    ):
-        _write_registry(tmp_path, enabled=False)
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-            context_files=["CLAUDE.md"],
-        )
-        save_init_options(tmp_path, {"context_file": "LEGACY.md"})
-
-        content = CommandRegistrar.resolve_skill_placeholders(
-            "codex",
-            {},
-            "Read __CONTEXT_FILE__",
-            tmp_path,
-        )
-
-        assert content == "Read AGENTS.md"
-
-    def test_context_files_deduplicate_with_platform_semantics(self, tmp_path):
-        duplicate = "agents.md" if os.name == "nt" else "AGENTS.md"
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-            context_files=["AGENTS.md", "CLAUDE.md", duplicate],
-        )
-
-        content = CommandRegistrar.resolve_skill_placeholders(
-            "codex",
-            {},
-            "Read __CONTEXT_FILE__",
-            tmp_path,
-        )
-
-        assert content == "Read AGENTS.md, CLAUDE.md"
 
 
 class TestBundledUpdaterPathValidation:
@@ -1005,231 +545,329 @@ class TestBundledUpdaterPathValidation:
         assert not (outside / "out.md").exists()
 
 
-# ── Extension config writers ─────────────────────────────────────────────────
+# ── CLI does not resolve agent context placeholders ──────────────────────────
 
 
-class TestExtensionConfigWriters:
-    def test_clear_init_options_clears_ext_config_context_file(self, tmp_path):
-        from specify_cli import _clear_init_options_for_integration
+class TestSkillPlaceholderContextResolution:
+    """The CLI no longer resolves any ``__CONTEXT_FILE__`` placeholder.
 
-        save_init_options(
+    Agent context files are owned entirely by the opt-in agent-context
+    extension, so the CLI neither reads integration metadata nor the
+    extension config when rendering commands/skills.
+    """
+
+    def test_cli_does_not_resolve_context_placeholder(self, tmp_path):
+        content = CommandRegistrar.resolve_skill_placeholders(
+            "codex",
+            {},
+            "Read __CONTEXT_FILE__",
             tmp_path,
-            {"integration": "claude", "ai": "claude"},
         )
-        _write_ext_config(tmp_path, context_file="CLAUDE.md")
-        _clear_init_options_for_integration(tmp_path, "claude")
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg.get("context_file") == ""
+        assert content == "Read __CONTEXT_FILE__"
 
-    def test_clear_init_options_creates_ext_config_when_missing(self, tmp_path):
-        from specify_cli import _clear_init_options_for_integration
-
-        save_init_options(
+    def test_extension_config_does_not_influence_resolution(self, tmp_path):
+        # Even a populated extension config must not influence resolution.
+        _write_ext_config(
             tmp_path,
-            {"integration": "claude", "ai": "claude"},
+            context_file="FROM_CONFIG.md",
+            context_files=["ALSO_CONFIG.md"],
         )
-        _clear_init_options_for_integration(tmp_path, "claude")
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg.get("context_file") == ""
 
-    def test_clear_init_options_removes_legacy_context_keys_even_when_not_active(
+        content = CommandRegistrar.resolve_skill_placeholders(
+            "claude",
+            {},
+            "Read __CONTEXT_FILE__",
+            tmp_path,
+        )
+        assert "FROM_CONFIG.md" not in content
+        assert "ALSO_CONFIG.md" not in content
+        assert content == "Read __CONTEXT_FILE__"
+
+
+# ── CLI no longer owns the agent-context extension config ────────────────────
+
+
+class TestCliDoesNotManageExtensionConfig:
+    """The Python codebase must not read or write the extension config."""
+
+    def test_config_helpers_are_removed(self):
+        import specify_cli
+
+        for name in (
+            "_load_agent_context_config",
+            "_save_agent_context_config",
+            "_update_agent_context_config_file",
+            "_AGENT_CTX_EXT_CONFIG",
+        ):
+            assert not hasattr(specify_cli, name), name
+
+    def test_no_agent_context_config_symbols_in_source(self):
+        src = PROJECT_ROOT / "src" / "specify_cli"
+        offenders = []
+        for path in src.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            if "agent-context-config" in text or "agent_context_config" in text:
+                offenders.append(str(path.relative_to(PROJECT_ROOT)))
+        assert not offenders, offenders
+
+    def test_update_init_options_does_not_create_ext_config(self, tmp_path):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+        from specify_cli.integrations._helpers import (
+            _update_init_options_for_integration,
+        )
+
+        _update_init_options_for_integration(
+            tmp_path, INTEGRATION_REGISTRY["claude"], script_type="sh"
+        )
+
+        cfg = (
+            tmp_path
+            / ".specify"
+            / "extensions"
+            / "agent-context"
+            / "agent-context-config.yml"
+        )
+        assert not cfg.exists()
+
+    def test_clear_init_options_does_not_create_ext_config(self, tmp_path):
+        from specify_cli.integrations._helpers import (
+            _clear_init_options_for_integration,
+        )
+
+        save_init_options(tmp_path, {"integration": "claude", "ai": "claude"})
+        _clear_init_options_for_integration(tmp_path, "claude")
+
+        cfg = (
+            tmp_path
+            / ".specify"
+            / "extensions"
+            / "agent-context"
+            / "agent-context-config.yml"
+        )
+        assert not cfg.exists()
+
+
+# ── Extension self-seeds its target from the active integration ──────────────
+
+
+class TestExtensionSelfSeed:
+    """When its own config declares no target, the bundled extension derives
+    the context file from the active integration using its OWN bundled
+    agent->context-file defaults map (no Specify CLI dependency)."""
+
+    @requires_bash
+    def test_bash_script_self_seeds_from_active_integration(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        # Config present but empty — no context_file / context_files.
+        _install_agent_context_config(project, context_file="", context_files=[])
+        # Active integration recorded in init-options.json (codex -> AGENTS.md).
+        save_init_options(project, {"integration": "codex", "ai": "codex"})
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert "agent-context: updated AGENTS.md" in (result.stderr + result.stdout)
+        assert (project / "AGENTS.md").exists()
+        assert "<!-- SPECKIT START -->" in (
+            project / "AGENTS.md"
+        ).read_text(encoding="utf-8")
+
+    @requires_bash
+    def test_bash_script_nothing_to_do_without_integration(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file="", context_files=[])
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert "nothing to do" in (result.stderr + result.stdout)
+
+
+_MDC_CONTEXT_FILE = ".cursor/rules/specify-rules.mdc"
+
+
+class TestMdcFrontmatter:
+    """Cursor-style ``.mdc`` targets must carry ``alwaysApply: true`` frontmatter
+    so the rule file is auto-loaded; non-``.mdc`` targets must not gain any."""
+
+    @requires_bash
+    def test_bash_script_prepends_mdc_frontmatter(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / _MDC_CONTEXT_FILE).read_text(encoding="utf-8")
+        assert text.startswith("---\nalwaysApply: true\n---\n")
+        assert "<!-- SPECKIT START -->" in text
+
+    @requires_bash
+    def test_bash_script_mdc_frontmatter_is_idempotent(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+
+        _run_bash_agent_context_script(project)
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / _MDC_CONTEXT_FILE).read_text(encoding="utf-8")
+        assert text.count("alwaysApply: true") == 1
+
+    @requires_bash
+    def test_bash_script_repairs_existing_mdc_frontmatter(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+        target = project / _MDC_CONTEXT_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "---\ndescription: My rules\nalwaysApply: false\n---\n\nUser notes\n",
+            encoding="utf-8",
+        )
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = target.read_text(encoding="utf-8")
+        assert "alwaysApply: true" in text
+        assert "alwaysApply: false" not in text
+        assert "description: My rules" in text
+        assert "User notes" in text
+
+    @requires_bash
+    def test_bash_script_skips_frontmatter_for_non_mdc(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file="AGENTS.md")
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / "AGENTS.md").read_text(encoding="utf-8")
+        assert "alwaysApply" not in text
+        assert text.startswith("<!-- SPECKIT START -->")
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_prepends_mdc_frontmatter(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / _MDC_CONTEXT_FILE).read_text(encoding="utf-8")
+        assert text.startswith("---\nalwaysApply: true\n---\n")
+        assert "<!-- SPECKIT START -->" in text
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_repairs_existing_mdc_frontmatter(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file=_MDC_CONTEXT_FILE)
+        target = project / _MDC_CONTEXT_FILE
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            "---\ndescription: My rules\nalwaysApply: false\n---\n\nUser notes\n",
+            encoding="utf-8",
+        )
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = target.read_text(encoding="utf-8")
+        assert "alwaysApply: true" in text
+        assert "alwaysApply: false" not in text
+        assert "description: My rules" in text
+        assert "User notes" in text
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_skips_frontmatter_for_non_mdc(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(project, context_file="AGENTS.md")
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / "AGENTS.md").read_text(encoding="utf-8")
+        assert "alwaysApply" not in text
+        assert text.startswith("<!-- SPECKIT START -->")
+
+
+_LEGACY_CONTEXT = (
+    "# CLAUDE.md\n\n"
+    "Some user notes.\n\n"
+    "<!-- SPECKIT START -->\n"
+    "Legacy managed section written by an older Spec Kit version.\n"
+    "<!-- SPECKIT END -->\n\n"
+    "More user notes.\n"
+)
+
+
+class TestBackwardCompatibility:
+    """Legacy projects must keep working; the CLI never touches their artifacts."""
+
+    def _seed_legacy_project(self, project_root: Path) -> Path:
+        ctx = project_root / "CLAUDE.md"
+        ctx.write_text(_LEGACY_CONTEXT, encoding="utf-8")
+        _write_ext_config(project_root, context_file="CLAUDE.md")
+        save_init_options(project_root, {"integration": "claude", "ai": "claude"})
+        return ctx
+
+    def test_integration_setup_leaves_legacy_artifacts_untouched(self, tmp_path):
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "legacy"
+        project.mkdir()
+        ctx = self._seed_legacy_project(project)
+        cfg_path = (
+            project / ".specify" / "extensions" / "agent-context"
+            / "agent-context-config.yml"
+        )
+        before_ctx = ctx.read_text(encoding="utf-8")
+        before_cfg = cfg_path.read_text(encoding="utf-8")
+
+        integration = INTEGRATION_REGISTRY["claude"]
+        m = IntegrationManifest("claude", project)
+        integration.setup(project, m)
+
+        assert ctx.read_text(encoding="utf-8") == before_ctx
+        assert cfg_path.read_text(encoding="utf-8") == before_cfg
+
+    def test_integration_switch_and_uninstall_leave_legacy_artifacts_untouched(
         self, tmp_path
     ):
-        from specify_cli import _clear_init_options_for_integration
-
-        save_init_options(
-            tmp_path,
-            {
-                "integration": "copilot",
-                "ai": "copilot",
-                "context_file": "CLAUDE.md",
-                "context_markers": {"start": "<!-- X -->", "end": "<!-- Y -->"},
-            },
+        from specify_cli.integrations import INTEGRATION_REGISTRY
+        from specify_cli.integrations._helpers import (
+            _clear_init_options_for_integration,
+            _update_init_options_for_integration,
         )
-        _clear_init_options_for_integration(tmp_path, "claude")
-        opts = load_init_options(tmp_path)
-        assert opts["integration"] == "copilot"
-        assert opts["ai"] == "copilot"
-        assert "context_file" not in opts
-        assert "context_markers" not in opts
 
-    def test_update_init_options_writes_context_file_to_ext_config(self, tmp_path):
-        from specify_cli import _update_init_options_for_integration
-
-        # Pre-create the extension config so _update_init_options_for_integration
-        # updates it (rather than skipping it when ext config doesn't exist yet).
-        _write_ext_config(tmp_path, context_file="")
-        i = _CtxIntegration()
-        _update_init_options_for_integration(tmp_path, i, script_type="sh")
-        # init-options.json must NOT have context_file or context_markers
-        opts = load_init_options(tmp_path)
-        assert "context_file" not in opts
-        assert "context_markers" not in opts
-        # Extension config must have them
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg["context_file"] == i.context_file
-        assert "context_markers" in cfg
-
-    def test_update_init_options_preserves_context_files(self, tmp_path):
-        from specify_cli import _update_init_options_for_integration
-
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-            context_files=["AGENTS.md", "CLAUDE.md"],
-        )
-        i = _CtxIntegration()
-        _update_init_options_for_integration(tmp_path, i, script_type="sh")
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg["context_file"] == i.context_file
-        assert cfg["context_files"] == ["AGENTS.md", "CLAUDE.md"]
-
-    def test_update_init_options_preserves_empty_context_files(self, tmp_path):
-        from specify_cli import _update_init_options_for_integration
-
-        _write_ext_config(
-            tmp_path,
-            context_file="AGENTS.md",
-            context_files=[],
-        )
-        i = _CtxIntegration()
-        _update_init_options_for_integration(tmp_path, i, script_type="sh")
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg["context_file"] == i.context_file
-        assert cfg["context_files"] == []
-
-    def test_update_init_options_normalizes_invalid_context_files(self, tmp_path):
-        from specify_cli import _update_init_options_for_integration
-
-        _write_ext_config(tmp_path, context_file="AGENTS.md")
-        cfg = _load_agent_context_config(tmp_path)
-        cfg["context_files"] = "AGENTS.md"
-        _save_agent_context_config(tmp_path, cfg)
-
-        i = _CtxIntegration()
-        _update_init_options_for_integration(tmp_path, i, script_type="sh")
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg["context_file"] == i.context_file
-        assert cfg["context_files"] == []
-
-    def test_clear_init_options_clears_context_files(self, tmp_path):
-        from specify_cli import _clear_init_options_for_integration
-
-        save_init_options(
-            tmp_path,
-            {"integration": "claude", "ai": "claude"},
-        )
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_files=["AGENTS.md", "CLAUDE.md"],
-        )
-        _clear_init_options_for_integration(tmp_path, "claude")
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg.get("context_file") == ""
-        assert "context_files" not in cfg
-
-    def test_update_init_options_preserves_custom_markers(self, tmp_path):
-        from specify_cli import _update_init_options_for_integration
-
-        _write_ext_config(
-            tmp_path,
-            context_file="",
-            context_markers={"start": "<!-- B -->", "end": "<!-- E -->"},
-        )
-        i = _CtxIntegration()
-        _update_init_options_for_integration(tmp_path, i)
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg["context_markers"] == {"start": "<!-- B -->", "end": "<!-- E -->"}
-
-    def test_reinit_preserves_custom_markers(self, tmp_path):
-        """specify init (reinit) must not overwrite user-customised markers."""
-        from specify_cli import _update_agent_context_config_file
-
-        # Simulate existing project with custom markers
-        _write_ext_config(
-            tmp_path,
-            context_file="CLAUDE.md",
-            context_markers={"start": "<!-- CUSTOM -->", "end": "<!-- /CUSTOM -->"},
-        )
-        # Re-running init updates context_file but must preserve markers
-        _update_agent_context_config_file(
-            tmp_path, "CLAUDE.md", preserve_markers=True
-        )
-        cfg = _load_agent_context_config(tmp_path)
-        assert cfg["context_markers"] == {
-            "start": "<!-- CUSTOM -->",
-            "end": "<!-- /CUSTOM -->",
-        }
-
-
-# ── Deprecation warning on upsert ────────────────────────────────────────────
-
-
-class TestDeprecationWarning:
-    def test_upsert_emits_deprecation_warning(self, tmp_path, capsys):
-        """upsert_context_section must emit a deprecation notice on stdout."""
-        from tests.conftest import strip_ansi
-
-        i = _CtxIntegration()
-        _write_ext_config(tmp_path, context_file="CLAUDE.md")
-        i.upsert_context_section(tmp_path)
-        captured = capsys.readouterr()
-        plain = strip_ansi(captured.out)
-        assert "Deprecation" in plain
-        assert "v0.12.0" in plain
-        assert "agent-context" in plain
-
-    def test_upsert_no_warning_when_disabled(self, tmp_path, capsys):
-        """No deprecation warning when agent-context extension is disabled."""
-        _write_registry(tmp_path, enabled=False)
-        i = _CtxIntegration()
-        i.upsert_context_section(tmp_path)
-        captured = capsys.readouterr()
-        assert "Deprecation" not in captured.out
-
-
-# ── Corrupt / invalid extension config ───────────────────────────────────────
-
-
-class TestCorruptExtensionConfig:
-    def test_marker_resolution_with_corrupt_yaml(self, tmp_path):
-        """Corrupt YAML in agent-context-config.yml falls back to defaults."""
+        project = tmp_path / "legacy"
+        project.mkdir()
+        ctx = self._seed_legacy_project(project)
         cfg_path = (
-            tmp_path / ".specify" / "extensions" / "agent-context"
+            project / ".specify" / "extensions" / "agent-context"
             / "agent-context-config.yml"
         )
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text(": invalid: yaml: {{{\n", encoding="utf-8")
-        i = _CtxIntegration()
-        start, end = i._resolve_context_markers(tmp_path)
-        assert start == IntegrationBase.CONTEXT_MARKER_START
-        assert end == IntegrationBase.CONTEXT_MARKER_END
+        before_ctx = ctx.read_text(encoding="utf-8")
+        before_cfg = cfg_path.read_text(encoding="utf-8")
 
-    def test_upsert_with_corrupt_config_uses_defaults(self, tmp_path):
-        """upsert_context_section still works when config YAML is corrupt."""
-        cfg_path = (
-            tmp_path / ".specify" / "extensions" / "agent-context"
-            / "agent-context-config.yml"
+        # Switch to a different integration.
+        _update_init_options_for_integration(
+            project, INTEGRATION_REGISTRY["gemini"], script_type="sh"
         )
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text("not valid yaml: {{{\n", encoding="utf-8")
-        i = _CtxIntegration()
-        result = i.upsert_context_section(tmp_path)
-        assert result is not None
-        text = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
-        assert IntegrationBase.CONTEXT_MARKER_START in text
-        assert IntegrationBase.CONTEXT_MARKER_END in text
+        assert ctx.read_text(encoding="utf-8") == before_ctx
+        assert cfg_path.read_text(encoding="utf-8") == before_cfg
 
-    def test_marker_resolution_with_non_dict_yaml(self, tmp_path):
-        """Config file containing a scalar (not a dict) falls back to defaults."""
-        cfg_path = (
-            tmp_path / ".specify" / "extensions" / "agent-context"
-            / "agent-context-config.yml"
-        )
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text("just a string\n", encoding="utf-8")
-        i = _CtxIntegration()
-        start, end = i._resolve_context_markers(tmp_path)
-        assert start == IntegrationBase.CONTEXT_MARKER_START
-        assert end == IntegrationBase.CONTEXT_MARKER_END
+        # Uninstall.
+        _clear_init_options_for_integration(project, "gemini")
+        assert ctx.read_text(encoding="utf-8") == before_ctx
+        assert cfg_path.read_text(encoding="utf-8") == before_cfg

@@ -8,4 +8,3 @@ class TestWindsurfIntegration(MarkdownIntegrationTests):
     FOLDER = ".windsurf/"
     COMMANDS_SUBDIR = "workflows"
     REGISTRAR_DIR = ".windsurf/workflows"
-    CONTEXT_FILE = ".windsurf/rules/specify-rules.md"

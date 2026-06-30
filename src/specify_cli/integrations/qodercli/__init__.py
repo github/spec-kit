@@ -18,5 +18,4 @@ class QodercliIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "QODER.md"
     multi_install_safe = True

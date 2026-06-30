@@ -8,4 +8,3 @@ class TestBobIntegration(MarkdownIntegrationTests):
     FOLDER = ".bob/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".bob/commands"
-    CONTEXT_FILE = "AGENTS.md"

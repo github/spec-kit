@@ -8,4 +8,3 @@ class TestRooIntegration(MarkdownIntegrationTests):
     FOLDER = ".roo/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".roo/commands"
-    CONTEXT_FILE = ".roo/rules/specify-rules.md"

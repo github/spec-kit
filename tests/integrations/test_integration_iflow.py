@@ -8,4 +8,3 @@ class TestIflowIntegration(MarkdownIntegrationTests):
     FOLDER = ".iflow/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".iflow/commands"
-    CONTEXT_FILE = "IFLOW.md"

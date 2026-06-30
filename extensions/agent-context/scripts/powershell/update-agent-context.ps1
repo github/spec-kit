@@ -20,6 +20,56 @@ param(
     [string]$PlanPath
 )
 
+function Add-MdcFrontmatter {
+    <#
+        Ensure .mdc content has YAML frontmatter with alwaysApply: true.
+
+        Cursor only auto-loads .mdc rule files that carry frontmatter with
+        alwaysApply: true. Prepend it when missing, or repair the value while
+        preserving any existing frontmatter comments/formatting.
+    #>
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Content)
+
+    $leading = ''
+    $stripped = $Content
+    $m = [regex]::Match($Content, '^\s*')
+    if ($m.Success) {
+        $leading = $m.Value
+        $stripped = $Content.Substring($m.Length)
+    }
+
+    if (-not $stripped.StartsWith('---')) {
+        return "---`nalwaysApply: true`n---`n`n" + $Content
+    }
+
+    $fm = [regex]::Match($stripped, '^(---[ \t]*\r?\n)(.*?)(\r?\n---[ \t]*)(\r?\n|$)(.*)', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if (-not $fm.Success) {
+        return "---`nalwaysApply: true`n---`n`n" + $Content
+    }
+
+    $opening = $fm.Groups[1].Value
+    $fmText  = $fm.Groups[2].Value
+    $closing = $fm.Groups[3].Value
+    $sep     = $fm.Groups[4].Value
+    $rest    = $fm.Groups[5].Value
+    $newline = if ($opening.Contains("`r`n")) { "`r`n" } else { "`n" }
+
+    if ([regex]::IsMatch($fmText, '(?m)^[ \t]*alwaysApply[ \t]*:[ \t]*true[ \t]*(?:#.*)?$')) {
+        return $Content
+    }
+
+    if ([regex]::IsMatch($fmText, '(?m)^[ \t]*alwaysApply[ \t]*:')) {
+        $alwaysApplyRegex = [regex]'(?m)^([ \t]*)alwaysApply[ \t]*:.*?([ \t]*(?:#.*)?)$'
+        $fmText = $alwaysApplyRegex.Replace($fmText, '${1}alwaysApply: true${2}', 1)
+    } elseif ($fmText.Trim()) {
+        $fmText = $fmText + $newline + 'alwaysApply: true'
+    } else {
+        $fmText = 'alwaysApply: true'
+    }
+
+    return "$leading$opening$fmText$closing$sep$rest"
+}
+
 function Get-ConfigValue {
     param(
         [AllowNull()][object]$Object,
@@ -251,6 +301,43 @@ foreach ($ContextFile in $ContextFiles) {
 }
 $ContextFiles = $dedupedContextFiles
 if ($ContextFiles.Count -eq 0) {
+    # Self-seed: the agent-context extension owns its lifecycle, so when its
+    # own config declares no target it derives one from the active integration
+    # recorded in init-options.json, using the extension's OWN bundled mapping
+    # (agent-context-defaults.json). Independent of the Specify CLI by design.
+    $initOptionsPath = Join-Path $ProjectRoot '.specify/init-options.json'
+    if (Test-Path -LiteralPath $initOptionsPath) {
+        try {
+            $initOpts = Get-Content -LiteralPath $initOptionsPath -Raw | ConvertFrom-Json -ErrorAction Stop
+            $integrationKey = $null
+            if ($initOpts.PSObject.Properties['integration'] -and $initOpts.integration) {
+                $integrationKey = [string]$initOpts.integration
+            } elseif ($initOpts.PSObject.Properties['ai'] -and $initOpts.ai) {
+                $integrationKey = [string]$initOpts.ai
+            }
+            if ($integrationKey) {
+                $defaultsPath = Join-Path $ProjectRoot '.specify/extensions/agent-context/agent-context-defaults.json'
+                if (Test-Path -LiteralPath $defaultsPath) {
+                    $defaults = Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json -ErrorAction Stop
+                    $derived = $null
+                    if ($defaults.PSObject.Properties['agents'] -and $defaults.agents.PSObject.Properties[$integrationKey]) {
+                        $derived = [string]$defaults.agents.PSObject.Properties[$integrationKey].Value
+                    }
+                    if ($derived -and -not [string]::IsNullOrWhiteSpace($derived)) {
+                        $ContextFiles += $derived.Trim()
+                    } else {
+                        Write-Warning ("agent-context: no default context file is known for integration '{0}'; set 'context_file' in the extension config to choose one." -f $integrationKey)
+                    }
+                } else {
+                    Write-Warning ("agent-context: unable to read {0}; cannot self-seed the context file. Set 'context_file' in the extension config." -f $defaultsPath)
+                }
+            }
+        } catch {
+            # Non-fatal: fall through to the nothing-to-do guard below.
+        }
+    }
+}
+if ($ContextFiles.Count -eq 0) {
     Write-Warning 'agent-context: context_files/context_file not set in extension config; nothing to do.'
     exit 0
 }
@@ -411,6 +498,9 @@ foreach ($ContextFile in $ContextFiles) {
     }
 
     $newContent = $newContent.Replace("`r`n", "`n").Replace("`r", "`n")
+    if ($ContextFile -match '\.mdc$') {
+        $newContent = Add-MdcFrontmatter -Content $newContent
+    }
     [System.IO.File]::WriteAllText($CtxPath, $newContent, (New-Object System.Text.UTF8Encoding($false)))
 
     Write-Host "agent-context: updated $ContextFile"

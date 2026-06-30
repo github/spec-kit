@@ -26,7 +26,6 @@ class TraeIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = ".trae/rules/project_rules.md"
     multi_install_safe = True
 
     @classmethod
