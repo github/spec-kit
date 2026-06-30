@@ -168,7 +168,7 @@ def _resolve_catalog_extension(
 
         # Try by display name - search using argument as query, then filter for exact match
         search_results = catalog.search(query=argument)
-        name_matches = [ext for ext in search_results if ext["name"].lower() == argument.lower()]
+        name_matches = [ext for ext in search_results if str(ext.get("name", "")).lower() == argument.lower()]
 
         if len(name_matches) == 1:
             return (name_matches[0], None)
@@ -207,22 +207,30 @@ def extension_list(
     available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
     all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
 ):
-    """List installed extensions."""
-    from . import ExtensionManager
+    """List installed extensions, and available catalog extensions with --available/--all."""
+    from . import ExtensionManager, ExtensionCatalog, ExtensionError
 
     project_root = _require_specify_project()
     manager = ExtensionManager(project_root)
     installed = manager.list_installed()
 
-    if not installed and not (available or all_extensions):
+    # Default (no flags) lists installed; --all also lists installed.
+    # --available alone lists only catalog extensions, not installed.
+    show_installed = all_extensions or not available
+    show_available = available or all_extensions
+
+    if not installed and not show_available:
         console.print("[yellow]No extensions installed.[/yellow]")
         console.print("\nInstall an extension with:")
         console.print("  specify extension add <extension-name>")
         return
 
-    if installed:
+    if show_installed:
         console.print("\n[bold cyan]Installed Extensions:[/bold cyan]\n")
 
+        if not installed:
+            console.print("  [dim]No extensions installed.[/dim]")
+            console.print()
         for ext in installed:
             status_icon = "✓" if ext["enabled"] else "✗"
             status_color = "green" if ext["enabled"] else "red"
@@ -233,9 +241,41 @@ def extension_list(
             console.print(f"     Commands: {ext['command_count']} | Hooks: {ext['hook_count']} | Priority: {ext['priority']} | Status: {'Enabled' if ext['enabled'] else 'Disabled'}")
             console.print()
 
-    if available or all_extensions:
-        console.print("\nInstall an extension:")
-        console.print("  [cyan]specify extension add <name>[/cyan]")
+    if show_available:
+        # Query the catalog and show extensions that are not already installed.
+        catalog = ExtensionCatalog(project_root)
+        installed_ids = {ext["id"] for ext in installed}
+
+        try:
+            results = catalog.search()
+        except ExtensionError as e:
+            console.print(f"\n[red]Error:[/red] Could not query extension catalog: {_escape_markup(str(e))}")
+            console.print("[dim]The catalog may be temporarily unavailable. Try again later.[/dim]")
+            raise typer.Exit(1)
+
+        available_exts = [ext for ext in results if ext.get("id") not in installed_ids]
+
+        console.print("\n[bold cyan]Available Extensions:[/bold cyan]\n")
+        if not available_exts:
+            console.print("  [dim]No additional extensions available in the catalog.[/dim]")
+        else:
+            for ext in available_exts:
+                # Catalog fields are untrusted (remote/community catalogs); escape
+                # before embedding in Rich markup to prevent markup injection.
+                safe_id = _escape_markup(str(ext.get("id", "")))
+                verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
+                safe_name = _escape_markup(str(ext.get("name", "(unnamed)")))
+                safe_version = _escape_markup(str(ext.get("version", "?")))
+                console.print(f"  [bold]{safe_name}[/bold] (v{safe_version}){verified_badge}")
+                console.print(f"     [dim]{safe_id}[/dim]")
+                console.print(f"     {_escape_markup(str(ext.get('description', '')))}")
+                install_allowed = ext.get("_install_allowed", True)
+                if install_allowed:
+                    console.print(f"     [cyan]Install:[/cyan] specify extension add {safe_id}")
+                else:
+                    catalog_name = _escape_markup(str(ext.get("_catalog_name", "")))
+                    console.print(f"     [yellow]Discovery only — not installable from '{catalog_name}'[/yellow]")
+                console.print()
 
 
 @catalog_app.command("list")
@@ -601,7 +641,7 @@ def extension_add(
 
                         # Download extension ZIP (use resolved ID, not original argument which may be display name)
                         extension_id = ext_info['id']
-                        console.print(f"Downloading {_escape_markup(str(ext_info['name']))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
+                        console.print(f"Downloading {_escape_markup(str(ext_info.get('name', extension_id)))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
                         zip_path = catalog.download_extension(extension_id)
 
                         try:
@@ -753,8 +793,8 @@ def extension_search(
         for ext in results:
             # Extension header
             verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
-            console.print(f"[bold]{_escape_markup(str(ext['name']))}[/bold] (v{_escape_markup(str(ext['version']))}){verified_badge}")
-            console.print(f"  {_escape_markup(str(ext['description']))}")
+            console.print(f"[bold]{_escape_markup(str(ext.get('name', '(unnamed)')))}[/bold] (v{_escape_markup(str(ext.get('version', '?')))}){verified_badge}")
+            console.print(f"  {_escape_markup(str(ext.get('description', '')))}")
 
             # Metadata
             console.print(f"\n  [dim]Author:[/dim] {_escape_markup(str(ext.get('author', 'Unknown')))}")
@@ -776,7 +816,7 @@ def extension_search(
             if ext.get('downloads') is not None:
                 stats.append(f"Downloads: {ext['downloads']:,}")
             if ext.get('stars') is not None:
-                stats.append(f"Stars: {ext['stars']}")
+                stats.append(f"Stars: {_escape_markup(str(ext['stars']))}")
             if stats:
                 console.print(f"  [dim]{' | '.join(stats)}[/dim]")
 
@@ -897,12 +937,12 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
-    console.print(f"\n[bold]{_escape_markup(str(ext_info['name']))}[/bold] (v{_escape_markup(str(ext_info['version']))}){verified_badge}")
+    console.print(f"\n[bold]{_escape_markup(str(ext_info.get('name', '(unnamed)')))}[/bold] (v{_escape_markup(str(ext_info.get('version', '?')))}){verified_badge}")
     console.print(f"ID: {_escape_markup(str(ext_info['id']))}")
     console.print()
 
     # Description
-    console.print(f"{_escape_markup(str(ext_info['description']))}")
+    console.print(f"{_escape_markup(str(ext_info.get('description', '')))}")
     console.print()
 
     # Author and License
@@ -923,23 +963,26 @@ def _print_extension_info(ext_info: dict, manager):
     console.print()
 
     # Requirements
-    if ext_info.get('requires'):
+    reqs = ext_info.get('requires')
+    if isinstance(reqs, dict) and reqs:
         console.print("[bold]Requirements:[/bold]")
-        reqs = ext_info['requires']
         if reqs.get('speckit_version'):
             console.print(f"  • Spec Kit: {_escape_markup(str(reqs['speckit_version']))}")
-        if reqs.get('tools'):
-            for tool in reqs['tools']:
-                tool_name = _escape_markup(str(tool['name']))
+        tools = reqs.get('tools')
+        if isinstance(tools, list):
+            for tool in tools:
+                if not isinstance(tool, dict):
+                    continue
+                tool_name = _escape_markup(str(tool.get('name', '(unnamed)')))
                 tool_version = _escape_markup(str(tool.get('version', 'any')))
                 required = " (required)" if tool.get('required') else " (optional)"
                 console.print(f"  • {tool_name}: {tool_version}{required}")
         console.print()
 
     # Provides
-    if ext_info.get('provides'):
+    provides = ext_info.get('provides')
+    if isinstance(provides, dict) and provides:
         console.print("[bold]Provides:[/bold]")
-        provides = ext_info['provides']
         if provides.get('commands'):
             console.print(f"  • Commands: {_escape_markup(str(provides['commands']))}")
         if provides.get('hooks'):
@@ -957,7 +1000,7 @@ def _print_extension_info(ext_info: dict, manager):
     if ext_info.get('downloads') is not None:
         stats.append(f"Downloads: {ext_info['downloads']:,}")
     if ext_info.get('stars') is not None:
-        stats.append(f"Stars: {ext_info['stars']}")
+        stats.append(f"Stars: {_escape_markup(str(ext_info['stars']))}")
     if stats:
         console.print(f"[bold]Statistics:[/bold] {' | '.join(stats)}")
         console.print()
@@ -1064,8 +1107,8 @@ def extension_update(
                 continue
 
             try:
-                catalog_version = pkg_version.Version(ext_info["version"])
-            except pkg_version.InvalidVersion:
+                catalog_version = pkg_version.Version(str(ext_info["version"]))
+            except (pkg_version.InvalidVersion, KeyError):
                 console.print(
                     f"⚠  {safe_ext_id}: Invalid catalog version '{_escape_markup(str(ext_info.get('version')))}' (skipping)"
                 )
