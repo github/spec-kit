@@ -16,6 +16,7 @@ from typing import Any
 
 import typer
 import yaml
+from rich.markup import escape as _escape_markup
 
 from .._console import console
 
@@ -97,22 +98,39 @@ def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
     before ``mkdir``/copy/download follows a symlink outside the project root.
     Rejects, with a clean ``typer.Exit``:
 
-    - an ``<id>`` that escapes ``workflows_dir`` (path traversal);
     - an ``<id>`` that is a symlink or an existing non-directory
       (the latter would otherwise make ``mkdir`` raise);
-    - an ``<id>/workflow.yml`` leaf that is a symlink.
+    - an ``<id>`` that escapes ``workflows_dir`` (path traversal);
+    - an ``<id>/workflow.yml`` leaf that is a symlink or an existing
+      non-file (either would otherwise make the later write/copy raise).
+
+    The symlink/non-directory check runs *before* ``resolve()`` so a symlinked
+    ``<id>`` reports as a symlink rather than misleadingly as path traversal.
+    ``workflow_id`` is markup-escaped in output to avoid Rich markup injection.
     """
+    safe_id = _escape_markup(workflow_id)
     dest_dir = workflows_dir / workflow_id
+    _reject_unsafe_dir(dest_dir, f".specify/workflows/{safe_id}")
     try:
         dest_dir.resolve().relative_to(workflows_dir.resolve())
     except ValueError:
-        console.print(f"[red]Error:[/red] Invalid workflow ID: {workflow_id!r}")
+        # Escape the repr (not the raw id) so backslashes added by repr cannot
+        # re-expose markup brackets to Rich.
+        console.print(
+            f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
+        )
         raise typer.Exit(1)
-    _reject_unsafe_dir(dest_dir, f".specify/workflows/{workflow_id}")
-    if (dest_dir / "workflow.yml").is_symlink():
+    workflow_yml = dest_dir / "workflow.yml"
+    if workflow_yml.is_symlink():
         console.print(
             "[red]Error:[/red] Refusing to write through symlinked "
-            f".specify/workflows/{workflow_id}/workflow.yml"
+            f".specify/workflows/{safe_id}/workflow.yml"
+        )
+        raise typer.Exit(1)
+    if workflow_yml.exists() and not workflow_yml.is_file():
+        console.print(
+            "[red]Error:[/red] "
+            f".specify/workflows/{safe_id}/workflow.yml exists but is not a file"
         )
         raise typer.Exit(1)
     return dest_dir

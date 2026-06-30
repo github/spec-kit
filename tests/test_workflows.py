@@ -5402,6 +5402,43 @@ class TestWorkflowAddSymlinkGuard:
         assert "exists but is not a directory" in result.output
         assert result.exception is None or isinstance(result.exception, SystemExit)
 
+    def test_add_refuses_workflow_yml_as_directory(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """A pre-existing <id>/workflow.yml *directory* must fail cleanly, not crash."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        id_dir = temp_dir / ".specify" / "workflows" / "test-workflow"
+        id_dir.mkdir(parents=True)
+        # Plant workflow.yml as a directory so a later write/copy2 would raise
+        # IsADirectoryError without the explicit non-file guard.
+        (id_dir / "workflow.yml").mkdir()
+        src = temp_dir / "incoming.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        assert "test-workflow/workflow.yml" in result.output
+        assert "is not a file" in result.output
+        # Clean exit, not an unhandled IsADirectoryError traceback.
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+    def test_safe_workflow_id_dir_escapes_markup_in_invalid_id(self, temp_dir, capsys):
+        """A traversal <id> carrying Rich markup must be escaped, not interpreted."""
+        import typer
+        from specify_cli.workflows._commands import _safe_workflow_id_dir
+
+        workflows_dir = temp_dir / ".specify" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        # Traversal (so the "Invalid workflow ID" branch fires) plus markup.
+        with pytest.raises(typer.Exit):
+            _safe_workflow_id_dir(workflows_dir, "../[red]evil[/red]")
+
+        out = capsys.readouterr().out
+        # Literal bracketed text survives; Rich did not consume it as a tag.
+        assert "[red]evil[/red]" in out
+
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_list_refuses_symlinked_runs_dir(self, temp_dir, monkeypatch):
         """workflow commands using the project shim must refuse symlinked run storage."""
