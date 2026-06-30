@@ -10,7 +10,7 @@ on:
 
 tools:
   edit:
-  bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "uniq", "python3", "jq", "date", "ls", "find", "pytest", "pip", "npm", "npx", "node", "pnpm", "yarn", "go", "cargo", "make", "mvn", "gradle", "dotnet", "bundle", "rake", "ruby"]
+  bash: ["echo", "cat", "head", "tail", "grep", "wc", "sort", "uniq", "python3", "jq", "date", "ls", "find", "pytest", "npm", "go", "cargo", "dotnet"]
   github:
     toolsets: [issues, repos]
     min-integrity: none
@@ -31,6 +31,8 @@ safe-outputs:
     labels: [bug-fix, automated]
     draft: true
     max: 1
+    protected-files:
+      policy: blocked
   add-comment:
     max: 1
   add-labels:
