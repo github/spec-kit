@@ -248,15 +248,17 @@ class TestExpressions:
         assert result == "foobar"
 
     def test_single_expression_with_literal_braces_preserves_type(self):
-        """A lone expression whose string argument contains a literal ``{{``
+        """A lone expression whose string argument contains a literal ``{{`` or ``}}``
         must still take the typed fast path and return a bool, not a string
-        (the fix for #3208 must not coerce it to ``"True"``)."""
+        (the fix for #3208 must not coerce it to ``\"True\"``)."""
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
         ctx = StepContext(inputs={"text": "uses {{ jinja }} syntax"})
-        result = evaluate_expression("{{ inputs.text | contains('{{') }}", ctx)
-        assert result is True
+        assert evaluate_expression("{{ inputs.text | contains('{{') }}", ctx) is True
+
+        ctx = StepContext(inputs={"text": "uses }} syntax"})
+        assert evaluate_expression("{{ inputs.text | contains('}}') }}", ctx) is True
 
     def test_comparison_equals(self):
         from specify_cli.workflows.expressions import evaluate_expression
