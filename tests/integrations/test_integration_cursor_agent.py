@@ -125,6 +125,38 @@ class TestCursorAgentCliDispatch:
         assert argv is not None
         assert argv[0] == "cursor-agent"
 
+    def test_build_exec_args_honors_executable_override(self, monkeypatch):
+        """``SPECKIT_INTEGRATION_CURSOR_AGENT_EXECUTABLE`` overrides argv[0].
+
+        Every other CLI-dispatch integration (codex, devin, ...) routes
+        argv[0] through ``_resolve_executable()`` so operators can pin a
+        binary path (issue #2596). cursor-agent hardcoded ``self.key`` and
+        silently ignored the documented override.
+        """
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CURSOR_AGENT_EXECUTABLE", "/custom/cursor"
+        )
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args("/speckit-plan", output_json=False)
+        assert args[0] == "/custom/cursor"
+        # The mandatory headless flags must still be present.
+        for flag in ("-p", "--trust", "--approve-mcps", "--force"):
+            assert flag in args
+
+    def test_build_exec_args_honors_extra_args_override(self, monkeypatch):
+        """``SPECKIT_INTEGRATION_CURSOR_AGENT_EXTRA_ARGS`` flags are injected.
+
+        The ``_apply_extra_args_env_var()`` hook (issue #2595) was never
+        invoked by cursor-agent, so operator-supplied flags were dropped.
+        """
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CURSOR_AGENT_EXTRA_ARGS", "--foo bar"
+        )
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args("/speckit-plan", output_json=False)
+        assert "--foo" in args
+        assert "bar" in args
+
     def test_build_command_invocation_uses_hyphenated_skill_name(self):
         """SkillsIntegration: /speckit-plan (not /speckit.plan)."""
         i = get_integration("cursor-agent")
