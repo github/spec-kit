@@ -5,9 +5,10 @@ Copilot has several unique behaviors compared to standard markdown agents:
 - Each command gets a companion ``.prompt.md`` file in ``.github/prompts/``
 - Installs ``.vscode/settings.json`` with prompt file recommendations
 
-When ``--skills`` is passed via ``--integration-options``, Copilot scaffolds
-commands as ``speckit-<name>/SKILL.md`` directories under ``.github/skills/``
-instead.  The two modes are mutually exclusive.
+Copilot now defaults to skills mode, scaffolding commands as
+``speckit-<name>/SKILL.md`` directories under ``.github/skills/``.
+The legacy ``.agent.md`` + ``.prompt.md`` layout remains available for
+explicit non-skills installs.
 """
 
 from __future__ import annotations
@@ -126,8 +127,8 @@ class CopilotIntegration(IntegrationBase):
             IntegrationOption(
                 "--skills",
                 is_flag=True,
-                default=False,
-                help="Scaffold commands as agent skills (speckit-<name>/SKILL.md) instead of .agent.md files",
+                default=True,
+                help="Scaffold commands as agent skills (default for Copilot)",
             ),
         ]
 
@@ -308,12 +309,12 @@ class CopilotIntegration(IntegrationBase):
     ) -> list[Path]:
         """Install copilot commands, companion prompts, and VS Code settings.
 
-        When ``parsed_options["skills"]`` is truthy, delegates to skills
-        scaffolding (``speckit-<name>/SKILL.md`` under ``.github/skills/``).
-        Otherwise uses the default ``.agent.md`` + ``.prompt.md`` layout.
+        Defaults to skills scaffolding (``speckit-<name>/SKILL.md`` under
+        ``.github/skills/``). When ``parsed_options["skills"]`` is falsy,
+        uses the legacy ``.agent.md`` + ``.prompt.md`` layout.
         """
         parsed_options = parsed_options or {}
-        self._skills_mode = bool(parsed_options.get("skills"))
+        self._skills_mode = bool(parsed_options.get("skills", True))
         if self._skills_mode:
             return self._setup_skills(project_root, manifest, parsed_options, **opts)
         return self._setup_default(project_root, manifest, parsed_options, **opts)

@@ -68,8 +68,9 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
-        assert (project / ".github" / "prompts" / "speckit.plan.prompt.md").exists()
+        assert (project / ".github" / "skills" / "speckit-plan" / "SKILL.md").exists()
+        assert not (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert not (project / ".github" / "prompts" / "speckit.plan.prompt.md").exists()
         assert (project / ".specify" / "scripts" / "bash" / "common.sh").exists()
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
@@ -110,7 +111,7 @@ class TestInitIntegrationFlag:
 
         assert result.exit_code == 0, result.output
         assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert (project / ".github" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
@@ -130,7 +131,7 @@ class TestInitIntegrationFlag:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
+        assert (project / ".github" / "skills" / "speckit-plan" / "SKILL.md").exists()
 
     def test_init_optional_preset_failure_reports_target_and_continues(
         self, tmp_path, monkeypatch
@@ -1121,7 +1122,7 @@ class TestSharedInfraCommandRefs:
         assert "/speckit.specify" not in script_content
 
     def test_full_init_copilot_resolves_page_templates(self, tmp_path):
-        """Full CLI init with Copilot (markdown agent) produces dot refs in page templates."""
+        """Full CLI init with Copilot now defaults to skills-mode hyphen refs."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -1143,12 +1144,13 @@ class TestSharedInfraCommandRefs:
 
         plan = project / ".specify" / "templates" / "plan-template.md"
         content = plan.read_text(encoding="utf-8")
-        assert "/speckit.plan" in content, "Copilot (markdown) should use /speckit.plan"
+        assert "/speckit-plan" in content, "Copilot default should use /speckit-plan"
+        assert "/speckit.plan" not in content
         assert "__SPECKIT_COMMAND_" not in content
 
         script_content = self._combined_script_content(project, "sh")
-        assert "/speckit.specify" in script_content
-        assert "/speckit-specify" not in script_content
+        assert "/speckit-specify" in script_content
+        assert "/speckit.specify" not in script_content
 
     def test_full_init_copilot_skills_resolves_page_templates(self, tmp_path):
         """Full CLI init with Copilot --skills produces hyphen refs in page templates."""

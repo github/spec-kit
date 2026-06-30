@@ -27,6 +27,16 @@ class TestCopilotIntegration:
         copilot = CopilotIntegration()
         m = IntegrationManifest("copilot", tmp_path)
         created = copilot.setup(tmp_path, m)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) > 0
+        for f in skill_files:
+            assert f.parent.parent == tmp_path / ".github" / "skills"
+
+    def test_setup_creates_agent_md_files_when_skills_disabled(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+        created = copilot.setup(tmp_path, m, parsed_options={"skills": False})
         assert len(created) > 0
         agent_files = [f for f in created if ".agent." in f.name]
         assert len(agent_files) > 0
@@ -38,7 +48,7 @@ class TestCopilotIntegration:
         from specify_cli.integrations.copilot import CopilotIntegration
         copilot = CopilotIntegration()
         m = IntegrationManifest("copilot", tmp_path)
-        created = copilot.setup(tmp_path, m)
+        created = copilot.setup(tmp_path, m, parsed_options={"skills": False})
         prompt_files = [f for f in created if f.parent.name == "prompts"]
         assert len(prompt_files) > 0
         for f in prompt_files:
@@ -50,7 +60,7 @@ class TestCopilotIntegration:
         from specify_cli.integrations.copilot import CopilotIntegration
         copilot = CopilotIntegration()
         m = IntegrationManifest("copilot", tmp_path)
-        created = copilot.setup(tmp_path, m)
+        created = copilot.setup(tmp_path, m, parsed_options={"skills": False})
         agents = [f for f in created if ".agent.md" in f.name]
         prompts = [f for f in created if ".prompt.md" in f.name]
         assert len(agents) == len(prompts)
@@ -60,7 +70,7 @@ class TestCopilotIntegration:
         copilot = CopilotIntegration()
         assert copilot._vscode_settings_path() is not None
         m = IntegrationManifest("copilot", tmp_path)
-        created = copilot.setup(tmp_path, m)
+        created = copilot.setup(tmp_path, m, parsed_options={"skills": False})
         settings = tmp_path / ".vscode" / "settings.json"
         assert settings.exists()
         assert settings in created
@@ -74,7 +84,7 @@ class TestCopilotIntegration:
         existing = {"editor.fontSize": 14, "custom.setting": True}
         (vscode_dir / "settings.json").write_text(json.dumps(existing, indent=4), encoding="utf-8")
         m = IntegrationManifest("copilot", tmp_path)
-        created = copilot.setup(tmp_path, m)
+        created = copilot.setup(tmp_path, m, parsed_options={"skills": False})
         settings = tmp_path / ".vscode" / "settings.json"
         data = json.loads(settings.read_text(encoding="utf-8"))
         assert data["editor.fontSize"] == 14
@@ -121,15 +131,15 @@ class TestCopilotIntegration:
         copilot = CopilotIntegration()
         m = IntegrationManifest("copilot", tmp_path)
         copilot.setup(tmp_path, m)
-        agents_dir = tmp_path / ".github" / "agents"
-        assert agents_dir.is_dir()
-        agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
-        assert len(agent_files) == 10
+        skills_dir = tmp_path / ".github" / "skills"
+        assert skills_dir.is_dir()
+        skill_files = sorted(skills_dir.glob("speckit-*/SKILL.md"))
+        assert len(skill_files) == 10
         expected_commands = {
             "analyze", "clarify", "constitution", "converge", "implement",
             "plan", "checklist", "specify", "tasks", "taskstoissues",
         }
-        actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
+        actual_commands = {f.parent.name.removeprefix("speckit-") for f in skill_files}
         assert actual_commands == expected_commands
 
     def test_templates_are_processed(self, tmp_path):
@@ -153,7 +163,7 @@ class TestCopilotIntegration:
         m = IntegrationManifest("copilot", tmp_path)
         copilot.setup(tmp_path, m)
 
-        specify_file = tmp_path / ".github" / "agents" / "speckit.specify.agent.md"
+        specify_file = tmp_path / ".github" / "skills" / "speckit-specify" / "SKILL.md"
         content = specify_file.read_text(encoding="utf-8")
 
         assert "specify preset resolve spec-template" in content
@@ -168,13 +178,13 @@ class TestCopilotIntegration:
         copilot = CopilotIntegration()
         m = IntegrationManifest("copilot", tmp_path)
         copilot.setup(tmp_path, m)
-        plan_file = tmp_path / ".github" / "agents" / "speckit.plan.agent.md"
+        plan_file = tmp_path / ".github" / "skills" / "speckit-plan" / "SKILL.md"
         assert plan_file.exists()
         content = plan_file.read_text(encoding="utf-8")
         assert "__CONTEXT_FILE__" not in content
 
     def test_complete_file_inventory_sh(self, tmp_path):
-        """Every file produced by specify init --integration copilot --script sh."""
+        """Every file produced by default Copilot init now uses skills mode."""
         from typer.testing import CliRunner
         from specify_cli import app
         project = tmp_path / "inventory-sh"
@@ -190,27 +200,10 @@ class TestCopilotIntegration:
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
-            ".github/agents/speckit.analyze.agent.md",
-            ".github/agents/speckit.checklist.agent.md",
-            ".github/agents/speckit.clarify.agent.md",
-            ".github/agents/speckit.constitution.agent.md",
-            ".github/agents/speckit.converge.agent.md",
-            ".github/agents/speckit.implement.agent.md",
-            ".github/agents/speckit.plan.agent.md",
-            ".github/agents/speckit.specify.agent.md",
-            ".github/agents/speckit.tasks.agent.md",
-            ".github/agents/speckit.taskstoissues.agent.md",
-            ".github/prompts/speckit.analyze.prompt.md",
-            ".github/prompts/speckit.checklist.prompt.md",
-            ".github/prompts/speckit.clarify.prompt.md",
-            ".github/prompts/speckit.constitution.prompt.md",
-            ".github/prompts/speckit.converge.prompt.md",
-            ".github/prompts/speckit.implement.prompt.md",
-            ".github/prompts/speckit.plan.prompt.md",
-            ".github/prompts/speckit.specify.prompt.md",
-            ".github/prompts/speckit.tasks.prompt.md",
-            ".github/prompts/speckit.taskstoissues.prompt.md",
-            ".vscode/settings.json",
+            *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in [
+                "analyze", "checklist", "clarify", "constitution", "converge",
+                "implement", "plan", "specify", "tasks", "taskstoissues",
+            ]],
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -235,7 +228,7 @@ class TestCopilotIntegration:
         )
 
     def test_complete_file_inventory_ps(self, tmp_path):
-        """Every file produced by specify init --integration copilot --script ps."""
+        """Every file produced by default Copilot init with PowerShell uses skills mode."""
         from typer.testing import CliRunner
         from specify_cli import app
         project = tmp_path / "inventory-ps"
@@ -251,27 +244,10 @@ class TestCopilotIntegration:
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
-            ".github/agents/speckit.analyze.agent.md",
-            ".github/agents/speckit.checklist.agent.md",
-            ".github/agents/speckit.clarify.agent.md",
-            ".github/agents/speckit.constitution.agent.md",
-            ".github/agents/speckit.converge.agent.md",
-            ".github/agents/speckit.implement.agent.md",
-            ".github/agents/speckit.plan.agent.md",
-            ".github/agents/speckit.specify.agent.md",
-            ".github/agents/speckit.tasks.agent.md",
-            ".github/agents/speckit.taskstoissues.agent.md",
-            ".github/prompts/speckit.analyze.prompt.md",
-            ".github/prompts/speckit.checklist.prompt.md",
-            ".github/prompts/speckit.clarify.prompt.md",
-            ".github/prompts/speckit.constitution.prompt.md",
-            ".github/prompts/speckit.converge.prompt.md",
-            ".github/prompts/speckit.implement.prompt.md",
-            ".github/prompts/speckit.plan.prompt.md",
-            ".github/prompts/speckit.specify.prompt.md",
-            ".github/prompts/speckit.tasks.prompt.md",
-            ".github/prompts/speckit.taskstoissues.prompt.md",
-            ".vscode/settings.json",
+            *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in [
+                "analyze", "checklist", "clarify", "constitution", "converge",
+                "implement", "plan", "specify", "tasks", "taskstoissues",
+            ]],
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -321,7 +297,7 @@ class TestCopilotSkillsMode:
         skills_opts = [o for o in opts if o.name == "--skills"]
         assert len(skills_opts) == 1
         assert skills_opts[0].is_flag is True
-        assert skills_opts[0].default is False
+        assert skills_opts[0].default is True
 
     # -- Skills directory structure ---------------------------------------
 
@@ -674,14 +650,12 @@ class TestCopilotSkillsMode:
         copilot.setup(tmp_path / "proj1", m1, parsed_options={"skills": True})
         assert copilot._skills_mode is True
 
-        # Second call: default mode (no skills option)
+        # Second call: default mode (no explicit skills option) still means skills mode.
         (tmp_path / "proj2").mkdir()
         m2 = IntegrationManifest("copilot", tmp_path / "proj2")
         copilot.setup(tmp_path / "proj2", m2)
-        assert copilot._skills_mode is False
-
-        # build_command_invocation must use default (dotted) mode
-        assert copilot.build_command_invocation("plan", "args") == "args"
+        assert copilot._skills_mode is True
+        assert copilot.build_command_invocation("plan", "args") == "/speckit-plan args"
 
     # -- Auto-detection must ignore unrelated .github/skills/ -------------
 
