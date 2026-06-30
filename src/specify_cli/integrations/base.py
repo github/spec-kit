@@ -513,7 +513,7 @@ class IntegrationBase(ABC):
                 continue
             dst_script = scripts_dest / src_script.name
             shutil.copy2(src_script, dst_script)
-            if dst_script.suffix == ".sh":
+            if dst_script.suffix in (".sh", ".py"):
                 dst_script.chmod(dst_script.stat().st_mode | 0o111)
             self.record_file_in_manifest(dst_script, project_root, manifest)
             created.append(dst_script)
@@ -539,12 +539,45 @@ class IntegrationBase(ABC):
         )
 
     @staticmethod
+    def resolve_python_interpreter(project_root: Path | None = None) -> str:
+        """Resolve a portable Python interpreter command for ``{SCRIPT}``.
+
+        Used to build the invocation string for the ``py`` script type so
+        that ``.py`` workflow scripts run consistently across platforms
+        (notably Windows, where ``.py`` files are not directly executable).
+
+        Resolution order:
+
+        1. A project virtual environment (``.venv``) interpreter, if one
+           exists under *project_root* (POSIX ``bin/python`` or Windows
+           ``Scripts/python.exe``).
+        2. ``python3`` on ``PATH``.
+        3. ``python`` on ``PATH``.
+
+        Falls back to ``"python3"`` when nothing is discoverable so the
+        generated command remains well-formed.
+        """
+        if project_root is not None:
+            venv_candidates = (
+                project_root / ".venv" / "bin" / "python",
+                project_root / ".venv" / "Scripts" / "python.exe",
+            )
+            for candidate in venv_candidates:
+                if candidate.exists():
+                    return str(candidate)
+        for name in ("python3", "python"):
+            if shutil.which(name):
+                return name
+        return "python3"
+
+    @staticmethod
     def process_template(
         content: str,
         agent_name: str,
         script_type: str,
         arg_placeholder: str = "$ARGUMENTS",
         invoke_separator: str = ".",
+        project_root: Path | None = None,
     ) -> str:
         """Process a raw command template into agent-ready content.
 
@@ -578,6 +611,12 @@ class IntegrationBase(ABC):
 
         # 2. Replace {SCRIPT}
         if script_command:
+            # For the Python script type, prefix the resolved interpreter so
+            # the command is portable (``.py`` files are not directly
+            # executable on Windows).
+            if script_type == "py":
+                interpreter = IntegrationBase.resolve_python_interpreter(project_root)
+                script_command = f"{interpreter} {script_command}"
             content = content.replace("{SCRIPT}", script_command)
 
         # 3. Strip scripts: section from frontmatter
@@ -784,6 +823,7 @@ class MarkdownIntegration(IntegrationBase):
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -986,6 +1026,7 @@ class TomlIntegration(IntegrationBase):
             description = self._extract_description(raw)
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -1186,6 +1227,7 @@ class YamlIntegration(IntegrationBase):
 
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1381,6 +1423,7 @@ class SkillsIntegration(IntegrationBase):
             # Process body through the standard template pipeline
             processed_body = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
                 invoke_separator=self.invoke_separator,
             )
             # Strip the processed frontmatter — we rebuild it for skills.

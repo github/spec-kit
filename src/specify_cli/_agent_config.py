@@ -17,4 +17,8 @@ AGENT_CONFIG: dict[str, dict[str, Any]] = _build_agent_config()
 
 DEFAULT_INIT_INTEGRATION = "copilot"
 
-SCRIPT_TYPE_CHOICES: dict[str, str] = {"sh": "POSIX Shell (bash/zsh)", "ps": "PowerShell"}
+SCRIPT_TYPE_CHOICES: dict[str, str] = {
+    "sh": "POSIX Shell (bash/zsh)",
+    "ps": "PowerShell",
+    "py": "Python",
+}
