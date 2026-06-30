@@ -216,7 +216,7 @@ tree you edited — you do not run `git` yourself.
   Proposed fix for issue #${{ github.event.issue.number }}, applying the
   remediation from the [bug assessment](<link to the assessment comment>).
 
-  **Verdict**: <valid | likely valid> · **Severity**: <critical | high | medium | low>
+  **Verdict**: <valid | likely valid, needs reproduction> · **Severity**: <critical | high | medium | low>
 
   ## Summary
 
