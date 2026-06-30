@@ -626,6 +626,11 @@ class IntegrationBase(ABC):
             # executable on Windows).
             if script_type == "py":
                 interpreter = IntegrationBase.resolve_python_interpreter(project_root)
+                # Quote the interpreter if it contains whitespace (e.g. an
+                # absolute ``sys.executable`` path under Windows
+                # ``Program Files``) so it isn't split into multiple args.
+                if any(ch.isspace() for ch in interpreter):
+                    interpreter = f'"{interpreter}"'
                 script_command = f"{interpreter} {script_command}"
             content = content.replace("{SCRIPT}", script_command)
 

@@ -403,6 +403,31 @@ class TestProcessTemplatePyScriptType:
         assert ".specify/scripts/bash/check-prerequisites.sh --json" in result
         assert "python" not in result
 
+    def test_py_quotes_interpreter_with_spaces(self, monkeypatch):
+        # An interpreter path containing whitespace (e.g. Windows
+        # ``Program Files``) must be quoted so it isn't split into args.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which", lambda name: None
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.sys.executable",
+            r"C:\Program Files\Python\python.exe",
+        )
+        result = IntegrationBase.process_template(self.CONTENT, "agent", "py")
+        assert (
+            '"C:\\Program Files\\Python\\python.exe" '
+            ".specify/scripts/python/check-prerequisites.py --json"
+        ) in result
+
+    def test_py_does_not_quote_interpreter_without_spaces(self, monkeypatch):
+        # Negative: a whitespace-free interpreter is left unquoted.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: "/usr/bin/python3" if name == "python3" else None,
+        )
+        result = IntegrationBase.process_template(self.CONTENT, "agent", "py")
+        assert '"' not in result.split("check-prerequisites.py")[0]
+
     def test_py_uses_project_venv(self, monkeypatch, tmp_path):
         venv_python = tmp_path / ".venv" / "bin" / "python"
         venv_python.parent.mkdir(parents=True)
