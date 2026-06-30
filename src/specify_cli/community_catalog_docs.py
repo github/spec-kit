@@ -23,7 +23,7 @@ def _format_tags(tags: Any) -> str:
         return "—"
     # Clean first, then filter: a tag of "  |  " would pass str(tag).strip() but produce
     # an empty backtick span after pipe removal, so filter on the cleaned value.
-    cleaned = [render_code_span(c) for tag in tags if (c := str(tag).replace("|", "").strip())]
+    cleaned = [render_code_span(render_cell(c)) for tag in tags if (c := str(tag).replace("|", "").strip())]
     return ", ".join(cleaned) if cleaned else "—"
 
 

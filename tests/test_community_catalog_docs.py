@@ -108,14 +108,14 @@ def test_whitespace_repository_is_treated_as_missing(tmp_path: Path) -> None:
     assert "[Foo](" not in table
 
 
-def test_tags_containing_pipe_do_not_break_table(tmp_path: Path) -> None:
+def test_tags_containing_pipe_and_newline_do_not_break_table(tmp_path: Path) -> None:
     f = _write_catalog(tmp_path, {
         # No "id" field — exercises ext_id fallback; tag has pipe — exercises stripping
-        "foo": {"name": "Foo", "description": "", "tags": ["foo|bar"], "verified": False, "repository": ""},
+        "foo": {"name": "Foo", "description": "", "tags": ["foo|bar\nbaz"], "verified": False, "repository": ""},
     })
     table = render_community_extensions_table(path=f)
-    # pipe stripped from tag value
-    assert "`foobar`" in table
+    # pipe stripped from tag value, newline normalized
+    assert "`foobar baz`" in table
     # id falls back to the dict key when "id" field is absent
     assert "`foo`" in table
     # row is well-formed: 5-column table has exactly 6 pipe separators per row
