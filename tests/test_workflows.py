@@ -925,6 +925,24 @@ class TestCommandStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'command'" in e for e in errors)
 
+    def test_validate_rejects_non_mapping_input_and_options(self):
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext
+
+        step = CommandStep()
+        # execute() does input.items() / options.update(); a non-mapping must be
+        # reported by validate(), not crash at run time (like switch 'cases').
+        for bad in (None, "args", ["a", "b"], 5):
+            errs = step.validate({"id": "c", "command": "/x", "input": bad})
+            assert any("'input' must be a mapping" in e for e in errs), bad
+        errs = step.validate({"id": "c", "command": "/x", "options": 42})
+        assert any("'options' must be a mapping" in e for e in errs)
+        # a valid mapping config is still accepted
+        assert step.validate({"id": "c", "command": "/x", "input": {"args": "y"}, "options": {"k": 1}}) == []
+        # defense in depth: execute() coerces a non-mapping input instead of crashing
+        result = step.execute({"id": "c", "command": "echo", "input": None}, StepContext())
+        assert result.status is not None
+
     def test_step_override_integration(self):
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
