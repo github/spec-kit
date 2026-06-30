@@ -46,6 +46,23 @@ Agents must preserve the route. Do not convert an issue-template submission into
 a direct PR-template submission unless the maintainer explicitly asks for that
 reroute.
 
+### Upstream submission template mapping
+
+For community catalog submissions to upstream `github/spec-kit`, use this
+mapping before opening any issue or PR:
+
+| Submission intent | Upstream entrypoint | Required template | Route value |
+|---|---|---|---|
+| Add or update a community extension | GitHub issue | `.github/ISSUE_TEMPLATE/extension_submission.yml` | `issue-template` |
+| Add or update a community preset | GitHub issue | `.github/ISSUE_TEMPLATE/preset_submission.yml` | `issue-template` |
+| Maintainer explicitly requests a direct catalog PR | GitHub pull request | `.github/PULL_REQUEST_TEMPLATE.md` | `pr-template` |
+
+Do not submit new or updated community extensions/presets directly with the PR
+template unless an upstream maintainer explicitly asks for the `pr-template`
+route. Closed PRs that were redirected by maintainers to an issue template must
+be recreated as the matching submission issue, then integrated through the
+catalog workflow PR that closes that issue.
+
 ### Required local steps for agents
 
 When integrating a community extension or preset:

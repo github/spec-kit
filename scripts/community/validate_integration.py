@@ -181,6 +181,17 @@ def validate_pr_body(body_path: Path | None, branch: str | None, validation: Val
         return
 
     if route == "pr-template":
+        direct_pr_approval = field_value(body, "Maintainer direct PR approval")
+        validation.require(
+            direct_pr_approval is not None and URL_RE.match(direct_pr_approval) is not None,
+            (
+                "direct pr-template community extension/preset PRs must include an https "
+                "Maintainer direct PR approval; otherwise submit extensions with "
+                ".github/ISSUE_TEMPLATE/extension_submission.yml and presets with "
+                ".github/ISSUE_TEMPLATE/preset_submission.yml"
+            ),
+        )
+
         source_repository = field_value(body, "Source repository")
         source_version = field_value(body, "Source version")
         source_commit = field_value(body, "Source commit")

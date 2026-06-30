@@ -21,6 +21,7 @@
 - Source commit: <!-- 40-character SHA or n/a -->
 - Download URL: <!-- release archive or asset URL, or n/a -->
 - Related issue: <!-- Closes #123 for issue-template route, or n/a -->
+- Maintainer direct PR approval: <!-- Required only for community extension/preset pr-template route. Link to maintainer request, or n/a -->
 
 ## AI Disclosure
 
