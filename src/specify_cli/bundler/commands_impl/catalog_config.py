@@ -179,19 +179,19 @@ def remove_source(project_root: Path, id_or_url: str) -> str:
             "(add a same-id source to override it instead)."
         )
 
-    # add_source canonicalizes a local path to an absolute url before storing,
-    # so match the canonical form too -- otherwise `remove ./cat.json` cannot
-    # undo `add ./cat.json` (the stored url is absolute). For ids and remote
-    # urls _canonicalize_url is a no-op, so this only adds the local-path case.
-    canonical = _canonicalize_url(target)
     catalogs = _read(project_root)
-    remaining = [
-        c
-        for c in catalogs
-        if c.get("id") != target
-        and c.get("url") != target
-        and c.get("url") != canonical
-    ]
+    # Prefer an exact id/url match.
+    remaining = [c for c in catalogs if c.get("id") != target and c.get("url") != target]
+    if len(remaining) == len(catalogs):
+        # No exact match. add_source canonicalizes a local path to an absolute
+        # url before storing, so fall back to a canonicalized-url match -- this
+        # lets `remove ./cat.json` undo `add ./cat.json` (stored absolute).
+        # Only as a *fallback*: _canonicalize_url treats a bare id as a local
+        # path (empty scheme), so applying it unconditionally could also delete a
+        # different source whose url equals the id's canonicalized path.
+        canonical = _canonicalize_url(target)
+        if canonical != target:
+            remaining = [c for c in catalogs if c.get("url") != canonical]
     if len(remaining) == len(catalogs):
         raise BundlerError(
             f"No project-scoped catalog source matching '{target}' was found."
