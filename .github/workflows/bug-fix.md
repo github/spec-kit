@@ -257,16 +257,18 @@ Keep the PR **draft** so a human remains the gatekeeper before merge.
 
 Add **one** comment to issue #${{ github.event.issue.number }} that links the
 draft PR and gives a one-line summary of the fix (slug + what changed). Point the
-maintainer to the next stage: review the PR, then apply the `bug-test` label to
-validate the fix. Keep the comment under **65,000 characters** — link to the PR
-for detail rather than pasting the full diff.
+maintainer to the next stage: review the draft PR and validate the fix — in this
+pipeline that is the stage-3 `bug-test` workflow, **if the repository has it
+configured** (it is the planned third stage of assess → fix → test and may not
+exist in every project). Keep the comment under **65,000 characters** — link to
+the PR for detail rather than pasting the full diff.
 
 ## Step 8 — Apply a Status Label
 
-After opening the PR and commenting, add the `fix-proposed` label to the issue
-(max 2 labels total). If you stopped early in Steps 1/3/4, you will already have
-applied `needs-assessment`, `needs-reproduction`, or `fix-blocked` instead — do
-not also add `fix-proposed` in those cases.
+After opening the PR and commenting, add the `fix-proposed` label to the issue.
+Add **exactly one** status label per run: if you stopped early in Steps 1/3/4 you
+will already have applied `needs-assessment`, `needs-reproduction`, or
+`fix-blocked` instead — do not also add `fix-proposed` in those cases.
 
 ## Guardrails
 
