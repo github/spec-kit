@@ -4060,6 +4060,40 @@ class TestPresetSetPriority:
         plain = strip_ansi(result.output)
         assert "already has priority 5" in plain
 
+    def test_set_priority_repairs_corrupted_bool(self, project_dir, pack_dir):
+        """A corrupted boolean priority must be repaired, not skipped.
+
+        ``isinstance(True, int)`` is True and ``True == 1`` in Python, so a
+        stored ``True`` priority would short-circuit the ``already has
+        priority 1`` skip path and never get rewritten to a real int —
+        contradicting the comment that promises corrupted values are
+        repaired. The guard must exclude bools (like normalize_priority).
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(pack_dir, "0.1.5", priority=5)
+        # Inject a corrupted boolean priority (True == 1).
+        manager.registry.update("test-pack", {"priority": True})
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["preset", "set-priority", "test-pack", "1"])
+
+        assert result.exit_code == 0, result.output
+        plain = strip_ansi(result.output)
+        # The corrupted bool must be repaired, not reported as already-set.
+        assert "already has priority" not in plain
+        assert "priority changed" in plain
+
+        # The stored value is now a real int, not a bool.
+        reloaded = PresetManager(project_dir).registry.get("test-pack")
+        assert reloaded["priority"] == 1
+        assert not isinstance(reloaded["priority"], bool)
+
     def test_set_priority_invalid_value(self, project_dir, pack_dir):
         """Test set-priority rejects invalid priority values."""
         from typer.testing import CliRunner
