@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-24T00:00:00Z",
+  "updated_at": "2026-06-29T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2501,8 +2501,8 @@
       "id": "product",
       "description": "Generates PRFAQ, Lean PRD, stakeholder summaries, and technical designs from engineering specs.",
       "author": "d0whc3r",
-      "version": "0.8.3",
-      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v0.8.3/product-0.8.3.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v1.0.1/product-1.0.1.zip",
       "repository": "https://github.com/d0whc3r/spec-kit-product",
       "homepage": "https://d0whc3r.github.io/spec-kit-product/",
       "documentation": "https://github.com/d0whc3r/spec-kit-product/wiki",
@@ -2514,7 +2514,7 @@
         "speckit_version": ">=0.2.0"
       },
       "provides": {
-        "commands": 4,
+        "commands": 3,
         "hooks": 3
       },
       "tags": [
@@ -2538,7 +2538,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-26T00:00:00Z",
-      "updated_at": "2026-06-01T00:00:00Z"
+      "updated_at": "2026-06-29T00:00:00Z"
     },
     "product-forge": {
       "name": "Product Forge",

@@ -47,7 +47,6 @@ class TestClineIntegration(MarkdownIntegrationTests):
     FOLDER = ".clinerules/"
     COMMANDS_SUBDIR = "workflows"
     REGISTRAR_DIR = ".clinerules/workflows"
-    CONTEXT_FILE = ".clinerules/specify-rules.md"
 
     @pytest.mark.parametrize(
         "cmd_name, expected_filename",
@@ -105,7 +104,6 @@ class TestClineIntegration(MarkdownIntegrationTests):
             for f in created
             if "scripts" not in f.parts
             and f.suffix == ".md"
-            and f.name != i.context_file
         ]
         for f in cmd_files:
             assert f.exists()
@@ -204,19 +202,5 @@ class TestClineIntegration(MarkdownIntegrationTests):
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")
         files.append(".specify/workflows/workflow-registry.json")
-
-        # Bundled agent-context extension
-        files.append(".specify/extensions.yml")
-        files.append(".specify/extensions/.registry")
-        files.append(".specify/extensions/agent-context/README.md")
-        files.append(".specify/extensions/agent-context/agent-context-config.yml")
-        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
-        files.append(".specify/extensions/agent-context/extension.yml")
-        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
-        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
-
-        # Agent context file (if set)
-        if i.context_file:
-            files.append(i.context_file)
 
         return sorted(files)

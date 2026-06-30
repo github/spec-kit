@@ -2,6 +2,37 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.0] - 2026-06-29
+
+### Changed
+
+- feat: make agent-context extension a full opt-in (#3097)
+- docs(workflows): add the built-in 'init' step type to the Step Types table (#3234)
+- fix(workflows): gate validate() must not crash on non-string options (#3233)
+- fix(workflows): make pipe-filter detection quote-aware in expressions (#3232)
+- fix(workflows): reject a fan-in wait_for that names an unknown step at validation (#3225)
+- fix(scripts): warn when spec template is missing in create-new-feature.ps1 (parity with bash) (#3230)
+- fix(scripts): count subdirectory-only dirs as non-empty in PowerShell (parity with bash) (#3137)
+- fix(scripts): drop HAS_GIT from PowerShell git-extension output (parity with bash) (#3195)
+- Update Product Spec Extension to v1.0.1 (#3226)
+- chore: release 0.11.10, begin 0.11.11.dev0 development (#3240)
+
+## [0.11.10] - 2026-06-29
+
+### Changed
+
+- fix(extensions): apply GHES auth and resolve release assets for `extension add --from` (#3217)
+- fix(pi): repoint install_url to @earendil-works/pi-coding-agent (#3169) (#3214)
+- fix(catalogs): reject host-less catalog URLs in base and preset validators (#3210)
+- fix: update CodeBuddy install docs URL (#3187)
+- fix(workflows): reject infinite number-input default instead of raising OverflowError (#3199)
+- fix(scripts): emit 'Copied plan template' status in setup-plan.ps1 (parity with bash) (#3198)
+- fix(workflows): make expression operator/literal parsing quote-aware (#3197)
+- fix(scripts): honor explicit -Number 0 in PowerShell create-new-feature (parity with bash) (#3196)
+- Add community bundle submission path (#3162)
+- Docs: Document /speckit.converge command (#3181)
+- chore: release 0.11.9, begin 0.11.10.dev0 development (#3189)
+
 ## [0.11.9] - 2026-06-26
 
 ### Changed

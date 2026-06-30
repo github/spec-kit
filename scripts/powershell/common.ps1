@@ -209,7 +209,13 @@ function Test-FileExists {
 
 function Test-DirHasFiles {
     param([string]$Path, [string]$Description)
-    if ((Test-Path -Path $Path -PathType Container) -and (Get-ChildItem -Path $Path -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer } | Select-Object -First 1)) {
+    # A directory counts as non-empty when Get-ChildItem returns any entry
+    # (files or subdirectories) -- matching the JSON contracts checks in
+    # check-prerequisites.ps1 / setup-tasks.ps1, and treating a directory whose
+    # only contents are subdirectories (e.g. contracts/v1/openapi.yaml) as
+    # non-empty like bash check_dir. Filtering out subdirectories would
+    # mis-report such a directory as empty.
+    if ((Test-Path -Path $Path -PathType Container) -and (Get-ChildItem -Path $Path -ErrorAction SilentlyContinue | Select-Object -First 1)) {
         Write-Output "  [OK] $Description"
         return $true
     } else {

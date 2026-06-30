@@ -296,6 +296,40 @@ def _validate_steps(
                     f"boolean, got {type(coe).__name__}."
                 )
 
+        # Fan-in: every wait_for id must reference a step declared at or before
+        # this point. An id not yet seen is either a typo (unknown step) or a
+        # forward reference (the target runs after this fan-in, so its results
+        # cannot exist yet) — both are wiring errors that previously surfaced as
+        # a silent empty result + COMPLETED. A step that is declared but only
+        # conditionally executed (e.g. inside an if/switch branch) is still
+        # "seen" here, so a legitimately-empty result at runtime stays valid.
+        if step_type == "fan-in":
+            wait_for = step_config.get("wait_for")
+            if isinstance(wait_for, list):
+                for wid in wait_for:
+                    if not isinstance(wid, str):
+                        # A non-string entry (e.g. YAML `wait_for: [123]`) can
+                        # never match a real step id, so the join is silently
+                        # empty at runtime — surface it as a wiring error.
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' entries must "
+                            f"be step-id strings, got {type(wid).__name__} "
+                            f"({wid!r})."
+                        )
+                    elif wid == step_id:
+                        # The fan-in's own id is already in seen_ids by now, so
+                        # a self-reference would pass the membership check below
+                        # while still producing an empty join at runtime.
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' references "
+                            f"itself; a fan-in cannot wait for its own results."
+                        )
+                    elif wid not in seen_ids:
+                        errors.append(
+                            f"Fan-in step {step_id!r}: 'wait_for' references "
+                            f"unknown or not-yet-declared step id {wid!r}."
+                        )
+
         # Recursively validate nested steps
         for nested_key in ("then", "else", "steps"):
             nested = step_config.get(nested_key)
@@ -1010,7 +1044,12 @@ class WorkflowEngine:
                 value = float(value)
                 if value == int(value):
                     value = int(value)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
+                # OverflowError: `int(value)` raises it for an infinite float
+                # (e.g. a `default: .inf` authoring mistake), which would
+                # otherwise escape validate_workflow's `except ValueError` and
+                # break its "return errors, never raise" contract. Surface it as
+                # the same clean "expected a number" error as NaN does.
                 msg = f"Input {name!r} expected a number, got {value!r}."
                 raise ValueError(msg) from None
         elif input_type == "boolean":

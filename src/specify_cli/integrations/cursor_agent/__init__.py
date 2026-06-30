@@ -36,7 +36,6 @@ class CursorAgentIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
 
-    context_file = ".cursor/rules/specify-rules.mdc"
     multi_install_safe = True
 
     def build_exec_args(

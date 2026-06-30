@@ -77,23 +77,17 @@ class TestInitIntegrationFlag:
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
-        # context_file lives in the agent-context extension config, not init-options.json
+        # init must not leave any legacy agent-context keys in init-options.json
         assert "context_file" not in opts
 
-        import yaml as _yaml
+        # agent-context is fully opt-in: init must not install it or write its config
         ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
-        assert ext_cfg_path.exists(), "agent-context extension config must be created on init"
-        ext_cfg = _yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8"))
-        assert ext_cfg["context_file"] == ".github/copilot-instructions.md"
+        assert not ext_cfg_path.exists(), "init must not create the agent-context extension config"
 
         assert (project / ".specify" / "integrations" / "copilot.manifest.json").exists()
 
-        # Context section should be upserted into the copilot instructions file
-        ctx_file = project / ".github" / "copilot-instructions.md"
-        assert ctx_file.exists()
-        ctx_content = ctx_file.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in ctx_content
-        assert "<!-- SPECKIT END -->" in ctx_content
+        # init must not create or manage the agent context file
+        assert not (project / ".github" / "copilot-instructions.md").exists()
 
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
@@ -1270,7 +1264,6 @@ class TestIntegrationCatalogDiscoveryCLI:
                 "args": "$ARGUMENTS",
                 "extension": ".md",
             }
-            context_file = "BROKEN.md"
 
             def setup(self, project_root, manifest, **kwargs):
                 raise OSError("setup exploded\nwith context")

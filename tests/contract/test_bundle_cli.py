@@ -62,6 +62,21 @@ def test_commands_outside_project_fail_with_guidance(tmp_path: Path, monkeypatch
     assert "Spec Kit project" in result.output
 
 
+def test_fail_writes_error_to_stderr_not_stdout(capsys):
+    """_fail must write to stderr, not stdout: every bundle command routes errors
+    through it, and under --json the error would otherwise corrupt the JSON payload
+    that consumers read from stdout."""
+    import typer
+
+    from specify_cli.commands.bundle import _fail
+
+    with pytest.raises(typer.Exit):
+        _fail("something broke")
+    captured = capsys.readouterr()
+    assert "something broke" in captured.err
+    assert "something broke" not in captured.out
+
+
 def test_search_works_without_a_project(tmp_path: Path, monkeypatch):
     # Discovery commands fall back to the built-in/user catalog stack and must
     # not require a Spec Kit project (matches README/quickstart examples).

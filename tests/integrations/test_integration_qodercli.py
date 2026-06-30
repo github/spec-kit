@@ -8,4 +8,3 @@ class TestQodercliIntegration(MarkdownIntegrationTests):
     FOLDER = ".qoder/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".qoder/commands"
-    CONTEXT_FILE = "QODER.md"

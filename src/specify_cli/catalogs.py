@@ -78,7 +78,10 @@ class CatalogStackBase:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.netloc:
+        # Check hostname, not netloc: netloc is truthy for host-less URLs like
+        # "https://:8080" or "https://user@", so the host guarantee this error
+        # promises would not actually hold. hostname is None in those cases.
+        if not parsed.hostname:
             raise cls._error("Catalog URL must be a valid URL with a host.")
 
     def _load_catalog_config(self, config_path: Path) -> list[CatalogEntry] | None:
