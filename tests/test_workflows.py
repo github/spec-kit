@@ -5303,6 +5303,95 @@ class TestWorkflowStepRemoveCLI:
         assert "Refusing to use symlinked step directory" in result.output
 
 
+class TestWorkflowRemoveGuard:
+    def test_remove_rejects_traversal_registry_key(self, project_dir, monkeypatch):
+        """A corrupted registry key must not let remove delete outside workflows/."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("../outside", {"name": "Bad"})
+        outside = project_dir / ".specify" / "outside"
+        outside.mkdir()
+        sentinel = outside / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["workflow", "remove", "../outside"])
+
+        assert result.exit_code != 0
+        assert "Invalid workflow ID" in result.output
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    @pytest.mark.parametrize("workflow_id", ["runs", "steps"])
+    def test_remove_rejects_reserved_storage_ids(
+        self, project_dir, monkeypatch, workflow_id
+    ):
+        """Reserved workflow storage directories must never be removable workflows."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add(workflow_id, {"name": "Bad"})
+        reserved_dir = project_dir / ".specify" / "workflows" / workflow_id
+        reserved_dir.mkdir(exist_ok=True)
+        sentinel = reserved_dir / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["workflow", "remove", workflow_id])
+
+        assert result.exit_code != 0
+        assert "Invalid workflow ID" in result.output
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_remove_refuses_symlinked_workflow_dir(self, project_dir, monkeypatch):
+        """A symlinked workflow directory must not let remove delete its target."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test"})
+        outside = project_dir / "outside-workflow-remove-target"
+        outside.mkdir(exist_ok=True)
+        sentinel = outside / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        (project_dir / ".specify" / "workflows" / "test-wf").symlink_to(
+            outside, target_is_directory=True
+        )
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
+
+        assert result.exit_code != 0
+        assert "symlinked .specify/workflows/test-wf" in result.output
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+        assert WorkflowRegistry(project_dir).is_installed("test-wf")
+
+    def test_remove_refuses_non_directory_workflow_path(self, project_dir, monkeypatch):
+        """A file at the workflow path must fail cleanly instead of crashing."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test"})
+        workflow_path = project_dir / ".specify" / "workflows" / "test-wf"
+        workflow_path.write_text("not a directory", encoding="utf-8")
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
+
+        assert result.exit_code != 0
+        assert "exists but is not a directory" in result.output
+        assert workflow_path.read_text(encoding="utf-8") == "not a directory"
+        assert WorkflowRegistry(project_dir).is_installed("test-wf")
+
+
 class TestWorkflowAddSymlinkGuard:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_refuses_symlinked_specify(self, temp_dir, monkeypatch):
@@ -5438,6 +5527,34 @@ class TestWorkflowAddSymlinkGuard:
         out = capsys.readouterr().out
         # Literal bracketed text survives; Rich did not consume it as a tag.
         assert "[red]evil[/red]" in out
+
+    @pytest.mark.parametrize(
+        "workflow_id",
+        [
+            "runs",
+            "steps",
+            "nested/workflow",
+            "nested\\workflow",
+            "bad id",
+            " bad-id",
+            "bad-id ",
+        ],
+    )
+    def test_safe_workflow_id_dir_rejects_reserved_or_non_segment_ids(
+        self, temp_dir, workflow_id, capsys
+    ):
+        """Install IDs must not collide with workflow internals or create nested paths."""
+        import typer
+        from specify_cli.workflows._commands import _safe_workflow_id_dir
+
+        workflows_dir = temp_dir / ".specify" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        with pytest.raises(typer.Exit):
+            _safe_workflow_id_dir(workflows_dir, workflow_id)
+
+        assert "Invalid workflow ID" in capsys.readouterr().out
+        assert not (workflows_dir / workflow_id).exists()
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_list_refuses_symlinked_runs_dir(self, temp_dir, monkeypatch):

@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -90,6 +91,22 @@ def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     )
 
 
+_WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
+_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"runs", "steps"})
+
+
+def _validate_workflow_id_or_exit(workflow_id: str) -> None:
+    """Validate that ``workflow_id`` is a safe installed-workflow directory name."""
+    if (
+        workflow_id in _RESERVED_WORKFLOW_IDS
+        or not _WORKFLOW_ID_PATTERN.match(workflow_id)
+    ):
+        console.print(
+            f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
+        )
+        raise typer.Exit(1)
+
+
 def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
     """Validate the per-id install directory before any write and return it.
 
@@ -100,6 +117,8 @@ def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
 
     - an ``<id>`` that is a symlink or an existing non-directory
       (the latter would otherwise make ``mkdir`` raise);
+    - an ``<id>`` that is not a single workflow-id path segment or collides
+      with internal workflow storage directories;
     - an ``<id>`` that escapes ``workflows_dir`` (path traversal);
     - an ``<id>/workflow.yml`` leaf that is a symlink or an existing
       non-file (either would otherwise make the later write/copy raise).
@@ -109,6 +128,8 @@ def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
     ``workflow_id`` is markup-escaped in output to avoid Rich markup injection.
     """
     safe_id = _escape_markup(workflow_id)
+    _validate_workflow_id_or_exit(workflow_id)
+
     dest_dir = workflows_dir / workflow_id
     _reject_unsafe_dir(dest_dir, f".specify/workflows/{safe_id}")
     try:
@@ -801,6 +822,9 @@ def workflow_remove(
     from .catalog import WorkflowRegistry
 
     project_root = _require_specify_project()
+    workflows_dir = project_root / ".specify" / "workflows"
+    _validate_workflow_id_or_exit(workflow_id)
+
     registry = WorkflowRegistry(project_root)
 
     if not registry.is_installed(workflow_id):
@@ -808,10 +832,44 @@ def workflow_remove(
         raise typer.Exit(1)
 
     # Remove workflow files
-    workflow_dir = project_root / ".specify" / "workflows" / workflow_id
+    workflow_dir_unresolved = workflows_dir / workflow_id
+    safe_id = _escape_markup(workflow_id)
+    if workflow_dir_unresolved.is_symlink():
+        console.print(
+            f"[red]Error:[/red] Refusing to remove symlinked "
+            f".specify/workflows/{safe_id}"
+        )
+        raise typer.Exit(1)
+
+    workflow_dir = workflow_dir_unresolved.resolve()
+    try:
+        rel_parts = workflow_dir.relative_to(workflows_dir.resolve()).parts
+    except ValueError:
+        console.print(
+            f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
+        )
+        raise typer.Exit(1)
+    if rel_parts != (workflow_id,):
+        console.print(
+            f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
+        )
+        raise typer.Exit(1)
+
+    if workflow_dir.exists() and not workflow_dir.is_dir():
+        console.print(
+            f"[red]Error:[/red] .specify/workflows/{safe_id} exists but is not a directory"
+        )
+        raise typer.Exit(1)
+
     if workflow_dir.exists():
         import shutil
-        shutil.rmtree(workflow_dir)
+        try:
+            shutil.rmtree(workflow_dir)
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to remove workflow directory {workflow_dir}: {exc}"
+            )
+            raise typer.Exit(1)
 
     registry.remove(workflow_id)
     console.print(f"[green]✓[/green] Workflow '{workflow_id}' removed")
