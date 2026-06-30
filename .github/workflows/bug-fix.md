@@ -37,7 +37,7 @@ safe-outputs:
     max: 1
   add-labels:
     allowed: [needs-assessment, needs-reproduction, fix-proposed, fix-blocked]
-    max: 2
+    max: 1
 ---
 
 # Fix Bug from Labeled Issue
