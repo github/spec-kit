@@ -332,13 +332,14 @@ class TestResolvePythonInterpreter:
         venv_python = tmp_path / ".venv" / "bin" / "python"
         venv_python.parent.mkdir(parents=True)
         venv_python.write_text("")
-        # Even if python3 is on PATH, the project venv wins.
+        # Even if python3 is on PATH, the project venv wins. The returned
+        # path is relative to the project root for portability.
         monkeypatch.setattr(
             "specify_cli.integrations.base.shutil.which",
             lambda name: "/usr/bin/python3",
         )
         result = IntegrationBase.resolve_python_interpreter(tmp_path)
-        assert result == str(venv_python)
+        assert result == ".venv/bin/python"
 
     def test_prefers_project_venv_windows(self, monkeypatch, tmp_path):
         venv_python = tmp_path / ".venv" / "Scripts" / "python.exe"
@@ -348,7 +349,7 @@ class TestResolvePythonInterpreter:
             "specify_cli.integrations.base.shutil.which", lambda name: None
         )
         result = IntegrationBase.resolve_python_interpreter(tmp_path)
-        assert result == str(venv_python)
+        assert result == ".venv/Scripts/python.exe"
 
     def test_ignores_missing_venv(self, monkeypatch, tmp_path):
         # Negative: no venv directory -> PATH resolution is used instead.
@@ -395,7 +396,7 @@ class TestProcessTemplatePyScriptType:
         result = IntegrationBase.process_template(
             self.CONTENT, "agent", "py", project_root=tmp_path
         )
-        assert str(venv_python) in result
+        assert ".venv/bin/python .specify/scripts/python/check-prerequisites.py" in result
 
 
 class TestInstallScriptsPython:

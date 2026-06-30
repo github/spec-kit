@@ -495,8 +495,8 @@ class IntegrationBase(ABC):
 
         Copies files from this integration's ``scripts/`` directory to
         ``.specify/integrations/<key>/scripts/`` in the project.  Shell
-        scripts are made executable.  All copied files are recorded in
-        *manifest*.
+        (``.sh``) and Python (``.py``) scripts are made executable.  All
+        copied files are recorded in *manifest*.
 
         Returns the list of files created.
         """
@@ -550,7 +550,10 @@ class IntegrationBase(ABC):
 
         1. A project virtual environment (``.venv``) interpreter, if one
            exists under *project_root* (POSIX ``bin/python`` or Windows
-           ``Scripts/python.exe``).
+           ``Scripts/python.exe``).  The returned path is **relative to the
+           project root** (e.g. ``.venv/bin/python``) so generated
+           ``{SCRIPT}`` invocations stay portable and runnable from the
+           repo root regardless of where the project lives.
         2. ``python3`` on ``PATH``.
         3. ``python`` on ``PATH``.
 
@@ -558,13 +561,17 @@ class IntegrationBase(ABC):
         generated command remains well-formed.
         """
         if project_root is not None:
+            # (existence check path, repo-root-relative invocation string)
             venv_candidates = (
-                project_root / ".venv" / "bin" / "python",
-                project_root / ".venv" / "Scripts" / "python.exe",
+                (project_root / ".venv" / "bin" / "python", ".venv/bin/python"),
+                (
+                    project_root / ".venv" / "Scripts" / "python.exe",
+                    ".venv/Scripts/python.exe",
+                ),
             )
-            for candidate in venv_candidates:
+            for candidate, relative in venv_candidates:
                 if candidate.exists():
-                    return str(candidate)
+                    return relative
         for name in ("python3", "python"):
             if shutil.which(name):
                 return name
