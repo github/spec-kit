@@ -954,7 +954,9 @@ class WorkflowEngine:
                     # Preserve original output and add collected results
                     fan_out_output = dict(result.output)
                     fan_out_output["results"] = fan_out_results
-                    context.steps[step_id]["output"] = fan_out_output
+                    # set_step_output updates the recorded dict under the run lock;
+                    # context.steps[step_id] is that same object, so it reflects the
+                    # change too — no separate (unlocked) context mutation needed.
                     state.set_step_output(step_id, fan_out_output)
                     if state.status in (
                         RunStatus.PAUSED,
@@ -965,7 +967,6 @@ class WorkflowEngine:
                 else:
                     # Empty items or no template — normalize output
                     result.output["results"] = []
-                    context.steps[step_id]["output"] = result.output
                     state.set_step_output(step_id, result.output)
 
     def _run_fan_out(
@@ -1000,11 +1001,17 @@ class WorkflowEngine:
         sequentially, while a numeric string like ``"4"`` or a float like ``4.0``
         is honored.
         """
+        if not items:
+            return []
+
         halting = (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED)
         try:
             workers = max(1, int(max_concurrency))
         except (TypeError, ValueError):
             workers = 1
+        # Never spin up more workers than there is work — bounds a user-controlled
+        # max_concurrency from over-allocating threads.
+        workers = min(workers, len(items))
 
         base_id = template.get("id", "item")
 
@@ -1043,29 +1050,33 @@ class WorkflowEngine:
             # disjoint parentId:templateId:index key (GIL-safe on distinct keys).
             return run_item(idx, dataclasses.replace(context, item=items[idx]))
 
-        def item_halted(idx: int) -> bool:
-            # Did THIS item's own execution halt the run? Decide from the item's
-            # own recorded result, not the shared run status, so a later item's
-            # concurrent halt is never misattributed here. Mirrors the sequential
-            # break condition: PAUSED halts; FAILED halts unless continue_on_error
-            # routes around it; an abort always halts.
+        def item_halt_status(idx: int) -> RunStatus | None:
+            # If THIS item's own execution halted the run, return the resulting run
+            # status; else None. Decided from the item's own recorded result, not
+            # the shared run status, so a later item's concurrent halt is never
+            # misattributed here. Mirrors the sequential mapping: PAUSED -> PAUSED;
+            # FAILED -> ABORTED when aborted, else FAILED, unless continue_on_error
+            # routes around it.
             rec = context.steps.get(item_id(idx))
             if rec is None:
-                # Ran but recorded nothing — only happens when the item failed
-                # before record_step_result (e.g. an unknown step type returns
-                # early). Every item runs the same template, so the run status is
+                # Ran but recorded nothing — only when the item failed before
+                # record_step_result (e.g. an unknown step type returns early).
+                # Every item runs the same template, so the shared run status is
                 # this item's own outcome; attribute the halt to it.
-                return state.status in halting
+                return state.status if state.status in halting else None
             status = rec.get("status")
             if status == StepStatus.PAUSED.value:
-                return True
+                return RunStatus.PAUSED
             if status == StepStatus.FAILED.value:
                 out = rec.get("output") or {}
-                if out.get("aborted") or template.get("continue_on_error") is not True:
-                    return True
-            return False
+                if out.get("aborted"):
+                    return RunStatus.ABORTED
+                if template.get("continue_on_error") is not True:
+                    return RunStatus.FAILED
+            return None
 
-        halted_at: int | None = None
+        # (halting item index, its run status) once a halt is attributed.
+        halt: tuple[int, RunStatus] | None = None
         collected = 0
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures: dict[int, Future] = {}
@@ -1103,15 +1114,21 @@ class WorkflowEngine:
                         other.cancel()
                     raise
                 collected = idx + 1
-                if item_halted(idx):
+                halt_status = item_halt_status(idx)
+                if halt_status is not None:
                     # First halting item in item order: include it (slots[idx] is
-                    # already set), then cancel everything still pending.
-                    halted_at = idx
+                    # already set), record its status, and cancel everything pending.
+                    halt = (idx, halt_status)
                     for other in futures.values():
                         other.cancel()
                     break
 
-        if halted_at is not None:
+        if halt is not None:
+            halted_at, halted_status = halt
+            # A later in-flight item may have overwritten state.status before the
+            # pool joined; restore the halting item's own outcome so the final run
+            # status matches the sequential semantics.
+            state.status = halted_status
             return slots[: halted_at + 1]
         return slots[:collected]
 

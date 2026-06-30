@@ -2089,6 +2089,23 @@ class TestFanOutConcurrency:
         results, _ = self._run(tmp_path, [], 4)
         assert results == []
 
+    def test_concurrent_halt_status_not_clobbered_by_later_item(self, tmp_path):
+        # Item 1 PAUSES (first halting item in order); item 3 FAILS while in
+        # flight. The final run status must be the halting item's (PAUSED), never
+        # a later item's (FAILED) that raced after it — matching sequential.
+        from specify_cli.workflows.base import RunStatus, StepStatus
+
+        def on_item(item):
+            if item == 1:
+                return StepStatus.PAUSED
+            if item == 3:
+                return StepStatus.FAILED
+            return None
+
+        results, state = self._run(tmp_path, list(range(4)), 4, on_item)
+        assert results == [{"seen": 0}, {"seen": 1}]
+        assert state.status == RunStatus.PAUSED
+
     def test_halt_on_failure_sequential_returns_prefix(self, tmp_path):
         from specify_cli.workflows.base import RunStatus, StepStatus
 
