@@ -34,6 +34,17 @@ from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import verify_archive_sha256
 
 
+# Tokens that mark an unmodified, generic constitution that has not yet been
+# authored. Used to decide whether seeding/re-seeding memory/constitution.md
+# from a preset-provided template is safe (i.e. won't clobber authored content).
+_CONSTITUTION_PLACEHOLDER_TOKENS = ("[PROJECT_NAME]", "[PRINCIPLE_1_NAME]")
+
+
+def _constitution_is_placeholder(content: str) -> bool:
+    """Return True if a constitution body is still the generic placeholder."""
+    return any(token in content for token in _CONSTITUTION_PLACEHOLDER_TOKENS)
+
+
 def _substitute_core_template(
     body: str,
     cmd_name: str,
@@ -1615,7 +1626,60 @@ class PresetManager:
                     stacklevel=2,
                 )
 
+        # Seed/re-seed memory/constitution.md from a preset-provided
+        # constitution-template. The constitution is the only template that is
+        # materialized to a live file rather than resolved on demand, so a
+        # preset that ships one (e.g. strategy: replace with a ratified
+        # constitution) must be propagated here. Guard against clobbering an
+        # already-authored constitution by only seeding when the memory file is
+        # missing or still contains generic placeholder tokens.
+        self._seed_constitution_from_preset(manifest)
+
         return manifest
+
+    def _seed_constitution_from_preset(self, manifest: PresetManifest) -> None:
+        """Seed memory/constitution.md from a preset constitution-template.
+
+        Only runs when the preset declares a ``type: template`` entry named
+        ``constitution-template`` and the live memory file is either missing or
+        still the generic placeholder. Authored constitutions are never
+        overwritten.
+        """
+        provides_constitution = any(
+            t.get("type") == "template" and t.get("name") == "constitution-template"
+            for t in manifest.templates
+        )
+        if not provides_constitution:
+            return
+
+        memory_constitution = (
+            self.project_root / ".specify" / "memory" / "constitution.md"
+        )
+        if memory_constitution.exists():
+            try:
+                existing = memory_constitution.read_text(encoding="utf-8")
+            except OSError:
+                return
+            if not _constitution_is_placeholder(existing):
+                # Legitimately authored constitution; leave it untouched.
+                return
+
+        resolved = PresetResolver(self.project_root).resolve(
+            "constitution-template", "template"
+        )
+        if resolved is None or not resolved.exists():
+            return
+
+        try:
+            memory_constitution.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(resolved, memory_constitution)
+        except OSError as exc:
+            import warnings
+
+            warnings.warn(
+                f"Failed to seed constitution from preset {manifest.id}: {exc}.",
+                stacklevel=2,
+            )
 
     def install_from_zip(
         self,
