@@ -193,7 +193,7 @@ Some IDE-based agents (like Kilo Code, Roo Code) may show **duplicate slash comm
 
 ```bash
 # Navigate to the agent's commands folder
-cd .kilocode/rules/
+cd .kilocode/workflows/
 
 # List files and identify duplicates
 ls -la
@@ -245,8 +245,8 @@ mv /tmp/constitution-backup.md .specify/memory/constitution.md
 This happens with IDE-based agents (Kilo Code, Roo Code, Cline, etc.).
 
 ```bash
-# Find the agent folder (example: .kilocode/rules/)
-cd .kilocode/rules/
+# Find the agent folder (example: .kilocode/workflows/)
+cd .kilocode/workflows/
 
 # List all files
 ls -la
