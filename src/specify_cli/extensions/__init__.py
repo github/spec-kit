@@ -26,6 +26,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from .._assets import _locate_core_pack, _repo_root
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
@@ -62,11 +63,21 @@ def _load_core_command_names() -> frozenset[str]:
     Prefer the wheel-time ``core_pack`` bundle when present, and fall back to
     the source checkout when running from the repository. If neither is
     available, use the baked-in fallback set so validation still works.
+
+    Path resolution is delegated to the canonical ``_assets`` helpers
+    (``_locate_core_pack`` / ``_repo_root``), which are anchored to the package
+    root rather than this module's location. The previous bespoke
+    ``Path(__file__)`` math was correct only while this code lived at
+    ``specify_cli/extensions.py``; once it moved into the
+    ``specify_cli/extensions/`` package the relative parents fell one level
+    short, so discovery always missed the real command dirs and silently fell
+    through to ``_FALLBACK_CORE_COMMAND_NAMES`` below.
     """
-    candidate_dirs = [
-        Path(__file__).parent / "core_pack" / "commands",
-        Path(__file__).resolve().parent.parent.parent / "templates" / "commands",
-    ]
+    candidate_dirs: list[Path] = []
+    core_pack = _locate_core_pack()
+    if core_pack is not None:
+        candidate_dirs.append(core_pack / "commands")
+    candidate_dirs.append(_repo_root() / "templates" / "commands")
 
     for commands_dir in candidate_dirs:
         if not commands_dir.is_dir():

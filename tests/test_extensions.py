@@ -205,6 +205,108 @@ class TestNormalizePriority:
         assert normalize_priority(True, default=5) == 5
 
 
+# ===== Core Command Discovery Tests =====
+
+
+class TestCoreCommandDiscovery:
+    """Regression tests for dynamic core-command discovery.
+
+    ``_load_core_command_names()`` must read the bundled command templates via
+    the canonical ``_assets`` resolvers. A prior off-by-one in this module's
+    bespoke ``Path(__file__)`` math (introduced when the code moved from
+    ``specify_cli/extensions.py`` into the ``specify_cli/extensions/`` package)
+    made discovery always miss the real dirs and silently return the hardcoded
+    ``_FALLBACK_CORE_COMMAND_NAMES``. These tests pin the live-discovery
+    behaviour so the regression cannot return unnoticed.
+    """
+
+    def test_discovery_returns_real_bundled_set_not_fallback(self, monkeypatch):
+        """Discovery must read the real bundled templates, not echo the fallback.
+
+        This is the core regression guard. ``_FALLBACK_CORE_COMMAND_NAMES``
+        currently equals the real command set, so a totally dead discovery path
+        looks healthy from the outside. We temporarily swap the fallback for a
+        sentinel: live discovery still returns the real bundled names, whereas
+        the pre-fix off-by-one (which always fell through to the fallback) would
+        return the sentinel and fail this assertion.
+        """
+        import specify_cli.extensions as ext
+
+        commands_dir = Path(__file__).resolve().parent.parent / "templates" / "commands"
+        bundled = frozenset(
+            command_file.stem
+            for command_file in commands_dir.iterdir()
+            if command_file.is_file() and command_file.suffix == ".md"
+        )
+        sentinel = frozenset({"__sentinel_fallback_must_not_be_used__"})
+        monkeypatch.setattr(ext, "_FALLBACK_CORE_COMMAND_NAMES", sentinel)
+
+        result = ext._load_core_command_names()
+
+        assert result == bundled
+        assert result != sentinel
+
+    def test_discovers_commands_from_source_tree(self, tmp_path, monkeypatch):
+        """Source checkout: read ``<repo_root>/templates/commands`` via ``_repo_root``."""
+        import specify_cli.extensions as ext
+
+        commands_dir = tmp_path / "templates" / "commands"
+        commands_dir.mkdir(parents=True)
+        for stem in ("alpha", "beta", "gamma"):
+            (commands_dir / f"{stem}.md").write_text("---\n---\n", encoding="utf-8")
+        # Non-markdown files and subdirectories must be ignored.
+        (commands_dir / "README.txt").write_text("ignore me", encoding="utf-8")
+        (commands_dir / "nested").mkdir()
+
+        monkeypatch.setattr(ext, "_locate_core_pack", lambda: None)
+        monkeypatch.setattr(ext, "_repo_root", lambda: tmp_path)
+
+        # A set distinct from _FALLBACK_CORE_COMMAND_NAMES proves discovery is
+        # live rather than masked by the fallback (which equals the real set).
+        assert ext._load_core_command_names() == frozenset({"alpha", "beta", "gamma"})
+
+    def test_prefers_wheel_core_pack(self, tmp_path, monkeypatch):
+        """Wheel install: read ``<core_pack>/commands`` when ``_locate_core_pack`` resolves."""
+        import specify_cli.extensions as ext
+
+        core_pack = tmp_path / "core_pack"
+        commands_dir = core_pack / "commands"
+        commands_dir.mkdir(parents=True)
+        (commands_dir / "wheelonly.md").write_text("---\n---\n", encoding="utf-8")
+
+        monkeypatch.setattr(ext, "_locate_core_pack", lambda: core_pack)
+        # Repo-root path intentionally absent so only the core_pack branch can match.
+        monkeypatch.setattr(ext, "_repo_root", lambda: tmp_path / "missing")
+
+        assert ext._load_core_command_names() == frozenset({"wheelonly"})
+
+    def test_falls_back_when_no_command_dir_exists(self, tmp_path, monkeypatch):
+        """With neither dir present, the baked-in fallback set is returned."""
+        import specify_cli.extensions as ext
+
+        monkeypatch.setattr(ext, "_locate_core_pack", lambda: None)
+        monkeypatch.setattr(ext, "_repo_root", lambda: tmp_path / "missing")
+
+        assert ext._load_core_command_names() == ext._FALLBACK_CORE_COMMAND_NAMES
+
+    def test_fallback_matches_bundled_commands(self):
+        """The safety-net fallback must stay in lockstep with the bundled templates.
+
+        Discovery now auto-syncs, but the hardcoded fallback remains the last
+        resort and should not rot if a core command is added or removed.
+        """
+        import specify_cli.extensions as ext
+
+        commands_dir = Path(__file__).resolve().parent.parent / "templates" / "commands"
+        bundled = frozenset(
+            command_file.stem
+            for command_file in commands_dir.iterdir()
+            if command_file.is_file() and command_file.suffix == ".md"
+        )
+
+        assert ext._FALLBACK_CORE_COMMAND_NAMES == bundled
+
+
 # ===== ExtensionManifest Tests =====
 
 class TestExtensionManifest:
