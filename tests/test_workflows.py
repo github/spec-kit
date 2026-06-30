@@ -322,6 +322,28 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.a == 9 or inputs.b == 2 }}", plain) is True
         assert evaluate_expression("{{ inputs.missing | default('a and b') }}", plain) == "a and b"
 
+    def test_pipe_splitting_is_quote_aware(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        # A '|' INSIDE a quoted operand must not be treated as a filter
+        # separator: the comparison applies to the whole string literal.
+        # Previously this raised ValueError("unknown filter 'write'") because
+        # the pipe split was not quote-aware (unlike and/or/comparison).
+        ctx = StepContext(inputs={"mode": "read|write"})
+        assert evaluate_expression("{{ inputs.mode == 'read|write' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.mode != 'a|b' }}", ctx) is True
+
+        # A single quoted literal that itself contains a pipe is preserved.
+        assert evaluate_expression("{{ 'read|write' }}", StepContext()) == "read|write"
+
+        # A pipe used as a real filter argument still works (separator is '|').
+        joined = StepContext(inputs={"tags": ["a", "b", "c"]})
+        assert evaluate_expression("{{ inputs.tags | join('|') }}", joined) == "a|b|c"
+
+        # Regression: an ordinary (top-level) filter still applies.
+        assert evaluate_expression("{{ inputs.missing | default('x') }}", StepContext()) == "x"
+
     def test_filter_default(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
