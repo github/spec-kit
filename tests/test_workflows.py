@@ -227,8 +227,8 @@ class TestExpressions:
         assert result == "Feature: login done"
 
     def test_multi_expression_no_surrounding_text(self):
-"""Two expressions with no surrounding literal text must interpolate each,
-not collapse to None via the fullmatch fast path (#3208)."""
+        """Two expressions with no surrounding literal text must interpolate each,
+        not collapse to None via the fullmatch fast path (#3208)."""
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
 
