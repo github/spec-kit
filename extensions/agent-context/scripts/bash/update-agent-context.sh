@@ -120,12 +120,11 @@ if isinstance(raw_files, list):
 if not context_files:
     add_context_file(get_str(data, "context_file"))
 if not context_files:
-    # Self-seed: the agent-context extension owns its lifecycle, so when its
-    # own config declares no target it derives one from the active integration
-    # recorded in init-options.json, using the OWN bundled mapping of the
-    # agent-context extension
-    # (agent-context-defaults.json). This is independent of the Specify CLI by
-    # design — nothing here imports specify_cli.
+    # Self-seed: the agent-context extension manages its own lifecycle, so when
+    # its config declares no target, it derives one from the active integration
+    # recorded in init-options.json, mapped through the bundled
+    # agent-context-defaults.json file. This is independent of the Specify CLI
+    # by design; nothing here imports specify_cli.
     project_root = sys.argv[3] if len(sys.argv) > 3 else "."
     integration_key = ""
     try:
