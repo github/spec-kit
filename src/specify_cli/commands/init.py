@@ -228,29 +228,28 @@ def register(app: typer.Typer) -> None:
                     console.print(
                         "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                     )
+                elif not _stdin_is_interactive():
+                    # No interactive terminal: do NOT prompt. A non-TTY stdin that
+                    # is open but idle (a common CI/agent scenario) would block on
+                    # typer.confirm, so fail fast and require an explicit --force
+                    # for a non-interactive merge. No merge happens here, so no
+                    # merge/overwrite warning is printed.
+                    console.print(
+                        "[red]Error:[/red] Current directory is not empty and no "
+                        "interactive terminal is available to confirm. Re-run with "
+                        "[bold]--force[/bold] to merge into it."
+                    )
+                    raise typer.Exit(1)
                 else:
-                    # Fold the merge/overwrite warning into the confirmation so it
-                    # is shown only when we are actually about to proceed -- not on
-                    # the fail-fast path below, where nothing is merged.
+                    console.print(
+                        "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
+                    )
                     try:
-                        proceed = typer.confirm(
-                            "Template files will be merged with existing content and "
-                            "may overwrite existing files. Continue?"
-                        )
-                    except (typer.Abort, EOFError):
-                        if _stdin_is_interactive():
-                            # Interactive cancel (e.g. Ctrl+C): a normal cancellation.
-                            console.print("[yellow]Operation cancelled[/yellow]")
-                            raise typer.Exit(0) from None
-                        # Non-interactive with no confirmation input on stdin: fail
-                        # fast with actionable guidance instead of a bare "Aborted."
-                        # (Piped input such as "y" is still honored above.)
-                        console.print(
-                            "[red]Error:[/red] Current directory is not empty and no "
-                            "confirmation input is available. Re-run with "
-                            "[bold]--force[/bold] to merge into it."
-                        )
-                        raise typer.Exit(1) from None
+                        proceed = typer.confirm("Do you want to continue?")
+                    except typer.Abort:
+                        # Interactive cancel (e.g. Ctrl+C): a normal cancellation.
+                        console.print("[yellow]Operation cancelled[/yellow]")
+                        raise typer.Exit(0) from None
                     if not proceed:
                         console.print("[yellow]Operation cancelled[/yellow]")
                         raise typer.Exit(0)
