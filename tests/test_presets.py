@@ -2778,6 +2778,55 @@ class TestSelfTestPreset:
         metadata = manager.registry.get("self-test")
         assert metadata["registered_commands"] == {}
 
+    def test_self_test_seeds_constitution_when_memory_absent(self, project_dir):
+        """Installing a preset seeds memory/constitution.md from its template."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.exists(), "constitution.md was not seeded from the preset"
+        assert "preset:self-test" in memory.read_text(), (
+            "constitution.md was not seeded from the self-test preset template"
+        )
+
+    def test_self_test_reseeds_placeholder_constitution(self, project_dir):
+        """A placeholder memory constitution is re-seeded from the preset template."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text("# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n")
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        content = memory.read_text()
+        assert "preset:self-test" in content, "placeholder constitution was not re-seeded"
+        assert "[PROJECT_NAME]" not in content
+
+    def test_self_test_preserves_authored_constitution(self, project_dir):
+        """An authored (placeholder-free) constitution is never overwritten."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\n\n### I. Ship It\nAuthored by a human.\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored, "authored constitution was overwritten"
+
+    def test_self_test_override_resolves_constitution_template(self, project_dir):
+        """The preset override of constitution-template resolves to the preset file."""
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core constitution\n")
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("constitution-template", "template")
+        assert result is not None
+        assert "preset:self-test" in result.read_text()
+
     def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
         """Test that extension command overrides are skipped if the extension isn't installed."""
         claude_dir = project_dir / ".claude" / "skills"
@@ -6149,3 +6198,65 @@ def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monke
     )
     assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/9"
     assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v2"]
+
+
+# ===== ensure_constitution_from_template resolver-awareness =====
+
+
+class TestEnsureConstitutionResolverAware:
+    """`ensure_constitution_from_template` must resolve through PresetResolver.
+
+    The constitution is the only template materialized to a live file rather
+    than resolved on demand. These tests pin the regression from issue #3272:
+    a preset-provided ``constitution-template`` must seed memory, while the
+    core template is used when no preset overrides it.
+    """
+
+    def _core_constitution(self, project_dir):
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n"
+        )
+
+    def test_seeds_from_core_when_no_preset(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        ensure_constitution_from_template(project_dir)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.exists()
+        assert "[PROJECT_NAME]" in memory.read_text()
+
+    def test_seeds_from_preset_when_installed(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        # Remove the memory file seeded during install to test ensure() in
+        # isolation; it must re-seed from the preset, not the core template.
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.unlink()
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory.exists()
+        content = memory.read_text()
+        assert "preset:self-test" in content
+        assert "[PROJECT_NAME]" not in content
+
+    def test_preserves_existing_memory(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\nAuthored.\n"
+        memory.write_text(authored)
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory.read_text() == authored

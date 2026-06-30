@@ -33,10 +33,19 @@ def _stdin_is_interactive() -> bool:
 def ensure_constitution_from_template(
     project_path: Path, tracker: StepTracker | None = None
 ) -> None:
-    """Copy constitution template to memory if it doesn't exist."""
+    """Copy the resolved constitution template to memory if it doesn't exist.
+
+    Resolution walks the full priority stack (project overrides → installed
+    presets → extensions → core) via :class:`PresetResolver`, so a preset that
+    ships a ``constitution-template`` (e.g. ``strategy: replace`` with a ratified
+    constitution) seeds the memory file verbatim. When nothing overrides it, the
+    resolver falls through to the core template, preserving legacy behavior.
+    """
+    from ..presets import PresetResolver
+
     memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
-    template_constitution = (
-        project_path / ".specify" / "templates" / "constitution-template.md"
+    template_constitution = PresetResolver(project_path).resolve(
+        "constitution-template", "template"
     )
 
     if memory_constitution.exists():
@@ -45,7 +54,7 @@ def ensure_constitution_from_template(
             tracker.skip("constitution", "existing file preserved")
         return
 
-    if not template_constitution.exists():
+    if template_constitution is None or not template_constitution.exists():
         if tracker:
             tracker.add("constitution", "Constitution setup")
             tracker.error("constitution", "template not found")
@@ -447,8 +456,6 @@ def register(app: typer.Typer) -> None:
                     "shared-infra", f"scripts ({selected_script}) + templates"
                 )
 
-                ensure_constitution_from_template(project_path, tracker=tracker)
-
                 try:
                     bundled_wf = _locate_bundled_workflow("speckit")
                     if bundled_wf:
@@ -575,6 +582,11 @@ def register(app: typer.Typer) -> None:
                             preset_err,
                             continuing="Continuing without the optional preset.",
                         )
+
+                # Seed the constitution AFTER preset installation so that a
+                # preset-provided constitution-template (resolved via the
+                # priority stack) wins over the core template.
+                ensure_constitution_from_template(project_path, tracker=tracker)
 
                 tracker.complete("final", "project ready")
             except (typer.Exit, SystemExit):
