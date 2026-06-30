@@ -56,7 +56,7 @@ specify init my-project --integration copilot --preset compliance
 
 > **Two resolution axes.** `SPECIFY_INIT_DIR` selects the **project** (which directory contains `.specify/`); `SPECIFY_FEATURE_DIRECTORY` / `.specify/feature.json` select the **feature** within that project. They are independent — project first, then feature.
 
-> **Symlinked project roots.** `SPECIFY_INIT_DIR` relocates *where* the project is, not *how* a surface treats symlinks: each surface keeps its existing cwd-path stance. Surfaces that traverse and write (`bundle`, `workflow run <file>`) refuse a symlinked `.specify/` to preserve write confinement; read/config surfaces (`integration`, `extension`, `workflow`) follow it.
+> **Symlinked project roots.** `SPECIFY_INIT_DIR` relocates *where* the project is, not *how* a command treats symlinks: each command keeps its existing cwd-path stance. Commands that traverse and write project files through broad input paths (`bundle`, `workflow run <file>`) refuse a symlinked `.specify/` to preserve write confinement. Other project-scoped commands keep their existing behavior when `SPECIFY_INIT_DIR` points at a project root, which may include following a symlinked `.specify/`.
 
 ## Check Installed Tools
 
