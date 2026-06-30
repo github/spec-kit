@@ -8,4 +8,3 @@ class TestJunieIntegration(MarkdownIntegrationTests):
     FOLDER = ".junie/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".junie/commands"
-    CONTEXT_FILE = ".junie/AGENTS.md"

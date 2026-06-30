@@ -31,7 +31,6 @@ class GenericIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "AGENTS.md"
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -119,13 +118,11 @@ class GenericIntegration(MarkdownIntegration):
         script_type = opts.get("script_type", "sh")
         arg_placeholder = "$ARGUMENTS"
         created: list[Path] = []
-        context_file_display = self._context_file_display(project_root)
 
         for src_file in templates:
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=context_file_display,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -133,7 +130,5 @@ class GenericIntegration(MarkdownIntegration):
             )
             created.append(dst_file)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created

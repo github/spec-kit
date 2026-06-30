@@ -152,6 +152,15 @@ _persist_feature_json() {
 }
 
 get_feature_paths() {
+    # Read-only callers (e.g. check-prerequisites.sh --paths-only) pass
+    # --no-persist so pure path resolution never writes .specify/feature.json,
+    # which would dirty the working tree or overwrite a pinned value (issue #3025).
+    local no_persist=false
+    if [[ "${1:-}" == "--no-persist" ]]; then
+        no_persist=true
+        shift
+    fi
+
     # Split decl/assignment so a SPECIFY_INIT_DIR validation failure in
     # get_repo_root propagates as a hard error instead of being masked by `local`.
     local repo_root
@@ -168,8 +177,11 @@ get_feature_paths() {
         feature_dir="$SPECIFY_FEATURE_DIRECTORY"
         # Normalize relative paths to absolute under repo root
         [[ "$feature_dir" != /* ]] && feature_dir="$repo_root/$feature_dir"
-        # Persist to feature.json so future sessions without the env var still work
-        _persist_feature_json "$repo_root" "$SPECIFY_FEATURE_DIRECTORY"
+        # Persist to feature.json so future sessions without the env var still
+        # work — unless the caller opted out for read-only resolution (#3025).
+        if [[ "$no_persist" != true ]]; then
+            _persist_feature_json "$repo_root" "$SPECIFY_FEATURE_DIRECTORY"
+        fi
     elif [[ -f "$repo_root/.specify/feature.json" ]]; then
         local _fd
         _fd=$(read_feature_json_feature_directory "$repo_root")

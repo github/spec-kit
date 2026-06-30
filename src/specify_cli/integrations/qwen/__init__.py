@@ -18,5 +18,4 @@ class QwenIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "QWEN.md"
     multi_install_safe = True
