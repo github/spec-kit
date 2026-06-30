@@ -13,7 +13,6 @@ class TestVibeIntegration(SkillsIntegrationTests):
     FOLDER = ".vibe/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".vibe/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
 
 class TestVibeUserInvocable:

@@ -140,7 +140,7 @@ generate_branch_name() {
     local stop_words="^(i|a|an|the|to|for|of|in|on|at|by|with|from|is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might|must|shall|this|that|these|those|my|your|our|their|want|need|add|get|set)$"
     
     # Convert to lowercase and split into words
-    local clean_name=$(echo "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/ /g')
+    local clean_name=$(printf '%s' "$description" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/ /g')
     
     # Filter words: remove stop words and words shorter than 3 chars (unless they're uppercase acronyms in original)
     local meaningful_words=()
@@ -152,8 +152,10 @@ generate_branch_name() {
         if ! echo "$word" | grep -qiE "$stop_words"; then
             if [ ${#word} -ge 3 ]; then
                 meaningful_words+=("$word")
-            elif echo "$description" | grep -q "\b${word^^}\b"; then
-                # Keep short words if they appear as uppercase in original (likely acronyms)
+            # Keep short words that appear as an uppercase acronym in the original.
+            # Uppercase via tr and match with grep -w (both portable) rather than
+            # bash's 4+ "^^" case expansion (breaks on macOS bash 3.2) and \b (non-POSIX).
+            elif printf '%s' "$description" | grep -qw -- "$(printf '%s' "$word" | tr '[:lower:]' '[:upper:]')"; then
                 meaningful_words+=("$word")
             fi
         fi

@@ -64,7 +64,6 @@ def _register_builtins() -> None:
     from .generic import GenericIntegration
     from .goose import GooseIntegration
     from .hermes import HermesIntegration
-    from .iflow import IflowIntegration
     from .junie import JunieIntegration
     from .kilocode import KilocodeIntegration
     from .kimi import KimiIntegration
@@ -80,7 +79,6 @@ def _register_builtins() -> None:
     from .tabnine import TabnineIntegration
     from .trae import TraeIntegration
     from .vibe import VibeIntegration
-    from .windsurf import WindsurfIntegration
     from .zcode import ZcodeIntegration
     from .zed import ZedIntegration
 
@@ -102,7 +100,6 @@ def _register_builtins() -> None:
     _register(GenericIntegration())
     _register(GooseIntegration())
     _register(HermesIntegration())
-    _register(IflowIntegration())
     _register(JunieIntegration())
     _register(KilocodeIntegration())
     _register(KimiIntegration())
@@ -118,7 +115,6 @@ def _register_builtins() -> None:
     _register(TabnineIntegration())
     _register(TraeIntegration())
     _register(VibeIntegration())
-    _register(WindsurfIntegration())
     _register(ZcodeIntegration())
     _register(ZedIntegration())
 

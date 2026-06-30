@@ -37,8 +37,12 @@ from specify_cli.extensions import (
     ValidationError,
     CompatibilityError,
     normalize_priority,
-    version_satisfies,
 )
+from specify_cli._utils import version_satisfies
+
+# Minimal valid ZIP (empty end-of-central-directory record). Passes
+# zipfile.is_zipfile() so --from download tests exercise the content guard.
+_MINIMAL_ZIP_BYTES = b"PK\x05\x06" + b"\x00" * 18
 
 
 def can_create_symlink(tmp_path: Path) -> bool:
@@ -1000,6 +1004,14 @@ class TestExtensionManager:
         # Requires >=0.1.0, but we have 0.0.1
         with pytest.raises(CompatibilityError, match="Extension requires spec-kit"):
             manager.check_compatibility(manifest, "0.0.1")
+
+    def test_check_compatibility_allows_prerelease_builds(self, extension_dir, project_dir):
+        """Prerelease spec-kit builds should satisfy compatible version ranges."""
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        result = manager.check_compatibility(manifest, "0.8.8.dev0")
+        assert result is True
 
     def test_install_from_directory(self, extension_dir, project_dir):
         """Test installing extension from directory."""
@@ -2624,6 +2636,12 @@ class TestVersionSatisfies:
         """Test complex version specifier."""
         assert version_satisfies("1.0.5", ">=1.0.0,!=1.0.3")
         assert not version_satisfies("1.0.3", ">=1.0.0,!=1.0.3")
+
+    def test_version_satisfies_prerelease(self):
+        """Prerelease builds should satisfy compatible lower bounds, but not higher bounds."""
+        assert version_satisfies("0.8.8.dev0", ">=0.2.0")
+        assert not version_satisfies("0.2.0.dev0", ">=0.2.0")
+        assert not version_satisfies("0.8.7.dev1", ">=0.8.8")
 
     def test_version_satisfies_invalid(self):
         """Test invalid version strings."""
@@ -5378,7 +5396,7 @@ class TestExtensionAddCLI:
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"zip-bytes")), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
              patch.object(ExtensionRegistry, "get", return_value={}):
             result = runner.invoke(
@@ -5445,6 +5463,98 @@ class TestExtensionAddCLI:
         assert result.exit_code == 1, result.output
         assert "https://example.com/[red]ext[/red].zip" in result.output
         assert "bad [red]download[/red]" in result.output
+
+    def test_add_from_url_rejects_non_zip_login_page(self, tmp_path):
+        """An HTML login page (unauthenticated fetch) must fail clearly, not BadZipFile."""
+        import io
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch(
+                 "specify_cli.authentication.http.open_url",
+                 return_value=FakeResponse(b"<!DOCTYPE html><html>Sign in</html>"),
+             ), \
+             patch.object(ExtensionManager, "install_from_zip") as install:
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://raw.ghe.example/o/r/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "did not return a ZIP archive" in result.output
+        install.assert_not_called()
+
+    def test_add_from_url_resolves_ghes_release_asset(self, tmp_path):
+        """A GHES release-download URL resolves to /api/v3 with octet-stream Accept."""
+        import io
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import json
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        seen = {}
+
+        def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+            if "/releases/tags/" in url:
+                body = json.dumps({
+                    "assets": [{
+                        "name": "ext.zip",
+                        "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42",
+                    }]
+                }).encode()
+                return FakeResponse(body)
+            seen["url"] = url
+            seen["headers"] = extra_headers
+            return FakeResponse(_MINIMAL_ZIP_BYTES)
+
+        def fake_install(self_obj, zip_path, speckit_version, priority=10, force=False):
+            return SimpleNamespace(
+                id="x", name="X", version="1.0.0", description="", warnings=[], commands=[], hooks=[]
+            )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.authentication.http.github_provider_hosts", return_value=("ghes.example",)), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "x", "--from",
+                 "https://ghes.example/org/repo/releases/download/v1.0/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "/api/v3/repos/org/repo/releases/assets/" in seen["url"]
+        assert seen["headers"] == {"Accept": "application/octet-stream"}
 
     @pytest.mark.parametrize(
         ("exc_type", "label"),
@@ -5523,7 +5633,7 @@ class TestExtensionAddCLI:
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"zip-bytes")), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
             result = runner.invoke(
                 app,
@@ -5532,7 +5642,7 @@ class TestExtensionAddCLI:
             )
 
         assert result.exit_code == 0
-        assert installed["zip_bytes"] == b"zip-bytes"
+        assert installed["zip_bytes"] == _MINIMAL_ZIP_BYTES
         assert installed["zip_path"].resolve().is_relative_to(downloads_dir.resolve())
         assert installed["zip_path"].name.startswith("extension-url-download-")
         assert not installed["zip_path"].exists()

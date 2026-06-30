@@ -8,4 +8,3 @@ class TestShaiIntegration(MarkdownIntegrationTests):
     FOLDER = ".shai/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".shai/commands"
-    CONTEXT_FILE = "SHAI.md"

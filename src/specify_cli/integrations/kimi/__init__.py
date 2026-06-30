@@ -5,8 +5,7 @@ Kimi uses the ``.kimi-code/skills/speckit-<name>/SKILL.md`` layout with
 
 Legacy migration covers projects created before Kimi Code CLI moved to
 this layout and handles two distinct changes: the directory move from
-``.kimi/`` to ``.kimi-code/`` (including the ``KIMI.md`` → ``AGENTS.md``
-context file), and the dotted-to-hyphenated skill naming
+``.kimi/`` to ``.kimi-code/``, and the dotted-to-hyphenated skill naming
 (``speckit.xxx`` → ``speckit-xxx``).
 """
 
@@ -16,7 +15,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
+from ..base import IntegrationOption, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
@@ -37,7 +36,6 @@ class KimiIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
     multi_install_safe = False
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
@@ -79,9 +77,7 @@ class KimiIntegration(SkillsIntegration):
                 default=False,
                 help=(
                     "Migrate legacy Kimi installations: "
-                    ".kimi/skills/ → .kimi-code/skills/, speckit.xxx → speckit-xxx, "
-                    "and (when the agent-context extension is enabled) "
-                    "KIMI.md user content → AGENTS.md"
+                    ".kimi/skills/ → .kimi-code/skills/ and speckit.xxx → speckit-xxx"
                 ),
             ),
         ]
@@ -128,14 +124,6 @@ class KimiIntegration(SkillsIntegration):
                 _is_safe_legacy_dir(new_skills_dir, project_root)
             ):
                 _migrate_legacy_kimi_skills_dir(old_skills_dir, new_skills_dir)
-            # Mirror upsert/remove_context_section: a disabled agent-context
-            # extension is a full opt-out, so skip the KIMI.md → AGENTS.md
-            # migration entirely and leave both files untouched.
-            if self._agent_context_extension_enabled(project_root):
-                marker_start, marker_end = self._resolve_context_markers(project_root)
-                _migrate_legacy_kimi_context_file(
-                    project_root, marker_start=marker_start, marker_end=marker_end
-                )
 
         return created
 
@@ -361,112 +349,6 @@ def _is_speckit_generated_skill(skill_dir: Path) -> bool:
         and isinstance(source, str)
         and source.startswith("templates/commands/")
     )
-
-
-def _migrate_legacy_kimi_context_file(
-    project_root: Path,
-    *,
-    marker_start: str = IntegrationBase.CONTEXT_MARKER_START,
-    marker_end: str = IntegrationBase.CONTEXT_MARKER_END,
-) -> bool:
-    """Migrate user content from legacy ``KIMI.md`` to ``AGENTS.md``.
-
-    The Speckit managed section is stripped from ``KIMI.md`` before the
-    remaining content is appended to ``AGENTS.md``. The legacy file is
-    deleted if it becomes empty. Returns ``True`` if ``KIMI.md`` was
-    migrated, ``False`` when the migration is skipped.
-
-    The migration is skipped (leaving ``KIMI.md`` untouched) in any of these
-    cases, so a best-effort legacy cleanup never aborts ``setup()`` or
-    corrupts ``AGENTS.md``:
-
-    - ``KIMI.md`` is a symlink, missing, or unreadable (its target could be
-      read from outside the project, or it may not be valid UTF-8).
-    - ``AGENTS.md`` is a symlink (it could redirect the write to a file
-      outside the project root), exists as a non-file (e.g. a directory),
-      or is unreadable/unwritable.
-    - ``KIMI.md`` has a corrupted managed section — only one marker is
-      present, or the end marker precedes the start. Stripping is only done
-      when both markers are present and well-ordered, so a partial managed
-      block is never copied into ``AGENTS.md``; the user repairs it manually.
-    """
-    legacy_path = project_root / "KIMI.md"
-    if legacy_path.is_symlink() or not legacy_path.is_file():
-        return False
-
-    target_path = project_root / "AGENTS.md"
-    # Never follow a symlinked target, and never treat an existing non-file
-    # (e.g. a directory) as a writable context file.
-    if target_path.is_symlink() or (target_path.exists() and not target_path.is_file()):
-        return False
-
-    try:
-        content = legacy_path.read_text(encoding="utf-8-sig")
-    except (OSError, UnicodeDecodeError):
-        return False
-
-    marker_pairs = [(marker_start, marker_end)]
-    default_pair = (
-        IntegrationBase.CONTEXT_MARKER_START,
-        IntegrationBase.CONTEXT_MARKER_END,
-    )
-    if default_pair not in marker_pairs:
-        marker_pairs.append(default_pair)
-
-    start_idx = -1
-    end_idx = -1
-    has_start = False
-    has_end = False
-    for s, e in marker_pairs:
-        s_idx = content.find(s)
-        e_idx = content.find(e, s_idx if s_idx != -1 else 0)
-        has_s = s_idx != -1
-        has_e = e_idx != -1
-        if not has_s and not has_e:
-            continue
-        # Refuse to migrate a corrupted managed section: exactly one marker, or
-        # an end marker that does not follow the start.
-        if has_s != has_e or e_idx <= s_idx:
-            return False
-        marker_start, marker_end = s, e
-        start_idx, end_idx = s_idx, e_idx
-        has_start = True
-        has_end = True
-        break
-    if has_start and has_end:
-        removal_start = start_idx
-        removal_end = end_idx + len(marker_end)
-        if removal_end < len(content) and content[removal_end] == "\r":
-            removal_end += 1
-        if removal_end < len(content) and content[removal_end] == "\n":
-            removal_end += 1
-        if removal_start > 0 and content[removal_start - 1] == "\n":
-            if removal_start > 1 and content[removal_start - 2] == "\n":
-                removal_start -= 1
-        content = content[:removal_start] + content[removal_end:]
-
-    user_content = content.replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not user_content:
-        legacy_path.unlink()
-        return True
-
-    try:
-        if target_path.is_file():
-            existing = target_path.read_text(encoding="utf-8-sig")
-            existing = existing.replace("\r\n", "\n").replace("\r", "\n")
-            if not existing.endswith("\n"):
-                existing += "\n"
-            new_content = existing + "\n" + user_content + "\n"
-        else:
-            new_content = user_content + "\n"
-
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(new_content.encode("utf-8"))
-    except (OSError, UnicodeDecodeError):
-        return False
-
-    legacy_path.unlink()
-    return True
 
 
 def _migrate_legacy_kimi_dotted_skills(skills_dir: Path) -> tuple[int, int]:

@@ -52,7 +52,6 @@ class TestRovodevIntegration:
     which violates the base mixin's pure-skills assumptions)."""
 
     KEY = "rovodev"
-    CONTEXT_FILE = "AGENTS.md"
 
     # -- ACLI dispatch -----------------------------------------------------
 
@@ -218,12 +217,8 @@ class TestRovodevIntegration:
         # Prompts: exactly the core template set.
         assert prompt_stems == core_skill_names
 
-        # Skills: core ∪ extension-installed.
-        assert core_skill_names.issubset(skill_names)
-        extension_skills = skill_names - core_skill_names
-        assert extension_skills, (
-            "Expected at least one extension-installed skill (e.g. agent-context)"
-        )
+        # Skills: exactly the core template set (no extension auto-install).
+        assert skill_names == core_skill_names
 
         # prompts.yml mirrors the prompt files exactly.
         prompts_manifest = project / ".rovodev" / "prompts.yml"
@@ -265,10 +260,6 @@ class TestRovodevIntegration:
             assert "/speckit." not in body, (
                 f"{skill_file} body contains dot-notation /speckit. reference"
             )
-
-        # The plan skill must reference the agent's context file.
-        plan_content = (skills_dir / "speckit-plan" / "SKILL.md").read_text(encoding="utf-8")
-        assert self.CONTEXT_FILE in plan_content
 
     # -- Full-CLI init: integration metadata -------------------------------
 

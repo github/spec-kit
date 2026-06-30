@@ -840,3 +840,54 @@ def test_setup_tasks_ps_errors_without_feature_context(
     output = result.stderr + result.stdout
     assert result.returncode != 0
     assert "Feature directory not found" in output
+
+
+# ---------------------------------------------------------------------------
+# Directory non-emptiness parity: a dir whose only contents are subdirectories
+# (e.g. contracts/v1/openapi.yaml) must count as non-empty in both shells.
+# ---------------------------------------------------------------------------
+
+def _run_bash_check_dir(repo: Path, target: Path) -> subprocess.CompletedProcess:
+    script = repo / ".specify" / "scripts" / "bash" / "common.sh"
+    return subprocess.run(
+        ["bash", "-c", 'source "$1"; check_dir "$2" "contracts/"', "bash", str(script), str(target)],
+        # check_dir echoes the non-ASCII markers ✓/✗; decode UTF-8 explicitly so
+        # the result does not depend on the platform locale (e.g. cp1252 on Windows).
+        cwd=repo, capture_output=True, text=True, encoding="utf-8", check=False, env=_clean_env(),
+    )
+
+
+def _run_powershell_test_dir(repo: Path, target: Path) -> subprocess.CompletedProcess:
+    script = repo / ".specify" / "scripts" / "powershell" / "common.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    return subprocess.run(
+        [exe, "-NoProfile", "-Command",
+         '& { param($common, $dir) . $common; Test-DirHasFiles -Path $dir -Description "contracts/" }',
+         str(script), str(target)],
+        cwd=repo, capture_output=True, text=True, encoding="utf-8", check=False, env=_clean_env(),
+    )
+
+
+@requires_bash
+def test_check_dir_bash_counts_subdir_only_contracts(tasks_repo: Path) -> None:
+    """bash check_dir treats a dir containing only subdirectories as non-empty."""
+    contracts = tasks_repo / "contracts" / "v1"
+    contracts.mkdir(parents=True)
+    (contracts / "openapi.yaml").write_text("openapi: 3.0\n", encoding="utf-8")
+    result = _run_bash_check_dir(tasks_repo, tasks_repo / "contracts")
+    # check_dir always exits 0 (it echoes ✓/✗ instead of setting an exit code),
+    # so the ✓ marker in stdout — not the return code — is what proves non-emptiness.
+    assert "✓" in result.stdout and "✗" not in result.stdout, result.stderr + result.stdout
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_dir_has_files_ps_counts_subdir_only_contracts(tasks_repo: Path) -> None:
+    """Test-DirHasFiles must match bash: a subdir-only dir counts as non-empty."""
+    contracts = tasks_repo / "contracts" / "v1"
+    contracts.mkdir(parents=True)
+    (contracts / "openapi.yaml").write_text("openapi: 3.0\n", encoding="utf-8")
+    result = _run_powershell_test_dir(tasks_repo, tasks_repo / "contracts")
+    # Test-DirHasFiles returns a boolean and pwsh still exits 0 when it returns
+    # $false, so the [OK] marker in stdout — not the return code — is what proves
+    # non-emptiness.
+    assert "[OK]" in result.stdout and "[FAIL]" not in result.stdout, result.stderr + result.stdout

@@ -304,3 +304,27 @@ def _display_project_path(project_root: Path, path: str | Path) -> str:
         except (OSError, ValueError):
             return path_obj.as_posix()
     return rel_path.as_posix()
+
+
+def version_satisfies(current: str, required: str) -> bool:
+    """Check if current version satisfies required version specifier.
+
+    Evaluates the version against the specifier using the project's
+    prerelease policy (prereleases are allowed).
+
+    Args:
+        current: Current version (e.g., "0.1.5")
+        required: Required version specifier (e.g., ">=0.1.0,<2.0.0")
+
+    Returns:
+        True if version satisfies requirement
+    """
+    from packaging import version as pkg_version
+    from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+    try:
+        current_ver = pkg_version.Version(current)
+        specifier = SpecifierSet(required)
+        return specifier.contains(current_ver, prereleases=True)
+    except (pkg_version.InvalidVersion, InvalidSpecifier):
+        return False
