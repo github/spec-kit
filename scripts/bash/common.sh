@@ -191,7 +191,8 @@ get_feature_paths() {
     # directory basename so CURRENT_BRANCH is a usable identifier rather than
     # an empty, misleading value (issue #3026).
     if [[ -z "$current_branch" ]]; then
-        current_branch="${feature_dir##*/}"
+        local feature_dir_trimmed="${feature_dir%/}"
+        current_branch="${feature_dir_trimmed##*/}"
     fi
 
     # Use printf '%q' to safely quote values, preventing shell injection
