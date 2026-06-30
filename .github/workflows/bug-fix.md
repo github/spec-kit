@@ -145,7 +145,7 @@ Before changing any code, check the assessment's verdict:
   questions that block a confident fix, add the `needs-reproduction` label, and
   **stop**. (There is no human in this automated run to answer them; defer to the
   reproduction step rather than guessing.)
-- **Valid** (or "likely valid" with no blocking clarifications) — continue.
+- **Valid** (or **Likely valid, needs reproduction** with no blocking clarifications) — continue.
 
 Restate, in 3–6 bullets in your working notes, exactly what you intend to change
 and where, based on the **Proposed Remediation** and **Files likely to change**.
