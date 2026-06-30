@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import shutil
+import sys
 from abc import ABC
 from dataclasses import dataclass
 from pathlib import Path
@@ -557,8 +558,10 @@ class IntegrationBase(ABC):
         2. ``python3`` on ``PATH``.
         3. ``python`` on ``PATH``.
 
-        Falls back to ``"python3"`` when nothing is discoverable so the
-        generated command remains well-formed.
+        Falls back to the running interpreter (``sys.executable``) when
+        ``PATH`` resolution fails so the generated command is guaranteed
+        to work in the current environment, and finally to ``"python3"``
+        if even that is unavailable.
         """
         if project_root is not None:
             # (existence check path, repo-root-relative invocation string)
@@ -575,7 +578,7 @@ class IntegrationBase(ABC):
         for name in ("python3", "python"):
             if shutil.which(name):
                 return name
-        return "python3"
+        return sys.executable or "python3"
 
     @staticmethod
     def process_template(

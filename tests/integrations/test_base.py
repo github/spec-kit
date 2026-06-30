@@ -321,10 +321,24 @@ class TestResolvePythonInterpreter:
         )
         assert IntegrationBase.resolve_python_interpreter() == "python"
 
-    def test_falls_back_to_python3_when_nothing_found(self, monkeypatch):
-        # Negative: nothing on PATH and no venv -> well-formed default.
+    def test_falls_back_to_sys_executable_when_nothing_found(self, monkeypatch):
+        # Negative: nothing on PATH and no venv -> the running interpreter
+        # (sys.executable) is used so the command works in this environment.
         monkeypatch.setattr(
             "specify_cli.integrations.base.shutil.which", lambda name: None
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.sys.executable", "/opt/py/bin/python"
+        )
+        assert IntegrationBase.resolve_python_interpreter() == "/opt/py/bin/python"
+
+    def test_falls_back_to_python3_when_no_interpreter_at_all(self, monkeypatch):
+        # Negative edge: neither PATH nor sys.executable resolves.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which", lambda name: None
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.sys.executable", ""
         )
         assert IntegrationBase.resolve_python_interpreter() == "python3"
 
