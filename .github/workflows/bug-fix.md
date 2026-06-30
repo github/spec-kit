@@ -73,9 +73,7 @@ whose first line has the shape:
 **Bug assessment — <slug>:** <Valid | Likely valid, needs reproduction | Invalid> · severity **<critical | high | medium | low>**
 ```
 
-Find the **most recent** such assessment comment. It is the contract you work
-against. If there is more than one (the bug was re-assessed), use the latest.
-
+Find the **most recent** such assessment comment **authored by `github-actions[bot]`** (the `bug-assess` workflow). If there is more than one, use the latest workflow-authored one. If no workflow-authored assessment exists, follow the "no assessment" path below.
 If **no** assessment comment exists on the issue:
 
 1. Add **one** comment explaining that a fix cannot be proposed because no
