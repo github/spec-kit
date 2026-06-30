@@ -31,6 +31,11 @@ class CommandStep(StepBase):
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         command = config.get("command", "")
         input_data = config.get("input", {})
+        # Defense in depth: validate() rejects a non-mapping input, but the
+        # engine does not auto-validate before execute(), so coerce defensively
+        # rather than crash on input_data.items() below.
+        if not isinstance(input_data, dict):
+            input_data = {}
 
         # Resolve expressions in input
         resolved_input: dict[str, Any] = {}
@@ -50,7 +55,7 @@ class CommandStep(StepBase):
         # Merge options (workflow defaults ← step overrides)
         options = dict(context.default_options)
         step_options = config.get("options", {})
-        if step_options:
+        if isinstance(step_options, dict) and step_options:
             options.update(step_options)
 
         # Attempt CLI dispatch
@@ -154,5 +159,17 @@ class CommandStep(StepBase):
         if "command" not in config:
             errors.append(
                 f"Command step {config.get('id', '?')!r} is missing 'command' field."
+            )
+        # execute() iterates input.items() and options.update(step_options); a
+        # non-mapping here would raise at run time. Validate the shape like the
+        # sibling steps (switch 'cases', fan-out 'step') so it is reported, not
+        # crashed on.
+        if "input" in config and not isinstance(config["input"], dict):
+            errors.append(
+                f"Command step {config.get('id', '?')!r}: 'input' must be a mapping."
+            )
+        if "options" in config and not isinstance(config["options"], dict):
+            errors.append(
+                f"Command step {config.get('id', '?')!r}: 'options' must be a mapping."
             )
         return errors
