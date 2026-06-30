@@ -860,17 +860,11 @@ class TestInitIntegrationFlag:
         # --force should overwrite the custom file
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
 
-    def test_init_here_without_force_preserves_shared_infra(self, tmp_path, monkeypatch):
-        """E2E: confirming the merge interactively (no --force) preserves existing
-        shared infra files (unlike --force, which overwrites them)."""
+    def test_init_here_without_force_preserves_shared_infra(self, tmp_path):
+        """E2E: confirming the merge with piped "y" (no --force) preserves
+        existing shared infra files (unlike --force, which overwrites them)."""
         from typer.testing import CliRunner
         from specify_cli import app
-        from specify_cli.commands import init as init_mod
-
-        # Simulate an interactive terminal so the confirmation prompt is reached;
-        # the piped "y" then exercises the preserve-merge path. (Non-interactive
-        # sessions now fail fast and require --force.)
-        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
 
         project = tmp_path / "e2e-no-force"
         project.mkdir()
