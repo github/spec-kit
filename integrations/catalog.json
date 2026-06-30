@@ -48,15 +48,6 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["ide"]
     },
-    "windsurf": {
-      "id": "windsurf",
-      "name": "Windsurf",
-      "version": "1.0.0",
-      "description": "Windsurf IDE workflow integration",
-      "author": "spec-kit-core",
-      "repository": "https://github.com/github/spec-kit",
-      "tags": ["ide"]
-    },
     "amp": {
       "id": "amp",
       "name": "Amp",

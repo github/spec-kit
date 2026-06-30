@@ -187,10 +187,10 @@
     "arch": {
       "name": "Architecture Workflow",
       "id": "arch",
-      "description": "Generate or reverse project-level 4+1 architecture views as separate commands",
+      "description": "Generate or reverse project-level 4+1 architecture views with per-view and full-workflow commands",
       "author": "bigsmartben",
-      "version": "1.2.1",
-      "download_url": "https://github.com/bigsmartben/spec-kit-arch/archive/refs/tags/v1.2.1.zip",
+      "version": "1.2.2",
+      "download_url": "https://github.com/bigsmartben/spec-kit-arch/archive/refs/tags/v1.2.2.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-arch",
       "homepage": "https://github.com/bigsmartben/spec-kit-arch",
       "documentation": "https://github.com/bigsmartben/spec-kit-arch/blob/main/README.md",
@@ -202,7 +202,7 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 10,
+        "commands": 12,
         "hooks": 0
       },
       "tags": [
@@ -215,7 +215,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-14T00:00:00Z",
-      "updated_at": "2026-06-23T00:00:00Z"
+      "updated_at": "2026-06-30T00:00:00Z"
     },
     "architect-preview": {
       "name": "Architect Impact Previewer",
@@ -1440,10 +1440,10 @@
     "intake": {
       "name": "Intake",
       "id": "intake",
-      "description": "Normalize PRD, design, and test-case evidence into SDD-ready intake artifacts.",
+      "description": "Normalize PRD, design, HTML SSOT, and test-case evidence into SDD-ready intake artifacts.",
       "author": "bigsmartben",
-      "version": "0.1.2",
-      "download_url": "https://github.com/bigsmartben/spec-kit-intake/archive/refs/tags/v0.1.2.zip",
+      "version": "0.1.3",
+      "download_url": "https://github.com/bigsmartben/spec-kit-intake/archive/refs/tags/v0.1.3.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-intake",
       "homepage": "https://github.com/bigsmartben/spec-kit-intake",
       "documentation": "https://github.com/bigsmartben/spec-kit-intake/blob/main/README.md",
@@ -1461,7 +1461,7 @@
         ]
       },
       "provides": {
-        "commands": 3,
+        "commands": 4,
         "hooks": 1
       },
       "tags": [
@@ -1475,7 +1475,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-23T00:00:00Z",
-      "updated_at": "2026-06-23T00:00:00Z"
+      "updated_at": "2026-06-30T00:00:00Z"
     },
     "issue": {
       "name": "GitHub Issues Integration 2",
