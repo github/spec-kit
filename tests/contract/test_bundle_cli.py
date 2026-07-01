@@ -473,7 +473,8 @@ def test_bundle_info_resolves_github_browser_release_url(project: Path):
 
     # The actual download must use the resolved API asset URL with octet-stream
     asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
-    assert len(asset_calls) >= 1
+    assert len(asset_calls) == 1
+    assert asset_calls[0][0] == api_asset_url
     assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
 
@@ -555,9 +556,10 @@ def test_bundle_info_resolves_github_browser_release_url_zip(project: Path):
     assert len(tag_calls) == 1
     assert "releases/tags/v2.0" in tag_calls[0]
 
-    # Asset download uses octet-stream
+    # Asset download uses the resolved API URL with octet-stream
     asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
-    assert len(asset_calls) >= 1
+    assert len(asset_calls) == 1
+    assert asset_calls[0][0] == api_asset_url
     assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
     # Manifest was successfully parsed from the ZIP
@@ -608,3 +610,47 @@ def test_bundle_info_api_asset_url_zip_detected_by_magic_bytes(project: Path):
     # ZIP bytes were detected by magic and bundle.yml extracted correctly
     payload = json.loads(result.output)
     assert payload["id"] == "demo-bundle"
+
+
+def test_bundle_info_github_release_url_resolution_failure_falls_back_and_errors(project: Path):
+    """When the GitHub tags API lookup finds no matching asset, fall back to the
+    original browser URL and surface a meaningful error (not a raw traceback)."""
+    browser_url = "https://github.com/org/repo/releases/download/v3.0/bundle.yml"
+
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "releases/tags/" in url:
+            # Tags API responds but the asset list doesn't include our file
+            return FakeBundleResponse(
+                json.dumps({"assets": []}).encode(),
+                url=url,
+            )
+        # Fallback download: GitHub serves HTML (SSO redirect) instead of YAML
+        return FakeBundleResponse(b"<html>SSO login required</html>", url=url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    # Must exit non-zero — the HTML body is not a valid bundle manifest
+    assert result.exit_code == 1
+
+    # The tags API lookup must have fired
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 1
+
+    # The fallback download should use the original browser URL (no octet-stream)
+    fallback_calls = [(url, h) for url, h in captured if url == browser_url]
+    assert len(fallback_calls) == 1
+    assert fallback_calls[0][1] is None  # no Accept header on the original URL
+
+    # Error output must be actionable (not a raw traceback)
+    assert "Error:" in result.output
