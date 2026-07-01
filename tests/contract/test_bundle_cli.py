@@ -698,13 +698,6 @@ def test_bundle_info_resolves_ghes_browser_release_url(project: Path):
     )
     _make_catalog_config(catalog, project)
 
-    ghes_entry = {
-        "hosts": [ghes_host],
-        "provider": "github",
-        "auth": "bearer",
-        "token": "ghes-test-token",
-    }
-
     with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
          patch("specify_cli.authentication.http.github_provider_hosts", return_value=(ghes_host,)):
         result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
