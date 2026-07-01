@@ -122,10 +122,10 @@ def _run_bash(script_name: str, cwd: Path, *args: str, env_extra: dict | None = 
     )
 
 
-def _run_pwsh(script_name: str, cwd: Path, *args: str) -> subprocess.CompletedProcess:
+def _run_pwsh(script_name: str, cwd: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
     """Run an extension PowerShell script."""
     script = cwd / ".specify" / "extensions" / "git" / "scripts" / "powershell" / script_name
-    env = {**os.environ, **_GIT_ENV}
+    env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
     return subprocess.run(
         ["pwsh", "-NoProfile", "-File", str(script), *args],
         cwd=cwd,
@@ -363,6 +363,69 @@ class TestCreateFeatureBash:
         data = json.loads(result.stdout)
         assert data["FEATURE_NUM"] == "003"
 
+    def test_branch_template_adds_author_and_app_namespace(self, tmp_path: Path):
+        """branch_template namespaces generated branch names for monorepos."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/001-guided-tour"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_branch_prefix_shorthand_adds_namespace(self, tmp_path: Path):
+        """branch_prefix expands to a namespace before the default branch shape."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_prefix: "features/{app}"\n')
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--short-name", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "features/app-a/001-guided-tour"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_branch_template_scopes_existing_branch_numbers(self, tmp_path: Path):
+        """Templated branch numbering ignores branches outside the current namespace."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/app-a/007-existing"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-b/010-other-app"], cwd=project, check=True)
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_git_branch_name_override_extracts_number_after_namespace(self, tmp_path: Path):
+        """GIT_BRANCH_NAME extracts FEATURE_NUM from a namespaced branch."""
+        project = _setup_project(tmp_path / "app-a")
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "Ignored description",
+            env_extra={"GIT_BRANCH_NAME": "jdoe/app-a/042-custom-branch"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/042-custom-branch"
+        assert data["FEATURE_NUM"] == "042"
+
     def test_dry_run_counts_branches_checked_out_in_worktrees(self, tmp_path: Path):
         """Branches checked out in sibling worktrees still reserve their prefix."""
         project = _setup_project(tmp_path / "project")
@@ -524,6 +587,54 @@ class TestCreateFeaturePowerShell:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert re.match(r"^\d{8}-\d{6}-feat$", data["BRANCH_NAME"])
+
+    def test_branch_template_adds_author_and_app_namespace(self, tmp_path: Path):
+        """PowerShell supports branch_template namespaces."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-ShortName", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/001-guided-tour"
+        assert data["FEATURE_NUM"] == "001"
+
+    def test_branch_template_scopes_existing_branch_numbers(self, tmp_path: Path):
+        """PowerShell templated numbering ignores branches outside the namespace."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/app-a/007-existing"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-b/010-other-app"], cwd=project, check=True)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_git_branch_name_override_extracts_number_after_namespace(self, tmp_path: Path):
+        """PowerShell GIT_BRANCH_NAME extracts FEATURE_NUM from a namespaced branch."""
+        project = _setup_project(tmp_path / "app-a")
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "Ignored description",
+            env_extra={"GIT_BRANCH_NAME": "jdoe/app-a/042-custom-branch"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/042-custom-branch"
+        assert data["FEATURE_NUM"] == "042"
 
     def test_no_git_graceful_degradation(self, tmp_path: Path):
         """create-new-feature-branch.ps1 works without git."""
@@ -1011,11 +1122,20 @@ class TestGitCommonBash:
         )
         assert result.returncode == 0
 
-    def test_check_feature_branch_rejects_nested_prefix(self, tmp_path: Path):
+    def test_check_feature_branch_accepts_nested_prefix(self, tmp_path: Path):
         project = _setup_project(tmp_path)
         script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
         result = subprocess.run(
             ["bash", "-c", f'source "{script}" && check_feature_branch "feat/fix/001-x" "true"'],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_check_feature_branch_rejects_nested_prefix_without_number(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "bash" / "git-common.sh"
+        result = subprocess.run(
+            ["bash", "-c", f'source "{script}" && check_feature_branch "feat/fix/no-number" "true"'],
             capture_output=True, text=True,
         )
         assert result.returncode != 0
@@ -1032,6 +1152,21 @@ class TestGitCommonPowerShell:
                 "-NoProfile",
                 "-Command",
                 f'. "{script}"; if (Test-FeatureBranch -Branch "feat/001-x" -HasGit $true) {{ exit 0 }} else {{ exit 1 }}',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+
+    def test_test_feature_branch_accepts_nested_prefix(self, tmp_path: Path):
+        project = _setup_project(tmp_path)
+        script = project / ".specify" / "extensions" / "git" / "scripts" / "powershell" / "git-common.ps1"
+        result = subprocess.run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-Command",
+                f'. "{script}"; if (Test-FeatureBranch -Branch "jdoe/app-a/001-x" -HasGit $true) {{ exit 0 }} else {{ exit 1 }}',
             ],
             capture_output=True,
             text=True,
