@@ -227,6 +227,73 @@ class TestExtensionManifest:
 
         assert CORE_COMMAND_NAMES == expected
 
+    def test_load_core_command_names_discovers_from_source_checkout(self, monkeypatch):
+        """Discovery must actually read the repo-root templates, not silently
+        fall back (#3274).
+
+        The fallback set happens to equal the real command stems today, so an
+        equality check against the live tree cannot tell a working loader apart
+        from a dead one. Point ``_repo_root`` at a temp tree with *different*
+        command names: the old off-by-one path math read nothing and returned
+        the baked-in fallback; the fixed loader returns the temp stems.
+        """
+        from specify_cli.extensions import (
+            _load_core_command_names,
+            _FALLBACK_CORE_COMMAND_NAMES,
+        )
+        import specify_cli.extensions as ext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            commands = Path(tmp) / "templates" / "commands"
+            commands.mkdir(parents=True)
+            (commands / "widget.md").write_text("# widget", encoding="utf-8")
+            (commands / "gadget.md").write_text("# gadget", encoding="utf-8")
+            (commands / "notacommand.txt").write_text("skip me", encoding="utf-8")
+
+            # No wheel bundle in this scenario; force the source-checkout path.
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: None)
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp))
+
+            result = _load_core_command_names()
+
+        assert result == {"widget", "gadget"}
+        assert result != _FALLBACK_CORE_COMMAND_NAMES
+
+    def test_load_core_command_names_prefers_wheel_core_pack(self, monkeypatch):
+        """When a wheel ``core_pack`` bundle exists, discovery reads
+        ``core_pack/commands`` (the force-include target) ahead of the source
+        tree (#3274)."""
+        from specify_cli.extensions import _load_core_command_names
+        import specify_cli.extensions as ext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            core_pack = Path(tmp) / "core_pack"
+            (core_pack / "commands").mkdir(parents=True)
+            (core_pack / "commands" / "sprocket.md").write_text("# sprocket", encoding="utf-8")
+
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: core_pack)
+            # Source fallback should be ignored while the bundle resolves.
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp) / "nonexistent")
+
+            result = _load_core_command_names()
+
+        assert result == {"sprocket"}
+
+    def test_load_core_command_names_falls_back_when_nothing_found(self, monkeypatch):
+        """With neither a bundle nor a source tree, discovery returns the
+        baked-in fallback so validation still works (#3274)."""
+        from specify_cli.extensions import (
+            _load_core_command_names,
+            _FALLBACK_CORE_COMMAND_NAMES,
+        )
+        import specify_cli.extensions as ext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: None)
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp) / "nonexistent")
+
+            assert _load_core_command_names() == _FALLBACK_CORE_COMMAND_NAMES
+
     def test_missing_required_field(self, temp_dir):
         """Test manifest missing required field."""
         import yaml

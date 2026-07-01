@@ -26,6 +26,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from .._assets import _locate_core_pack, _repo_root
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation
@@ -62,14 +63,28 @@ def _load_core_command_names() -> frozenset[str]:
     Prefer the wheel-time ``core_pack`` bundle when present, and fall back to
     the source checkout when running from the repository. If neither is
     available, use the baked-in fallback set so validation still works.
+
+    Path resolution is delegated to the canonical ``_assets`` resolvers
+    (``_locate_core_pack`` / ``_repo_root``) — the same ones the presets and
+    bundle loaders use — rather than bespoke ``Path(__file__)`` arithmetic.
+    Hand-counted ``.parent`` chains silently broke discovery once already: the
+    #3014 move of this module from ``specify_cli/extensions.py`` to
+    ``specify_cli/extensions/__init__.py`` pushed the file one directory deeper
+    without updating the counts, so both candidates resolved to non-existent
+    paths and every call fell through to the fallback (#3274). The shared
+    resolvers are anchored to the package root, so discovery survives future
+    module moves.
     """
+    core_pack = _locate_core_pack()
     candidate_dirs = [
-        Path(__file__).parent / "core_pack" / "commands",
-        Path(__file__).resolve().parent.parent.parent / "templates" / "commands",
+        # Wheel install: force-include maps templates/commands → core_pack/commands.
+        core_pack / "commands" if core_pack is not None else None,
+        # Source checkout / editable install: repo-root templates/commands.
+        _repo_root() / "templates" / "commands",
     ]
 
     for commands_dir in candidate_dirs:
-        if not commands_dir.is_dir():
+        if commands_dir is None or not commands_dir.is_dir():
             continue
 
         command_names = {
