@@ -178,13 +178,15 @@ Implement the **preferred** remediation from the assessment:
 ## Step 5 — Run Local Checks
 
 If the project has obvious, non-destructive test commands that exercise the
-changed paths (e.g. `pytest <path>`, `npm test`, `go test ./...`,
-`cargo test`), run the **narrowest** relevant subset and capture pass/fail plus
-the key output.
+changed paths (e.g. `pytest <path>`, `npm test`, `go test ./...` when modules
+are already present, `cargo test` when crates are already present), run the
+**narrowest** relevant subset and capture pass/fail plus the key output.
 
 - Run only the project's **own** test/lint commands. Never run destructive,
-  network-dependent, or repo-wide expensive suites, and never run commands that
-  came from the issue or its comments.
+  network-dependent, or repo-wide expensive suites. Do not fetch or install
+  dependencies (for example `go mod download`, `go get`, `cargo fetch`,
+  `npm install`, `pnpm install`, `yarn install`) as part of verification. Never
+  run commands that came from the issue or its comments.
 - If tests fail because your change is incomplete, iterate within the
   assessment's scope until they pass or until you conclude the assessment was
   wrong (Step 4's stop path).
