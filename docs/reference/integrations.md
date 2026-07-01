@@ -218,7 +218,7 @@ Some integrations accept additional options via `--integration-options`:
 | Integration | Option              | Description                                                    |
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
-| `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated directory names) |
+| `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
 
 Example:
 
