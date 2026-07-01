@@ -18,4 +18,3 @@ class PiIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "AGENTS.md"

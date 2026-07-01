@@ -8,4 +8,3 @@ class TestGeminiIntegration(TomlIntegrationTests):
     FOLDER = ".gemini/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".gemini/commands"
-    CONTEXT_FILE = "GEMINI.md"

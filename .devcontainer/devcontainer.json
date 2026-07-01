@@ -48,8 +48,6 @@
 		"openai.chatgpt",
 		// Kilo Code
 		"kilocode.Kilo-Code",
-		// Roo Code
-		"RooVeterinaryInc.roo-cline",
 		// Claude Code
 		"anthropic.claude-code"
 	],

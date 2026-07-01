@@ -22,8 +22,8 @@ ALL_INTEGRATION_KEYS = [
     "copilot",
     # Stage 3 — standard markdown integrations
     "claude", "qwen", "opencode", "junie", "kilocode", "auggie",
-    "roo", "rovodev", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
-    "pi", "iflow", "kiro-cli", "windsurf", "vibe", "cursor-agent", "firebender",
+    "rovodev", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
+    "pi", "kiro-cli", "vibe", "cursor-agent", "firebender",
     # Stage 4 — TOML integrations
     "gemini", "tabnine",
     # Stage 5 — skills, generic & option-driven integrations
@@ -164,16 +164,11 @@ class TestMultiInstallSafeContracts:
 
     @pytest.mark.parametrize("key", _multi_install_safe_keys())
     def test_safe_integrations_have_static_isolated_paths(self, key):
-        integration = INTEGRATION_REGISTRY[key]
-
         assert _integration_root_dir(key), (
             f"{key} is declared multi-install safe but has no static root directory"
         )
         assert _integration_commands_dir(key), (
             f"{key} is declared multi-install safe but has no static commands directory"
-        )
-        assert integration.context_file, (
-            f"{key} is declared multi-install safe but has no context file"
         )
 
     @pytest.mark.parametrize(("first", "second"), _multi_install_safe_pairs())
@@ -190,44 +185,6 @@ class TestMultiInstallSafeContracts:
             f"{first} and {second} are declared multi-install safe but have "
             f"overlapping command directories {_integration_commands_dir(first)!r} and "
             f"{_integration_commands_dir(second)!r}"
-        )
-
-    @pytest.mark.parametrize(("first", "second"), _multi_install_safe_pairs())
-    def test_safe_integrations_have_distinct_context_files(self, first, second):
-        first_context = _posix_path(INTEGRATION_REGISTRY[first].context_file)
-        second_context = _posix_path(INTEGRATION_REGISTRY[second].context_file)
-
-        assert first_context != second_context, (
-            f"{first} and {second} are declared multi-install safe but share "
-            f"context file {first_context!r}"
-        )
-
-    @pytest.mark.parametrize(("first", "second"), _multi_install_safe_pairs())
-    def test_safe_context_files_do_not_overlap_other_agent_roots(self, first, second):
-        first_context = _posix_path(INTEGRATION_REGISTRY[first].context_file)
-        second_context = _posix_path(INTEGRATION_REGISTRY[second].context_file)
-
-        assert not _path_is_inside(first_context, _integration_root_dir(second)), (
-            f"{first} context file {first_context!r} lives under {second} "
-            f"agent root {_integration_root_dir(second)!r}"
-        )
-        assert not _path_is_inside(second_context, _integration_root_dir(first)), (
-            f"{second} context file {second_context!r} lives under {first} "
-            f"agent root {_integration_root_dir(first)!r}"
-        )
-
-    @pytest.mark.parametrize(("first", "second"), _multi_install_safe_pairs())
-    def test_safe_context_files_do_not_overlap_other_command_dirs(self, first, second):
-        first_context = _posix_path(INTEGRATION_REGISTRY[first].context_file)
-        second_context = _posix_path(INTEGRATION_REGISTRY[second].context_file)
-
-        assert not _path_is_inside(first_context, _integration_commands_dir(second)), (
-            f"{first} context file {first_context!r} lives under {second} "
-            f"commands directory {_integration_commands_dir(second)!r}"
-        )
-        assert not _path_is_inside(second_context, _integration_commands_dir(first)), (
-            f"{second} context file {second_context!r} lives under {first} "
-            f"commands directory {_integration_commands_dir(first)!r}"
         )
 
     @pytest.mark.parametrize(("first", "second"), _multi_install_safe_pairs())
@@ -287,3 +244,26 @@ class TestMultiInstallSafeContracts:
                 f"{initial} and {additional} are declared multi-install safe but both manage "
                 f"these files: {sorted(initial_files & additional_files)}"
             )
+
+
+class TestCatalogParity:
+    """The discovery catalog must list every registered integration."""
+
+    def test_every_registered_integration_is_in_catalog(self):
+        """``integrations/catalog.json`` must cover every registry key.
+
+        The catalog is the discovery manifest; an integration that is
+        registered, registrar-aligned and registry-tested but missing from
+        the catalog is undiscoverable through it. ``generic`` is exempt —
+        it is the no-fixed-directory fallback, not a catalogued agent.
+        """
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[2]
+        catalog = json.loads(
+            (repo_root / "integrations" / "catalog.json").read_text(encoding="utf-8")
+        )
+        catalogued = set(catalog["integrations"])
+        registered = set(INTEGRATION_REGISTRY) - {"generic"}
+        missing = sorted(registered - catalogued)
+        assert not missing, f"integrations missing from catalog.json: {missing}"

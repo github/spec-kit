@@ -10,7 +10,6 @@ class TestCodebuddyIntegration(MarkdownIntegrationTests):
     FOLDER = ".codebuddy/"
     COMMANDS_SUBDIR = "commands"
     REGISTRAR_DIR = ".codebuddy/commands"
-    CONTEXT_FILE = "CODEBUDDY.md"
 
     def test_install_url_points_to_official_cli_install_docs(self):
         integration = get_integration(self.KEY)

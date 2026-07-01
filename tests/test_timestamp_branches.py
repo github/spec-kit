@@ -332,6 +332,27 @@ class TestSequentialBranchPowerShell:
         assert data["FEATURE_NUM"] == "000"
         assert data["BRANCH_NAME"] == "000-zero"
 
+    @pytest.mark.skipif(not _has_pwsh(), reason="pwsh not installed")
+    def test_missing_spec_template_warns_matching_bash(self, ps_git_repo: Path):
+        """When no spec template can be resolved, create-new-feature.ps1 must warn on
+        stderr (and still create an empty spec file), matching the bash twin's
+        'Warning: Spec template not found; created empty spec file'. Before the fix
+        PowerShell created the empty file silently."""
+        # Remove the template the fixture installs so resolution finds nothing.
+        (ps_git_repo / ".specify" / "templates" / "spec-template.md").unlink()
+        script = ps_git_repo / "scripts" / "powershell" / "create-new-feature.ps1"
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(script),
+             "-Json", "-ShortName", "no-tmpl", "No template feature"],
+            cwd=ps_git_repo, capture_output=True, text=True, encoding="utf-8",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Spec template not found" in result.stderr
+        # stdout stays parseable JSON and the empty spec file is still created.
+        data = json.loads(result.stdout)
+        spec_file = Path(data["SPEC_FILE"])
+        assert spec_file.is_file()
+
 
 # ── check_feature_branch Tests ───────────────────────────────────────────────
 
