@@ -807,7 +807,7 @@ def _download_remote_manifest(entry_id: str, url: str):
 
     import yaml as _yaml
 
-    from ...authentication.http import open_url
+    from ...authentication.http import github_provider_hosts, open_url
     from ..._github_http import resolve_github_release_asset_api_url
     from ...bundler.models.manifest import BundleManifest
 
@@ -823,7 +823,9 @@ def _download_remote_manifest(entry_id: str, url: str):
     # can download the actual file.
     extra_headers = None
     effective_url = url
-    resolved = resolve_github_release_asset_api_url(url, open_url, timeout=30)
+    resolved = resolve_github_release_asset_api_url(
+        url, open_url, timeout=30, github_hosts=github_provider_hosts()
+    )
     if resolved:
         effective_url = resolved
         _require_https(f"bundle '{entry_id}'", effective_url)

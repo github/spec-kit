@@ -669,3 +669,58 @@ def test_bundle_info_github_release_url_resolution_failure_falls_back_and_errors
 
     # Error output must be actionable (not a raw traceback)
     assert "Error:" in result.output
+
+
+def test_bundle_info_resolves_ghes_browser_release_url(project: Path):
+    """bundle info resolves a GHES private-repo browser release URL via /api/v3."""
+    ghes_host = "ghes.example"
+    browser_url = f"https://{ghes_host}/org/repo/releases/download/v1.0/bundle.yml"
+    api_asset_url = f"https://{ghes_host}/api/v3/repos/org/repo/releases/assets/42"
+
+    captured = []
+    manifest_yaml = yaml.safe_dump(valid_manifest_dict()).encode()
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "/api/v3/repos/" in url and "releases/tags/" in url:
+            return FakeBundleResponse(
+                json.dumps({
+                    "assets": [{"name": "bundle.yml", "url": api_asset_url}]
+                }).encode(),
+                url=url,
+            )
+        return FakeBundleResponse(manifest_yaml, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    ghes_entry = {
+        "hosts": [ghes_host],
+        "provider": "github",
+        "auth": "bearer",
+        "token": "ghes-test-token",
+    }
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
+         patch("specify_cli.authentication.http.github_provider_hosts", return_value=(ghes_host,)):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    # The GHES /api/v3 tags lookup must have fired
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 1
+    assert f"{ghes_host}/api/v3/repos/org/repo/releases/tags/v1.0" in tag_calls[0]
+
+    # Asset download must use the resolved GHES API URL with octet-stream
+    asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
+    assert len(asset_calls) == 1
+    assert asset_calls[0][0] == api_asset_url
+    assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"
