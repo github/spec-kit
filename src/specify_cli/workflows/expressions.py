@@ -146,6 +146,41 @@ def _build_namespace(context: Any) -> dict[str, Any]:
     return ns
 
 
+def _is_single_expression(stripped: str) -> bool:
+    """True when *stripped* is exactly one top-level ``{{ ... }}`` block.
+
+    Scans the block body for a ``}}`` that would close it early, ignoring any
+    braces inside string literals. This keeps a lone expression whose string
+    argument contains a literal ``{{`` or ``}}`` (e.g.
+    ``{{ inputs.text | contains('}}') }}``) on the typed fast path, while
+    ``{{ a }} {{ b }}`` and ``{{ a }}{{ b }}`` are correctly seen as
+    multi-expression. Mirrors the quote handling in
+    ``_split_top_level_commas``.
+
+    A regex span check cannot decide this: the pattern's non-greedy body stops
+    at the first ``}}``, so a literal ``}}`` inside a string argument would be
+    mistaken for the closing delimiter (issue #3208, follow-up review).
+    """
+    if not (stripped.startswith("{{") and stripped.endswith("}}")):
+        return False
+    inner = stripped[2:-2]
+    quote: str | None = None
+    i = 0
+    n = len(inner)
+    while i < n:
+        ch = inner[i]
+        if quote is not None:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif ch == "}" and i + 1 < n and inner[i + 1] == "}":
+            # A ``}}`` outside quotes closes the first block early.
+            return False
+        i += 1
+    return True
+
+
 def _split_top_level_commas(text: str) -> list[str]:
     """Split *text* on commas that are not inside quotes or nested brackets.
 
@@ -386,23 +421,18 @@ def evaluate_expression(template: str, context: Any) -> Any:
     # Single expression: return typed value (preserving type).
     #
     # The fast path must fire only when the whole template is one ``{{ ... }}``
-    # block. ``fullmatch`` cannot decide this: the pattern's non-greedy body
-    # ``(.+?)`` is defeated by ``fullmatch``, so ``"{{ a }} {{ b }}"`` still
-    # matches with the body expanded to ``"a }} {{ b"`` -- garbage that fails
-    # resolution and returns ``None``, bypassing the ``sub()`` interpolation
-    # path that handles each expression correctly (issue #3208).
-    #
-    # Anchor a single match at the start instead and require it to consume the
-    # entire stripped string. The non-greedy body then stops at the first
-    # ``}}``: a genuine two-block template leaves a trailing ``}}`` and fails the
-    # span check, while a lone expression -- even one with a literal ``{{`` in a
-    # string argument such as ``{{ inputs.text | contains('{{') }}`` -- matches
-    # to the end and keeps its typed return value. (Counting ``{{`` would
-    # misclassify that expression as multi-block and coerce it to ``str``.)
+    # block. Neither ``fullmatch`` nor a match-span check on ``_EXPR_PATTERN``
+    # can decide this reliably: the non-greedy body stops at the first ``}}``,
+    # so ``fullmatch`` over-expands ``"{{ a }} {{ b }}"`` to garbage (returning
+    # ``None`` and bypassing interpolation, issue #3208), while a span check
+    # trips over a literal ``}}`` inside a string argument such as
+    # ``{{ inputs.text | contains('}}') }}`` and mis-routes it to interpolation
+    # (coercing its typed return to ``str``). ``_is_single_expression`` scans
+    # for a block-closing ``}}`` outside string literals, so both cases resolve
+    # correctly.
     stripped = template.strip()
-    match = _EXPR_PATTERN.match(stripped)
-    if match and match.end() == len(stripped):
-        return _evaluate_simple_expression(match.group(1).strip(), namespace)
+    if _is_single_expression(stripped):
+        return _evaluate_simple_expression(stripped[2:-2].strip(), namespace)
 
     # Multi-expression: string interpolation
     def _replacer(m: re.Match[str]) -> str:
