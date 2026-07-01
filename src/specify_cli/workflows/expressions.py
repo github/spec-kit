@@ -164,6 +164,8 @@ def _is_single_expression(stripped: str) -> bool:
     if not (stripped.startswith("{{") and stripped.endswith("}}")):
         return False
     inner = stripped[2:-2]
+    if not inner.strip():
+        return False
     quote: str | None = None
     i = 0
     n = len(inner)
