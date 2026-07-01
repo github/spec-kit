@@ -33,6 +33,9 @@ safe-outputs:
     max: 1
     protected-files:
       policy: blocked
+      exclude:
+        - README.md
+        - CHANGELOG.md
   add-comment:
     max: 1
   add-labels:
@@ -189,7 +192,7 @@ Use the `create-pull-request` safe output to open a **draft** PR with your
 changes. The harness handles branching, committing, and pushing from the working
 tree you edited — you do not run `git` yourself.
 
-- **Branch name**: `bug-fix/<BUG_SLUG>`.
+- **Branch name**: `fix/${{ github.event.issue.number }}-<BUG_SLUG>`.
 - **Commit message**:
 
   ```text
