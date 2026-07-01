@@ -269,3 +269,26 @@ def test_override_rejects_symlinked_specify(tmp_path, monkeypatch):
     result = runner.invoke(app, ["workflow", "run", str(workflow_file)])
     assert result.exit_code != 0
     assert "Refusing to use symlinked .specify path" in result.output
+
+
+def test_override_rejects_symlinked_specify_json_error_stays_off_stdout(tmp_path, monkeypatch):
+    """`workflow run --json <file>` must keep this hard error off stdout."""
+    web = tmp_path / "web"
+    web.mkdir()
+    real = tmp_path / "real-specify"
+    real.mkdir()
+    try:
+        (web / ".specify").symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not available in this environment")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    workflow_file = elsewhere / "wf.yml"
+    workflow_file.write_text(_workflow_yaml("symlink-json-run"), encoding="utf-8")
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("SPECIFY_INIT_DIR", str(web))
+
+    result = runner.invoke(app, ["workflow", "run", str(workflow_file), "--json"])
+    assert result.exit_code != 0
+    assert result.stdout == ""
+    assert "Refusing to use symlinked .specify path" in result.stderr

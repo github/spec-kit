@@ -770,10 +770,10 @@ def workflow_run(
         specify_dir = project_root / ".specify"
         if specify_dir.is_symlink():
             where = " in current directory" if override is None else f": {specify_dir}"
-            console.print(f"[red]Error:[/red] Refusing to use symlinked .specify path{where}")
+            err_console.print(f"[red]Error:[/red] Refusing to use symlinked .specify path{where}")
             raise typer.Exit(1)
         if specify_dir.exists() and not specify_dir.is_dir():
-            console.print("[red]Error:[/red] .specify path exists but is not a directory")
+            err_console.print("[red]Error:[/red] .specify path exists but is not a directory")
             raise typer.Exit(1)
     else:
         project_root = _require_specify_project()

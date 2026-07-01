@@ -9,7 +9,6 @@ import typer
 
 from .._agent_config import SCRIPT_TYPE_CHOICES
 from .._console import console
-from .._project import _resolve_init_dir_override as _resolve_init_dir_override  # noqa: F401
 from ..integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
