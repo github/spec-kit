@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -41,11 +40,9 @@ def ensure_constitution_from_template(
     constitution) can seed the memory file. When nothing overrides it, the
     resolver falls through to the core template.
     """
-    from ..presets import PresetResolver
+    from ..presets import _materialize_constitution_template
 
     memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
-    resolver = PresetResolver(project_path)
-    layers = resolver.collect_all_layers("constitution-template", "template")
 
     if memory_constitution.exists():
         if tracker:
@@ -53,27 +50,21 @@ def ensure_constitution_from_template(
             tracker.skip("constitution", "existing file preserved")
         return
 
-    if not layers:
-        if tracker:
-            tracker.add("constitution", "Constitution setup")
-            tracker.error("constitution", "template not found")
-        return
-
     try:
-        memory_constitution.parent.mkdir(parents=True, exist_ok=True)
-        top_layer = layers[0]
-        if top_layer["strategy"] == "replace":
-            shutil.copy2(top_layer["path"], memory_constitution)
-        else:
-            composed_content = resolver.resolve_content(
-                "constitution-template", "template"
-            )
-            if composed_content is None:
-                raise FileNotFoundError("constitution template not found")
-            memory_constitution.write_text(composed_content, encoding="utf-8")
+        materialization = _materialize_constitution_template(
+            project_path, memory_constitution
+        )
+        if materialization is None:
+            if tracker:
+                tracker.add("constitution", "Constitution setup")
+                tracker.error("constitution", "template not found")
+            return
         if tracker:
             tracker.add("constitution", "Constitution setup")
-            tracker.complete("constitution", "copied from template")
+            if materialization == "copied":
+                tracker.complete("constitution", "copied from template")
+            else:
+                tracker.complete("constitution", "composed from template")
         else:
             console.print("[cyan]Initialized constitution from template[/cyan]")
     except Exception as e:
