@@ -33,20 +33,19 @@ def _stdin_is_interactive() -> bool:
 def ensure_constitution_from_template(
     project_path: Path, tracker: StepTracker | None = None
 ) -> None:
-    """Copy the resolved constitution template to memory if it doesn't exist.
+    """Materialize the resolved constitution template to memory if missing.
 
     Resolution walks the full priority stack (project overrides → installed
     presets → extensions → core) via :class:`PresetResolver`, so a preset that
     ships a ``constitution-template`` (e.g. ``strategy: replace`` with a ratified
-    constitution) seeds the memory file verbatim. When nothing overrides it, the
-    resolver falls through to the core template, preserving legacy behavior.
+    constitution) can seed the memory file. When nothing overrides it, the
+    resolver falls through to the core template.
     """
     from ..presets import PresetResolver
 
     memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
-    template_constitution = PresetResolver(project_path).resolve(
-        "constitution-template", "template"
-    )
+    resolver = PresetResolver(project_path)
+    layers = resolver.collect_all_layers("constitution-template", "template")
 
     if memory_constitution.exists():
         if tracker:
@@ -54,7 +53,7 @@ def ensure_constitution_from_template(
             tracker.skip("constitution", "existing file preserved")
         return
 
-    if template_constitution is None or not template_constitution.exists():
+    if not layers:
         if tracker:
             tracker.add("constitution", "Constitution setup")
             tracker.error("constitution", "template not found")
@@ -62,7 +61,16 @@ def ensure_constitution_from_template(
 
     try:
         memory_constitution.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(template_constitution, memory_constitution)
+        top_layer = layers[0]
+        if top_layer["strategy"] == "replace":
+            shutil.copy2(top_layer["path"], memory_constitution)
+        else:
+            composed_content = resolver.resolve_content(
+                "constitution-template", "template"
+            )
+            if composed_content is None:
+                raise FileNotFoundError("constitution template not found")
+            memory_constitution.write_text(composed_content, encoding="utf-8")
         if tracker:
             tracker.add("constitution", "Constitution setup")
             tracker.complete("constitution", "copied from template")
