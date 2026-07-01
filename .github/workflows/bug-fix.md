@@ -150,9 +150,10 @@ Before changing any code, check the assessment's verdict:
   and note that in the comment. Then **stop**. Do not open a PR.
 - **Likely valid, needs reproduction** with unresolved `[NEEDS CLARIFICATION]`
   items — the fix would be a guess. Add **one** comment listing the open
-  questions that block a confident fix, add the `needs-reproduction` label, and
-  **stop**. (There is no human in this automated run to answer them; defer to the
-  reproduction step rather than guessing.)
+  questions that block a confident fix. If the `needs-reproduction` label exists
+  in this repository, add it; otherwise skip labeling and note that in the
+  comment. **Stop.** (There is no human in this automated run to answer them;
+  defer to the reproduction step rather than guessing.)
 - **Valid** (or **Likely valid, needs reproduction** with no blocking clarifications) — continue.
 
 Restate, in 3–6 bullets in your working notes, exactly what you intend to change
