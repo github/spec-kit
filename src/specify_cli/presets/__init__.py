@@ -1664,15 +1664,23 @@ class PresetManager:
                 # Legitimately authored constitution; leave it untouched.
                 return
 
-        resolved = PresetResolver(self.project_root).resolve(
-            "constitution-template", "template"
-        )
-        if resolved is None or not resolved.exists():
+        resolver = PresetResolver(self.project_root)
+        layers = resolver.collect_all_layers("constitution-template", "template")
+        if not layers:
             return
 
         try:
             memory_constitution.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(resolved, memory_constitution)
+            top_layer = layers[0]
+            if top_layer["strategy"] == "replace":
+                shutil.copy2(top_layer["path"], memory_constitution)
+            else:
+                composed_content = resolver.resolve_content(
+                    "constitution-template", "template"
+                )
+                if composed_content is None:
+                    return
+                memory_constitution.write_text(composed_content, encoding="utf-8")
         except OSError as exc:
             import warnings
 

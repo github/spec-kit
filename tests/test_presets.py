@@ -2827,6 +2827,66 @@ class TestSelfTestPreset:
         assert result is not None
         assert "preset:self-test" in result.read_text()
 
+    def test_constitution_seed_composes_wrap_strategy(self, project_dir, temp_dir):
+        """Seeding memory composes wrap constitution-template layers."""
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# Core Constitution\n\n## Core Principle\n"
+        )
+
+        preset_dir = temp_dir / "constitution-wrap"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Wrapper Constitution\n\n{CORE_TEMPLATE}\n\n## Wrapper Footer\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "constitution-wrap",
+                        "name": "Constitution Wrap",
+                        "version": "1.0.0",
+                        "description": "Wrap constitution template for testing",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Wrapped constitution template",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        content = memory.read_text()
+        assert "{CORE_TEMPLATE}" not in content
+        assert "# Wrapper Constitution" in content
+        assert "## Core Principle" in content
+
+    def test_constitution_placeholder_tokens_are_pinned_to_core_template(self):
+        """Guard placeholder token drift between code and core template."""
+        from specify_cli.presets import _CONSTITUTION_PLACEHOLDER_TOKENS
+
+        expected_tokens = {"[PROJECT_NAME]", "[PRINCIPLE_1_NAME]"}
+        assert set(_CONSTITUTION_PLACEHOLDER_TOKENS) == expected_tokens
+
+        core_template = Path(__file__).parent.parent / "templates" / "constitution-template.md"
+        content = core_template.read_text(encoding="utf-8")
+        for token in expected_tokens:
+            assert token in content
+
     def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
         """Test that extension command overrides are skipped if the extension isn't installed."""
         claude_dir = project_dir / ".claude" / "skills"
@@ -6274,6 +6334,39 @@ class TestEnsureConstitutionResolverAware:
             "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n"
         )
 
+    def _wrap_constitution_preset(self, temp_dir):
+        preset_dir = temp_dir / "ensure-wrap-preset"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Ensure Wrapper\n\n{CORE_TEMPLATE}\n\n## Tail\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "ensure-wrap",
+                        "name": "Ensure Wrap",
+                        "version": "1.0.0",
+                        "description": "Wrap strategy for ensure() coverage",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Wrapped constitution",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        return preset_dir
+
     def test_seeds_from_core_when_no_preset(self, project_dir):
         from specify_cli.commands.init import ensure_constitution_from_template
 
@@ -6315,3 +6408,20 @@ class TestEnsureConstitutionResolverAware:
         ensure_constitution_from_template(project_dir)
 
         assert memory.read_text() == authored
+
+    def test_composes_wrap_strategy_when_ensuring(self, project_dir, temp_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self._wrap_constitution_preset(temp_dir), "0.1.5")
+
+        # Ensure we validate ensure() behavior directly.
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.unlink()
+        ensure_constitution_from_template(project_dir)
+
+        content = memory.read_text()
+        assert "{CORE_TEMPLATE}" not in content
+        assert "# Ensure Wrapper" in content
+        assert "[PROJECT_NAME]" in content
