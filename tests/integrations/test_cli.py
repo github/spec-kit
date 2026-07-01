@@ -43,16 +43,6 @@ class TestCliDiagnosticFormatting:
 
 
 class TestInitIntegrationFlag:
-    def test_integration_and_ai_mutually_exclusive(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-        runner = CliRunner()
-        result = runner.invoke(app, [
-            "init", str(tmp_path / "test-project"), "--ai", "claude", "--integration", "copilot",
-        ])
-        assert result.exit_code != 0
-        assert "mutually exclusive" in result.output
-
     def test_unknown_integration_rejected(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -73,7 +63,7 @@ class TestInitIntegrationFlag:
         try:
             os.chdir(project)
             result = runner.invoke(app, [
-                "init", "--here", "--integration", "copilot", "--script", "sh", "--no-git",
+                "init", "--here", "--integration", "copilot", "--script", "sh",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -87,23 +77,17 @@ class TestInitIntegrationFlag:
 
         opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
-        # context_file lives in the agent-context extension config, not init-options.json
+        # init must not leave any legacy agent-context keys in init-options.json
         assert "context_file" not in opts
 
-        import yaml as _yaml
+        # agent-context is fully opt-in: init must not install it or write its config
         ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
-        assert ext_cfg_path.exists(), "agent-context extension config must be created on init"
-        ext_cfg = _yaml.safe_load(ext_cfg_path.read_text(encoding="utf-8"))
-        assert ext_cfg["context_file"] == ".github/copilot-instructions.md"
+        assert not ext_cfg_path.exists(), "init must not create the agent-context extension config"
 
         assert (project / ".specify" / "integrations" / "copilot.manifest.json").exists()
 
-        # Context section should be upserted into the copilot instructions file
-        ctx_file = project / ".github" / "copilot-instructions.md"
-        assert ctx_file.exists()
-        ctx_content = ctx_file.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in ctx_content
-        assert "<!-- SPECKIT END -->" in ctx_content
+        # init must not create or manage the agent context file
+        assert not (project / ".github" / "copilot-instructions.md").exists()
 
         shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
@@ -121,7 +105,7 @@ class TestInitIntegrationFlag:
         runner = CliRunner()
         project = tmp_path / "noninteractive"
         result = runner.invoke(app, [
-            "init", str(project), "--script", "sh", "--no-git", "--ignore-agent-tools",
+            "init", str(project), "--script", "sh", "--ignore-agent-tools",
         ], catch_exceptions=False)
 
         assert result.exit_code == 0, result.output
@@ -131,7 +115,7 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
-    def test_ai_copilot_auto_promotes(self, tmp_path):
+    def test_integration_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
         project = tmp_path / "promote-test"
@@ -141,65 +125,12 @@ class TestInitIntegrationFlag:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "copilot", "--script", "sh", "--no-git",
+                "init", "--here", "--integration", "copilot", "--script", "sh",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
-
-    def test_ai_emits_deprecation_warning_with_integration_replacement(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        project = tmp_path / "warn-ai"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--ai", "copilot", "--script", "sh", "--no-git",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 0, result.output
-        assert "Deprecation Warning" in normalized_output
-        assert "--ai" in normalized_output
-        assert "deprecated" in normalized_output
-        assert "no longer be available" in normalized_output
-        assert "0.10.0" in normalized_output
-        assert "--integration copilot" in normalized_output
-        assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
-        assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
-
-    def test_ai_generic_warning_suggests_integration_options_equivalent(self, tmp_path):
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        project = tmp_path / "warn-generic"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--ai", "generic", "--ai-commands-dir", ".myagent/commands",
-                "--script", "sh", "--no-git",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 0, result.output
-        assert "Deprecation Warning" in normalized_output
-        assert "--integration generic" in normalized_output
-        assert "--integration-options" in normalized_output
-        assert ".myagent/commands" in normalized_output
-        assert normalized_output.index("Deprecation Warning") < normalized_output.index("Next Steps")
-        assert (project / ".myagent" / "commands" / "speckit.plan.md").exists()
 
     def test_init_optional_preset_failure_reports_target_and_continues(
         self, tmp_path, monkeypatch
@@ -223,7 +154,6 @@ class TestInitIntegrationFlag:
                 "copilot",
                 "--script",
                 "sh",
-                "--no-git",
                 "--preset",
                 "lean",
             ],
@@ -237,7 +167,7 @@ class TestInitIntegrationFlag:
         assert "Continuing without the optional preset" in normalized
         assert "Project ready" in normalized
 
-    def test_ai_claude_here_preserves_preexisting_commands(self, tmp_path):
+    def test_integration_claude_here_preserves_preexisting_commands(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -255,7 +185,7 @@ class TestInitIntegrationFlag:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--force", "--ai", "claude", "--ai-skills", "--script", "sh", "--no-git", "--ignore-agent-tools",
+                "init", "--here", "--force", "--integration", "claude", "--script", "sh", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -326,6 +256,206 @@ class TestInitIntegrationFlag:
         # Other shared files should also be installed
         assert (scripts_dir / "setup-plan.sh").exists()
         assert (templates_dir / "plan-template.md").exists()
+
+    def test_shared_infra_removes_stale_managed_script(self, tmp_path):
+        """A managed script the core no longer ships (e.g. the legacy
+        update-agent-context.sh, superseded by the agent-context extension) is
+        removed, and the manifest stops tracking it (#3076)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "stale-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        # Legacy orphan the current bundle no longer ships, recorded in the
+        # manifest as a managed file (hash matches on disk) — a pre-refactor install.
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        (scripts_dir / "update-agent-context.sh").write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # The orphan is gone and the manifest no longer tracks it.
+        assert not (scripts_dir / "update-agent-context.sh").exists()
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert stale_rel not in refreshed.files
+        # Scripts the core DOES ship are installed and tracked.
+        assert (scripts_dir / "common.sh").exists()
+        assert ".specify/scripts/bash/common.sh" in refreshed.files
+
+    def test_shared_infra_preserves_modified_stale_script(self, tmp_path):
+        """A user-modified stale script is preserved (hash diverges from the
+        managed baseline), never silently deleted (#3076)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "stale-modified"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# original managed\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(".specify/scripts/bash/update-agent-context.sh")
+        manifest.save()
+
+        # User customizes it after install → on-disk hash now diverges.
+        stale.write_text("# user customization\n", encoding="utf-8")
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # Preserved: it is no longer a managed (hash-matching) copy.
+        assert stale.exists()
+        assert stale.read_text(encoding="utf-8") == "# user customization\n"
+
+    def test_shared_infra_prunes_orphan_manifest_entry_when_file_absent(self, tmp_path):
+        """A stale manifest entry whose file is already gone from disk is pruned
+        so the manifest stays consistent, not left tracked forever (#3076 review)."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "orphan-entry"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+        # File removed out of band, but the manifest still tracks it.
+        stale.unlink()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert stale_rel not in refreshed.files
+
+    def test_shared_infra_empty_script_source_keeps_tracked_scripts(self, tmp_path, monkeypatch):
+        """If the bundle's script source dir exists but is empty, stale-cleanup
+        must NOT run (no source files seen → can't tell what's obsolete): a
+        previously-tracked script is preserved, never mass-deleted (#3076 review)."""
+        from specify_cli import _install_shared_infra, shared_infra
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        # Point the script source at an empty ``bash/`` directory.
+        empty_src = tmp_path / "empty-bundle" / "scripts"
+        (empty_src / "bash").mkdir(parents=True)
+        monkeypatch.setattr(shared_infra, "shared_scripts_source", lambda **kw: empty_src)
+
+        project = tmp_path / "empty-source"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        tracked_rel = ".specify/scripts/bash/common.sh"
+        (scripts_dir / "common.sh").write_text("# tracked\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(tracked_rel)
+        manifest.save()
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # Empty source → scripts_scanned stays False → nothing deleted.
+        assert (scripts_dir / "common.sh").exists()
+        refreshed = IntegrationManifest.load("speckit", project)
+        assert tracked_rel in refreshed.files
+
+    def test_shared_infra_stale_cleanup_ignores_unsafe_manifest_keys(self, tmp_path):
+        """A corrupted/hand-edited manifest key with a ``..`` segment is skipped
+        before any filesystem access — its traversal target is never deleted
+        (#3076 review, containment guard)."""
+        import hashlib
+        import json
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "unsafe-key"
+        project.mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+        manifest_dir = project / ".specify" / "integrations"
+        manifest_dir.mkdir(parents=True)
+
+        # A file the traversal key would resolve to (outside scripts/bash/).
+        victim = project / ".specify" / "scripts" / "keep-me.sh"
+        victim_bytes = b"# do not touch\n"
+        victim.write_bytes(victim_bytes)
+
+        # Hand-crafted manifest: a key under the script prefix but with a ``..``
+        # segment, with the *matching* hash so that — absent the containment guard
+        # — stale-cleanup would consider it managed and unlink the target.
+        traversal_key = ".specify/scripts/bash/../keep-me.sh"
+        (manifest_dir / "speckit.manifest.json").write_text(
+            json.dumps({
+                "integration": "speckit",
+                "version": "test",
+                "files": {traversal_key: hashlib.sha256(victim_bytes).hexdigest()},
+            }),
+            encoding="utf-8",
+        )
+
+        _install_shared_infra(project, "sh", force=False)
+
+        # The unsafe key was skipped; its target file is untouched.
+        assert victim.exists()
+        assert victim.read_bytes() == victim_bytes
+
+    def test_shared_infra_stale_cleanup_skips_escaping_key_without_failing(
+        self, tmp_path, monkeypatch
+    ):
+        """A key that passes the lexical guard but escapes containment — e.g. a
+        Windows drive-relative ``C:tmp`` that is not ``is_absolute()`` yet discards
+        the project root when joined — is skipped via ``_validate_rel_path``, never
+        unlinked, and never turned into an install-time hard failure (#3076 review
+        round 4). Simulated portably by forcing ``_validate_rel_path`` to reject the
+        managed key, since real drive-relative paths only escape on Windows."""
+        from specify_cli import _install_shared_infra
+        from specify_cli.integrations import manifest as manifest_mod
+        from specify_cli.integrations.manifest import IntegrationManifest
+
+        project = tmp_path / "escaping-key"
+        project.mkdir()
+        (project / ".specify").mkdir()
+        scripts_dir = project / ".specify" / "scripts" / "bash"
+        scripts_dir.mkdir(parents=True)
+
+        # A managed stale orphan that would normally be removed.
+        stale_rel = ".specify/scripts/bash/update-agent-context.sh"
+        stale = scripts_dir / "update-agent-context.sh"
+        stale.write_text("# legacy orphan\n", encoding="utf-8")
+        manifest = IntegrationManifest("speckit", project, version="test")
+        manifest.record_existing(stale_rel)
+        manifest.save()
+
+        # Force the containment check to reject this key, as it would for a
+        # drive-relative escape on Windows. The cleanup must skip it gracefully.
+        real_validate = manifest_mod._validate_rel_path
+
+        def fake_validate(rel, root):
+            if str(rel).endswith("update-agent-context.sh"):
+                raise ValueError("simulated drive-relative escape")
+            return real_validate(rel, root)
+
+        monkeypatch.setattr(manifest_mod, "_validate_rel_path", fake_validate)
+
+        # Must not raise (no install-time hard failure from a corrupted key).
+        _install_shared_infra(project, "sh", force=False)
+
+        # The escaping key was skipped, so its file is left untouched...
+        assert stale.exists()
+        assert stale.read_text(encoding="utf-8") == "# legacy orphan\n"
+        # ...yet the install otherwise completed: real scripts are installed.
+        assert (scripts_dir / "common.sh").exists()
 
     def test_shared_infra_skip_warning_displayed(self, tmp_path, capsys):
         """Console warning is displayed when files are skipped."""
@@ -696,7 +826,6 @@ class TestInitIntegrationFlag:
                 "init", "--here", "--force",
                 "--integration", "copilot",
                 "--script", "sh",
-                "--no-git",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -726,7 +855,6 @@ class TestInitIntegrationFlag:
                 "init", "--here",
                 "--integration", "copilot",
                 "--script", "sh",
-                "--no-git",
             ], input="y\n", catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -755,7 +883,7 @@ class TestForceExistingDirectory:
         runner = CliRunner()
         result = runner.invoke(app, [
             "init", str(target), "--integration", "copilot", "--force",
-            "--no-git", "--script", "sh",
+            "--script", "sh",
         ], catch_exceptions=False)
 
         assert result.exit_code == 0, f"init --force failed: {result.output}"
@@ -778,29 +906,29 @@ class TestForceExistingDirectory:
         runner = CliRunner()
         result = runner.invoke(app, [
             "init", str(target), "--integration", "copilot",
-            "--no-git", "--script", "sh",
+            "--script", "sh",
         ], catch_exceptions=False)
 
         assert result.exit_code == 1
         assert "already exists" in _normalize_cli_output(result.output)
 
 
-class TestGitExtensionAutoInstall:
-    """Tests for auto-installation of the git extension during specify init."""
+class TestGitExtensionOptIn:
+    """Tests verifying that the git extension is opt-in (not auto-installed) during specify init."""
 
-    def test_git_extension_auto_installed(self, tmp_path):
-        """Without --no-git, the git extension is installed during init."""
+    def test_git_extension_not_auto_installed(self, tmp_path):
+        """Git extension is NOT installed automatically during init."""
         from typer.testing import CliRunner
         from specify_cli import app
 
-        project = tmp_path / "git-auto"
+        project = tmp_path / "git-opt-in"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -808,114 +936,44 @@ class TestGitExtensionAutoInstall:
 
         assert result.exit_code == 0, f"init failed: {result.output}"
 
-        # Check that the tracker didn't report a git error
-        assert "install failed" not in result.output, f"git extension install failed: {result.output}"
-
-        # Git extension files should be installed
+        # Git extension directory should NOT be present after init
         ext_dir = project / ".specify" / "extensions" / "git"
-        assert ext_dir.exists(), "git extension directory not installed"
-        assert (ext_dir / "extension.yml").exists()
-        assert (ext_dir / "scripts" / "bash" / "create-new-feature.sh").exists()
-        assert (ext_dir / "scripts" / "bash" / "initialize-repo.sh").exists()
+        assert not ext_dir.exists(), "git extension should not be auto-installed"
 
-        # Hooks should be registered
-        extensions_yml = project / ".specify" / "extensions.yml"
-        assert extensions_yml.exists(), "extensions.yml not created"
-        hooks_data = yaml.safe_load(extensions_yml.read_text(encoding="utf-8"))
-        assert "hooks" in hooks_data
-        assert "before_specify" in hooks_data["hooks"]
-        assert "before_constitution" in hooks_data["hooks"]
-
-    def test_no_git_skips_extension(self, tmp_path):
-        """With --no-git, the git extension is NOT installed."""
+    def test_no_git_flag_is_rejected(self, tmp_path):
+        """--no-git flag has been removed; passing it should fail."""
         from typer.testing import CliRunner
         from specify_cli import app
 
-        project = tmp_path / "no-git"
+        project = tmp_path / "no-git-rejected"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--no-git", "--ignore-agent-tools",
-            ], catch_exceptions=False)
+            ])
         finally:
             os.chdir(old_cwd)
 
-        assert result.exit_code == 0, f"init failed: {result.output}"
+        assert result.exit_code != 0, "--no-git should be rejected as an unknown option"
+        assert "No such option" in result.output or "no such option" in result.output.lower()
 
-        # Git extension should NOT be installed
-        ext_dir = project / ".specify" / "extensions" / "git"
-        assert not ext_dir.exists(), "git extension should not be installed with --no-git"
-
-    def test_no_git_emits_deprecation_warning(self, tmp_path):
-        """Using --no-git emits a visible deprecation warning."""
+    def test_git_extension_commands_not_registered_by_default(self, tmp_path):
+        """Git extension commands are NOT registered with the agent during default init."""
         from typer.testing import CliRunner
         from specify_cli import app
 
-        project = tmp_path / "no-git-warn"
+        project = tmp_path / "git-cmds-absent"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
             runner = CliRunner()
             result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
-                "--no-git", "--ignore-agent-tools",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 0, result.output
-        assert "--no-git" in normalized_output
-        assert "deprecated" in normalized_output
-        assert "0.10.0" in normalized_output
-        assert "specify extension" in normalized_output
-        assert "will be removed" in normalized_output
-        assert "git extension will no longer be enabled by default" in normalized_output
-
-    def test_default_git_auto_enable_emits_notice(self, tmp_path):
-        """Default git auto-enable emits notice about the v0.10.0 opt-in change."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        project = tmp_path / "git-default-notice"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
-                "--ignore-agent-tools",
-            ], catch_exceptions=False)
-        finally:
-            os.chdir(old_cwd)
-
-        normalized_output = _normalize_cli_output(result.output)
-        assert result.exit_code == 0, result.output
-        # Check for key message components (notice may have box-drawing chars)
-        assert "git extension is currently enabled by default" in normalized_output
-        assert "v0.10.0" in normalized_output
-        assert "explicit opt-in" in normalized_output
-        assert "specify extension add git" in normalized_output
-
-    def test_git_extension_commands_registered(self, tmp_path):
-        """Git extension commands are registered with the agent during init."""
-        from typer.testing import CliRunner
-        from specify_cli import app
-
-        project = tmp_path / "git-cmds"
-        project.mkdir()
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(project)
-            runner = CliRunner()
-            result = runner.invoke(app, [
-                "init", "--here", "--ai", "claude", "--script", "sh",
+                "init", "--here", "--integration", "claude", "--script", "sh",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -923,11 +981,11 @@ class TestGitExtensionAutoInstall:
 
         assert result.exit_code == 0, f"init failed: {result.output}"
 
-        # Git extension commands should be registered with the agent
+        # Git extension skill commands should NOT be present
         claude_skills = project / ".claude" / "skills"
         assert claude_skills.exists(), "Claude skills directory was not created"
         git_skills = [f for f in claude_skills.iterdir() if f.name.startswith("speckit-git-")]
-        assert len(git_skills) > 0, "no git extension commands registered"
+        assert len(git_skills) == 0, "git extension commands should not be registered by default"
 
 
 class TestSharedInfraCommandRefs:
@@ -1046,7 +1104,6 @@ class TestSharedInfraCommandRefs:
                 "init", str(project),
                 "--integration", "claude",
                 "--script", "sh",
-                "--no-git",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -1077,7 +1134,6 @@ class TestSharedInfraCommandRefs:
                 "init", str(project),
                 "--integration", "copilot",
                 "--script", "sh",
-                "--no-git",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -1109,7 +1165,6 @@ class TestSharedInfraCommandRefs:
                 "--integration", "copilot",
                 "--integration-options", "--skills",
                 "--script", "sh",
-                "--no-git",
                 "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
@@ -1209,7 +1264,6 @@ class TestIntegrationCatalogDiscoveryCLI:
                 "args": "$ARGUMENTS",
                 "extension": ".md",
             }
-            context_file = "BROKEN.md"
 
             def setup(self, project_root, manifest, **kwargs):
                 raise OSError("setup exploded\nwith context")
@@ -1453,6 +1507,78 @@ class TestIntegrationCatalogDiscoveryCLI:
         extension_list = self._invoke(["extension", "catalog", "list"], project)
         assert extension_list.exit_code == 0, extension_list.output
         assert "Config: .specify/extension-catalogs.yml" in extension_list.output
+
+    def test_extension_catalog_add_rejects_non_mapping_config_root(self, tmp_path):
+        project = self._make_project(tmp_path)
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+
+        result = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", "demo-extensions",
+        ], project)
+
+        assert result.exit_code == 1, result.output
+        output = _normalize_cli_output(result.output)
+        assert "Invalid catalog config .specify/extension-catalogs.yml" in output
+        assert "expected a YAML mapping at the root" in output
+        assert "AttributeError" not in output
+
+    def test_extension_catalog_remove_rejects_non_mapping_config_root(self, tmp_path):
+        project = self._make_project(tmp_path)
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+
+        result = self._invoke(["extension", "catalog", "remove", "demo"], project)
+
+        assert result.exit_code == 1, result.output
+        output = _normalize_cli_output(result.output)
+        assert "Invalid catalog config .specify/extension-catalogs.yml" in output
+        assert "expected a YAML mapping at the root" in output
+        assert "AttributeError" not in output
+
+    def test_extension_catalog_add_escapes_catalog_name_markup(self, tmp_path):
+        project = self._make_project(tmp_path)
+        catalog_name = "[red]demo[/red]"
+
+        result = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", catalog_name,
+        ], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        assert f"Added catalog '{catalog_name}'" in output
+
+    def test_extension_catalog_remove_escapes_catalog_name_markup(self, tmp_path):
+        project = self._make_project(tmp_path)
+        catalog_name = "[red]demo[/red]"
+        cfg_path = project / ".specify" / "extension-catalogs.yml"
+        cfg_path.write_text(
+            yaml.safe_dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": catalog_name,
+                            "url": "https://example.com/extension-catalog.yml",
+                            "priority": 10,
+                            "install_allowed": False,
+                            "description": "",
+                        }
+                    ]
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        result = self._invoke(["extension", "catalog", "remove", catalog_name], project)
+
+        assert result.exit_code == 0, result.output
+        output = _normalize_cli_output(result.output)
+        assert f"Removed catalog '{catalog_name}'" in output
 
     # -- search ------------------------------------------------------------
 

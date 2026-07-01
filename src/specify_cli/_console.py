@@ -7,6 +7,7 @@ layer, not out of it, to avoid circular imports.
 """
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 
 import readchar
@@ -32,6 +33,10 @@ BANNER = """
 TAGLINE = "GitHub Spec Kit - Spec-Driven Development Toolkit"
 
 console = Console(highlight=False)
+
+# Stderr-bound console for error/diagnostic output, so human-facing messages
+# never contaminate stdout (which carries machine-readable ``--json`` payloads).
+err_console = Console(stderr=True, highlight=False)
 
 class StepTracker:
     """Track and render hierarchical steps without emojis, similar to Claude Code tree output.
@@ -192,7 +197,8 @@ def select_with_arrows(
 
     def run_selection_loop():
         nonlocal selected_key, selected_index
-        with Live(create_selection_panel(), console=console, transient=True, auto_refresh=False) as live:
+        _transient = sys.platform != "win32"
+        with Live(create_selection_panel(), console=console, transient=_transient, auto_refresh=False) as live:
             while True:
                 try:
                     key = get_key()

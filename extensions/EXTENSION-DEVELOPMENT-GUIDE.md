@@ -206,9 +206,12 @@ Available hook points:
 - `before_constitution` / `after_constitution`: Before/after constitution update
 - `before_taskstoissues` / `after_taskstoissues`: Before/after tasks-to-issues conversion
 
+Each event accepts a single hook object or a list of hook objects (multiple commands on one event).
+
 Hook object:
 
 - `command`: Command to execute (typically from `provides.commands`, but can reference any registered command)
+- `priority`: Run order within the event (integer ≥ 1, default 10; lower runs first; equal priorities keep authoring order)
 - `optional`: If true, prompt user before executing
 - `prompt`: Prompt text for optional hooks
 - `description`: Hook description
@@ -653,6 +656,23 @@ hooks:
     command: "speckit.auto.analyze"
     optional: false  # Always run
     description: "Analyze tasks after generation"
+```
+
+Multiple commands on one event, ordered by `priority` (lower runs first):
+
+```yaml
+# extension.yml
+hooks:
+  after_plan:
+    - command: "speckit.my-ext.verify"
+      priority: 5
+      optional: false
+      description: "Verify the plan"
+    - command: "speckit.my-ext.report"
+      priority: 10
+      optional: true
+      prompt: "Generate the report?"
+      description: "Generate a report from the plan"
 ```
 
 ---

@@ -14,7 +14,7 @@ The toolkit supports multiple AI coding assistants, allowing teams to use their 
 
 Each AI agent is a self-contained **integration subpackage** under `src/specify_cli/integrations/<key>/`. The subpackage exposes a single class that declares all metadata and inherits setup/teardown logic from a base class. Built-in integrations are then instantiated and added to the global `INTEGRATION_REGISTRY` by `src/specify_cli/integrations/__init__.py` via `_register_builtins()`.
 
-```
+```text
 src/specify_cli/integrations/
 ├── __init__.py            # INTEGRATION_REGISTRY + _register_builtins()
 ├── base.py                # IntegrationBase, MarkdownIntegration, TomlIntegration, YamlIntegration, SkillsIntegration
@@ -23,7 +23,7 @@ src/specify_cli/integrations/
 │   └── __init__.py        #   ClaudeIntegration class
 ├── gemini/                # Example: TomlIntegration subclass
 │   └── __init__.py
-├── windsurf/              # Example: MarkdownIntegration subclass
+├── kilocode/              # Example: MarkdownIntegration subclass
 │   └── __init__.py
 ├── copilot/               # Example: IntegrationBase subclass (custom setup)
 │   └── __init__.py
@@ -52,30 +52,29 @@ Most agents only need `MarkdownIntegration` — a minimal subclass with zero met
 
 Create `src/specify_cli/integrations/<package_dir>/__init__.py`, where `<package_dir>` is the Python-safe directory name derived from `<key>`: use the key as-is when it contains no hyphens (e.g., key `"gemini"` → `gemini/`), or replace hyphens with underscores when it does (e.g., key `"kiro-cli"` → `kiro_cli/`). The `IntegrationBase.key` class attribute always retains the original hyphenated value, since that is what the CLI and registry use. For CLI-based integrations (`requires_cli: True`), the `key` should match the actual CLI tool name (the executable users install and run) so CLI checks can resolve it correctly. For IDE-based integrations (`requires_cli: False`), use the canonical integration identifier instead.
 
-**Minimal example — Markdown agent (Windsurf):**
+**Minimal example — Markdown agent (Kilo Code):**
 
 ```python
-"""Windsurf IDE integration."""
+"""Kilo Code IDE integration."""
 
 from ..base import MarkdownIntegration
 
 
-class WindsurfIntegration(MarkdownIntegration):
-    key = "windsurf"
+class KilocodeIntegration(MarkdownIntegration):
+    key = "kilocode"
     config = {
-        "name": "Windsurf",
-        "folder": ".windsurf/",
+        "name": "Kilo Code",
+        "folder": ".kilocode/",
         "commands_subdir": "workflows",
         "install_url": None,
         "requires_cli": False,
     }
     registrar_config = {
-        "dir": ".windsurf/workflows",
+        "dir": ".kilocode/workflows",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = ".windsurf/rules/specify-rules.md"
 ```
 
 **TOML agent (Gemini):**
@@ -101,7 +100,6 @@ class GeminiIntegration(TomlIntegration):
         "args": "{{args}}",
         "extension": ".toml",
     }
-    context_file = "GEMINI.md"
 ```
 
 **Skills agent (Codex):**
@@ -129,7 +127,6 @@ class CodexIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -150,9 +147,8 @@ class CodexIntegration(SkillsIntegration):
 | `key` | Class attribute | Unique identifier; for CLI-based integrations (`requires_cli: True`), must match the CLI executable name |
 | `config` | Class attribute (dict) | Agent metadata: `name`, `folder`, `commands_subdir`, `install_url`, `requires_cli` |
 | `registrar_config` | Class attribute (dict) | Command output config: `dir`, `format`, `args` placeholder, file `extension` |
-| `context_file` | Class attribute (str or None) | Path to agent context/instructions file (e.g., `"CLAUDE.md"`, `".github/copilot-instructions.md"`) |
 
-**Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"windsurf"`, `"copilot"`).
+**Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"kilocode"`, `"copilot"`).
 
 ### 3. Register it
 
@@ -175,9 +171,11 @@ def _register_builtins() -> None:
 
 ### 4. Context file behavior
 
-Set `context_file` on the integration class. The base integration setup creates or updates the managed Spec Kit section in that file, and uninstall removes the managed section when appropriate.
+The Specify CLI carries **no agent-context state whatsoever**. Integration classes do **not** declare a `context_file`, and the CLI never creates, updates, removes, resolves, or migrates a context/instruction file (`CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, …). New integrations add nothing for context handling.
 
-The managed section is owned by the bundled `agent-context` extension (`extensions/agent-context/`). All configuration flows through the extension's own config file at `.specify/extensions/agent-context/agent-context-config.yml`:
+Managing the "Spec Kit" section in the context file is fully owned by the bundled `agent-context` extension (`extensions/agent-context/`), which is a **full opt-in**: `specify init` does not install it. A user adds/enables it through the standard extension verbs, after which the extension's own bundled scripts maintain the context section. When the extension is absent or disabled, nothing in Spec Kit touches the context file.
+
+The extension reads its own config file at `.specify/extensions/agent-context/agent-context-config.yml`:
 
 ```yaml
 # Path to the coding agent context file managed by this extension
@@ -189,10 +187,10 @@ context_markers:
   end: "<!-- SPECKIT END -->"
 ```
 
-- `context_file` is written automatically from the integration's class attribute when `specify init` or `specify integration use` is run.
-- `context_markers.{start,end}` defaults to `IntegrationBase.CONTEXT_MARKER_START` / `CONTEXT_MARKER_END`. Users who want custom markers edit `agent-context-config.yml` directly — both the Python layer (`upsert_context_section()` / `remove_context_section()`) and the bundled scripts (`extensions/agent-context/scripts/bash/update-agent-context.sh` and `.ps1`) read from this single source of truth.
+- The Specify CLI does **not** write this config. When `context_file` is empty, the extension's bundled scripts self-seed it by looking up the active integration's key in the extension's own `agent-context-defaults.json` map (`extensions/agent-context/scripts/bash/update-agent-context.sh` and `.ps1`). The CLI registry is never consulted — all agent→context-file knowledge lives inside the extension.
+- `context_markers.{start,end}` are read solely by the extension's scripts; they default to the Spec Kit markers shown above and can be customized by editing `agent-context-config.yml` directly.
 
-Users can opt out entirely with `specify extension disable agent-context`; while disabled, Spec Kit skips context-file creation, updates, and removal (the gates are inside `upsert_context_section()` and `remove_context_section()`).
+Existing projects created by older Spec Kit versions keep working: any previously written managed section or extension config is left intact and is only ever updated by the extension when run.
 
 Only add custom setup logic when the agent needs non-standard behavior. Integrations no longer require per-agent thin wrapper scripts or shared context-update dispatcher scripts — the `agent-context` extension is fully generic.
 
@@ -203,8 +201,8 @@ Only add custom setup logic when the agent needs non-standard behavior. Integrat
 specify init my-project --integration <key>
 
 # Verify files were created in the commands directory configured by
-# config["folder"] + config["commands_subdir"] (for example, .windsurf/workflows/)
-ls -R my-project/.windsurf/workflows/
+# config["folder"] + config["commands_subdir"] (for example, .kilocode/workflows/)
+ls -R my-project/.kilocode/workflows/
 
 # Uninstall cleanly
 cd my-project && specify integration uninstall <key>
@@ -340,18 +338,21 @@ Some agents require custom processing beyond the standard template transformatio
 ### Copilot Integration
 
 GitHub Copilot has unique requirements:
+
 - Commands use `.agent.md` extension (not `.md`)
 - Each command gets a companion `.prompt.md` file in `.github/prompts/`
 - Installs `.vscode/settings.json` with prompt file recommendations
 - Context file lives at `.github/copilot-instructions.md`
 
 Implementation: Extends `IntegrationBase` with custom `setup()` method that:
+
 1. Processes templates with `process_template()`
 2. Generates companion `.prompt.md` files
 3. Merges VS Code settings
 
 **Skills mode (`--skills`):** Copilot also supports an alternative skills-based layout
 via `--integration-options="--skills"`. When enabled:
+
 - Commands are scaffolded as `speckit-<name>/SKILL.md` under `.github/skills/`
 - No companion `.prompt.md` files are generated
 - No `.vscode/settings.json` merge
@@ -371,11 +372,13 @@ specify init my-project --integration copilot --integration-options="--skills"
 ### Forge Integration
 
 Forge has special frontmatter and argument requirements:
+
 - Uses `{{parameters}}` instead of `$ARGUMENTS`
 - Strips `handoffs` frontmatter key (Forge-specific collaboration feature)
 - Injects `name` field into frontmatter when missing
 
 Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
+
 1. Inherits standard template processing from `MarkdownIntegration`
 2. Adds extra `$ARGUMENTS` → `{{parameters}}` replacement after template processing
 3. Applies Forge-specific transformations via `_apply_forge_transformations()`
@@ -385,22 +388,23 @@ Implementation: Extends `MarkdownIntegration` with custom `setup()` method that:
 ### Goose Integration
 
 Goose is a YAML-format agent using Block's recipe system:
+
 - Uses `.goose/recipes/` directory for YAML recipe files
 - Uses `{{args}}` argument placeholder
 - Produces YAML with `prompt: |` block scalar for command content
 
 Implementation: Extends `YamlIntegration` (parallel to `TomlIntegration`):
+
 1. Processes templates through the standard placeholder pipeline
 2. Extracts title and description from frontmatter
 3. Renders output as Goose recipe YAML (version, title, description, author, extensions, activities, prompt)
 4. Uses `yaml.safe_dump()` for header fields to ensure proper escaping
-5. Sets `context_file = "AGENTS.md"` so the base setup manages the Spec Kit context section there
 
 ## Branch Naming Convention
 
 Branches follow one of two patterns depending on whether an issue exists:
 
-```
+```text
 <type>/<number>-<short-slug>   # when an issue is created first
 <type>/<short-slug>            # when no issue exists (PR-only changes)
 ```
@@ -423,13 +427,47 @@ When an issue exists, include its number immediately after the prefix — this i
 
 ---
 
+## Agent Disclosure for PRs, Comments, and Commits
+
+Disclosure is **continuous**, not a one-time event. A single AI-disclosure paragraph in the PR body does **not** cover the commits and replies you add during review rounds. Each of the following must independently attest to agent authorship.
+
+### Commits
+
+- **Every commit you author must carry an `Assisted-by:` trailer** identifying the agent and whether it acted autonomously or under direct human supervision, for example:
+
+  ```
+  Assisted-by: GitHub Copilot (model: <name-if-known>, autonomous)
+  ```
+
+  Use `supervised` instead of `autonomous` only when a human actually authored or line-by-line reviewed the change before it was committed.
+- **Never push solo-authored commits that hide agent authorship behind the operator's git identity.** If an agent generated the change, the trailer must say so even when the commit is attributed to a human account.
+- Preserve any tool-generated `Co-authored-by:` trailers (e.g. Copilot Autofix) — do not strip them to make a commit look hand-written.
+
+### Comments
+
+- If you are an agent working on behalf of a human, **disclose your identity in your PR comment** — name the agent (and model, if applicable) and the human you are acting for (e.g., "Posted on behalf of @user by GitHub Copilot (model: &lt;name-if-known&gt;)").
+- **Re-state agent identity in each review-round summary comment.** A prior PR-body disclosure does not cover later comments or commits.
+- Post **one** top-level summary comment per review round listing what changed and the commit SHA. Do not reply on every individual comment.
+- Reply inline only when context is needed (disagreement, deferral, non-obvious fix). Keep it to a sentence or two.
+- **Never click "Resolve conversation"** — that belongs to the reviewer or PR author.
+- No emoji, no celebratory framing, no checklist mirroring the reviewer's items, no restating what the reviewer wrote.
+- Re-request review once per round (when all feedback is addressed), not after every intermediate push.
+
+### Anti-patterns (do not do these)
+
+- **Do not** reply "Done" or push a "fix" within seconds/minutes of a review event without disclosing that the response or commit was agent-generated. Speed of turnaround is not a substitute for attestation — a near-instant tested code change is itself a signal of automation and must be disclosed as such.
+- **Do not** claim "reviewed, tested, and understood by me" for commits that were authored and pushed automatically in response to a review trigger. If the loop is automated, disclose it as automated.
+
+---
+
 ## Common Pitfalls
 
 1. **Using shorthand keys for CLI-based integrations**: For CLI-based integrations (`requires_cli: True`), the `key` must match the executable name (e.g., `"cursor-agent"` not `"cursor"`). `shutil.which(key)` is used for CLI tool checks — mismatches require special-case mappings. IDE-based integrations (`requires_cli: False`) are not subject to this constraint.
-2. **Forgetting context configuration**: The bundled `agent-context` extension reads from `.specify/extensions/agent-context/agent-context-config.yml`. New integrations only need to set `context_file` on the class — markers and dispatcher scripts are managed centrally.
+2. **Reintroducing context handling into the CLI**: The opt-in `agent-context` extension owns everything about context files — including the per-agent default mapping in `agent-context-defaults.json`. Integration classes must **not** declare a `context_file`, and no CLI code should read, write, resolve, or migrate context files. All context-file logic lives in `.specify/extensions/agent-context/` and its bundled scripts.
 3. **Incorrect `requires_cli` value**: Set to `True` only for agents that have a CLI tool; set to `False` for IDE-based agents.
 4. **Wrong argument format**: Use `$ARGUMENTS` for Markdown agents, `{{args}}` for TOML agents.
 5. **Skipping registration**: The import and `_register()` call in `_register_builtins()` must both be added.
+6. **Running tests against the wrong environment**: Always run the suite inside this working tree's own virtualenv (`uv sync --extra test` then `.venv/bin/python -m pytest`, or activate the venv first). A bare `uv run pytest` can resolve to an ambient/global interpreter whose editable `.pth` points at a *different* worktree. The failure is sneaky: test collection still imports `specify_cli` successfully, but newly-added subpackages (e.g. a fresh `specify_cli/bundler/`) resolve as a stale namespace package and raise `ModuleNotFoundError`. If a brand-new subpackage imports under `python -c` but not under pytest, suspect environment contamination, not your code.
 
 ---
 

@@ -11,23 +11,71 @@ class TestCodexIntegration(SkillsIntegrationTests):
     FOLDER = ".agents/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".agents/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
 
-class TestCodexAutoPromote:
-    """--ai codex auto-promotes to integration path."""
+class TestCodexInitFlow:
+    """--integration codex creates expected files."""
 
-    def test_ai_codex_without_ai_skills_auto_promotes(self, tmp_path):
-        """--ai codex should work the same as --integration codex."""
+    def test_integration_codex_creates_skills(self, tmp_path):
+        """--integration codex should create skills in .agents/skills."""
         from typer.testing import CliRunner
         from specify_cli import app
 
         runner = CliRunner()
         target = tmp_path / "test-proj"
-        result = runner.invoke(app, ["init", str(target), "--ai", "codex", "--no-git", "--ignore-agent-tools", "--script", "sh"])
+        result = runner.invoke(app, ["init", str(target), "--integration", "codex", "--ignore-agent-tools", "--script", "sh"])
 
-        assert result.exit_code == 0, f"init --ai codex failed: {result.output}"
+        assert result.exit_code == 0, f"init --integration codex failed: {result.output}"
         assert (target / ".agents" / "skills" / "speckit-plan" / "SKILL.md").exists()
+
+    def test_plan_skill_has_no_context_placeholder(self, tmp_path):
+        """The core plan skill must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
+        target = tmp_path / "test-proj"
+        target.mkdir()
+
+        integration = get_integration("codex")
+        manifest = IntegrationManifest("codex", target)
+        integration.setup(target, manifest, script_type="sh")
+
+        plan_skill = target / ".agents" / "skills" / "speckit-plan" / "SKILL.md"
+        content = plan_skill.read_text(encoding="utf-8")
+        assert "__CONTEXT_FILE__" not in content
+
+    def test_plan_skill_ignores_extension_config(self, tmp_path):
+        """The extension config must not influence rendered commands: the CLI
+        no longer reads any context-file metadata when rendering."""
+        import yaml
+
+        target = tmp_path / "test-proj"
+        target.mkdir()
+        ext_cfg = (
+            target
+            / ".specify"
+            / "extensions"
+            / "agent-context"
+            / "agent-context-config.yml"
+        )
+        ext_cfg.parent.mkdir(parents=True, exist_ok=True)
+        ext_cfg.write_text(
+            yaml.safe_dump(
+                {
+                    "context_file": "FROM_CONFIG.md",
+                    "context_files": ["FROM_CONFIG.md", "ALSO_CONFIG.md"],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        integration = get_integration("codex")
+        manifest = IntegrationManifest("codex", target)
+        integration.setup(target, manifest, script_type="sh")
+
+        plan_skill = target / ".agents" / "skills" / "speckit-plan" / "SKILL.md"
+        content = plan_skill.read_text(encoding="utf-8")
+        assert "FROM_CONFIG.md" not in content
+        assert "ALSO_CONFIG.md" not in content
+        assert "__CONTEXT_FILE__" not in content
 
 
 class TestCodexHookCommandNote:

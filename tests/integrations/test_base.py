@@ -43,7 +43,6 @@ class TestIntegrationBase:
         assert i.key == "stub"
         assert i.config["name"] == "Stub Agent"
         assert i.registrar_config["format"] == "markdown"
-        assert i.context_file == "STUB.md"
 
     def test_options_default_empty(self):
         assert StubIntegration.options() == []
@@ -120,6 +119,11 @@ class TestBasePrimitives:
         templates = i.list_command_templates()
         assert len(templates) > 0
         assert all(t.suffix == ".md" for t in templates)
+
+    def test_list_command_templates_keeps_checklist_after_plan(self):
+        i = StubIntegration()
+        stems = [template.stem for template in i.list_command_templates()]
+        assert stems.index("plan") < stems.index("checklist")
 
     def test_command_filename_default(self):
         i = StubIntegration()

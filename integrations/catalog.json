@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-05-13T00:00:00Z",
+  "updated_at": "2026-06-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
     "claude": {
@@ -44,15 +44,6 @@
       "name": "Cursor",
       "version": "1.0.0",
       "description": "Cursor IDE integration",
-      "author": "spec-kit-core",
-      "repository": "https://github.com/github/spec-kit",
-      "tags": ["ide"]
-    },
-    "windsurf": {
-      "id": "windsurf",
-      "name": "Windsurf",
-      "version": "1.0.0",
-      "description": "Windsurf IDE workflow integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["ide"]
@@ -101,6 +92,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
+    },
+    "firebender": {
+      "id": "firebender",
+      "name": "Firebender",
+      "version": "1.0.0",
+      "description": "Firebender IDE integration for Android Studio / IntelliJ",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide"]
     },
     "forge": {
       "id": "forge",
@@ -165,14 +165,14 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["ide"]
     },
-    "roo": {
-      "id": "roo",
-      "name": "Roo Code",
+    "rovodev": {
+      "id": "rovodev",
+      "name": "RovoDev ACLI",
       "version": "1.0.0",
-      "description": "Roo Code IDE integration",
+      "description": "Atlassian RovoDev integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
-      "tags": ["ide"]
+      "tags": ["cli", "atlassian"]
     },
     "bob": {
       "id": "bob",
@@ -237,11 +237,11 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
     },
-    "iflow": {
-      "id": "iflow",
-      "name": "iFlow CLI",
+    "omp": {
+      "id": "omp",
+      "name": "Oh My Pi",
       "version": "1.0.0",
-      "description": "iFlow CLI integration by iflow-ai",
+      "description": "Oh My Pi (omp) terminal coding agent prompt-based integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
@@ -268,7 +268,7 @@
       "id": "generic",
       "name": "Generic (bring your own agent)",
       "version": "1.0.0",
-      "description": "Generic integration for any agent via --ai-commands-dir",
+      "description": "Generic integration for any agent via --integration-options=\"--commands-dir <dir>\"",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["generic"]
@@ -290,6 +290,24 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills"]
+    },
+    "zcode": {
+      "id": "zcode",
+      "name": "ZCode",
+      "version": "1.0.0",
+      "description": "Z.AI ZCode CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills", "z-ai"]
+    },
+    "zed": {
+      "id": "zed",
+      "name": "Zed",
+      "version": "1.0.0",
+      "description": "Zed editor skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "skills"]
     }
   }
 }

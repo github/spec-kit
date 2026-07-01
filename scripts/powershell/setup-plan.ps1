@@ -23,13 +23,6 @@ if ($Help) {
 # Get all paths and variables from common functions
 $paths = Get-FeaturePathsEnv
 
-# If feature.json pins an existing feature directory, branch naming is not required.
-if (-not (Test-FeatureJsonMatchesFeatureDir -RepoRoot $paths.REPO_ROOT -ActiveFeatureDir $paths.FEATURE_DIR)) {
-    if (-not (Test-FeatureBranch -Branch $paths.CURRENT_BRANCH -HasGit $paths.HAS_GIT)) {
-        exit 1
-    }
-}
-
 # Ensure the feature directory exists
 New-Item -ItemType Directory -Path $paths.FEATURE_DIR -Force | Out-Null
 
@@ -47,8 +40,22 @@ if (Test-Path $paths.IMPL_PLAN -PathType Leaf) {
         $content = [System.IO.File]::ReadAllText($template)
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($paths.IMPL_PLAN, $content, $utf8NoBom)
+        # Emit the copy status like the bash twin (setup-plan.sh); route to stderr
+        # in -Json mode so stdout stays pure JSON, matching the sibling messages.
+        if ($Json) {
+            [Console]::Error.WriteLine("Copied plan template to $($paths.IMPL_PLAN)")
+        } else {
+            Write-Output "Copied plan template to $($paths.IMPL_PLAN)"
+        }
     } else {
-        Write-Warning "Plan template not found"
+        # Match the bash twin's wording and stream routing (stderr in -Json so
+        # stdout stays pure JSON, stdout otherwise), consistent with the sibling
+        # "Copied plan template" message above.
+        if ($Json) {
+            [Console]::Error.WriteLine("Warning: Plan template not found")
+        } else {
+            Write-Output "Warning: Plan template not found"
+        }
         # Create a basic plan file if template doesn't exist
         New-Item -ItemType File -Path $paths.IMPL_PLAN -Force | Out-Null
     }
@@ -61,7 +68,6 @@ if ($Json) {
         IMPL_PLAN = $paths.IMPL_PLAN
         SPECS_DIR = $paths.FEATURE_DIR
         BRANCH = $paths.CURRENT_BRANCH
-        HAS_GIT = $paths.HAS_GIT
     }
     $result | ConvertTo-Json -Compress
 } else {
@@ -69,5 +75,4 @@ if ($Json) {
     Write-Output "IMPL_PLAN: $($paths.IMPL_PLAN)"
     Write-Output "SPECS_DIR: $($paths.FEATURE_DIR)"
     Write-Output "BRANCH: $($paths.CURRENT_BRANCH)"
-    Write-Output "HAS_GIT: $($paths.HAS_GIT)"
 }

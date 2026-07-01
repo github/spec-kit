@@ -13,7 +13,6 @@ Provides:
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shlex
@@ -33,6 +32,22 @@ _HOOK_COMMAND_NOTE = (
     "replace dots (`.`) with hyphens (`-`). "
     "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
 )
+
+_CORE_COMMAND_TEMPLATE_ORDER = (
+    "analyze",
+    "clarify",
+    "constitution",
+    "implement",
+    "converge",
+    "plan",
+    "checklist",
+    "specify",
+    "tasks",
+    "taskstoissues",
+)
+_CORE_COMMAND_TEMPLATE_RANK = {
+    command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)
+}
 
 
 # ---------------------------------------------------------------------------
@@ -75,8 +90,9 @@ class IntegrationBase(ABC):
 
     And may optionally set:
 
-    * ``context_file``     — path (relative to project root) of the agent
-                             context/instructions file (e.g. ``"CLAUDE.md"``)
+    * ``invoke_separator`` — slash-command separator (defaults to ``"."``)
+    * ``multi_install_safe`` — declare the integration safe to install
+      alongside others (defaults to ``False``)
     """
 
     # -- Must be set by every subclass ------------------------------------
@@ -92,24 +108,19 @@ class IntegrationBase(ABC):
 
     # -- Optional ---------------------------------------------------------
 
-    context_file: str | None = None
-    """Relative path to the agent context file (e.g. ``CLAUDE.md``)."""
-
     invoke_separator: str = "."
     """Separator used in slash-command invocations (``"."`` → ``/speckit.plan``)."""
+
+    dev_no_symlink: bool = False
+    """Whether dev-mode registration should write files instead of symlinks."""
 
     multi_install_safe: bool = False
     """Whether this integration is declared safe to install alongside others.
 
-    Safe integrations must use a static, unique agent root, command directory,
-    and context file. Registry tests enforce those invariants for every
+    Safe integrations must use a static, unique agent root and command
+    directory. Registry tests enforce those invariants for every
     integration that sets this flag.
     """
-
-    # -- Markers for managed context section ------------------------------
-
-    CONTEXT_MARKER_START = "<!-- SPECKIT START -->"
-    CONTEXT_MARKER_END = "<!-- SPECKIT END -->"
 
     # -- Public API -------------------------------------------------------
 
@@ -270,6 +281,16 @@ class IntegrationBase(ABC):
             )
             raise NotImplementedError(msg)
 
+        # Windows: ``subprocess.run`` calls ``CreateProcess`` which does not
+        # consult ``PATHEXT``, so a bare command name like ``cursor-agent``
+        # that resolves to ``cursor-agent.cmd`` fails with ``WinError 2``.
+        # Resolve via ``shutil.which`` (which does honor ``PATHEXT``) so
+        # ``.cmd``/``.bat`` shims work transparently.  On POSIX this is a
+        # no-op for absolute paths and a harmless lookup otherwise.
+        resolved = shutil.which(exec_args[0])
+        if resolved:
+            exec_args = [resolved, *exec_args[1:]]
+
         cwd = str(project_root) if project_root else None
 
         if stream:
@@ -345,11 +366,19 @@ class IntegrationBase(ABC):
         return None
 
     def list_command_templates(self) -> list[Path]:
-        """Return sorted list of command template files from the shared directory."""
+        """Return ordered list of command template files from the shared directory."""
         cmd_dir = self.shared_commands_dir()
         if not cmd_dir or not cmd_dir.is_dir():
             return []
-        return sorted(f for f in cmd_dir.iterdir() if f.is_file() and f.suffix == ".md")
+        return sorted(
+            (f for f in cmd_dir.iterdir() if f.is_file() and f.suffix == ".md"),
+            key=lambda f: (
+                _CORE_COMMAND_TEMPLATE_RANK.get(
+                    f.stem, len(_CORE_COMMAND_TEMPLATE_ORDER)
+                ),
+                f.name,
+            ),
+        )
 
     def command_filename(self, template_name: str) -> str:
         """Return the destination filename for a command template.
@@ -359,6 +388,18 @@ class IntegrationBase(ABC):
         to change the extension or naming convention.
         """
         return f"speckit.{template_name}.md"
+
+    def stale_cleanup_exclusions(self) -> set[str]:
+        """Return project-relative paths that upgrade must never stale-delete.
+
+        During ``integration upgrade``, files recorded in a previous manifest
+        but absent from the freshly written one are treated as stale and
+        removed.  Conditionally-tracked files (e.g. a settings file that the
+        integration merges into when it already exists, and therefore stops
+        tracking) would otherwise be deleted even though they are still
+        managed.  Subclasses list such paths here to protect them.
+        """
+        return set()
 
     def commands_dest(self, project_root: Path) -> Path:
         """Return the absolute path to the commands output directory.
@@ -479,331 +520,6 @@ class IntegrationBase(ABC):
 
         return created
 
-    # -- Agent context file management ------------------------------------
-
-    @staticmethod
-    def _ensure_mdc_frontmatter(content: str) -> str:
-        """Ensure ``.mdc`` content has YAML frontmatter with ``alwaysApply: true``.
-
-        If frontmatter is missing, prepend it.  If frontmatter exists but
-        ``alwaysApply`` is absent or not ``true``, inject/fix it.
-
-        Uses string/regex manipulation to preserve comments and formatting
-        in existing frontmatter.
-        """
-        import re as _re
-
-        leading_ws = len(content) - len(content.lstrip())
-        leading = content[:leading_ws]
-        stripped = content[leading_ws:]
-
-        if not stripped.startswith("---"):
-            return "---\nalwaysApply: true\n---\n\n" + content
-
-        # Match frontmatter block: ---\n...\n---
-        match = _re.match(
-            r"^(---[ \t]*\r?\n)(.*?)(\r?\n---[ \t]*)(\r?\n|$)(.*)",
-            stripped,
-            _re.DOTALL,
-        )
-        if not match:
-            return "---\nalwaysApply: true\n---\n\n" + content
-
-        opening, fm_text, closing, sep, rest = match.groups()
-        newline = "\r\n" if "\r\n" in opening else "\n"
-
-        # Already correct?
-        if _re.search(
-            r"(?m)^[ \t]*alwaysApply[ \t]*:[ \t]*true[ \t]*(?:#.*)?$", fm_text
-        ):
-            return content
-
-        # alwaysApply exists but wrong value — fix in place while preserving
-        # indentation and any trailing inline comment.
-        if _re.search(r"(?m)^[ \t]*alwaysApply[ \t]*:", fm_text):
-            fm_text = _re.sub(
-                r"(?m)^([ \t]*)alwaysApply[ \t]*:.*?([ \t]*(?:#.*)?)$",
-                r"\1alwaysApply: true\2",
-                fm_text,
-                count=1,
-            )
-        elif fm_text.strip():
-            fm_text = fm_text + newline + "alwaysApply: true"
-        else:
-            fm_text = "alwaysApply: true"
-
-        return f"{leading}{opening}{fm_text}{closing}{sep}{rest}"
-
-    @staticmethod
-    def _build_context_section(plan_path: str = "") -> str:
-        """Build the content for the managed section between markers.
-
-        *plan_path* is the project-relative path to the current plan
-        (e.g. ``"specs/<feature>/plan.md"``).  When empty, the section
-        contains only the generic directive without a concrete path.
-        """
-        lines = [
-            "For additional context about technologies to be used, project structure,",
-            "shell commands, and other important information, read the current plan",
-        ]
-        if plan_path:
-            lines.append(f"at {plan_path}")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _agent_context_extension_enabled(project_root: Path) -> bool:
-        """Return whether the bundled ``agent-context`` extension is enabled.
-
-        The extension is the single source of truth for managing coding
-        agent context/instruction files (e.g. ``CLAUDE.md``,
-        ``.github/copilot-instructions.md``).
-
-        Returns ``True`` (enabled) when:
-        - the extension registry does not exist (legacy project, backwards
-          compatibility), or
-        - the registry has no ``agent-context`` entry (older project layout
-          predating the extension), or
-        - the entry is present and not explicitly disabled.
-
-        Returns ``False`` only when an entry exists with ``enabled: false``.
-        """
-        registry_path = (
-            project_root / ".specify" / "extensions" / ".registry"
-        )
-        if not registry_path.exists():
-            return True
-        try:
-            data = json.loads(registry_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, UnicodeError):
-            return True
-        if not isinstance(data, dict):
-            return True
-        extensions = data.get("extensions")
-        if not isinstance(extensions, dict):
-            return True
-        entry = extensions.get("agent-context")
-        if not isinstance(entry, dict):
-            return True
-        return entry.get("enabled", True) is not False
-
-    def _resolve_context_markers(self, project_root: Path) -> tuple[str, str]:
-        """Return the (start, end) context markers to use for *project_root*.
-
-        Reads ``context_markers.start`` / ``context_markers.end`` from the
-        agent-context extension config
-        (``.specify/extensions/agent-context/agent-context-config.yml``)
-        when present.  Falls back to the class-level constants
-        ``CONTEXT_MARKER_START`` / ``CONTEXT_MARKER_END`` when the file is
-        missing, the section is absent, or the values are not non-empty
-        strings.
-        """
-        from .._console import console  # local import to avoid cycles
-
-        start = self.CONTEXT_MARKER_START
-        end = self.CONTEXT_MARKER_END
-        config_path = (
-            project_root
-            / ".specify"
-            / "extensions"
-            / "agent-context"
-            / "agent-context-config.yml"
-        )
-        try:
-            raw = config_path.read_text(encoding="utf-8")
-            cfg = yaml.safe_load(raw)
-        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
-            return start, end
-        markers = cfg.get("context_markers") if isinstance(cfg, dict) else None
-        if isinstance(markers, dict):
-            cm_start = markers.get("start")
-            cm_end = markers.get("end")
-            s_valid = isinstance(cm_start, str) and cm_start
-            e_valid = isinstance(cm_end, str) and cm_end
-            if not s_valid and cm_start is not None:
-                console.print(
-                    f"[yellow]agent-context: ignoring invalid context_markers.start "
-                    f"({cm_start!r}), using default[/yellow]"
-                )
-            if not e_valid and cm_end is not None:
-                console.print(
-                    f"[yellow]agent-context: ignoring invalid context_markers.end "
-                    f"({cm_end!r}), using default[/yellow]"
-                )
-            if s_valid:
-                start = cm_start  # type: ignore[assignment]
-            if e_valid:
-                end = cm_end  # type: ignore[assignment]
-        return start, end
-
-    def upsert_context_section(
-        self,
-        project_root: Path,
-        plan_path: str = "",
-    ) -> Path | None:
-        """Create or update the managed section in the agent context file.
-
-        If the context file does not exist it is created with just the
-        managed section.  If it exists, the content between the configured
-        start/end markers (default ``<!-- SPECKIT START -->`` /
-        ``<!-- SPECKIT END -->``) is replaced, or appended when no markers
-        are found. Markers are read from the agent-context extension config
-        (``.specify/extensions/agent-context/agent-context-config.yml``)
-        when present, falling back to the class-level constants.
-
-        Returns the path to the context file, or ``None`` when
-        ``context_file`` is not set or the ``agent-context`` extension is
-        disabled.
-        """
-        if not self.context_file:
-            return None
-
-        if not self._agent_context_extension_enabled(project_root):
-            return None
-
-        from .._console import console  # local import to avoid cycles
-
-        console.print(
-            "[yellow]Deprecation:[/yellow] Inline agent-context updates during "
-            "integration setup will be disabled in v0.12.0. Context file "
-            "management has moved to the bundled [bold]agent-context[/bold] "
-            "extension. Run [cyan]specify extension disable agent-context[/cyan] "
-            "to opt out early.",
-            highlight=False,
-        )
-
-        marker_start, marker_end = self._resolve_context_markers(project_root)
-
-        ctx_path = project_root / self.context_file
-        section = (
-            f"{marker_start}\n"
-            f"{self._build_context_section(plan_path)}\n"
-            f"{marker_end}\n"
-        )
-
-        if ctx_path.exists():
-            content = ctx_path.read_text(encoding="utf-8-sig")
-            start_idx = content.find(marker_start)
-            end_idx = content.find(
-                marker_end,
-                start_idx if start_idx != -1 else 0,
-            )
-
-            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                # Replace existing section (include the end marker + newline)
-                end_of_marker = end_idx + len(marker_end)
-                # Consume trailing line ending (CRLF or LF)
-                if end_of_marker < len(content) and content[end_of_marker] == "\r":
-                    end_of_marker += 1
-                if end_of_marker < len(content) and content[end_of_marker] == "\n":
-                    end_of_marker += 1
-                new_content = content[:start_idx] + section + content[end_of_marker:]
-            elif start_idx != -1:
-                # Corrupted: start marker without end — replace from start through EOF
-                new_content = content[:start_idx] + section
-            elif end_idx != -1:
-                # Corrupted: end marker without start — replace BOF through end marker
-                end_of_marker = end_idx + len(marker_end)
-                if end_of_marker < len(content) and content[end_of_marker] == "\r":
-                    end_of_marker += 1
-                if end_of_marker < len(content) and content[end_of_marker] == "\n":
-                    end_of_marker += 1
-                new_content = section + content[end_of_marker:]
-            else:
-                # No markers found — append
-                if content:
-                    if not content.endswith("\n"):
-                        content += "\n"
-                    new_content = content + "\n" + section
-                else:
-                    new_content = section
-
-            # Ensure .mdc files have required YAML frontmatter
-            if ctx_path.suffix == ".mdc":
-                new_content = self._ensure_mdc_frontmatter(new_content)
-        else:
-            ctx_path.parent.mkdir(parents=True, exist_ok=True)
-            # Cursor .mdc files require YAML frontmatter to be loaded
-            if ctx_path.suffix == ".mdc":
-                new_content = self._ensure_mdc_frontmatter(section)
-            else:
-                new_content = section
-
-        normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
-        ctx_path.write_bytes(normalized.encode("utf-8"))
-        return ctx_path
-
-    def remove_context_section(self, project_root: Path) -> bool:
-        """Remove the managed section from the agent context file.
-
-        Returns ``True`` if the section was found and removed.  If the
-        file becomes empty (or whitespace-only) after removal it is deleted.
-        Markers are read from the agent-context extension config
-        (``.specify/extensions/agent-context/agent-context-config.yml``)
-        when present, falling back to the class-level constants.
-        """
-        if not self.context_file:
-            return False
-
-        if not self._agent_context_extension_enabled(project_root):
-            return False
-
-        ctx_path = project_root / self.context_file
-        if not ctx_path.exists():
-            return False
-
-        marker_start, marker_end = self._resolve_context_markers(project_root)
-
-        content = ctx_path.read_text(encoding="utf-8-sig")
-        start_idx = content.find(marker_start)
-        end_idx = content.find(
-            marker_end,
-            start_idx if start_idx != -1 else 0,
-        )
-
-        # Only remove a complete, well-ordered managed section. If either
-        # marker is missing, leave the file unchanged to avoid deleting
-        # unrelated user-authored content.
-        if start_idx == -1 or end_idx == -1 or end_idx <= start_idx:
-            return False
-
-        removal_start = start_idx
-        removal_end = end_idx + len(marker_end)
-
-        # Consume trailing line ending (CRLF or LF)
-        if removal_end < len(content) and content[removal_end] == "\r":
-            removal_end += 1
-        if removal_end < len(content) and content[removal_end] == "\n":
-            removal_end += 1
-
-        # Also strip a blank line before the section if present
-        if removal_start > 0 and content[removal_start - 1] == "\n":
-            if removal_start > 1 and content[removal_start - 2] == "\n":
-                removal_start -= 1
-
-        new_content = content[:removal_start] + content[removal_end:]
-
-        # Normalize line endings before comparisons
-        normalized = new_content.replace("\r\n", "\n").replace("\r", "\n")
-
-        # For .mdc files, treat Speckit-generated frontmatter-only content as empty
-        if ctx_path.suffix == ".mdc":
-            import re
-
-            # Delete the file if only YAML frontmatter remains (no body content)
-            frontmatter_only = re.match(
-                r"^---\n.*?\n---\s*$", normalized, re.DOTALL
-            )
-            if not normalized.strip() or frontmatter_only:
-                ctx_path.unlink()
-                return True
-
-        if not normalized.strip():
-            ctx_path.unlink()
-        else:
-            ctx_path.write_bytes(normalized.encode("utf-8"))
-
-        return True
-
     @staticmethod
     def resolve_command_refs(content: str, separator: str = ".") -> str:
         """Replace ``__SPECKIT_COMMAND_<NAME>__`` placeholders with invocations.
@@ -828,7 +544,6 @@ class IntegrationBase(ABC):
         agent_name: str,
         script_type: str,
         arg_placeholder: str = "$ARGUMENTS",
-        context_file: str = "",
         invoke_separator: str = ".",
     ) -> str:
         """Process a raw command template into agent-ready content.
@@ -839,9 +554,8 @@ class IntegrationBase(ABC):
         3. Strip ``scripts:`` section from frontmatter
         4. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
         5. Replace ``__AGENT__`` with *agent_name*
-        6. Replace ``__CONTEXT_FILE__`` with *context_file*
-        7. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
-        8. Replace ``__SPECKIT_COMMAND_<NAME>__`` with invocation strings
+        6. Rewrite paths: ``scripts/`` → ``.specify/scripts/`` etc.
+        7. Replace ``__SPECKIT_COMMAND_<NAME>__`` with invocation strings
         """
         # 1. Extract script command from frontmatter
         script_command = ""
@@ -901,10 +615,7 @@ class IntegrationBase(ABC):
         # 5. Replace __AGENT__
         content = content.replace("__AGENT__", agent_name)
 
-        # 6. Replace __CONTEXT_FILE__
-        content = content.replace("__CONTEXT_FILE__", context_file)
-
-        # 7. Rewrite paths — delegate to the shared implementation in
+        # 6. Rewrite paths — delegate to the shared implementation in
         #    CommandRegistrar so extension-local paths are preserved and
         #    boundary rules stay consistent across the codebase.
         from specify_cli.agents import CommandRegistrar
@@ -959,8 +670,6 @@ class IntegrationBase(ABC):
             self.record_file_in_manifest(dst_file, project_root, manifest)
             created.append(dst_file)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created
 
@@ -975,11 +684,9 @@ class IntegrationBase(ABC):
 
         Delegates to ``manifest.uninstall()`` which only removes files
         whose hash still matches the recorded value (unless *force*).
-        Also removes the managed context section from the agent file.
 
         Returns ``(removed, skipped)`` file lists.
         """
-        self.remove_context_section(project_root)
         return manifest.uninstall(project_root, force=force)
 
     # -- Convenience helpers for subclasses -------------------------------
@@ -1013,12 +720,11 @@ class IntegrationBase(ABC):
 class MarkdownIntegration(IntegrationBase):
     """Concrete base for integrations that use standard Markdown commands.
 
-    Subclasses only need to set ``key``, ``config``, ``registrar_config``
-    (and optionally ``context_file``).  Everything else is inherited.
+    Subclasses only need to set ``key``, ``config``, ``registrar_config``.
+    Everything else is inherited.
 
     ``setup()`` processes command templates (replacing ``{SCRIPT}``,
-    ``{ARGS}``, ``__AGENT__``, rewriting paths) and upserts the
-    managed context section into the agent context file.
+    ``{ARGS}``, ``__AGENT__``, rewriting paths).
     """
 
     def build_exec_args(
@@ -1078,7 +784,6 @@ class MarkdownIntegration(IntegrationBase):
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -1086,8 +791,6 @@ class MarkdownIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created
 
@@ -1101,8 +804,7 @@ class TomlIntegration(IntegrationBase):
     """Concrete base for integrations that use TOML command format.
 
     Mirrors ``MarkdownIntegration`` closely: subclasses only need to set
-    ``key``, ``config``, ``registrar_config`` (and optionally
-    ``context_file``).  Everything else is inherited.
+    ``key``, ``config``, ``registrar_config``.  Everything else is inherited.
 
     ``setup()`` processes command templates through the same placeholder
     pipeline as ``MarkdownIntegration``, then converts the result to
@@ -1284,7 +986,6 @@ class TomlIntegration(IntegrationBase):
             description = self._extract_description(raw)
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -1294,8 +995,6 @@ class TomlIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created
 
@@ -1309,8 +1008,7 @@ class YamlIntegration(IntegrationBase):
     """Concrete base for integrations that use YAML recipe format.
 
     Mirrors ``TomlIntegration`` closely: subclasses only need to set
-    ``key``, ``config``, ``registrar_config`` (and optionally
-    ``context_file``).  Everything else is inherited.
+    ``key``, ``config``, ``registrar_config``.  Everything else is inherited.
 
     ``setup()`` processes command templates through the same placeholder
     pipeline as ``MarkdownIntegration``, then converts the result to
@@ -1488,7 +1186,6 @@ class YamlIntegration(IntegrationBase):
 
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1500,8 +1197,6 @@ class YamlIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created
 
@@ -1517,8 +1212,8 @@ class SkillsIntegration(IntegrationBase):
     Skills use the ``speckit-<name>/SKILL.md`` directory layout following
     the `agentskills.io <https://agentskills.io/specification>`_ spec.
 
-    Subclasses set ``key``, ``config``, ``registrar_config`` (and
-    optionally ``context_file``) like any integration.  They may also
+    Subclasses set ``key``, ``config``, ``registrar_config`` like any
+    integration.  They may also
     override ``options()`` to declare additional CLI flags (e.g.
     ``--skills``, ``--migrate-legacy``).
 
@@ -1686,7 +1381,6 @@ class SkillsIntegration(IntegrationBase):
             # Process body through the standard template pipeline
             processed_body = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
-                context_file=self.context_file or "",
                 invoke_separator=self.invoke_separator,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
@@ -1733,7 +1427,5 @@ class SkillsIntegration(IntegrationBase):
             )
             created.append(dst)
 
-        # Upsert managed context section into the agent context file
-        self.upsert_context_section(project_root)
 
         return created

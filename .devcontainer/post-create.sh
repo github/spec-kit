@@ -56,7 +56,7 @@ run_command "npm install -g @jetbrains/junie-cli@latest"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing Pi Coding Agent..."
-run_command "npm install -g @mariozechner/pi-coding-agent@latest"
+run_command "npm install -g @earendil-works/pi-coding-agent@latest"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing Kiro CLI..."
@@ -88,9 +88,9 @@ fi
 run_command "$kiro_binary --help > /dev/null"
 echo "✅ Done"
 
-echo -e "\n🤖 Installing Kimi CLI..."
+echo -e "\n🤖 Installing Kimi Code CLI..."
 # https://code.kimi.com
-run_command "pipx install kimi-cli"
+run_command "npm install -g @moonshot-ai/kimi-code@latest"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing CodeBuddy CLI..."

@@ -30,7 +30,6 @@ class TestHermesIntegration(SkillsIntegrationTests):
     FOLDER = ".hermes/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = "~/.hermes/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
     # -- Hermes-specific setup: skills go to ~/.hermes/skills/ -------------
 
@@ -72,23 +71,19 @@ class TestHermesIntegration(SkillsIntegrationTests):
         """Override: Hermes writes to global, not project-local."""
         self.test_setup_writes_to_global_skills_dir(tmp_path, monkeypatch)
 
-    def test_plan_references_correct_context_file(self, tmp_path, monkeypatch):
-        """Plan skill goes to global dir, but we check it still references AGENTS.md."""
+    def test_plan_skill_has_no_context_placeholder(self, tmp_path, monkeypatch):
+        """The core plan skill must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         home = _fake_home(tmp_path)
         monkeypatch.setattr(Path, "home", lambda: home)
 
         i = get_integration(self.KEY)
-        if not i.context_file:
-            return
         m = IntegrationManifest(self.KEY, tmp_path)
         i.setup(tmp_path, m)
         # Find the plan skill in global ~/.hermes/skills/
         plan_file = home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md"
         assert plan_file.exists(), f"Plan skill {plan_file} not created globally"
         content = plan_file.read_text(encoding="utf-8")
-        assert i.context_file in content, (
-            f"Plan skill should reference {i.context_file!r} but it was not found"
-        )
         assert "__CONTEXT_FILE__" not in content, (
             "Plan skill has unprocessed __CONTEXT_FILE__ placeholder"
         )
@@ -232,7 +227,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
             os.chdir(project)
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", self.KEY,
-                "--script", "sh", "--no-git", "--ignore-agent-tools",
+                "--script", "sh", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -270,7 +265,7 @@ class TestHermesIntegration(SkillsIntegrationTests):
             os.chdir(project)
             result = CliRunner().invoke(app, [
                 "init", "--here", "--integration", self.KEY,
-                "--script", "ps", "--no-git", "--ignore-agent-tools",
+                "--script", "ps", "--ignore-agent-tools",
             ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
@@ -326,12 +321,11 @@ class TestHermesIntegration(SkillsIntegrationTests):
         )
 
 
-class TestHermesAutoPromote:
-    """--ai hermes auto-promotes to integration path."""
+class TestHermesInitFlow:
+    """--integration hermes creates expected files."""
 
-    def test_ai_hermes_without_ai_skills_auto_promotes(self, tmp_path, monkeypatch):
-        """--ai hermes should work the same as --integration hermes,
-        creating global skills and a local marker."""
+    def test_integration_hermes_creates_global_skills(self, tmp_path, monkeypatch):
+        """--integration hermes should create global skills and a local marker."""
         home = _fake_home(tmp_path)
         monkeypatch.setattr(Path, "home", lambda: home)
 
@@ -342,13 +336,12 @@ class TestHermesAutoPromote:
         target = tmp_path / "test-proj"
         result = runner.invoke(app, [
             "init", str(target),
-            "--ai", "hermes",
-            "--no-git",
+            "--integration", "hermes",
             "--ignore-agent-tools",
             "--script", "sh",
         ])
 
-        assert result.exit_code == 0, f"init --ai hermes failed: {result.output}"
+        assert result.exit_code == 0, f"init --integration hermes failed: {result.output}"
         # Skills should be in global ~/.hermes/skills/
         assert (home / ".hermes" / "skills" / "speckit-plan" / "SKILL.md").exists()
         # Local marker should exist

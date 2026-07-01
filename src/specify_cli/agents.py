@@ -15,6 +15,9 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from ._init_options import is_ai_skills_enabled, load_init_options
+from ._utils import relative_extension_path_violation
+
 
 def _build_agent_configs() -> dict[str, Any]:
     """Derive CommandRegistrar.AGENT_CONFIGS from INTEGRATION_REGISTRY."""
@@ -34,6 +37,8 @@ def _build_agent_configs() -> dict[str, Any]:
             # when register_commands() resolves __SPECKIT_COMMAND_*__ tokens.
             if "invoke_separator" not in config:
                 config["invoke_separator"] = integration.invoke_separator
+            if integration.dev_no_symlink:
+                config["dev_no_symlink"] = True
             configs[key] = config
     return configs
 
@@ -231,9 +236,14 @@ class CommandRegistrar:
         toml_lines.append(f"# Source: {source_id}")
         toml_lines.append("")
 
-        # Keep TOML output valid even when body contains triple-quote delimiters.
-        # Prefer multiline forms, then fall back to escaped basic string.
-        if '"""' not in body:
+        # Keep TOML output valid even when body contains triple-quote delimiters
+        # or backslashes. Prefer multiline forms, then fall back to escaped basic
+        # string. A multiline *basic* string ("""...""") processes backslash escape
+        # sequences, so a body containing a backslash (e.g. a Windows path
+        # ``C:\\Users\\...`` whose ``\\U`` reads as an invalid unicode escape) would
+        # produce unparseable TOML — route those to the *literal* form ('''...'''),
+        # which does not process escapes, or to the escaped basic string.
+        if '"""' not in body and "\\" not in body:
             toml_lines.append('prompt = """')
             toml_lines.append(body)
             toml_lines.append('"""')
@@ -355,15 +365,37 @@ class CommandRegistrar:
         return skill_frontmatter
 
     @staticmethod
+    def apply_argument_hint(
+        source_frontmatter: Dict[str, Any],
+        skill_frontmatter: Dict[str, Any],
+        integration: Optional[object] = None,
+    ) -> None:
+        """Carry a command's ``argument-hint`` into its generated skill frontmatter.
+
+        Copies ``argument-hint`` from the parsed source command frontmatter into
+        *skill_frontmatter* (mutated in place) before serialization, so that a
+        folded multi-line ``description`` cannot be split into invalid YAML. Only
+        integrations that support the field — those exposing
+        ``inject_argument_hint`` (currently Claude) — receive the key, leaving
+        :meth:`build_skill_frontmatter`'s shared shape unchanged for every other
+        agent. Built-in templates carry no ``argument-hint``, so this is a no-op
+        for the core path.
+        """
+        if not isinstance(source_frontmatter, dict) or not isinstance(skill_frontmatter, dict):
+            return
+        argument_hint = source_frontmatter.get("argument-hint")
+        if (
+            argument_hint
+            and integration is not None
+            and hasattr(integration, "inject_argument_hint")
+        ):
+            skill_frontmatter["argument-hint"] = str(argument_hint)
+
+    @staticmethod
     def resolve_skill_placeholders(
         agent_name: str, frontmatter: dict, body: str, project_root: Path
     ) -> str:
         """Resolve script placeholders for skills-backed agents."""
-        try:
-            from . import load_init_options
-        except ImportError:
-            return body
-
         if not isinstance(frontmatter, dict):
             frontmatter = {}
 
@@ -400,17 +432,6 @@ class CommandRegistrar:
             body = body.replace("{SCRIPT}", script_command)
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
-
-        # Resolve __CONTEXT_FILE__ from the agent-context extension config.
-        # Fall back to init-options.json for projects that haven't migrated.
-        # Local import: _load_agent_context_config lives in __init__.py which
-        # imports agents.py, so a top-level import would be circular.
-        from . import _load_agent_context_config
-        ac_cfg = _load_agent_context_config(project_root)
-        context_file = ac_cfg.get("context_file") or ""
-        if not context_file:
-            context_file = init_opts.get("context_file") or ""
-        body = body.replace("__CONTEXT_FILE__", context_file)
 
         return CommandRegistrar.rewrite_project_relative_paths(body)
 
@@ -474,6 +495,29 @@ class CommandRegistrar:
             return False
         return os.path.normpath(name) == name
 
+    @staticmethod
+    def _same_lexical_path(left: Path, right: Path) -> bool:
+        """Compare paths after lexical normalization without resolving symlinks."""
+        return os.path.normcase(os.path.normpath(os.fspath(left))) == os.path.normcase(
+            os.path.normpath(os.fspath(right))
+        )
+
+    @staticmethod
+    def _active_skills_agent(project_root: Path) -> Optional[str]:
+        """Return the initialized skills-backed agent, if skills mode is active."""
+        opts = load_init_options(project_root)
+        if not isinstance(opts, dict):
+            return None
+
+        agent = opts.get("ai")
+        if not isinstance(agent, str) or not agent:
+            return None
+        # Kimi is a native skills integration; when ai_skills is not boolean
+        # True, Kimi still uses its existing SKILL.md layout.
+        if not is_ai_skills_enabled(opts) and agent != "kimi":
+            return None
+        return agent
+
     def register_commands(
         self,
         agent_name: str,
@@ -520,17 +564,42 @@ class CommandRegistrar:
 
         registered = []
         is_cline_ext = agent_name == "cline" and source_id != "core"
+        source_root = source_dir.resolve()
 
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             aliases = cmd_info.get("aliases", [])
             cmd_file = cmd_info["file"]
 
-            source_file = source_dir / cmd_file
-            if not source_file.exists():
+            # Guard against path traversal using the single shared policy in
+            # relative_extension_path_violation(), so the runtime guard stays
+            # aligned with ExtensionManifest._validate() and the skill/preset
+            # readers. Skip a malformed/unsafe ``file`` (non-string, empty,
+            # whitespace, absolute/anchored, or ``..`` traversal); the
+            # resolve()/relative_to() check below is the final containment
+            # backstop.
+            if relative_extension_path_violation(cmd_file):
+                continue
+            try:
+                source_file = (source_root / cmd_file).resolve()
+                source_file.relative_to(source_root)  # raises ValueError if outside
+            except (OSError, ValueError):
                 continue
 
-            content = source_file.read_text(encoding="utf-8")
+            if not source_file.is_file():
+                continue
+
+            try:
+                content = source_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Skipping command '{cmd_name}': could not read source file "
+                    f"'{cmd_file}' ({exc.__class__.__name__}: {exc}).",
+                    stacklevel=2,
+                )
+                continue
             frontmatter, body = self.parse_frontmatter(content)
 
             if frontmatter.get("strategy") == "wrap":
@@ -621,6 +690,7 @@ class CommandRegistrar:
                 output_name,
                 agent_config["extension"],
                 link_outputs,
+                agent_config,
             )
 
             if agent_name == "copilot":
@@ -695,6 +765,7 @@ class CommandRegistrar:
                     alias_output_name,
                     agent_config["extension"],
                     link_outputs,
+                    agent_config,
                 )
                 if agent_name == "copilot":
                     self.write_copilot_prompt(project_root, alias)
@@ -711,9 +782,12 @@ class CommandRegistrar:
         output_name: str,
         extension: str,
         link_outputs: bool,
+        agent_config: dict[str, Any] | None = None,
     ) -> None:
         """Write a rendered agent artifact, optionally as a dev-mode symlink."""
-        if not link_outputs:
+        if not link_outputs or (agent_config or {}).get("dev_no_symlink"):
+            if dest_file.is_symlink():
+                dest_file.unlink()
             dest_file.write_text(content, encoding="utf-8")
             return
 
@@ -806,6 +880,7 @@ class CommandRegistrar:
         project_root: Path,
         context_note: str = None,
         link_outputs: bool = False,
+        create_missing_active_skills_dir: bool = False,
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -817,6 +892,11 @@ class CommandRegistrar:
             context_note: Custom context comment for markdown output
             link_outputs: If True, create dev-mode symlinks for rendered
                 command files when supported by the OS.
+            create_missing_active_skills_dir: If True, attempt missing-dir
+                recovery only for the active initialized skills-backed agent.
+                Recovery requires active skills mode (or Kimi's existing native
+                skills directory) and is skipped when safe resolution or
+                creation fails.
 
         Returns:
             Dictionary mapping agent names to list of registered commands
@@ -824,7 +904,27 @@ class CommandRegistrar:
         results = {}
 
         self._ensure_configs()
+        active_skills_agent = (
+            self._active_skills_agent(project_root)
+            if create_missing_active_skills_dir else None
+        )
+        active_skills_dir: Optional[Path] = None
+        if active_skills_agent:
+            active_skills_config = self.AGENT_CONFIGS.get(active_skills_agent)
+            if (
+                active_skills_config
+                and active_skills_config.get("extension") == "/SKILL.md"
+            ):
+                active_skills_dir = self._resolve_agent_dir(
+                    active_skills_agent, active_skills_config, project_root,
+                )
+        active_created_skills_dir: Optional[Path] = None
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
+            active_skills_output = (
+                agent_name == active_skills_agent
+                and agent_config.get("extension") == "/SKILL.md"
+            )
+            recovered_active_skills_dir: Optional[Path] = None
             # Check detect_dir first (project-local marker) if configured,
             # falling back to the resolved dir for output.  This prevents
             # global dirs (e.g. ~/.hermes/skills) from causing false
@@ -832,13 +932,63 @@ class CommandRegistrar:
             detect_dir_str = agent_config.get("detect_dir")
             if detect_dir_str:
                 detect_path = project_root / detect_dir_str
-                if not detect_path.exists():
-                    continue
+                if not detect_path.is_dir():
+                    if not active_skills_output:
+                        continue
+                    try:
+                        from . import resolve_active_skills_dir
+
+                        recovered_active_skills_dir = (
+                            resolve_active_skills_dir(project_root)
+                        )
+                    except (ValueError, OSError):
+                        continue
+                    if recovered_active_skills_dir is None or not detect_path.is_dir():
+                        continue
+                    active_created_skills_dir = recovered_active_skills_dir
             agent_dir = self._resolve_agent_dir(
                 agent_name, agent_config, project_root,
             )
+            shares_active_skills_dir = (
+                active_skills_dir is not None
+                and agent_name != active_skills_agent
+                and agent_config.get("extension") == "/SKILL.md"
+                and self._same_lexical_path(agent_dir, active_skills_dir)
+            )
+            if shares_active_skills_dir:
+                continue
 
-            if agent_dir.exists():
+            agent_dir_existed = agent_dir.is_dir()
+            register_missing_active_skills_agent = (
+                not agent_dir_existed
+                and active_skills_output
+            )
+            if register_missing_active_skills_agent:
+                if recovered_active_skills_dir is None:
+                    try:
+                        from . import resolve_active_skills_dir
+
+                        recovered_active_skills_dir = (
+                            resolve_active_skills_dir(project_root)
+                        )
+                    except (ValueError, OSError):
+                        continue
+                    if recovered_active_skills_dir is None:
+                        continue
+                active_created_skills_dir = recovered_active_skills_dir
+            # Shared skill dirs such as .agents/skills should not make
+            # later integrations look detected when the active agent just
+            # recreated the directory during this registration pass.
+            created_by_active_agent = (
+                active_created_skills_dir is not None
+                and self._same_lexical_path(agent_dir, active_created_skills_dir)
+                and agent_name != active_skills_agent
+            )
+            should_register = (
+                agent_dir_existed and not created_by_active_agent
+            ) or register_missing_active_skills_agent
+
+            if should_register:
                 try:
                     registered = self.register_commands(
                         agent_name,
@@ -852,8 +1002,16 @@ class CommandRegistrar:
                     )
                     if registered:
                         results[agent_name] = registered
+                    if register_missing_active_skills_agent:
+                        active_created_skills_dir = (
+                            recovered_active_skills_dir or agent_dir
+                        )
                 except ValueError:
                     continue
+                except OSError:
+                    if register_missing_active_skills_agent:
+                        continue
+                    raise
 
         return results
 
@@ -892,12 +1050,12 @@ class CommandRegistrar:
             detect_dir_str = agent_config.get("detect_dir")
             if detect_dir_str:
                 detect_path = project_root / detect_dir_str
-                if not detect_path.exists():
+                if not detect_path.is_dir():
                     continue
             agent_dir = self._resolve_agent_dir(
                 agent_name, agent_config, project_root,
             )
-            if agent_dir.exists():
+            if agent_dir.is_dir():
                 try:
                     registered = self.register_commands(
                         agent_name,

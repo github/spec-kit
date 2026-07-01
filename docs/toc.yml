@@ -35,18 +35,30 @@
       href: reference/presets.md
     - name: Workflows
       href: reference/workflows.md
+    - name: Bundles
+      href: reference/bundles.md
+    - name: Authentication
+      href: reference/authentication.md
 
 # Concepts
 - name: Concepts
   items:
     - name: What is SDD?
       href: concepts/sdd.md
+    - name: Spec Persistence Models
+      href: concepts/spec-persistence.md
+    - name: Handling Complex Features
+      href: concepts/complex-features.md
 
 # Development workflows
 - name: Development
   items:
     - name: Local Development
       href: local-development.md
+    - name: Evolving Specs
+      href: guides/evolving-specs.md
+    - name: Monorepos
+      href: guides/monorepo.md
 
 # Community
 - name: Community
@@ -58,6 +70,8 @@
       href: community/extensions.md
     - name: Presets
       href: community/presets.md
+    - name: Bundles
+      href: community/bundles.md
     - name: Walkthroughs
       href: community/walkthroughs.md
     - name: Friends

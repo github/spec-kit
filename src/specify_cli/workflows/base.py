@@ -47,9 +47,10 @@ class StepContext:
     #: Resolved workflow inputs (from user prompts / defaults).
     inputs: dict[str, Any] = field(default_factory=dict)
 
-    #: Accumulated step results keyed by step ID.
-    #: Each entry is ``{"integration": ..., "model": ..., "options": ...,
-    #:   "input": ..., "output": ...}``.
+    #: Accumulated step results keyed by step ID. Each entry is the dict the
+    #: engine persists per step:
+    #: ``{"type": ..., "integration": ..., "model": ..., "options": ...,
+    #:   "input": ..., "output": ..., "status": ...}``.
     steps: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     #: Current fan-out item (set only inside fan-out iterations).
@@ -96,6 +97,13 @@ class StepBase(ABC):
 
     Every step type — built-in or extension-provided — implements this
     interface and registers in ``STEP_REGISTRY``.
+
+    Thread-safety: ``STEP_REGISTRY`` holds a single shared instance per type, so
+    a concurrent ``fan-out`` (``max_concurrency > 1``) can invoke ``execute`` on
+    the same instance from several threads at once. Implementations must be
+    stateless / thread-safe — derive all per-run state from the ``config`` and
+    ``context`` arguments and never mutate ``self`` in ``execute``. The built-in
+    steps follow this rule.
     """
 
     #: Matches the ``type:`` value in workflow YAML.
