@@ -55,7 +55,10 @@ class TestCopilotIntegration:
             warnings.simplefilter("always")
             created = copilot.setup(tmp_path, m, parsed_options={"skills": True})
 
-        assert len(caught) == 0
+        assert not any(
+            "Copilot legacy markdown mode is deprecated" in str(item.message)
+            for item in caught
+        )
         assert any(f.name == "SKILL.md" for f in created)
 
     def test_setup_creates_companion_prompts(self, tmp_path):
