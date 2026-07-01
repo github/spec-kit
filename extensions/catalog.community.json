@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-30T00:00:00Z",
+  "updated_at": "2026-07-01T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -144,6 +144,40 @@
       "stars": 0,
       "created_at": "2026-05-04T00:00:00Z",
       "updated_at": "2026-05-04T00:00:00Z"
+    },
+    "analytics": {
+      "name": "Analytics",
+      "id": "analytics",
+      "description": "Measure what your AI builds, and how much time it saves you",
+      "author": "Fyloss",
+      "version": "0.1.0",
+      "download_url": "https://github.com/Fyloss/spec-kit-analytics/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/Fyloss/spec-kit-analytics",
+      "homepage": "https://github.com/Fyloss/spec-kit-analytics",
+      "documentation": "https://github.com/Fyloss/spec-kit-analytics/tree/main/doc",
+      "changelog": "",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.10.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 16
+      },
+      "tags": [
+        "analytics",
+        "productivity",
+        "metrics",
+        "benchmarking",
+        "tracking"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-01T00:00:00Z",
+      "updated_at": "2026-07-01T00:00:00Z"
     },
     "api-evolve": {
       "name": "API Evolve",
