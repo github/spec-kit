@@ -155,7 +155,7 @@
       "repository": "https://github.com/Fyloss/spec-kit-analytics",
       "homepage": "https://github.com/Fyloss/spec-kit-analytics",
       "documentation": "https://github.com/Fyloss/spec-kit-analytics/tree/main/doc",
-      "changelog": "",
+      "changelog": "https://github.com/Fyloss/spec-kit-analytics/releases",
       "license": "MIT",
       "category": "visibility",
       "effect": "read-write",
