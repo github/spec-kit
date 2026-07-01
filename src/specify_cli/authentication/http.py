@@ -118,6 +118,20 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
     return urllib.request.Request(url, headers=headers)
 
 
+def github_provider_hosts() -> tuple[str, ...]:
+    """Return host patterns from every ``github`` provider entry in ``auth.json``.
+
+    Used to classify which hosts are GitHub Enterprise Server instances when
+    resolving release-asset download URLs. Returns an empty tuple when no
+    ``auth.json`` exists or it contains no ``github`` entries.
+    """
+    hosts: list[str] = []
+    for entry in _load_config():
+        if entry.provider == "github":
+            hosts.extend(entry.hosts)
+    return tuple(hosts)
+
+
 def open_url(
     url: str,
     timeout: int = 10,

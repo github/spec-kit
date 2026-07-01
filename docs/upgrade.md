@@ -185,7 +185,7 @@ cp -r .specify/scripts .specify/scripts-backup
 
 ### 3. Duplicate slash commands (IDE-based agents)
 
-Some IDE-based agents (like Kilo Code, Windsurf) may show **duplicate slash commands** after upgrading—both old and new versions appear.
+Some IDE-based agents (like Kilo Code, Cline) may show **duplicate slash commands** after upgrading—both old and new versions appear.
 
 **Solution:** Manually delete the old command files from your agent's folder.
 
@@ -193,7 +193,7 @@ Some IDE-based agents (like Kilo Code, Windsurf) may show **duplicate slash comm
 
 ```bash
 # Navigate to the agent's commands folder
-cd .kilocode/rules/
+cd .kilocode/workflows/
 
 # List files and identify duplicates
 ls -la
@@ -242,11 +242,11 @@ mv /tmp/constitution-backup.md .specify/memory/constitution.md
 
 ### Scenario 3: "I see duplicate slash commands in my IDE"
 
-This happens with IDE-based agents (Kilo Code, Windsurf, Roo Code, etc.).
+This happens with IDE-based agents (Kilo Code, Cline, etc.).
 
 ```bash
-# Find the agent folder (example: .kilocode/rules/)
-cd .kilocode/rules/
+# Find the agent folder (example: .kilocode/workflows/)
+cd .kilocode/workflows/
 
 # List all files
 ls -la
@@ -308,6 +308,7 @@ Alternatively, run the `/speckit.specify` command which creates `.specify/featur
    ls -la .gemini/commands/      # Gemini
    ls -la .cursor/skills/      # Cursor
    ls -la .pi/prompts/           # Pi Coding Agent
+   ls -la .omp/commands/         # Oh My Pi
    ```
 
 3. **Check agent-specific setup:**
@@ -427,7 +428,7 @@ The `specify` CLI tool is used for:
 - **Upgrades:** `specify init --here --force` to update templates and commands
 - **Diagnostics:** `specify check` to verify tool installation
 
-Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, `.pi/prompts/`, etc.). Your AI coding agent reads these command files directly—no need to run `specify` again.
+Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, `.pi/prompts/`, `.omp/commands/`, etc.). Your AI coding agent reads these command files directly—no need to run `specify` again.
 
 **If your agent isn't recognizing slash commands:**
 
@@ -442,6 +443,9 @@ Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/s
 
    # For Pi
    ls -la .pi/prompts/
+
+   # For Oh My Pi
+   ls -la .omp/commands/
    ```
 
 2. **Restart your IDE/editor completely** (not just reload window)

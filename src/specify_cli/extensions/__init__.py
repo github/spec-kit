@@ -28,9 +28,10 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
-from .._utils import dump_frontmatter, relative_extension_path_violation
+from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
+from ..shared_infra import verify_archive_sha256
 
 _FALLBACK_CORE_COMMAND_NAMES = frozenset(
     {
@@ -1278,19 +1279,19 @@ class ExtensionManager:
             CompatibilityError: If extension is incompatible
         """
         required = manifest.requires_speckit_version
-        current = pkg_version.Version(speckit_version)
 
         # Parse version specifier (e.g., ">=0.1.0,<2.0.0")
         try:
-            specifier = SpecifierSet(required)
-            if current not in specifier:
-                raise CompatibilityError(
-                    f"Extension requires spec-kit {required}, "
-                    f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
-                )
+            SpecifierSet(required)  # Just to validate
         except InvalidSpecifier:
             raise CompatibilityError(f"Invalid version specifier: {required}")
+
+        if not version_satisfies(speckit_version, required):
+            raise CompatibilityError(
+                f"Extension requires spec-kit {required}, "
+                f"but {speckit_version} is installed.\n"
+                f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
+            )
 
         return True
 
@@ -1870,24 +1871,6 @@ class ExtensionManager:
             return None
 
 
-def version_satisfies(current: str, required: str) -> bool:
-    """Check if current version satisfies required version specifier.
-
-    Args:
-        current: Current version (e.g., "0.1.5")
-        required: Required version specifier (e.g., ">=0.1.0,<2.0.0")
-
-    Returns:
-        True if version satisfies requirement
-    """
-    try:
-        current_ver = pkg_version.Version(current)
-        specifier = SpecifierSet(required)
-        return current_ver in specifier
-    except (pkg_version.InvalidVersion, InvalidSpecifier):
-        return False
-
-
 class CommandRegistrar:
     """Handles registration of extension commands with AI agents.
 
@@ -2056,12 +2039,18 @@ class ExtensionCatalog(CatalogStackBase):
     ) -> Optional[str]:
         """Resolve a GitHub release asset URL to its API asset URL.
 
-        Delegates to the shared helper in :mod:`specify_cli._github_http`.
+        Delegates to the shared helper in :mod:`specify_cli._github_http`,
+        passing the ``github`` provider hosts from ``auth.json`` so GitHub
+        Enterprise Server release assets resolve via ``/api/v3``.
         """
         from specify_cli._github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.http import github_provider_hosts
 
         return resolve_github_release_asset_api_url(
-            download_url, self._open_url, timeout=timeout
+            download_url,
+            self._open_url,
+            timeout=timeout,
+            github_hosts=github_provider_hosts(),
         )
 
     def _validate_catalog_payload(self, catalog_data: Any, url: str) -> None:
@@ -2620,6 +2609,10 @@ class ExtensionCatalog(CatalogStackBase):
                 download_url, timeout=60, extra_headers=extra_headers
             ) as response:
                 zip_data = response.read()
+
+            verify_archive_sha256(
+                zip_data, ext_info.get("sha256"), extension_id, ExtensionError
+            )
 
             zip_path.write_bytes(zip_data)
             return zip_path

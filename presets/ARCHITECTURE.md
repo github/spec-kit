@@ -99,7 +99,7 @@ The `CommandRegistrar` renders commands differently per agent:
 
 | Agent | Format | Extension | Arg placeholder |
 |-------|--------|-----------|-----------------|
-| Claude, Cursor, opencode, Windsurf, etc. | Markdown | `.md` | `$ARGUMENTS` |
+| Claude, Kilo Code, opencode, etc. | Markdown | `.md` | `$ARGUMENTS` |
 | Copilot | Markdown | `.agent.md` + `.prompt.md` | `$ARGUMENTS` |
 | Gemini, Qwen, Tabnine | TOML | `.toml` | `{{args}}` |
 

@@ -10,7 +10,6 @@ class TestAgyIntegration(SkillsIntegrationTests):
     FOLDER = ".agents/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".agents/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
     def test_options_include_skills_flag(self):
         """Override inherited test: AgyIntegration should not expose a --skills flag because .agents/ is its only layout."""

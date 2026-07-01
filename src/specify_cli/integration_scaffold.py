@@ -117,11 +117,6 @@ class {class_name}({template.base_class}):
         "args": "{template.args}",
         "extension": "{template.extension}",
     }}
-    context_file = "AGENTS.md"
-    # Default to False so the generated boilerplate passes the registry
-    # contract out of the box: multi-install-safe integrations must each have a
-    # distinct context_file, and the placeholder above ("AGENTS.md") collides
-    # with the existing codex integration. Opt in once you pick a unique one.
     multi_install_safe = False
 '''
 
@@ -155,7 +150,6 @@ def test_metadata():
     assert integration.registrar_config["format"] == "{template.registrar_format}"
     assert integration.registrar_config["args"] == "{template.args}"
     assert integration.registrar_config["extension"] == "{template.extension}"
-    assert integration.context_file == "AGENTS.md"
     assert integration.multi_install_safe is False
 '''
 
@@ -274,7 +268,7 @@ def scaffold_integration(
 
     next_steps = (
         f"Register {class_name} in src/specify_cli/integrations/__init__.py.",
-        "Review config metadata, install_url, requires_cli, context_file, and multi_install_safe.",
+        "Review config metadata, install_url, requires_cli, and multi_install_safe.",
         f"Run pytest tests/integrations/test_integration_{package_name}.py -v.",
     )
     return IntegrationScaffoldResult(

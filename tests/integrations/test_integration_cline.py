@@ -47,7 +47,6 @@ class TestClineIntegration(MarkdownIntegrationTests):
     FOLDER = ".clinerules/"
     COMMANDS_SUBDIR = "workflows"
     REGISTRAR_DIR = ".clinerules/workflows"
-    CONTEXT_FILE = ".clinerules/specify-rules.md"
 
     @pytest.mark.parametrize(
         "cmd_name, expected_filename",
@@ -91,6 +90,22 @@ class TestClineIntegration(MarkdownIntegrationTests):
         assert "replace dots (`.`) with hyphens (`-`)" in injected
         assert "- For each executable hook, output the following:" in injected
 
+    def test_cline_hook_instruction_injection_no_trailing_newline(self):
+        """Note must not collapse onto the instruction line when the
+        instruction is the final line with no trailing newline.
+
+        The injection regex matches the end-of-line via ``(\\r\\n|\\n|$)``, so
+        the captured ``eol`` is empty on a file's last line that lacks a
+        trailing newline. Without an ``or "\\n"`` fallback the note text and
+        the instruction are emitted on the same line.
+        """
+        cline = get_integration("cline")
+        content = "- For each executable hook, output the following:"  # no trailing \n
+        injected = cline._inject_hook_command_note(content)
+        assert "replace dots (`.`) with hyphens (`-`)" in injected
+        # Instruction stays on its own line rather than being mashed onto the note.
+        assert "\n- For each executable hook, output the following:" in injected
+
     # -- Overrides for MarkdownIntegrationTests ---------------------------
 
     def test_setup_creates_files(self, tmp_path):
@@ -105,7 +120,6 @@ class TestClineIntegration(MarkdownIntegrationTests):
             for f in created
             if "scripts" not in f.parts
             and f.suffix == ".md"
-            and f.name != i.context_file
         ]
         for f in cmd_files:
             assert f.exists()
@@ -204,19 +218,5 @@ class TestClineIntegration(MarkdownIntegrationTests):
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")
         files.append(".specify/workflows/workflow-registry.json")
-
-        # Bundled agent-context extension
-        files.append(".specify/extensions.yml")
-        files.append(".specify/extensions/.registry")
-        files.append(".specify/extensions/agent-context/README.md")
-        files.append(".specify/extensions/agent-context/agent-context-config.yml")
-        files.append(".specify/extensions/agent-context/commands/speckit.agent-context.update.md")
-        files.append(".specify/extensions/agent-context/extension.yml")
-        files.append(".specify/extensions/agent-context/scripts/bash/update-agent-context.sh")
-        files.append(".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1")
-
-        # Agent context file (if set)
-        if i.context_file:
-            files.append(i.context_file)
 
         return sorted(files)

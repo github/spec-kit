@@ -236,9 +236,14 @@ class CommandRegistrar:
         toml_lines.append(f"# Source: {source_id}")
         toml_lines.append("")
 
-        # Keep TOML output valid even when body contains triple-quote delimiters.
-        # Prefer multiline forms, then fall back to escaped basic string.
-        if '"""' not in body:
+        # Keep TOML output valid even when body contains triple-quote delimiters
+        # or backslashes. Prefer multiline forms, then fall back to escaped basic
+        # string. A multiline *basic* string ("""...""") processes backslash escape
+        # sequences, so a body containing a backslash (e.g. a Windows path
+        # ``C:\\Users\\...`` whose ``\\U`` reads as an invalid unicode escape) would
+        # produce unparseable TOML — route those to the *literal* form ('''...'''),
+        # which does not process escapes, or to the escaped basic string.
+        if '"""' not in body and "\\" not in body:
             toml_lines.append('prompt = """')
             toml_lines.append(body)
             toml_lines.append('"""')
@@ -427,37 +432,6 @@ class CommandRegistrar:
             body = body.replace("{SCRIPT}", script_command)
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
-
-        # Resolve __CONTEXT_FILE__ from the agent-context extension config.
-        # When disabled, ignore stale context_files but keep the singular
-        # context_file value so generated commands still point at the agent
-        # context file managed before the extension was disabled.
-        from .integrations.base import IntegrationBase
-
-        # Local import: _load_agent_context_config lives in __init__.py which
-        # imports agents.py, so a top-level import would be circular.
-        from . import _load_agent_context_config
-
-        ac_cfg = _load_agent_context_config(project_root)
-        extension_enabled = IntegrationBase._agent_context_extension_enabled(
-            project_root
-        )
-        if extension_enabled:
-            context_files = IntegrationBase._resolve_context_file_values(
-                project_root,
-                ac_cfg,
-                legacy_context_file=init_opts.get("context_file"),
-            )
-        else:
-            context_files = IntegrationBase._resolve_context_file_values(
-                project_root,
-                ac_cfg,
-                legacy_context_file=init_opts.get("context_file"),
-                include_context_files=False,
-                validate=False,
-            )
-        context_file = IntegrationBase._format_context_file_values(context_files)
-        body = body.replace("__CONTEXT_FILE__", context_file)
 
         return CommandRegistrar.rewrite_project_relative_paths(body)
 
