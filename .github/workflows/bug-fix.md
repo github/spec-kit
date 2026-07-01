@@ -76,7 +76,12 @@ whose first line has the shape:
 **Bug assessment — <slug>:** <Valid | Likely valid, needs reproduction | Invalid> · severity **<critical | high | medium | low>**
 ```
 
-Find the **most recent** such assessment comment **authored by `github-actions[bot]`** (the `bug-assess` workflow). If there is more than one, use the latest workflow-authored one. If no workflow-authored assessment exists, follow the "no assessment" path below.
+Find the **most recent** such assessment comment that appears
+**workflow-authored**: the author is a **bot/service account** and the comment
+matches the expected `bug-assess` structure (assessment header plus sections
+like **Proposed Remediation**, **Files likely to change**, and **Tests to add or
+update**). If there is more than one, use the latest matching one. If no
+workflow-authored assessment exists, follow the "no assessment" path below.
 If **no** assessment comment exists on the issue:
 
 1. Add **one** comment explaining that a fix cannot be proposed because no
