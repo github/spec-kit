@@ -115,7 +115,7 @@ def escape_markdown_link_text(text: str) -> str:
 
 def render_code_span(value: str) -> str:
     """Safely render a value as an inline markdown code span.
-    
+
     Replaces internal backticks with single quotes to prevent breaking the code span.
     """
     safe_value = value.replace("`", "'")
