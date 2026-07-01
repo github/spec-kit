@@ -831,6 +831,14 @@ def _download_remote_manifest(entry_id: str, url: str):
         _require_https(f"bundle '{entry_id}'", effective_url)
         extra_headers = {"Accept": "application/octet-stream"}
 
+    # Human-readable description of where the bytes came from, reused across
+    # all post-download error messages so failures point at the catalog URL
+    # (and resolved API URL, if any) instead of an opaque temp path.
+    if effective_url != url:
+        _source_desc = f"{url} (resolved to {effective_url})"
+    else:
+        _source_desc = url
+
     try:
         with open_url(
             effective_url,
@@ -845,11 +853,9 @@ def _download_remote_manifest(entry_id: str, url: str):
     except Exception as exc:  # noqa: BLE001
         # Report the original catalog URL so users know which entry to fix,
         # and include the resolved URL when it differs for easier debugging.
-        if effective_url != url:
-            msg = f"Failed to download bundle '{entry_id}' from {url} (resolved to {effective_url}): {exc}"
-        else:
-            msg = f"Failed to download bundle '{entry_id}' from {url}: {exc}"
-        raise BundlerError(msg) from exc
+        raise BundlerError(
+            f"Failed to download bundle '{entry_id}' from {_source_desc}: {exc}"
+        ) from exc
 
     # A .zip artifact is written to a temp file and parsed via the local-source
     # path (which extracts bundle.yml); any other payload is treated as YAML.
@@ -864,14 +870,25 @@ def _download_remote_manifest(entry_id: str, url: str):
             with tempfile.TemporaryDirectory() as tmp:
                 artifact = Path(tmp) / "bundle.zip"
                 artifact.write_bytes(raw)
-                manifest = _local_manifest_source(str(artifact))
+                # Wrap ZIP parsing so any failure (BadZipFile, missing
+                # bundle.yml, etc.) references the source URL rather than the
+                # opaque temporary path, consistent with the download-error
+                # handling above.
+                try:
+                    manifest = _local_manifest_source(str(artifact))
+                except Exception as exc:  # noqa: BLE001
+                    raise BundlerError(
+                        f"Downloaded artifact for bundle '{entry_id}' from "
+                        f"{_source_desc} is not a valid bundle: {exc}"
+                    ) from exc
                 # _local_manifest_source returns None only when the file does
                 # not exist; since we just wrote *artifact* that cannot happen
                 # here.  The explicit guard ensures callers never receive None
                 # and silently degrade instead of raising a clear error.
                 if manifest is None:
                     raise BundlerError(
-                        f"Downloaded artifact for bundle '{entry_id}' is not a valid bundle."
+                        f"Downloaded artifact for bundle '{entry_id}' from "
+                        f"{_source_desc} is not a valid bundle."
                     )
                 return manifest
 
@@ -881,11 +898,13 @@ def _download_remote_manifest(entry_id: str, url: str):
         raise
     except _yaml.YAMLError as exc:
         raise BundlerError(
-            f"Downloaded content for bundle '{entry_id}' is not valid YAML: {exc}"
+            f"Downloaded content for bundle '{entry_id}' from {_source_desc} "
+            f"is not valid YAML: {exc}"
         ) from exc
     except Exception as exc:  # noqa: BLE001
         raise BundlerError(
-            f"Failed to parse downloaded bundle '{entry_id}': {exc}"
+            f"Failed to parse downloaded bundle '{entry_id}' from "
+            f"{_source_desc}: {exc}"
         ) from exc
 
 
