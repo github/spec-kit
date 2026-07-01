@@ -2,6 +2,22 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.3] - 2026-07-01
+
+### Changed
+
+- feat(copilot): warn before skills default rollout (#3256)
+- Add June 2026 newsletter (#3289)
+- docs(toc): add Bundles and Authentication to the Reference nav (#3267)
+- fix(integrations): add zed to discovery catalog.json (#3266)
+- fix(integrations): cline hook note collapses onto instruction at EOF (#3263)
+- refactor: move workflow command handlers to workflows/_commands.py (PR-8/8) (#3159)
+- chore: retire Roo Code integration — extension shut down (#3167) (#3212)
+- fix(bundle): allow 'catalog remove' by the same relative path used to add (#3242)
+- fix(workflows): reject bool max_iterations in while/do-while validation (#3237)
+- fix: allow prerelease spec-kit versions in compatibility checks (#2695)
+- chore: release 0.12.2, begin 0.12.3.dev0 development (#3259)
+
 ## [0.12.2] - 2026-06-30
 
 ### Changed
