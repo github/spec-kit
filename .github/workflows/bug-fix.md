@@ -87,7 +87,8 @@ If **no** assessment comment exists on the issue:
 1. Add **one** comment explaining that a fix cannot be proposed because no
    `bug-assess` assessment was found, and ask a maintainer to apply the
    `bug-assess` label first so the assessment stage can run.
-2. Add the `needs-assessment` label.
+2. If the `needs-assessment` label already exists in this repository, add it.
+   If it does not exist, skip labeling and note that in the comment.
 3. **Stop.** Do not read the codebase, do not edit files, do not open a PR.
 
 ## Step 2 — Recover the Slug and the Contract
@@ -144,8 +145,9 @@ fetch it only under these rules:
 Before changing any code, check the assessment's verdict:
 
 - **Invalid** — there is nothing to fix. Add **one** comment stating that the
-  assessment marked this report invalid (quote its reason), add the
-  `fix-blocked` label, and **stop**. Do not open a PR.
+  assessment marked this report invalid (quote its reason). If the
+  `fix-blocked` label exists in this repository, add it; otherwise skip labeling
+  and note that in the comment. Then **stop**. Do not open a PR.
 - **Likely valid, needs reproduction** with unresolved `[NEEDS CLARIFICATION]`
   items — the fix would be a guess. Add **one** comment listing the open
   questions that block a confident fix, add the `needs-reproduction` label, and
@@ -172,8 +174,10 @@ Implement the **preferred** remediation from the assessment:
   did not call for.
 - If you discover the assessment was **wrong** (the proposed fix does not work,
   or the root cause is elsewhere), **stop modifying code**. Revert your partial
-  edits, add a comment summarizing the new finding, add the `fix-blocked` label,
-  recommend re-running `bug-assess`, and **stop** without opening a PR.
+  edits, add a comment summarizing the new finding. If the `fix-blocked` label
+  exists in this repository, add it; otherwise skip labeling and note that in
+  the comment. Recommend re-running `bug-assess`, and **stop** without opening a
+  PR.
 
 ## Step 5 — Run Local Checks
 
@@ -275,10 +279,14 @@ the PR for detail rather than pasting the full diff.
 
 ## Step 8 — Apply a Status Label
 
-After opening the PR and commenting, add the `fix-proposed` label to the issue.
-Add **exactly one** status label per run: if you stopped early in Steps 1/3/4 you
-will already have applied `needs-assessment`, `needs-reproduction`, or
-`fix-blocked` instead — do not also add `fix-proposed` in those cases.
+After opening the PR and commenting, if the `fix-proposed` label exists in this
+repository, add it. If it does not exist, skip labeling and note that in the
+comment.
+
+Add **exactly one** status label per run when the label exists: if you stopped
+early in Steps 1/3/4 you will already have applied `needs-assessment`,
+`needs-reproduction`, or `fix-blocked` instead — do not also add `fix-proposed`
+in those cases.
 
 ## Guardrails
 
