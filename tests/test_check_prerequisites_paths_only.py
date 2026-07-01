@@ -122,36 +122,31 @@ def test_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
 
 
 @requires_bash
-def test_current_branch_falls_back_to_feature_dir_basename(prereq_repo: Path) -> None:
-    """When no branch context exists (feature resolved from feature.json,
-    SPECIFY_FEATURE unset), BRANCH must fall back to the feature directory
-    basename instead of being emitted empty (#3026)."""
+@pytest.mark.parametrize(
+    ("use_env_var", "specify_feature", "expected_branch"),
+    [
+        (False, None, "001-my-feature"),
+        (True, None, "001-my-feature"),
+        (False, "my-explicit-branch", "my-explicit-branch"),
+    ],
+    ids=["feature_json", "env_var", "explicit_feature"],
+)
+def test_current_branch_falls_back_to_feature_dir_basename(
+    prereq_repo: Path, use_env_var: bool, specify_feature: str | None, expected_branch: str
+) -> None:
+    """With no SPECIFY_FEATURE, BRANCH falls back to the feature directory
+    basename (from feature.json or SPECIFY_FEATURE_DIRECTORY) instead of being
+    emitted empty. If SPECIFY_FEATURE is set, it remains authoritative (#3026)."""
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True, exist_ok=True)
-    _write_feature_json(prereq_repo)
-    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
-    result = subprocess.run(
-        ["bash", str(script), "--json", "--paths-only"],
-        cwd=prereq_repo,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=_clean_env(),  # no SPECIFY_FEATURE
-    )
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
-    assert data["BRANCH"] == "001-my-feature"
-
-
-@requires_bash
-def test_explicit_feature_still_overrides_basename(prereq_repo: Path) -> None:
-    """SPECIFY_FEATURE remains authoritative over the basename fallback (#3026)."""
-    feat = prereq_repo / "specs" / "001-my-feature"
-    feat.mkdir(parents=True, exist_ok=True)
-    _write_feature_json(prereq_repo)
-    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
     env = _clean_env()
-    env["SPECIFY_FEATURE"] = "my-explicit-branch"
+    if specify_feature:
+        env["SPECIFY_FEATURE"] = specify_feature
+    if use_env_var:
+        env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-my-feature"
+    else:
+        _write_feature_json(prereq_repo)
+    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
     result = subprocess.run(
         ["bash", str(script), "--json", "--paths-only"],
         cwd=prereq_repo,
@@ -162,7 +157,7 @@ def test_explicit_feature_still_overrides_basename(prereq_repo: Path) -> None:
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
-    assert data["BRANCH"] == "my-explicit-branch"
+    assert data["BRANCH"] == expected_branch
 
 
 @requires_bash
@@ -271,6 +266,8 @@ def test_ps_current_branch_falls_back_to_feature_dir_basename(
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
     assert data["BRANCH"] == expected_branch
+
+
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
 def test_ps_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
     """-PathsOnly must also work when feature.json and SPECIFY_FEATURE agree."""

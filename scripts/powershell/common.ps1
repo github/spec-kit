@@ -187,7 +187,9 @@ function Get-FeaturePathsEnv {
     # directory basename so CURRENT_BRANCH is a usable identifier rather than
     # an empty, misleading value (issue #3026).
     if (-not $currentBranch) {
-        $featureDirTrimmed = [System.IO.Path]::TrimEndingDirectorySeparator($featureDir)
+        # TrimEnd (not [Path]::TrimEndingDirectorySeparator, which is .NET Core
+        # only) keeps this working on Windows PowerShell 5.1 / .NET Framework.
+        $featureDirTrimmed = $featureDir.TrimEnd('/', '\')
         $currentBranch = Split-Path -Leaf $featureDirTrimmed
     }
 
