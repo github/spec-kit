@@ -1,5 +1,7 @@
 """Tests for IntegrationOption, IntegrationBase, MarkdownIntegration, and primitives."""
 
+import sys
+
 import pytest
 
 from specify_cli.integrations.base import (
@@ -451,7 +453,8 @@ class TestInstallScriptsPython:
         )
         return integration
 
-    def test_copies_py_and_marks_executable(self, monkeypatch, tmp_path):
+    def test_copies_all_script_files(self, monkeypatch, tmp_path):
+        # Cross-platform: every bundled file is copied into the project.
         integration = self._make_integration_with_scripts(monkeypatch, tmp_path)
         project_root = tmp_path / "proj"
         project_root.mkdir()
@@ -460,6 +463,17 @@ class TestInstallScriptsPython:
         created = integration.install_scripts(project_root, manifest)
         names = {p.name for p in created}
         assert {"common.py", "common.sh", "notes.txt"} == names
+
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="chmod exec bit not reliable on Windows"
+    )
+    def test_marks_py_and_sh_executable(self, monkeypatch, tmp_path):
+        integration = self._make_integration_with_scripts(monkeypatch, tmp_path)
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+        manifest = IntegrationManifest("stub", project_root.resolve())
+
+        integration.install_scripts(project_root, manifest)
 
         dest = project_root / ".specify" / "integrations" / "stub" / "scripts"
         py_file = dest / "common.py"
