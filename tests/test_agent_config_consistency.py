@@ -38,7 +38,6 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "pi",
     "qodercli",
     "qwen",
-    "roo",
     "rovodev",
     "shai",
     "tabnine",

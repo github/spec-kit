@@ -22,7 +22,7 @@ ALL_INTEGRATION_KEYS = [
     "copilot",
     # Stage 3 — standard markdown integrations
     "claude", "qwen", "opencode", "junie", "kilocode", "auggie",
-    "roo", "rovodev", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
+    "rovodev", "codebuddy", "qodercli", "amp", "shai", "bob", "trae",
     "pi", "kiro-cli", "vibe", "cursor-agent", "firebender",
     # Stage 4 — TOML integrations
     "gemini", "tabnine",
@@ -244,3 +244,26 @@ class TestMultiInstallSafeContracts:
                 f"{initial} and {additional} are declared multi-install safe but both manage "
                 f"these files: {sorted(initial_files & additional_files)}"
             )
+
+
+class TestCatalogParity:
+    """The discovery catalog must list every registered integration."""
+
+    def test_every_registered_integration_is_in_catalog(self):
+        """``integrations/catalog.json`` must cover every registry key.
+
+        The catalog is the discovery manifest; an integration that is
+        registered, registrar-aligned and registry-tested but missing from
+        the catalog is undiscoverable through it. ``generic`` is exempt —
+        it is the no-fixed-directory fallback, not a catalogued agent.
+        """
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[2]
+        catalog = json.loads(
+            (repo_root / "integrations" / "catalog.json").read_text(encoding="utf-8")
+        )
+        catalogued = set(catalog["integrations"])
+        registered = set(INTEGRATION_REGISTRY) - {"generic"}
+        missing = sorted(registered - catalogued)
+        assert not missing, f"integrations missing from catalog.json: {missing}"

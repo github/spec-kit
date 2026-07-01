@@ -1822,6 +1822,12 @@ class TestWhileStep:
         step = WhileStep()
         errors = step.validate({"id": "test", "condition": "{{ true }}", "max_iterations": 0, "steps": []})
         assert any("must be an integer >= 1" in e for e in errors)
+        # bool is an int subclass; `max_iterations: true` must be rejected, not
+        # silently treated as a single iteration.
+        bool_errors = step.validate(
+            {"id": "test", "condition": "{{ true }}", "max_iterations": True, "steps": []}
+        )
+        assert any("must be an integer >= 1" in e for e in bool_errors)
 
 
 class TestDoWhileStep:
@@ -1860,6 +1866,21 @@ class TestDoWhileStep:
         # Body always executes on first call regardless of condition
         assert len(result.next_steps) == 1
         assert result.output["max_iterations"] == 5
+
+    def test_validate_rejects_bool_max_iterations(self):
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        # bool is an int subclass; `max_iterations: true` must be rejected.
+        errors = step.validate(
+            {"id": "test", "condition": "{{ true }}", "max_iterations": True, "steps": []}
+        )
+        assert any("must be an integer >= 1" in e for e in errors)
+        # a real positive integer is fully valid (no errors at all).
+        ok = step.validate(
+            {"id": "test", "condition": "{{ true }}", "max_iterations": 3, "steps": []}
+        )
+        assert ok == [], ok
 
     def test_execute_empty_steps(self):
         from specify_cli.workflows.steps.do_while import DoWhileStep
@@ -5282,6 +5303,279 @@ class TestWorkflowStepRemoveCLI:
         assert "Refusing to use symlinked step directory" in result.output
 
 
+class TestWorkflowRemoveGuard:
+    def test_remove_rejects_traversal_registry_key(self, project_dir, monkeypatch):
+        """A corrupted registry key must not let remove delete outside workflows/."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("../outside", {"name": "Bad"})
+        outside = project_dir / ".specify" / "outside"
+        outside.mkdir()
+        sentinel = outside / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["workflow", "remove", "../outside"])
+
+        assert result.exit_code != 0
+        assert "Invalid workflow ID" in result.output
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    @pytest.mark.parametrize("workflow_id", ["runs", "steps"])
+    def test_remove_rejects_reserved_storage_ids(
+        self, project_dir, monkeypatch, workflow_id
+    ):
+        """Reserved workflow storage directories must never be removable workflows."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add(workflow_id, {"name": "Bad"})
+        reserved_dir = project_dir / ".specify" / "workflows" / workflow_id
+        reserved_dir.mkdir(exist_ok=True)
+        sentinel = reserved_dir / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["workflow", "remove", workflow_id])
+
+        assert result.exit_code != 0
+        assert "Invalid workflow ID" in result.output
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_remove_refuses_symlinked_workflow_dir(self, project_dir, monkeypatch):
+        """A symlinked workflow directory must not let remove delete its target."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test"})
+        outside = project_dir / "outside-workflow-remove-target"
+        outside.mkdir(exist_ok=True)
+        sentinel = outside / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        (project_dir / ".specify" / "workflows" / "test-wf").symlink_to(
+            outside, target_is_directory=True
+        )
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
+
+        assert result.exit_code != 0
+        assert "symlinked .specify/workflows/test-wf" in result.output
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+        assert WorkflowRegistry(project_dir).is_installed("test-wf")
+
+    def test_remove_refuses_non_directory_workflow_path(self, project_dir, monkeypatch):
+        """A file at the workflow path must fail cleanly instead of crashing."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test"})
+        workflow_path = project_dir / ".specify" / "workflows" / "test-wf"
+        workflow_path.write_text("not a directory", encoding="utf-8")
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
+
+        assert result.exit_code != 0
+        assert "exists but is not a directory" in result.output
+        assert workflow_path.read_text(encoding="utf-8") == "not a directory"
+        assert WorkflowRegistry(project_dir).is_installed("test-wf")
+
+
+class TestWorkflowAddSymlinkGuard:
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_refuses_symlinked_specify(self, temp_dir, monkeypatch):
+        """workflow add must refuse a symlinked .specify (writes could escape root)."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        outside = temp_dir.parent / "outside-specify-target"
+        (outside / "workflows").mkdir(parents=True, exist_ok=True)
+        (temp_dir / ".specify").symlink_to(outside, target_is_directory=True)
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", "anything.yml"])
+
+        assert result.exit_code != 0
+        assert "symlinked .specify" in result.output
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_refuses_symlinked_workflows_dir(self, temp_dir, monkeypatch):
+        """workflow add must refuse a symlinked .specify/workflows directory."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify").mkdir()
+        outside = temp_dir.parent / "outside-workflows-target"
+        outside.mkdir(parents=True, exist_ok=True)
+        (temp_dir / ".specify" / "workflows").symlink_to(outside, target_is_directory=True)
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", "anything.yml"])
+
+        assert result.exit_code != 0
+        assert "symlinked .specify/workflows" in result.output
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_refuses_symlinked_id_dir(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """A symlinked <id> install dir must not let a copy escape the project root."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        outside = temp_dir.parent / "outside-id-target"
+        outside.mkdir(parents=True, exist_ok=True)
+        # <id> from the YAML below is "test-workflow"; plant it as a symlink.
+        (temp_dir / ".specify" / "workflows" / "test-workflow").symlink_to(
+            outside, target_is_directory=True
+        )
+        src = temp_dir / "incoming.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        # No write-through: the symlink target stays empty.
+        assert not (outside / "workflow.yml").exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_add_refuses_symlinked_workflow_yml_leaf(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """A symlinked <id>/workflow.yml must not let copy2 write through the link."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        id_dir = temp_dir / ".specify" / "workflows" / "test-workflow"
+        id_dir.mkdir(parents=True)
+        outside_file = temp_dir.parent / "outside-leaf-target.yml"
+        outside_file.write_text("original\n", encoding="utf-8")
+        (id_dir / "workflow.yml").symlink_to(outside_file)
+        src = temp_dir / "incoming.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        # Rich may wrap the message; assert on the unbroken path fragment.
+        assert "test-workflow/workflow.yml" in result.output
+        assert "symlinked" in result.output
+        # The link target content is untouched.
+        assert outside_file.read_text(encoding="utf-8") == "original\n"
+
+    def test_add_refuses_non_directory_id(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """An <id> path that already exists as a file must fail cleanly, not crash."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        wf_dir = temp_dir / ".specify" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "test-workflow").write_text("not a dir", encoding="utf-8")
+        src = temp_dir / "incoming.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        assert "exists but is not a directory" in result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+    def test_add_refuses_workflow_yml_as_directory(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """A pre-existing <id>/workflow.yml *directory* must fail cleanly, not crash."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        id_dir = temp_dir / ".specify" / "workflows" / "test-workflow"
+        id_dir.mkdir(parents=True)
+        # Plant workflow.yml as a directory so a later write/copy2 would raise
+        # IsADirectoryError without the explicit non-file guard.
+        (id_dir / "workflow.yml").mkdir()
+        src = temp_dir / "incoming.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        assert "test-workflow/workflow.yml" in result.output
+        assert "is not a file" in result.output
+        # Clean exit, not an unhandled IsADirectoryError traceback.
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+    def test_safe_workflow_id_dir_escapes_markup_in_invalid_id(self, temp_dir, capsys):
+        """A traversal <id> carrying Rich markup must be escaped, not interpreted."""
+        import typer
+        from specify_cli.workflows._commands import _safe_workflow_id_dir
+
+        workflows_dir = temp_dir / ".specify" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        # Traversal (so the "Invalid workflow ID" branch fires) plus markup.
+        with pytest.raises(typer.Exit):
+            _safe_workflow_id_dir(workflows_dir, "../[red]evil[/red]")
+
+        out = capsys.readouterr().out
+        # Literal bracketed text survives; Rich did not consume it as a tag.
+        assert "[red]evil[/red]" in out
+
+    @pytest.mark.parametrize(
+        "workflow_id",
+        [
+            "runs",
+            "steps",
+            "nested/workflow",
+            "nested\\workflow",
+            "bad id",
+            " bad-id",
+            "bad-id ",
+        ],
+    )
+    def test_safe_workflow_id_dir_rejects_reserved_or_non_segment_ids(
+        self, temp_dir, workflow_id, capsys
+    ):
+        """Install IDs must not collide with workflow internals or create nested paths."""
+        import typer
+        from specify_cli.workflows._commands import _safe_workflow_id_dir
+
+        workflows_dir = temp_dir / ".specify" / "workflows"
+        workflows_dir.mkdir(parents=True)
+
+        with pytest.raises(typer.Exit):
+            _safe_workflow_id_dir(workflows_dir, workflow_id)
+
+        assert "Invalid workflow ID" in capsys.readouterr().out
+        assert not (workflows_dir / workflow_id).exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_list_refuses_symlinked_runs_dir(self, temp_dir, monkeypatch):
+        """workflow commands using the project shim must refuse symlinked run storage."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        outside = temp_dir.parent / "outside-runs-target"
+        outside.mkdir(parents=True, exist_ok=True)
+        (temp_dir / ".specify" / "workflows" / "runs").symlink_to(
+            outside, target_is_directory=True
+        )
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "list"])
+
+        assert result.exit_code != 0
+        assert "symlinked .specify/workflows/runs" in result.output
+
+
 class TestWorkflowStepAddCLI:
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_rejects_symlinked_steps_base_dir(self, project_dir, monkeypatch):
@@ -5595,7 +5889,7 @@ steps:
         # at the file-descriptor level, so it sees the subprocess output too.
         import subprocess
         import sys as _sys
-        from specify_cli import _stdout_to_stderr_when
+        from specify_cli.workflows._commands import _stdout_to_stderr_when
 
         print("STDOUT_BEFORE")
         with _stdout_to_stderr_when(True):
@@ -5614,7 +5908,7 @@ steps:
         assert "PY_LEAK" in err and "SUBPROC_LEAK" in err
 
     def test_json_redirect_inactive_is_noop(self, capfd):
-        from specify_cli import _stdout_to_stderr_when
+        from specify_cli.workflows._commands import _stdout_to_stderr_when
 
         with _stdout_to_stderr_when(False):
             print("VISIBLE_ON_STDOUT")
@@ -6235,7 +6529,7 @@ steps:
         # not cleared afterwards, so a `completed`/`failed` run whose last
         # executed step was a gate must NOT surface a stale gate block.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         gate_step = {
             "type": "gate",
@@ -6262,7 +6556,7 @@ steps:
         # message may be a non-string YAML literal (e.g. a number); the JSON
         # surface normalises it so the emitted schema stays stable.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         state = SimpleNamespace(
             status=SimpleNamespace(value="paused"),
@@ -6281,7 +6575,7 @@ steps:
         # workflow; the JSON surface always normalises them to list[str] | None
         # so the emitted schema is stable regardless of the input shape.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         def _options_payload(options):
             state = SimpleNamespace(
@@ -6311,7 +6605,7 @@ steps:
         # surface normalises it to str (and keeps None = no decision yet),
         # consistent with the message/options normalization.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         def _choice_payload(choice):
             state = SimpleNamespace(
@@ -6335,7 +6629,7 @@ steps:
         # gate is still detected by its unique output signature (`on_reject`),
         # so resume surfaces the gate block instead of silently dropping it.
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         state = SimpleNamespace(
             status=SimpleNamespace(value="paused"),
@@ -6361,7 +6655,7 @@ steps:
         # A typeless record lacking the gate signature must NOT be mistaken for
         # a gate (the fallback keys off `on_reject`, which only GateStep writes).
         from types import SimpleNamespace
-        from specify_cli import _gate_outcome
+        from specify_cli.workflows._commands import _gate_outcome
 
         state = SimpleNamespace(
             status=SimpleNamespace(value="paused"),

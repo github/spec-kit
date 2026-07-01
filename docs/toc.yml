@@ -35,6 +35,10 @@
       href: reference/presets.md
     - name: Workflows
       href: reference/workflows.md
+    - name: Bundles
+      href: reference/bundles.md
+    - name: Authentication
+      href: reference/authentication.md
 
 # Concepts
 - name: Concepts

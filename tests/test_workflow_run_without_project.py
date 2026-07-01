@@ -204,7 +204,91 @@ class TestWorkflowRunWithoutProject:
             os.chdir(old_cwd)
 
         assert result.exit_code != 0
-        assert "Refusing to use symlinked .specify path in current directory" in result.output
+        assert "Refusing to use symlinked .specify path" in result.output
+
+    def test_workflow_run_yaml_rejects_symlinked_workflows_dir(self, tmp_path):
+        """Running local YAML should fail when .specify/workflows is a symlink."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        workflow_file = tmp_path / "test-workflow.yml"
+        workflow_content = {
+            "schema_version": "1.0",
+            "workflow": {
+                "id": "symlink-workflows-test",
+                "name": "Symlink Workflows Test",
+                "version": "1.0.0",
+                "description": "A workflow for symlink guard testing",
+            },
+            "steps": [{"id": "noop", "type": "shell", "run": "echo done"}],
+        }
+        workflow_file.write_text(yaml.dump(workflow_content), encoding="utf-8")
+
+        (tmp_path / ".specify").mkdir()
+        target_dir = tmp_path / "real-workflows-dir"
+        target_dir.mkdir()
+        try:
+            (tmp_path / ".specify" / "workflows").symlink_to(
+                target_dir, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks are not available in this environment")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(app, [
+                "workflow", "run", str(workflow_file),
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "Refusing to use symlinked .specify/workflows path" in result.output
+
+    def test_workflow_run_yaml_rejects_symlinked_runs_dir(self, tmp_path):
+        """Running local YAML should fail when .specify/workflows/runs is a symlink."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        workflow_file = tmp_path / "test-workflow.yml"
+        workflow_content = {
+            "schema_version": "1.0",
+            "workflow": {
+                "id": "symlink-runs-test",
+                "name": "Symlink Runs Test",
+                "version": "1.0.0",
+                "description": "A workflow for symlink guard testing",
+            },
+            "steps": [{"id": "noop", "type": "shell", "run": "echo done"}],
+        }
+        workflow_file.write_text(yaml.dump(workflow_content), encoding="utf-8")
+
+        (tmp_path / ".specify" / "workflows").mkdir(parents=True)
+        target_dir = tmp_path / "real-runs-dir"
+        target_dir.mkdir()
+        try:
+            (tmp_path / ".specify" / "workflows" / "runs").symlink_to(
+                target_dir, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks are not available in this environment")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(app, [
+                "workflow", "run", str(workflow_file),
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code != 0
+        assert "Refusing to use symlinked .specify/workflows/runs path" in result.output
 
     def test_workflow_run_yaml_rejects_non_directory_specify_path(self, tmp_path):
         """Running local YAML should fail when .specify is not a directory."""

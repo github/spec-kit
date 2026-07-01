@@ -710,6 +710,15 @@ class TestPresetManager:
         manifest = PresetManifest(pack_dir / "preset.yml")
         assert manager.check_compatibility(manifest, "0.1.5") is True
 
+    def test_check_compatibility_prerelease(self, pack_dir, temp_dir):
+        """Test compatibility check allows prereleases and fails on boundary."""
+        manager = PresetManager(temp_dir)
+        manifest = PresetManifest(pack_dir / "preset.yml")
+        # manifest requires >=0.1.0
+        assert manager.check_compatibility(manifest, "0.8.8.dev0") is True
+        with pytest.raises(PresetCompatibilityError, match="Preset requires spec-kit"):
+            manager.check_compatibility(manifest, "0.1.0.dev0")
+
     def test_check_compatibility_invalid(self, pack_dir, temp_dir):
         """Test compatibility check with invalid specifier."""
         manager = PresetManager(temp_dir)
