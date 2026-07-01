@@ -45,6 +45,35 @@ def _constitution_is_placeholder(content: str) -> bool:
     return any(token in content for token in _CONSTITUTION_PLACEHOLDER_TOKENS)
 
 
+def _materialize_constitution_template(
+    project_root: Path,
+    memory_constitution: Path,
+) -> str | None:
+    """Materialize constitution-template content into memory/constitution.md.
+
+    Returns:
+        "copied" when the winning layer is ``replace`` and the source file is
+        copied verbatim; "composed" when a composing strategy is materialized
+        via ``resolve_content``; ``None`` when no constitution template resolves.
+    """
+    resolver = PresetResolver(project_root)
+    layers = resolver.collect_all_layers("constitution-template", "template")
+    if not layers:
+        return None
+
+    memory_constitution.parent.mkdir(parents=True, exist_ok=True)
+    top_layer = layers[0]
+    if top_layer["strategy"] == "replace":
+        shutil.copy2(top_layer["path"], memory_constitution)
+        return "copied"
+
+    composed_content = resolver.resolve_content("constitution-template", "template")
+    if composed_content is None:
+        return None
+    memory_constitution.write_text(composed_content, encoding="utf-8")
+    return "composed"
+
+
 def _substitute_core_template(
     body: str,
     cmd_name: str,
@@ -1664,23 +1693,12 @@ class PresetManager:
                 # Legitimately authored constitution; leave it untouched.
                 return
 
-        resolver = PresetResolver(self.project_root)
-        layers = resolver.collect_all_layers("constitution-template", "template")
-        if not layers:
-            return
-
         try:
-            memory_constitution.parent.mkdir(parents=True, exist_ok=True)
-            top_layer = layers[0]
-            if top_layer["strategy"] == "replace":
-                shutil.copy2(top_layer["path"], memory_constitution)
-            else:
-                composed_content = resolver.resolve_content(
-                    "constitution-template", "template"
-                )
-                if composed_content is None:
-                    return
-                memory_constitution.write_text(composed_content, encoding="utf-8")
+            result = _materialize_constitution_template(
+                self.project_root, memory_constitution
+            )
+            if result is None:
+                return
         except OSError as exc:
             import warnings
 
