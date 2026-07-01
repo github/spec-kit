@@ -33,17 +33,33 @@ def _stdin_is_interactive() -> bool:
 def ensure_constitution_from_template(
     project_path: Path, tracker: StepTracker | None = None
 ) -> None:
-    """Copy constitution template to memory if it doesn't exist."""
+    """Copy constitution template to memory if it doesn't exist.
+
+    Resolves the template through the preset priority stack so that a preset's
+    replacement constitution-template is used instead of the generic core file.
+    """
     memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
-    template_constitution = (
-        project_path / ".specify" / "templates" / "constitution-template.md"
-    )
 
     if memory_constitution.exists():
         if tracker:
             tracker.add("constitution", "Constitution setup")
             tracker.skip("constitution", "existing file preserved")
         return
+
+    # Resolve through the preset priority stack so preset replacements are honoured.
+    template_constitution: Path | None = None
+    try:
+        from ..presets import PresetResolver as _PresetResolver
+        template_constitution = _PresetResolver(project_path).resolve(
+            "constitution-template", "template"
+        )
+    except Exception:
+        template_constitution = None
+
+    if template_constitution is None:
+        template_constitution = (
+            project_path / ".specify" / "templates" / "constitution-template.md"
+        )
 
     if not template_constitution.exists():
         if tracker:
@@ -447,8 +463,6 @@ def register(app: typer.Typer) -> None:
                     "shared-infra", f"scripts ({selected_script}) + templates"
                 )
 
-                ensure_constitution_from_template(project_path, tracker=tracker)
-
                 try:
                     bundled_wf = _locate_bundled_workflow("speckit")
                     if bundled_wf:
@@ -575,6 +589,8 @@ def register(app: typer.Typer) -> None:
                             preset_err,
                             continuing="Continuing without the optional preset.",
                         )
+
+                ensure_constitution_from_template(project_path, tracker=tracker)
 
                 tracker.complete("final", "project ready")
             except (typer.Exit, SystemExit):
