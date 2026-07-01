@@ -3452,6 +3452,56 @@ steps:
         assert "retry-loop:tick:1" in state.step_results
         assert "retry-loop:tick:2" in state.step_results
 
+    def test_loop_with_bool_max_iterations_uses_default_cap(self, project_dir):
+        """A boolean max_iterations must fall back to the default cap of 10,
+        not be treated as the int 1 (bool-is-int trap).
+
+        ``max_iterations: true`` would otherwise slip past the int check
+        (``isinstance(True, int)`` is True and ``True < 1`` is False) and
+        cap the loop at ``range(True - 1) == range(0)`` — a single
+        iteration. ``execute()`` does not auto-validate, so the engine's own
+        guard is the only line of defence here.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        import sys
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('pending', end='')\n",
+            encoding="utf-8",
+        )
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-bool-max-iterations"
+  name: "While Bool Max Iterations"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "{{{{ 'done' not in steps.tick.output.stdout }}}}"
+    max_iterations: true
+    steps:
+      - id: tick
+        type: shell
+        run: '"{py}" "{script_file}"'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # Falls back to the default cap of 10, not range(True - 1) == 1 run.
+        assert counter_file.read_text(encoding="utf-8").strip() == "10"
+
     def test_do_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
         """Do-while loop must still run to max_iterations when the condition
         never becomes false.
