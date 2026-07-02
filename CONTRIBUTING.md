@@ -113,6 +113,20 @@ uv pip install -e ".[test]"
 > `specify_cli` to this checkout's `src/`. This matches the gotcha documented in
 > `AGENTS.md` (Common Pitfalls).
 
+#### Security checks
+
+```bash
+uvx --from pip-audit==2.10.0 pip-audit --disable-pip --require-hashes -r .github/security-audit-requirements.txt --progress-spinner off
+```
+
+Run this before changing dependency metadata. Pull request, push, and manual CI audits use the committed hashed requirements file so they stay deterministic. The scheduled CI audit also resolves the runtime and `test` extra dependency set across the supported Python and OS matrix to catch newly published advisories. If dependency metadata changes, refresh the committed audit input before running pip-audit:
+
+```bash
+uv pip compile pyproject.toml --extra test --universal --upgrade --generate-hashes --quiet --no-header --output-file .github/security-audit-requirements.txt
+```
+
+Upstream package releases drift over time, so even an unrelated PR touching `pyproject.toml` can fail the `dependency-audit` check until the committed file is regenerated with the command above and re-committed.
+
 #### Shell scripts
 
 ```bash
