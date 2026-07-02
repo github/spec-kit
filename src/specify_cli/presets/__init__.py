@@ -1615,7 +1615,55 @@ class PresetManager:
                     stacklevel=2,
                 )
 
+        # Re-seed constitution memory if the preset provides a replacement
+        # constitution-template and the existing memory file is still a generic placeholder.
+        self._maybe_reseed_constitution(manifest)
+
         return manifest
+
+    def _maybe_reseed_constitution(self, manifest: "PresetManifest") -> None:
+        """Re-seed .specify/memory/constitution.md from a preset's constitution-template.
+
+        Only re-seeds when:
+        1. The preset provides a ``constitution-template`` template entry.
+        2. The memory file exists and still contains generic placeholder tokens
+           (``[PROJECT_NAME]`` or ``[PRINCIPLE_1_NAME]``), meaning it has not
+           been legitimately authored yet.
+
+        This handles ``specify preset add`` on an existing project so the
+        preset's ratified constitution lands in memory without requiring
+        ``ensure_constitution_from_template`` to run again.
+        """
+        has_constitution_template = any(
+            t.get("type") == "template" and t.get("name") == "constitution-template"
+            for t in manifest.templates
+        )
+        if not has_constitution_template:
+            return
+
+        memory_constitution = self.project_root / ".specify" / "memory" / "constitution.md"
+        if not memory_constitution.exists():
+            # Will be seeded by ensure_constitution_from_template later; nothing to do here.
+            return
+
+        try:
+            content = memory_constitution.read_text(encoding="utf-8")
+        except OSError:
+            return
+
+        # Skip re-seed if the file has been legitimately authored (no placeholder tokens).
+        if "[PROJECT_NAME]" not in content and "[PRINCIPLE_1_NAME]" not in content:
+            return
+
+        resolver = PresetResolver(self.project_root)
+        resolved = resolver.resolve("constitution-template", "template")
+        if resolved is None or not resolved.exists():
+            return
+
+        try:
+            shutil.copy2(resolved, memory_constitution)
+        except OSError:
+            pass  # best-effort; don't fail preset installation for this
 
     def install_from_zip(
         self,
