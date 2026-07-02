@@ -123,7 +123,40 @@ class IntegrationBase(ABC):
     integration that sets this flag.
     """
 
+    capabilities: dict[str, Any] = {}
+    """Structured capability declaration for cross-agent portability.
+
+    Maps canonical capability names (e.g., ``"interactive_prompts"``,
+    ``"subagents"``) to dicts containing at minimum a ``"tool"`` key
+    with the agent-specific tool name, plus optional boolean
+    sub-properties.  See ``_capability_vocabulary.STANDARD_CAPABILITIES``
+    for the canonical names.
+
+    Example::
+
+        capabilities = {
+            "interactive_prompts": {
+                "tool": "AskUserQuestion",
+                "structured": True,
+                "multi_select": True,
+            },
+        }
+    """
+
     # -- Public API -------------------------------------------------------
+
+    def post_process_command_content(self, content: str) -> str:
+        """Post-process command content after registration rendering.
+
+        Called by ``register_commands()`` for all format types (Markdown,
+        TOML, YAML, Skills) to let integrations apply agent-specific
+        content transformations.  The default implementation is a no-op.
+
+        Subclasses may override to inject markers, rewrite patterns, or
+        apply any integration-specific transformation to the final
+        rendered output before it is written to disk.
+        """
+        return content
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -1368,10 +1401,12 @@ class SkillsIntegration(IntegrationBase):
 
         Called by external skill generators (presets, extensions) to let
         the integration inject agent-specific frontmatter or body
-        transformations.  The base implementation injects shared skills
-        guidance for converting dotted hook command names to hyphenated
-        slash commands.  Subclasses may override — see ``ClaudeIntegration``.
+        transformations.  Runs the generic
+        ``post_process_command_content()`` hook first, then applies
+        skills-specific transformations (hook command note injection).
+        Subclasses may override — see ``ClaudeIntegration``.
         """
+        content = self.post_process_command_content(content)
         return self._inject_hook_command_note(content)
 
     def setup(

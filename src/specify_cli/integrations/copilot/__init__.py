@@ -117,6 +117,7 @@ class CopilotIntegration(IntegrationBase):
         "args": "$ARGUMENTS",
         "extension": ".agent.md",
     }
+    capabilities = {}
 
     # Mutable flag set by setup() — indicates the active scaffolding mode.
     _skills_mode: bool = False

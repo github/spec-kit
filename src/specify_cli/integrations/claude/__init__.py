@@ -53,6 +53,26 @@ class ClaudeIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     multi_install_safe = True
+    capabilities = {
+        "interactive_prompts": {
+            "tool": "AskUserQuestion",
+            "structured": True,
+            "multi_select": True,
+        },
+        "subagents": {
+            "tool": "Agent",
+            "background": True,
+            "worktree_isolation": True,
+        },
+        "process_enforcement": {
+            "tool": "process_enforcement",
+            "hooks": True,
+            "pre_tool_gate": True,
+        },
+        "context_clearing": {
+            "tool": "/clear",
+        },
+    }
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:

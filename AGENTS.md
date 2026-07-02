@@ -472,3 +472,10 @@ Disclosure is **continuous**, not a one-time event. A single AI-disclosure parag
 ---
 
 *This documentation should be updated whenever new integrations are added to maintain accuracy and completeness.*
+
+## Active Technologies
+- Python 3.11+ (matching existing spec-kit requirements) + No new dependencies. Uses existing Python stdlib (re module for template processing). The capability processor is purpose-built, not based on Jinja2. (003-extension-capability-system)
+- N/A (file-based, processes command templates at install time) (003-extension-capability-system)
+
+## Recent Changes
+- 003-extension-capability-system: Added Python 3.11+ (matching existing spec-kit requirements) + No new dependencies. Uses existing Python stdlib (re module for template processing). The capability processor is purpose-built, not based on Jinja2.

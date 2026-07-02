@@ -18,3 +18,4 @@ class GooseIntegration(YamlIntegration):
         "args": "{{args}}",
         "extension": ".yaml",
     }
+    capabilities = {}

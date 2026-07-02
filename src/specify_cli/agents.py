@@ -566,6 +566,36 @@ class CommandRegistrar:
         is_cline_ext = agent_name == "cline" and source_id != "core"
         source_root = source_dir.resolve()
 
+        # -- Extension manifest requires_capabilities check ----------------
+        # If the extension declares required capabilities, warn about any
+        # that the target agent does not support (FR-012, FR-013).
+        _ext_yml = source_root / "extension.yml"
+        if _ext_yml.is_file():
+            try:
+                import warnings as _rw  # noqa: PLC0415
+
+                _ext_data = yaml.safe_load(_ext_yml.read_text(encoding="utf-8"))
+                if isinstance(_ext_data, dict):
+                    _req_caps = _ext_data.get("requires_capabilities", [])
+                    if isinstance(_req_caps, list) and _req_caps:
+                        from specify_cli.integrations import (  # noqa: PLC0415
+                            get_integration as _get_int,
+                        )
+
+                        _int = _get_int(agent_name)
+                        _agent_caps = _int.capabilities if _int else {}
+                        _missing = [c for c in _req_caps if c not in _agent_caps]
+                        if _missing:
+                            _rw.warn(
+                                f"Extension '{source_id}' requires capabilities "
+                                f"not supported by agent '{agent_name}': "
+                                f"{', '.join(_missing)}. Affected commands will "
+                                f"have unsupported capability sections excluded.",
+                                stacklevel=2,
+                            )
+            except (OSError, yaml.YAMLError):
+                pass  # Silently skip if manifest can't be read/parsed
+
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             aliases = cmd_info.get("aliases", [])
@@ -624,6 +654,39 @@ class CommandRegistrar:
                 format_name = agent_config.get("format_name")
                 frontmatter["name"] = format_name(cmd_name) if format_name else cmd_name
 
+            # -- Capability resolution -----------------------------------------
+            # Resolve {{#if capability}} conditionals and {{tool:name}}
+            # substitutions before any other body transformations.  The
+            # integration's capabilities dict drives the resolution.
+            from specify_cli.integrations import get_integration  # noqa: PLC0415
+            from specify_cli.integrations._capabilities import (  # noqa: PLC0415
+                CapabilitySyntaxError,
+                resolve_capabilities,
+            )
+
+            _integration = get_integration(agent_name)
+            _caps = _integration.capabilities if _integration else {}
+            if _caps or "{{#if " in body or "{{tool:" in body:
+                try:
+                    body = resolve_capabilities(body, _caps)
+                except CapabilitySyntaxError as exc:
+                    import warnings as _w  # noqa: PLC0415
+
+                    _w.warn(
+                        f"Skipping command '{cmd_name}': "
+                        f"malformed capability syntax: "
+                        + "; ".join(exc.errors),
+                        stacklevel=2,
+                    )
+                    continue  # Skip registering this command per FR-014
+
+            # -- Plugin root variable ------------------------------------------
+            # Replace __PLUGIN_ROOT__ with the extension's source directory
+            # so bundled scripts can be discovered portably.
+            if "__PLUGIN_ROOT__" in body:
+                _plugin_root = str(source_root)
+                body = body.replace("__PLUGIN_ROOT__", _plugin_root)
+
             if is_cline_ext:
                 frontmatter = self._hyphenate_frontmatter_refs(frontmatter)
                 body = self._hyphenate_body_refs(body)
@@ -678,6 +741,12 @@ class CommandRegistrar:
                 )
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
+
+            # -- Generalized post-processing for non-skills agents ---------
+            # Skills-format agents run post-processing via
+            # post_process_skill_content() in the setup() flow instead.
+            if agent_config["extension"] != "/SKILL.md" and _integration:
+                output = _integration.post_process_command_content(output)
 
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             self._ensure_inside(dest_file, commands_dir)

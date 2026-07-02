@@ -19,6 +19,18 @@ class OpencodeIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
+    capabilities = {
+        "interactive_prompts": {
+            "tool": "question",
+            "structured": True,
+            "multi_select": False,
+        },
+        "subagents": {
+            "tool": "Task",
+            "background": False,
+            "worktree_isolation": False,
+        },
+    }
 
     def build_exec_args(
         self,

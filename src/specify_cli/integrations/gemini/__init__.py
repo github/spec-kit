@@ -19,3 +19,4 @@ class GeminiIntegration(TomlIntegration):
         "extension": ".toml",
     }
     multi_install_safe = True
+    capabilities = {}
