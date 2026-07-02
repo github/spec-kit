@@ -123,6 +123,19 @@ class IntegrationBase(ABC):
     integration that sets this flag.
     """
 
+    def post_process_command_content(self, content: str) -> str:
+        """Transform command content after format rendering.
+
+        Called by ``register_commands()`` for non-skills format types
+        (Markdown, TOML, YAML) after the command has been rendered into
+        its target format and before writing to disk.  Skills-format
+        agents use ``post_process_skill_content()`` instead.
+
+        Subclasses may override to inject agent-specific content.
+        The default implementation returns *content* unchanged.
+        """
+        return content
+
     # -- Public API -------------------------------------------------------
 
     @classmethod
