@@ -521,7 +521,25 @@ class TestBundledUpdaterPathValidation:
         plan.parent.mkdir(parents=True)
         plan.write_text("# Plan\n", encoding="utf-8")
 
-        result = _run_powershell_agent_context_script(project)
+        ps51 = shutil.which("powershell.exe") if os.name == "nt" else None
+        ps = ps51 or POWERSHELL
+        script = EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
+        env = _bundled_script_env(project)
+        result = subprocess.run(
+            [
+                ps,
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+            ],
+            cwd=project,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
 
         assert result.returncode == 0, result.stderr + result.stdout
         text = (project / "AGENTS.md").read_text(encoding="utf-8")
