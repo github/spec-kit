@@ -376,6 +376,12 @@ validate_branch_template() {
             exit 1
             ;;
     esac
+    case "$template" in
+        *"{slug}"*"{number}"*)
+            >&2 echo "Error: branch_template must not place {slug} before {number}; use {slug} only in the final feature segment."
+            exit 1
+            ;;
+    esac
     case "$feature_segment" in
         "{number}-"*) ;;
         *)

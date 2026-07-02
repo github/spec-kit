@@ -327,6 +327,11 @@ function Assert-BranchTemplateValid {
         throw "branch_template must include the {number} token so generated branches remain valid feature branches."
     }
     if ($Template) {
+        $numberIndex = $Template.IndexOf('{number}', [System.StringComparison]::Ordinal)
+        $slugIndex = $Template.IndexOf('{slug}', [System.StringComparison]::Ordinal)
+        if ($slugIndex -ge 0 -and $slugIndex -lt $numberIndex) {
+            throw "branch_template must not place {slug} before {number}; use {slug} only in the final feature segment."
+        }
         $featureSegment = ($Template -split '/')[-1]
         if (-not $featureSegment.StartsWith('{number}-', [System.StringComparison]::Ordinal)) {
             throw "branch_template must put {number}- at the start of the final path segment so generated branches remain valid feature branches."

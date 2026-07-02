@@ -455,7 +455,7 @@ class TestCreateFeatureBash:
     def test_branch_template_requires_feature_segment_to_start_with_number(self, tmp_path: Path):
         """Templates must render a final path segment that validation accepts."""
         project = _setup_project(tmp_path / "app-a")
-        _write_config(project, 'branch_template: "{author}/{app}/{slug}-{number}"\n')
+        _write_config(project, 'branch_template: "{author}/{app}/feature-{number}"\n')
 
         result = _run_bash(
             "create-new-feature-branch.sh", project,
@@ -465,6 +465,21 @@ class TestCreateFeatureBash:
         assert result.returncode != 0
         assert "branch_template" in result.stderr
         assert "{number}-" in result.stderr
+
+    def test_branch_template_rejects_slug_before_number(self, tmp_path: Path):
+        """{slug} before {number} would make branch-number scanning slug-specific."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_template: "{author}/{slug}/{number}-{slug}"\n')
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode != 0
+        assert "branch_template" in result.stderr
+        assert "{slug}" in result.stderr
+        assert "{number}" in result.stderr
 
     def test_git_branch_name_override_extracts_number_after_namespace(self, tmp_path: Path):
         """GIT_BRANCH_NAME extracts FEATURE_NUM from a namespaced branch."""
@@ -769,7 +784,7 @@ class TestCreateFeaturePowerShell:
     def test_branch_template_requires_feature_segment_to_start_with_number(self, tmp_path: Path):
         """PowerShell rejects templates whose final segment cannot validate."""
         project = _setup_project(tmp_path / "app-a")
-        _write_config(project, 'branch_template: "{author}/{app}/{slug}-{number}"\n')
+        _write_config(project, 'branch_template: "{author}/{app}/feature-{number}"\n')
 
         result = _run_pwsh(
             "create-new-feature-branch.ps1", project,
@@ -779,6 +794,21 @@ class TestCreateFeaturePowerShell:
         assert result.returncode != 0
         assert "branch_template" in result.stderr
         assert "{number}-" in result.stderr
+
+    def test_branch_template_rejects_slug_before_number(self, tmp_path: Path):
+        """PowerShell rejects templates where {slug} scopes number scanning."""
+        project = _setup_project(tmp_path / "app-a")
+        _write_config(project, 'branch_template: "{author}/{slug}/{number}-{slug}"\n')
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "guided-tour", "Add guided tour",
+        )
+
+        assert result.returncode != 0
+        assert "branch_template" in result.stderr
+        assert "{slug}" in result.stderr
+        assert "{number}" in result.stderr
 
     def test_git_branch_name_override_extracts_number_after_namespace(self, tmp_path: Path):
         """PowerShell GIT_BRANCH_NAME extracts FEATURE_NUM from a namespaced branch."""

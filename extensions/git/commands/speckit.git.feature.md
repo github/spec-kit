@@ -37,7 +37,7 @@ Determine the branch numbering strategy by checking configuration in this order:
 
 ## Branch Name Template
 
-Check `.specify/extensions/git/git-config.yml` for an optional `branch_template` value. If it is empty or missing, use the default branch shape `{number}-{slug}`. If it is set, its final path segment must start with `{number}-` and the script expands these tokens:
+Check `.specify/extensions/git/git-config.yml` for an optional `branch_template` value. If it is empty or missing, use the default branch shape `{number}-{slug}`. If it is set, `{slug}` must not appear before `{number}`, its final path segment must start with `{number}-`, and the script expands these tokens:
 
 - `{author}`: sanitized Git config author (`user.name`, falling back to the email local part)
 - `{app}`: sanitized Spec Kit init directory name
