@@ -1,0 +1,25 @@
+{
+  "name": "speckit",
+  "version": "0.1.0",
+  "description": "Spec-Driven Development (SDD) workflow for Claude Code - Generate specifications, plans, tasks, and implement features systematically",
+  "author": {
+    "name": "spec-kit"
+  },
+  "contributors": [
+    {
+      "name": "Hamed Mohammadpour",
+      "url": "https://github.com/hamedmp"
+    }
+  ],
+  "repository": "https://github.com/github/spec-kit",
+  "license": "MIT",
+  "keywords": [
+    "specification",
+    "planning",
+    "development-workflow",
+    "sdd",
+    "spec-driven-development",
+    "project-management",
+    "task-management"
+  ]
+}
