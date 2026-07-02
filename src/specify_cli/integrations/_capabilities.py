@@ -55,7 +55,17 @@ def resolve_tool_references(content: str, capabilities: dict[str, Any]) -> str:
         cap_name = match.group(1)
         cap = capabilities.get(cap_name)
         if isinstance(cap, dict) and "tool" in cap:
-            return str(cap["tool"])
+            tool_val = cap["tool"]
+            if not isinstance(tool_val, str):
+                logger.warning(
+                    "Capability '%s' tool value is not a string (%s); "
+                    "replacing {{tool:%s}} with empty string.",
+                    cap_name,
+                    type(tool_val).__name__,
+                    cap_name,
+                )
+                return ""
+            return tool_val
         logger.warning(
             "Capability '%s' not found or has no tool name; "
             "replacing {{tool:%s}} with empty string.",
@@ -97,8 +107,7 @@ def _lookup_capability(path: str, capabilities: dict[str, Any]) -> bool:
     if not cap or not isinstance(cap, dict):
         return False
     if len(parts) == 1:
-        # Top-level check: capability exists and is non-empty
-        return bool(cap)
+        return True
     # Sub-property check
     sub_key = parts[1]
     return bool(cap.get(sub_key, False))
