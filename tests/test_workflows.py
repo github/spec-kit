@@ -6092,10 +6092,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -6144,10 +6149,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -6187,10 +6197,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/55"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -6263,10 +6278,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -6318,10 +6338,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"
 
-            def read(self):
-                return self._data
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
