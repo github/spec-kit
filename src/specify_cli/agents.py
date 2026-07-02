@@ -679,6 +679,16 @@ class CommandRegistrar:
             else:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
+            # -- Post-process for non-skills agents -----------------------
+            if agent_config["extension"] != "/SKILL.md":
+                from specify_cli.integrations import (  # noqa: PLC0415
+                    get_integration,
+                )
+
+                _integration = get_integration(agent_name)
+                if _integration is not None:
+                    output = _integration.post_process_command_content(output)
+
             dest_file = commands_dir / f"{output_name}{agent_config['extension']}"
             self._ensure_inside(dest_file, commands_dir)
             dest_file.parent.mkdir(parents=True, exist_ok=True)
@@ -738,6 +748,9 @@ class CommandRegistrar:
                         raise ValueError(
                             f"Unsupported format: {agent_config['format']}"
                         )
+
+                    if agent_config["extension"] != "/SKILL.md" and _integration is not None:
+                        alias_output = _integration.post_process_command_content(alias_output)
                 else:
                     # For other agents, reuse the primary output
                     alias_output = output
