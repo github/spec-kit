@@ -9,7 +9,7 @@ class CodebuddyIntegration(MarkdownIntegration):
         "name": "CodeBuddy",
         "folder": ".codebuddy/",
         "commands_subdir": "commands",
-        "install_url": "https://www.codebuddy.ai/cli",
+        "install_url": "https://www.codebuddy.cn/docs/cli/installation",
         "requires_cli": True,
     }
     registrar_config = {
@@ -18,5 +18,4 @@ class CodebuddyIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "CODEBUDDY.md"
     multi_install_safe = True

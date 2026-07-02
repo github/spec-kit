@@ -27,7 +27,6 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "goose",
     "hermes",
     "bob",
-    "iflow",
     "junie",
     "kilocode",
     "kimi",
@@ -39,12 +38,10 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "pi",
     "qodercli",
     "qwen",
-    "roo",
     "rovodev",
     "shai",
     "tabnine",
     "trae",
-    "windsurf",
     "zcode",
     "zed",
 ]
@@ -291,28 +288,6 @@ class TestAgentConfigConsistency:
     def test_agent_config_includes_pi(self):
         """AGENT_CONFIG should include pi."""
         assert "pi" in AGENT_CONFIG
-
-    # --- iFlow CLI consistency checks ---
-
-    def test_iflow_in_agent_config(self):
-        """AGENT_CONFIG should include iflow with correct folder and commands_subdir."""
-        assert "iflow" in AGENT_CONFIG
-        assert AGENT_CONFIG["iflow"]["folder"] == ".iflow/"
-        assert AGENT_CONFIG["iflow"]["commands_subdir"] == "commands"
-        assert AGENT_CONFIG["iflow"]["requires_cli"] is True
-
-    def test_iflow_in_extension_registrar(self):
-        """Extension command registrar should include iflow targeting .iflow/commands."""
-        cfg = CommandRegistrar.AGENT_CONFIGS
-
-        assert "iflow" in cfg
-        assert cfg["iflow"]["dir"] == ".iflow/commands"
-        assert cfg["iflow"]["format"] == "markdown"
-        assert cfg["iflow"]["args"] == "$ARGUMENTS"
-
-    def test_agent_config_includes_iflow(self):
-        """AGENT_CONFIG should include iflow."""
-        assert "iflow" in AGENT_CONFIG
 
     # --- Goose consistency checks ---
 

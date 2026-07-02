@@ -2,7 +2,9 @@
 
 import json
 import os
+import warnings
 
+import pytest
 import yaml
 
 from specify_cli.integrations import get_integration
@@ -17,7 +19,6 @@ class TestCopilotIntegration:
         assert copilot.config["folder"] == ".github/"
         assert copilot.config["commands_subdir"] == "agents"
         assert copilot.registrar_config["extension"] == ".agent.md"
-        assert copilot.context_file == ".github/copilot-instructions.md"
 
     def test_command_filename_agent_md(self):
         copilot = get_integration("copilot")
@@ -34,6 +35,31 @@ class TestCopilotIntegration:
         for f in agent_files:
             assert f.parent == tmp_path / ".github" / "agents"
             assert f.name.endswith(".agent.md")
+
+    def test_setup_warns_legacy_markdown_default_is_deprecated(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+
+        with pytest.warns(UserWarning, match="Copilot legacy markdown mode is deprecated"):
+            created = copilot.setup(tmp_path, m)
+
+        assert any(f.name.endswith(".agent.md") for f in created)
+
+    def test_skills_setup_does_not_warn_about_legacy_default(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            created = copilot.setup(tmp_path, m, parsed_options={"skills": True})
+
+        assert not any(
+            "Copilot legacy markdown mode is deprecated" in str(item.message)
+            for item in caught
+        )
+        assert any(f.name == "SKILL.md" for f in created)
 
     def test_setup_creates_companion_prompts(self, tmp_path):
         from specify_cli.integrations.copilot import CopilotIntegration
@@ -162,8 +188,9 @@ class TestCopilotIntegration:
         assert "Copy `.specify/templates/spec-template.md`" not in content
         assert "Load `.specify/templates/spec-template.md`" not in content
 
-    def test_plan_references_correct_context_file(self, tmp_path):
-        """The generated plan command must reference copilot's context file."""
+    def test_plan_command_has_no_context_placeholder(self, tmp_path):
+        """The core plan command must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         from specify_cli.integrations.copilot import CopilotIntegration
         copilot = CopilotIntegration()
         m = IntegrationManifest("copilot", tmp_path)
@@ -171,9 +198,6 @@ class TestCopilotIntegration:
         plan_file = tmp_path / ".github" / "agents" / "speckit.plan.agent.md"
         assert plan_file.exists()
         content = plan_file.read_text(encoding="utf-8")
-        assert copilot.context_file in content, (
-            f"Plan command should reference {copilot.context_file!r}"
-        )
         assert "__CONTEXT_FILE__" not in content
 
     def test_complete_file_inventory_sh(self, tmp_path):
@@ -193,7 +217,6 @@ class TestCopilotIntegration:
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
-            ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
@@ -204,7 +227,6 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
-            ".github/prompts/speckit.agent-context.update.prompt.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -216,15 +238,6 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
-            ".github/copilot-instructions.md",
-            ".specify/extensions.yml",
-            ".specify/extensions/.registry",
-            ".specify/extensions/agent-context/README.md",
-            ".specify/extensions/agent-context/agent-context-config.yml",
-            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
-            ".specify/extensions/agent-context/extension.yml",
-            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
-            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -265,7 +278,6 @@ class TestCopilotIntegration:
         assert result.exit_code == 0
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
-            ".github/agents/speckit.agent-context.update.agent.md",
             ".github/agents/speckit.analyze.agent.md",
             ".github/agents/speckit.checklist.agent.md",
             ".github/agents/speckit.clarify.agent.md",
@@ -276,7 +288,6 @@ class TestCopilotIntegration:
             ".github/agents/speckit.specify.agent.md",
             ".github/agents/speckit.tasks.agent.md",
             ".github/agents/speckit.taskstoissues.agent.md",
-            ".github/prompts/speckit.agent-context.update.prompt.md",
             ".github/prompts/speckit.analyze.prompt.md",
             ".github/prompts/speckit.checklist.prompt.md",
             ".github/prompts/speckit.clarify.prompt.md",
@@ -288,15 +299,6 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.tasks.prompt.md",
             ".github/prompts/speckit.taskstoissues.prompt.md",
             ".vscode/settings.json",
-            ".github/copilot-instructions.md",
-            ".specify/extensions.yml",
-            ".specify/extensions/.registry",
-            ".specify/extensions/agent-context/README.md",
-            ".specify/extensions/agent-context/agent-context-config.yml",
-            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
-            ".specify/extensions/agent-context/extension.yml",
-            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
-            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             ".specify/integration.json",
             ".specify/init-options.json",
             ".specify/integrations/copilot.manifest.json",
@@ -318,6 +320,51 @@ class TestCopilotIntegration:
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
+        )
+
+    def test_default_cli_init_warns_legacy_markdown_is_deprecated(self, tmp_path):
+        """Default Copilot init should warn users about the future skills default."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        project = tmp_path / "default-warning"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            with pytest.warns(
+                UserWarning,
+                match="Copilot legacy markdown mode is deprecated",
+            ):
+                result = CliRunner().invoke(app, [
+                    "init", "--here", "--integration", "copilot", "--script", "sh",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+
+    def test_skills_cli_init_does_not_warn_about_legacy_markdown(self, tmp_path):
+        """Explicit Copilot skills mode should not warn about the legacy default."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        project = tmp_path / "skills-no-warning"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                result = CliRunner().invoke(app, [
+                    "init", "--here", "--integration", "copilot",
+                    "--integration-options", "--skills", "--script", "sh",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert not any(
+            "Copilot legacy markdown mode is deprecated" in str(item.message)
+            for item in caught
         )
 
 
@@ -537,14 +584,14 @@ class TestCopilotSkillsMode:
             body = parts[2].strip() if len(parts) >= 3 else ""
             assert len(body) > 0, f"{f} has empty body"
 
-    def test_plan_references_correct_context_file(self, tmp_path):
-        """The generated plan skill must reference copilot's context file."""
+    def test_plan_skill_has_no_context_placeholder(self, tmp_path):
+        """The core plan skill must not carry a context-file placeholder —
+        agent context files are owned by the opt-in agent-context extension."""
         copilot = self._make_copilot()
         self._setup_skills(copilot, tmp_path)
         plan_file = tmp_path / ".github" / "skills" / "speckit-plan" / "SKILL.md"
         assert plan_file.exists()
         content = plan_file.read_text(encoding="utf-8")
-        assert copilot.context_file in content
         assert "__CONTEXT_FILE__" not in content
 
     # -- Manifest tracking ------------------------------------------------
@@ -603,14 +650,13 @@ class TestCopilotSkillsMode:
 
     # -- Context section ---------------------------------------------------
 
-    def test_skills_setup_upserts_context_section(self, tmp_path):
+    def test_skills_setup_does_not_write_context_section(self, tmp_path):
         copilot = self._make_copilot()
         self._setup_skills(copilot, tmp_path)
-        ctx_path = tmp_path / copilot.context_file
-        assert ctx_path.exists()
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "<!-- SPECKIT END -->" in content
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text
 
     # -- CLI integration test ---------------------------------------------
 
@@ -659,20 +705,8 @@ class TestCopilotSkillsMode:
         assert result.exit_code == 0, f"init failed: {result.output}"
         actual = sorted(p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file() and ".git" not in p.parts)
         expected = sorted([
-            # Skill files (core + extension-installed agent-context command)
+            # Skill files (core commands)
             *[f".github/skills/speckit-{cmd}/SKILL.md" for cmd in self._SKILL_COMMANDS],
-            ".github/skills/speckit-agent-context-update/SKILL.md",
-            # Context file
-            ".github/copilot-instructions.md",
-            # Bundled agent-context extension
-            ".specify/extensions.yml",
-            ".specify/extensions/.registry",
-            ".specify/extensions/agent-context/README.md",
-            ".specify/extensions/agent-context/agent-context-config.yml",
-            ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
-            ".specify/extensions/agent-context/extension.yml",
-            ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh",
-            ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
             # Integration metadata
             ".specify/init-options.json",
             ".specify/integration.json",

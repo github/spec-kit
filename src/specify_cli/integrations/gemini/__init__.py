@@ -18,5 +18,4 @@ class GeminiIntegration(TomlIntegration):
         "args": "{{args}}",
         "extension": ".toml",
     }
-    context_file = "GEMINI.md"
     multi_install_safe = True

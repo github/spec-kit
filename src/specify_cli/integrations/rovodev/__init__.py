@@ -39,7 +39,6 @@ class RovodevIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
 
     # -- CLI dispatch ------------------------------------------------------
 
@@ -228,8 +227,7 @@ class RovodevIntegration(SkillsIntegration):
     ) -> list[Path]:
         """Install RovoDev skills, then generate prompt wrappers and manifest.
 
-        1. ``SkillsIntegration.setup()`` generates skill files and
-           upserts the context section.
+        1. ``SkillsIntegration.setup()`` generates the skill files.
         2. Generates prompt wrappers and ``prompts.yml`` for each skill
            created in step 1.
         """
