@@ -165,6 +165,15 @@ class TestRegistrarKeyAlignment:
 class TestMultiInstallSafeContracts:
     """Declared safe integrations must stay isolated from each other."""
 
+    def test_safe_install_orders_rotate_each_integration_through_init(self):
+        safe_keys = _multi_install_safe_keys()
+        orders = _multi_install_safe_orders()
+
+        assert len(safe_keys) >= 2
+        assert [order[0] for order in orders] == safe_keys
+        assert len({tuple(order) for order in orders}) == len(safe_keys)
+        assert all(sorted(order) == safe_keys for order in orders)
+
     @pytest.mark.parametrize("key", _multi_install_safe_keys())
     def test_safe_integrations_have_static_isolated_paths(self, key):
         assert _integration_root_dir(key), (
@@ -247,14 +256,14 @@ class TestMultiInstallSafeContracts:
             os.chdir(original_cwd)
 
         integrations_dir = project_root / ".specify" / "integrations"
-        manifests = {
-            key: set(
-                json.loads(
-                    (integrations_dir / f"{key}.manifest.json").read_text(encoding="utf-8")
-                ).get("files", {})
+        manifests = {}
+        for key in ordered_keys:
+            manifest = json.loads(
+                (integrations_dir / f"{key}.manifest.json").read_text(encoding="utf-8")
             )
-            for key in ordered_keys
-        }
+            files = manifest.get("files", {})
+            assert isinstance(files, dict), f"{key} manifest files must be an object"
+            manifests[key] = set(files.keys())
 
         for first, second in _multi_install_safe_pairs():
             overlap = manifests[first] & manifests[second]
