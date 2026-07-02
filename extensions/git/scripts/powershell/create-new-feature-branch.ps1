@@ -34,6 +34,10 @@ if ($Help) {
     Write-Host "Environment variables:"
     Write-Host "  GIT_BRANCH_NAME     Use this exact branch name, bypassing all prefix/suffix generation"
     Write-Host ""
+    Write-Host "Configuration:"
+    Write-Host "  branch_template     Optional git-config.yml template with {author}, {app}, {number}, {slug}"
+    Write-Host "  branch_prefix       Optional shorthand namespace expanded before {number}-{slug}"
+    Write-Host ""
     exit 0
 }
 
@@ -67,11 +71,23 @@ function Get-HighestNumberFromSpecs {
 }
 
 function Get-HighestNumberFromNames {
-    param([string[]]$Names)
+    param(
+        [string[]]$Names,
+        [string]$ScopePrefix = ''
+    )
 
     [long]$highest = 0
     foreach ($name in $Names) {
-        if ($name -match '^(\d{3,})-' -and $name -notmatch '^\d{8}-\d{6}-') {
+        if ($ScopePrefix -and -not $name.StartsWith($ScopePrefix, [System.StringComparison]::Ordinal)) {
+            continue
+        }
+        if ($ScopePrefix) {
+            $name = $name.Substring($ScopePrefix.Length)
+        }
+        $name = ($name -split '/')[-1]
+        $hasTimestampPrefix = $name -match '^\d{8}-\d{6}-'
+        $hasMalformedTimestamp = ($name -match '^\d{7}-\d{6}-') -or ($name -match '^(?:\d{7}|\d{8})-\d{6}$')
+        if ($name -match '^(\d{3,})-' -and -not $hasTimestampPrefix -and -not $hasMalformedTimestamp) {
             [long]$num = 0
             if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
                 $highest = $num
@@ -82,7 +98,7 @@ function Get-HighestNumberFromNames {
 }
 
 function Get-HighestNumberFromBranches {
-    param()
+    param([string]$ScopePrefix = '')
 
     try {
         $branches = git branch -a 2>$null
@@ -90,7 +106,7 @@ function Get-HighestNumberFromBranches {
             $cleanNames = $branches | ForEach-Object {
                 $_.Trim() -replace '^[+*]?\s+', '' -replace '^remotes/[^/]+/', ''
             }
-            return Get-HighestNumberFromNames -Names $cleanNames
+            return Get-HighestNumberFromNames -Names $cleanNames -ScopePrefix $ScopePrefix
         }
     } catch {
         Write-Verbose "Could not check Git branches: $_"
@@ -99,6 +115,8 @@ function Get-HighestNumberFromBranches {
 }
 
 function Get-HighestNumberFromRemoteRefs {
+    param([string]$ScopePrefix = '')
+
     [long]$highest = 0
     try {
         $remotes = git remote 2>$null
@@ -111,7 +129,7 @@ function Get-HighestNumberFromRemoteRefs {
                     $refNames = $refs | ForEach-Object {
                         if ($_ -match 'refs/heads/(.+)$') { $matches[1] }
                     } | Where-Object { $_ }
-                    $remoteHighest = Get-HighestNumberFromNames -Names $refNames
+                    $remoteHighest = Get-HighestNumberFromNames -Names $refNames -ScopePrefix $ScopePrefix
                     if ($remoteHighest -gt $highest) { $highest = $remoteHighest }
                 }
             }
@@ -125,18 +143,19 @@ function Get-HighestNumberFromRemoteRefs {
 function Get-NextBranchNumber {
     param(
         [string]$SpecsDir,
-        [switch]$SkipFetch
+        [switch]$SkipFetch,
+        [string]$ScopePrefix = ''
     )
 
     if ($SkipFetch) {
-        $highestBranch = Get-HighestNumberFromBranches
-        $highestRemote = Get-HighestNumberFromRemoteRefs
+        $highestBranch = Get-HighestNumberFromBranches -ScopePrefix $ScopePrefix
+        $highestRemote = Get-HighestNumberFromRemoteRefs -ScopePrefix $ScopePrefix
         $highestBranch = [Math]::Max($highestBranch, $highestRemote)
     } else {
         try {
             git fetch --all --prune 2>$null | Out-Null
         } catch { }
-        $highestBranch = Get-HighestNumberFromBranches
+        $highestBranch = Get-HighestNumberFromBranches -ScopePrefix $ScopePrefix
     }
 
     $highestSpec = Get-HighestNumberFromSpecs -SpecsDir $SpecsDir
@@ -232,6 +251,145 @@ if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {
 Set-Location $repoRoot
 
 $specsDir = Join-Path $repoRoot 'specs'
+$configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
+
+function Read-GitConfigValue {
+    param([string]$Key)
+
+    if (-not (Test-Path -LiteralPath $configFile -PathType Leaf)) { return '' }
+    $escapedKey = [regex]::Escape($Key)
+    foreach ($line in Get-Content -LiteralPath $configFile) {
+        if ($line -match "^\s*$escapedKey\s*:\s*(.*)$") {
+            $val = ($matches[1] -replace '\s+#.*$', '').Trim()
+            $val = $val -replace '^["'']', '' -replace '["'']$', ''
+            return $val
+        }
+    }
+    return ''
+}
+
+function ConvertTo-BranchToken {
+    param(
+        [string]$Value,
+        [string]$Fallback
+    )
+
+    $cleaned = ConvertTo-CleanBranchName -Name $Value
+    if ($cleaned) { return $cleaned }
+    return $Fallback
+}
+
+function Get-GitAuthorToken {
+    $author = ''
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        try { $author = (git config user.name 2>$null | Out-String).Trim() } catch {}
+        if (-not $author) {
+            try {
+                $email = (git config user.email 2>$null | Out-String).Trim()
+                if ($email) { $author = ($email -split '@')[0] }
+            } catch {}
+        }
+    }
+    if (-not $author) { $author = if ($env:USER) { $env:USER } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' } }
+    return ConvertTo-BranchToken -Value $author -Fallback 'unknown'
+}
+
+function Get-AppToken {
+    return ConvertTo-BranchToken -Value (Split-Path $repoRoot -Leaf) -Fallback 'app'
+}
+
+function Resolve-BranchTemplate {
+    $template = Read-GitConfigValue -Key 'branch_template'
+    if ($template) { return $template }
+
+    $prefix = Read-GitConfigValue -Key 'branch_prefix'
+    if (-not $prefix) { return '' }
+    if ($prefix.EndsWith('/')) { return "${prefix}{number}-{slug}" }
+    return "$prefix/{number}-{slug}"
+}
+
+function Expand-BranchTemplate {
+    param(
+        [string]$Template,
+        [string]$FeatureNum,
+        [string]$BranchSuffix
+    )
+
+    $rendered = $Template.Replace('{author}', $authorToken)
+    $rendered = $rendered.Replace('{app}', $appToken)
+    $rendered = $rendered.Replace('{number}', $FeatureNum)
+    $rendered = $rendered.Replace('{slug}', $BranchSuffix)
+    return $rendered
+}
+
+function Assert-BranchTemplateValid {
+    param([string]$Template)
+
+    if ($Template -and -not $Template.Contains('{number}')) {
+        throw "branch_template must include the {number} token so generated branches remain valid feature branches."
+    }
+    if ($Template) {
+        $numberIndex = $Template.IndexOf('{number}', [System.StringComparison]::Ordinal)
+        $slugIndex = $Template.IndexOf('{slug}', [System.StringComparison]::Ordinal)
+        if ($slugIndex -ge 0 -and $slugIndex -lt $numberIndex) {
+            throw "branch_template must not place {slug} before {number}; use {slug} only in the final feature segment."
+        }
+        $featureSegment = ($Template -split '/')[-1]
+        if (-not $featureSegment.StartsWith('{number}-', [System.StringComparison]::Ordinal)) {
+            throw "branch_template must put {number}- at the start of the final path segment so generated branches remain valid feature branches."
+        }
+    }
+}
+
+function New-BranchName {
+    param(
+        [string]$FeatureNum,
+        [string]$BranchSuffix
+    )
+
+    if ($branchTemplate) {
+        return Expand-BranchTemplate -Template $branchTemplate -FeatureNum $FeatureNum -BranchSuffix $BranchSuffix
+    }
+    return "$FeatureNum-$BranchSuffix"
+}
+
+function Get-BranchScopePrefix {
+    param(
+        [string]$Template,
+        [string]$BranchSuffix
+    )
+
+    if (-not $Template) { return '' }
+    $numberIndex = $Template.IndexOf('{number}', [System.StringComparison]::Ordinal)
+    $slugIndex = $Template.IndexOf('{slug}', [System.StringComparison]::Ordinal)
+    $indexes = @($numberIndex, $slugIndex) | Where-Object { $_ -ge 0 } | Sort-Object
+    if (-not $indexes) { return '' }
+    $prefix = $Template.Substring(0, $indexes[0])
+    return Expand-BranchTemplate -Template $prefix -FeatureNum '' -BranchSuffix $BranchSuffix
+}
+
+function Get-FeatureNumberFromBranchName {
+    param([string]$BranchName)
+
+    $featureSegment = ($BranchName -split '/')[-1]
+    if ($featureSegment -match '^(\d{8}-\d{6})-') {
+        return $matches[1]
+    }
+    if ($featureSegment -match '^(\d+)-') {
+        return $matches[1]
+    }
+    return $BranchName
+}
+
+function Get-Utf8ByteCount {
+    param([string]$Value)
+    return [System.Text.Encoding]::UTF8.GetByteCount($Value)
+}
+
+$authorToken = Get-GitAuthorToken
+$appToken = Get-AppToken
+$branchTemplate = Resolve-BranchTemplate
+Assert-BranchTemplateValid -Template $branchTemplate
 
 function Get-BranchName {
     param([string]$Description)
@@ -276,19 +434,11 @@ function Get-BranchName {
 if ($env:GIT_BRANCH_NAME) {
     $branchName = $env:GIT_BRANCH_NAME
     # Check 244-byte limit (UTF-8) for override names
-    $branchNameUtf8ByteCount = [System.Text.Encoding]::UTF8.GetByteCount($branchName)
+    $branchNameUtf8ByteCount = Get-Utf8ByteCount -Value $branchName
     if ($branchNameUtf8ByteCount -gt 244) {
         throw "GIT_BRANCH_NAME must be 244 bytes or fewer in UTF-8. Provided value is $branchNameUtf8ByteCount bytes; please supply a shorter override branch name."
     }
-    # Extract FEATURE_NUM from the branch name if it starts with a numeric prefix
-    # Check timestamp pattern first (YYYYMMDD-HHMMSS-) since it also matches the simpler ^\d+ pattern
-    if ($branchName -match '^(\d{8}-\d{6})-') {
-        $featureNum = $matches[1]
-    } elseif ($branchName -match '^(\d+)-') {
-        $featureNum = $matches[1]
-    } else {
-        $featureNum = $branchName
-    }
+    $featureNum = Get-FeatureNumberFromBranchName -BranchName $branchName
 } else {
     if ($ShortName) {
         $branchSuffix = ConvertTo-CleanBranchName -Name $ShortName
@@ -303,39 +453,41 @@ if ($env:GIT_BRANCH_NAME) {
 
     if ($Timestamp) {
         $featureNum = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $branchName = "$featureNum-$branchSuffix"
+        $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
     } else {
+        $branchScopePrefix = Get-BranchScopePrefix -Template $branchTemplate -BranchSuffix $branchSuffix
         if ($Number -eq 0) {
             if ($DryRun -and $hasGit) {
-                $Number = Get-NextBranchNumber -SpecsDir $specsDir -SkipFetch
+                $Number = Get-NextBranchNumber -SpecsDir $specsDir -SkipFetch -ScopePrefix $branchScopePrefix
             } elseif ($DryRun) {
                 $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
             } elseif ($hasGit) {
-                $Number = Get-NextBranchNumber -SpecsDir $specsDir
+                $Number = Get-NextBranchNumber -SpecsDir $specsDir -ScopePrefix $branchScopePrefix
             } else {
                 $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
             }
         }
 
         $featureNum = ('{0:000}' -f $Number)
-        $branchName = "$featureNum-$branchSuffix"
+        $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
     }
 }
 
 $maxBranchLength = 244
-if ($branchName.Length -gt $maxBranchLength) {
-    $prefixLength = $featureNum.Length + 1
-    $maxSuffixLength = $maxBranchLength - $prefixLength
-
-    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
-    $truncatedSuffix = $truncatedSuffix -replace '-$', ''
-
+if ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength) {
     $originalBranchName = $branchName
-    $branchName = "$featureNum-$truncatedSuffix"
+    $truncatedSuffix = $branchSuffix
+    while ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength -and $truncatedSuffix.Length -gt 0) {
+        $truncatedSuffix = $truncatedSuffix.Substring(0, $truncatedSuffix.Length - 1) -replace '-$', ''
+        $branchName = New-BranchName -FeatureNum $featureNum -BranchSuffix $truncatedSuffix
+    }
+    if ((Get-Utf8ByteCount -Value $branchName) -gt $maxBranchLength) {
+        throw "Branch template prefix exceeds GitHub's 244-byte branch name limit."
+    }
 
     Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
-    Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
-    Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
+    Write-Warning "[specify] Original: $originalBranchName ($(Get-Utf8ByteCount -Value $originalBranchName) bytes)"
+    Write-Warning "[specify] Truncated to: $branchName ($(Get-Utf8ByteCount -Value $branchName) bytes)"
 }
 
 if (-not $DryRun) {
