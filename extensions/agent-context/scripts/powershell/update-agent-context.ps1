@@ -280,18 +280,30 @@ if ($cm) {
 }
 
 if (-not $PlanPath) {
-    # Discover plan.md exactly one level deep (specs/<feature>/plan.md),
-    # matching the bash glob specs/*/plan.md. Wrap in try/catch so access errors under
-    # $ErrorActionPreference = 'Stop' don't abort the script.
+    # Discover the most recently modified plan.md anywhere under specs/,
+    # matching the bash glob specs/**/plan.md. Recursing (rather than the old
+    # one-level specs/*/plan.md) picks up scoped layouts created via
+    # SPECIFY_FEATURE_DIRECTORY, e.g. specs/<scope>/<feature>/plan.md (#3024).
+    # Wrap in try/catch so access errors under $ErrorActionPreference = 'Stop'
+    # don't abort the script.
     try {
         $specsDir = Join-Path $ProjectRoot 'specs'
-        $candidate = Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |
-            ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'plan.md') -ErrorAction SilentlyContinue } |
-            Where-Object { $_ } |
+        $candidate = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
         if ($candidate) {
-            $PlanPath = [System.IO.Path]::GetRelativePath($ProjectRoot, $candidate.FullName).Replace('\','/')
+            # [System.IO.Path]::GetRelativePath is .NET Core 2.1+ only and throws
+            # under Windows PowerShell 5.1 (.NET Framework). The candidate is always
+            # under $ProjectRoot, so strip the root prefix directly instead.
+            $rootFull = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+            )
+            $rel = $candidate.FullName.Substring($rootFull.Length).TrimStart(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+            )
+            $PlanPath = $rel.Replace('\','/')
         }
     } catch {
         # Non-fatal: continue without a plan path.

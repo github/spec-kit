@@ -873,6 +873,29 @@ class TestBundledUpdaterPathValidation:
         assert "agent-context: updated agents.md" not in output
 
     @requires_bash
+    def test_bash_script_discovers_nested_plan(self, tmp_path):
+        """Plan discovery recurses into scoped layouts (#3024)."""
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=[],
+        )
+        plan = project / "specs" / "scope" / "001-feature" / "plan.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# Plan\n", encoding="utf-8")
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / "AGENTS.md").read_text(encoding="utf-8")
+        # The old one-level glob (specs/*/plan.md) would find nothing here, so no
+        # "at" line would be emitted. Normalize separators before matching: on
+        # MSYS bash the emitted path may be absolute with backslashes.
+        assert "specs/scope/001-feature/plan.md" in text.replace("\\", "/")
+
+    @requires_bash
     def test_bash_script_falls_back_from_invalid_speckit_python(self, tmp_path):
         project = tmp_path / "project"
         project.mkdir()
@@ -943,6 +966,26 @@ class TestBundledUpdaterPathValidation:
         assert output.count("agent-context: updated AGENTS.md") == 1
         assert output.count("agent-context: updated CLAUDE.md") == 1
         assert "agent-context: updated agents.md" not in output
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_discovers_nested_plan(self, tmp_path):
+        """Plan discovery recurses into scoped layouts (#3024)."""
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=[],
+        )
+        plan = project / "specs" / "scope" / "001-feature" / "plan.md"
+        plan.parent.mkdir(parents=True)
+        plan.write_text("# Plan\n", encoding="utf-8")
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        text = (project / "AGENTS.md").read_text(encoding="utf-8")
+        assert "at specs/scope/001-feature/plan.md" in text
 
     @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
     def test_powershell_script_falls_back_from_invalid_speckit_python(self, tmp_path):
