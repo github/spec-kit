@@ -26,4 +26,3 @@ class KiroCliIntegration(MarkdownIntegration):
         "args": _KIRO_ARG_FALLBACK,
         "extension": ".md",
     }
-    context_file = "AGENTS.md"

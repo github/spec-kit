@@ -14,7 +14,6 @@ class TestZedIntegration(SkillsIntegrationTests):
     FOLDER = ".agents/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".agents/skills"
-    CONTEXT_FILE = "AGENTS.md"
 
     def test_options_include_skills_flag(self):
         """Not applicable to Zed — Zed is always skills-based with no --skills flag."""

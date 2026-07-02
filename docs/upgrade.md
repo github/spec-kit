@@ -185,7 +185,7 @@ cp -r .specify/scripts .specify/scripts-backup
 
 ### 3. Duplicate slash commands (IDE-based agents)
 
-Some IDE-based agents (like Kilo Code, Windsurf) may show **duplicate slash commands** after upgrading—both old and new versions appear.
+Some IDE-based agents (like Kilo Code, Cline) may show **duplicate slash commands** after upgrading—both old and new versions appear.
 
 **Solution:** Manually delete the old command files from your agent's folder.
 
@@ -193,7 +193,7 @@ Some IDE-based agents (like Kilo Code, Windsurf) may show **duplicate slash comm
 
 ```bash
 # Navigate to the agent's commands folder
-cd .kilocode/rules/
+cd .kilocode/workflows/
 
 # List files and identify duplicates
 ls -la
@@ -242,11 +242,11 @@ mv /tmp/constitution-backup.md .specify/memory/constitution.md
 
 ### Scenario 3: "I see duplicate slash commands in my IDE"
 
-This happens with IDE-based agents (Kilo Code, Windsurf, Roo Code, etc.).
+This happens with IDE-based agents (Kilo Code, Cline, etc.).
 
 ```bash
-# Find the agent folder (example: .kilocode/rules/)
-cd .kilocode/rules/
+# Find the agent folder (example: .kilocode/workflows/)
+cd .kilocode/workflows/
 
 # List all files
 ls -la

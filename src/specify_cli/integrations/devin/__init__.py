@@ -30,7 +30,6 @@ class DevinIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
 
     def build_exec_args(
         self,

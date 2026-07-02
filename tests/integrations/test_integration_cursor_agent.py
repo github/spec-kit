@@ -1,10 +1,8 @@
 """Tests for CursorAgentIntegration."""
 
-from pathlib import Path
 from urllib.parse import urlparse
 
 from specify_cli.integrations import get_integration
-from specify_cli.integrations.manifest import IntegrationManifest
 
 from .test_integration_base_skills import SkillsIntegrationTests
 
@@ -14,82 +12,6 @@ class TestCursorAgentIntegration(SkillsIntegrationTests):
     FOLDER = ".cursor/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".cursor/skills"
-    CONTEXT_FILE = ".cursor/rules/specify-rules.mdc"
-
-
-class TestCursorMdcFrontmatter:
-    """Verify .mdc frontmatter handling in upsert/remove context section."""
-
-    def _setup(self, tmp_path: Path):
-        i = get_integration("cursor-agent")
-        m = IntegrationManifest("cursor-agent", tmp_path)
-        return i, m
-
-    def test_new_mdc_gets_frontmatter(self, tmp_path):
-        """A freshly created .mdc file includes alwaysApply: true."""
-        i, m = self._setup(tmp_path)
-        i.setup(tmp_path, m)
-        ctx = (tmp_path / i.context_file).read_text(encoding="utf-8")
-        assert ctx.startswith("---\n")
-        assert "alwaysApply: true" in ctx
-
-    def test_existing_mdc_without_frontmatter_gets_it(self, tmp_path):
-        """An existing .mdc without frontmatter gets it added."""
-        i, m = self._setup(tmp_path)
-        ctx_path = tmp_path / i.context_file
-        ctx_path.parent.mkdir(parents=True, exist_ok=True)
-        ctx_path.write_text("# User rules\n", encoding="utf-8")
-        i.upsert_context_section(tmp_path)
-        content = ctx_path.read_text(encoding="utf-8")
-        assert content.lstrip().startswith("---")
-        assert "alwaysApply: true" in content
-        assert "# User rules" in content
-
-    def test_existing_mdc_with_frontmatter_preserves_it(self, tmp_path):
-        """An existing .mdc with custom frontmatter is preserved."""
-        i, m = self._setup(tmp_path)
-        ctx_path = tmp_path / i.context_file
-        ctx_path.parent.mkdir(parents=True, exist_ok=True)
-        ctx_path.write_text(
-            "---\nalwaysApply: true\ncustomKey: hello\n---\n\n# Rules\n",
-            encoding="utf-8",
-        )
-        i.upsert_context_section(tmp_path)
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "alwaysApply: true" in content
-        assert "customKey: hello" in content
-        assert "<!-- SPECKIT START -->" in content
-
-    def test_existing_mdc_wrong_alwaysapply_fixed(self, tmp_path):
-        """An .mdc with alwaysApply: false gets corrected."""
-        i, m = self._setup(tmp_path)
-        ctx_path = tmp_path / i.context_file
-        ctx_path.parent.mkdir(parents=True, exist_ok=True)
-        ctx_path.write_text(
-            "---\nalwaysApply: false\n---\n\n# Rules\n",
-            encoding="utf-8",
-        )
-        i.upsert_context_section(tmp_path)
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "alwaysApply: true" in content
-        assert "alwaysApply: false" not in content
-
-    def test_upsert_idempotent_no_duplicate_frontmatter(self, tmp_path):
-        """Repeated upserts don't duplicate frontmatter."""
-        i, m = self._setup(tmp_path)
-        i.upsert_context_section(tmp_path)
-        i.upsert_context_section(tmp_path)
-        content = (tmp_path / i.context_file).read_text(encoding="utf-8")
-        assert content.count("alwaysApply") == 1
-
-    def test_remove_deletes_mdc_with_only_frontmatter(self, tmp_path):
-        """Removing the section from a Speckit-only .mdc deletes the file."""
-        i, m = self._setup(tmp_path)
-        i.upsert_context_section(tmp_path)
-        ctx_path = tmp_path / i.context_file
-        assert ctx_path.exists()
-        i.remove_context_section(tmp_path)
-        assert not ctx_path.exists()
 
 
 class TestCursorAgentInitFlow:
@@ -202,6 +124,55 @@ class TestCursorAgentCliDispatch:
         argv = i.build_exec_args("/speckit-plan", output_json=False)
         assert argv is not None
         assert argv[0] == "cursor-agent"
+
+    def test_build_exec_args_honors_executable_override(self, monkeypatch):
+        """``SPECKIT_INTEGRATION_CURSOR_AGENT_EXECUTABLE`` overrides argv[0].
+
+        Every other CLI-dispatch integration (codex, devin, ...) routes
+        argv[0] through ``_resolve_executable()`` so operators can pin a
+        binary path (issue #2596). cursor-agent hardcoded ``self.key`` and
+        silently ignored the documented override.
+        """
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CURSOR_AGENT_EXECUTABLE", "/custom/cursor"
+        )
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args("/speckit-plan", output_json=False)
+        assert args[0] == "/custom/cursor"
+        # The mandatory headless flags must still be present.
+        for flag in ("-p", "--trust", "--approve-mcps", "--force"):
+            assert flag in args
+
+    def test_build_exec_args_honors_extra_args_override(self, monkeypatch):
+        """``SPECKIT_INTEGRATION_CURSOR_AGENT_EXTRA_ARGS`` flags are injected
+        *before* Spec Kit's canonical ``--model`` / ``--output-format`` flags.
+
+        The ``_apply_extra_args_env_var()`` hook (issue #2595) was never
+        invoked by cursor-agent, so operator-supplied flags were dropped.
+        Insertion order is the real contract: extra args must land after the
+        mandatory headless flags but before ``--model`` / ``--output-format``,
+        so they cannot clobber, displace, or reorder Spec Kit's canonical
+        trailing flags. Exercise with both a model and JSON output so both
+        canonical flags are present to pin against.
+        """
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CURSOR_AGENT_EXTRA_ARGS", "--foo bar"
+        )
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args(
+            "/speckit-plan", model="sonnet-4-thinking", output_json=True
+        )
+        assert "--foo" in args
+        assert "bar" in args
+        # "bar" is the value of "--foo": the tokens stay adjacent and in order.
+        assert args.index("bar") == args.index("--foo") + 1
+        # Extra args are inserted before the canonical flags, so they cannot
+        # clobber or reorder them (the behavioral contract this test guards).
+        assert args.index("--foo") < args.index("--model")
+        assert args.index("--foo") < args.index("--output-format")
+        # The canonical flags themselves remain intact and correctly paired.
+        assert args[args.index("--model") + 1] == "sonnet-4-thinking"
+        assert args[args.index("--output-format") + 1] == "json"
 
     def test_build_command_invocation_uses_hyphenated_skill_name(self):
         """SkillsIntegration: /speckit-plan (not /speckit.plan)."""

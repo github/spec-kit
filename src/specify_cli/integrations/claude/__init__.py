@@ -52,7 +52,6 @@ class ClaudeIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "CLAUDE.md"
     multi_install_safe = True
 
     @staticmethod

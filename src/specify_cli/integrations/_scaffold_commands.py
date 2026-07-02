@@ -32,6 +32,8 @@ def integration_scaffold(
     """Create a minimal built-in integration package and test skeleton."""
     from ..integration_scaffold import scaffold_integration
 
+    # scaffold targets the Spec Kit *source* repo layout (_is_spec_kit_repo_root),
+    # not a .specify/ member project, so SPECIFY_INIT_DIR does not apply here.
     project_root = Path.cwd()
     try:
         result = scaffold_integration(project_root, key, integration_type.value)

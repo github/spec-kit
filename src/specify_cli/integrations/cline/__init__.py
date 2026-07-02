@@ -70,7 +70,6 @@ class ClineIntegration(MarkdownIntegration):
         "format_name": format_cline_command_name,
         "invoke_separator": "-",
     }
-    context_file = ".clinerules/specify-rules.md"
     invoke_separator = "-"
     multi_install_safe = True
 
@@ -97,7 +96,11 @@ class ClineIntegration(MarkdownIntegration):
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
             instruction = m.group(2)
-            eol = m.group(3)
+            # ``eol`` is empty when the regex matched via ``$`` because the
+            # instruction was the final line of a file with no trailing
+            # newline. Default to ``\n`` so the note never collapses onto
+            # the same line as the instruction.
+            eol = m.group(3) or "\n"
             return (
                 indent
                 + _HOOK_COMMAND_NOTE.rstrip("\n")

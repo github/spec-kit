@@ -8,4 +8,3 @@ class TestPiIntegration(MarkdownIntegrationTests):
     FOLDER = ".pi/"
     COMMANDS_SUBDIR = "prompts"
     REGISTRAR_DIR = ".pi/prompts"
-    CONTEXT_FILE = "AGENTS.md"
