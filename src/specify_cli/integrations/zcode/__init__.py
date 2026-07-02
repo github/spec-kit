@@ -28,7 +28,6 @@ class ZcodeIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "ZCODE.md"
     multi_install_safe = True
 
     @classmethod

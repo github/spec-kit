@@ -28,7 +28,6 @@ class VibeIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "AGENTS.md"
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:

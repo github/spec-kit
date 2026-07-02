@@ -30,7 +30,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
-from .._utils import dump_frontmatter
+from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import verify_archive_sha256
 
 
@@ -572,19 +572,16 @@ class PresetManager:
             PresetCompatibilityError: If pack is incompatible
         """
         required = manifest.requires_speckit_version
-        current = pkg_version.Version(speckit_version)
-
         try:
-            specifier = SpecifierSet(required)
-            if current not in specifier:
-                raise PresetCompatibilityError(
-                    f"Preset requires spec-kit {required}, "
-                    f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
-                )
+            SpecifierSet(required)  # Just to validate
         except InvalidSpecifier:
+            raise PresetCompatibilityError(f"Invalid version specifier: {required}")
+
+        if not version_satisfies(speckit_version, required):
             raise PresetCompatibilityError(
-                f"Invalid version specifier: {required}"
+                f"Preset requires spec-kit {required}, "
+                f"but {speckit_version} is installed.\n"
+                f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
             )
 
         return True
@@ -1861,7 +1858,10 @@ class PresetCatalog:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.netloc:
+        # Check hostname, not netloc: netloc is truthy for host-less URLs like
+        # "https://:8080" or "https://user@", so the host guarantee this error
+        # promises would not actually hold. hostname is None in those cases (#3209).
+        if not parsed.hostname:
             raise PresetValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -1892,10 +1892,19 @@ class PresetCatalog:
         download_url: str,
         timeout: int = 60,
     ) -> Optional[str]:
-        """Resolve a GitHub release asset URL to its REST API asset URL."""
+        """Resolve a GitHub release asset URL to its REST API asset URL.
+
+        Passes the ``github`` provider hosts from ``auth.json`` so GitHub
+        Enterprise Server release assets resolve via ``/api/v3``.
+        """
         from specify_cli._github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.http import github_provider_hosts
+
         return resolve_github_release_asset_api_url(
-            download_url, self._open_url, timeout=timeout
+            download_url,
+            self._open_url,
+            timeout=timeout,
+            github_hosts=github_provider_hosts(),
         )
 
     def _validate_catalog_payload(self, catalog_data: Any, url: str) -> None:

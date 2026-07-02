@@ -3,8 +3,8 @@
 Firebender (https://firebender.com/) is an AI coding agent for Android Studio
 and IntelliJ. It reads project-local custom slash commands from
 ``.firebender/commands/*.mdc`` and project rules from ``.firebender/rules/*.mdc``,
-so Spec Kit installs its command templates as ``.mdc`` command files and writes
-the managed context section into a ``.firebender/rules/`` rule file.
+so Spec Kit installs its command templates as ``.mdc`` command files. The managed
+context section (when used) is owned by the ``agent-context`` extension.
 """
 
 from ..base import MarkdownIntegration
@@ -25,7 +25,6 @@ class FirebenderIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".mdc",
     }
-    context_file = ".firebender/rules/specify-rules.mdc"
     multi_install_safe = True
 
     def command_filename(self, template_name: str) -> str:

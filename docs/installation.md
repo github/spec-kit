@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Linux/macOS** (or Windows; PowerShell scripts now supported without WSL)
-- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [Codebuddy CLI](https://www.codebuddy.ai/cli), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Pi Coding Agent](https://pi.dev), or [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)
+- AI coding agent: [Claude Code](https://www.anthropic.com/claude-code), [GitHub Copilot](https://code.visualstudio.com/), [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Pi Coding Agent](https://pi.dev), or [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent)
 - [uv](https://docs.astral.sh/uv/) for package management (recommended) or [pipx](https://pipx.pypa.io/) for persistent installation
 - [Python 3.11+](https://www.python.org/downloads/)
 - [Git](https://git-scm.com/downloads) _(optional — required only when the git extension is enabled)_
@@ -94,8 +94,15 @@ This helps verify you are running the official Spec Kit build from GitHub, not a
 After initialization, you should see the following commands available in your coding agent:
 
 - `/speckit.specify` - Create specifications
-- `/speckit.plan` - Generate implementation plans  
+- `/speckit.plan` - Generate implementation plans
 - `/speckit.tasks` - Break down into actionable tasks
+- `/speckit.implement` - Execute implementation tasks
+- `/speckit.analyze` - Validate cross-artifact consistency
+- `/speckit.clarify` - Identify and resolve ambiguities
+- `/speckit.checklist` - Generate quality checklists
+- `/speckit.constitution` - Create or update project principles
+- `/speckit.converge` - Assess codebase against artifacts and append remaining tasks
+- `/speckit.taskstoissues` - Convert tasks to issues
 
 Scripts are installed into a variant subdirectory matching the chosen script type:
 

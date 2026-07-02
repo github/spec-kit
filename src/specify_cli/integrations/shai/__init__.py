@@ -18,5 +18,4 @@ class ShaiIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "SHAI.md"
     multi_install_safe = True

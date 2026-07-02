@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-06-24T00:00:00Z",
+  "updated_at": "2026-07-01T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -145,6 +145,40 @@
       "created_at": "2026-05-04T00:00:00Z",
       "updated_at": "2026-05-04T00:00:00Z"
     },
+    "analytics": {
+      "name": "Analytics",
+      "id": "analytics",
+      "description": "Measure what your AI builds, and how much time it saves you",
+      "author": "Fyloss",
+      "version": "0.1.0",
+      "download_url": "https://github.com/Fyloss/spec-kit-analytics/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/Fyloss/spec-kit-analytics",
+      "homepage": "https://github.com/Fyloss/spec-kit-analytics",
+      "documentation": "https://github.com/Fyloss/spec-kit-analytics/tree/main/doc",
+      "changelog": "https://github.com/Fyloss/spec-kit-analytics/releases",
+      "license": "MIT",
+      "category": "visibility",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.10.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 16
+      },
+      "tags": [
+        "analytics",
+        "productivity",
+        "metrics",
+        "benchmarking",
+        "tracking"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-01T00:00:00Z",
+      "updated_at": "2026-07-01T00:00:00Z"
+    },
     "api-evolve": {
       "name": "API Evolve",
       "id": "api-evolve",
@@ -187,10 +221,10 @@
     "arch": {
       "name": "Architecture Workflow",
       "id": "arch",
-      "description": "Generate or reverse project-level 4+1 architecture views as separate commands",
+      "description": "Generate or reverse project-level 4+1 architecture views with per-view and full-workflow commands",
       "author": "bigsmartben",
-      "version": "1.2.1",
-      "download_url": "https://github.com/bigsmartben/spec-kit-arch/archive/refs/tags/v1.2.1.zip",
+      "version": "1.2.2",
+      "download_url": "https://github.com/bigsmartben/spec-kit-arch/archive/refs/tags/v1.2.2.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-arch",
       "homepage": "https://github.com/bigsmartben/spec-kit-arch",
       "documentation": "https://github.com/bigsmartben/spec-kit-arch/blob/main/README.md",
@@ -202,7 +236,7 @@
         "speckit_version": ">=0.8.10.dev0"
       },
       "provides": {
-        "commands": 10,
+        "commands": 12,
         "hooks": 0
       },
       "tags": [
@@ -215,7 +249,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-14T00:00:00Z",
-      "updated_at": "2026-06-23T00:00:00Z"
+      "updated_at": "2026-06-30T00:00:00Z"
     },
     "architect-preview": {
       "name": "Architect Impact Previewer",
@@ -772,40 +806,40 @@
     "companion": {
       "name": "SpecKit Companion",
       "id": "companion",
-      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, and a turbo pipeline profile.",
+      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, and composable commands you can customize with hooks and recipes.",
       "author": "alfredoperez",
-      "version": "0.3.0",
-      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.3.0/companion-0.3.0.zip",
+      "version": "0.11.0",
+      "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.11.0/companion-0.11.0.zip",
       "repository": "https://github.com/alfredoperez/speckit-companion",
       "homepage": "https://github.com/alfredoperez/speckit-companion/tree/main/speckit-extension",
-      "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/docs/",
+      "documentation": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/README.md",
       "changelog": "https://github.com/alfredoperez/speckit-companion/blob/main/speckit-extension/CHANGELOG.md",
       "license": "MIT",
       "category": "visibility",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.8.5",
+        "speckit_version": ">=0.9.5",
         "tools": [
           { "name": "python3", "required": false }
         ]
       },
       "provides": {
-        "commands": 10,
+        "commands": 13,
         "hooks": 4
       },
       "tags": [
-        "tracking",
-        "companion",
-        "progress",
         "vscode",
-        "lifecycle",
-        "resume"
+        "progress",
+        "status",
+        "resume",
+        "configurable",
+        "extensible"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-06-11T00:00:00Z"
+      "updated_at": "2026-06-24T00:00:00Z"
     },
     "conduct": {
       "name": "Conduct Extension",
@@ -1440,10 +1474,10 @@
     "intake": {
       "name": "Intake",
       "id": "intake",
-      "description": "Normalize PRD, design, and test-case evidence into SDD-ready intake artifacts.",
+      "description": "Normalize PRD, design, HTML SSOT, and test-case evidence into SDD-ready intake artifacts.",
       "author": "bigsmartben",
-      "version": "0.1.2",
-      "download_url": "https://github.com/bigsmartben/spec-kit-intake/archive/refs/tags/v0.1.2.zip",
+      "version": "0.1.3",
+      "download_url": "https://github.com/bigsmartben/spec-kit-intake/archive/refs/tags/v0.1.3.zip",
       "repository": "https://github.com/bigsmartben/spec-kit-intake",
       "homepage": "https://github.com/bigsmartben/spec-kit-intake",
       "documentation": "https://github.com/bigsmartben/spec-kit-intake/blob/main/README.md",
@@ -1461,7 +1495,7 @@
         ]
       },
       "provides": {
-        "commands": 3,
+        "commands": 4,
         "hooks": 1
       },
       "tags": [
@@ -1475,7 +1509,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-23T00:00:00Z",
-      "updated_at": "2026-06-23T00:00:00Z"
+      "updated_at": "2026-06-30T00:00:00Z"
     },
     "issue": {
       "name": "GitHub Issues Integration 2",
@@ -2501,8 +2535,8 @@
       "id": "product",
       "description": "Generates PRFAQ, Lean PRD, stakeholder summaries, and technical designs from engineering specs.",
       "author": "d0whc3r",
-      "version": "0.8.3",
-      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v0.8.3/product-0.8.3.zip",
+      "version": "1.0.1",
+      "download_url": "https://github.com/d0whc3r/spec-kit-product/releases/download/v1.0.1/product-1.0.1.zip",
       "repository": "https://github.com/d0whc3r/spec-kit-product",
       "homepage": "https://d0whc3r.github.io/spec-kit-product/",
       "documentation": "https://github.com/d0whc3r/spec-kit-product/wiki",
@@ -2514,7 +2548,7 @@
         "speckit_version": ">=0.2.0"
       },
       "provides": {
-        "commands": 4,
+        "commands": 3,
         "hooks": 3
       },
       "tags": [
@@ -2538,7 +2572,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-05-26T00:00:00Z",
-      "updated_at": "2026-06-01T00:00:00Z"
+      "updated_at": "2026-06-29T00:00:00Z"
     },
     "product-forge": {
       "name": "Product Forge",
@@ -2827,6 +2861,46 @@
       "stars": 0,
       "created_at": "2026-03-23T13:30:00Z",
       "updated_at": "2026-03-23T13:30:00Z"
+    },
+    "repository-governance": {
+      "name": "Repository Governance",
+      "id": "repository-governance",
+      "description": "Generate project-governance projections from Spec Kit metadata",
+      "author": "bigben",
+      "version": "3.0.1",
+      "download_url": "https://github.com/bigsmartben/spec-kit-agent-governance/releases/download/v3.0.1/repository-governance-v3.0.1.zip",
+      "repository": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "homepage": "https://github.com/bigsmartben/spec-kit-agent-governance",
+      "documentation": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/README.md",
+      "changelog": "https://github.com/bigsmartben/spec-kit-agent-governance/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.8.0",
+        "tools": [
+          {
+            "name": "uv",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 3
+      },
+      "tags": [
+        "governance",
+        "repository",
+        "agents",
+        "memory",
+        "context"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-06-30T00:00:00Z",
+      "updated_at": "2026-06-30T00:00:00Z"
     },
     "reqnroll-bdd": {
       "name": "Reqnroll BDD",

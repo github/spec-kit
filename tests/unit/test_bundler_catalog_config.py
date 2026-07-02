@@ -69,6 +69,49 @@ def test_add_source_persists_absolute_local_path(tmp_path: Path, monkeypatch):
     assert Path(source.url) == catalog.resolve()
 
 
+def test_remove_source_accepts_relative_local_path(tmp_path: Path, monkeypatch):
+    """add_source stores a local path as an absolute url, so remove_source must
+    accept the same relative path the caller added; otherwise `remove ./cat.json`
+    cannot undo `add ./cat.json`."""
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    catalog = project / "sub" / "cat.json"
+    catalog.parent.mkdir()
+    catalog.write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(project)
+
+    cc.add_source(project, "sub/cat.json", policy="install-allowed", priority=50)
+    # Removing with the same relative path must succeed (stored absolute).
+    removed = cc.remove_source(project, "sub/cat.json")
+    assert removed == "sub/cat.json"
+    # And it is actually gone now.
+    with pytest.raises(BundlerError, match="No project-scoped catalog source"):
+        cc.remove_source(project, "sub/cat.json")
+
+
+def test_remove_by_id_does_not_also_delete_canonical_url_match(tmp_path: Path, monkeypatch):
+    """`remove <id>` must remove only the exact-id source, not also a different
+    source whose url happens to equal the id's canonicalized path. (_canonicalize_url
+    treats a bare id as a local path, so the canonical match is only a fallback when
+    there is no exact id/url match.)"""
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    monkeypatch.chdir(project)
+    # Source A: id "local", a remote url.
+    cc.add_source(
+        project, "https://example.com/a.json", source_id="local",
+        policy="install-allowed", priority=10,
+    )
+    # Source B: a local path that canonicalizes to <cwd>/local, with a distinct id.
+    cc.add_source(project, "local", source_id="bsource", policy="install-allowed", priority=20)
+
+    removed = cc.remove_source(project, "local")
+    assert removed == "local"
+    ids = {c["id"] for c in cc._read(project)}
+    assert "local" not in ids   # the exact-id source was removed
+    assert "bsource" in ids     # the canonical-url source survives (not collateral)
+
+
 def test_add_source_refuses_symlinked_specify_escape(tmp_path: Path):
     project = tmp_path / "proj"
     project.mkdir()

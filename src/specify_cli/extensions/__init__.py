@@ -26,9 +26,10 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from .._assets import _locate_core_pack, _repo_root
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
-from .._utils import dump_frontmatter, relative_extension_path_violation
+from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
 from ..catalogs import CatalogEntry as BaseCatalogEntry
 from ..catalogs import CatalogStackBase
 from ..shared_infra import verify_archive_sha256
@@ -62,14 +63,28 @@ def _load_core_command_names() -> frozenset[str]:
     Prefer the wheel-time ``core_pack`` bundle when present, and fall back to
     the source checkout when running from the repository. If neither is
     available, use the baked-in fallback set so validation still works.
+
+    Path resolution is delegated to the canonical ``_assets`` resolvers
+    (``_locate_core_pack`` / ``_repo_root``) — the same ones the presets and
+    bundle loaders use — rather than bespoke ``Path(__file__)`` arithmetic.
+    Hand-counted ``.parent`` chains silently broke discovery once already: the
+    #3014 move of this module from ``specify_cli/extensions.py`` to
+    ``specify_cli/extensions/__init__.py`` pushed the file one directory deeper
+    without updating the counts, so both candidates resolved to non-existent
+    paths and every call fell through to the fallback (#3274). The shared
+    resolvers are anchored to the package root, so discovery survives future
+    module moves.
     """
+    core_pack = _locate_core_pack()
     candidate_dirs = [
-        Path(__file__).parent / "core_pack" / "commands",
-        Path(__file__).resolve().parent.parent.parent / "templates" / "commands",
+        # Wheel install: force-include maps templates/commands → core_pack/commands.
+        core_pack / "commands" if core_pack is not None else None,
+        # Source checkout / editable install: repo-root templates/commands.
+        _repo_root() / "templates" / "commands",
     ]
 
     for commands_dir in candidate_dirs:
-        if not commands_dir.is_dir():
+        if commands_dir is None or not commands_dir.is_dir():
             continue
 
         command_names = {
@@ -1279,19 +1294,19 @@ class ExtensionManager:
             CompatibilityError: If extension is incompatible
         """
         required = manifest.requires_speckit_version
-        current = pkg_version.Version(speckit_version)
 
         # Parse version specifier (e.g., ">=0.1.0,<2.0.0")
         try:
-            specifier = SpecifierSet(required)
-            if current not in specifier:
-                raise CompatibilityError(
-                    f"Extension requires spec-kit {required}, "
-                    f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
-                )
+            SpecifierSet(required)  # Just to validate
         except InvalidSpecifier:
             raise CompatibilityError(f"Invalid version specifier: {required}")
+
+        if not version_satisfies(speckit_version, required):
+            raise CompatibilityError(
+                f"Extension requires spec-kit {required}, "
+                f"but {speckit_version} is installed.\n"
+                f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
+            )
 
         return True
 
@@ -1871,24 +1886,6 @@ class ExtensionManager:
             return None
 
 
-def version_satisfies(current: str, required: str) -> bool:
-    """Check if current version satisfies required version specifier.
-
-    Args:
-        current: Current version (e.g., "0.1.5")
-        required: Required version specifier (e.g., ">=0.1.0,<2.0.0")
-
-    Returns:
-        True if version satisfies requirement
-    """
-    try:
-        current_ver = pkg_version.Version(current)
-        specifier = SpecifierSet(required)
-        return current_ver in specifier
-    except (pkg_version.InvalidVersion, InvalidSpecifier):
-        return False
-
-
 class CommandRegistrar:
     """Handles registration of extension commands with AI agents.
 
@@ -2057,12 +2054,18 @@ class ExtensionCatalog(CatalogStackBase):
     ) -> Optional[str]:
         """Resolve a GitHub release asset URL to its API asset URL.
 
-        Delegates to the shared helper in :mod:`specify_cli._github_http`.
+        Delegates to the shared helper in :mod:`specify_cli._github_http`,
+        passing the ``github`` provider hosts from ``auth.json`` so GitHub
+        Enterprise Server release assets resolve via ``/api/v3``.
         """
         from specify_cli._github_http import resolve_github_release_asset_api_url
+        from specify_cli.authentication.http import github_provider_hosts
 
         return resolve_github_release_asset_api_url(
-            download_url, self._open_url, timeout=timeout
+            download_url,
+            self._open_url,
+            timeout=timeout,
+            github_hosts=github_provider_hosts(),
         )
 
     def _validate_catalog_payload(self, catalog_data: Any, url: str) -> None:

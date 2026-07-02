@@ -1,6 +1,5 @@
 """Tests for ClaudeIntegration."""
 
-import codecs
 import json
 import os
 from pathlib import Path
@@ -33,10 +32,6 @@ class TestClaudeIntegration:
         assert integration.registrar_config["format"] == "markdown"
         assert integration.registrar_config["args"] == "$ARGUMENTS"
         assert integration.registrar_config["extension"] == "/SKILL.md"
-
-    def test_context_file(self):
-        integration = get_integration("claude")
-        assert integration.context_file == "CLAUDE.md"
 
     def test_setup_creates_skill_files(self, tmp_path):
         integration = get_integration("claude")
@@ -76,57 +71,30 @@ class TestClaudeIntegration:
         )
         assert "Prüfe Konformität" in rendered
 
-    def test_setup_upserts_context_section(self, tmp_path):
+    def test_setup_does_not_write_context_section(self, tmp_path):
+        """The CLI no longer manages the agent context file — that is owned by
+        the opt-in agent-context extension. Setup must not create or touch it."""
         integration = get_integration("claude")
         manifest = IntegrationManifest("claude", tmp_path)
         integration.setup(tmp_path, manifest, script_type="sh")
 
-        ctx_path = tmp_path / integration.context_file
-        assert ctx_path.exists()
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "<!-- SPECKIT END -->" in content
-        assert "read the current plan" in content
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text
 
-    def test_upsert_context_section_strips_bom(self, tmp_path):
-        """Existing context file with UTF-8 BOM must be cleaned up on upsert."""
+    def test_teardown_does_not_touch_existing_context_file(self, tmp_path):
+        """A user-authored context file is left intact on teardown."""
         integration = get_integration("claude")
-        ctx_path = tmp_path / integration.context_file
+        ctx_path = tmp_path / "CLAUDE.md"
+        original = "# CLAUDE.md\n\nUser content.\n"
+        ctx_path.write_text(original, encoding="utf-8")
 
-        # Write a file that starts with a UTF-8 BOM (as the old PowerShell script did)
-        bom = codecs.BOM_UTF8
-        ctx_path.write_bytes(bom + b"# CLAUDE.md\n\nSome existing content.\n")
+        manifest = IntegrationManifest("claude", tmp_path)
+        integration.setup(tmp_path, manifest, script_type="sh")
+        integration.teardown(tmp_path, manifest)
 
-        integration.upsert_context_section(tmp_path)
-
-        result = ctx_path.read_bytes()
-        assert not result.startswith(bom), "BOM must be stripped after upsert"
-        content = result.decode("utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "Some existing content." in content
-
-    def test_remove_context_section_strips_bom(self, tmp_path):
-        """remove_context_section must clean BOM from context file on Windows-authored files."""
-        integration = get_integration("claude")
-        ctx_path = tmp_path / integration.context_file
-
-        marker_content = (
-            "# CLAUDE.md\n\n"
-            "<!-- SPECKIT START -->\n"
-            "For additional context about technologies to be used, project structure,\n"
-            "shell commands, and other important information, read the current plan\n"
-            "<!-- SPECKIT END -->\n"
-        )
-        ctx_path.write_bytes(codecs.BOM_UTF8 + marker_content.encode("utf-8"))
-
-        result = integration.remove_context_section(tmp_path)
-
-        assert result is True
-        assert ctx_path.exists(), "File should exist (non-empty content remains)"
-        remaining = ctx_path.read_bytes()
-        assert not remaining.startswith(codecs.BOM_UTF8), "BOM must be stripped after remove"
-        assert b"<!-- SPECKIT" not in remaining
-        assert b"# CLAUDE.md" in remaining
+        assert ctx_path.read_text(encoding="utf-8") == original
 
     def test_integration_flag_creates_skill_files_cli(self, tmp_path):
         from typer.testing import CliRunner
@@ -539,8 +507,16 @@ class TestClaudeDisableModelInvocation:
 class TestClaudeForkContext:
     """Verify context: fork is injected only for commands listed in FORK_CONTEXT_COMMANDS."""
 
-    def test_analyze_skill_runs_in_forked_subagent(self, tmp_path):
-        """speckit-analyze must opt into context: fork + agent."""
+    def test_no_commands_fork_by_default(self):
+        """FORK_CONTEXT_COMMANDS is empty: no command opts into context: fork.
+
+        ``analyze`` was removed (#3185) because its verbose report defeated the
+        purpose of forking and compounded context overhead across repeated runs.
+        """
+        assert FORK_CONTEXT_COMMANDS == {}
+
+    def test_analyze_skill_does_not_fork(self, tmp_path):
+        """speckit-analyze must run in the main session, not a forked subagent (#3185)."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
         i.setup(tmp_path, m, script_type="sh")
@@ -549,10 +525,10 @@ class TestClaudeForkContext:
         content = analyze_skill.read_text(encoding="utf-8")
         parts = content.split("---", 2)
         parsed = yaml.safe_load(parts[1])
-        assert parsed.get("context") == "fork"
-        assert parsed.get("agent") == "general-purpose"
+        assert "context" not in parsed
+        assert "agent" not in parsed
 
-    def test_other_skills_do_not_fork(self, tmp_path):
+    def test_no_skills_fork(self, tmp_path):
         """Skills not in FORK_CONTEXT_COMMANDS must not get context: fork."""
         i = get_integration("claude")
         m = IntegrationManifest("claude", tmp_path)
@@ -574,60 +550,39 @@ class TestClaudeForkContext:
                 f"{f.parent.name}: must not have agent frontmatter"
             )
 
-    def test_fork_flags_inside_frontmatter(self, tmp_path):
-        """context/agent must appear in the frontmatter, not in the body."""
+    def test_post_process_no_fork_for_skills(self):
+        """With FORK_CONTEXT_COMMANDS empty, post_process must not add context/agent."""
         i = get_integration("claude")
-        m = IntegrationManifest("claude", tmp_path)
-        i.setup(tmp_path, m, script_type="sh")
-        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
-        content = analyze_skill.read_text(encoding="utf-8")
-        parts = content.split("---", 2)
-        assert len(parts) >= 3
-        frontmatter = parts[1]
-        body = parts[2]
-        assert "context: fork" in frontmatter
-        assert "agent: general-purpose" in frontmatter
-        assert "context: fork" not in body
-        assert "agent: general-purpose" not in body
+        for name in ("speckit-analyze", "speckit-plan"):
+            content = f'---\nname: "{name}"\ndescription: "x"\n---\n\nBody\n'
+            result = i.post_process_skill_content(content)
+            parsed = yaml.safe_load(result.split("---", 2)[1])
+            assert "context" not in parsed
+            assert "agent" not in parsed
 
-    def test_fork_injection_idempotent(self, tmp_path):
-        """Re-running setup must not duplicate the fork frontmatter keys."""
-        i = get_integration("claude")
-        m = IntegrationManifest("claude", tmp_path)
-        i.setup(tmp_path, m, script_type="sh")
-        i.setup(tmp_path, m, script_type="sh")
-        analyze_skill = tmp_path / ".claude/skills/speckit-analyze/SKILL.md"
-        content = analyze_skill.read_text(encoding="utf-8")
-        assert content.count("context: fork") == 1
-        assert content.count("agent: general-purpose") == 1
+    def test_fork_mechanism_injects_when_configured(self, monkeypatch):
+        """The injection mechanism still works for any command added to
+        FORK_CONTEXT_COMMANDS, even though none ships enabled by default."""
+        import specify_cli.integrations.claude as claude_mod
 
-    def test_fork_context_injected_via_post_process(self):
-        """Preset/extension generators call post_process_skill_content directly,
-        bypassing setup(); fork context must be injected there too."""
+        monkeypatch.setitem(
+            claude_mod.FORK_CONTEXT_COMMANDS,
+            "analyze",
+            {"context": "fork", "agent": "general-purpose"},
+        )
         i = get_integration("claude")
         content = '---\nname: "speckit-analyze"\ndescription: "x"\n---\n\nBody\n'
         result = i.post_process_skill_content(content)
-        parsed = yaml.safe_load(result.split("---", 2)[1])
+        parts = result.split("---", 2)
+        parsed = yaml.safe_load(parts[1])
         assert parsed.get("context") == "fork"
         assert parsed.get("agent") == "general-purpose"
-        assert parsed.get("argument-hint") == ARGUMENT_HINTS["analyze"]
-
-    def test_post_process_no_fork_for_other_skills(self):
-        """Skills not in FORK_CONTEXT_COMMANDS must not gain context/agent."""
-        i = get_integration("claude")
-        content = '---\nname: "speckit-plan"\ndescription: "x"\n---\n\nBody\n'
-        result = i.post_process_skill_content(content)
-        parsed = yaml.safe_load(result.split("---", 2)[1])
-        assert "context" not in parsed
-        assert "agent" not in parsed
-
-    def test_post_process_fork_idempotent(self):
-        """Re-running post_process must not duplicate fork frontmatter keys."""
-        i = get_integration("claude")
-        content = '---\nname: "speckit-analyze"\ndescription: "x"\n---\n\nBody\n'
-        once = i.post_process_skill_content(content)
-        twice = i.post_process_skill_content(once)
-        assert once == twice
+        # Flags must land in the frontmatter, not the body.
+        assert "context: fork" in parts[1]
+        assert "context: fork" not in parts[2]
+        # Re-running must not duplicate the injected keys.
+        twice = i.post_process_skill_content(result)
+        assert result == twice
         assert twice.count("context: fork") == 1
         assert twice.count("agent: general-purpose") == 1
 

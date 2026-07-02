@@ -16,8 +16,10 @@ import platform
 import tempfile
 import shutil
 import tomllib
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 from tests.conftest import strip_ansi
 from specify_cli.extensions import (
@@ -35,8 +37,12 @@ from specify_cli.extensions import (
     ValidationError,
     CompatibilityError,
     normalize_priority,
-    version_satisfies,
 )
+from specify_cli._utils import version_satisfies
+
+# Minimal valid ZIP (empty end-of-central-directory record). Passes
+# zipfile.is_zipfile() so --from download tests exercise the content guard.
+_MINIMAL_ZIP_BYTES = b"PK\x05\x06" + b"\x00" * 18
 
 
 def can_create_symlink(tmp_path: Path) -> bool:
@@ -226,6 +232,73 @@ class TestExtensionManifest:
         }
 
         assert CORE_COMMAND_NAMES == expected
+
+    def test_load_core_command_names_discovers_from_source_checkout(self, monkeypatch):
+        """Discovery must actually read the repo-root templates, not silently
+        fall back (#3274).
+
+        The fallback set happens to equal the real command stems today, so an
+        equality check against the live tree cannot tell a working loader apart
+        from a dead one. Point ``_repo_root`` at a temp tree with *different*
+        command names: the old off-by-one path math read nothing and returned
+        the baked-in fallback; the fixed loader returns the temp stems.
+        """
+        from specify_cli.extensions import (
+            _load_core_command_names,
+            _FALLBACK_CORE_COMMAND_NAMES,
+        )
+        import specify_cli.extensions as ext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            commands = Path(tmp) / "templates" / "commands"
+            commands.mkdir(parents=True)
+            (commands / "widget.md").write_text("# widget", encoding="utf-8")
+            (commands / "gadget.md").write_text("# gadget", encoding="utf-8")
+            (commands / "notacommand.txt").write_text("skip me", encoding="utf-8")
+
+            # No wheel bundle in this scenario; force the source-checkout path.
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: None)
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp))
+
+            result = _load_core_command_names()
+
+        assert result == {"widget", "gadget"}
+        assert result != _FALLBACK_CORE_COMMAND_NAMES
+
+    def test_load_core_command_names_prefers_wheel_core_pack(self, monkeypatch):
+        """When a wheel ``core_pack`` bundle exists, discovery reads
+        ``core_pack/commands`` (the force-include target) ahead of the source
+        tree (#3274)."""
+        from specify_cli.extensions import _load_core_command_names
+        import specify_cli.extensions as ext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            core_pack = Path(tmp) / "core_pack"
+            (core_pack / "commands").mkdir(parents=True)
+            (core_pack / "commands" / "sprocket.md").write_text("# sprocket", encoding="utf-8")
+
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: core_pack)
+            # Source fallback should be ignored while the bundle resolves.
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp) / "nonexistent")
+
+            result = _load_core_command_names()
+
+        assert result == {"sprocket"}
+
+    def test_load_core_command_names_falls_back_when_nothing_found(self, monkeypatch):
+        """With neither a bundle nor a source tree, discovery returns the
+        baked-in fallback so validation still works (#3274)."""
+        from specify_cli.extensions import (
+            _load_core_command_names,
+            _FALLBACK_CORE_COMMAND_NAMES,
+        )
+        import specify_cli.extensions as ext
+
+        with tempfile.TemporaryDirectory() as tmp:
+            monkeypatch.setattr(ext, "_locate_core_pack", lambda: None)
+            monkeypatch.setattr(ext, "_repo_root", lambda: Path(tmp) / "nonexistent")
+
+            assert _load_core_command_names() == _FALLBACK_CORE_COMMAND_NAMES
 
     def test_missing_required_field(self, temp_dir):
         """Test manifest missing required field."""
@@ -998,6 +1071,14 @@ class TestExtensionManager:
         # Requires >=0.1.0, but we have 0.0.1
         with pytest.raises(CompatibilityError, match="Extension requires spec-kit"):
             manager.check_compatibility(manifest, "0.0.1")
+
+    def test_check_compatibility_allows_prerelease_builds(self, extension_dir, project_dir):
+        """Prerelease spec-kit builds should satisfy compatible version ranges."""
+        manager = ExtensionManager(project_dir)
+        manifest = ExtensionManifest(extension_dir / "extension.yml")
+
+        result = manager.check_compatibility(manifest, "0.8.8.dev0")
+        assert result is True
 
     def test_install_from_directory(self, extension_dir, project_dir):
         """Test installing extension from directory."""
@@ -2622,6 +2703,12 @@ class TestVersionSatisfies:
         """Test complex version specifier."""
         assert version_satisfies("1.0.5", ">=1.0.0,!=1.0.3")
         assert not version_satisfies("1.0.3", ">=1.0.0,!=1.0.3")
+
+    def test_version_satisfies_prerelease(self):
+        """Prerelease builds should satisfy compatible lower bounds, but not higher bounds."""
+        assert version_satisfies("0.8.8.dev0", ">=0.2.0")
+        assert not version_satisfies("0.2.0.dev0", ">=0.2.0")
+        assert not version_satisfies("0.8.7.dev1", ">=0.8.8")
 
     def test_version_satisfies_invalid(self):
         """Test invalid version strings."""
@@ -5376,7 +5463,7 @@ class TestExtensionAddCLI:
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"zip-bytes")), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip), \
              patch.object(ExtensionRegistry, "get", return_value={}):
             result = runner.invoke(
@@ -5443,6 +5530,98 @@ class TestExtensionAddCLI:
         assert result.exit_code == 1, result.output
         assert "https://example.com/[red]ext[/red].zip" in result.output
         assert "bad [red]download[/red]" in result.output
+
+    def test_add_from_url_rejects_non_zip_login_page(self, tmp_path):
+        """An HTML login page (unauthenticated fetch) must fail clearly, not BadZipFile."""
+        import io
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch(
+                 "specify_cli.authentication.http.open_url",
+                 return_value=FakeResponse(b"<!DOCTYPE html><html>Sign in</html>"),
+             ), \
+             patch.object(ExtensionManager, "install_from_zip") as install:
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://raw.ghe.example/o/r/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert "did not return a ZIP archive" in result.output
+        install.assert_not_called()
+
+    def test_add_from_url_resolves_ghes_release_asset(self, tmp_path):
+        """A GHES release-download URL resolves to /api/v3 with octet-stream Accept."""
+        import io
+        from types import SimpleNamespace
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        import json
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        seen = {}
+
+        def fake_open_url(url, timeout=10, extra_headers=None, redirect_validator=None):
+            if "/releases/tags/" in url:
+                body = json.dumps({
+                    "assets": [{
+                        "name": "ext.zip",
+                        "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42",
+                    }]
+                }).encode()
+                return FakeResponse(body)
+            seen["url"] = url
+            seen["headers"] = extra_headers
+            return FakeResponse(_MINIMAL_ZIP_BYTES)
+
+        def fake_install(self_obj, zip_path, speckit_version, priority=10, force=False):
+            return SimpleNamespace(
+                id="x", name="X", version="1.0.0", description="", warnings=[], commands=[], hooks=[]
+            )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("typer.confirm", return_value=True), \
+             patch("specify_cli.authentication.http.github_provider_hosts", return_value=("ghes.example",)), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
+             patch.object(ExtensionManager, "install_from_zip", fake_install):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "x", "--from",
+                 "https://ghes.example/org/repo/releases/download/v1.0/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "/api/v3/repos/org/repo/releases/assets/" in seen["url"]
+        assert seen["headers"] == {"Accept": "application/octet-stream"}
 
     @pytest.mark.parametrize(
         ("exc_type", "label"),
@@ -5521,7 +5700,7 @@ class TestExtensionAddCLI:
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch("typer.confirm", return_value=True), \
-             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(b"zip-bytes")), \
+             patch("specify_cli.authentication.http.open_url", return_value=FakeResponse(_MINIMAL_ZIP_BYTES)), \
              patch.object(ExtensionManager, "install_from_zip", fake_install_from_zip):
             result = runner.invoke(
                 app,
@@ -5530,7 +5709,7 @@ class TestExtensionAddCLI:
             )
 
         assert result.exit_code == 0
-        assert installed["zip_bytes"] == b"zip-bytes"
+        assert installed["zip_bytes"] == _MINIMAL_ZIP_BYTES
         assert installed["zip_path"].resolve().is_relative_to(downloads_dir.resolve())
         assert installed["zip_path"].name.startswith("extension-url-download-")
         assert not installed["zip_path"].exists()
@@ -7280,3 +7459,36 @@ class TestExtensionForceCLI:
             )
             assert result2.exit_code == 0, strip_ansi(result2.output)
             assert "installed" in strip_ansi(result2.output)
+
+
+def test_extension_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monkeypatch):
+    """End-to-end wiring: auth.json github host → GHES asset resolution."""
+    from specify_cli.authentication import http as _auth_http
+    from specify_cli.authentication.config import AuthConfigEntry
+    from specify_cli.extensions import ExtensionCatalog
+
+    monkeypatch.setattr(_auth_http, "_config_override", [
+        AuthConfigEntry(hosts=("ghes.example",), provider="github",
+                        auth="bearer", token="t"),
+    ])
+    catalog = ExtensionCatalog(tmp_path)
+
+    captured = []
+
+    @contextmanager
+    def fake_open(url, timeout=None, extra_headers=None):
+        captured.append(url)
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({
+            "assets": [{"name": "ext.zip",
+                        "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/7"}]
+        }).encode()
+        yield resp
+
+    monkeypatch.setattr(catalog, "_open_url", fake_open)
+
+    resolved = catalog._resolve_github_release_asset_api_url(
+        "https://ghes.example/o/r/releases/download/v1/ext.zip"
+    )
+    assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/7"
+    assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v1"]

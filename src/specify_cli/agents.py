@@ -433,37 +433,6 @@ class CommandRegistrar:
 
         body = body.replace("{ARGS}", "$ARGUMENTS").replace("__AGENT__", agent_name)
 
-        # Resolve __CONTEXT_FILE__ from the agent-context extension config.
-        # When disabled, ignore stale context_files but keep the singular
-        # context_file value so generated commands still point at the agent
-        # context file managed before the extension was disabled.
-        from .integrations.base import IntegrationBase
-
-        # Local import: _load_agent_context_config lives in __init__.py which
-        # imports agents.py, so a top-level import would be circular.
-        from . import _load_agent_context_config
-
-        ac_cfg = _load_agent_context_config(project_root)
-        extension_enabled = IntegrationBase._agent_context_extension_enabled(
-            project_root
-        )
-        if extension_enabled:
-            context_files = IntegrationBase._resolve_context_file_values(
-                project_root,
-                ac_cfg,
-                legacy_context_file=init_opts.get("context_file"),
-            )
-        else:
-            context_files = IntegrationBase._resolve_context_file_values(
-                project_root,
-                ac_cfg,
-                legacy_context_file=init_opts.get("context_file"),
-                include_context_files=False,
-                validate=False,
-            )
-        context_file = IntegrationBase._format_context_file_values(context_files)
-        body = body.replace("__CONTEXT_FILE__", context_file)
-
         return CommandRegistrar.rewrite_project_relative_paths(body)
 
     def _convert_argument_placeholder(

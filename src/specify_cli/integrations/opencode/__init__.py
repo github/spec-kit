@@ -19,7 +19,6 @@ class OpencodeIntegration(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "AGENTS.md"
 
     def build_exec_args(
         self,

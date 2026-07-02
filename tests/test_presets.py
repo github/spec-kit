@@ -17,9 +17,11 @@ import tempfile
 import shutil
 import warnings
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import yaml
 
@@ -707,6 +709,15 @@ class TestPresetManager:
         manager = PresetManager(temp_dir)
         manifest = PresetManifest(pack_dir / "preset.yml")
         assert manager.check_compatibility(manifest, "0.1.5") is True
+
+    def test_check_compatibility_prerelease(self, pack_dir, temp_dir):
+        """Test compatibility check allows prereleases and fails on boundary."""
+        manager = PresetManager(temp_dir)
+        manifest = PresetManifest(pack_dir / "preset.yml")
+        # manifest requires >=0.1.0
+        assert manager.check_compatibility(manifest, "0.8.8.dev0") is True
+        with pytest.raises(PresetCompatibilityError, match="Preset requires spec-kit"):
+            manager.check_compatibility(manifest, "0.1.0.dev0")
 
     def test_check_compatibility_invalid(self, pack_dir, temp_dir):
         """Test compatibility check with invalid specifier."""
@@ -1421,6 +1432,27 @@ class TestPresetCatalog:
         catalog = PresetCatalog(project_dir)
         catalog._validate_catalog_url("http://localhost:8080/catalog.json")
         catalog._validate_catalog_url("http://127.0.0.1:8080/catalog.json")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://:8080",                # port only, no host
+            "https://:8080/catalog.json",   # port only, with path
+            "https://:0",                   # port only, no host
+            "https://user@",                # userinfo only, no host
+            "https://user:pass@",           # userinfo only, no host
+        ],
+    )
+    def test_validate_catalog_url_hostless_rejected(self, project_dir, url):
+        """Reject host-less URLs whose netloc is truthy but hostname is None (#3209).
+
+        ``urlparse('https://:8080').netloc`` is ``':8080'`` (truthy) but its
+        ``hostname`` is ``None``, so a netloc-based check would accept a URL
+        with no actual host, contradicting the "valid URL with a host" error.
+        """
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="valid URL with a host"):
+            catalog._validate_catalog_url(url)
 
     def test_env_var_catalog_url(self, project_dir, monkeypatch):
         """Test catalog URL from environment variable."""
@@ -4752,6 +4784,69 @@ class TestPresetAddFromUrlResolution:
         assert captured_urls[0][0] == "https://api.github.com/repos/org/repo/releases/assets/42"
         assert captured_urls[0][1] == {"Accept": "application/octet-stream"}
 
+    def test_preset_add_from_ghes_release_url_resolves_via_api_v3(self, project_dir, monkeypatch):
+        """'preset add --from <ghes-release-url>' resolves via GHES /api/v3 endpoint."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+        from specify_cli.authentication import http as _auth_http
+        from specify_cli.authentication.config import AuthConfigEntry
+
+        monkeypatch.setattr(_auth_http, "_config_override", [
+            AuthConfigEntry(hosts=("ghes.example",), provider="github", auth="bearer", token="t"),
+        ])
+
+        manifest_content = yaml.dump({
+            "schema_version": "1.0",
+            "preset": {"id": "my-preset", "name": "My Preset", "version": "1.0.0", "description": "Test preset", "author": "Test", "license": "MIT"},
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": [{"type": "template", "name": "t", "file": "templates/t.md", "description": "t"}]},
+        })
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w") as zf:
+            zf.writestr("preset.yml", manifest_content)
+        zip_bytes = zip_buf.getvalue()
+
+        captured_urls = []
+
+        class FakeResponse:
+            def __init__(self, data):
+                self._data = data
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured_urls.append((url, extra_headers))
+            if "releases/tags/" in url:
+                return FakeResponse(json.dumps({
+                    "assets": [{"name": "preset.zip", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
+                }).encode())
+            return FakeResponse(zip_bytes)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.get_speckit_version", return_value="1.0.0"), \
+             patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+            result = runner.invoke(app, [
+                "preset", "add",
+                "--from", "https://ghes.example/org/repo/releases/download/v1.0/preset.zip",
+            ])
+
+        assert result.exit_code == 0, result.output
+        # The tag-lookup call must use the GHES /api/v3 endpoint
+        assert any("ghes.example/api/v3/repos/org/repo/releases/tags/v1.0" in url for url, _ in captured_urls)
+        # The asset download call must carry Accept: application/octet-stream
+        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        assert len(asset_calls) >= 1
+        assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
 
 class TestWrapStrategy:
     """Tests for strategy: wrap preset command substitution."""
@@ -6021,3 +6116,36 @@ def _create_pack(temp_dir, valid_pack_data, pack_id, content,
         (subdir / f"{template_name}.md").write_text(content)
 
     return pack_dir
+
+
+def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monkeypatch):
+    """End-to-end wiring for presets: auth.json github host → GHES asset resolution."""
+    from specify_cli.authentication import http as _auth_http
+    from specify_cli.authentication.config import AuthConfigEntry
+    from specify_cli.presets import PresetCatalog
+
+    monkeypatch.setattr(_auth_http, "_config_override", [
+        AuthConfigEntry(hosts=("ghes.example",), provider="github",
+                        auth="bearer", token="t"),
+    ])
+    catalog = PresetCatalog(tmp_path)
+
+    captured = []
+
+    @contextmanager
+    def fake_open(url, timeout=None, extra_headers=None):
+        captured.append(url)
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({
+            "assets": [{"name": "pack.zip",
+                        "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/9"}]
+        }).encode()
+        yield resp
+
+    monkeypatch.setattr(catalog, "_open_url", fake_open)
+
+    resolved = catalog._resolve_github_release_asset_api_url(
+        "https://ghes.example/o/r/releases/download/v2/pack.zip"
+    )
+    assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/9"
+    assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v2"]

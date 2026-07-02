@@ -56,7 +56,7 @@ run_command "npm install -g @jetbrains/junie-cli@latest"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing Pi Coding Agent..."
-run_command "npm install -g @mariozechner/pi-coding-agent@latest"
+run_command "npm install -g @earendil-works/pi-coding-agent@latest"
 echo "✅ Done"
 
 echo -e "\n🤖 Installing Kiro CLI..."

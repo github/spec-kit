@@ -48,15 +48,6 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["ide"]
     },
-    "windsurf": {
-      "id": "windsurf",
-      "name": "Windsurf",
-      "version": "1.0.0",
-      "description": "Windsurf IDE workflow integration",
-      "author": "spec-kit-core",
-      "repository": "https://github.com/github/spec-kit",
-      "tags": ["ide"]
-    },
     "amp": {
       "id": "amp",
       "name": "Amp",
@@ -174,15 +165,6 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["ide"]
     },
-    "roo": {
-      "id": "roo",
-      "name": "Roo Code",
-      "version": "1.0.0",
-      "description": "Roo Code IDE integration",
-      "author": "spec-kit-core",
-      "repository": "https://github.com/github/spec-kit",
-      "tags": ["ide"]
-    },
     "rovodev": {
       "id": "rovodev",
       "name": "RovoDev ACLI",
@@ -264,15 +246,6 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
     },
-    "iflow": {
-      "id": "iflow",
-      "name": "iFlow CLI",
-      "version": "1.0.0",
-      "description": "iFlow CLI integration by iflow-ai",
-      "author": "spec-kit-core",
-      "repository": "https://github.com/github/spec-kit",
-      "tags": ["cli"]
-    },
     "vibe": {
       "id": "vibe",
       "name": "Mistral Vibe",
@@ -326,6 +299,15 @@
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli", "skills", "z-ai"]
+    },
+    "zed": {
+      "id": "zed",
+      "name": "Zed",
+      "version": "1.0.0",
+      "description": "Zed editor skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["ide", "skills"]
     }
   }
 }
