@@ -25,7 +25,7 @@ spec_kit_effective_branch_name() {
 # Validate that a branch name matches the expected feature branch pattern.
 # Accepts sequential (###-* with >=3 digits) or timestamp (YYYYMMDD-HHMMSS-*) formats,
 # either at the start of the branch or after path-style namespace prefixes.
-# Logic aligned with scripts/bash/common.sh check_feature_branch after effective-name normalization.
+# Logic aligned with the git extension's PowerShell Test-FeatureBranch twin.
 check_feature_branch() {
     local raw="$1"
     local has_git_repo="$2"

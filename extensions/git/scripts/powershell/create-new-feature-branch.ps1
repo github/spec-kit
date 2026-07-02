@@ -85,7 +85,9 @@ function Get-HighestNumberFromNames {
             $name = $name.Substring($ScopePrefix.Length)
         }
         $name = ($name -split '/')[-1]
-        if ($name -match '^(\d{3,})-' -and $name -notmatch '^\d{8}-\d{6}-') {
+        $hasTimestampPrefix = $name -match '^\d{8}-\d{6}-'
+        $hasMalformedTimestamp = ($name -match '^\d{7}-\d{6}-') -or ($name -match '^(?:\d{7}|\d{8})-\d{6}$')
+        if ($name -match '^(\d{3,})-' -and -not $hasTimestampPrefix -and -not $hasMalformedTimestamp) {
             [long]$num = 0
             if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
                 $highest = $num

@@ -148,7 +148,10 @@ _extract_highest_number() {
             esac
         fi
         name="${name##*/}"
-        if echo "$name" | grep -Eq '^[0-9]{3,}-' && ! echo "$name" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
+        if echo "$name" | grep -Eq '^[0-9]{3,}-' \
+            && ! echo "$name" | grep -Eq '^[0-9]{8}-[0-9]{6}-' \
+            && ! echo "$name" | grep -Eq '^[0-9]{7}-[0-9]{6}-' \
+            && ! echo "$name" | grep -Eq '^[0-9]{7,8}-[0-9]{6}$'; then
             number=$(echo "$name" | grep -Eo '^[0-9]{3,}-' | sed -E 's/-$//' || echo "0")
             number=$((10#$number))
             if [ "$number" -gt "$highest" ]; then

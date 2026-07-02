@@ -420,6 +420,25 @@ class TestCreateFeatureBash:
         assert data["BRANCH_NAME"] == "jdoe/2026-app/008-next"
         assert data["FEATURE_NUM"] == "008"
 
+    def test_branch_template_ignores_malformed_timestamp_branches_when_numbering(self, tmp_path: Path):
+        """Malformed timestamp-looking branches must not inflate sequential numbering."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/app-a/007-existing"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-a/2026031-143022-invalid"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-a/20260319-143022"], cwd=project, check=True)
+
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--short-name", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
     def test_branch_template_scopes_existing_branch_numbers(self, tmp_path: Path):
         """Templated branch numbering ignores branches outside the current namespace."""
         project = _setup_project(tmp_path / "app-a")
@@ -747,6 +766,25 @@ class TestCreateFeaturePowerShell:
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
         assert data["BRANCH_NAME"] == "jdoe/2026-app/008-next"
+        assert data["FEATURE_NUM"] == "008"
+
+    def test_branch_template_ignores_malformed_timestamp_branches_when_numbering(self, tmp_path: Path):
+        """PowerShell skips malformed timestamp-looking refs during sequential numbering."""
+        project = _setup_project(tmp_path / "app-a")
+        subprocess.run(["git", "config", "user.name", "jdoe"], cwd=project, check=True)
+        _write_config(project, 'branch_template: "{author}/{app}/{number}-{slug}"\n')
+        subprocess.run(["git", "branch", "jdoe/app-a/007-existing"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-a/2026031-143022-invalid"], cwd=project, check=True)
+        subprocess.run(["git", "branch", "jdoe/app-a/20260319-143022"], cwd=project, check=True)
+
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-ShortName", "next", "Next feature",
+        )
+
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "jdoe/app-a/008-next"
         assert data["FEATURE_NUM"] == "008"
 
     def test_branch_template_scopes_existing_branch_numbers(self, tmp_path: Path):
