@@ -64,7 +64,7 @@ RedirectValidator = Callable[[str, str], None]
 def _validate_strict_redirect(_old_url: str, new_url: str) -> None:
     if not is_https_or_localhost_http(new_url):
         raise urllib.error.URLError(
-            "unsafe redirect: target must use HTTPS with a hostname, "
+            f"unsafe redirect to {new_url}: target must use HTTPS with a hostname, "
             "or HTTP for localhost (127.0.0.1, ::1)"
         )
 
