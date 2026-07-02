@@ -92,6 +92,11 @@ class TestResolveToolReferences:
             result = resolve_tool_references(content, full_capabilities)
         assert result == "Use  here."
         assert "nonexistent" in caplog.text
+        assert any(
+            r.levelno == logging.WARNING
+            for r in caplog.records
+            if "nonexistent" in r.message
+        )
 
     def test_empty_capabilities_resolves_all_to_empty(self, empty_capabilities, caplog):
         content = "{{tool:interactive_prompts}} and {{tool:subagents}}"

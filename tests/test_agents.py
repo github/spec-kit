@@ -201,11 +201,6 @@ class TestPostProcessCommandContent:
         content = cmd_output.read_text(encoding="utf-8")
         assert marker in content
 
-        # Restore original
-        monkeypatch.setattr(
-            opencode.__class__, "post_process_command_content", original
-        )
-
 
 class TestPluginRoot:
     """T031: __PLUGIN_ROOT__ resolves to the source_dir path."""
@@ -285,7 +280,7 @@ class TestRequiresCapabilities:
             ]
             assert len(cap_warnings) > 0, "Expected warning about missing capabilities"
             warning_text = str(cap_warnings[0].message)
-            assert "subagents" in warning_text or "process_enforcement" in warning_text
+            assert "subagents" in warning_text and "process_enforcement" in warning_text
 
     def test_all_capabilities_present_no_warning(
         self, tmp_path, registrar, ext_with_capability_template
@@ -385,6 +380,172 @@ class TestAllFormatTypes:
         # No raw capability syntax should remain
         assert "{{#if" not in content
         assert "{{/if}}" not in content
+
+
+class TestNestedConditionals:
+    """US2-3: Nested conditionals resolve correctly through the full pipeline."""
+
+    def test_nested_multi_select_claude_vs_opencode(
+        self, tmp_path, registrar, ext_with_capability_template
+    ):
+        ext_dir, cmd_dir = ext_with_capability_template
+        cmd_file = cmd_dir / "nested.md"
+        cmd_file.write_text(
+            "---\n"
+            "description: Nested conditional test\n"
+            "---\n\n"
+            "{{#if interactive_prompts}}"
+            "Prompts available. "
+            "{{#if interactive_prompts.multi_select}}"
+            "MULTI_SELECT"
+            "{{else}}"
+            "SINGLE_SELECT"
+            "{{/if}}"
+            "{{else}}"
+            "NO_PROMPTS"
+            "{{/if}}\n",
+            encoding="utf-8",
+        )
+
+        commands = [{"name": "speckit.test.nested", "file": "commands/nested.md"}]
+
+        # Claude has multi_select=True
+        registrar.register_commands(
+            "claude", commands, "test-ext", ext_dir, tmp_path
+        )
+        skill_file = (
+            tmp_path / ".claude" / "skills" / "speckit-test-nested" / "SKILL.md"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "MULTI_SELECT" in content
+        assert "SINGLE_SELECT" not in content
+        assert "NO_PROMPTS" not in content
+
+        # OpenCode has multi_select=False
+        registrar.register_commands(
+            "opencode", commands, "test-ext", ext_dir, tmp_path
+        )
+        cmd_output = (
+            tmp_path / ".opencode" / "commands" / "speckit.test.nested.md"
+        )
+        content = cmd_output.read_text(encoding="utf-8")
+        assert "SINGLE_SELECT" in content
+        assert "MULTI_SELECT" not in content
+        assert "NO_PROMPTS" not in content
+
+
+class TestPluginRootClaude:
+    """US5-1: __PLUGIN_ROOT__ resolves correctly for skills-format agents."""
+
+    def test_plugin_root_replaced_for_claude(
+        self, tmp_path, registrar, ext_with_capability_template
+    ):
+        ext_dir, cmd_dir = ext_with_capability_template
+        cmd_file = cmd_dir / "run.md"
+        cmd_file.write_text(
+            "---\n"
+            "description: Run a script\n"
+            "---\n\n"
+            'Execute "$__PLUGIN_ROOT__/scripts/run.sh"\n',
+            encoding="utf-8",
+        )
+
+        commands = [{"name": "speckit.test.run", "file": "commands/run.md"}]
+        registrar.register_commands(
+            "claude", commands, "test-ext", ext_dir, tmp_path
+        )
+
+        skill_file = (
+            tmp_path / ".claude" / "skills" / "speckit-test-run" / "SKILL.md"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "__PLUGIN_ROOT__" not in content
+        assert str(ext_dir) in content or str(ext_dir.resolve()) in content
+
+
+class TestMalformedSyntaxSkip:
+    """FR-014: Malformed capability syntax skips the command gracefully."""
+
+    def test_malformed_command_skipped_others_registered(
+        self, tmp_path, registrar, ext_with_capability_template
+    ):
+        ext_dir, cmd_dir = ext_with_capability_template
+
+        # Malformed command (missing {{/if}})
+        bad_file = cmd_dir / "bad.md"
+        bad_file.write_text(
+            "---\n"
+            "description: Bad command\n"
+            "---\n\n"
+            "{{#if subagents}}missing close\n",
+            encoding="utf-8",
+        )
+
+        # Good command
+        good_file = cmd_dir / "good.md"
+        good_file.write_text(
+            "---\n"
+            "description: Good command\n"
+            "---\n\n"
+            "This is fine.\n",
+            encoding="utf-8",
+        )
+
+        commands = [
+            {"name": "speckit.test.bad", "file": "commands/bad.md"},
+            {"name": "speckit.test.good", "file": "commands/good.md"},
+        ]
+
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            registered = registrar.register_commands(
+                "claude", commands, "test-ext", ext_dir, tmp_path
+            )
+
+        assert "speckit.test.good" in registered
+        assert "speckit.test.bad" not in registered
+        syntax_warnings = [
+            x for x in w if "malformed capability syntax" in str(x.message).lower()
+        ]
+        assert len(syntax_warnings) > 0
+
+
+class TestPipelineOrdering:
+    """Tool refs in eliminated conditional branches should NOT trigger warnings."""
+
+    def test_tool_ref_in_false_branch_no_warning(
+        self, tmp_path, registrar, ext_with_capability_template, caplog
+    ):
+        import logging
+
+        ext_dir, cmd_dir = ext_with_capability_template
+        cmd_file = cmd_dir / "order.md"
+        cmd_file.write_text(
+            "---\n"
+            "description: Pipeline ordering test\n"
+            "---\n\n"
+            "{{#if subagents}}"
+            "Use {{tool:subagents}} for dispatch"
+            "{{else}}"
+            "No agents, use {{tool:nonexistent_capability}}"
+            "{{/if}}\n",
+            encoding="utf-8",
+        )
+
+        commands = [{"name": "speckit.test.order", "file": "commands/order.md"}]
+        with caplog.at_level(logging.WARNING):
+            registrar.register_commands(
+                "claude", commands, "test-ext", ext_dir, tmp_path
+            )
+
+        skill_file = (
+            tmp_path / ".claude" / "skills" / "speckit-test-order" / "SKILL.md"
+        )
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Agent" in content
+        assert "nonexistent_capability" not in content
+        assert "nonexistent" not in caplog.text
 
 
 class TestRegressionNoCaps:

@@ -71,6 +71,18 @@ def resolve_tool_references(content: str, capabilities: dict[str, Any]) -> str:
 # Conditional block processing
 # ---------------------------------------------------------------------------
 
+#: Matches the innermost ``{{#if}}...{{/if}}`` block (content contains
+#: neither nested ``{{#if`` nor ``{{/if}}``).  Used iteratively to
+#: resolve nested blocks inside-out.
+_INNER_IF_RE = re.compile(
+    r"\{\{#if\s+([\w.]+)\}\}"  # opening tag with capability path
+    r"((?:(?!\{\{#if\s)(?!\{\{/if\}\}).)*?)"  # true-branch (no nested if/endif)
+    r"(?:\{\{else\}\}"  # optional else
+    r"((?:(?!\{\{#if\s)(?!\{\{/if\}\}).)*?))?"  # false-branch
+    r"\{\{/if\}\}",  # closing tag
+    re.DOTALL,
+)
+
 
 def _lookup_capability(path: str, capabilities: dict[str, Any]) -> bool:
     """Evaluate a dotted capability path against *capabilities*.
@@ -99,20 +111,9 @@ def resolve_conditionals(content: str, capabilities: dict[str, Any]) -> str:
     Uses an iterative inside-out approach: repeatedly resolves the
     innermost ``{{#if}}...{{/if}}`` block until none remain.
     """
-    # Pattern matches the innermost {{#if}}...{{/if}} (no nested {{#if}} inside)
-    inner_if_re = re.compile(
-        r"\{\{#if\s+([\w.]+)\}\}"  # opening tag with capability path
-        r"((?:(?!\{\{#if\s)(?!\{\{/if\}\}).)*?)"  # true-branch (no nested if)
-        r"(?:\{\{else\}\}"  # optional else
-        r"((?:(?!\{\{#if\s)(?!\{\{/if\}\}).)*?))?"  # false-branch
-        r"\{\{/if\}\}",  # closing tag
-        re.DOTALL,
-    )
-
-    # Iteratively resolve innermost blocks until no more remain
     max_iterations = 100  # safety guard against infinite loops
     for _ in range(max_iterations):
-        match = inner_if_re.search(content)
+        match = _INNER_IF_RE.search(content)
         if not match:
             break
         cap_path = match.group(1)
@@ -125,6 +126,13 @@ def resolve_conditionals(content: str, capabilities: dict[str, Any]) -> str:
             replacement = false_branch
 
         content = content[: match.start()] + replacement + content[match.end() :]
+    else:
+        if _INNER_IF_RE.search(content):
+            logger.warning(
+                "Capability conditional resolution hit iteration limit (%d); "
+                "some {{#if}} blocks remain unresolved.",
+                max_iterations,
+            )
 
     return content
 
