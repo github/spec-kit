@@ -54,9 +54,13 @@ Configuration is stored in `.specify/extensions/git/git-config.yml`:
 branch_numbering: sequential
 
 # Optional branch name template. Leave empty for the default "{number}-{slug}".
-# Supported tokens: {author}, {app}, {number}, {slug}
+# Supported tokens: {author}, {app}, {number}, {slug}; custom templates must include {number}
 # Example for monorepos: "{author}/{app}/{number}-{slug}"
 branch_template: ""
+
+# Optional shorthand namespace. Leave empty to use branch_template/default behavior.
+# Example: "features/{app}" expands to "features/{app}/{number}-{slug}"
+branch_prefix: ""
 
 # Custom commit message for git init
 init_commit_message: "[Spec Kit] Initial commit"
@@ -70,7 +74,7 @@ auto_commit:
     message: "[Spec Kit] Add specification"
 ```
 
-`{author}` is derived from Git config and sanitized for branch names. `{app}` is derived from the Spec Kit init directory name. For a monorepo project at `apps/web/.specify/`, a template such as `{author}/{app}/{number}-{slug}` produces branches like `jdoe/web/008-guided-tour`.
+`{author}` is derived from Git config and sanitized for branch names. `{app}` is derived from the Spec Kit init directory name. `{number}` is required for custom templates so generated names remain valid feature branches. For a monorepo project at `apps/web/.specify/`, a template such as `{author}/{app}/{number}-{slug}` produces branches like `jdoe/web/008-guided-tour`.
 
 For simple namespace-only customization, `branch_prefix` is also accepted as a shorthand and expands to `<branch_prefix>/{number}-{slug}`.
 

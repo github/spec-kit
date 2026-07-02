@@ -142,12 +142,13 @@ _extract_highest_number() {
         [ -z "$name" ] && continue
         if [ -n "$scope_prefix" ]; then
             case "$name" in
-                "$scope_prefix"*) ;;
+                "$scope_prefix"*) name="${name#"$scope_prefix"}" ;;
                 *) continue ;;
             esac
         fi
-        if echo "$name" | grep -Eq '(^|/)[0-9]{3,}-' && ! echo "$name" | grep -Eq '(^|/)[0-9]{8}-[0-9]{6}-'; then
-            number=$(echo "$name" | grep -Eo '(^|/)[0-9]{3,}-' | head -n 1 | sed -E 's|^/||; s/-$//' || echo "0")
+        name="${name##*/}"
+        if echo "$name" | grep -Eq '^[0-9]{3,}-' && ! echo "$name" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
+            number=$(echo "$name" | grep -Eo '^[0-9]{3,}-' | sed -E 's/-$//' || echo "0")
             number=$((10#$number))
             if [ "$number" -gt "$highest" ]; then
                 highest=$number
@@ -362,6 +363,18 @@ render_branch_template() {
     printf '%s\n' "$rendered"
 }
 
+validate_branch_template() {
+    local template="$1"
+    [ -n "$template" ] || return 0
+    case "$template" in
+        *"{number}"*) ;;
+        *)
+            >&2 echo "Error: branch_template must include the {number} token so generated branches remain valid feature branches."
+            exit 1
+            ;;
+    esac
+}
+
 build_branch_name() {
     local feature_num="$1"
     local branch_suffix="$2"
@@ -386,15 +399,16 @@ branch_scope_prefix() {
 
 extract_feature_num_from_branch() {
     local branch_name="$1"
+    branch_name="${branch_name##*/}"
     local match
-    match=$(printf '%s\n' "$branch_name" | grep -Eo '(^|/)[0-9]{8}-[0-9]{6}-' | head -n 1 || true)
+    match=$(printf '%s\n' "$branch_name" | grep -Eo '^[0-9]{8}-[0-9]{6}-' | head -n 1 || true)
     if [ -n "$match" ]; then
-        printf '%s\n' "$match" | sed -E 's|^/||; s/-$//'
+        printf '%s\n' "$match" | sed -E 's/-$//'
         return
     fi
-    match=$(printf '%s\n' "$branch_name" | grep -Eo '(^|/)[0-9]+-' | head -n 1 || true)
+    match=$(printf '%s\n' "$branch_name" | grep -Eo '^[0-9]+-' | head -n 1 || true)
     if [ -n "$match" ]; then
-        printf '%s\n' "$match" | sed -E 's|^/||; s/-$//'
+        printf '%s\n' "$match" | sed -E 's/-$//'
         return
     fi
     printf '%s\n' "$branch_name"
@@ -403,6 +417,7 @@ extract_feature_num_from_branch() {
 AUTHOR_TOKEN=$(get_author_token)
 APP_TOKEN=$(get_app_token)
 BRANCH_TEMPLATE=$(resolve_branch_template)
+validate_branch_template "$BRANCH_TEMPLATE"
 
 # Function to generate branch name with stop word filtering
 generate_branch_name() {

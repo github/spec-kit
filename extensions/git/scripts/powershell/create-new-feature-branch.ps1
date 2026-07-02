@@ -80,9 +80,13 @@ function Get-HighestNumberFromNames {
         if ($ScopePrefix -and -not $name.StartsWith($ScopePrefix, [System.StringComparison]::Ordinal)) {
             continue
         }
-        if ($name -match '(^|/)(\d{3,})-' -and $name -notmatch '(^|/)\d{8}-\d{6}-') {
+        if ($ScopePrefix) {
+            $name = $name.Substring($ScopePrefix.Length)
+        }
+        $name = ($name -split '/')[-1]
+        if ($name -match '^(\d{3,})-' -and $name -notmatch '^\d{8}-\d{6}-') {
             [long]$num = 0
-            if ([long]::TryParse($matches[2], [ref]$num) -and $num -gt $highest) {
+            if ([long]::TryParse($matches[1], [ref]$num) -and $num -gt $highest) {
                 $highest = $num
             }
         }
@@ -315,6 +319,14 @@ function Expand-BranchTemplate {
     return $rendered
 }
 
+function Assert-BranchTemplateValid {
+    param([string]$Template)
+
+    if ($Template -and -not $Template.Contains('{number}')) {
+        throw "branch_template must include the {number} token so generated branches remain valid feature branches."
+    }
+}
+
 function New-BranchName {
     param(
         [string]$FeatureNum,
@@ -345,10 +357,11 @@ function Get-BranchScopePrefix {
 function Get-FeatureNumberFromBranchName {
     param([string]$BranchName)
 
-    if ($BranchName -match '(?:^|/)(\d{8}-\d{6})-') {
+    $featureSegment = ($BranchName -split '/')[-1]
+    if ($featureSegment -match '^(\d{8}-\d{6})-') {
         return $matches[1]
     }
-    if ($BranchName -match '(?:^|/)(\d+)-') {
+    if ($featureSegment -match '^(\d+)-') {
         return $matches[1]
     }
     return $BranchName
@@ -362,6 +375,7 @@ function Get-Utf8ByteCount {
 $authorToken = Get-GitAuthorToken
 $appToken = Get-AppToken
 $branchTemplate = Resolve-BranchTemplate
+Assert-BranchTemplateValid -Template $branchTemplate
 
 function Get-BranchName {
     param([string]$Description)

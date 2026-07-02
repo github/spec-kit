@@ -138,4 +138,5 @@ config:
   defaults:
     branch_numbering: sequential
     branch_template: ""
+    branch_prefix: ""
     init_commit_message: "[Spec Kit] Initial commit"

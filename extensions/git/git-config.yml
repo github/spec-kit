@@ -9,6 +9,10 @@ branch_numbering: sequential
 # Example for monorepos: "{author}/{app}/{number}-{slug}"
 branch_template: ""
 
+# Optional shorthand namespace. Leave empty to use branch_template/default behavior.
+# Example: "features/{app}" expands to "features/{app}/{number}-{slug}"
+branch_prefix: ""
+
 # Commit message used by `git commit` during repository initialization
 init_commit_message: "[Spec Kit] Initial commit"
 
