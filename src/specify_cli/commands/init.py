@@ -220,16 +220,34 @@ def register(app: typer.Typer) -> None:
                 console.print(
                     f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)"
                 )
-                console.print(
-                    "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
-                )
                 if force:
+                    # Proceeding: the merge/overwrite warning is accurate here.
+                    console.print(
+                        "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
+                    )
                     console.print(
                         "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                     )
                 else:
-                    response = typer.confirm("Do you want to continue?")
-                    if not response:
+                    console.print(
+                        "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
+                    )
+                    # Call typer.confirm normally so piped y/n is honored — e.g.
+                    # `echo y | specify init --here` keeps reaching the
+                    # non-destructive preserve-merge path. Only when no
+                    # confirmation input is available at all (closed/empty stdin
+                    # → EOF/Abort) do we convert it into an actionable error that
+                    # points at --force, rather than blocking or failing opaquely.
+                    try:
+                        proceed = typer.confirm("Do you want to continue?")
+                    except (typer.Abort, EOFError):
+                        console.print(
+                            "[red]Error:[/red] Current directory is not empty and no "
+                            "confirmation input is available. Re-run with "
+                            "[bold]--force[/bold] to merge into it."
+                        )
+                        raise typer.Exit(1) from None
+                    if not proceed:
                         console.print("[yellow]Operation cancelled[/yellow]")
                         raise typer.Exit(0)
         else:
