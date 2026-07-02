@@ -97,17 +97,26 @@ read_feature_json_feature_directory() {
     local fj="$repo_root/.specify/feature.json"
     [[ -f "$fj" ]] || { printf '%s' ''; return 0; }
 
+    # Try parsers in order (jq -> python3 -> grep/sed), falling through on
+    # failure. Selection is by *parse success*, not mere availability: on
+    # Windows `python3` commonly resolves to the Microsoft Store App Execution
+    # Alias stub, which passes `command -v` but fails at runtime (exit 49), so
+    # an availability-gated `elif` would pick python3, swallow its failure, and
+    # never reach the grep/sed fallback -- leaving feature.json unreadable even
+    # though it is valid (issue #3304).
     local _fd=''
     if command -v jq >/dev/null 2>&1; then
         if ! _fd=$(jq -r '.feature_directory // empty' "$fj" 2>/dev/null); then
             _fd=''
         fi
-    elif command -v python3 >/dev/null 2>&1; then
+    fi
+    if [[ -z "$_fd" ]] && command -v python3 >/dev/null 2>&1; then
         # Use Python so pretty-printed/multi-line JSON still parses correctly.
         if ! _fd=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); v=d.get('feature_directory'); print(v if v else '')" "$fj" 2>/dev/null); then
             _fd=''
         fi
-    else
+    fi
+    if [[ -z "$_fd" ]]; then
         # Last-resort single-line grep/sed fallback. The `|| true` guards against
         # grep returning 1 (no match) aborting under `set -e` / `pipefail`.
         _fd=$( { grep -E '"feature_directory"[[:space:]]*:' "$fj" 2>/dev/null || true; } \
