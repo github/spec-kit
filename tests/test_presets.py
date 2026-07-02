@@ -2863,6 +2863,243 @@ class TestSelfTestPreset:
         assert cmd_file.exists(), "Skill not registered despite extension being present"
 
 
+# ===== Constitution Re-seed Tests =====
+
+
+class TestConstitutionReseed:
+    """Tests for preset-aware constitution seeding.
+
+    Covers the two-part fix for issue #3272:
+    1. ``ensure_constitution_from_template`` uses PresetResolver so a preset
+       constitution-template is picked up.
+    2. ``install_from_directory`` re-seeds the memory constitution when adding
+       a preset to an existing project that still has the generic placeholder.
+    """
+
+    def _make_constitution_preset(self, temp_dir: Path, preset_id: str, content: str) -> Path:
+        """Build a minimal preset directory that provides a constitution-template."""
+        preset_dir = temp_dir / preset_id
+        preset_dir.mkdir()
+        templates_dir = preset_dir / "templates"
+        templates_dir.mkdir()
+        (templates_dir / "constitution-template.md").write_text(content, encoding="utf-8")
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id.title(),
+                "version": "1.0.0",
+                "description": "Test preset with constitution template",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "constitution-template",
+                        "file": "templates/constitution-template.md",
+                        "description": "Ratified constitution",
+                        "replaces": "constitution-template",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return preset_dir
+
+    def test_ensure_constitution_uses_resolver_when_preset_installed(
+        self, project_dir: Path, temp_dir: Path
+    ) -> None:
+        """ensure_constitution_from_template seeds from a preset's constitution-template."""
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        # Create the core template (generic placeholder)
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# [PROJECT_NAME] Constitution\n## [PRINCIPLE_1_NAME]\n", encoding="utf-8"
+        )
+
+        # Install a preset that provides a ratified constitution
+        preset_content = "# Ratified Constitution\n## Core Principle\nDo the right thing.\n"
+        preset_dir = self._make_constitution_preset(temp_dir, "org-constitution", preset_content)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+
+        # Ensure there is no existing memory constitution
+        memory_path = project_dir / ".specify" / "memory" / "constitution.md"
+        assert not memory_path.exists()
+
+        # Call the function — it should pick up the preset's version
+        ensure_constitution_from_template(project_dir)
+
+        assert memory_path.exists(), "memory constitution should have been created"
+        content = memory_path.read_text(encoding="utf-8")
+        assert "Ratified Constitution" in content, (
+            "memory constitution should contain the preset's content, not the generic placeholder"
+        )
+        assert "[PROJECT_NAME]" not in content
+
+    def test_ensure_constitution_falls_back_to_core_without_preset(
+        self, project_dir: Path
+    ) -> None:
+        """ensure_constitution_from_template uses the core template when no preset overrides it."""
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# [PROJECT_NAME] Constitution\n## [PRINCIPLE_1_NAME]\n", encoding="utf-8"
+        )
+
+        memory_path = project_dir / ".specify" / "memory" / "constitution.md"
+        assert not memory_path.exists()
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory_path.exists()
+        content = memory_path.read_text(encoding="utf-8")
+        assert "[PROJECT_NAME]" in content  # fell back to generic core template
+
+    def test_ensure_constitution_skips_existing_file(self, project_dir: Path) -> None:
+        """ensure_constitution_from_template does not overwrite an existing memory file."""
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text("# Template\n")
+
+        memory_dir = project_dir / ".specify" / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        memory_path = memory_dir / "constitution.md"
+        memory_path.write_text("# My Authored Constitution\n", encoding="utf-8")
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory_path.read_text(encoding="utf-8") == "# My Authored Constitution\n"
+
+    def test_install_from_directory_reseeds_generic_constitution(
+        self, project_dir: Path, temp_dir: Path
+    ) -> None:
+        """install_from_directory re-seeds a generic memory constitution from the preset."""
+        # Seed the memory constitution with the generic placeholder
+        memory_dir = project_dir / ".specify" / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        memory_path = memory_dir / "constitution.md"
+        memory_path.write_text(
+            "# [PROJECT_NAME] Constitution\n## [PRINCIPLE_1_NAME]\n", encoding="utf-8"
+        )
+
+        preset_content = "# Ratified Constitution\n## Article I\nDo no harm.\n"
+        preset_dir = self._make_constitution_preset(temp_dir, "org-const2", preset_content)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+
+        content = memory_path.read_text(encoding="utf-8")
+        assert "Ratified Constitution" in content, (
+            "memory constitution should be re-seeded from the preset after install"
+        )
+        assert "[PROJECT_NAME]" not in content
+
+    def test_install_from_directory_does_not_overwrite_authored_constitution(
+        self, project_dir: Path, temp_dir: Path
+    ) -> None:
+        """install_from_directory leaves an authored constitution (no placeholders) intact."""
+        # Seed the memory constitution with authored content (no placeholder tokens)
+        memory_dir = project_dir / ".specify" / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        memory_path = memory_dir / "constitution.md"
+        authored_content = "# Acme Corp Constitution\n## Core Principle\nInnovate responsibly.\n"
+        memory_path.write_text(authored_content, encoding="utf-8")
+
+        preset_content = "# Preset Constitution\n## Article I\nPreset principle.\n"
+        preset_dir = self._make_constitution_preset(temp_dir, "org-const3", preset_content)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+
+        assert memory_path.read_text(encoding="utf-8") == authored_content, (
+            "authored constitution should not be overwritten by preset install"
+        )
+
+    def test_install_from_directory_skips_reseed_without_constitution_template(
+        self, project_dir: Path, temp_dir: Path
+    ) -> None:
+        """install_from_directory does not touch the memory file for presets lacking constitution-template."""
+        memory_dir = project_dir / ".specify" / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        memory_path = memory_dir / "constitution.md"
+        memory_path.write_text(
+            "# [PROJECT_NAME] Constitution\n## [PRINCIPLE_1_NAME]\n", encoding="utf-8"
+        )
+        original_content = memory_path.read_text(encoding="utf-8")
+
+        # Preset that provides a spec-template only (no constitution-template)
+        preset_dir = temp_dir / "no-const-preset"
+        preset_dir.mkdir()
+        templates_dir = preset_dir / "templates"
+        templates_dir.mkdir()
+        (templates_dir / "spec-template.md").write_text("# Custom spec\n")
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "no-const-preset",
+                "name": "No Constitution Preset",
+                "version": "1.0.0",
+                "description": "Preset without constitution-template",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "templates/spec-template.md",
+                        "description": "Custom spec template",
+                        "replaces": "spec-template",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.0")
+
+        assert memory_path.read_text(encoding="utf-8") == original_content
+
+    def test_self_test_preset_reseeds_generic_constitution_on_install(
+        self, project_dir: Path
+    ) -> None:
+        """Installing the self-test preset re-seeds a generic memory constitution."""
+        # Seed the memory constitution with the generic placeholder
+        memory_dir = project_dir / ".specify" / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        memory_path = memory_dir / "constitution.md"
+        memory_path.write_text(
+            "# [PROJECT_NAME] Constitution\n## [PRINCIPLE_1_NAME]\n", encoding="utf-8"
+        )
+
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# [PROJECT_NAME] Constitution\n## [PRINCIPLE_1_NAME]\n"
+        )
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        content = memory_path.read_text(encoding="utf-8")
+        assert "preset:self-test" in content, (
+            "memory constitution should be re-seeded from the self-test preset"
+        )
+        assert "[PROJECT_NAME]" not in content
+
+
 # ===== Init Options and Skills Tests =====
 
 

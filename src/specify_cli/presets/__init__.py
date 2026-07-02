@@ -541,6 +541,12 @@ class PresetRegistry:
         return pack_id in packs
 
 
+# Placeholder tokens present in the generic upstream constitution template.
+# Used to detect whether a memory constitution has been legitimately authored
+# or is still the unmodified placeholder shipped with Spec Kit.
+_CONSTITUTION_PLACEHOLDER_TOKENS = ("[PROJECT_NAME]", "[PRINCIPLE_1_NAME]")
+
+
 class PresetManager:
     """Manages preset lifecycle: installation, removal, updates."""
 
@@ -1498,6 +1504,49 @@ class PresetManager:
                 # No core or extension template — remove the skill entirely
                 shutil.rmtree(skill_subdir)
 
+    def _maybe_reseed_constitution(self, manifest: PresetManifest) -> None:
+        """Re-seed the memory constitution from the resolved template if it is still generic.
+
+        Acts only when all of the following hold:
+        1. The manifest provides a ``constitution-template`` entry (any strategy).
+        2. ``.specify/memory/constitution.md`` exists in the project.
+        3. The memory file still contains generic placeholder tokens, meaning it
+           has not been legitimately authored by a user or agent.
+
+        Legitimately authored constitutions (no placeholder tokens) are never
+        overwritten, so running ``specify preset add`` on a project whose
+        constitution has been filled in is always safe.
+        """
+        has_constitution_template = any(
+            t.get("name") == "constitution-template"
+            for t in manifest.templates
+            if t.get("type") == "template"
+        )
+        if not has_constitution_template:
+            return
+
+        memory_path = self.project_root / ".specify" / "memory" / "constitution.md"
+        if not memory_path.exists():
+            return
+
+        try:
+            content = memory_path.read_text(encoding="utf-8")
+        except OSError:
+            return
+
+        if not any(token in content for token in _CONSTITUTION_PLACEHOLDER_TOKENS):
+            return
+
+        resolver = PresetResolver(self.project_root)
+        resolved = resolver.resolve("constitution-template", "template")
+        if resolved is None:
+            return
+
+        try:
+            shutil.copy2(resolved, memory_path)
+        except OSError:
+            pass
+
     def install_from_directory(
         self,
         source_dir: Path,
@@ -1614,6 +1663,8 @@ class PresetManager:
                     f"Agent command files may not reflect the current priority stack.",
                     stacklevel=2,
                 )
+
+        self._maybe_reseed_constitution(manifest)
 
         return manifest
 
