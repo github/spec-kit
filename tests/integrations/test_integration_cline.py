@@ -90,6 +90,22 @@ class TestClineIntegration(MarkdownIntegrationTests):
         assert "replace dots (`.`) with hyphens (`-`)" in injected
         assert "- For each executable hook, output the following:" in injected
 
+    def test_cline_hook_instruction_injection_no_trailing_newline(self):
+        """Note must not collapse onto the instruction line when the
+        instruction is the final line with no trailing newline.
+
+        The injection regex matches the end-of-line via ``(\\r\\n|\\n|$)``, so
+        the captured ``eol`` is empty on a file's last line that lacks a
+        trailing newline. Without an ``or "\\n"`` fallback the note text and
+        the instruction are emitted on the same line.
+        """
+        cline = get_integration("cline")
+        content = "- For each executable hook, output the following:"  # no trailing \n
+        injected = cline._inject_hook_command_note(content)
+        assert "replace dots (`.`) with hyphens (`-`)" in injected
+        # Instruction stays on its own line rather than being mashed onto the note.
+        assert "\n- For each executable hook, output the following:" in injected
+
     # -- Overrides for MarkdownIntegrationTests ---------------------------
 
     def test_setup_creates_files(self, tmp_path):

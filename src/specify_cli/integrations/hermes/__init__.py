@@ -140,6 +140,7 @@ class HermesIntegration(SkillsIntegration):
                 script_type,
                 arg_placeholder,
                 invoke_separator=self.invoke_separator,
+                project_root=project_root,
             )
             # Strip the processed frontmatter — we rebuild it for skills.
             if processed_body.startswith("---"):

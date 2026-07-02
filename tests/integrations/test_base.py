@@ -1,5 +1,7 @@
 """Tests for IntegrationOption, IntegrationBase, MarkdownIntegration, and primitives."""
 
+import sys
+
 import pytest
 
 from specify_cli.integrations.base import (
@@ -299,3 +301,186 @@ class TestResolveCommandRefs:
         text = "__SPECKIT_COMMAND_V2_PLAN__"
         result = IntegrationBase.resolve_command_refs(text, ".")
         assert result == "/speckit.v2.plan"
+
+
+class TestResolvePythonInterpreter:
+    def test_returns_python_on_path(self, monkeypatch):
+        # Positive: when python3 is on PATH it is preferred over python.
+        def fake_which(name):
+            return f"/usr/bin/{name}" if name in ("python3", "python") else None
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which", fake_which
+        )
+        assert IntegrationBase.resolve_python_interpreter() == "python3"
+
+    def test_falls_back_to_python_when_no_python3(self, monkeypatch):
+        def fake_which(name):
+            return "/usr/bin/python" if name == "python" else None
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which", fake_which
+        )
+        assert IntegrationBase.resolve_python_interpreter() == "python"
+
+    def test_falls_back_to_sys_executable_when_nothing_found(self, monkeypatch):
+        # Negative: nothing on PATH and no venv -> the running interpreter
+        # (sys.executable) is used so the command works in this environment.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which", lambda name: None
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.sys.executable", "/opt/py/bin/python"
+        )
+        assert IntegrationBase.resolve_python_interpreter() == "/opt/py/bin/python"
+
+    def test_falls_back_to_python3_when_no_interpreter_at_all(self, monkeypatch):
+        # Negative edge: neither PATH nor sys.executable resolves.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which", lambda name: None
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.sys.executable", ""
+        )
+        assert IntegrationBase.resolve_python_interpreter() == "python3"
+
+    def test_prefers_project_venv_posix(self, monkeypatch, tmp_path):
+        venv_python = tmp_path / ".venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("")
+        # Even if python3 is on PATH, the project venv wins. The returned
+        # path is relative to the project root for portability.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: "/usr/bin/python3",
+        )
+        result = IntegrationBase.resolve_python_interpreter(tmp_path)
+        assert result == ".venv/bin/python"
+
+    def test_prefers_project_venv_windows(self, monkeypatch, tmp_path):
+        venv_python = tmp_path / ".venv" / "Scripts" / "python.exe"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("")
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which", lambda name: None
+        )
+        result = IntegrationBase.resolve_python_interpreter(tmp_path)
+        assert result == ".venv/Scripts/python.exe"
+
+    def test_ignores_missing_venv(self, monkeypatch, tmp_path):
+        # Negative: no venv directory -> PATH resolution is used instead.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: "/usr/bin/python3" if name == "python3" else None,
+        )
+        assert IntegrationBase.resolve_python_interpreter(tmp_path) == "python3"
+
+
+class TestProcessTemplatePyScriptType:
+    CONTENT = (
+        "---\n"
+        "scripts:\n"
+        "  sh: scripts/bash/check-prerequisites.sh --json\n"
+        "  ps: scripts/powershell/check-prerequisites.ps1 -Json\n"
+        "  py: scripts/python/check-prerequisites.py --json\n"
+        "---\n"
+        "Run {SCRIPT} now."
+    )
+
+    def test_py_prefixes_interpreter(self, monkeypatch):
+        # Positive: py script type prefixes a resolved interpreter and the
+        # script path is rewritten to the .specify location.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: "/usr/bin/python3" if name == "python3" else None,
+        )
+        result = IntegrationBase.process_template(self.CONTENT, "agent", "py")
+        assert "python3 .specify/scripts/python/check-prerequisites.py --json" in result
+        # The scripts: frontmatter block is stripped.
+        assert "scripts:" not in result
+
+    def test_sh_does_not_prefix_interpreter(self):
+        # Negative: non-py script types are never prefixed with an interpreter.
+        result = IntegrationBase.process_template(self.CONTENT, "agent", "sh")
+        assert ".specify/scripts/bash/check-prerequisites.sh --json" in result
+        assert "python" not in result
+
+    def test_py_quotes_interpreter_with_spaces(self, monkeypatch):
+        # An interpreter path containing whitespace (e.g. Windows
+        # ``Program Files``) must be quoted so it isn't split into args.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which", lambda name: None
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.sys.executable",
+            r"C:\Program Files\Python\python.exe",
+        )
+        result = IntegrationBase.process_template(self.CONTENT, "agent", "py")
+        assert (
+            '"C:\\Program Files\\Python\\python.exe" '
+            ".specify/scripts/python/check-prerequisites.py --json"
+        ) in result
+
+    def test_py_does_not_quote_interpreter_without_spaces(self, monkeypatch):
+        # Negative: a whitespace-free interpreter is left unquoted.
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: "/usr/bin/python3" if name == "python3" else None,
+        )
+        result = IntegrationBase.process_template(self.CONTENT, "agent", "py")
+        assert '"' not in result.split("check-prerequisites.py")[0]
+
+    def test_py_uses_project_venv(self, monkeypatch, tmp_path):
+        venv_python = tmp_path / ".venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("")
+        result = IntegrationBase.process_template(
+            self.CONTENT, "agent", "py", project_root=tmp_path
+        )
+        assert ".venv/bin/python .specify/scripts/python/check-prerequisites.py" in result
+
+
+class TestInstallScriptsPython:
+    def _make_integration_with_scripts(self, monkeypatch, tmp_path):
+        scripts_src = tmp_path / "bundled_scripts"
+        scripts_src.mkdir()
+        (scripts_src / "common.py").write_text("print('hi')\n")
+        (scripts_src / "common.sh").write_text("echo hi\n")
+        (scripts_src / "notes.txt").write_text("not executable\n")
+        integration = StubIntegration()
+        monkeypatch.setattr(
+            integration, "integration_scripts_dir", lambda: scripts_src
+        )
+        return integration
+
+    def test_copies_all_script_files(self, monkeypatch, tmp_path):
+        # Cross-platform: every bundled file is copied into the project.
+        integration = self._make_integration_with_scripts(monkeypatch, tmp_path)
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+        manifest = IntegrationManifest("stub", project_root.resolve())
+
+        created = integration.install_scripts(project_root, manifest)
+        names = {p.name for p in created}
+        assert {"common.py", "common.sh", "notes.txt"} == names
+
+    @pytest.mark.skipif(
+        sys.platform == "win32", reason="chmod exec bit not reliable on Windows"
+    )
+    def test_marks_py_and_sh_executable(self, monkeypatch, tmp_path):
+        integration = self._make_integration_with_scripts(monkeypatch, tmp_path)
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+        manifest = IntegrationManifest("stub", project_root.resolve())
+
+        integration.install_scripts(project_root, manifest)
+
+        dest = project_root / ".specify" / "integrations" / "stub" / "scripts"
+        py_file = dest / "common.py"
+        sh_file = dest / "common.sh"
+        txt_file = dest / "notes.txt"
+        # Positive: .py and .sh are executable.
+        assert py_file.stat().st_mode & 0o111
+        assert sh_file.stat().st_mode & 0o111
+        # Negative: a non-script file is not made executable.
+        assert not (txt_file.stat().st_mode & 0o111)

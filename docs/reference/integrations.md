@@ -11,7 +11,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview)                              | `auggie`         |                                                                                                                                           |
 | [Claude Code](https://www.anthropic.com/claude-code)                                 | `claude`         | Skills-based integration; installs skills in `.claude/skills`                                                                              |
 | [Cline](https://github.com/cline/cline)                                              | `cline`          | IDE-based agent                                                                                                                           |
-| [CodeBuddy CLI](https://www.codebuddy.ai/cli)                                        | `codebuddy`      |                                                                                                                                           |
+| [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation)                      | `codebuddy`      |                                                                                                                                           |
 | [Codex CLI](https://github.com/openai/codex)                                         | `codex`          | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
 | [Cursor](https://cursor.sh/)                                                         | `cursor-agent`   |                                                                                                                                           |
 | [Devin for Terminal](https://cli.devin.ai/docs)                                      | `devin`          | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
@@ -22,10 +22,9 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Goose](https://goose-docs.ai/)                                                      | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
 | [Hermes](https://github.com/NousResearch/hermes-agent)                               | `hermes`         | Skills-based integration; installs skills globally into `~/.hermes/skills/`                                                                |
 | [IBM Bob](https://www.ibm.com/products/bob)                                          | `bob`            | IDE-based agent                                                                                                                           |
-| [iFlow CLI](https://docs.iflow.cn/en/cli/quickstart)                                 | `iflow`          |                                                                                                                                           |
 | [Junie](https://junie.jetbrains.com/)                                                | `junie`          |                                                                                                                                           |
 | [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | `kilocode`       |                                                                                                                                           |
-| [Kimi Code](https://code.kimi.com/)                                                  | `kimi`           | Skills-based integration; installs into `.kimi-code/skills/`. `--migrate-legacy` moves old `.kimi/skills/` installs to the new paths, and (when the `agent-context` extension is enabled) migrates `KIMI.md` context into `AGENTS.md` |
+| [Kimi Code](https://code.kimi.com/)                                                  | `kimi`           | Skills-based integration; installs into `.kimi-code/skills/`. `--migrate-legacy` moves old `.kimi/skills/` installs to the new paths |
 | [Kiro CLI](https://kiro.dev/docs/cli/)                                               | `kiro-cli`       | Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, so Spec Kit ships a prose fallback at render time (see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) and issue [#1926](https://github.com/github/spec-kit/issues/1926)). Alias: `--integration kiro` |
 | [Lingma](https://lingma.aliyun.com/)                                                 | `lingma`         | Skills-based integration; skills are installed automatically                                                                               |
 | [Mistral Vibe](https://github.com/mistralai/mistral-vibe)                            | `vibe`           |                                                                                                                                           |
@@ -34,12 +33,10 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Pi Coding Agent](https://pi.dev)                                                    | `pi`             | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
 | [Qoder CLI](https://qoder.com/cli)                                                   | `qodercli`       |                                                                                                                                           |
 | [Qwen Code](https://github.com/QwenLM/qwen-code)                                     | `qwen`           |                                                                                                                                           |
-| [Roo Code](https://roocode.com/)                                                     | `roo`            |                                                                                                                                           |
 | [RovoDev](https://www.atlassian.com/software/rovo-dev)                               | `rovodev`        | Generates `.rovodev/skills/`, prompt wrappers, and `prompts.yml`; runtime dispatch uses `acli rovodev`                                   |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai)                                       | `shai`           |                                                                                                                                           |
 | [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli)             | `tabnine`        |                                                                                                                                           |
 | [Trae](https://www.trae.ai/)                                                         | `trae`           | Skills-based integration; skills are installed automatically                                                                               |
-| [Windsurf](https://windsurf.com/)                                                    | `windsurf`       |                                                                                                                                           |
 | [ZCode](https://zcode.z.ai/)                                                         | `zcode`          | Skills-based integration; installs skills into `.zcode/skills/` and invokes them as `$speckit-<command>`                                  |
 | [Zed](https://zed.dev/)                                                              | `zed`            | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>`                                  |
 | Generic                                                                              | `generic`        | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above     |
@@ -173,6 +170,47 @@ is `null` when no installed integration set can be evaluated, such as when the
 integration state is missing, unreadable, lacks a valid recorded integration
 list, or records no installed integrations.
 
+## Catalog Management
+
+Integration catalogs control where the discovery commands (`search` and `info`) look for integrations. Catalogs are checked in priority order.
+
+### List Catalogs
+
+```bash
+specify integration catalog list
+```
+
+Shows the active catalog sources. Project-level sources (when configured) are removable by index; otherwise the active sources are shown as non-removable.
+
+### Add a Catalog
+
+```bash
+specify integration catalog add <url>
+```
+
+| Option          | Description                   |
+| --------------- | ----------------------------- |
+| `--name <name>` | Optional name for the catalog |
+
+Adds a custom catalog URL to the project's `.specify/integration-catalogs.yml`. The URL must use HTTPS (except `http://localhost`, `http://127.0.0.1`, or `http://[::1]` for local testing).
+
+### Remove a Catalog
+
+```bash
+specify integration catalog remove <index>
+```
+
+Removes a project catalog source by its 0-based index in `catalog list`.
+
+### Catalog Resolution Order
+
+Catalogs are resolved in this order (first match wins):
+
+1. **Environment variable** — `SPECKIT_INTEGRATION_CATALOG_URL` overrides all catalogs
+2. **Project config** — `.specify/integration-catalogs.yml`
+3. **User config** — `~/.specify/integration-catalogs.yml`
+4. **Built-in defaults** — official catalog + community catalog
+
 ## Integration-Specific Options
 
 Some integrations accept additional options via `--integration-options`:
@@ -180,7 +218,7 @@ Some integrations accept additional options via `--integration-options`:
 | Integration | Option              | Description                                                    |
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
-| `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated directory names); when the `agent-context` extension is enabled, also migrates `KIMI.md` to `AGENTS.md` |
+| `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
 
 Example:
 
@@ -224,16 +262,13 @@ The currently declared multi-install safe integrations are:
 | `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
 | `firebender` | `.firebender/commands`, `.firebender/rules/specify-rules.mdc` |
 | `gemini` | `.gemini/commands`, `GEMINI.md` |
-| `iflow` | `.iflow/commands`, `IFLOW.md` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |
 | `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
 | `qodercli` | `.qoder/commands`, `QODER.md` |
 | `qwen` | `.qwen/commands`, `QWEN.md` |
-| `roo` | `.roo/commands`, `.roo/rules/specify-rules.md` |
 | `shai` | `.shai/commands`, `SHAI.md` |
 | `tabnine` | `.tabnine/agent/commands`, `TABNINE.md` |
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
-| `windsurf` | `.windsurf/workflows`, `.windsurf/rules/specify-rules.md` |
 | `zcode` | `.zcode/skills`, `ZCODE.md` |
 
 Integrations that share a context file or command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
@@ -248,7 +283,7 @@ Run `specify integration list` to see all available integrations with their keys
 
 ### Do I need the AI coding agent installed to use an integration?
 
-CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be installed. IDE-based integrations (like Windsurf, Cursor) work through the IDE itself. Some agents like GitHub Copilot support both IDE and CLI usage. `specify integration list` shows which type each integration is.
+CLI-based integrations (like Claude Code, Gemini CLI) require the tool to be installed. IDE-based integrations (like Cursor) work through the IDE itself. Some agents like GitHub Copilot support both IDE and CLI usage. `specify integration list` shows which type each integration is.
 
 ### When should I use `upgrade` vs `switch`?
 

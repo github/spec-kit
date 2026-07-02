@@ -134,6 +134,7 @@ class ForgeIntegration(MarkdownIntegration):
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 invoke_separator=self.invoke_separator,
+                project_root=project_root,
             )
 
             # FORGE-SPECIFIC: Ensure any remaining $ARGUMENTS placeholders are

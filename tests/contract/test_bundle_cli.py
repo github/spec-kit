@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -404,3 +405,315 @@ def test_install_integration_override_cannot_bypass_clash_guard(project: Path):
     )
     assert result.exit_code == 1
     assert "claude" in result.output and "copilot" in result.output
+
+
+# ===== Private GitHub release asset URL resolution =====
+
+
+class FakeBundleResponse:
+    """Minimal context-manager response stub for open_url fakes."""
+
+    def __init__(self, data: bytes, url: str = "https://api.github.com/repos/org/repo/releases/assets/99"):
+        self._data = data
+        self._url = url
+
+    def read(self) -> bytes:
+        return self._data
+
+    def geturl(self) -> str:
+        return self._url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
+def _make_catalog_config(catalog_path: Path, project: Path) -> None:
+    """Write a bundle-catalogs.yml pointing at *catalog_path* in *project*."""
+    config = {
+        "schema_version": "1.0",
+        "catalogs": [
+            {
+                "id": "test",
+                "url": str(catalog_path),
+                "priority": 1,
+                "install_policy": "install-allowed",
+            }
+        ],
+    }
+    (project / ".specify" / "bundle-catalogs.yml").write_text(
+        yaml.safe_dump(config), encoding="utf-8"
+    )
+
+
+def test_bundle_info_resolves_github_browser_release_url(project: Path):
+    """bundle info resolves a private-repo browser release URL via the GitHub API."""
+    browser_url = "https://github.com/org/repo/releases/download/v1.0/bundle.yml"
+    api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/99"
+
+    captured = []
+    manifest_yaml = yaml.safe_dump(valid_manifest_dict()).encode()
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "releases/tags/" in url:
+            # GitHub API release-tags lookup — return asset list
+            return FakeBundleResponse(
+                json.dumps({
+                    "assets": [{"name": "bundle.yml", "url": api_asset_url}]
+                }).encode(),
+                url=url,
+            )
+        # Actual asset download
+        return FakeBundleResponse(manifest_yaml, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    # The browser release URL must have been resolved via the GitHub tags API
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 1, f"Expected exactly one tags API call; got {captured}"
+    assert "releases/tags/v1.0" in tag_calls[0]
+
+    # The actual download must use the resolved API asset URL with octet-stream
+    asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
+    assert len(asset_calls) == 1
+    assert asset_calls[0][0] == api_asset_url
+    assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+
+def test_bundle_info_passes_through_api_asset_url(project: Path):
+    """bundle info passes a direct GitHub API asset URL through with octet-stream."""
+    api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/77"
+
+    captured = []
+    manifest_yaml = yaml.safe_dump(valid_manifest_dict()).encode()
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        return FakeBundleResponse(manifest_yaml, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=api_asset_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    # No tags API call — URL was already a REST asset URL
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 0
+
+    # Exactly one download call to the asset URL with octet-stream
+    asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
+    assert len(asset_calls) == 1
+    assert asset_calls[0][0] == api_asset_url
+    assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+
+def test_bundle_info_resolves_github_browser_release_url_zip(project: Path):
+    """bundle info resolves a browser release URL for a .zip artifact and extracts bundle.yml."""
+    import io
+    import zipfile
+
+    browser_url = "https://github.com/org/repo/releases/download/v2.0/bundle.zip"
+    api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/88"
+
+    # Build a minimal in-memory ZIP containing bundle.yml
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict()))
+    zip_bytes = buf.getvalue()
+
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "releases/tags/" in url:
+            return FakeBundleResponse(
+                json.dumps({
+                    "assets": [{"name": "bundle.zip", "url": api_asset_url}]
+                }).encode(),
+                url=url,
+            )
+        return FakeBundleResponse(zip_bytes, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    # tags API lookup must have fired
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 1
+    assert "releases/tags/v2.0" in tag_calls[0]
+
+    # Asset download uses the resolved API URL with octet-stream
+    asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
+    assert len(asset_calls) == 1
+    assert asset_calls[0][0] == api_asset_url
+    assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    # Manifest was successfully parsed from the ZIP
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"
+
+
+def test_bundle_info_api_asset_url_zip_detected_by_magic_bytes(project: Path):
+    """bundle info correctly handles a direct API asset URL that serves ZIP bytes."""
+    import io
+    import zipfile
+
+    api_asset_url = "https://api.github.com/repos/org/repo/releases/assets/55"
+
+    # Build a minimal in-memory ZIP containing bundle.yml
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict()))
+    zip_bytes = buf.getvalue()
+
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        return FakeBundleResponse(zip_bytes, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=api_asset_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    # No tags API call — URL was already a REST asset URL
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 0
+
+    # Download used octet-stream header
+    asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
+    assert len(asset_calls) == 1
+    assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    # ZIP bytes were detected by magic and bundle.yml extracted correctly
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"
+
+
+def test_bundle_info_github_release_url_resolution_failure_falls_back_and_errors(project: Path):
+    """When the GitHub tags API lookup finds no matching asset, fall back to the
+    original browser URL and surface a meaningful error (not a raw traceback)."""
+    browser_url = "https://github.com/org/repo/releases/download/v3.0/bundle.yml"
+
+    captured = []
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "releases/tags/" in url:
+            # Tags API responds but the asset list doesn't include our file
+            return FakeBundleResponse(
+                json.dumps({"assets": []}).encode(),
+                url=url,
+            )
+        # Fallback download: GitHub serves HTML (SSO redirect) instead of YAML
+        return FakeBundleResponse(b"<html>SSO login required</html>", url=url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    # Must exit non-zero — the HTML body is not a valid bundle manifest
+    assert result.exit_code == 1
+
+    # The tags API lookup must have fired
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 1
+
+    # The fallback download should use the original browser URL (no octet-stream)
+    fallback_calls = [(url, h) for url, h in captured if url == browser_url]
+    assert len(fallback_calls) == 1
+    assert fallback_calls[0][1] is None  # no Accept header on the original URL
+
+    # Error output must be actionable (not a raw traceback)
+    assert "Error:" in result.output
+
+
+def test_bundle_info_resolves_ghes_browser_release_url(project: Path):
+    """bundle info resolves a GHES private-repo browser release URL via /api/v3."""
+    ghes_host = "ghes.example"
+    browser_url = f"https://{ghes_host}/org/repo/releases/download/v1.0/bundle.yml"
+    api_asset_url = f"https://{ghes_host}/api/v3/repos/org/repo/releases/assets/42"
+
+    captured = []
+    manifest_yaml = yaml.safe_dump(valid_manifest_dict()).encode()
+
+    def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+        captured.append((url, extra_headers))
+        if "/api/v3/repos/" in url and "releases/tags/" in url:
+            return FakeBundleResponse(
+                json.dumps({
+                    "assets": [{"name": "bundle.yml", "url": api_asset_url}]
+                }).encode(),
+                url=url,
+            )
+        return FakeBundleResponse(manifest_yaml, url=api_asset_url)
+
+    catalog = project / "catalog.json"
+    write_catalog_file(
+        catalog,
+        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=browser_url)},
+    )
+    _make_catalog_config(catalog, project)
+
+    with patch("specify_cli.authentication.http.open_url", side_effect=fake_open_url), \
+         patch("specify_cli.authentication.http.github_provider_hosts", return_value=(ghes_host,)):
+        result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json"])
+
+    assert result.exit_code == 0, result.output
+
+    # The GHES /api/v3 tags lookup must have fired
+    tag_calls = [url for url, _ in captured if "releases/tags/" in url]
+    assert len(tag_calls) == 1
+    assert f"{ghes_host}/api/v3/repos/org/repo/releases/tags/v1.0" in tag_calls[0]
+
+    # Asset download must use the resolved GHES API URL with octet-stream
+    asset_calls = [(url, h) for url, h in captured if "releases/assets/" in url]
+    assert len(asset_calls) == 1
+    assert asset_calls[0][0] == api_asset_url
+    assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
+
+    payload = json.loads(result.output)
+    assert payload["id"] == "demo-bundle"

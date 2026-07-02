@@ -28,7 +28,7 @@ class TestDevinBuildExecArgs:
         assert args is not None, (
             "DevinIntegration.build_exec_args must not return None. "
             "None is the codebase sentinel for IDE-only integrations "
-            "(see WindsurfIntegration); Devin is dispatchable via 'devin -p'."
+            "(see KilocodeIntegration); Devin is dispatchable via 'devin -p'."
         )
         assert args[:3] == ["devin", "-p", "test prompt"]
 

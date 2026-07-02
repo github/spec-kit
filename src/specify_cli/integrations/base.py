@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import shutil
+import sys
 from abc import ABC
 from dataclasses import dataclass
 from pathlib import Path
@@ -495,8 +496,8 @@ class IntegrationBase(ABC):
 
         Copies files from this integration's ``scripts/`` directory to
         ``.specify/integrations/<key>/scripts/`` in the project.  Shell
-        scripts are made executable.  All copied files are recorded in
-        *manifest*.
+        (``.sh``) and Python (``.py``) scripts are made executable.  All
+        copied files are recorded in *manifest*.
 
         Returns the list of files created.
         """
@@ -513,7 +514,7 @@ class IntegrationBase(ABC):
                 continue
             dst_script = scripts_dest / src_script.name
             shutil.copy2(src_script, dst_script)
-            if dst_script.suffix == ".sh":
+            if dst_script.suffix in (".sh", ".py"):
                 dst_script.chmod(dst_script.stat().st_mode | 0o111)
             self.record_file_in_manifest(dst_script, project_root, manifest)
             created.append(dst_script)
@@ -539,12 +540,54 @@ class IntegrationBase(ABC):
         )
 
     @staticmethod
+    def resolve_python_interpreter(project_root: Path | None = None) -> str:
+        """Resolve a portable Python interpreter command for ``{SCRIPT}``.
+
+        Used to build the invocation string for the ``py`` script type so
+        that ``.py`` workflow scripts run consistently across platforms
+        (notably Windows, where ``.py`` files are not directly executable).
+
+        Resolution order:
+
+        1. A project virtual environment (``.venv``) interpreter, if one
+           exists under *project_root* (POSIX ``bin/python`` or Windows
+           ``Scripts/python.exe``).  The returned path is **relative to the
+           project root** (e.g. ``.venv/bin/python``) so generated
+           ``{SCRIPT}`` invocations stay portable and runnable from the
+           repo root regardless of where the project lives.
+        2. ``python3`` on ``PATH``.
+        3. ``python`` on ``PATH``.
+
+        Falls back to the running interpreter (``sys.executable``) when
+        ``PATH`` resolution fails so the generated command is guaranteed
+        to work in the current environment, and finally to ``"python3"``
+        if even that is unavailable.
+        """
+        if project_root is not None:
+            # (existence check path, repo-root-relative invocation string)
+            venv_candidates = (
+                (project_root / ".venv" / "bin" / "python", ".venv/bin/python"),
+                (
+                    project_root / ".venv" / "Scripts" / "python.exe",
+                    ".venv/Scripts/python.exe",
+                ),
+            )
+            for candidate, relative in venv_candidates:
+                if candidate.exists():
+                    return relative
+        for name in ("python3", "python"):
+            if shutil.which(name):
+                return name
+        return sys.executable or "python3"
+
+    @staticmethod
     def process_template(
         content: str,
         agent_name: str,
         script_type: str,
         arg_placeholder: str = "$ARGUMENTS",
         invoke_separator: str = ".",
+        project_root: Path | None = None,
     ) -> str:
         """Process a raw command template into agent-ready content.
 
@@ -578,6 +621,17 @@ class IntegrationBase(ABC):
 
         # 2. Replace {SCRIPT}
         if script_command:
+            # For the Python script type, prefix the resolved interpreter so
+            # the command is portable (``.py`` files are not directly
+            # executable on Windows).
+            if script_type == "py":
+                interpreter = IntegrationBase.resolve_python_interpreter(project_root)
+                # Quote the interpreter if it contains whitespace (e.g. an
+                # absolute ``sys.executable`` path under Windows
+                # ``Program Files``) so it isn't split into multiple args.
+                if any(ch.isspace() for ch in interpreter):
+                    interpreter = f'"{interpreter}"'
+                script_command = f"{interpreter} {script_command}"
             content = content.replace("{SCRIPT}", script_command)
 
         # 3. Strip scripts: section from frontmatter
@@ -784,6 +838,7 @@ class MarkdownIntegration(IntegrationBase):
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(
@@ -986,6 +1041,7 @@ class TomlIntegration(IntegrationBase):
             description = self._extract_description(raw)
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
             )
             _, body = self._split_frontmatter(processed)
             toml_content = self._render_toml(description, body)
@@ -1186,6 +1242,7 @@ class YamlIntegration(IntegrationBase):
 
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
             )
             _, body = self._split_frontmatter(processed)
             yaml_content = self._render_yaml(
@@ -1381,6 +1438,7 @@ class SkillsIntegration(IntegrationBase):
             # Process body through the standard template pipeline
             processed_body = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
                 invoke_separator=self.invoke_separator,
             )
             # Strip the processed frontmatter — we rebuild it for skills.

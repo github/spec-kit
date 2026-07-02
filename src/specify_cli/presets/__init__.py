@@ -30,7 +30,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
-from .._utils import dump_frontmatter
+from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import verify_archive_sha256
 
 
@@ -572,19 +572,16 @@ class PresetManager:
             PresetCompatibilityError: If pack is incompatible
         """
         required = manifest.requires_speckit_version
-        current = pkg_version.Version(speckit_version)
-
         try:
-            specifier = SpecifierSet(required)
-            if current not in specifier:
-                raise PresetCompatibilityError(
-                    f"Preset requires spec-kit {required}, "
-                    f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
-                )
+            SpecifierSet(required)  # Just to validate
         except InvalidSpecifier:
+            raise PresetCompatibilityError(f"Invalid version specifier: {required}")
+
+        if not version_satisfies(speckit_version, required):
             raise PresetCompatibilityError(
-                f"Invalid version specifier: {required}"
+                f"Preset requires spec-kit {required}, "
+                f"but {speckit_version} is installed.\n"
+                f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
             )
 
         return True
@@ -1863,7 +1860,7 @@ class PresetCatalog:
             )
         # Check hostname, not netloc: netloc is truthy for host-less URLs like
         # "https://:8080" or "https://user@", so the host guarantee this error
-        # promises would not actually hold. hostname is None in those cases.
+        # promises would not actually hold. hostname is None in those cases (#3209).
         if not parsed.hostname:
             raise PresetValidationError(
                 "Catalog URL must be a valid URL with a host."

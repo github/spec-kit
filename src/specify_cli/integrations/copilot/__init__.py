@@ -57,6 +57,17 @@ def _allow_all() -> bool:
     return True
 
 
+def _warn_legacy_markdown_default() -> None:
+    """Warn that Copilot's default markdown scaffold is being phased out."""
+    warnings.warn(
+        "Copilot legacy markdown mode is deprecated and will stop being the "
+        'default in a future Spec Kit release; pass --integration-options "--skills" '
+        "to opt in to Copilot skills mode now.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
 class _CopilotSkillsHelper(SkillsIntegration):
     """Internal helper used when Copilot is scaffolded in skills mode.
 
@@ -316,6 +327,8 @@ class CopilotIntegration(IntegrationBase):
         self._skills_mode = bool(parsed_options.get("skills"))
         if self._skills_mode:
             return self._setup_skills(project_root, manifest, parsed_options, **opts)
+        if "skills" not in parsed_options:
+            _warn_legacy_markdown_default()
         return self._setup_default(project_root, manifest, parsed_options, **opts)
 
     def _setup_default(
@@ -357,6 +370,7 @@ class CopilotIntegration(IntegrationBase):
             raw = src_file.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
+                project_root=project_root,
             )
             dst_name = self.command_filename(src_file.stem)
             dst_file = self.write_file_and_record(

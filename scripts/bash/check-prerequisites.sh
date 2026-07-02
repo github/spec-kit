@@ -78,8 +78,14 @@ done
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-# Get feature paths
-_paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+# Get feature paths.
+# In --paths-only mode this is pure resolution, so pass --no-persist to opt out
+# of the feature.json write side effect (issue #3025).
+if $PATHS_ONLY; then
+    _paths_output=$(get_feature_paths --no-persist) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+else
+    _paths_output=$(get_feature_paths) || { echo "ERROR: Failed to resolve feature paths" >&2; exit 1; }
+fi
 eval "$_paths_output"
 unset _paths_output
 

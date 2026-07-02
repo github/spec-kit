@@ -59,6 +59,13 @@ case "$(uname -s 2>/dev/null || true)" in
 esac
 
 # Parse extension config once; emit context files as JSON, followed by marker strings.
+#
+# NOTE (bash 3.2 / macOS portability): the embedded Python heredocs below run
+# inside $(...) command substitution. bash 3.2 (the system /bin/bash on macOS)
+# mis-parses a single-quote/apostrophe in a heredoc body nested in $(...),
+# failing with "unexpected EOF while looking for matching `''". Keep these
+# $(...)-nested heredoc bodies free of apostrophes (use double quotes in Python
+# string literals and avoid contractions in comments).
 if ! _raw_opts="$("$_python" - "$EXT_CONFIG" "$_case_insensitive_context_files" "$PROJECT_ROOT" <<'PY'
 import json
 import sys
@@ -113,11 +120,11 @@ if isinstance(raw_files, list):
 if not context_files:
     add_context_file(get_str(data, "context_file"))
 if not context_files:
-    # Self-seed: the agent-context extension owns its lifecycle, so when its
-    # own config declares no target it derives one from the active integration
-    # recorded in init-options.json, using the extension's OWN bundled mapping
-    # (agent-context-defaults.json). This is independent of the Specify CLI by
-    # design — nothing here imports specify_cli.
+    # Self-seed: the agent-context extension manages its own lifecycle, so when
+    # its config declares no target, it derives one from the active integration
+    # recorded in init-options.json, mapped through the bundled
+    # agent-context-defaults.json file. This is independent of the Specify CLI
+    # by design; nothing here imports specify_cli.
     project_root = sys.argv[3] if len(sys.argv) > 3 else "."
     integration_key = ""
     try:
@@ -144,7 +151,7 @@ if not context_files:
         except Exception:
             print(
                 "agent-context: unable to read %s; cannot self-seed the context "
-                "file. Set 'context_file' in the extension config." % defaults_path,
+                "file. Set context_file in the extension config." % defaults_path,
                 file=sys.stderr,
             )
             mapping = {}
@@ -152,7 +159,7 @@ if not context_files:
         if not context_files:
             print(
                 "agent-context: no default context file is known for integration "
-                "'%s'. Set 'context_file' in the extension config to choose one."
+                "%s. Set context_file in the extension config to choose one."
                 % integration_key,
                 file=sys.stderr,
             )

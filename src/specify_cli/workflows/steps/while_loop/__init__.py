@@ -55,7 +55,10 @@ class WhileStep(StepBase):
             )
         max_iter = config.get("max_iterations")
         if max_iter is not None:
-            if not isinstance(max_iter, int) or max_iter < 1:
+            # bool is a subclass of int, so isinstance(True, int) is True and
+            # True < 1 is False; reject bools explicitly so `max_iterations: true`
+            # is a type error rather than a silent single iteration.
+            if isinstance(max_iter, bool) or not isinstance(max_iter, int) or max_iter < 1:
                 errors.append(
                     f"While step {config.get('id', '?')!r}: "
                     f"'max_iterations' must be an integer >= 1."

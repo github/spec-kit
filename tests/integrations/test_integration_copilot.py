@@ -2,7 +2,9 @@
 
 import json
 import os
+import warnings
 
+import pytest
 import yaml
 
 from specify_cli.integrations import get_integration
@@ -33,6 +35,31 @@ class TestCopilotIntegration:
         for f in agent_files:
             assert f.parent == tmp_path / ".github" / "agents"
             assert f.name.endswith(".agent.md")
+
+    def test_setup_warns_legacy_markdown_default_is_deprecated(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+
+        with pytest.warns(UserWarning, match="Copilot legacy markdown mode is deprecated"):
+            created = copilot.setup(tmp_path, m)
+
+        assert any(f.name.endswith(".agent.md") for f in created)
+
+    def test_skills_setup_does_not_warn_about_legacy_default(self, tmp_path):
+        from specify_cli.integrations.copilot import CopilotIntegration
+        copilot = CopilotIntegration()
+        m = IntegrationManifest("copilot", tmp_path)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            created = copilot.setup(tmp_path, m, parsed_options={"skills": True})
+
+        assert not any(
+            "Copilot legacy markdown mode is deprecated" in str(item.message)
+            for item in caught
+        )
+        assert any(f.name == "SKILL.md" for f in created)
 
     def test_setup_creates_companion_prompts(self, tmp_path):
         from specify_cli.integrations.copilot import CopilotIntegration
@@ -293,6 +320,51 @@ class TestCopilotIntegration:
         assert actual == expected, (
             f"Missing: {sorted(set(expected) - set(actual))}\n"
             f"Extra: {sorted(set(actual) - set(expected))}"
+        )
+
+    def test_default_cli_init_warns_legacy_markdown_is_deprecated(self, tmp_path):
+        """Default Copilot init should warn users about the future skills default."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        project = tmp_path / "default-warning"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            with pytest.warns(
+                UserWarning,
+                match="Copilot legacy markdown mode is deprecated",
+            ):
+                result = CliRunner().invoke(app, [
+                    "init", "--here", "--integration", "copilot", "--script", "sh",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+
+    def test_skills_cli_init_does_not_warn_about_legacy_markdown(self, tmp_path):
+        """Explicit Copilot skills mode should not warn about the legacy default."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        project = tmp_path / "skills-no-warning"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                result = CliRunner().invoke(app, [
+                    "init", "--here", "--integration", "copilot",
+                    "--integration-options", "--skills", "--script", "sh",
+                ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert not any(
+            "Copilot legacy markdown mode is deprecated" in str(item.message)
+            for item in caught
         )
 
 

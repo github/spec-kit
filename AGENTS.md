@@ -23,7 +23,7 @@ src/specify_cli/integrations/
 │   └── __init__.py        #   ClaudeIntegration class
 ├── gemini/                # Example: TomlIntegration subclass
 │   └── __init__.py
-├── windsurf/              # Example: MarkdownIntegration subclass
+├── kilocode/              # Example: MarkdownIntegration subclass
 │   └── __init__.py
 ├── copilot/               # Example: IntegrationBase subclass (custom setup)
 │   └── __init__.py
@@ -52,25 +52,25 @@ Most agents only need `MarkdownIntegration` — a minimal subclass with zero met
 
 Create `src/specify_cli/integrations/<package_dir>/__init__.py`, where `<package_dir>` is the Python-safe directory name derived from `<key>`: use the key as-is when it contains no hyphens (e.g., key `"gemini"` → `gemini/`), or replace hyphens with underscores when it does (e.g., key `"kiro-cli"` → `kiro_cli/`). The `IntegrationBase.key` class attribute always retains the original hyphenated value, since that is what the CLI and registry use. For CLI-based integrations (`requires_cli: True`), the `key` should match the actual CLI tool name (the executable users install and run) so CLI checks can resolve it correctly. For IDE-based integrations (`requires_cli: False`), use the canonical integration identifier instead.
 
-**Minimal example — Markdown agent (Windsurf):**
+**Minimal example — Markdown agent (Kilo Code):**
 
 ```python
-"""Windsurf IDE integration."""
+"""Kilo Code IDE integration."""
 
 from ..base import MarkdownIntegration
 
 
-class WindsurfIntegration(MarkdownIntegration):
-    key = "windsurf"
+class KilocodeIntegration(MarkdownIntegration):
+    key = "kilocode"
     config = {
-        "name": "Windsurf",
-        "folder": ".windsurf/",
+        "name": "Kilo Code",
+        "folder": ".kilocode/",
         "commands_subdir": "workflows",
         "install_url": None,
         "requires_cli": False,
     }
     registrar_config = {
-        "dir": ".windsurf/workflows",
+        "dir": ".kilocode/workflows",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": ".md",
@@ -148,7 +148,7 @@ class CodexIntegration(SkillsIntegration):
 | `config` | Class attribute (dict) | Agent metadata: `name`, `folder`, `commands_subdir`, `install_url`, `requires_cli` |
 | `registrar_config` | Class attribute (dict) | Command output config: `dir`, `format`, `args` placeholder, file `extension` |
 
-**Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"windsurf"`, `"copilot"`).
+**Key design rule:** For CLI-based integrations (`requires_cli: True`), `key` must be the actual executable name (e.g., `"cursor-agent"` not `"cursor"`). This ensures `shutil.which(key)` works for CLI-tool checks without special-case mappings. IDE-based integrations (`requires_cli: False`) should use their canonical identifier (e.g., `"kilocode"`, `"copilot"`).
 
 ### 3. Register it
 
@@ -201,8 +201,8 @@ Only add custom setup logic when the agent needs non-standard behavior. Integrat
 specify init my-project --integration <key>
 
 # Verify files were created in the commands directory configured by
-# config["folder"] + config["commands_subdir"] (for example, .windsurf/workflows/)
-ls -R my-project/.windsurf/workflows/
+# config["folder"] + config["commands_subdir"] (for example, .kilocode/workflows/)
+ls -R my-project/.kilocode/workflows/
 
 # Uninstall cleanly
 cd my-project && specify integration uninstall <key>
