@@ -925,6 +925,25 @@ class TestRedirectStripping:
             handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
                                      "http://evil.example.com/archive.zip")
 
+    def test_strict_redirect_error_describes_target_and_allowed_localhost(self):
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+        import urllib.error
+
+        handler = _StripAuthOnRedirect(("example.com",))
+        req = Request("https://example.com/archive.zip")
+
+        with pytest.raises(urllib.error.URLError) as exc_info:
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "http://evil.example.com/archive.zip")
+
+        error_message = str(exc_info.value)
+        assert "http://evil.example.com/archive.zip" in error_message
+        assert "localhost" in error_message
+        assert "127.0.0.1" in error_message
+        assert "::1" in error_message
+
 
 # ---------------------------------------------------------------------------
 # _fetch_latest_release_tag delegation
