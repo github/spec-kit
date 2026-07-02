@@ -34,6 +34,46 @@ from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import verify_archive_sha256
 
 
+# Tokens that mark an unmodified, generic constitution that has not yet been
+# authored. Used to decide whether seeding/re-seeding memory/constitution.md
+# from a preset-provided template is safe (i.e. won't clobber authored content).
+_CONSTITUTION_PLACEHOLDER_TOKENS = ("[PROJECT_NAME]", "[PRINCIPLE_1_NAME]")
+
+
+def _constitution_is_placeholder(content: str) -> bool:
+    """Return True if a constitution body is still the generic placeholder."""
+    return any(token in content for token in _CONSTITUTION_PLACEHOLDER_TOKENS)
+
+
+def _materialize_constitution_template(
+    project_root: Path,
+    memory_constitution: Path,
+) -> str | None:
+    """Materialize constitution-template content into memory/constitution.md.
+
+    Returns:
+        "copied" when the winning layer is ``replace`` and the source file is
+        copied verbatim; "composed" when a composing strategy is materialized
+        via ``resolve_content``; ``None`` when no constitution template resolves.
+    """
+    resolver = PresetResolver(project_root)
+    layers = resolver.collect_all_layers("constitution-template", "template")
+    if not layers:
+        return None
+
+    memory_constitution.parent.mkdir(parents=True, exist_ok=True)
+    top_layer = layers[0]
+    if top_layer["strategy"] == "replace":
+        shutil.copy2(top_layer["path"], memory_constitution)
+        return "copied"
+
+    composed_content = resolver.resolve_content("constitution-template", "template")
+    if composed_content is None:
+        return None
+    memory_constitution.write_text(composed_content, encoding="utf-8")
+    return "composed"
+
+
 def _substitute_core_template(
     body: str,
     cmd_name: str,
@@ -1615,7 +1655,57 @@ class PresetManager:
                     stacklevel=2,
                 )
 
+        # Seed/re-seed memory/constitution.md from a preset-provided
+        # constitution-template. The constitution is the only template that is
+        # materialized to a live file rather than resolved on demand, so a
+        # preset that ships one (e.g. strategy: replace with a ratified
+        # constitution) must be propagated here. Guard against clobbering an
+        # already-authored constitution by only seeding when the memory file is
+        # missing or still contains generic placeholder tokens.
+        self._seed_constitution_from_preset(manifest)
+
         return manifest
+
+    def _seed_constitution_from_preset(self, manifest: PresetManifest) -> None:
+        """Seed memory/constitution.md from a preset constitution-template.
+
+        Only runs when the preset declares a ``type: template`` entry named
+        ``constitution-template`` and the live memory file is either missing or
+        still the generic placeholder. Authored constitutions are never
+        overwritten.
+        """
+        provides_constitution = any(
+            t.get("type") == "template" and t.get("name") == "constitution-template"
+            for t in manifest.templates
+        )
+        if not provides_constitution:
+            return
+
+        memory_constitution = (
+            self.project_root / ".specify" / "memory" / "constitution.md"
+        )
+        if memory_constitution.exists():
+            try:
+                existing = memory_constitution.read_text(encoding="utf-8")
+            except OSError:
+                return
+            if not _constitution_is_placeholder(existing):
+                # Legitimately authored constitution; leave it untouched.
+                return
+
+        try:
+            result = _materialize_constitution_template(
+                self.project_root, memory_constitution
+            )
+            if result is None:
+                return
+        except OSError as exc:
+            import warnings
+
+            warnings.warn(
+                f"Failed to seed constitution from preset {manifest.id}: {exc}.",
+                stacklevel=2,
+            )
 
     def install_from_zip(
         self,
