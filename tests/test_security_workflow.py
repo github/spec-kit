@@ -182,6 +182,30 @@ class TestDependencyAuditWorkflow:
             assert re.search(r"@[0-9a-f]{40}$", uses_ref), uses_ref
             assert re.search(r"@v\d+", uses_ref) is None
 
+    def test_setup_python_pin_matches_repo_standard(self):
+        workflow = _load_security_workflow()
+        security_refs = {
+            step["uses"]
+            for job in workflow["jobs"].values()
+            for step in job["steps"]
+            if step.get("uses", "").startswith("actions/setup-python@")
+        }
+        repo_standard_refs = set()
+        for workflow_path in (
+            REPO_ROOT / ".github" / "workflows" / "test.yml",
+            REPO_ROOT / ".github" / "workflows" / "publish-pypi.yml",
+        ):
+            workflow_data = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+            repo_standard_refs.update(
+                step["uses"]
+                for job in workflow_data["jobs"].values()
+                for step in job["steps"]
+                if step.get("uses", "").startswith("actions/setup-python@")
+            )
+
+        assert len(repo_standard_refs) == 1
+        assert security_refs == repo_standard_refs
+
     def test_committed_audit_requirements_are_hashed(self):
         requirements = SECURITY_REQUIREMENTS.read_text(encoding="utf-8")
 
