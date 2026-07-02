@@ -48,6 +48,7 @@ def _register_builtins() -> None:
     """
     # -- Imports (alphabetical) -------------------------------------------
     from .agy import AgyIntegration
+    from .alquimia import AlquimiaAIIntegration
     from .amp import AmpIntegration
     from .auggie import AuggieIntegration
     from .bob import BobIntegration
@@ -84,6 +85,7 @@ def _register_builtins() -> None:
 
     # -- Registration (alphabetical) --------------------------------------
     _register(AgyIntegration())
+    _register(AlquimiaAIIntegration())
     _register(AmpIntegration())
     _register(AuggieIntegration())
     _register(BobIntegration())

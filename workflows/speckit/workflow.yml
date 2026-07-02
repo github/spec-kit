@@ -20,6 +20,7 @@ requires:
     # ones not listed below, as long as that integration provides the four
     # core commands referenced in ``steps``.
     any:
+      - "alquimia"
       - "claude"
       - "copilot"
       - "gemini"
