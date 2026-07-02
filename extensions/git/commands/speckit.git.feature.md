@@ -19,7 +19,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 If the user explicitly provided `GIT_BRANCH_NAME` (e.g., via environment variable, argument, or in their request), pass it through to the script by setting the `GIT_BRANCH_NAME` environment variable before invoking the script. When `GIT_BRANCH_NAME` is set:
 - The script uses the exact value as the branch name, bypassing all prefix/suffix generation
 - `--short-name`, `--number`, and `--timestamp` flags are ignored
-- `FEATURE_NUM` is extracted from the first numeric or timestamp segment (for example `042-name`, `feat/042-name`, or `jdoe/app/042-name`), otherwise set to the full branch name
+- `FEATURE_NUM` is extracted when the final path segment starts with a numeric or timestamp feature marker (for example `042-name`, `feat/042-name`, or `jdoe/app/042-name`), otherwise set to the full branch name
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ Determine the branch numbering strategy by checking configuration in this order:
 
 ## Branch Name Template
 
-Check `.specify/extensions/git/git-config.yml` for an optional `branch_template` value. If it is empty or missing, use the default branch shape `{number}-{slug}`. If it is set, it must include `{number}` and the script expands these tokens:
+Check `.specify/extensions/git/git-config.yml` for an optional `branch_template` value. If it is empty or missing, use the default branch shape `{number}-{slug}`. If it is set, its final path segment must start with `{number}-` and the script expands these tokens:
 
 - `{author}`: sanitized Git config author (`user.name`, falling back to the email local part)
 - `{app}`: sanitized Spec Kit init directory name

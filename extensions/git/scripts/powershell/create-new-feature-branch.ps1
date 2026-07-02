@@ -36,6 +36,7 @@ if ($Help) {
     Write-Host ""
     Write-Host "Configuration:"
     Write-Host "  branch_template     Optional git-config.yml template with {author}, {app}, {number}, {slug}"
+    Write-Host "  branch_prefix       Optional shorthand namespace expanded before {number}-{slug}"
     Write-Host ""
     exit 0
 }
@@ -324,6 +325,12 @@ function Assert-BranchTemplateValid {
 
     if ($Template -and -not $Template.Contains('{number}')) {
         throw "branch_template must include the {number} token so generated branches remain valid feature branches."
+    }
+    if ($Template) {
+        $featureSegment = ($Template -split '/')[-1]
+        if (-not $featureSegment.StartsWith('{number}-', [System.StringComparison]::Ordinal)) {
+            throw "branch_template must put {number}- at the start of the final path segment so generated branches remain valid feature branches."
+        }
     }
 }
 

@@ -77,6 +77,7 @@ while [ $i -le $# ]; do
             echo ""
             echo "Configuration:"
             echo "  branch_template     Optional git-config.yml template with {author}, {app}, {number}, {slug}"
+            echo "  branch_prefix       Optional shorthand namespace expanded before {number}-{slug}"
             echo ""
             echo "Examples:"
             echo "  $0 'Add user authentication system' --short-name 'user-auth'"
@@ -366,10 +367,19 @@ render_branch_template() {
 validate_branch_template() {
     local template="$1"
     [ -n "$template" ] || return 0
+    local feature_segment
+    feature_segment="${template##*/}"
     case "$template" in
         *"{number}"*) ;;
         *)
             >&2 echo "Error: branch_template must include the {number} token so generated branches remain valid feature branches."
+            exit 1
+            ;;
+    esac
+    case "$feature_segment" in
+        "{number}-"*) ;;
+        *)
+            >&2 echo "Error: branch_template must put {number}- at the start of the final path segment so generated branches remain valid feature branches."
             exit 1
             ;;
     esac
@@ -399,14 +409,14 @@ branch_scope_prefix() {
 
 extract_feature_num_from_branch() {
     local branch_name="$1"
-    branch_name="${branch_name##*/}"
+    local feature_segment="${branch_name##*/}"
     local match
-    match=$(printf '%s\n' "$branch_name" | grep -Eo '^[0-9]{8}-[0-9]{6}-' | head -n 1 || true)
+    match=$(printf '%s\n' "$feature_segment" | grep -Eo '^[0-9]{8}-[0-9]{6}-' | head -n 1 || true)
     if [ -n "$match" ]; then
         printf '%s\n' "$match" | sed -E 's/-$//'
         return
     fi
-    match=$(printf '%s\n' "$branch_name" | grep -Eo '^[0-9]+-' | head -n 1 || true)
+    match=$(printf '%s\n' "$feature_segment" | grep -Eo '^[0-9]+-' | head -n 1 || true)
     if [ -n "$match" ]; then
         printf '%s\n' "$match" | sed -E 's/-$//'
         return
@@ -525,8 +535,10 @@ elif [ "$BRANCH_BYTE_LEN" -gt $MAX_BRANCH_LENGTH ]; then
     fi
 
     >&2 echo "[specify] Warning: Branch name exceeded GitHub's 244-byte limit"
-    >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${#ORIGINAL_BRANCH_NAME} bytes)"
-    >&2 echo "[specify] Truncated to: $BRANCH_NAME (${#BRANCH_NAME} bytes)"
+    ORIGINAL_BRANCH_BYTE_LEN=$(_byte_length "$ORIGINAL_BRANCH_NAME")
+    TRUNCATED_BRANCH_BYTE_LEN=$(_byte_length "$BRANCH_NAME")
+    >&2 echo "[specify] Original: $ORIGINAL_BRANCH_NAME (${ORIGINAL_BRANCH_BYTE_LEN} bytes)"
+    >&2 echo "[specify] Truncated to: $BRANCH_NAME (${TRUNCATED_BRANCH_BYTE_LEN} bytes)"
 fi
 
 if [ "$DRY_RUN" != true ]; then

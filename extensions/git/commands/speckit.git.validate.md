@@ -22,10 +22,10 @@ Get the current branch name:
 git rev-parse --abbrev-ref HEAD
 ```
 
-The branch name must contain one of these feature markers either at the start or after one or more namespace path segments:
+The branch name's final path segment must start with one of these feature markers:
 
-1. **Sequential**: `(^|/)[0-9]{3,}-` (e.g., `001-feature-name`, `042-fix-bug`, `1000-big-feature`, `jdoe/web/008-guided-tour`)
-2. **Timestamp**: `(^|/)[0-9]{8}-[0-9]{6}-` (e.g., `20260319-143022-feature-name`, `jdoe/web/20260319-143022-feature-name`)
+1. **Sequential**: `[0-9]{3,}-` (e.g., `001-feature-name`, `042-fix-bug`, `1000-big-feature`, `jdoe/web/008-guided-tour`)
+2. **Timestamp**: `[0-9]{8}-[0-9]{6}-` (e.g., `20260319-143022-feature-name`, `jdoe/web/20260319-143022-feature-name`)
 
 ## Execution
 
