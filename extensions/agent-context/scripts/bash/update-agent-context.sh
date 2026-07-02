@@ -307,8 +307,11 @@ import sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 specs = root / "specs"
+# Recurse (rather than the old one-level specs/*/plan.md glob) so scoped layouts
+# created via SPECIFY_FEATURE_DIRECTORY, e.g. specs/<scope>/<feature>/plan.md,
+# are still discovered when feature.json is absent (#3024).
 plans = sorted(
-    specs.glob("*/plan.md"),
+    specs.rglob("plan.md"),
     key=lambda p: p.stat().st_mtime,
     reverse=True,
 )
