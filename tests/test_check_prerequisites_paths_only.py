@@ -122,6 +122,45 @@ def test_paths_only_succeeds_on_spec_branch(prereq_repo: Path) -> None:
 
 
 @requires_bash
+@pytest.mark.parametrize(
+    ("use_env_var", "specify_feature", "expected_branch"),
+    [
+        (False, None, "001-my-feature"),
+        (True, None, "001-my-feature"),
+        (False, "my-explicit-branch", "my-explicit-branch"),
+    ],
+    ids=["feature_json", "env_var", "explicit_feature"],
+)
+def test_current_branch_falls_back_to_feature_dir_basename(
+    prereq_repo: Path, use_env_var: bool, specify_feature: str | None, expected_branch: str
+) -> None:
+    """With no SPECIFY_FEATURE, BRANCH falls back to the feature directory
+    basename (from feature.json or SPECIFY_FEATURE_DIRECTORY) instead of being
+    emitted empty. If SPECIFY_FEATURE is set, it remains authoritative (#3026)."""
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    env = _clean_env()
+    if specify_feature:
+        env["SPECIFY_FEATURE"] = specify_feature
+    if use_env_var:
+        env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-my-feature"
+    else:
+        _write_feature_json(prereq_repo)
+    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    result = subprocess.run(
+        ["bash", str(script), "--json", "--paths-only"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["BRANCH"] == expected_branch
+
+
+@requires_bash
 def test_paths_only_text_mode_on_non_spec_branch(prereq_repo: Path) -> None:
     """--paths-only without --json must return text paths from feature.json."""
     feat = prereq_repo / "specs" / "001-my-feature"
@@ -163,6 +202,66 @@ def test_normal_mode_still_validates_branch(prereq_repo: Path) -> None:
     assert result.stdout.strip() == ""
 
 
+@requires_bash
+def test_paths_only_does_not_persist_feature_json(prereq_repo: Path) -> None:
+    """--paths-only must not rewrite feature.json even when the env override
+    differs from the pinned value (#3025).
+
+    Path resolution is read-only, so it must never dirty the working tree or
+    overwrite the persisted feature directory.
+    """
+    pinned = "specs/001-my-feature"
+    (prereq_repo / "specs" / "001-my-feature").mkdir(parents=True, exist_ok=True)
+    (prereq_repo / "specs" / "002-other").mkdir(parents=True, exist_ok=True)
+    _write_feature_json(prereq_repo, pinned)
+    fj = prereq_repo / ".specify" / "feature.json"
+    before = fj.read_text(encoding="utf-8")
+
+    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    env = _clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = "specs/002-other"
+    result = subprocess.run(
+        ["bash", str(script), "--json", "--paths-only"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    # The override is honored in the output...
+    data = json.loads(result.stdout)
+    assert "002-other" in data["FEATURE_DIR"]
+    # ...but the pinned file on disk is untouched.
+    assert fj.read_text(encoding="utf-8") == before
+
+
+@requires_bash
+def test_normal_mode_still_persists_feature_json(prereq_repo: Path) -> None:
+    """Without --paths-only, the env override is still persisted to feature.json,
+    so the --no-persist opt-out does not regress normal write behavior (#3025)."""
+    (prereq_repo / "specs" / "001-my-feature").mkdir(parents=True, exist_ok=True)
+    feat = prereq_repo / "specs" / "002-other"
+    feat.mkdir(parents=True, exist_ok=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    _write_feature_json(prereq_repo, "specs/001-my-feature")
+    fj = prereq_repo / ".specify" / "feature.json"
+
+    script = prereq_repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
+    env = _clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = "specs/002-other"
+    result = subprocess.run(
+        ["bash", str(script), "--json"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(fj.read_text(encoding="utf-8"))["feature_directory"] == "specs/002-other"
+
+
 # ── PowerShell tests ──────────────────────────────────────────────────────
 
 
@@ -187,6 +286,46 @@ def test_ps_paths_only_succeeds_on_non_spec_branch(prereq_repo: Path) -> None:
     assert "REPO_ROOT" in data
     assert "BRANCH" in data
     assert "FEATURE_DIR" in data
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+@pytest.mark.parametrize(
+    ("use_env_var", "specify_feature", "expected_branch"),
+    [
+        (False, None, "001-my-feature"),
+        (True, None, "001-my-feature"),
+        (False, "my-explicit-branch", "my-explicit-branch"),
+    ],
+    ids=["feature_json", "env_var", "explicit_feature"],
+)
+def test_ps_current_branch_falls_back_to_feature_dir_basename(
+    prereq_repo: Path, use_env_var: bool, specify_feature: str | None, expected_branch: str
+) -> None:
+    """With no SPECIFY_FEATURE, BRANCH falls back to the feature directory
+    basename (from feature.json or SPECIFY_FEATURE_DIRECTORY) instead of being
+    emitted empty. If SPECIFY_FEATURE is set, it remains authoritative (#3026)."""
+    feat = prereq_repo / "specs" / "001-my-feature"
+    feat.mkdir(parents=True, exist_ok=True)
+    env = _clean_env()
+    if specify_feature:
+        env["SPECIFY_FEATURE"] = specify_feature
+    if use_env_var:
+        env["SPECIFY_FEATURE_DIRECTORY"] = "specs/001-my-feature"
+    else:
+        _write_feature_json(prereq_repo)
+    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json", "-PathsOnly"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["BRANCH"] == expected_branch
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
@@ -283,3 +422,64 @@ def test_ps_missing_tasks_error_goes_to_stderr(prereq_repo: Path) -> None:
     assert "tasks.md not found" in result.stderr
     assert "tasks.md not found" not in result.stdout
     assert result.stdout.strip() == ""
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_ps_paths_only_does_not_persist_feature_json(prereq_repo: Path) -> None:
+    """-PathsOnly must not rewrite feature.json even when the env override
+    differs from the pinned value (#3025)."""
+    pinned = "specs/001-my-feature"
+    (prereq_repo / "specs" / "001-my-feature").mkdir(parents=True, exist_ok=True)
+    (prereq_repo / "specs" / "002-other").mkdir(parents=True, exist_ok=True)
+    _write_feature_json(prereq_repo, pinned)
+    fj = prereq_repo / ".specify" / "feature.json"
+    before = fj.read_text(encoding="utf-8")
+
+    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    env = _clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = "specs/002-other"
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json", "-PathsOnly"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert "002-other" in data["FEATURE_DIR"]
+    assert fj.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
+def test_ps_normal_mode_still_persists_feature_json(prereq_repo: Path) -> None:
+    """Without -PathsOnly, the env override is still persisted to feature.json,
+    so the -NoPersist opt-out does not regress normal write behavior (#3025).
+
+    Symmetric to the bash test_normal_mode_still_persists_feature_json guard:
+    asserts the default path still persists and that -NoPersist is not passed
+    unconditionally.
+    """
+    (prereq_repo / "specs" / "001-my-feature").mkdir(parents=True, exist_ok=True)
+    feat = prereq_repo / "specs" / "002-other"
+    feat.mkdir(parents=True, exist_ok=True)
+    (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
+    _write_feature_json(prereq_repo, "specs/001-my-feature")
+    fj = prereq_repo / ".specify" / "feature.json"
+
+    script = prereq_repo / ".specify" / "scripts" / "powershell" / "check-prerequisites.ps1"
+    exe = "pwsh" if HAS_PWSH else _WINDOWS_POWERSHELL
+    env = _clean_env()
+    env["SPECIFY_FEATURE_DIRECTORY"] = "specs/002-other"
+    result = subprocess.run(
+        [exe, "-NoProfile", "-File", str(script), "-Json"],
+        cwd=prereq_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(fj.read_text(encoding="utf-8"))["feature_directory"] == "specs/002-other"

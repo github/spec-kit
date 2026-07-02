@@ -27,23 +27,21 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "goose",
     "hermes",
     "bob",
-    "iflow",
     "junie",
     "kilocode",
     "kimi",
     "kiro-cli",
     "lingma",
     "vibe",
+    "omp",
     "opencode",
     "pi",
     "qodercli",
     "qwen",
-    "roo",
     "rovodev",
     "shai",
     "tabnine",
     "trae",
-    "windsurf",
     "zcode",
     "zed",
 ]
@@ -225,17 +223,17 @@ class TestAgentConfigConsistency:
     def test_kimi_in_agent_config(self):
         """AGENT_CONFIG should include kimi with correct folder and commands_subdir."""
         assert "kimi" in AGENT_CONFIG
-        assert AGENT_CONFIG["kimi"]["folder"] == ".kimi/"
+        assert AGENT_CONFIG["kimi"]["folder"] == ".kimi-code/"
         assert AGENT_CONFIG["kimi"]["commands_subdir"] == "skills"
         assert AGENT_CONFIG["kimi"]["requires_cli"] is True
 
     def test_kimi_in_extension_registrar(self):
-        """Extension command registrar should include kimi using .kimi/skills and SKILL.md."""
+        """Extension command registrar should include kimi using .kimi-code/skills and SKILL.md."""
         cfg = CommandRegistrar.AGENT_CONFIGS
 
         assert "kimi" in cfg
         kimi_cfg = cfg["kimi"]
-        assert kimi_cfg["dir"] == ".kimi/skills"
+        assert kimi_cfg["dir"] == ".kimi-code/skills"
         assert kimi_cfg["extension"] == "/SKILL.md"
 
     def test_agent_config_includes_kimi(self):
@@ -290,28 +288,6 @@ class TestAgentConfigConsistency:
     def test_agent_config_includes_pi(self):
         """AGENT_CONFIG should include pi."""
         assert "pi" in AGENT_CONFIG
-
-    # --- iFlow CLI consistency checks ---
-
-    def test_iflow_in_agent_config(self):
-        """AGENT_CONFIG should include iflow with correct folder and commands_subdir."""
-        assert "iflow" in AGENT_CONFIG
-        assert AGENT_CONFIG["iflow"]["folder"] == ".iflow/"
-        assert AGENT_CONFIG["iflow"]["commands_subdir"] == "commands"
-        assert AGENT_CONFIG["iflow"]["requires_cli"] is True
-
-    def test_iflow_in_extension_registrar(self):
-        """Extension command registrar should include iflow targeting .iflow/commands."""
-        cfg = CommandRegistrar.AGENT_CONFIGS
-
-        assert "iflow" in cfg
-        assert cfg["iflow"]["dir"] == ".iflow/commands"
-        assert cfg["iflow"]["format"] == "markdown"
-        assert cfg["iflow"]["args"] == "$ARGUMENTS"
-
-    def test_agent_config_includes_iflow(self):
-        """AGENT_CONFIG should include iflow."""
-        assert "iflow" in AGENT_CONFIG
 
     # --- Goose consistency checks ---
 

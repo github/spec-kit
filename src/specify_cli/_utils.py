@@ -65,14 +65,31 @@ def dump_frontmatter(data: dict[str, Any]) -> str:
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True).strip()
 
 
-def run_command(cmd: list[str], check_return: bool = True, capture: bool = False, shell: bool = False) -> str | None:
-    """Run a shell command and optionally capture output."""
+def run_command(
+    cmd: list[str],
+    check_return: bool = True,
+    capture: bool = False,
+    shell: bool = False,
+) -> str | None:
+    """Run a command without invoking a shell and optionally capture output.
+
+    The ``shell`` parameter is kept in the signature so existing keyword
+    callers (and the re-export from ``specify_cli``) don't raise ``TypeError``,
+    but only the default ``shell=False`` is honoured. ``shell=True`` is
+    rejected with ``ValueError`` rather than silently ignored, so the
+    unsupported mode fails loudly instead of running with a different meaning.
+    """
+    if shell:
+        raise ValueError(
+            "run_command() does not support shell=True; pass argv as a list"
+        )
+
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True, shell=shell)
+            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True)
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return, shell=shell)
+            subprocess.run(cmd, check=check_return)
             return None
     except subprocess.CalledProcessError as e:
         if check_return:
@@ -287,3 +304,27 @@ def _display_project_path(project_root: Path, path: str | Path) -> str:
         except (OSError, ValueError):
             return path_obj.as_posix()
     return rel_path.as_posix()
+
+
+def version_satisfies(current: str, required: str) -> bool:
+    """Check if current version satisfies required version specifier.
+
+    Evaluates the version against the specifier using the project's
+    prerelease policy (prereleases are allowed).
+
+    Args:
+        current: Current version (e.g., "0.1.5")
+        required: Required version specifier (e.g., ">=0.1.0,<2.0.0")
+
+    Returns:
+        True if version satisfies requirement
+    """
+    from packaging import version as pkg_version
+    from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+    try:
+        current_ver = pkg_version.Version(current)
+        specifier = SpecifierSet(required)
+        return specifier.contains(current_ver, prereleases=True)
+    except (pkg_version.InvalidVersion, InvalidSpecifier):
+        return False

@@ -111,8 +111,11 @@ function Get-BranchName {
         # Keep words that are length >= 3 OR appear as uppercase in original (likely acronyms)
         if ($word.Length -ge 3) {
             $meaningfulWords += $word
-        } elseif ($Description -match "\b$($word.ToUpper())\b") {
-            # Keep short words if they appear as uppercase in original (likely acronyms)
+        } elseif ($Description -cmatch "\b$($word.ToUpper())\b") {
+            # Keep short words only if they appear as uppercase in original (likely
+            # acronyms). Use -cmatch so the comparison is case-sensitive, matching the
+            # bash script's case-sensitive grep; -match would be case-insensitive and
+            # would keep every short word.
             $meaningfulWords += $word
         }
     }
@@ -139,8 +142,10 @@ if ($ShortName) {
     $branchSuffix = Get-BranchName -Description $featureDesc
 }
 
-# Warn if -Number and -Timestamp are both specified
-if ($Timestamp -and $Number -ne 0) {
+# Warn if -Number and -Timestamp are both specified. Use ContainsKey (not
+# `-ne 0`) so an explicit `-Number 0` is also detected, matching the bash twin's
+# `[ -n "$BRANCH_NUMBER" ]` check.
+if ($Timestamp -and $PSBoundParameters.ContainsKey('Number')) {
     Write-Warning "[specify] Warning: -Number is ignored when -Timestamp is used"
     $Number = 0
 }
@@ -150,8 +155,10 @@ if ($Timestamp) {
     $featureNum = Get-Date -Format 'yyyyMMdd-HHmmss'
     $branchName = "$featureNum-$branchSuffix"
 } else {
-    # Determine branch number from existing feature directories
-    if ($Number -eq 0) {
+    # Determine branch number from existing feature directories. Auto-detect only
+    # when -Number was not supplied; an explicit value (including 0) is honored,
+    # matching the bash twin's `[ -z "$BRANCH_NUMBER" ]` check.
+    if (-not $PSBoundParameters.ContainsKey('Number')) {
         $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
     }
 
@@ -204,6 +211,10 @@ if (-not $DryRun) {
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             [System.IO.File]::WriteAllText($specFile, $content, $utf8NoBom)
         } else {
+            # Match the bash twin (create-new-feature.sh): warn on stderr that no
+            # spec template was found before creating an empty spec file, so the
+            # missing-template signal is not silently swallowed on Windows.
+            [Console]::Error.WriteLine("Warning: Spec template not found; created empty spec file")
             New-Item -ItemType File -Path $specFile -Force | Out-Null
         }
     }

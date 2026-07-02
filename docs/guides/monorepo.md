@@ -77,6 +77,18 @@ feature non-interactively. See the
 [`SPECIFY_INIT_DIR` reference](../reference/core.md#environment-variables) for
 the full contract and the two-axes model.
 
+The `specify` CLI's project-scoped subcommands honor the same variable, so they
+target a member project from the root without `cd` too:
+
+```bash
+export SPECIFY_INIT_DIR=apps/web
+specify workflow list          # lists apps/web's workflows
+specify integration status     # reports apps/web's integration
+```
+
+The validation rules are the same: the path must exist and contain `.specify/`,
+with no fallback to the current directory.
+
 ## How `SPECIFY_INIT_DIR` reaches your agent
 
 `SPECIFY_INIT_DIR` is read by the shell scripts that the slash commands invoke

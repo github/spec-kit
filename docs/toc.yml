@@ -35,6 +35,10 @@
       href: reference/presets.md
     - name: Workflows
       href: reference/workflows.md
+    - name: Bundles
+      href: reference/bundles.md
+    - name: Authentication
+      href: reference/authentication.md
 
 # Concepts
 - name: Concepts
@@ -66,6 +70,8 @@
       href: community/extensions.md
     - name: Presets
       href: community/presets.md
+    - name: Bundles
+      href: community/bundles.md
     - name: Walkthroughs
       href: community/walkthroughs.md
     - name: Friends

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import logging
 import os
 import re
 import tempfile
@@ -10,6 +13,74 @@ from typing import Any
 
 from .integrations.base import IntegrationBase
 from .integrations.manifest import IntegrationManifest
+
+logger = logging.getLogger(__name__)
+
+# Matches a SHA-256 digest in its normalized form: exactly 64 hexadecimal
+# characters. Callers lowercase the declared value before matching (see
+# ``expected_hex = raw.lower()`` below), so an uppercase digest is accepted and
+# normalized rather than rejected.
+_SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def verify_archive_sha256(
+    data: bytes,
+    expected: str | None,
+    name: str,
+    error_cls: type[Exception],
+) -> None:
+    """Verify downloaded archive bytes against a catalog-declared SHA-256.
+
+    Catalog entries may pin the expected digest of their release archive in a
+    ``sha256`` field (optionally prefixed with ``"sha256:"``). When present, the
+    downloaded bytes must match before they are written to disk and installed,
+    so a corrupted or tampered archive is rejected even though the transport was
+    HTTPS. Entries without a declared digest are accepted unchanged, keeping the
+    check backwards compatible.
+
+    Args:
+        data: The raw downloaded archive bytes.
+        expected: The catalog-declared SHA-256 hex digest, or ``None``.
+        name: The extension/preset id, used in the error message.
+        error_cls: Exception type to raise on mismatch (e.g. ``ExtensionError``).
+
+    Raises:
+        error_cls: If ``expected`` is provided and is not a well-formed
+            SHA-256 hex digest, or does not match ``data``.
+    """
+    # Skip only when no digest is declared at all (``None``). A declared but
+    # empty/blank value (e.g. ``sha256: ""``) is an authoring error, not an
+    # opt-out: let it fall through to the format check below so it is rejected
+    # rather than silently disabling verification.
+    if expected is None:
+        logger.debug(
+            "No sha256 declared for %r; archive integrity was not verified.",
+            name,
+        )
+        return
+    # Strip *only* a literal ``sha256:`` algorithm prefix (case-insensitive).
+    # Any other prefix is part of the value and must not be silently dropped,
+    # otherwise a malformed or wrong-algorithm digest (e.g. ``md5:...``) would
+    # be quietly accepted as if it were a valid SHA-256.
+    raw = str(expected).strip()
+    if raw[:7].lower() == "sha256:":
+        raw = raw[7:].strip()
+    expected_hex = raw.lower()
+    if not _SHA256_HEX_RE.match(expected_hex):
+        raise error_cls(
+            f"Invalid sha256 declared for {name!r}: expected 64 hexadecimal "
+            f"characters (optionally prefixed with 'sha256:'), got "
+            f"{expected!r}."
+        )
+    actual_hex = hashlib.sha256(data).hexdigest()
+    # Constant-time comparison: both sides are fixed-length hex digests, so use
+    # ``hmac.compare_digest`` to avoid leaking information through timing.
+    if not hmac.compare_digest(actual_hex, expected_hex):
+        raise error_cls(
+            f"Integrity check failed for {name!r}: the catalog declares "
+            f"sha256 {expected_hex}, but the downloaded archive is "
+            f"{actual_hex}. The archive may be corrupted or tampered with."
+        )
 
 
 class SymlinkedSharedPathError(ValueError):

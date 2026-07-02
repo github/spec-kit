@@ -262,6 +262,7 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `command`    | Invoke a Spec Kit command (e.g., `speckit.plan`) |
 | `prompt`     | Send an arbitrary prompt to the AI coding agent  |
 | `shell`      | Execute a shell command and capture output       |
+| `init`       | Bootstrap a project (like `specify init`)        |
 | `gate`       | Pause for human approval before continuing       |
 | `if`         | Conditional branching (then/else)                |
 | `switch`     | Multi-branch dispatch on an expression           |
@@ -269,6 +270,8 @@ specify workflow run speckit -i spec="Build a kanban board with drag-and-drop ta
 | `do-while`   | Execute at least once, then loop on condition    |
 | `fan-out`    | Dispatch a step for each item in a list          |
 | `fan-in`     | Aggregate results from a fan-out step            |
+
+> **Security note:** a `shell` step runs a local command with **your** privileges. There is no capability sandbox — `requires` is an advisory pre-condition block (spec-kit version, integrations), not a runtime gate, so it does **not** restrict what a step can do. In particular there is no `requires.permissions` capability gate: it is rejected by validation precisely because it would imply a sandbox that does not exist. Review any catalog or downloaded workflow before running it, and use a `gate` step to require explicit approval before sensitive or destructive shell commands.
 
 ## Expressions
 

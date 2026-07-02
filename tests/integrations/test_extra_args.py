@@ -37,7 +37,6 @@ class _ClaudeStub(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "CLAUDE.md"
 
 
 class _KiroCliStub(SkillsIntegration):
@@ -58,7 +57,6 @@ class _KiroCliStub(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "KIRO.md"
 
 
 class _NoCliStub(SkillsIntegration):
@@ -79,7 +77,6 @@ class _NoCliStub(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "NOCLI.md"
 
 
 class _MarkdownAgentStub(MarkdownIntegration):
@@ -102,7 +99,6 @@ class _MarkdownAgentStub(MarkdownIntegration):
         "args": "$ARGUMENTS",
         "extension": ".md",
     }
-    context_file = "MDAGENT.md"
 
 
 class _TomlAgentStub(TomlIntegration):
@@ -124,7 +120,6 @@ class _TomlAgentStub(TomlIntegration):
         "args": "$ARGUMENTS",
         "extension": ".toml",
     }
-    context_file = "TOMLAGENT.md"
 
 
 @pytest.fixture(autouse=True)
