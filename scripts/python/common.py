@@ -65,6 +65,10 @@ def get_repo_root(script_file: Path | None = None) -> Path:
         return specify_root
 
     if script_file is not None:
+        script_root = find_specify_root(script_file.resolve().parent)
+        if script_root is not None:
+            return script_root
+
         # Installed scripts live at .specify/scripts/python/<script>.py.
         return script_file.resolve().parents[3]
     return Path.cwd().resolve()

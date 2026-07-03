@@ -88,6 +88,11 @@ def _py_cmd(repo: Path, *args: str) -> list[str]:
     return [sys.executable, str(script), *args]
 
 
+def _repo_copy_py_cmd(repo: Path, *args: str) -> list[str]:
+    script = repo / "scripts" / "python" / "check_prerequisites.py"
+    return [sys.executable, str(script), *args]
+
+
 def _bash_cmd(repo: Path, *args: str) -> list[str]:
     script = repo / ".specify" / "scripts" / "bash" / "check-prerequisites.sh"
     return ["bash", str(script), *args]
@@ -122,6 +127,13 @@ def _normalize_status_text(text: str) -> str:
         .replace("  ✗ ", "  [FAIL] ")
         .replace("\r\n", "\n")
     )
+
+
+def _normalize_help_text(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace(
+        "check-prerequisites.sh", "check_prerequisites.py"
+    )
+    return "\n".join("" if not line.strip() else line for line in normalized.split("\n"))
 
 
 @requires_bash
@@ -170,22 +182,13 @@ def test_python_text_output_matches_bash(prereq_repo: Path) -> None:
 
 
 @requires_bash
-def test_python_help_output_matches_bash_flags(prereq_repo: Path) -> None:
+def test_python_help_output_matches_bash(prereq_repo: Path) -> None:
     bash = _run(_bash_cmd(prereq_repo, "--help"), prereq_repo)
     py = _run(_py_cmd(prereq_repo, "--help"), prereq_repo)
 
     assert py.returncode == bash.returncode == 0
     assert py.stderr == bash.stderr == ""
-    for flag in [
-        "--json",
-        "--require-tasks",
-        "--include-tasks",
-        "--paths-only",
-        "--help, -h",
-    ]:
-        assert flag in py.stdout
-        assert flag in bash.stdout
-    assert "Consolidated prerequisite checking" in py.stdout
+    assert _normalize_help_text(py.stdout) == _normalize_help_text(bash.stdout)
 
 
 @requires_bash
@@ -199,26 +202,58 @@ def test_python_unknown_option_matches_bash_error_shape(prereq_repo: Path) -> No
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
-def test_python_json_output_matches_powershell(prereq_repo: Path) -> None:
+@pytest.mark.parametrize(
+    ("py_args", "ps_args"),
+    [
+        (("--json",), ("-Json",)),
+        (("--json", "--include-tasks"), ("-Json", "-IncludeTasks")),
+        (
+            ("--json", "--require-tasks", "--include-tasks"),
+            ("-Json", "-RequireTasks", "-IncludeTasks"),
+        ),
+        (("--json", "--paths-only"), ("-Json", "-PathsOnly")),
+    ],
+)
+def test_python_json_output_matches_powershell(
+    prereq_repo: Path, py_args: tuple[str, ...], ps_args: tuple[str, ...]
+) -> None:
     feat = prereq_repo / "specs" / "001-my-feature"
     feat.mkdir(parents=True)
     (feat / "plan.md").write_text("# plan\n", encoding="utf-8")
     (feat / "tasks.md").write_text("# tasks\n", encoding="utf-8")
+    (feat / "research.md").write_text("# research\n", encoding="utf-8")
+    (feat / "data-model.md").write_text("# model\n", encoding="utf-8")
     (feat / "quickstart.md").write_text("# quickstart\n", encoding="utf-8")
+    (feat / "contracts" / "v1").mkdir(parents=True)
     _write_feature_json(prereq_repo)
 
-    ps = _run(
-        _ps_cmd(prereq_repo, "-Json", "-RequireTasks", "-IncludeTasks"),
-        prereq_repo,
-    )
-    py = _run(
-        _py_cmd(prereq_repo, "--json", "--require-tasks", "--include-tasks"),
-        prereq_repo,
-    )
+    ps = _run(_ps_cmd(prereq_repo, *ps_args), prereq_repo)
+    py = _run(_py_cmd(prereq_repo, *py_args), prereq_repo)
 
     assert py.returncode == ps.returncode == 0
     assert py.stderr == ps.stderr == ""
     assert _json_stdout(py) == _json_stdout(ps)
+
+
+def test_python_repo_copy_script_file_fallback_finds_repo_root(tmp_path: Path) -> None:
+    repo = tmp_path / "proj"
+    outside = tmp_path / "outside"
+    repo.mkdir()
+    outside.mkdir()
+    _git_init(repo)
+    (repo / ".specify").mkdir()
+    _write_feature_json(repo)
+    (repo / "specs" / "001-my-feature").mkdir(parents=True)
+
+    py_dir = repo / "scripts" / "python"
+    py_dir.mkdir(parents=True)
+    shutil.copy(COMMON_PY, py_dir / "common.py")
+    shutil.copy(CHECK_PREREQS_PY, py_dir / "check_prerequisites.py")
+
+    py = _run(_repo_copy_py_cmd(repo, "--json", "--paths-only"), outside)
+
+    assert py.returncode == 0, py.stderr
+    assert Path(_json_stdout(py)["REPO_ROOT"]) == repo
 
 
 def test_python_paths_only_does_not_persist_feature_json(prereq_repo: Path) -> None:
