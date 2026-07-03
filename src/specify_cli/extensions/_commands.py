@@ -462,18 +462,23 @@ def extension_list(
             for ext in available_exts:
                 # Catalog fields are untrusted (remote/community catalogs); escape
                 # before embedding in Rich markup to prevent markup injection.
-                safe_id = _escape_markup(str(ext.get("id", "")))
+                # A missing/blank id means the entry cannot be installed, so skip
+                # it entirely rather than printing a bogus install hint.
+                extension_id = _catalog_id(ext)
+                if not extension_id:
+                    continue
+                safe_id = _escape_markup(extension_id)
                 verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
-                safe_name = _escape_markup(str(ext.get("name", "(unnamed)")))
-                safe_version = _escape_markup(str(ext.get("version", "?")))
+                safe_name = _escape_markup(_catalog_str(ext, "name", "(unnamed)"))
+                safe_version = _escape_markup(_catalog_str(ext, "version", "?"))
                 console.print(f"  [bold]{safe_name}[/bold] (v{safe_version}){verified_badge}")
                 console.print(f"     [dim]{safe_id}[/dim]")
-                console.print(f"     {_escape_markup(str(ext.get('description', '')))}")
+                console.print(f"     {_escape_markup(_catalog_str(ext, 'description'))}")
                 install_allowed = ext.get("_install_allowed", True)
                 if install_allowed:
                     console.print(f"     [cyan]Install:[/cyan] specify extension add {safe_id}")
                 else:
-                    catalog_name = _escape_markup(str(ext.get("_catalog_name", "")))
+                    catalog_name = _escape_markup(_catalog_str(ext, "_catalog_name"))
                     console.print(f"     [yellow]Discovery only — not installable from '{catalog_name}'[/yellow]")
                 console.print()
 
@@ -1271,16 +1276,28 @@ def extension_search(
         console.print(f"\n[green]Found {len(results)} extension(s):[/green]\n")
 
         for ext in results:
+            # Catalog entries are untrusted; a missing/blank id cannot be
+            # installed or referenced, so skip it rather than emit a bogus
+            # install hint or crash on ext['id'].
+            extension_id = _catalog_id(ext)
+            if not extension_id:
+                continue
+
             # Extension header
             verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
-            console.print(f"[bold]{_escape_markup(str(ext.get('name', '(unnamed)')))}[/bold] (v{_escape_markup(str(ext.get('version', '?')))}){verified_badge}")
-            console.print(f"  {_escape_markup(str(ext.get('description', '')))}")
+            console.print(f"[bold]{_escape_markup(_catalog_str(ext, 'name', '(unnamed)'))}[/bold] (v{_escape_markup(_catalog_str(ext, 'version', '?'))}){verified_badge}")
+            console.print(f"  {_escape_markup(_catalog_str(ext, 'description'))}")
 
             # Metadata
-            console.print(f"\n  [dim]Author:[/dim] {_escape_markup(str(ext.get('author', 'Unknown')))}")
+            console.print(f"\n  [dim]Author:[/dim] {_escape_markup(_catalog_str(ext, 'author', 'Unknown'))}")
             ext_tags = ext.get('tags', [])
-            if isinstance(ext_tags, list) and ext_tags:
-                tags_str = ", ".join(str(t) for t in ext_tags)
+            tags = (
+                [tag.strip() for tag in ext_tags if isinstance(tag, str) and tag.strip()]
+                if isinstance(ext_tags, list)
+                else []
+            )
+            if tags:
+                tags_str = ", ".join(tags)
                 console.print(f"  [dim]Tags:[/dim] {_escape_markup(tags_str)}")
 
             # Source catalog
@@ -1307,7 +1324,7 @@ def extension_search(
                 console.print(f"  [dim]Repository:[/dim] {_escape_markup(str(ext['repository']))}")
 
             # Install command (show warning if not installable)
-            safe_id = _escape_markup(str(ext['id']))
+            safe_id = _escape_markup(extension_id)
             if install_allowed:
                 console.print(f"\n  [cyan]Install:[/cyan] specify extension add {safe_id}")
             else:
@@ -1440,17 +1457,17 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Header
     verified_badge = " [green]✓ Verified[/green]" if ext_info.get("verified") else ""
-    console.print(f"\n[bold]{_escape_markup(str(ext_info.get('name', '(unnamed)')))}[/bold] (v{_escape_markup(str(ext_info.get('version', '?')))}){verified_badge}")
+    console.print(f"\n[bold]{_escape_markup(_catalog_str(ext_info, 'name', '(unnamed)'))}[/bold] (v{_escape_markup(_catalog_str(ext_info, 'version', '?'))}){verified_badge}")
     console.print(f"ID: {_escape_markup(str(ext_info['id']))}")
     console.print()
 
     # Description
-    console.print(f"{_escape_markup(str(ext_info.get('description', '')))}")
+    console.print(f"{_escape_markup(_catalog_str(ext_info, 'description'))}")
     console.print()
 
     # Author and License
-    console.print(f"[dim]Author:[/dim] {_escape_markup(str(ext_info.get('author', 'Unknown')))}")
-    console.print(f"[dim]License:[/dim] {_escape_markup(str(ext_info.get('license', 'Unknown')))}")
+    console.print(f"[dim]Author:[/dim] {_escape_markup(_catalog_str(ext_info, 'author', 'Unknown'))}")
+    console.print(f"[dim]License:[/dim] {_escape_markup(_catalog_str(ext_info, 'license', 'Unknown'))}")
 
     # Category and Effect
     if ext_info.get('category'):

@@ -130,6 +130,57 @@ def test_list_available_tolerates_entry_missing_name_or_version(project_dir, mon
     assert "(v?)" in result.output
 
 
+def test_list_available_json_null_fields_render_placeholders_not_none(project_dir, monkeypatch):
+    """Explicit JSON null fields must fall back, not render the literal "None".
+
+    ``dict.get(key, default)`` only substitutes when the key is absent; an
+    explicit ``null`` value reaches ``str()`` and would print "None". Untrusted
+    catalog JSON can carry nulls, so name/version/description must degrade to
+    their placeholders instead.
+    """
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [])
+    monkeypatch.setattr(ExtensionCatalog, "search", lambda self: [
+        {"id": "null-ext", "name": None, "version": None, "description": None},
+    ])
+
+    result = runner.invoke(app, ["extension", "list", "--available"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0
+    assert "null-ext" in result.output
+    assert "(unnamed)" in result.output
+    assert "(v?)" in result.output
+    # The literal string "None" must never leak into the rendered output.
+    assert "None" not in result.output
+
+
+@pytest.mark.parametrize("bad_id", [None, "", "   "])
+def test_list_available_skips_entries_without_valid_id(project_dir, monkeypatch, bad_id):
+    """Entries with a missing/blank/null id are skipped entirely.
+
+    Such an id cannot be installed (``download_extension()`` would refuse it),
+    so printing an install hint like ``specify extension add`` with no id — or
+    with ``None`` — only misleads the user. Skip the whole entry.
+    """
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [])
+    monkeypatch.setattr(ExtensionCatalog, "search", lambda self: [
+        {"id": bad_id, "name": "Ghost Ext", "version": "1.0.0"},
+        _catalog_entry("real-ext", "Real Ext"),
+    ])
+
+    result = runner.invoke(app, ["extension", "list", "--available"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0
+    # The valid entry still renders with its install hint...
+    assert "real-ext" in result.output
+    assert "specify extension add real-ext" in result.output
+    # ...but the id-less entry is dropped: no name, no dangling install hint.
+    assert "Ghost Ext" not in result.output
+
+
 def test_list_all_shows_installed_and_available(project_dir, monkeypatch):
     """--all lists installed extensions and available catalog extensions."""
     monkeypatch.chdir(project_dir)
