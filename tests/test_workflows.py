@@ -260,6 +260,60 @@ class TestExpressions:
         ctx = StepContext(inputs={"text": "uses }} syntax"})
         assert evaluate_expression("{{ inputs.text | contains('}}') }}", ctx) is True
 
+    def test_multi_expression_with_literal_close_brace_in_argument(self):
+        """A multi-expression template with a literal ``}}`` inside a string
+        argument must interpolate, not raise. #3208/#3228 hardened the single-
+        expression fast path for literal braces but left the interpolation path
+        on ``_EXPR_PATTERN``, whose non-greedy body stops at the first ``}}`` --
+        so the block was captured truncated and the filter parser raised
+        ValueError."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        # ``}}`` in the default fallback of the second block.
+        result = evaluate_expression(
+            "{{ inputs.name }}: {{ inputs.missing | default('}}') }}", ctx
+        )
+        assert result == "Bob: }}"
+        # ``}}`` in the first block, expression following it.
+        result = evaluate_expression(
+            "{{ inputs.missing | default('}}') }} / {{ inputs.name }}", ctx
+        )
+        assert result == "}} / Bob"
+
+    def test_multi_expression_with_literal_open_brace_in_argument(self):
+        """A literal ``{{`` inside a string argument in a multi-expression
+        template must not confuse block detection either."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        result = evaluate_expression(
+            "{{ inputs.name }} {{ inputs.missing | default('{{') }}", ctx
+        )
+        assert result == "Bob {{"
+
+    def test_multi_expression_unbalanced_quote_still_raises(self):
+        """A malformed block (an unbalanced quote in a filter arg) must still
+        surface a ValueError, not be silently emitted verbatim.
+
+        The quote-aware scan never finds a block-closing ``}}`` when a quote is
+        left open, but a raw ``}}`` is still present in the tail. It must fall
+        back to that raw delimiter and evaluate — same as the old regex path —
+        so a typo fails loudly instead of being hidden (Copilot review on
+        #3307)."""
+        import pytest
+
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        with pytest.raises(ValueError):
+            evaluate_expression(
+                "{{ inputs.name }} {{ inputs.missing | default('oops }}", ctx
+            )
+
     def test_comparison_equals(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
