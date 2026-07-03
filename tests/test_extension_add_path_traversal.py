@@ -34,11 +34,22 @@ def test_add_from_url_sanitizes_traversal_label(project_dir, monkeypatch):
 
     captured = {}
 
+    # A minimal but valid ZIP archive: the `add --from` flow validates the
+    # downloaded bytes are a real ZIP before installing, so a non-ZIP body would
+    # be rejected upstream of the path-sanitization under test.
+    import io
+    import zipfile
+
+    _zip_buf = io.BytesIO()
+    with zipfile.ZipFile(_zip_buf, "w") as _zf:
+        _zf.writestr("extension.yaml", "name: evil\n")
+    valid_zip_bytes = _zip_buf.getvalue()
+
     @contextlib.contextmanager
-    def fake_open_url(url, timeout=60):
+    def fake_open_url(url, timeout=60, extra_headers=None):
         class _Resp:
             def read(self):
-                return b"not-a-real-zip"
+                return valid_zip_bytes
         yield _Resp()
 
     monkeypatch.setattr("specify_cli.authentication.http.open_url", fake_open_url)

@@ -51,6 +51,27 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
 EXTENSION_ID_PATTERN = re.compile(r"^[a-z0-9-]+$")
 
+# Characters allowed verbatim in a catalog-provided version when it is used to
+# build a download filename. Anything else (path separators, "..", control
+# chars, whitespace) is collapsed to "-" so an untrusted version cannot inject
+# a nested path or an unwritable filename — we sanitize rather than rely on the
+# post-hoc Path.resolve() containment check as the primary guard.
+_UNSAFE_VERSION_TOKEN_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_version_token(version: Any, fallback: str = "unknown") -> str:
+    """Reduce a catalog ``version`` to a filename-safe token.
+
+    Non-strings (JSON null, numbers) and blank values degrade to ``fallback``.
+    Path separators and traversal tokens are stripped so the result can never
+    span directories or escape the download target.
+    """
+    if not isinstance(version, str):
+        return fallback
+    token = _UNSAFE_VERSION_TOKEN_PATTERN.sub("-", version).strip("-.")
+    return token or fallback
+
+
 VALID_EFFECTS = frozenset({"read-only", "read-write"})
 
 DEFAULT_HOOK_PRIORITY = 10
@@ -2621,7 +2642,7 @@ class ExtensionCatalog(CatalogStackBase):
             target_dir = self.cache_dir / "downloads"
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        version = ext_info.get("version", "unknown")
+        version = _safe_version_token(ext_info.get("version"))
         zip_filename = f"{extension_id}-{version}.zip"
         zip_path = target_dir / zip_filename
         try:
