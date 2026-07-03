@@ -25,6 +25,14 @@ BASH = shutil.which("bash")
 POWERSHELL = (
     shutil.which("pwsh") or shutil.which("powershell.exe") or shutil.which("powershell")
 )
+# On Windows, prefer the built-in Windows PowerShell 5.1 (.NET Framework) when a
+# test needs to exercise a 5.1-specific code path; fall back to whatever
+# POWERSHELL resolves to elsewhere.
+WINDOWS_POWERSHELL = (
+    (shutil.which("powershell.exe") or shutil.which("powershell") or POWERSHELL)
+    if os.name == "nt"
+    else POWERSHELL
+)
 
 
 def _write_ext_config(project_root: Path, **overrides: object) -> None:
@@ -279,12 +287,14 @@ def shlex_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
-def _run_powershell_agent_context_script(project_root: Path) -> subprocess.CompletedProcess:
+def _run_powershell_agent_context_script(
+    project_root: Path, powershell: str | None = None
+) -> subprocess.CompletedProcess:
     script = EXT_DIR / "scripts" / "powershell" / "update-agent-context.ps1"
     env = _bundled_script_env(project_root)
     return subprocess.run(
         [
-            POWERSHELL,
+            powershell or POWERSHELL,
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
@@ -507,9 +517,14 @@ class TestBundledUpdaterPathValidation:
         assert output.count("agent-context: updated CLAUDE.md") == 1
         assert "agent-context: updated agents.md" not in output
 
-    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    @pytest.mark.skipif(WINDOWS_POWERSHELL is None, reason="PowerShell not available")
     def test_powershell_script_discovers_nested_plan(self, tmp_path):
-        """Plan discovery recurses into scoped layouts (#3024)."""
+        """Plan discovery recurses into scoped layouts (#3024).
+
+        The relative-path fix this covers is specific to Windows PowerShell 5.1
+        (.NET Framework), so prefer ``powershell.exe`` over ``pwsh`` here to
+        actually exercise that failure mode on Windows.
+        """
         project = tmp_path / "project"
         project.mkdir()
         _install_agent_context_config(
@@ -521,7 +536,9 @@ class TestBundledUpdaterPathValidation:
         plan.parent.mkdir(parents=True)
         plan.write_text("# Plan\n", encoding="utf-8")
 
-        result = _run_powershell_agent_context_script(project)
+        result = _run_powershell_agent_context_script(
+            project, powershell=WINDOWS_POWERSHELL
+        )
 
         assert result.returncode == 0, result.stderr + result.stdout
         text = (project / "AGENTS.md").read_text(encoding="utf-8")

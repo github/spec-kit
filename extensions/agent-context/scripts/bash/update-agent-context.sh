@@ -307,19 +307,24 @@ import sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 specs = root / "specs"
+
+def _resolved_rel(p):
+    # Resolve symlinks before checking containment: relative_to() is lexical
+    # and would otherwise accept a plan reached through a specs/ symlink that
+    # points outside the project, emitting an in-project-looking path for an
+    # out-of-project file (or picking it as "most recent").
+    try:
+        return p.resolve().relative_to(root)
+    except (OSError, ValueError):
+        return None
+
 # Recurse (rather than the old one-level specs/*/plan.md glob) so scoped layouts
 # created via SPECIFY_FEATURE_DIRECTORY, e.g. specs/<scope>/<feature>/plan.md,
 # are still discovered when feature.json is absent (#3024).
-plans = sorted(
-    specs.rglob("plan.md"),
-    key=lambda p: p.stat().st_mtime,
-    reverse=True,
-)
-if plans:
-    try:
-        print(plans[0].relative_to(root).as_posix())
-    except ValueError:
-        print("")
+candidates = [(p, rel) for p in specs.rglob("plan.md") if (rel := _resolved_rel(p))]
+candidates.sort(key=lambda pr: pr[0].stat().st_mtime, reverse=True)
+if candidates:
+    print(candidates[0][1].as_posix())
 else:
     print("")
 PY
