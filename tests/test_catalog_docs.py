@@ -14,13 +14,14 @@ from specify_cli.catalog_docs import (
     escape_markdown_link_text,
     INTEGRATIONS_REFERENCE_PATH,
     render_cell,
+    render_code_span,
     list_integrations_for_docs,
     render_integrations_table,
 )
 from specify_cli import app
 
 
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 @contextmanager
@@ -139,6 +140,9 @@ def test_escape_url_for_markdown_link():
 
 def test_escape_markdown_link_text():
     assert escape_markdown_link_text("Code [Buddy]") == "Code \\[Buddy\\]"
+
+def test_render_code_span_preserves_backticks():
+    assert render_code_span("alpha`beta") == "``alpha`beta``"
 
 
 def test_integrations_docs_label_and_url_sources():

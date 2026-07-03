@@ -290,7 +290,7 @@ def integration_search(
             typer.echo(render_integrations_table(), nl=False)
         except (FileNotFoundError, ValueError) as exc:
             typer.echo(f"Error rendering integrations table: {exc}", err=True)
-            raise typer.Exit(code=1)
+            raise typer.Exit(1)
         return
     from . import INTEGRATION_REGISTRY
     from .catalog import (

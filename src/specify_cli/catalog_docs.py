@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ._assets import ROOT_DIR
@@ -46,6 +47,8 @@ INTEGRATION_DOC_URLS: dict[str, str | None] = {
 INTEGRATION_LABEL_OVERRIDES: dict[str, str] = {
     "agy": "Antigravity (agy)",
     "codebuddy": "CodeBuddy CLI",
+    "hermes": "Hermes",
+    "rovodev": "RovoDev",
     "generic": "Generic",
     "shai": "SHAI (OVHcloud)",
 }
@@ -53,6 +56,7 @@ INTEGRATION_LABEL_OVERRIDES: dict[str, str] = {
 INTEGRATION_NOTES: dict[str, str] = {
     "agy": "Skills-based integration; skills are installed automatically",
     "claude": "Skills-based integration; installs skills in `.claude/skills`",
+    "cline": "IDE-based agent",
     "codex": (
         "Skills-based integration; installs skills into `.agents/skills` "
         "and invokes them as `$speckit-<command>`"
@@ -62,10 +66,17 @@ INTEGRATION_NOTES: dict[str, str] = {
         "Skills-based integration; installs skills into `.devin/skills/` "
         "and invokes them as `/speckit-<command>`"
     ),
+    "firebender": "IDE-based agent for Android Studio / IntelliJ",
     "goose": "Uses YAML recipe format in `.goose/recipes/`",
+    "hermes": (
+        "Skills-based integration; installs skills globally into "
+        "`~/.hermes/skills/`"
+    ),
     "kimi": (
-        "Skills-based integration; supports `--migrate-legacy` "
-        "for dotted→hyphenated directory migration"
+        "Skills-based integration; installs into `.kimi-code/skills/`. "
+        "`--migrate-legacy` moves old `.kimi/skills/` installs to the new "
+        "paths, and (when the `agent-context` extension is enabled) migrates "
+        "`KIMI.md` context into `AGENTS.md`"
     ),
     "kiro-cli": (
         "Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, "
@@ -75,6 +86,7 @@ INTEGRATION_NOTES: dict[str, str] = {
         "Alias: `--integration kiro`"
     ),
     "lingma": "Skills-based integration; skills are installed automatically",
+    "omp": "Installs slash commands into `.omp/commands`",
     "pi": (
         "Pi doesn't have MCP support out of the box, so `taskstoissues` "
         "won't work as intended. MCP support can be added via "
@@ -87,6 +99,18 @@ INTEGRATION_NOTES: dict[str, str] = {
         "for AI coding agents not listed above"
     ),
     "trae": "Skills-based integration; skills are installed automatically",
+    "rovodev": (
+        "Generates `.rovodev/skills/`, prompt wrappers, and `prompts.yml`; "
+        "runtime dispatch uses `acli rovodev`"
+    ),
+    "zcode": (
+        "Skills-based integration; installs skills into `.zcode/skills/` "
+        "and invokes them as `$speckit-<command>`"
+    ),
+    "zed": (
+        "Skills-based integration; installs skills into `.agents/skills` "
+        "and invokes them as `/speckit-<command>`"
+    ),
 }
 
 
@@ -114,12 +138,10 @@ def escape_markdown_link_text(text: str) -> str:
 
 
 def render_code_span(value: str) -> str:
-    """Safely render a value as an inline markdown code span.
-
-    Replaces internal backticks with single quotes to prevent breaking the code span.
-    """
-    safe_value = value.replace("`", "'")
-    return f"`{safe_value}`"
+    """Safely render a value as an inline markdown code span."""
+    delimiter_width = max((len(match) for match in re.findall(r"`+", value)), default=0) + 1
+    delimiter = "`" * delimiter_width
+    return f"{delimiter}{value}{delimiter}"
 
 
 def _get_integration_registry() -> dict[str, Any]:
@@ -151,7 +173,7 @@ def list_integrations_for_docs(
             f"{', '.join(missing)}. They will be included in the docs table "
             "without documentation links. Add them to INTEGRATION_DOC_URLS in "
             "catalog_docs.py if a link should be available.",
-            stacklevel=2
+            stacklevel=2,
         )
 
     # Warn if there are stale keys in doc maps not in the registry (when enabled)
@@ -172,7 +194,7 @@ def list_integrations_for_docs(
                 f"{', '.join(stale_keys)}. Consider removing them from "
                 "INTEGRATION_DOC_URLS, INTEGRATION_LABEL_OVERRIDES, and "
                 "INTEGRATION_NOTES.",
-                stacklevel=2
+                stacklevel=2,
             )
 
     rows: list[tuple[str, str, str | None, str]] = []

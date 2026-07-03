@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from specify_cli.community_catalog_docs import list_community_extensions, render_community_extensions_table
+from specify_cli.community_catalog_docs import (
+    list_community_extensions,
+    render_community_extensions_table,
+)
 
 
 def _write_catalog(tmp_path: Path, extensions: dict) -> Path:
