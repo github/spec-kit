@@ -408,7 +408,13 @@ class TestWorkflowRunDryRunFlag:
         assert "Status: completed" in result.stdout
         # "Resume with:" hint only appears for paused runs.
         assert "Resume with:" not in result.stdout
-        # No shell step ran (after step was a shell, never executed).
+        # The after step is a shell step. Per the engine docstring, the
+        # dry-run flag is opt-in per step type and shell steps are NOT
+        # opt-in — they execute their normal logic. Their subprocess
+        # output is captured by the shell, not by CliRunner.stdout, so
+        # we only assert that the gate short-circuit reached status
+        # completed (no "DRY RUN previews:" banner for the shell step).
+        assert "after" not in result.stdout.split("DRY RUN")[0]
         _ = _json  # keep import in case future assertions need it
 
     def test_with_json_suppresses_banner_and_previews(
