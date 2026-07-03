@@ -223,10 +223,19 @@ def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
                 break
             j += 1
         if close == -1:
-            # No closing delimiter: leave the unterminated ``{{`` verbatim, the
-            # same way the regex leaves an unmatched opener untouched.
-            out.append(template[start:])
-            break
+            # No quote-aware close. Two sub-cases, both kept identical to the old
+            # regex so a malformed template is never silently hidden:
+            #   * a raw ``}}`` still exists in the tail (e.g. an unbalanced quote
+            #     in a filter arg swallowed the real delimiter) -- fall back to
+            #     that first raw ``}}`` and evaluate, letting the parser surface
+            #     a ValueError just as ``_EXPR_PATTERN.sub`` would have.
+            #   * no ``}}`` at all -- a genuinely unterminated ``{{``; leave the
+            #     tail verbatim, again matching the regex (which cannot match).
+            raw_close = template.find("}}", start + 2)
+            if raw_close == -1:
+                out.append(template[start:])
+                break
+            close = raw_close
         val = _evaluate_simple_expression(template[start + 2:close].strip(), namespace)
         out.append(str(val) if val is not None else "")
         i = close + 2

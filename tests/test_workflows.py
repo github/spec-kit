@@ -294,6 +294,26 @@ class TestExpressions:
         )
         assert result == "Bob {{"
 
+    def test_multi_expression_unbalanced_quote_still_raises(self):
+        """A malformed block (an unbalanced quote in a filter arg) must still
+        surface a ValueError, not be silently emitted verbatim.
+
+        The quote-aware scan never finds a block-closing ``}}`` when a quote is
+        left open, but a raw ``}}`` is still present in the tail. It must fall
+        back to that raw delimiter and evaluate — same as the old regex path —
+        so a typo fails loudly instead of being hidden (Copilot review on
+        #3307)."""
+        import pytest
+
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        with pytest.raises(ValueError):
+            evaluate_expression(
+                "{{ inputs.name }} {{ inputs.missing | default('oops }}", ctx
+            )
+
     def test_comparison_equals(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
