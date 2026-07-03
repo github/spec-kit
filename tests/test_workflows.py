@@ -288,6 +288,35 @@ class TestExpressions:
         assert evaluate_expression("{{ steps.plan.output.task_count > 5 }}", ctx) is True
         assert evaluate_expression("{{ steps.plan.output.task_count < 5 }}", ctx) is False
 
+    def test_ordering_comparison_of_non_numeric_strings(self):
+        """`<`/`>`/`<=`/`>=` between non-numeric strings must compare
+        lexicographically, not silently return False.
+
+        `_safe_compare` used to coerce both operands to int/float unconditionally;
+        a non-numeric string (date, version tag, name) failed that coercion and
+        the whole comparison returned False. Ordinary strings should order the
+        way Python does; numeric strings must still compare as numbers."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        # ISO dates compare lexicographically (correct chronological order).
+        ctx = StepContext(inputs={"d": "2026-01-01"})
+        assert evaluate_expression("{{ inputs.d < '2026-02-01' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.d > '2026-02-01' }}", ctx) is False
+
+        # Plain string ordering.
+        ctx = StepContext(inputs={"name": "beta"})
+        assert evaluate_expression("{{ inputs.name > 'alpha' }}", ctx) is True
+
+        # Two numeric strings still compare numerically, not lexically
+        # ("10" > "9" is True as numbers; as strings it would be False).
+        ctx = StepContext(inputs={"v": "10"})
+        assert evaluate_expression("{{ inputs.v > '9' }}", ctx) is True
+
+        # A number vs a non-numeric string is genuinely incomparable -> False.
+        ctx = StepContext(inputs={"n": 5})
+        assert evaluate_expression("{{ inputs.n > 'abc' }}", ctx) is False
+
     def test_boolean_and(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext

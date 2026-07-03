@@ -408,15 +408,34 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     return _resolve_dot_path(namespace, expr)
 
 
+def _coerce_number(value: Any) -> Any:
+    """Return *value* as int/float if it is a numeric string, else unchanged."""
+    if isinstance(value, str):
+        try:
+            return float(value) if "." in value else int(value)
+        except ValueError:
+            return value
+    return value
+
+
 def _safe_compare(left: Any, right: Any, op: str) -> bool:
-    """Safely compare two values, coercing types when possible."""
-    try:
-        if isinstance(left, str):
-            left = float(left) if "." in left else int(left)
-        if isinstance(right, str):
-            right = float(right) if "." in right else int(right)
-    except (ValueError, TypeError):
-        return False
+    """Compare two values for ordering, coercing numeric strings when possible.
+
+    Numeric coercion is applied only when *both* operands look numeric, so a
+    pair like ``"10"`` and ``"9"`` compares as numbers (10 > 9). When either
+    side is a non-numeric string, both fall back to their original values and
+    are compared directly -- so ordinary strings (dates, semver-ish tags,
+    names) compare lexicographically the way Python does, instead of every
+    such comparison silently returning ``False`` after a failed int()/float()
+    coercion. A genuinely incomparable pair (e.g. number vs non-numeric string)
+    raises ``TypeError`` and yields ``False``.
+    """
+    cl, cr = _coerce_number(left), _coerce_number(right)
+    # Only use the coerced numbers when both converted; otherwise a numeric
+    # string paired with a plain string would become an int-vs-str mismatch
+    # (always False) rather than a lexicographic string comparison.
+    if isinstance(cl, (int, float)) and isinstance(cr, (int, float)):
+        left, right = cl, cr
     try:
         if op == ">":
             return left > right  # type: ignore[operator]
