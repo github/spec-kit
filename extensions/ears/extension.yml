@@ -1,0 +1,31 @@
+schema_version: "1.0"
+
+extension:
+  id: ears
+  name: "EARS Requirements Syntax"
+  version: "1.0.0"
+  description: "Author, lint, and convert requirements using EARS (Easy Approach to Requirements Syntax) - the five industry-standard sentence patterns for unambiguous, testable requirements"
+  author: spec-kit-core
+  repository: https://github.com/github/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.9.0"
+
+provides:
+  commands:
+    - name: speckit.ears.author
+      file: commands/speckit.ears.author.md
+      description: "Draft requirements for a feature directly in EARS format, classified by pattern with stable requirement IDs"
+    - name: speckit.ears.lint
+      file: commands/speckit.ears.lint.md
+      description: "Audit existing requirements for EARS conformance and ambiguity, producing a read-only lint report with suggested rewrites"
+    - name: speckit.ears.convert
+      file: commands/speckit.ears.convert.md
+      description: "Rewrite free-form requirements into EARS patterns and produce a traceability matrix from originals to EARS statements"
+
+tags:
+  - "ears"
+  - "requirements"
+  - "specification"
+  - "quality"

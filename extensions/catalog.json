@@ -32,6 +32,21 @@
         "qa"
       ]
     },
+    "ears": {
+      "name": "EARS Requirements Syntax",
+      "id": "ears",
+      "version": "1.0.0",
+      "description": "Author, lint, and convert requirements using EARS (Easy Approach to Requirements Syntax) - the five industry-standard sentence patterns for unambiguous, testable requirements",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "ears",
+        "requirements",
+        "specification",
+        "quality"
+      ]
+    },
     "git": {
       "name": "Git Branching Workflow",
       "id": "git",
