@@ -12,6 +12,7 @@ Usage::
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from shutil import rmtree
 from typing import Any
@@ -55,7 +56,12 @@ class HermesIntegration(SkillsIntegration):
 
     @staticmethod
     def _hermes_home_skills_dir() -> Path:
-        """Return ``~/.hermes/skills/`` — the global skills directory."""
+        """Return the Hermes skills directory, respecting ``$HERMES_HOME``
+        for profile-mode installations.
+        """
+        hermes_home = os.environ.get("HERMES_HOME")
+        if hermes_home:
+            return Path(hermes_home) / "skills"
         return Path.home() / ".hermes" / "skills"
 
     # -- Options -----------------------------------------------------------
