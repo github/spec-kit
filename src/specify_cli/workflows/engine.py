@@ -59,9 +59,9 @@ class WorkflowDefinition:
         # Advisory pre-conditions (spec-kit version / integrations a workflow
         # expects). Validated by ``validate_workflow`` (recognized keys only;
         # see ``_RECOGNIZED_REQUIRES_KEYS``) but NOT enforced at run time — they
-        # are not a security boundary. In particular there is no
-        # ``requires.permissions`` capability gate: shell steps always run with
-        # the user's privileges.
+        # are not a security boundary. In particular there is no granular
+        # ``requires.permissions`` capability sandbox; shell steps are guarded
+        # by their own explicit workflow-trust prompt/env gate.
         #
         # Holds the raw parsed value, so before ``validate_workflow`` runs it may
         # be a non-mapping (``None`` for a bare ``requires:``, a list for
@@ -204,9 +204,10 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     # integrations a workflow expects). Only a fixed set of keys is recognized;
     # reject anything else so authoring typos surface here instead of being
     # silently ignored at runtime. In particular ``requires.permissions`` is
-    # rejected explicitly: it reads like a runtime capability gate, but no such
-    # gate exists — a ``shell`` step always runs with the user's privileges, so
-    # declaring it would give a false sense of sandboxing.
+    # rejected explicitly: it reads like a granular runtime capability sandbox,
+    # but no such sandbox exists. A ``shell`` step has its own explicit trust
+    # gate, and declaring ``requires.permissions`` would still give a false
+    # sense of per-workflow permission enforcement.
     #
     # Mirror ``inputs`` validation: an omitted block defaults to ``{}`` and is
     # valid, but any present-but-non-mapping value — ``requires:`` (YAML null),
@@ -219,9 +220,10 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             if key == "permissions":
                 errors.append(
                     "'requires.permissions' is not a recognized or "
-                    "enforced capability gate — shell steps always run "
-                    "with the user's privileges. Remove it and gate "
-                    "sensitive steps with a 'gate' step instead."
+                    "enforced capability sandbox. Shell steps require "
+                    "explicit workflow trust before execution, but "
+                    "'requires.permissions' does not grant or constrain "
+                    "runtime permissions."
                 )
             elif key not in _RECOGNIZED_REQUIRES_KEYS:
                 errors.append(

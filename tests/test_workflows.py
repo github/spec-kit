@@ -47,6 +47,12 @@ def project_dir(temp_dir):
     return temp_dir
 
 
+@pytest.fixture(autouse=True)
+def trust_shell_workflow_steps_by_default(monkeypatch):
+    """Let legacy workflow tests execute shell steps unless they opt out."""
+    monkeypatch.setenv("SPECKIT_TRUSTED_WORKFLOW", "1")
+
+
 @pytest.fixture
 def sample_workflow_yaml():
     """Return a valid minimal workflow YAML string."""
@@ -1152,9 +1158,25 @@ class TestShellStep:
         script.write_text(body, encoding="utf-8")
         return f'"{sys.executable}" "{script}"'
 
-    def test_execute_echo(self):
+    def test_execute_untrusted_noninteractive_pauses(self, monkeypatch):
         from specify_cli.workflows.steps.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.delenv("SPECKIT_TRUSTED_WORKFLOW", raising=False)
+
+        step = ShellStep()
+        ctx = StepContext()
+        config = {"id": "test", "run": "echo hello"}
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.PAUSED
+        assert result.output["trusted"] is False
+        assert "SPECKIT_TRUSTED_WORKFLOW=1" in (result.error or "")
+
+    def test_execute_env_trusted_echo(self, monkeypatch):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_TRUSTED_WORKFLOW", "1")
 
         step = ShellStep()
         ctx = StepContext()
@@ -1164,9 +1186,41 @@ class TestShellStep:
         assert result.output["exit_code"] == 0
         assert "hello" in result.output["stdout"]
 
-    def test_execute_failure(self):
+    def test_execute_invalid_trust_env_still_pauses(self, monkeypatch):
         from specify_cli.workflows.steps.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_TRUSTED_WORKFLOW", "true")
+
+        step = ShellStep()
+        ctx = StepContext()
+        config = {"id": "test", "run": "echo hello"}
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.PAUSED
+        assert result.output["trusted"] is False
+
+    def test_execute_interactive_approval_runs_command(self, monkeypatch):
+        import specify_cli.workflows.steps.shell as shell_module
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.delenv("SPECKIT_TRUSTED_WORKFLOW", raising=False)
+        monkeypatch.setattr(shell_module.sys, "stdin", _StubStdin(True))
+        monkeypatch.setattr("builtins.input", lambda _prompt: "yes")
+
+        step = ShellStep()
+        ctx = StepContext()
+        config = {"id": "test", "run": "echo hello"}
+        result = step.execute(config, ctx)
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["exit_code"] == 0
+        assert "hello" in result.output["stdout"]
+
+    def test_execute_failure(self, monkeypatch):
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_TRUSTED_WORKFLOW", "1")
 
         step = ShellStep()
         ctx = StepContext()
@@ -1184,9 +1238,11 @@ class TestShellStep:
         assert any("missing 'run'" in e for e in errors)
 
 
-    def test_output_format_json_exposes_data(self, tmp_path):
+    def test_output_format_json_exposes_data(self, tmp_path, monkeypatch):
         from specify_cli.workflows.steps.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_TRUSTED_WORKFLOW", "1")
 
         step = ShellStep()
         ctx = StepContext(project_root=str(tmp_path))
@@ -1202,9 +1258,11 @@ class TestShellStep:
         assert result.output["data"] == {"items": [1, 2]}
         assert result.output["exit_code"] == 0  # raw keys still present
 
-    def test_output_format_json_invalid_stdout_fails(self, tmp_path):
+    def test_output_format_json_invalid_stdout_fails(self, tmp_path, monkeypatch):
         from specify_cli.workflows.steps.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_TRUSTED_WORKFLOW", "1")
 
         step = ShellStep()
         ctx = StepContext(project_root=str(tmp_path))
@@ -1217,9 +1275,11 @@ class TestShellStep:
         assert result.status == StepStatus.FAILED
         assert "output_format: json" in (result.error or "")
 
-    def test_no_output_format_keeps_raw_output_only(self, tmp_path):
+    def test_no_output_format_keeps_raw_output_only(self, tmp_path, monkeypatch):
         from specify_cli.workflows.steps.shell import ShellStep
         from specify_cli.workflows.base import StepContext, StepStatus
+
+        monkeypatch.setenv("SPECKIT_TRUSTED_WORKFLOW", "1")
 
         step = ShellStep()
         ctx = StepContext(project_root=str(tmp_path))
@@ -2642,10 +2702,10 @@ steps:
         assert any("typo_key" in e and "requires" in e for e in errors)
 
     def test_requires_permissions_is_rejected_as_not_enforced(self):
-        """A `requires.permissions` block looks like a runtime capability gate
-        but no such gate exists — shell steps always run with the user's
-        privileges. Reject it explicitly so authors are not misled into
-        believing the declaration sandboxes execution.
+        """A `requires.permissions` block looks like a runtime capability
+        sandbox, but no granular permissions sandbox exists. Reject it
+        explicitly so authors are not misled into believing the declaration
+        grants or constrains workflow permissions.
         """
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
@@ -2663,11 +2723,10 @@ steps:
     run: "echo hi"
 """)
         errors = validate_workflow(definition)
-        # Assert on specific markers from the intended message (the offending
-        # key and the `gate` remediation) so the test fails if the validation
-        # path or wording drifts, rather than passing on any error that merely
-        # happens to contain "permissions" and "not".
-        assert any("requires.permissions" in e and "gate" in e for e in errors)
+        # Assert on specific markers from the intended message so the test
+        # fails if the validation path or wording drifts, rather than passing
+        # on any error that merely happens to contain "permissions" and "not".
+        assert any("requires.permissions" in e and "explicit workflow trust" in e for e in errors)
 
     def test_requires_empty_sequence_is_rejected_as_non_mapping(self):
         """A non-mapping ``requires`` (e.g. an empty list) is an authoring
