@@ -71,6 +71,47 @@ def test_search_dedupes_by_precedence_and_filters():
     assert [r.entry.id for r in qa_only] == ["beta"]
 
 
+def test_search_does_not_surface_a_shadowed_lower_precedence_entry():
+    """Search must resolve each id at its highest-precedence source, then
+    filter — never fall through to a shadowed lower-precedence entry the query
+    happens to match.
+
+    If the query matched only the lower-precedence copy of an id, search used
+    to return that copy, even though `resolve()`/install always use the
+    higher-precedence one. That advertised a bundle (name/version/source) the
+    user could never actually get.
+    """
+    sources = [_source("high", 1, "install-allowed"), _source("low", 2, "install-allowed")]
+    payloads = {
+        # Highest-precedence entry for 'shared' does NOT match "widget".
+        "high": catalog_payload({
+            "shared": catalog_entry_dict(
+                "shared", name="Alpha Tool", role="developer",
+                description="nothing relevant", version="2.0.0",
+            ),
+        }),
+        # Lower-precedence entry for the same id DOES match "widget".
+        "low": catalog_payload({
+            "shared": catalog_entry_dict(
+                "shared", name="Searchable Widget", version="1.0.0",
+            ),
+        }),
+    }
+    stack = _stack(sources, payloads)
+
+    # resolve() uses the high-precedence entry.
+    assert stack.resolve("shared").source.id == "high"
+
+    # A query that only the shadowed low-precedence entry matches returns
+    # nothing — search agrees with resolve().
+    assert stack.search("widget") == []
+
+    # And a query the high-precedence entry matches returns it (from 'high').
+    alpha = stack.search("alpha tool")
+    assert [r.entry.id for r in alpha] == ["shared"]
+    assert alpha[0].source.id == "high"
+
+
 def test_unreachable_source_raises_named_error():
     def fetcher(src):
         raise RuntimeError("boom")

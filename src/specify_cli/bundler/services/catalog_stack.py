@@ -88,17 +88,25 @@ class CatalogStack:
         Results are sorted by bundle id for deterministic output.
         """
         needle = query.strip().lower()
-        seen: dict[str, ResolvedBundle] = {}
+        # Resolve each id to its highest-precedence entry FIRST, then filter by
+        # the query. Claiming an id only when it matches would let a lower-
+        # precedence entry with the same id surface when the highest-precedence
+        # one doesn't match the query — but that shadowed entry is not what
+        # `resolve()`/install would use, so search would advertise a bundle
+        # (name, version, author) the user can never actually get.
+        resolved: dict[str, ResolvedBundle] = {}
         for source in self._sources:
             for bundle_id, entry in self._entries_for(source).items():
-                if bundle_id in seen:
+                if bundle_id in resolved:
                     continue
-                if needle and not _matches(entry, needle):
-                    continue
-                seen[bundle_id] = ResolvedBundle(
+                resolved[bundle_id] = ResolvedBundle(
                     entry=entry.with_provenance(source), source=source
                 )
-        return [seen[k] for k in sorted(seen)]
+        return [
+            resolved[k]
+            for k in sorted(resolved)
+            if not needle or _matches(resolved[k].entry, needle)
+        ]
 
 
 def _matches(entry: CatalogEntry, needle: str) -> bool:
