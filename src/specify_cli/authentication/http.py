@@ -25,6 +25,26 @@ _config_override: list[AuthConfigEntry] | None = None
 _config_cache: list[AuthConfigEntry] | None = None  # None = not yet loaded
 
 
+def _validate_http_url(url: str) -> str:
+    """Return *url* when it is an absolute HTTP(S) URL with a host.
+
+    Authenticated download helpers must never hand ``file:``, custom schemes,
+    relative paths, or malformed hostless URLs to ``urllib``. Keeping this as a
+    single validator makes both authenticated and unauthenticated fallbacks use
+    the same network-only boundary.
+    """
+    if not isinstance(url, str):
+        raise ValueError("URL must be a string.")
+    if url != url.strip() or any(ord(ch) < 32 or ord(ch) == 127 for ch in url):
+        raise ValueError("URL must be an absolute http(s) URL with a hostname.")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("URL must be an absolute http(s) URL with a hostname.")
+    if parsed.username or parsed.password:
+        raise ValueError("URL must not include embedded credentials.")
+    return url
+
+
 def _load_config() -> list[AuthConfigEntry]:
     """Load auth config, using override if set (for testing).
 
@@ -101,6 +121,7 @@ def build_request(url: str, extra_headers: dict[str, str] | None = None) -> urll
     Uses the first matching entry from ``auth.json`` whose token resolves.
     Returns a plain request when no entry matches or the file doesn't exist.
     """
+    url = _validate_http_url(url)
     headers: dict[str, str] = {}
     if extra_headers:
         # Strip Authorization from extra_headers to prevent bypass
@@ -150,6 +171,7 @@ def open_url(
     *redirect_validator*, when provided, is called with ``(old_url, new_url)``
     before following each redirect and may raise to reject the redirect.
     """
+    url = _validate_http_url(url)
     entries = find_entries_for_url(url, _load_config())
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
@@ -185,4 +207,4 @@ def open_url(
     if redirect_validator is not None:
         opener = urllib.request.build_opener(_StripAuthOnRedirect((), redirect_validator))
         return opener.open(req, timeout=timeout)
-    return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310
+    return urllib.request.urlopen(req, timeout=timeout)  # nosec B310

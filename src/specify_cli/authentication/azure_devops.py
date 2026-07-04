@@ -7,6 +7,7 @@ import json as _json
 import os
 import subprocess
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from .base import AuthProvider
 
@@ -15,6 +16,17 @@ if TYPE_CHECKING:
 
 # Azure DevOps resource ID for OAuth / Azure AD token acquisition.
 _ADO_RESOURCE_ID = "499b84ac-1321-427f-aa17-267ca6975798"
+_MICROSOFT_LOGIN_HOST = "login.microsoftonline.com"
+
+
+def _is_safe_tenant_segment(tenant_id: str) -> bool:
+    """Return True when *tenant_id* cannot alter the Azure token URL path."""
+    tenant_id = tenant_id.strip()
+    if not tenant_id or tenant_id in (".", ".."):
+        return False
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in tenant_id):
+        return False
+    return quote(tenant_id, safe="") == tenant_id
 
 
 class AzureDevOpsAuth(AuthProvider):
@@ -91,10 +103,11 @@ class AzureDevOpsAuth(AuthProvider):
         if not client_secret:
             return None
 
-        url = (
-            f"https://login.microsoftonline.com/{entry.tenant_id}"
-            "/oauth2/v2.0/token"
-        )
+        tenant_id = entry.tenant_id.strip()
+        if not _is_safe_tenant_segment(tenant_id):
+            return None
+
+        url = f"https://{_MICROSOFT_LOGIN_HOST}/{tenant_id}/oauth2/v2.0/token"
         from urllib.parse import urlencode
         body = urlencode({
             "grant_type": "client_credentials",
@@ -109,7 +122,7 @@ class AzureDevOpsAuth(AuthProvider):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+            with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310
                 payload = _json.loads(resp.read().decode("utf-8"))
                 token = payload.get("access_token", "").strip()
                 return token or None

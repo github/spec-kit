@@ -525,6 +525,36 @@ class TestAzureDevOpsAuth:
                     side_effect=urllib.error.URLError("connection refused")):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
+    def test_resolve_token_azure_ad_rejects_path_shaped_tenant(self, monkeypatch):
+        """azure-ad tenant IDs must stay a single URL path segment."""
+        from unittest.mock import patch
+
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid/../evil", client_id="cid", client_secret_env="MY_SECRET",
+        )
+
+        with patch("urllib.request.urlopen") as urlopen:
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+        urlopen.assert_not_called()
+
+    def test_resolve_token_azure_ad_rejects_query_shaped_tenant(self, monkeypatch):
+        """azure-ad tenant IDs must not alter the token endpoint URL."""
+        from unittest.mock import patch
+
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid?x=1", client_id="cid", client_secret_env="MY_SECRET",
+        )
+
+        with patch("urllib.request.urlopen") as urlopen:
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+        urlopen.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # open_url / build_request — positive tests
@@ -690,6 +720,42 @@ class TestAuthenticatedHttpNegative:
                     side_effect=socket.timeout("timed out")):
             with pytest.raises(socket.timeout):
                 open_url("https://example.com/file")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///tmp/auth.json",
+            "ftp://example.com/file",
+            "https:///missing-host",
+            "/relative/path",
+        ],
+    )
+    def test_build_request_rejects_non_http_urls(self, monkeypatch, url):
+        from specify_cli.authentication.http import build_request
+
+        self._set_config(monkeypatch, [])
+        with pytest.raises(ValueError, match="URL must"):
+            build_request(url)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///tmp/auth.json",
+            "ftp://example.com/file",
+            "https:///missing-host",
+            "/relative/path",
+        ],
+    )
+    def test_open_url_rejects_non_http_urls_before_network(self, monkeypatch, url):
+        from unittest.mock import patch
+        from specify_cli.authentication.http import open_url
+
+        self._set_config(monkeypatch, [])
+        with patch("specify_cli.authentication.http.urllib.request.urlopen") as urlopen:
+            with pytest.raises(ValueError, match="URL must"):
+                open_url(url)
+
+        urlopen.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
