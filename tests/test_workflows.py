@@ -1240,6 +1240,95 @@ class TestShellStep:
         errors = step.validate({"id": "emit", "run": "exit 0", "output_format": "yaml"})
         assert any("'output_format' must be 'json'" in e for e in errors)
 
+    def test_configured_timeout_is_passed_to_subprocess(self, monkeypatch):
+        """A ``timeout:`` value on the step overrides the 300s default and is
+        threaded through to ``subprocess.run`` (issue #3327)."""
+        import subprocess
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        captured: dict[str, object] = {}
+
+        def fake_run(*args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            return subprocess.CompletedProcess(
+                args=args[0] if args else "", returncode=0, stdout="", stderr=""
+            )
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        step = ShellStep()
+        result = step.execute(
+            {"id": "qa", "run": "echo hi", "timeout": 1800}, StepContext()
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert captured["timeout"] == 1800
+
+    def test_default_timeout_preserved_when_omitted(self, monkeypatch):
+        """Omitting ``timeout:`` preserves the historical 300s default."""
+        import subprocess
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext
+
+        captured: dict[str, object] = {}
+
+        def fake_run(*args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            return subprocess.CompletedProcess(
+                args=args[0] if args else "", returncode=0, stdout="", stderr=""
+            )
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        step = ShellStep()
+        step.execute({"id": "qa", "run": "echo hi"}, StepContext())
+        assert captured["timeout"] == 300
+
+    def test_timeout_error_reports_configured_value(self, monkeypatch):
+        """The timeout failure message reflects the configured duration, not a
+        hardcoded 300."""
+        import subprocess
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        def fake_run(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd="echo hi", timeout=5)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        step = ShellStep()
+        result = step.execute(
+            {"id": "qa", "run": "echo hi", "timeout": 5}, StepContext()
+        )
+        assert result.status == StepStatus.FAILED
+        assert "5 seconds" in (result.error or "")
+
+    def test_validate_rejects_non_positive_timeout(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        for bad in (0, -30):
+            errors = step.validate({"id": "qa", "run": "echo hi", "timeout": bad})
+            assert any("'timeout' must be a positive number" in e for e in errors)
+
+    def test_validate_rejects_non_numeric_timeout(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        # A string and a bool are both invalid (bool is an int subclass but a
+        # config error, not a duration).
+        for bad in ("30", True):
+            errors = step.validate({"id": "qa", "run": "echo hi", "timeout": bad})
+            assert any("'timeout' must be a positive number" in e for e in errors)
+
+    def test_validate_accepts_positive_numeric_timeout(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        for good in (1, 300, 1800, 12.5):
+            errors = step.validate({"id": "qa", "run": "echo hi", "timeout": good})
+            assert not any("'timeout'" in e for e in errors)
+
 class _StubStdin:
     """Stdin stub exposing only a fixed ``isatty`` result.
 

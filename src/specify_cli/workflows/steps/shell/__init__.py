@@ -26,6 +26,11 @@ class ShellStep(StepBase):
 
         cwd = context.project_root or "."
 
+        # Per-step execution timeout in seconds; defaults to 300 for backward
+        # compatibility. ``validate`` guarantees a positive number when the
+        # field is present, so ``execute`` can pass it straight through.
+        timeout = config.get("timeout", 300)
+
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors
         # control commands; catalog-installed workflows should be reviewed
@@ -37,7 +42,7 @@ class ShellStep(StepBase):
                 capture_output=True,
                 text=True,
                 cwd=cwd,
-                timeout=300,
+                timeout=timeout,
             )
             output = {
                 "exit_code": proc.returncode,
@@ -74,7 +79,7 @@ class ShellStep(StepBase):
         except subprocess.TimeoutExpired:
             return StepResult(
                 status=StepStatus.FAILED,
-                error="Shell command timed out after 300 seconds.",
+                error=f"Shell command timed out after {timeout} seconds.",
                 output={"exit_code": -1, "stdout": "", "stderr": "timeout"},
             )
         except OSError as exc:
@@ -96,4 +101,17 @@ class ShellStep(StepBase):
                 f"Shell step {config.get('id', '?')!r}: 'output_format' must "
                 f"be 'json' when present, got {output_format!r}."
             )
+        if "timeout" in config:
+            timeout = config["timeout"]
+            # bool is a subclass of int, but ``timeout: true`` is a config
+            # error rather than a duration — reject it explicitly.
+            if (
+                isinstance(timeout, bool)
+                or not isinstance(timeout, (int, float))
+                or timeout <= 0
+            ):
+                errors.append(
+                    f"Shell step {config.get('id', '?')!r}: 'timeout' must be a "
+                    f"positive number of seconds, got {timeout!r}."
+                )
         return errors
