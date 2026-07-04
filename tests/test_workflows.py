@@ -3977,6 +3977,48 @@ steps:
         assert state.status == RunStatus.ABORTED
         assert "should-not-run" not in state.step_results
 
+    def test_gate_reject_matches_case_insensitively(
+        self, project_dir, monkeypatch
+    ):
+        """A capitalised reject option (`options: [Approve, Reject]`) still
+        aborts the run. `validate` accepts a reject choice case-insensitively,
+        so the runtime reject check must agree — a case-sensitive comparison
+        would treat the echoed `Reject` as approval and silently run
+        downstream steps.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps.gate import GateStep
+
+        # `_prompt` echoes the option's original casing, so the operator
+        # picking "Reject" hands `execute` the capitalised string.
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(lambda _msg, _opts: "Reject")
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "gate-reject-case"
+  name: "Gate Reject Case"
+  version: "1.0.0"
+steps:
+  - id: gate-step
+    type: gate
+    message: "Approve?"
+    options: [Approve, Reject]
+    on_reject: abort
+  - id: should-not-run
+    type: shell
+    run: "echo nope"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.ABORTED
+        assert "should-not-run" not in state.step_results
+
     def test_validation_rejects_non_bool_continue_on_error(self):
         """`continue_on_error` must be a literal boolean; coerced
         strings like `"true"` are rejected at validation time so
