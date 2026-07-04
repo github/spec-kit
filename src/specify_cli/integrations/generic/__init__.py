@@ -63,7 +63,7 @@ class GenericIntegration(MarkdownIntegration):
             import shlex
             tokens = shlex.split(raw)
             for i, token in enumerate(tokens):
-                if token == "--commands-dir" and i + 1 < len(tokens):
+                if token == "--commands-dir" and i + 1 < len(tokens):  # nosec B105
                     return tokens[i + 1]
                 if token.startswith("--commands-dir="):
                     return token.split("=", 1)[1]

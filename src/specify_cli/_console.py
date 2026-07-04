@@ -84,7 +84,7 @@ class StepTracker:
         if self._refresh_cb:
             try:
                 self._refresh_cb()
-            except Exception:
+            except Exception:  # nosec B110
                 pass
 
     def render(self):

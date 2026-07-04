@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json as _json
 import os
-import subprocess
+import subprocess  # nosec B404
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
@@ -68,7 +68,7 @@ class AzureDevOpsAuth(AuthProvider):
     def _acquire_via_az_cli() -> str | None:
         """Run ``az account get-access-token`` and return the access token."""
         try:
-            result = subprocess.run(  # noqa: S603, S607
+            result = subprocess.run(  # noqa: S603, S607  # nosec B603 B607
                 [
                     "az",
                     "account",

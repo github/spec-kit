@@ -206,5 +206,5 @@ def _rollback(
     for component in reversed(done):
         try:
             installer.remove(project_root, component)
-        except Exception:  # noqa: BLE001 - best-effort rollback
+        except Exception:  # noqa: BLE001 - best-effort rollback  # nosec B112
             continue

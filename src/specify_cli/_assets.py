@@ -105,7 +105,7 @@ def get_speckit_version() -> str:
     """Get current spec-kit version."""
     try:
         return importlib.metadata.version("specify-cli")
-    except Exception:
+    except importlib.metadata.PackageNotFoundError:
         # Fallback: try reading from pyproject.toml
         try:
             import tomllib
@@ -114,7 +114,7 @@ def get_speckit_version() -> str:
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
                     return data.get("project", {}).get("version", "unknown")
-        except Exception:
+        except (OSError, tomllib.TOMLDecodeError, TypeError):
             # Intentionally ignore any errors while reading/parsing pyproject.toml.
             # If this lookup fails for any reason, we fall back to returning "unknown" below.
             pass

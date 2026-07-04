@@ -16,7 +16,7 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 import urllib.error
 import urllib.parse
@@ -407,7 +407,7 @@ def _uv_tool_list_contains_specify_cli(stdout: str) -> bool:
         if not line:
             continue
         first_token = line.split(None, 1)[0]
-        if first_token == "specify-cli":
+        if first_token == "specify-cli":  # nosec B105
             return True
     return False
 
@@ -527,7 +527,7 @@ def _detect_install_method(
         if uv_bin is not None:
             consulted.append("uv tool list")
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # nosec B603
                     [uv_bin, "tool", "list"],
                     capture_output=True,
                     text=True,
@@ -547,7 +547,7 @@ def _detect_install_method(
         if pipx_bin is not None:
             consulted.append("pipx list --json")
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # nosec B603
                     [pipx_bin, "list", "--json"],
                     capture_output=True,
                     text=True,
@@ -819,7 +819,7 @@ def _run_installer(plan: _UpgradePlan) -> _InstallerResult:
             timeout = None
 
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # nosec B603
             plan.installer_argv,
             shell=False,
             check=False,
@@ -882,7 +882,7 @@ def _verify_upgrade(plan: _UpgradePlan) -> str | None:
     if specify_bin is None:
         return None
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             [specify_bin, "--version"],
             shell=False,
             check=False,
@@ -1156,7 +1156,8 @@ def self_check() -> None:
         # Graceful-failure path (FR-008). `failure_reason` is one of the
         # enumerated strings produced by _fetch_latest_release_tag() — it
         # never contains a URL, headers, response body, or traceback.
-        assert failure_reason is not None
+        if failure_reason is None:
+            failure_reason = "unknown"
         console.print(f"Installed: {installed}")
         console.print(f"[yellow]Could not check latest release:[/yellow] {failure_reason}")
         return

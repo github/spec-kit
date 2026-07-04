@@ -780,7 +780,7 @@ class PresetManager:
                                         context_note=f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n",
                                     )
                                     registered = True
-                            except Exception:
+                            except Exception:  # nosec B110
                                 # Extension registration failed; fall back to
                                 # generic path-based registration below.
                                 pass
@@ -905,7 +905,7 @@ class PresetManager:
                                         cmd_tmpl["aliases"] = aliases
                                     break
                         break
-            except Exception:
+            except Exception:  # nosec B110
                 pass  # best-effort alias loading
         self._register_for_non_skill_agents(
             registrar, [cmd_tmpl], source_id, cmd_path.parent
@@ -1080,7 +1080,7 @@ class PresetManager:
                     if integration is not None and hasattr(integration, "post_process_skill_content"):
                         skill_content = integration.post_process_skill_content(skill_content)
                     skill_file.write_text(skill_content, encoding="utf-8")
-                except Exception:
+                except Exception:  # nosec B110
                     pass  # best-effort override skill restoration
 
         # Register skills only for the specific commands being reconciled,

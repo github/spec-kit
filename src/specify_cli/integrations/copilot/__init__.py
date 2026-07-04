@@ -213,7 +213,7 @@ class CopilotIntegration(IntegrationBase):
         In skills mode, the prompt includes the skill invocation
         (``/speckit-<stem>``).
         """
-        import subprocess
+        import subprocess  # nosec B404
 
         stem = command_name
         if stem.startswith("speckit."):
@@ -256,7 +256,7 @@ class CopilotIntegration(IntegrationBase):
 
         if stream:
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # nosec B603
                     cli_args,
                     text=True,
                     cwd=cwd,
@@ -273,7 +273,7 @@ class CopilotIntegration(IntegrationBase):
                 "stderr": "",
             }
 
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             cli_args,
             capture_output=True,
             text=True,

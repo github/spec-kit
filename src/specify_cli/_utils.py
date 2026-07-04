@@ -6,7 +6,7 @@ import json5
 import os
 import shutil
 import stat
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 import yaml
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -86,10 +86,12 @@ def run_command(
 
     try:
         if capture:
-            result = subprocess.run(cmd, check=check_return, capture_output=True, text=True)
+            result = subprocess.run(  # nosec B603
+                cmd, check=check_return, capture_output=True, text=True
+            )
             return result.stdout.strip()
         else:
-            subprocess.run(cmd, check=check_return)
+            subprocess.run(cmd, check=check_return)  # nosec B603
             return None
     except subprocess.CalledProcessError as e:
         if check_return:

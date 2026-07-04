@@ -266,7 +266,7 @@ class IntegrationBase(ABC):
         Raises ``NotImplementedError`` if the integration does not
         support CLI dispatch.
         """
-        import subprocess
+        import subprocess  # nosec B404
 
         prompt = self.build_command_invocation(command_name, args)
         # When streaming to the terminal, request text output so the
@@ -299,7 +299,7 @@ class IntegrationBase(ABC):
             # can Ctrl+C at any time.  The timeout parameter is only
             # applied in the captured (non-streaming) branch below.
             try:
-                result = subprocess.run(
+                result = subprocess.run(  # nosec B603
                     exec_args,
                     text=True,
                     cwd=cwd,
@@ -316,7 +316,7 @@ class IntegrationBase(ABC):
                 "stderr": "",
             }
 
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             exec_args,
             capture_output=True,
             text=True,

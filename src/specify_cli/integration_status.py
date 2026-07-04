@@ -381,7 +381,8 @@ def build_integration_status_report(project_root: Path) -> dict[str, Any]:
         )
         return _build_report(None, [], findings, {}, None)
 
-    assert raw_state is not None
+    if raw_state is None:
+        return _build_report(None, [], findings, {}, None)
     raw_default_key = default_integration_key(raw_state)
     raw_installed_value = raw_state.get("installed_integrations")
     raw_installed_is_list = isinstance(raw_installed_value, list)

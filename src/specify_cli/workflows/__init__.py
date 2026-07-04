@@ -196,7 +196,7 @@ def load_custom_steps(project_root: Path) -> list[str]:
                         k for k in _sys.modules if k.startswith(submodule_prefix)
                     ]:
                         _sys.modules.pop(_mod_key, None)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001  # nosec B112
             # Silently skip broken step packages at load time
             continue
 

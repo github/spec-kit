@@ -128,14 +128,14 @@ class PromptStep(StepBase):
         if not exec_args:
             return None
 
-        import subprocess
+        import subprocess  # nosec B404
 
         project_root = (
             Path(context.project_root) if context.project_root else Path.cwd()
         )
 
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 exec_args,
                 text=True,
                 cwd=str(project_root),
