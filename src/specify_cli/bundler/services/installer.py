@@ -130,6 +130,28 @@ def install_bundle(
             done.append(component)
             result.installed.append(component)
             contributed.append(component)
+
+        # On update (refresh), uninstall components this bundle used to own
+        # that the new version no longer ships. Otherwise they are dropped
+        # from the record below (contributed only holds plan.components) yet
+        # left on disk — permanently orphaned, since no bundle record can
+        # ever remove them. A stale component still owned by another bundle
+        # is kept installed and simply de-attributed here (it stays in that
+        # bundle's record). Mirrors remove_bundle's refcount logic.
+        if refresh and existing is not None:
+            planned = {(c.kind, c.id) for c in plan.components}
+            still_needed = components_still_needed(
+                records, exclude_bundle_id=plan.bundle_id
+            )
+            for component in existing.contributed_components:
+                key = (component.kind, component.id)
+                if key in planned:
+                    continue
+                if key in still_needed:
+                    continue
+                if installer.is_installed(project_root, component):
+                    installer.remove(project_root, component)
+                    result.uninstalled.append(component)
     except BundlerError:
         _rollback(project_root, installer, done)
         raise
