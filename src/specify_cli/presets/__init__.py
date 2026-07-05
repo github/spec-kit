@@ -2676,6 +2676,34 @@ class PresetResolver:
             registry = PresetRegistry(self.presets_dir)
             for pack_id, _metadata in registry.list_by_priority():
                 pack_dir = self.presets_dir / pack_id
+                # The preset manifest is authoritative: if it declares this
+                # template with an explicit ``file:``, resolve to that path —
+                # and do NOT fall back to convention when it's missing, to
+                # avoid masking typos or picking up an undeclared file. Only
+                # when the manifest is absent or doesn't list this template do
+                # we use the convention-based subdir lookup. Mirrors
+                # collect_all_layers()/resolve_content() so resolve() and
+                # resolve_with_source() agree with them instead of returning
+                # the core template (or a stray convention file).
+                manifest_file_path = None
+                manifest_found_entry = False
+                manifest = self._get_manifest(pack_dir)
+                if manifest:
+                    for tmpl in manifest.templates:
+                        if (tmpl.get("name") == template_name
+                                and tmpl.get("type") == template_type):
+                            manifest_file_path = tmpl.get("file")
+                            manifest_found_entry = True
+                            break
+                if manifest_file_path:
+                    manifest_candidate = pack_dir / manifest_file_path
+                    if manifest_candidate.exists():
+                        return manifest_candidate
+                    # Declared file missing: skip this pack's convention fallback.
+                    continue
+                if manifest_found_entry:
+                    # Manifest lists the template without a file: nothing here.
+                    continue
                 for subdir in subdirs:
                     if subdir:
                         candidate = pack_dir / subdir / f"{template_name}{ext}"

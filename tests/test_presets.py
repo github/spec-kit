@@ -884,6 +884,84 @@ class TestPresetResolver:
         assert result is not None
         assert "Custom Spec Template" in result.read_text()
 
+    def _install_pack_with_manifest_file(self, project_dir, *, extra_file=False):
+        """Create a pack whose manifest declares a NON-convention file: path.
+
+        Returns the pack dir under the project. The declared file lives at
+        custom/spec.md (not the convention templates/spec-template.md).
+        """
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        (pack_dir / "custom").mkdir(parents=True)
+        (pack_dir / "custom" / "spec.md").write_text(
+            "# Manifest-declared Spec\n", encoding="utf-8"
+        )
+        if extra_file:
+            # An undeclared convention-path file the manifest points away from.
+            (pack_dir / "templates").mkdir()
+            (pack_dir / "templates" / "spec-template.md").write_text(
+                "# Stray Convention Spec\n", encoding="utf-8"
+            )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a non-convention file path",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+        return pack_dir
+
+    def test_resolve_uses_manifest_declared_file_path(self, project_dir):
+        """resolve() must honor a manifest-declared non-convention file: path.
+
+        Previously the tier-2 loop was convention-only, so it returned the
+        core template and resolve_with_source() misattributed source='core',
+        diverging from collect_all_layers()/resolve_content().
+        """
+        pack_dir = self._install_pack_with_manifest_file(project_dir)
+        resolver = PresetResolver(project_dir)
+
+        result = resolver.resolve("spec-template")
+        assert result == pack_dir / "custom" / "spec.md"
+        assert "Manifest-declared Spec" in result.read_text()
+
+        sourced = resolver.resolve_with_source("spec-template")
+        assert sourced is not None
+        assert "mypack" in sourced["source"]
+        # resolve() must agree with collect_all_layers()'s top layer.
+        layers = resolver.collect_all_layers("spec-template")
+        assert Path(layers[0]["path"]) == pack_dir / "custom" / "spec.md"
+
+    def test_resolve_manifest_file_wins_over_undeclared_convention_file(
+        self, project_dir
+    ):
+        """A stray convention-path file must not shadow the manifest's file:."""
+        pack_dir = self._install_pack_with_manifest_file(
+            project_dir, extra_file=True
+        )
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result == pack_dir / "custom" / "spec.md"
+        assert "Manifest-declared Spec" in result.read_text()
+
     def test_resolve_override_takes_priority_over_pack(self, project_dir, pack_dir):
         """Test that overrides take priority over installed packs."""
         # Install the pack
