@@ -184,6 +184,23 @@ class YamlIntegrationTests:
         assert "scripts:" not in parsed["prompt"]
         assert "---" not in parsed["prompt"]
 
+    def test_yaml_prompt_with_indented_first_line_stays_valid(self):
+        """A body whose first line is indented must still parse.
+
+        A bare ``|`` block scalar infers its indentation from the first
+        non-empty line, so a body starting with an indented line (e.g. a
+        markdown code block or nested list item) made the parser expect that
+        deeper indent for the whole block and reject the later, shallower
+        lines. The explicit ``|2`` indicator pins the indent so it parses."""
+        body = "    indented first line\nback to normal\n    indented again"
+        rendered = YamlIntegration._render_yaml("Title", "Desc", body, "src")
+
+        yaml_lines = [
+            ln for ln in rendered.split("\n") if not ln.startswith("# Source:")
+        ]
+        parsed = yaml.safe_load("\n".join(yaml_lines))
+        assert parsed["prompt"].rstrip("\n") == body
+
     def test_plan_command_has_no_context_placeholder(self, tmp_path):
         """The generated plan command must not carry a context-file placeholder.
 
