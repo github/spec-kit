@@ -89,7 +89,11 @@ class AgyIntegration(SkillsIntegration):
         output_json: bool = True,
     ) -> list[str] | None:
         # agy does not support --model or JSON output; both params are ignored
-        return [self._resolve_executable(), "--print", prompt]
+        args = [self._resolve_executable(), "--print", prompt]
+        # Honor SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (operator-supplied flags),
+        # appended after the positional prompt like the devin integration.
+        self._apply_extra_args_env_var(args)
+        return args
 
     def setup(
         self,
