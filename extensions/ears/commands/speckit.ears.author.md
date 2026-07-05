@@ -112,6 +112,6 @@ After resolution, set `EARS_SLUG` and `EARS_DIR = .specify/ears/<EARS_SLUG>`.
 ## Guardrails
 
 - Ground every requirement in the provided input. Do not invent scope; mark unknowns as `[NEEDS CLARIFICATION]`.
-- Every requirement uses `shall` and exactly one EARS pattern keyword; no compound requirements.
+- Every requirement uses `shall` and at least one EARS pattern keyword (simple requirements use exactly one; complex requirements may combine multiple). Split compound requirements — statements joined by "and"/commas — into separate requirements; this is distinct from a single complex requirement combining pattern keywords.
 - Write only inside `EARS_DIR`. Do not modify `spec.md` or any source file. You may offer to insert the generated block into an existing spec, but only apply it after explicit confirmation.
 - Never overwrite an existing `requirements.md` without confirmation.
