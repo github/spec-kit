@@ -22,7 +22,7 @@ A trailing `slug=...` / `--slug ...` token sets the output slug. If the input is
 
 ## EARS Reference
 
-Every EARS requirement uses the mandatory modal **shall** and exactly one pattern keyword:
+Every EARS requirement uses the mandatory modal **shall** and at least one pattern keyword (simple requirements use exactly one; complex requirements combine multiple, see below):
 
 | Pattern | Template | When to use |
 |---------|----------|-------------|
@@ -58,7 +58,7 @@ Set `EARS_SLUG` and `EARS_DIR = .specify/ears/<EARS_SLUG>`, creating the directo
    - Number the converted requirements `REQ-001`, `REQ-002`, ... Maintain the mapping from each original statement to its resulting REQ ID(s).
 
 4. **Self-check**
-   - Verify every converted requirement uses `shall` exactly once and exactly one pattern keyword, names a `<system>`, and is atomic. Fix any that fail before writing.
+   - Verify every converted requirement uses `shall` exactly once, uses at least one valid pattern keyword (simple patterns use exactly one; complex requirements may combine multiple), names a `<system>`, and is atomic. Fix any that fail before writing.
 
 5. **Write the output** to `EARS_DIR/requirements.md`:
 

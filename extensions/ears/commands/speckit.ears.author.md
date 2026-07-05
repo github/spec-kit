@@ -22,7 +22,7 @@ If the current project already has an active spec (e.g. `.specify/specs/<n>/spec
 
 ## EARS Reference
 
-EARS defines five requirement patterns. Every EARS requirement uses the mandatory modal **shall** and exactly one pattern keyword:
+EARS defines five requirement patterns. Every EARS requirement uses the mandatory modal **shall** and at least one pattern keyword (simple requirements use exactly one; complex requirements combine multiple, see below):
 
 | Pattern | Template | When to use |
 |---------|----------|-------------|

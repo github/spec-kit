@@ -12,6 +12,7 @@ Validates:
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -80,6 +81,22 @@ class TestBundleResolution:
         located = _locate_bundled_extension("ears")
         assert located is not None
         assert (located / "extension.yml").is_file()
+
+    def test_pyproject_force_includes_ears_for_wheel_builds(self):
+        """The catalog marks ``ears`` as bundled, so the wheel build must
+        force-include ``extensions/ears`` alongside the other bundled
+        extensions. Otherwise `specify extension add ears` fails on wheel
+        installs because `_locate_bundled_extension()` only finds bundled
+        extensions under `specify_cli/core_pack/extensions/` in that case."""
+        pyproject = tomllib.loads(
+            (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        force_include = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"][
+            "force-include"
+        ]
+        assert force_include.get("extensions/ears") == (
+            "specify_cli/core_pack/extensions/ears"
+        )
 
 
 # ── Install ──────────────────────────────────────────────────────────────────
