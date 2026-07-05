@@ -2688,7 +2688,12 @@ class ConfigManager:
             return {}
 
         try:
-            return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+            # Coerce a non-mapping root (list/scalar, or None for an empty
+            # file) to {} so callers that iterate/merge the result — e.g.
+            # _merge_configs' .items() — never crash. Mirrors the same
+            # non-dict-root guard in get_project_config().
+            return data if isinstance(data, dict) else {}
         except (yaml.YAMLError, OSError, UnicodeError):
             return {}
 

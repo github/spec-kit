@@ -31,6 +31,7 @@ from specify_cli.extensions import (
     ExtensionRegistry,
     ExtensionManager,
     CommandRegistrar,
+    ConfigManager,
     HookExecutor,
     ExtensionCatalog,
     ExtensionError,
@@ -7492,3 +7493,52 @@ def test_extension_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, mo
     )
     assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/7"
     assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v1"]
+
+
+class TestConfigManagerNonMappingYaml:
+    """A non-mapping YAML config root must not crash config/hook resolution."""
+
+    def _make(self, tmp_path, body: str):
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "jira-config.yml").write_text(body, encoding="utf-8")
+        return ConfigManager(tmp_path, "jira")
+
+    def test_get_config_coerces_list_root(self, tmp_path):
+        """A YAML list root previously raised AttributeError in _merge_configs."""
+        cm = self._make(tmp_path, "- foo\n- bar\n")
+        assert cm.get_config() == {}
+
+    def test_get_config_coerces_scalar_root(self, tmp_path):
+        cm = self._make(tmp_path, "just a string\n")
+        assert cm.get_config() == {}
+
+    def test_has_value_and_get_value_do_not_raise(self, tmp_path):
+        cm = self._make(tmp_path, "- foo\n")
+        assert cm.has_value("anything") is False
+        assert cm.get_value("anything") is None
+
+    def test_valid_local_config_layers_over_list_root_project_config(self, tmp_path):
+        """A malformed project config must not block a valid local config."""
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "jira-config.yml").write_text("- foo\n- bar\n", encoding="utf-8")
+        (ext_dir / "local-config.yml").write_text(
+            "notifications:\n  enabled: true\n", encoding="utf-8"
+        )
+        cm = ConfigManager(tmp_path, "jira")
+        assert cm.get_value("notifications.enabled") is True
+
+    def test_hook_condition_returns_false_without_raising(self, tmp_path):
+        """`config.x is set` on a scalar-root config must evaluate cleanly.
+
+        Before the fix, _merge_configs raised AttributeError and the
+        exception was swallowed by should_execute_hook, silently disabling
+        every config-based hook for the extension. Assert on
+        _evaluate_condition directly so the crash isn't masked.
+        """
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "jira-config.yml").write_text("just a string\n", encoding="utf-8")
+        executor = HookExecutor(tmp_path)
+        assert executor._evaluate_condition("config.x is set", "jira") is False
