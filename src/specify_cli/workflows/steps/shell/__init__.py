@@ -90,6 +90,16 @@ class ShellStep(StepBase):
             errors.append(
                 f"Shell step {config.get('id', '?')!r} is missing 'run' field."
             )
+        elif not isinstance(config["run"], str):
+            # execute() str()-coerces run and invokes it under shell=True, so a
+            # null or list 'run' would run the Python repr ('None', "['echo']")
+            # as a command. Reject non-strings at validation, mirroring the
+            # command-step input/options and gate options type checks. An
+            # expression like "{{ ... }}" is still a str, so it stays valid.
+            errors.append(
+                f"Shell step {config.get('id', '?')!r}: 'run' must be a string, "
+                f"got {type(config['run']).__name__}."
+            )
         output_format = config.get("output_format")
         if output_format is not None and output_format != "json":
             errors.append(
