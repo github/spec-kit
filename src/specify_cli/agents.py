@@ -243,7 +243,12 @@ class CommandRegistrar:
         # ``C:\\Users\\...`` whose ``\\U`` reads as an invalid unicode escape) would
         # produce unparseable TOML — route those to the *literal* form ('''...'''),
         # which does not process escapes, or to the escaped basic string.
-        if '"""' not in body and "\\" not in body:
+        # Control characters (U+0000–U+001F except tab/newline, U+007F) and a bare
+        # CR are illegal in every TOML string form, so a body containing them must
+        # go to the escaped basic string regardless of which delimiters it uses.
+        if self._has_illegal_toml_control(body):
+            toml_lines.append(f"prompt = {self._render_basic_toml_string(body)}")
+        elif '"""' not in body and "\\" not in body:
             toml_lines.append('prompt = """')
             toml_lines.append(body)
             toml_lines.append('"""')
@@ -257,16 +262,50 @@ class CommandRegistrar:
         return "\n".join(toml_lines)
 
     @staticmethod
+    def _has_illegal_toml_control(value: str) -> bool:
+        """True if *value* has a character TOML forbids in strings.
+
+        TOML bans control characters (U+0000–U+001F except tab and newline, plus
+        U+007F) in every string form, and a bare CR that is not part of a CRLF
+        pair. Such a value cannot be emitted raw into any multiline string.
+        """
+        length = len(value)
+        for i, ch in enumerate(value):
+            code = ord(ch)
+            if ch == "\r":
+                if i + 1 < length and value[i + 1] == "\n":
+                    continue
+                return True
+            if (code < 0x20 and ch not in ("\t", "\n")) or code == 0x7F:
+                return True
+        return False
+
+    @staticmethod
     def _render_basic_toml_string(value: str) -> str:
-        """Render *value* as a TOML basic string literal."""
-        escaped = (
-            value.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        )
-        return f'"{escaped}"'
+        """Render *value* as a TOML basic string literal.
+
+        Escapes the delimiter and backslash, the shorthand escapes (\\n, \\r,
+        \\t), and any remaining control character (U+0000–U+001F, U+007F) as a
+        ``\\uXXXX`` sequence so the result is always valid TOML.
+        """
+        out = []
+        for ch in value:
+            code = ord(ch)
+            if ch == "\\":
+                out.append("\\\\")
+            elif ch == '"':
+                out.append('\\"')
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\r":
+                out.append("\\r")
+            elif ch == "\t":
+                out.append("\\t")
+            elif code < 0x20 or code == 0x7F:
+                out.append(f"\\u{code:04x}")
+            else:
+                out.append(ch)
+        return '"' + "".join(out) + '"'
 
     def render_yaml_command(
         self,

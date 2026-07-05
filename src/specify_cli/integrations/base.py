@@ -941,6 +941,56 @@ class TomlIntegration(IntegrationBase):
         return frontmatter, body
 
     @staticmethod
+    def _has_illegal_toml_control(value: str) -> bool:
+        """True when *value* contains a character TOML forbids literally.
+
+        TOML basic/literal strings (single- or multi-line) allow tab and, in
+        the multiline forms, newlines — but every other control character
+        (``U+0000``–``U+001F`` and ``U+007F``) must be ``\\u``-escaped, which
+        only a basic string can do. A bare carriage return counts too: a
+        multiline basic string treats ``\\r`` as a newline only when paired
+        into ``\\r\\n``; a lone ``\\r`` is an illegal control character.
+        """
+        length = len(value)
+        for i, ch in enumerate(value):
+            code = ord(ch)
+            if ch == "\r":
+                # Only a CR that is part of a CRLF newline is allowed literally.
+                if i + 1 < length and value[i + 1] == "\n":
+                    continue
+                return True
+            if (code < 0x20 and ch not in ("\t", "\n")) or code == 0x7F:
+                return True
+        return False
+
+    @staticmethod
+    def _escape_toml_basic(value: str) -> str:
+        """Render *value* as a single-line basic string, escaping everything.
+
+        Always valid TOML: backslash/quote are escaped, the common control
+        chars use their short escapes, and any remaining control character is
+        emitted as a ``\\uXXXX`` sequence.
+        """
+        out: list[str] = []
+        for ch in value:
+            code = ord(ch)
+            if ch == "\\":
+                out.append("\\\\")
+            elif ch == '"':
+                out.append('\\"')
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\r":
+                out.append("\\r")
+            elif ch == "\t":
+                out.append("\\t")
+            elif code < 0x20 or code == 0x7F:
+                out.append(f"\\u{code:04x}")
+            else:
+                out.append(ch)
+        return '"' + "".join(out) + '"'
+
+    @staticmethod
     def _render_toml_string(value: str) -> str:
         """Render *value* as a TOML string literal.
 
@@ -949,6 +999,12 @@ class TomlIntegration(IntegrationBase):
         literal string or escaped basic string when delimiters appear in
         the content.
         """
+        # Control characters other than tab/newline (and a bare CR) cannot
+        # appear literally in any TOML string; route them to a fully-escaped
+        # basic string so the generated file stays parseable.
+        if TomlIntegration._has_illegal_toml_control(value):
+            return TomlIntegration._escape_toml_basic(value)
+
         if "\n" not in value and "\r" not in value:
             escaped = value.replace("\\", "\\\\").replace('"', '\\"')
             return f'"{escaped}"'
@@ -961,17 +1017,7 @@ class TomlIntegration(IntegrationBase):
         if "'''" not in value and not value.endswith("'"):
             return "'''\n" + value + "'''"
 
-        return (
-            '"'
-            + (
-                value.replace("\\", "\\\\")
-                .replace('"', '\\"')
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
-            )
-            + '"'
-        )
+        return TomlIntegration._escape_toml_basic(value)
 
     @staticmethod
     def _render_toml(description: str, body: str) -> str:
