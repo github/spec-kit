@@ -112,3 +112,40 @@ def test_install_bundled_extension_from_zip_offline(tmp_path: Path):
         assert not ExtensionManager(project).registry.is_installed("agent-context")
     finally:
         os.chdir(previous)
+
+
+def test_download_manifest_resolves_file_url(tmp_path: Path):
+    """A catalog ``file://`` download_url must resolve to the manifest.
+
+    ``Path(parsed.path)`` kept the leading slash of ``file:///C:/x``
+    (yielding a ``/C:/x``-style path on Windows, which never exists) and skipped
+    percent-decoding, so ``my%20bundles`` stayed encoded on every OS.
+    The space in the directory name below makes the failure reproduce on
+    POSIX CI too, not just Windows.
+    """
+    from types import SimpleNamespace
+
+    from specify_cli.commands.bundle import _download_manifest
+
+    manifest_path = write_manifest(tmp_path / "my bundles")
+    resolved = SimpleNamespace(
+        entry=SimpleNamespace(id="demo-bundle", download_url=manifest_path.as_uri())
+    )
+
+    manifest = _download_manifest(resolved, offline=True)
+    assert manifest.bundle.id == "demo-bundle"
+
+
+def test_download_manifest_bare_windows_path_still_resolves(tmp_path: Path):
+    """The non-URL branch (bare absolute path) keeps working unchanged."""
+    from types import SimpleNamespace
+
+    from specify_cli.commands.bundle import _download_manifest
+
+    manifest_path = write_manifest(tmp_path / "plain")
+    resolved = SimpleNamespace(
+        entry=SimpleNamespace(id="demo-bundle", download_url=str(manifest_path))
+    )
+
+    manifest = _download_manifest(resolved, offline=True)
+    assert manifest.bundle.id == "demo-bundle"

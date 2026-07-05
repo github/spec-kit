@@ -766,7 +766,17 @@ def _download_manifest(resolved, *, offline: bool):
     # On Windows an absolute path like ``C:\bundle.yml`` parses with a
     # single-letter ``scheme``; treat it as a local file, not a URL scheme.
     if scheme in ("", "file") or re.match(r"^[A-Za-z]:[\\/]", url):
-        local = Path(parsed.path if scheme == "file" else url)
+        if scheme == "file":
+            # Raw ``parsed.path`` keeps the leading slash of ``file:///C:/x``
+            # (yielding ``\C:\x`` on Windows) and skips percent-decoding
+            # (``my%20bundles``). Reuse the adapters helper that already
+            # handles drive letters, UNC hosts, and percent-encoding for
+            # catalog ``file://`` URLs.
+            from ...bundler.services.adapters import _file_url_to_path
+
+            local = _file_url_to_path(parsed)
+        else:
+            local = Path(url)
         manifest = _local_manifest_source(str(local))
         if manifest is None:
             raise BundlerError(f"Bundle manifest not found: {local}")
