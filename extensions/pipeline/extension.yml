@@ -1,0 +1,37 @@
+schema_version: "1.0"
+
+extension:
+  id: "pipeline"
+  name: "Pipeline"
+  version: "1.0.0"
+  description: "Chain the Spec Kit phases (specify → clarify → plan → tasks → analyze → implement) into one guided, single-invocation pipeline with a deterministic phase resolver and one interactive clarify gate."
+  author: "Dominik Mattioli"
+  repository: "https://github.com/domattioli/spec-kit-pipeline"
+  license: "MIT"
+  homepage: "https://github.com/domattioli/spec-kit-pipeline"
+
+requires:
+  speckit_version: ">=0.2.0"
+
+provides:
+  commands:
+    - name: "speckit.pipeline.run"
+      file: "commands/run.md"
+      description: "Run the full spec → implement pipeline from one feature description, with a single interactive clarify checkpoint."
+    - name: "speckit.pipeline.preview"
+      file: "commands/preview.md"
+      description: "Print the resolved phase plan for the given --skip/--add flags without running anything (dry run)."
+
+  config:
+    - name: "pipeline-config.yml"
+      template: "config-template.yml"
+      description: "Pipeline defaults — auto-resolve cap for analyze findings, default skip/add sets."
+      required: false
+
+tags:
+  - "workflow"
+  - "orchestration"
+  - "pipeline"
+  - "automation"
+  - "sdd"
+  - "spec-driven-development"
