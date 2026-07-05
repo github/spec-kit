@@ -2099,6 +2099,27 @@ class TestFanInStep:
         errors = step.validate({"id": "test", "wait_for": "not-a-list"})
         assert any("non-empty list" in e for e in errors)
 
+    @pytest.mark.parametrize("bad_output", [["{{ fan_in.results }}"], "{{ x }}", 42])
+    def test_validate_rejects_non_mapping_output(self, bad_output):
+        """A non-mapping 'output' must be rejected: execute() would otherwise
+        silently coerce it to {} and drop the declared aggregation keys."""
+        from specify_cli.workflows.steps.fan_in import FanInStep
+
+        step = FanInStep()
+        errors = step.validate(
+            {"id": "j", "wait_for": ["a"], "output": bad_output}
+        )
+        assert any("'output' must be a mapping" in e for e in errors)
+
+    def test_validate_accepts_mapping_or_absent_output(self):
+        from specify_cli.workflows.steps.fan_in import FanInStep
+
+        step = FanInStep()
+        assert step.validate(
+            {"id": "j", "wait_for": ["a"], "output": {"joined": "{{ x }}"}}
+        ) == []
+        assert step.validate({"id": "j", "wait_for": ["a"]}) == []
+
 
 class TestFanOutConcurrency:
     """Fan-out honors max_concurrency (WorkflowEngine._run_fan_out)."""
