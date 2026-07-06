@@ -159,9 +159,23 @@ def test_setup_plan_survives_broken_python3_stub(plan_repo: Path) -> None:
     )
     stub.chmod(0o755)
 
+    # A stub jq that shadows any real jq on PATH and also fails, so the parser
+    # cannot short-circuit on jq and must reach the broken python3 stub and then
+    # fall through to grep/sed. Without this, a runner that has jq installed
+    # would parse feature.json via jq and never exercise the fallback this test
+    # is meant to cover.
+    jq_stub = stub_dir / "jq"
+    jq_stub.write_text(
+        "#!/bin/sh\n"
+        'echo "jq: simulated failure" >&2\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    jq_stub.chmod(0o755)
+
     env = _clean_env()
-    # Prepend the stub dir; also drop jq so the chain must reach python3 then
-    # fall through to grep/sed. PATH still needs the real bash utilities.
+    # Prepend the stub dir so the failing jq and python3 stubs take precedence
+    # over any real ones; PATH still needs the real bash utilities for grep/sed.
     env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
 
     script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
