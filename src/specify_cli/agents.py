@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from ._init_options import is_ai_skills_enabled, load_init_options
+from ._toml_string import escape_toml_basic as _escape_toml_basic
+from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ._utils import relative_extension_path_violation
 
 
@@ -261,51 +263,11 @@ class CommandRegistrar:
 
         return "\n".join(toml_lines)
 
-    @staticmethod
-    def _has_illegal_toml_control(value: str) -> bool:
-        """True if *value* has a character TOML forbids in strings.
-
-        TOML bans control characters (U+0000–U+001F except tab and newline, plus
-        U+007F) in every string form, and a bare CR that is not part of a CRLF
-        pair. Such a value cannot be emitted raw into any multiline string.
-        """
-        length = len(value)
-        for i, ch in enumerate(value):
-            code = ord(ch)
-            if ch == "\r":
-                if i + 1 < length and value[i + 1] == "\n":
-                    continue
-                return True
-            if (code < 0x20 and ch not in ("\t", "\n")) or code == 0x7F:
-                return True
-        return False
-
-    @staticmethod
-    def _render_basic_toml_string(value: str) -> str:
-        """Render *value* as a TOML basic string literal.
-
-        Escapes the delimiter and backslash, the shorthand escapes (\\n, \\r,
-        \\t), and any remaining control character (U+0000–U+001F, U+007F) as a
-        ``\\uXXXX`` sequence so the result is always valid TOML.
-        """
-        out = []
-        for ch in value:
-            code = ord(ch)
-            if ch == "\\":
-                out.append("\\\\")
-            elif ch == '"':
-                out.append('\\"')
-            elif ch == "\n":
-                out.append("\\n")
-            elif ch == "\r":
-                out.append("\\r")
-            elif ch == "\t":
-                out.append("\\t")
-            elif code < 0x20 or code == 0x7F:
-                out.append(f"\\u{code:04x}")
-            else:
-                out.append(ch)
-        return '"' + "".join(out) + '"'
+    # Control-char detection and basic-string escaping are shared with the
+    # gemini/tabnine renderer in ``specify_cli.integrations.base`` via
+    # ``specify_cli._toml_string`` so the two never drift apart.
+    _has_illegal_toml_control = staticmethod(_has_illegal_toml_control)
+    _render_basic_toml_string = staticmethod(_escape_toml_basic)
 
     def render_yaml_command(
         self,

@@ -25,6 +25,9 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from .._toml_string import escape_toml_basic as _escape_toml_basic
+from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
+
 if TYPE_CHECKING:
     from .manifest import IntegrationManifest
 
@@ -940,55 +943,11 @@ class TomlIntegration(IntegrationBase):
         body = "".join(lines[frontmatter_end + 1 :])
         return frontmatter, body
 
-    @staticmethod
-    def _has_illegal_toml_control(value: str) -> bool:
-        """True when *value* contains a character TOML forbids literally.
-
-        TOML basic/literal strings (single- or multi-line) allow tab and, in
-        the multiline forms, newlines — but every other control character
-        (``U+0000``–``U+001F`` and ``U+007F``) must be ``\\u``-escaped, which
-        only a basic string can do. A bare carriage return counts too: a
-        multiline basic string treats ``\\r`` as a newline only when paired
-        into ``\\r\\n``; a lone ``\\r`` is an illegal control character.
-        """
-        length = len(value)
-        for i, ch in enumerate(value):
-            code = ord(ch)
-            if ch == "\r":
-                # Only a CR that is part of a CRLF newline is allowed literally.
-                if i + 1 < length and value[i + 1] == "\n":
-                    continue
-                return True
-            if (code < 0x20 and ch not in ("\t", "\n")) or code == 0x7F:
-                return True
-        return False
-
-    @staticmethod
-    def _escape_toml_basic(value: str) -> str:
-        """Render *value* as a single-line basic string, escaping everything.
-
-        Always valid TOML: backslash/quote are escaped, the common control
-        chars use their short escapes, and any remaining control character is
-        emitted as a ``\\uXXXX`` sequence.
-        """
-        out: list[str] = []
-        for ch in value:
-            code = ord(ch)
-            if ch == "\\":
-                out.append("\\\\")
-            elif ch == '"':
-                out.append('\\"')
-            elif ch == "\n":
-                out.append("\\n")
-            elif ch == "\r":
-                out.append("\\r")
-            elif ch == "\t":
-                out.append("\\t")
-            elif code < 0x20 or code == 0x7F:
-                out.append(f"\\u{code:04x}")
-            else:
-                out.append(ch)
-        return '"' + "".join(out) + '"'
+    # Control-char detection and basic-string escaping are shared with the
+    # extension/preset renderer in ``specify_cli.agents`` via
+    # ``specify_cli._toml_string`` so the two never drift apart.
+    _has_illegal_toml_control = staticmethod(_has_illegal_toml_control)
+    _escape_toml_basic = staticmethod(_escape_toml_basic)
 
     @staticmethod
     def _render_toml_string(value: str) -> str:
