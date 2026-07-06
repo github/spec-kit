@@ -182,6 +182,73 @@ def get_feature_paths(
     )
 
 
+def _sorted_preset_ids(presets_dir: Path) -> list[str]:
+    registry = presets_dir / ".registry"
+    if registry.is_file():
+        try:
+            data = json.loads(registry.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = None
+        if isinstance(data, dict):
+            presets = data.get("presets", {})
+            if isinstance(presets, dict):
+                return [
+                    pid
+                    for pid, meta in sorted(
+                        presets.items(),
+                        key=lambda kv: kv[1].get("priority", 10)
+                        if isinstance(kv[1], dict)
+                        else 10,
+                    )
+                    if isinstance(meta, dict) and meta.get("enabled", True) is not False
+                ]
+    try:
+        return sorted(p.name for p in presets_dir.iterdir() if p.is_dir())
+    except OSError:
+        return []
+
+
+def resolve_template(template_name: str, repo_root: Path) -> Path | None:
+    """Resolve a template name to a file path using the priority stack.
+
+    Order (mirrors resolve_template in scripts/bash/common.sh):
+      1. .specify/templates/overrides/
+      2. .specify/presets/<preset-id>/templates/ (sorted by .registry priority)
+      3. .specify/extensions/<ext-id>/templates/ (hidden directories skipped)
+      4. .specify/templates/ (core)
+    """
+    base = repo_root / ".specify" / "templates"
+
+    override = base / "overrides" / f"{template_name}.md"
+    if override.is_file():
+        return override
+
+    presets_dir = repo_root / ".specify" / "presets"
+    if presets_dir.is_dir():
+        for preset_id in _sorted_preset_ids(presets_dir):
+            candidate = presets_dir / preset_id / "templates" / f"{template_name}.md"
+            if candidate.is_file():
+                return candidate
+
+    ext_dir = repo_root / ".specify" / "extensions"
+    if ext_dir.is_dir():
+        try:
+            extensions = sorted(p for p in ext_dir.iterdir() if p.is_dir())
+        except OSError:
+            extensions = []
+        for ext in extensions:
+            if ext.name.startswith("."):
+                continue
+            candidate = ext / "templates" / f"{template_name}.md"
+            if candidate.is_file():
+                return candidate
+
+    core = base / f"{template_name}.md"
+    if core.is_file():
+        return core
+    return None
+
+
 def get_invoke_separator(repo_root: Path) -> str:
     integration_json = repo_root / ".specify" / "integration.json"
     if not integration_json.is_file():
