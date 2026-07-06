@@ -2073,3 +2073,44 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert listing.exit_code == 0, listing.output
         assert "default" in listing.output
         assert "community" in listing.output
+
+
+def test_refresh_shared_templates_preserves_recovered_user_file(tmp_path):
+    """refresh_shared_templates must not overwrite a recovered (pre-existing
+    user) template without --force, matching install_shared_infra's gate (#2918).
+    """
+    from specify_cli.shared_infra import (
+        load_speckit_manifest,
+        refresh_shared_templates,
+    )
+
+    project = tmp_path / "proj"
+    templates_dir = project / ".specify" / "templates"
+    templates_dir.mkdir(parents=True)
+    user_file = templates_dir / "spec-template.md"
+    user_file.write_text("# USER CUSTOM CONTENT\n", encoding="utf-8")
+
+    # Record the pre-existing file as recovered (its hash was adopted, not written).
+    manifest = load_speckit_manifest(project, version="test", console=_NoopConsole())
+    rel = ".specify/templates/spec-template.md"
+    manifest.record_existing(rel, recovered=True)
+    manifest.save()
+
+    # Bundled source ships a different body for the same template.
+    core_pack = tmp_path / "core-pack"
+    src = core_pack / "templates"
+    src.mkdir(parents=True)
+    (src / "spec-template.md").write_text("# BUNDLED CONTENT v2\n", encoding="utf-8")
+
+    refresh_shared_templates(
+        project,
+        version="test",
+        core_pack=core_pack,
+        repo_root=tmp_path / "unused",
+        console=_NoopConsole(),
+        invoke_separator=".",
+        force=False,
+    )
+
+    # Recovered user content must survive (fail-before: replaced by bundled body).
+    assert user_file.read_text(encoding="utf-8") == "# USER CUSTOM CONTENT\n"
