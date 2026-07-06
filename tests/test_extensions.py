@@ -1146,10 +1146,12 @@ class TestExtensionManager:
             context_note=None,
             link_outputs=False,
             create_missing_active_skills_dir=False,
+            extension_id=None,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
             )
+            captured["extension_id"] = extension_id
             return {}
 
         monkeypatch.setattr(
@@ -1163,6 +1165,7 @@ class TestExtensionManager:
         registrar.register_commands_for_all_agents(manifest, extension_dir, project_dir)
 
         assert captured["create_missing_active_skills_dir"] is False
+        assert captured["extension_id"] == manifest.id
 
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
@@ -1694,6 +1697,29 @@ $ARGUMENTS
         assert adjusted["scripts"]["sh"] == ".specify/extensions/test-ext/scripts/setup.sh {ARGS}"
         assert adjusted["scripts"]["ps"] == ".specify/scripts/powershell/setup-plan.ps1 {ARGS}"
 
+    def test_adjust_script_paths_rewrites_extension_top_level_scripts(self):
+        """Extension command-local scripts should resolve under the installed extension."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        original = {
+            "scripts": {
+                "sh": "scripts/bash/resolve-skill.sh {ARGS}",
+                "ps": "../../scripts/powershell/setup-plan.ps1 -Json",
+            }
+        }
+
+        adjusted = registrar._adjust_script_paths(original, extension_id="test-ext")
+
+        assert (
+            adjusted["scripts"]["sh"]
+            == ".specify/extensions/test-ext/scripts/bash/resolve-skill.sh {ARGS}"
+        )
+        assert (
+            adjusted["scripts"]["ps"]
+            == ".specify/scripts/powershell/setup-plan.ps1 -Json"
+        )
+
     def test_rewrite_project_relative_paths_preserves_extension_local_body_paths(self):
         """Body rewrites should preserve extension-local assets while fixing top-level refs."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
@@ -1707,6 +1733,24 @@ $ARGUMENTS
 
         assert ".specify/extensions/test-ext/templates/spec.md" in rewritten
         assert ".specify/scripts/bash/setup-plan.sh" in rewritten
+
+    def test_rewrite_project_relative_paths_uses_extension_context_for_scripts(self):
+        """Extension source bodies treat top-level scripts/ as extension-local."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        body = (
+            "Run scripts/bash/ensure-skills.sh\n"
+            "Fallback ../../scripts/bash/setup-plan.sh\n"
+            "Read templates/checklist.md\n"
+        )
+
+        rewritten = AgentCommandRegistrar.rewrite_project_relative_paths(
+            body, extension_id="test-ext"
+        )
+
+        assert ".specify/extensions/test-ext/scripts/bash/ensure-skills.sh" in rewritten
+        assert ".specify/scripts/bash/setup-plan.sh" in rewritten
+        assert ".specify/templates/checklist.md" in rewritten
 
     def test_render_toml_command_handles_embedded_triple_double_quotes(self):
         """TOML renderer should stay valid when body includes triple double-quotes."""
