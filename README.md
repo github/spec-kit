@@ -17,6 +17,17 @@
 
 ---
 
+## AI Team Independent Distribution
+
+This repository is maintained as an independent AI Team SDD distribution based
+on Spec Kit. AI Team changes are developed and reviewed in
+`EuphoriaYan/spec-kit`; do not open upstream pull requests to `github/spec-kit`
+for this work.
+
+Upstream Spec Kit documentation remains as reference until a local AI Team page
+replaces it. When commands or links disagree, prefer this repository's AI Team
+extension docs under [`extensions/ai-team/`](extensions/ai-team/).
+
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
@@ -45,10 +56,10 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify CLI
 
-Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the tag or branch used by this independent distribution:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
 ```
 
 See the [Installation Guide](./docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.

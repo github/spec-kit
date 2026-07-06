@@ -39,9 +39,9 @@ specify extension search  # Now uses your organization's catalog instead of the 
 
 You control which extensions your team can discover and install:
 
-### Bundled Extensions In This Fork
+### Bundled Extensions In This Distribution
 
-This fork includes an enterprise AI Team extension:
+This independent distribution includes an enterprise AI Team extension:
 
 | Extension | Purpose |
 |---|---|
