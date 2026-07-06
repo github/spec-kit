@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.5] - 2026-07-06
+
+### Changed
+
+- fix(workflows): match gate reject option case-insensitively (#3335)
+- fix(bundler): reject host-less catalog URLs in adapters (use hostname, not netloc) (#3333)
+- fix(bundler): resolve catalog search at highest-precedence source before filtering (#3331)
+- fix(workflows): compare non-numeric strings lexicographically instead of returning False (#3323)
+- fix(workflows): quote-aware interpolation so a literal }} in a filter arg doesn't break multi-expression templates (#3307)
+- Support namespaced git feature branch templates (#3293)
+- chore(deps): bump actions/setup-dotnet from 5.3.0 to 5.4.0 (#3315)
+- fix(integrations): cursor-agent honors executable/extra-args env overrides (#3265)
+- docs: drop stale kimi KIMI.md->AGENTS.md migration note (#3291)
+- chore: release 0.12.4, begin 0.12.5.dev0 development (#3305)
+
 ## [0.12.4] - 2026-07-02
 
 ### Changed
