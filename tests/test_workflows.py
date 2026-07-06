@@ -4746,11 +4746,55 @@ class TestWorkflowRegistry:
         registry2 = WorkflowRegistry(project_dir)
         assert registry2.is_installed("test-wf")
 
+    @pytest.mark.parametrize("bad_content", ["[]", '{"schema_version": "1.0"}'])
+    def test_load_tolerates_misshaped_registry(self, project_dir, bad_content):
+        """A JSON-valid but mis-shaped registry file must not crash every method.
+
+        A list root, or a dict lacking a 'workflows' mapping, previously made
+        is_installed/get/list/remove/add raise TypeError/KeyError. Mirrors the
+        shape guard StepRegistry._load already has.
+        """
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        reg_path = project_dir / ".specify" / "workflows" / "workflow-registry.json"
+        reg_path.parent.mkdir(parents=True, exist_ok=True)
+        reg_path.write_text(bad_content, encoding="utf-8")
+
+        registry = WorkflowRegistry(project_dir)
+        assert registry.data == {"schema_version": "1.0", "workflows": {}}
+        # None of these should raise on the recovered-default shape.
+        assert registry.is_installed("x") is False
+        assert registry.get("x") is None
+        assert registry.list() == {} or registry.list() == []
+        registry.remove("x")
+        registry.add("x", {"name": "X"})
+        assert registry.is_installed("x")
+
 
 # ===== Workflow Catalog Tests =====
 
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
+
+    def test_search_with_non_string_fields(self, project_dir, monkeypatch):
+        """Non-string workflow fields (null/int name/description) must not
+        raise TypeError in search — StepCatalog.search already coerces these."""
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        catalog = WorkflowCatalog(project_dir)
+        monkeypatch.setattr(catalog, "_get_merged_workflows", lambda **kw: {
+            "42": {
+                "id": 42,
+                "name": None,
+                "description": 99,
+                "_catalog_name": "test",
+                "_install_allowed": True,
+            },
+        })
+
+        assert len(catalog.search()) == 1
+        assert len(catalog.search(query="42")) == 1
+        assert len(catalog.search(query="missing")) == 0
 
     def test_default_catalogs(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import WorkflowCatalog
