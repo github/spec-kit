@@ -593,12 +593,19 @@ class IntegrationBase(ABC):
 
     @staticmethod
     def _interpreter_runs(path: str) -> bool:
-        """Return True when *path* executes as a Python interpreter."""
+        """Return True when *path* executes as a Python interpreter.
+
+        Runs isolated (``-I``) without ``site`` (``-S``) and discards
+        I/O so the probe is a fast liveness check that cannot trigger
+        ``sitecustomize``/user startup hooks.
+        """
         try:
             return (
                 subprocess.run(
-                    [path, "-c", ""],
-                    capture_output=True,
+                    [path, "-I", "-S", "-c", ""],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                     timeout=15,
                 ).returncode
                 == 0
