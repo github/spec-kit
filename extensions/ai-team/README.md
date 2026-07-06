@@ -18,6 +18,7 @@ and adds enterprise collaboration constraints:
 - strict build planning for new projects;
 - self-test and Evidence Board output;
 - failure evolution after review, test, incident, or repeated AI mistakes.
+- external Skill, Knowledge, and Memory support layers around the project.
 
 ## Role Model
 
@@ -72,6 +73,24 @@ New project work needs a stricter build-from-zero plan:
 | `speckit.ai-team.plan-gate` | review architecture plan readiness before tasks |
 | `speckit.ai-team.task-gate` | review task readiness before implementation |
 | `speckit.ai-team.evidence` | produce Evidence Board after implementation |
+| `speckit.ai-team.support` | audit Skill, Knowledge, and Memory support layers |
+
+## Skill, Knowledge, Memory Support
+
+AI Team work is supported by three external layers:
+
+| Layer | Purpose | Default artifact |
+|---|---|---|
+| Skill | reusable procedures and tool recipes | skill inventory and reuse review |
+| Knowledge | project facts, terminology, boundaries, code graph, impact model | knowledge map |
+| Memory | approved historical decisions and curated attempt lessons | memory index |
+
+These layers are external supports, not a single giant prompt. Skills are
+loaded when needed, knowledge is sliced by task, and memory is lower precedence
+than current source, spec, plan, issue, and owner decisions.
+
+Use [docs/skill-knowledge-memory.md](docs/skill-knowledge-memory.md) for the
+full model and `speckit.ai-team.support` to audit a project.
 
 ## Installation
 

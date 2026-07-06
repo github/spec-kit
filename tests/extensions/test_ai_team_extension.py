@@ -28,6 +28,7 @@ def test_ai_team_extension_command_files_exist():
         "speckit.ai-team.plan-gate",
         "speckit.ai-team.task-gate",
         "speckit.ai-team.evidence",
+        "speckit.ai-team.support",
     }
 
     for command in manifest["provides"]["commands"]:
@@ -44,3 +45,17 @@ def test_ai_team_config_template_defines_repository_and_role_contracts():
     assert config["privacy"]["raw_customer_demand_public"] is False
     assert set(config["roles"]) == {"specify", "plan", "tasks_and_implement"}
     assert all(role["context_isolation"] is True for role in config["roles"].values())
+
+
+def test_ai_team_support_model_document_exists():
+    support_doc = EXTENSION_ROOT / "docs" / "skill-knowledge-memory.md"
+
+    assert support_doc.exists()
+    text = support_doc.read_text(encoding="utf-8")
+    assert "Skill Layer" in text
+    assert "Knowledge Layer" in text
+    assert "Memory Layer" in text
+    assert "Decision Memory" in text
+    assert "Attempt Memory" in text
+    assert "Third-party sources to review" in text
+    assert "Precedence" in text

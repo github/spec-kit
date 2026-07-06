@@ -34,6 +34,9 @@ provides:
     - name: speckit.ai-team.evidence
       file: commands/speckit.ai-team.evidence.md
       description: "Produce an Evidence Board after implementation and record self-test, scope, and failure-evolution follow-ups."
+    - name: speckit.ai-team.support
+      file: commands/speckit.ai-team.support.md
+      description: "Audit and maintain the external Skill, Knowledge, and Memory support layers for AI Team SDD work."
 
   config:
     - name: ai-team-config.yml
@@ -69,3 +72,5 @@ tags:
   - sdd
   - governance
   - collaboration
+  - memory
+  - knowledge
