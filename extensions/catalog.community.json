@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-01T00:00:00Z",
+  "updated_at": "2026-07-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2361,6 +2361,39 @@
       "stars": 0,
       "created_at": "2026-04-03T00:00:00Z",
       "updated_at": "2026-04-03T00:00:00Z"
+    },
+    "orchestration-task-context-management": {
+      "name": "Orchestration Task Context Management",
+      "id": "orchestration-task-context-management",
+      "description": "Adds subagent work-unit orchestration to generated Spec Kit task files",
+      "author": "Igor Benicio de Mesquita",
+      "version": "0.0.0",
+      "download_url": "https://github.com/benizzio/spec-kit-orchestration-task-context-management/archive/refs/tags/v0.0.0.zip",
+      "repository": "https://github.com/benizzio/spec-kit-orchestration-task-context-management",
+      "homepage": "https://github.com/benizzio/spec-kit-orchestration-task-context-management",
+      "documentation": "https://github.com/benizzio/spec-kit-orchestration-task-context-management/blob/main/README.md",
+      "changelog": "https://github.com/benizzio/spec-kit-orchestration-task-context-management/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.7.2"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "agent",
+        "orchestration",
+        "tasks",
+        "context"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-06T00:00:00Z",
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "orchestrator": {
       "name": "Spec Orchestrator",
