@@ -213,6 +213,12 @@ def test_python_unknown_option_matches_bash_error_shape(prereq_repo: Path) -> No
         ),
         (("--json", "--paths-only"), ("-Json", "-PathsOnly")),
     ],
+    ids=[
+        "json",
+        "json_include_tasks",
+        "json_require_tasks_include_tasks",
+        "json_paths_only",
+    ],
 )
 def test_python_json_output_matches_powershell(
     prereq_repo: Path, py_args: tuple[str, ...], ps_args: tuple[str, ...]
