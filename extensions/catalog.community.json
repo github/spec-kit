@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-01T00:00:00Z",
+  "updated_at": "2026-07-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -3047,10 +3047,10 @@
     "ripple": {
       "name": "Ripple",
       "id": "ripple",
-      "description": "Detect side effects that tests can't catch after implementation — delta-anchored analysis across 9 domain-agnostic categories with fix-induced side effect detection",
+      "description": "Detect side effects that tests can't catch after implementation — surface hidden ripple effects across 9 analysis categories",
       "author": "chordpli",
-      "version": "1.0.0",
-      "download_url": "https://github.com/chordpli/spec-kit-ripple/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/chordpli/spec-kit-ripple/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/chordpli/spec-kit-ripple",
       "homepage": "https://github.com/chordpli/spec-kit-ripple",
       "documentation": "https://github.com/chordpli/spec-kit-ripple/blob/main/README.md",
@@ -3059,7 +3059,13 @@
       "category": "code",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.2.0"
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 3,
@@ -3076,7 +3082,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
-      "updated_at": "2026-04-20T00:00:00Z"
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "roadmap": {
       "name": "Spec Roadmap",
