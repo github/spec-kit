@@ -156,11 +156,11 @@ def add_source(
             "Use http(s)://, file://, builtin://, or a local path."
         )
     if parsed.scheme.lower() in {"http", "https"}:
-        # Mirror specify_cli.catalogs / bundler adapters URL validation
-        # (#3209/#3210): HTTPS only (HTTP just for localhost), and check
-        # hostname, not netloc — netloc is truthy for host-less URLs like
-        # "https://:8080" or "https://user@". Validating here keeps junk out
-        # of catalogs.yaml instead of failing later at fetch time.
+        # Mirror specify_cli.catalogs._validate_catalog_url (#3209/#3210):
+        # HTTPS only (HTTP just for localhost), and check hostname, not
+        # netloc — netloc is truthy for host-less URLs like "https://:8080"
+        # or "https://user@". Validating here keeps junk out of
+        # bundle-catalogs.yml instead of failing later at fetch time.
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme.lower() != "https" and not is_localhost:
             raise BundlerError(
