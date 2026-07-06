@@ -680,6 +680,7 @@ class CommandRegistrar:
                 raise ValueError(f"Unsupported format: {agent_config['format']}")
 
             # -- Post-process for non-skills agents -----------------------
+            _integration = None
             if agent_config["extension"] != "/SKILL.md":
                 from specify_cli.integrations import (  # noqa: PLC0415
                     get_integration,
