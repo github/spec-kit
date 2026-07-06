@@ -59,6 +59,26 @@ def _assert_pinned_version(
         )
 
 
+def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
+    """Best-effort read of a bundled asset's declared version from its manifest.
+
+    Returns ``None`` when the manifest is missing/unreadable/invalid, which
+    ``_assert_pinned_version`` treats as "cannot enforce" (proceed) — matching
+    the catalog "advertises no version" escape hatch.
+    """
+    try:
+        import yaml
+
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            section = data.get(root_key)
+            if isinstance(section, dict):
+                return section.get("version")
+    except Exception:  # noqa: BLE001 - unreadable/invalid manifest: skip pin
+        return None
+    return None
+
+
 class _KindManager(Protocol):
     def is_installed(self, component: ComponentRef) -> bool: ...
 
@@ -134,6 +154,15 @@ class _PresetKindManager:
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None:
+            # Enforce the manifest pin against the bundled asset's own version,
+            # mirroring the catalog path below (the bundled path previously
+            # skipped the pin entirely).
+            _assert_pinned_version(
+                "Preset",
+                component.id,
+                component.version,
+                _bundled_manifest_version(bundled / "preset.yml", "preset"),
+            )
             self._manager.install_from_directory(bundled, speckit_version, priority)
             return
 
@@ -198,6 +227,15 @@ class _ExtensionKindManager:
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None:
+            # Enforce the manifest pin against the bundled asset's own version,
+            # mirroring the catalog path below (the bundled path previously
+            # skipped the pin entirely).
+            _assert_pinned_version(
+                "Extension",
+                component.id,
+                component.version,
+                _bundled_manifest_version(bundled / "extension.yml", "extension"),
+            )
             self._manager.install_from_directory(
                 bundled, speckit_version, priority=priority
             )
