@@ -18,7 +18,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Firebender](https://firebender.com/)                                                | `firebender`     | IDE-based agent for Android Studio / IntelliJ                                                                                             |
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
-| [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        | Installs `.agent.md` files by default. Pass `--integration-options "--skills"` to scaffold skills as `speckit-<name>/SKILL.md` under `.github/skills/` instead. The markdown default is deprecated and will be phased out in a future release. |
+| [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        | Defaults to legacy markdown mode: `.agent.md` command files plus companion `.prompt.md` files under `.github/prompts/`. Pass `--integration-options "--skills"` to scaffold skills as `speckit-<name>/SKILL.md` under `.github/skills/` instead. Legacy markdown mode is deprecated and will stop being the default in a future release. |
 | [Goose](https://goose-docs.ai/)                                                      | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
 | [Hermes](https://github.com/NousResearch/hermes-agent)                               | `hermes`         | Skills-based integration; installs skills globally into `~/.hermes/skills/`                                                                |
 | [IBM Bob](https://www.ibm.com/products/bob)                                          | `bob`            | IDE-based agent                                                                                                                           |
@@ -219,7 +219,7 @@ Some integrations accept additional options via `--integration-options`:
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
-| `copilot`   | `--skills`          | Scaffold commands as agent skills (`speckit-<name>/SKILL.md` under `.github/skills/`, invoked as `/speckit-<name>`) instead of the default `.agent.md` files. Without this flag, install warns that the markdown default is deprecated. |
+| `copilot`   | `--skills`          | Scaffold commands as agent skills (`speckit-<name>/SKILL.md` under `.github/skills/`, invoked as `/speckit-<name>`) instead of the default legacy markdown mode (`.agent.md` + `.prompt.md`). Without this flag, install warns that legacy markdown mode is deprecated. |
 
 Example:
 
