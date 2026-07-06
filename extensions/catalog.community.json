@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-01T00:00:00Z",
+  "updated_at": "2026-07-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1072,10 +1072,10 @@
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
-      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise.",
+      "description": "The only doc-integrity engine with an MCP server, SARIF output, and a deterministic zero-LLM core. Validates, scores, and traces documentation against code — 24 validators, stable finding codes, GitHub Action with PR annotations, spec-kit hooks. Pure Node.js, one pinned dep.",
       "author": "raccioly",
-      "version": "0.28.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.28.0/spec-kit-docguard-v0.28.0.zip",
+      "version": "0.30.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.30.0/spec-kit-docguard-v0.30.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1111,7 +1111,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-06-23T00:00:00Z"
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
