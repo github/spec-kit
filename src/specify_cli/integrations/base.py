@@ -1122,6 +1122,11 @@ class TomlIntegration(IntegrationBase):
 # YamlIntegration — YAML-format agents (Goose)
 # ---------------------------------------------------------------------------
 
+# Characters a YAML literal block scalar cannot carry: C0 controls other
+# than tab/LF (a bare CR acts as a line break inside the scalar), and DEL.
+_YAML_BLOCK_SCALAR_UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
 class YamlIntegration(IntegrationBase):
     """Concrete base for integrations that use YAML recipe format.
 
@@ -1239,6 +1244,23 @@ class YamlIntegration(IntegrationBase):
             allow_unicode=True,
             default_flow_style=False,
         ).strip()
+
+        # YAML forbids C0 control characters (except tab and newline) and
+        # DEL in every scalar form, and a bare CR acts as a line break
+        # inside a block scalar. A literal block scalar emits such bytes
+        # verbatim, producing a recipe the YAML parser rejects, so fall
+        # back to an escaped double-quoted scalar for those bodies.
+        if _YAML_BLOCK_SCALAR_UNSAFE.search(body):
+            prompt_yaml = yaml.safe_dump(
+                {"prompt": body}, allow_unicode=True, default_style='"', width=float("inf")
+            ).strip()
+            lines = [
+                header_yaml,
+                prompt_yaml,
+                "",
+                f"# Source: {source_id}",
+            ]
+            return "\n".join(lines) + "\n"
 
         # Indent the body for YAML block scalar. Use an explicit indentation
         # indicator ("|2") rather than a bare "|": YAML infers a plain block

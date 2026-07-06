@@ -201,6 +201,29 @@ class YamlIntegrationTests:
         parsed = yaml.safe_load("\n".join(yaml_lines))
         assert parsed["prompt"].rstrip("\n") == body
 
+    def test_yaml_prompt_with_control_characters_stays_valid(self):
+        """A body containing control characters must still produce parseable YAML.
+
+        YAML forbids C0 control characters (except tab and newline) and DEL
+        in every scalar form; a literal block scalar emits them verbatim,
+        so the generated recipe failed to load. The renderer falls back to
+        an escaped double-quoted scalar for such bodies."""
+        for ch in ("\x08", "\x0c", "\x1b", "\x7f"):
+            body = f"before{ch}after\nsecond line"
+            rendered = YamlIntegration._render_yaml("Title", "Desc", body, "src")
+            parsed = yaml.safe_load(rendered)
+            assert parsed["prompt"].rstrip("\n") == body, f"char {ch!r} round-trip"
+
+    def test_yaml_prompt_with_bare_carriage_return_stays_valid(self):
+        """A bare CR (not part of CRLF) must not break the generated YAML.
+
+        Inside a block scalar a lone \r acts as a line break, corrupting
+        the document structure."""
+        body = "line1\rstill line1\nline2"
+        rendered = YamlIntegration._render_yaml("Title", "Desc", body, "src")
+        parsed = yaml.safe_load(rendered)
+        assert parsed["prompt"].rstrip("\n") == body
+
     def test_plan_command_has_no_context_placeholder(self, tmp_path):
         """The generated plan command must not carry a context-file placeholder.
 
