@@ -309,7 +309,14 @@ class IntegrationManifest:
             if abs_path.is_symlink() or not abs_path.is_file():
                 modified.append(rel)
                 continue
-            if _sha256(abs_path) != expected_hash:
+            try:
+                changed = _sha256(abs_path) != expected_hash
+            except OSError:
+                # Unreadable regular file (e.g. permission denied): treat as
+                # modified, consistent with the symlink / non-regular-file
+                # handling above, rather than letting the OSError escape.
+                changed = True
+            if changed:
                 modified.append(rel)
         return modified
 
@@ -358,9 +365,17 @@ class IntegrationManifest:
                     skipped.append(path)
                     continue
             else:
-                if not force and _sha256(path) != expected_hash:
-                    skipped.append(path)
-                    continue
+                if not force:
+                    try:
+                        matches = _sha256(path) == expected_hash
+                    except OSError:
+                        # Unreadable: can't verify it's ours, so preserve it
+                        # (mirrors the path.unlink() OSError guard below).
+                        skipped.append(path)
+                        continue
+                    if not matches:
+                        skipped.append(path)
+                        continue
             try:
                 path.unlink()
             except OSError:

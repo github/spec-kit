@@ -481,3 +481,40 @@ class TestRecordExistingNewGuards:
         m = IntegrationManifest("test", tmp_path)
         with pytest.raises(ValueError, match=r"canonical|'\.\.' segments"):
             m.record_existing("dir/../file.txt")
+
+
+class TestManifestUnreadableFile:
+    """A managed file that is unreadable (e.g. PermissionError) must not crash
+    check_modified()/uninstall() — the CLI handlers surfaced a raw traceback."""
+
+    def _mk(self, tmp_path):
+        m = IntegrationManifest("test", tmp_path)
+        m.record_file("sub/f.md", "content")
+        return m
+
+    def test_check_modified_treats_unreadable_as_modified(self, tmp_path, monkeypatch):
+        m = self._mk(tmp_path)
+
+        def raise_perm(_path):
+            raise PermissionError("unreadable")
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.manifest._sha256", raise_perm
+        )
+        # Before the fix this raised PermissionError.
+        assert m.check_modified() == ["sub/f.md"]
+
+    def test_uninstall_preserves_unreadable_file(self, tmp_path, monkeypatch):
+        m = self._mk(tmp_path)
+
+        def raise_perm(_path):
+            raise PermissionError("unreadable")
+
+        monkeypatch.setattr(
+            "specify_cli.integrations.manifest._sha256", raise_perm
+        )
+        removed, skipped = m.uninstall(force=False)
+        # Can't verify ownership => preserve, don't crash and don't delete.
+        assert removed == []
+        assert (tmp_path / "sub" / "f.md") in skipped
+        assert (tmp_path / "sub" / "f.md").exists()
