@@ -103,11 +103,14 @@ class ShellStep(StepBase):
             )
         if "timeout" in config:
             timeout = config["timeout"]
+            import math
+
             # bool is a subclass of int, but ``timeout: true`` is a config
             # error rather than a duration — reject it explicitly.
             if (
                 isinstance(timeout, bool)
                 or not isinstance(timeout, (int, float))
+                or not math.isfinite(timeout)
                 or timeout <= 0
             ):
                 errors.append(
