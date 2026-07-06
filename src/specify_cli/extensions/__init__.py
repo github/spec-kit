@@ -1428,12 +1428,38 @@ class ExtensionManager:
                 backup_config_dir.unlink()
             did_remove = self.remove(manifest.id)
 
+        # A prior `remove(keep_config=True)` leaves the top-level
+        # *-config.yml / *-config.local.yml in place while dropping the
+        # registry entry. A later reinstall is not a --force removal
+        # (did_remove is False), so the rmtree below would wipe those
+        # preserved configs and the backup-restore path never runs. Capture
+        # them here and write them back after the fresh copytree, mirroring
+        # the *-config filter the --force restore path uses.
+        preserved_configs: dict[str, bytes] = {}
+        if dest_dir.exists():
+            for cfg_file in dest_dir.iterdir():
+                if (
+                    cfg_file.is_file()
+                    and not cfg_file.is_symlink()
+                    and (
+                        cfg_file.name.endswith("-config.yml")
+                        or cfg_file.name.endswith("-config.local.yml")
+                    )
+                ):
+                    preserved_configs[cfg_file.name] = cfg_file.read_bytes()
+
         # Install extension (dest_dir computed above during self-install guard)
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+
+        # Restore configs preserved from a keep-config leftover (see above).
+        # The --force backup-restore below (did_remove) still takes precedence
+        # for that path, which uses .backup/ rather than an in-place leftover.
+        for name, data in preserved_configs.items():
+            (dest_dir / name).write_bytes(data)
 
         # Register commands with AI agents
         registered_commands = {}

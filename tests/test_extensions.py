@@ -1557,6 +1557,29 @@ class TestExtensionManager:
         assert backup_file.exists()
         assert backup_file.read_text() == "test: config"
 
+    def test_reinstall_preserves_keep_config_leftover(self, extension_dir, project_dir):
+        """A reinstall after `remove(keep_config=True)` must not wipe the
+        preserved config. remove(keep_config=True) leaves the *-config.yml in
+        place and drops the registry entry; the subsequent reinstall is not a
+        --force removal, so the unconditional rmtree used to destroy it."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("api_key: MY-CUSTOMIZED-VALUE")
+
+        # keep-config removal: registry entry dropped, config left in place.
+        assert manager.remove("test-ext", keep_config=True) is True
+        assert config_file.exists()
+
+        # Reinstall (no --force; registry now reports not-installed).
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # The user's config must survive the reinstall (was silently wiped).
+        assert config_file.exists()
+        assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
+
 
 # ===== CommandRegistrar Tests =====
 
