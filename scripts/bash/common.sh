@@ -303,15 +303,28 @@ PY
                 END {
                     key=keyval(doc,"default_integration"); if (key=="") key=keyval(doc,"integration")
                     sep="."
-                    if (key!="" && match(doc, "\"" key "\"[ \t\r\n]*:[ \t\r\n]*[{]")) {
-                        rest=substr(doc, RSTART+RLENGTH-1)
-                        if (match(rest, /"invoke_separator"[ \t\r\n]*:[ \t\r\n]*"[.-]"/)) {
-                            tok=substr(rest,RSTART,RLENGTH); s=substr(tok,length(tok)-1,1)
-                            if (s=="." || s=="-") sep=s
+                    if (key!="") {
+                        settings=doc
+                        if (match(doc, /"integration_settings"[ \t\r\n]*:[ \t\r\n]*[{]/)) {
+                            settings=substr(doc, RSTART+RLENGTH-1)
+                        }
+                        if (match(settings, "\"" key "\"[ \t\r\n]*:[ \t\r\n]*[{]")) {
+                            start=RSTART+RLENGTH-1
+                            depth=0
+                            obj=""
+                            for (i=start; i<=length(settings); i++) {
+                                c=substr(settings,i,1)
+                                obj=obj c
+                                if (c=="{") depth++
+                                else if (c=="}") { depth--; if (depth==0) break }
+                            }
+                            if (match(obj, /"invoke_separator"[ \t\r\n]*:[ \t\r\n]*"[.-]"/)) {
+                                tok=substr(obj,RSTART,RLENGTH); s=substr(tok,length(tok)-1,1)
+                                if (s=="." || s=="-") sep=s
+                            }
                         }
                     }
                     print sep
-                }
             ' "$integration_json" 2>/dev/null)
             case "$awk_separator" in
                 "."|"-") separator="$awk_separator" ;;
