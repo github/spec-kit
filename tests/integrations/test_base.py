@@ -375,6 +375,72 @@ class TestResolvePythonInterpreter:
         )
         assert IntegrationBase.resolve_python_interpreter(tmp_path) == "python3"
 
+    def test_windows_skips_store_alias_stub(self, monkeypatch):
+        # On Windows, python3 on PATH may be the Microsoft Store App
+        # Execution Alias stub: it exists but only prints an installer
+        # hint and exits non-zero. Existence is not enough; the
+        # interpreter must actually run (mirrors #3304 for the CLI).
+        monkeypatch.setattr("specify_cli.integrations.base.sys.platform", "win32")
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: f"C:\\WindowsApps\\{name}.exe"
+            if name in ("python3", "python")
+            else None,
+        )
+        monkeypatch.setattr(
+            IntegrationBase, "_interpreter_runs", staticmethod(lambda path: False)
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.sys.executable", "C:\\Python\\python.exe"
+        )
+        result = IntegrationBase.resolve_python_interpreter()
+        assert result == "C:\\Python\\python.exe"
+
+    def test_windows_keeps_working_interpreter(self, monkeypatch):
+        # Positive: a real python3 on Windows PATH passes the run check.
+        monkeypatch.setattr("specify_cli.integrations.base.sys.platform", "win32")
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: f"C:\\Python\\{name}.exe" if name == "python3" else None,
+        )
+        monkeypatch.setattr(
+            IntegrationBase, "_interpreter_runs", staticmethod(lambda path: True)
+        )
+        assert IntegrationBase.resolve_python_interpreter() == "python3"
+
+    def test_windows_stub_python3_falls_through_to_working_python(self, monkeypatch):
+        # python3 is the stub but python is a real install: pick python.
+        monkeypatch.setattr("specify_cli.integrations.base.sys.platform", "win32")
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: f"C:\\somewhere\\{name}.exe"
+            if name in ("python3", "python")
+            else None,
+        )
+        monkeypatch.setattr(
+            IntegrationBase,
+            "_interpreter_runs",
+            staticmethod(lambda path: path.endswith("python.exe")),
+        )
+        assert IntegrationBase.resolve_python_interpreter() == "python"
+
+    def test_posix_does_not_spawn_run_check(self, monkeypatch):
+        # Non-Windows platforms have no App Execution Alias; existence
+        # on PATH stays sufficient and no subprocess is spawned.
+        monkeypatch.setattr("specify_cli.integrations.base.sys.platform", "linux")
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.shutil.which",
+            lambda name: "/usr/bin/python3" if name == "python3" else None,
+        )
+
+        def boom(path):
+            raise AssertionError("run check must not execute on POSIX")
+
+        monkeypatch.setattr(
+            IntegrationBase, "_interpreter_runs", staticmethod(boom)
+        )
+        assert IntegrationBase.resolve_python_interpreter() == "python3"
+
 
 class TestProcessTemplatePyScriptType:
     CONTENT = (

@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 from abc import ABC
 from dataclasses import dataclass
@@ -576,9 +577,34 @@ class IntegrationBase(ABC):
                 if candidate.exists():
                     return relative
         for name in ("python3", "python"):
-            if shutil.which(name):
-                return name
+            found = shutil.which(name)
+            if not found:
+                continue
+            # On Windows, python3/python on PATH may be the Microsoft
+            # Store App Execution Alias stub: it exists but only prints
+            # an installer hint and exits non-zero, so existence is not
+            # enough (see #3304 for the same defect in the sh scripts).
+            if sys.platform == "win32" and not IntegrationBase._interpreter_runs(
+                found
+            ):
+                continue
+            return name
         return sys.executable or "python3"
+
+    @staticmethod
+    def _interpreter_runs(path: str) -> bool:
+        """Return True when *path* executes as a Python interpreter."""
+        try:
+            return (
+                subprocess.run(
+                    [path, "-c", ""],
+                    capture_output=True,
+                    timeout=15,
+                ).returncode
+                == 0
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
 
     @staticmethod
     def process_template(
@@ -1058,7 +1084,6 @@ class TomlIntegration(IntegrationBase):
 # ---------------------------------------------------------------------------
 # YamlIntegration — YAML-format agents (Goose)
 # ---------------------------------------------------------------------------
-
 
 class YamlIntegration(IntegrationBase):
     """Concrete base for integrations that use YAML recipe format.
