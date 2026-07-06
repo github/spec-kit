@@ -42,6 +42,7 @@ packages = ["src/specify_cli"]
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/git" = "specify_cli/core_pack/extensions/git"
 "extensions/agent-context" = "specify_cli/core_pack/extensions/agent-context"
+"extensions/ai-team" = "specify_cli/core_pack/extensions/ai-team"
 "extensions/bug" = "specify_cli/core_pack/extensions/bug"
 # Bundled workflows (auto-installed during `specify init`)
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
@@ -83,4 +84,3 @@ extend-select = [
     "S604",  # call-with-shell-equals-true
     "S605",  # start-process-with-a-shell
 ]
-

@@ -39,6 +39,20 @@ specify extension search  # Now uses your organization's catalog instead of the 
 
 You control which extensions your team can discover and install:
 
+### Bundled Extensions In This Fork
+
+This fork includes an enterprise AI Team extension:
+
+| Extension | Purpose |
+|---|---|
+| `ai-team` | Adds role-isolated SDD handoffs, coding/enhancement repository boundaries, plan/task gates, self-test evidence, and failure evolution for enterprise AI Team Coding. |
+
+Install it in a Spec Kit project with:
+
+```bash
+specify extension add ai-team
+```
+
 ### Option 1: Curated Catalog (Recommended for Organizations)
 
 Populate your `catalog.json` with approved extensions:

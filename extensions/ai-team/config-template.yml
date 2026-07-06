@@ -1,0 +1,76 @@
+# AI Team SDD Collaboration configuration.
+# Copy is installed to `.specify/extensions/ai-team/ai-team-config.yml`.
+
+repositories:
+  # Enhancement repository stores customer/private demand, feature issues,
+  # status labels, wave plans, and approval history. Enterprise teams often keep
+  # this private.
+  enhancement:
+    role: enhancement
+    remote: ""
+    visibility: private
+    stores:
+      - raw customer demand
+      - feature issues
+      - approval comments
+      - wave plan
+      - acceptance expectations
+
+  # Coding repository stores source code, public implementation plans, tasks,
+  # self-tests, evidence, and implementation PRs.
+  coding:
+    role: coding
+    remote: ""
+    visibility: project-controlled
+    stores:
+      - source code
+      - public plan
+      - tasks
+      - self-test evidence
+      - implementation PRs
+
+privacy:
+  raw_customer_demand_public: false
+  public_plan_allowed: true
+  public_artifacts:
+    - plan.md
+    - tasks.md
+    - quickstart.md
+    - Evidence Board
+  private_artifacts:
+    - raw customer request
+    - commercial context
+    - sensitive acceptance discussion
+
+roles:
+  specify:
+    name: product-manager-or-customer-manager
+    owns:
+      - problem
+      - user scenario
+      - acceptance intent
+    context_isolation: true
+  plan:
+    name: architect
+    owns:
+      - architecture plan
+      - public/private boundary
+      - code graph impact
+      - build-from-zero strategy
+    context_isolation: true
+  tasks_and_implement:
+    name: developer
+    owns:
+      - tasks
+      - implementation
+      - self-test evidence
+      - pull request
+    context_isolation: true
+
+gates:
+  require_role_handoff: true
+  require_code_graph_for_existing_project: true
+  require_strict_build_plan_for_new_project: true
+  require_selftest_mapping: true
+  require_evidence_board: true
+  require_failure_evolution_followup: true

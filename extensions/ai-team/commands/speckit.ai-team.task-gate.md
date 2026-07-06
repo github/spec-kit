@@ -1,0 +1,74 @@
+---
+description: "Review generated tasks for phase isolation, self-test mapping, existing-project impact, and new-project build-plan completeness."
+---
+
+# AI Team Task Gate
+
+Run this after `speckit.tasks` and before `speckit.implement`.
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+## Goal
+
+Confirm developer-owned tasks are ready for implementation without relying on
+hidden context from product or architecture roles.
+
+## Steps
+
+1. Locate the active feature directory from `.specify/feature.json`.
+2. Read:
+   - `spec.md`;
+   - `plan.md`;
+   - `tasks.md`;
+   - AI Team handoff and plan gate files when present.
+3. Verify tasks:
+   - each task has an ID, phase, file path, and dependency position;
+   - tasks are ordered by SDD phase and user story where applicable;
+   - no task requires hidden product or architect chat context;
+   - public interface changes have contract or compatibility tasks;
+   - self-test tasks exist for changed behavior;
+   - evidence tasks exist before PR submission.
+4. For new projects, ensure tasks create a runnable spine before breadth:
+   - repository skeleton;
+   - build command;
+   - minimal executable path;
+   - first self-test;
+   - docs for how to run.
+5. For existing projects, ensure tasks stay inside the plan gate's impact
+   radius unless an owner-approved expansion task is present.
+6. Write `.specify/ai-team/gates/<feature-slug>/task-gate.md`.
+
+## Output Shape
+
+```markdown
+# AI Team Task Gate
+
+- **Feature**:
+- **Task status**: pass / revise / blocked
+- **Context isolation**: pass / fail
+- **New-project strict build plan**: pass / not applicable / fail
+- **Existing-project impact radius**: local / module / cross-module / architecture / not applicable
+
+## Missing Tasks
+
+## Self-Test Mapping
+
+## Evidence Tasks
+
+## Scope Risks
+
+## Implementation Entry Conditions
+```
+
+## Stop Conditions
+
+Stop before implementation when:
+
+- tasks depend on hidden chat context;
+- self-test or evidence tasks are missing for behavior changes;
+- new-project tasks do not produce a runnable thin slice early;
+- existing-project tasks exceed the approved impact radius.
