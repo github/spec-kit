@@ -5396,6 +5396,29 @@ class TestExtensionAddCLI:
                 f"confirm must precede spinner, got: {call_order}"
         assert result.exit_code == 0  # user declined → clean exit
 
+    def test_add_from_malformed_ipv6_url_exits_cleanly(self, tmp_path):
+        """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://[::1/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        plain = strip_ansi(result.output)
+        assert "Invalid URL" in plain
+
     def test_add_status_escapes_extension_markup(self, tmp_path):
         """User-controlled extension names must not be parsed as Rich markup."""
         from rich.markup import escape as escape_markup

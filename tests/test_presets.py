@@ -4538,6 +4538,27 @@ class TestBundledPresetLocator:
         assert "got https://" not in output
         open_url.assert_not_called()
 
+    def test_preset_add_from_malformed_ipv6_url_exits_cleanly(self, project_dir):
+        """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(
+                app,
+                ["preset", "add", "--from", "https://[::1/preset.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        output = strip_ansi(result.output)
+        assert "Invalid URL" in output
+        open_url.assert_not_called()
+
     def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
         """Redirect rejection message covers hostless HTTPS, not only non-HTTPS URLs."""
         import typer

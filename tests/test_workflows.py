@@ -5427,6 +5427,23 @@ class TestWorkflowRemoveGuard:
 
 
 class TestWorkflowAddSymlinkGuard:
+    def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
+        """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify").mkdir(exist_ok=True)
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(
+            app,
+            ["workflow", "add", "https://[::1/wf.yaml"],
+            catch_exceptions=True,
+        )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Invalid URL" in result.output
+
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_refuses_symlinked_specify(self, temp_dir, monkeypatch):
         """workflow add must refuse a symlinked .specify (writes could escape root)."""

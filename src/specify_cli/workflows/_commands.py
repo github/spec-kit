@@ -617,7 +617,11 @@ def workflow_add(
         from urllib.parse import urlparse
         from specify_cli.authentication.http import open_url as _open_url
 
-        parsed_src = urlparse(source)
+        try:
+            parsed_src = urlparse(source)
+        except ValueError:
+            console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(source)}")
+            raise typer.Exit(1)
         src_host = parsed_src.hostname or ""
         src_loopback = src_host == "localhost"
         if not src_loopback:
