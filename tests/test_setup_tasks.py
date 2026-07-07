@@ -469,11 +469,11 @@ def test_bash_command_hint_preserves_hyphens_inside_segments(tasks_repo: Path) -
 def _install_broken_json_tool_stubs(repo: Path) -> Path:
     """Create a bin dir with `jq` and `python3` stubs that exist but fail.
 
-    Mimics stock Windows + Git Bash, where `jq` is absent and `python3`
-    resolves to the Microsoft Store App Execution Alias stub: both satisfy
-    `command -v` yet fail at runtime (the alias exits 49). Prepending this to
-    PATH forces the invoke-separator parser past jq and python3 to its awk
-    text fallback (#3304).
+    Mimics stock Windows + Git Bash, where a JSON tool may be missing or broken
+    and `python3` resolves to the Microsoft Store App Execution Alias stub: both
+    satisfy `command -v` yet fail at runtime (the alias exits 49). Prepending
+    this to PATH forces the invoke-separator parser past jq and python3 to its
+    awk text fallback (#3304).
     """
     stub_dir = repo / "_broken_bin"
     stub_dir.mkdir(exist_ok=True)
