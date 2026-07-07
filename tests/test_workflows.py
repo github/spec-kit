@@ -4513,6 +4513,60 @@ class TestWorkflowCatalog:
         data = yaml.safe_load(config_path.read_text())
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-catalog.json"
+        assert data["catalogs"][0]["priority"] == 1
+        assert data["catalogs"][0]["install_allowed"] is True
+        assert data["catalogs"][0]["description"] == ""
+
+    def test_add_catalog_accepts_metadata_overrides(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog(
+            "https://example.com/new-catalog.json",
+            "my-catalog",
+            priority=7,
+            install_allowed=False,
+            description="Workflow source",
+        )
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text())
+        assert data["catalogs"][0] == {
+            "name": "my-catalog",
+            "url": "https://example.com/new-catalog.json",
+            "priority": 7,
+            "install_allowed": False,
+            "description": "Workflow source",
+        }
+
+    def test_catalog_add_cli_accepts_metadata_options(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow",
+                "catalog",
+                "add",
+                "https://example.com/new-catalog.json",
+                "--name",
+                "my-catalog",
+                "--priority",
+                "7",
+                "--no-install-allowed",
+                "--description",
+                "Workflow source",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text())
+        assert data["catalogs"][0]["priority"] == 7
+        assert data["catalogs"][0]["install_allowed"] is False
+        assert data["catalogs"][0]["description"] == "Workflow source"
 
     def test_add_catalog_duplicate_rejected(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
@@ -4959,6 +5013,61 @@ class TestStepCatalog:
         data = yaml.safe_load(config_path.read_text())
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
+        assert data["catalogs"][0]["priority"] == 1
+        assert data["catalogs"][0]["install_allowed"] is True
+        assert data["catalogs"][0]["description"] == ""
+
+    def test_add_catalog_accepts_metadata_overrides(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog(
+            "https://example.com/new-steps.json",
+            "my-steps",
+            priority=7,
+            install_allowed=False,
+            description="Step source",
+        )
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text())
+        assert data["catalogs"][0] == {
+            "name": "my-steps",
+            "url": "https://example.com/new-steps.json",
+            "priority": 7,
+            "install_allowed": False,
+            "description": "Step source",
+        }
+
+    def test_catalog_add_cli_accepts_metadata_options(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        result = CliRunner().invoke(
+            app,
+            [
+                "workflow",
+                "step",
+                "catalog",
+                "add",
+                "https://example.com/new-steps.json",
+                "--name",
+                "my-steps",
+                "--priority",
+                "7",
+                "--no-install-allowed",
+                "--description",
+                "Step source",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        data = yaml.safe_load(config_path.read_text())
+        assert data["catalogs"][0]["priority"] == 7
+        assert data["catalogs"][0]["install_allowed"] is False
+        assert data["catalogs"][0]["description"] == "Step source"
 
     def test_add_catalog_empty_yaml_file(self, project_dir):
         """An empty YAML config file should be treated as empty, not corrupted."""

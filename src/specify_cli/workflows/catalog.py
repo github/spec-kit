@@ -476,7 +476,14 @@ class WorkflowCatalog:
             for e in entries
         ]
 
-    def add_catalog(self, url: str, name: str | None = None) -> None:
+    def add_catalog(
+        self,
+        url: str,
+        name: str | None = None,
+        priority: int | None = None,
+        install_allowed: bool = True,
+        description: str = "",
+    ) -> None:
         """Add a catalog source to the project-level config."""
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / "workflow-catalogs.yml"
@@ -530,9 +537,9 @@ class WorkflowCatalog:
             {
                 "name": name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
-                "priority": max_priority + 1,
-                "install_allowed": True,
-                "description": "",
+                "priority": max_priority + 1 if priority is None else priority,
+                "install_allowed": install_allowed,
+                "description": description,
             }
         )
         data["catalogs"] = catalogs
@@ -1086,7 +1093,14 @@ class StepCatalog:
             for e in entries
         ]
 
-    def add_catalog(self, url: str, name: str | None = None) -> None:
+    def add_catalog(
+        self,
+        url: str,
+        name: str | None = None,
+        priority: int | None = None,
+        install_allowed: bool = True,
+        description: str = "",
+    ) -> None:
         """Add a catalog source to the project-level config."""
         self._validate_catalog_url(url)
         config_path = self.project_root / ".specify" / "step-catalogs.yml"
@@ -1136,9 +1150,9 @@ class StepCatalog:
             {
                 "name": name or f"catalog-{len(catalogs) + 1}",
                 "url": url,
-                "priority": max_priority + 1,
-                "install_allowed": True,
-                "description": "",
+                "priority": max_priority + 1 if priority is None else priority,
+                "install_allowed": install_allowed,
+                "description": description,
             }
         )
         data["catalogs"] = catalogs

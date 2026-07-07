@@ -1009,6 +1009,13 @@ def workflow_catalog_list():
 def workflow_catalog_add(
     url: str = typer.Argument(..., help="Catalog URL to add"),
     name: str | None = typer.Option(None, "--name", help="Catalog name"),
+    priority: int | None = typer.Option(None, "--priority", help="Priority (lower = higher priority)"),
+    install_allowed: bool = typer.Option(
+        True,
+        "--install-allowed/--no-install-allowed",
+        help="Allow workflows from this catalog to be installed",
+    ),
+    description: str = typer.Option("", "--description", help="Description of the catalog"),
 ):
     """Add a workflow catalog source."""
     from .catalog import WorkflowCatalog, WorkflowValidationError
@@ -1016,7 +1023,7 @@ def workflow_catalog_add(
     project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
     try:
-        catalog.add_catalog(url, name)
+        catalog.add_catalog(url, name, priority, install_allowed, description)
     except WorkflowValidationError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
@@ -1661,6 +1668,13 @@ def workflow_step_catalog_list():
 def workflow_step_catalog_add(
     url: str = typer.Argument(..., help="Catalog URL to add"),
     name: str | None = typer.Option(None, "--name", help="Catalog name"),
+    priority: int | None = typer.Option(None, "--priority", help="Priority (lower = higher priority)"),
+    install_allowed: bool = typer.Option(
+        True,
+        "--install-allowed/--no-install-allowed",
+        help="Allow steps from this catalog to be installed",
+    ),
+    description: str = typer.Option("", "--description", help="Description of the catalog"),
 ):
     """Add a step catalog source."""
     from .catalog import StepCatalog, StepValidationError
@@ -1669,7 +1683,7 @@ def workflow_step_catalog_add(
 
     catalog = StepCatalog(project_root)
     try:
-        catalog.add_catalog(url, name)
+        catalog.add_catalog(url, name, priority, install_allowed, description)
     except StepValidationError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
