@@ -51,6 +51,18 @@ _CORE_COMMAND_TEMPLATE_RANK = {
 }
 
 
+def yaml_quote(value: str) -> str:
+    """Emit *value* as a double-quoted YAML scalar on a single line.
+
+    A hand-rolled quote cannot carry raw newlines (YAML folds them to
+    spaces) or control characters (the reader rejects them), so let the
+    YAML emitter produce the escapes.
+    """
+    return yaml.safe_dump(
+        str(value), default_style='"', allow_unicode=True, width=sys.maxsize
+    ).strip()
+
+
 # ---------------------------------------------------------------------------
 # IntegrationOption
 # ---------------------------------------------------------------------------
@@ -1475,21 +1487,17 @@ class SkillsIntegration(IntegrationBase):
             if not description:
                 description = f"Spec Kit: {command_name} workflow"
 
-            # Build SKILL.md with manually formatted frontmatter to match
-            # the release packaging script output exactly (double-quoted
-            # values, no yaml.safe_dump quoting differences).
-            def _quote(v: str) -> str:
-                escaped = v.replace("\\", "\\\\").replace('"', '\\"')
-                return f'"{escaped}"'
-
+            # Build SKILL.md with manually formatted frontmatter (stable
+            # double-quoted values). yaml_quote escapes newlines and control
+            # characters that a plain quoted f-string cannot carry.
             skill_content = (
                 f"---\n"
-                f"name: {_quote(skill_name)}\n"
-                f"description: {_quote(description)}\n"
-                f"compatibility: {_quote('Requires spec-kit project structure with .specify/ directory')}\n"
+                f"name: {yaml_quote(skill_name)}\n"
+                f"description: {yaml_quote(description)}\n"
+                f"compatibility: {yaml_quote('Requires spec-kit project structure with .specify/ directory')}\n"
                 f"metadata:\n"
-                f"  author: {_quote('github-spec-kit')}\n"
-                f"  source: {_quote('templates/commands/' + src_file.name)}\n"
+                f"  author: {yaml_quote('github-spec-kit')}\n"
+                f"  source: {yaml_quote('templates/commands/' + src_file.name)}\n"
                 f"---\n"
                 f"{processed_body}"
             )
