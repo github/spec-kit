@@ -39,6 +39,75 @@ published requirements, durable Task Context Packages for resume, replaceable
 code graph adapters for impact analysis, and portable evidence gates for
 enterprise teams.
 
+### AI Team Working Model
+
+This distribution is designed for teams using Codex, Claude Code, Cursor Agent,
+or Trae to collaborate on enterprise software. It keeps the Spec Kit SDD phases
+but adds team controls around them:
+
+```text
+intake -> task context -> requirement or bug work item -> code graph impact
+-> specify -> plan -> tasks -> implement -> checks/evidence -> PR/review
+```
+
+The exact path depends on the user journey:
+
+| Journey | When to use | Required anchor |
+|---|---|---|
+| existing project bug fix | current behavior is broken, flaky, regressed, or throws errors | coding issue URL or bug slug |
+| existing project new feature | adding public behavior to an existing repository | published requirement URL |
+| new project from zero | creating a new repository, service, product, or application | published project charter or requirement URL |
+| resume from middle | work stopped after approval, gate, failed check, tool switch, or lost chat | workflow run ID or Task Context Package task ID |
+| failure evolution | repeated AI mistake, failed review, failed check, escaped bug, or incident | failed PR, check, incident, or task ID |
+
+For detailed steps, start with
+[`extensions/ai-team/README.md`](extensions/ai-team/) and
+[`extensions/ai-team/docs/user-journeys.md`](extensions/ai-team/docs/user-journeys.md).
+
+### AI Team Quick Start
+
+Install this distribution, initialize the coding repository, and add the AI
+Team extension and workflow:
+
+```bash
+uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
+specify init . --integration codex --integration-options="--skills"
+specify extension add ai-team
+specify workflow add ai-team-sdd
+```
+
+Use `--integration claude`, `--integration cursor-agent`, or `--integration
+trae` when those tools are active.
+
+Examples:
+
+```bash
+# Existing project bug fix
+specify workflow run ai-team-sdd \
+  --input request="Fix the upload timeout reported by support" \
+  --input work_type=bug \
+  --input coding_issue_url="https://example.com/org/project/issues/123"
+
+# Existing project feature
+specify workflow run ai-team-sdd \
+  --input request="Implement REQ-2026-015 search result export" \
+  --input work_type=feature \
+  --input published_requirement_url="https://example.com/requirements/rfcs/REQ-2026-015"
+
+# New project
+specify workflow run ai-team-sdd \
+  --input request="Create the initial customer notification service" \
+  --input work_type=new-project \
+  --input bootstrap_workspace=true \
+  --input published_requirement_url="https://example.com/requirements/rfcs/REQ-2026-020"
+
+# Resume by workflow run state
+specify workflow resume <run-id>
+
+# Resume by durable task context after tool or chat loss
+speckit.ai-team.context task_id=<task-id> resume=true
+```
+
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)

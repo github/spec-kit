@@ -150,6 +150,18 @@ def test_ai_team_code_graph_adapter_document_exists():
     assert "edges.jsonl" in text
 
 
+def test_ai_team_user_journeys_document_exists():
+    journeys_doc = EXTENSION_ROOT / "docs" / "user-journeys.md"
+
+    assert journeys_doc.exists()
+    text = journeys_doc.read_text(encoding="utf-8")
+    assert "Existing Project Bug Fix" in text
+    assert "Existing Project New Feature" in text
+    assert "New Project From Zero" in text
+    assert "Resume From The Middle" in text
+    assert "speckit.ai-team.context task_id=<task-id> resume=true" in text
+
+
 def test_ai_team_workflow_is_bundled_and_uses_init_step():
     workflow = REPO_ROOT / "workflows" / "ai-team-sdd" / "workflow.yml"
     catalog = json.loads(
@@ -167,6 +179,7 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert steps[0]["then"][0]["type"] == "init"
     assert "task_id" in data["inputs"]
     assert "resume_from" in data["inputs"]
+    assert "new-project" in data["inputs"]["work_type"]["enum"]
     step_ids = [step["id"] for step in steps]
     assert "context-open" in step_ids
     assert "codegraph" in step_ids

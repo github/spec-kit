@@ -34,6 +34,7 @@ Store task context under the coding repository:
 Use a stable `task-id`:
 
 - published requirement ID or URL slug for feature work;
+- published project charter or requirement ID for new-project work;
 - coding issue number, bug slug, or bug report slug for bug fixes;
 - explicit `task_id=<value>` when the work item has no stable ID yet.
 
@@ -61,7 +62,7 @@ tool switching, manual command execution, and issue-driven re-entry.
 ```text
 Task Context Package:
 - task id:
-- work type: bug fix / feature / template change / unclear
+- work type: bug fix / feature / new project / template change / unclear
 - work item:
 - coding issue URL or bug slug:
 - published requirement URL:

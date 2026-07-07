@@ -29,6 +29,7 @@ cross-session recovery.
 |---|---|
 | bug fix | coding issue URL, issue number, or `.specify/bugs/<slug>/` |
 | feature | published requirement URL or requirement ID |
+| new project | published project charter URL, published requirement URL, or explicit project task ID |
 | template change | distribution repository issue or PR |
 | unclear intake | explicit temporary `task_id=<value>` until clarified |
 

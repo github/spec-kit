@@ -4,8 +4,9 @@ description: "Create or refine the private requirement work item and publish the
 
 # AI Team Requirement Publication
 
-Use this before feature implementation when the user has a feature idea,
-private draft, or internal approval discussion but no published requirement URL.
+Use this before feature or new-project implementation when the user has a
+feature idea, private draft, project charter, or internal approval discussion
+but no published requirement URL.
 
 ## User Input
 
@@ -44,7 +45,8 @@ submodule path.
 
 ## Workflow
 
-1. Confirm the request is a new feature or public behavior, not a bug.
+1. Confirm the request is a new feature, new project, or public behavior, not a
+   bug.
 2. Work in `requirements-internal` when raw demand, commercial context, or
    unapproved acceptance discussion is needed.
 3. Produce a sanitized published requirement with:
@@ -52,6 +54,8 @@ submodule path.
    - user scenario and value;
    - scope and non-goals;
    - affected coding repository and likely modules;
+   - target repository or project creation intent when the work is a new
+     project;
    - approval route: maintainer, technical committee, architecture reviewer,
      release owner, or delegated owner;
    - wave plan;
@@ -75,6 +79,7 @@ Requirement publication:
 - approval route:
 - current wave:
 - affected coding repository:
+- new project target:
 - likely modules:
 - privacy exclusions:
 - next command:

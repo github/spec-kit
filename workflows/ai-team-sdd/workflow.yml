@@ -36,7 +36,7 @@ inputs:
   work_type:
     type: string
     default: "auto"
-    enum: ["auto", "bug", "feature", "template"]
+    enum: ["auto", "bug", "feature", "new-project", "template"]
   coding_issue_url:
     type: string
     default: ""

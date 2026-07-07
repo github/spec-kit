@@ -38,7 +38,8 @@ Read when present:
 | Request type | Route | Required work item |
 |---|---|---|
 | existing behavior is broken, flaky, regressed, or throws errors | bug fix | coding issue or bug slug |
-| new capability, scenario, integration, public behavior, or roadmap work | feature | published requirement URL |
+| new capability, scenario, integration, public behavior, or roadmap work in an existing project | feature | published requirement URL |
+| create a new product, service, repository, or application from zero | new project | published requirement URL or approved project charter |
 | change AI Team rules, commands, templates, examples, or workflow | template change | this repository PR |
 | unclear | ask one focused question | no edits |
 
@@ -61,6 +62,21 @@ If the user has only a private draft or raw customer request, route to
 `speckit.ai-team.requirement` first. Code implementation must wait until there
 is a published requirement URL.
 
+New projects use the same SDD path but must set `work_type=new-project` and
+must keep a stricter build-from-zero plan:
+
+```text
+project charter or published requirement URL -> specify init/bootstrap
+-> speckit.ai-team.workspace -> speckit.ai-team.context
+-> speckit.specify -> speckit.ai-team.handoff -> speckit.plan
+-> speckit.ai-team.plan-gate -> speckit.tasks
+-> speckit.ai-team.task-gate -> speckit.implement
+-> speckit.ai-team.evidence
+```
+
+The first implementation wave should produce a runnable thin slice before
+adding breadth.
+
 ## Task Context Package
 
 Return this block and persist it through `speckit.ai-team.context` under
@@ -70,7 +86,7 @@ Return this block and persist it through `speckit.ai-team.context` under
 Task Context Package:
 - task id:
 - request:
-- classification: bug fix / feature / template change / unclear
+- classification: bug fix / feature / new project / template change / unclear
 - required work item:
 - coding issue URL or bug slug:
 - published requirement URL:
@@ -101,6 +117,8 @@ After creating or updating the package, return the next command:
 - feature without a published requirement URL: `speckit.ai-team.requirement`;
 - feature with a published requirement URL: `speckit.specify` or
   `speckit.ai-team.codegraph` when existing code is named;
+- new project with an approved charter or published requirement URL:
+  `speckit.specify` after workspace bootstrap;
 - interrupted work: `speckit.ai-team.context task_id=<task-id> resume=true`.
 
 ## Stop Conditions

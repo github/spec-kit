@@ -82,6 +82,65 @@ speckit.ai-team.context task_id=<task-id> resume=true
 Use [docs/task-context-package.md](docs/task-context-package.md) for the
 storage format, phase model, and resume protocol.
 
+## User Journeys
+
+Use [docs/user-journeys.md](docs/user-journeys.md) for the complete
+step-by-step journeys. The short version:
+
+| Journey | Work item | Main path |
+|---|---|---|
+| existing project bug fix | coding issue or bug slug | context -> code graph when needed -> impact -> bug assess/fix/test -> checks/evidence -> PR |
+| existing project new feature | published requirement URL | requirement review -> context -> code graph -> specify/plan/tasks/implement -> evidence -> PR |
+| new project from zero | published project charter or requirement URL | bootstrap -> workspace -> context -> specify/plan with strict build plan -> thin slice -> evidence |
+| resume from middle | workflow run ID or task ID | workflow resume for paused runs, or `speckit.ai-team.context task_id=<task-id> resume=true` for cross-session recovery |
+| failed review/check/incident | PR, check, incident, or repeated AI mistake | retrospect -> update command, gate, knowledge, memory, graph, or test evidence |
+
+### Existing Project Bug Fix
+
+Bug fixes must link a coding repository issue or bug slug. The reporter may
+describe only symptoms; the AI agent uses source evidence and code graph impact
+to find the likely module. The actual bug lifecycle uses the bundled bug
+extension:
+
+```text
+speckit.bug.assess -> speckit.bug.fix -> speckit.bug.test
+```
+
+AI Team adds the task context, code graph impact, portable checks, Evidence
+Board, PR description, and review gates around that bug lifecycle.
+
+### Existing Project New Feature
+
+Feature work must link a published requirement URL from the
+requirements-published repository. If the only available input is a private
+draft or raw customer request, run `speckit.ai-team.requirement` and
+`speckit.ai-team.feature-review` before coding.
+
+The coding repository should not record requirements-internal paths or raw
+customer demand.
+
+### New Project From Zero
+
+New projects use `work_type=new-project`. They still follow SDD, but the plan
+gate is stricter: it must establish the project skeleton, architecture spine,
+dependency strategy, runnable thin slice, self-test strategy, and evidence
+strategy before broad feature construction.
+
+### Resume From Middle
+
+Use Spec Kit workflow state for the same paused workflow run:
+
+```bash
+specify workflow status <run-id>
+specify workflow resume <run-id>
+```
+
+Use the AI Team Task Context Package when switching terminal, AI tool, or chat:
+
+```text
+speckit.ai-team.context task_id=<task-id> resume=true
+```
+
 ## Existing Project vs New Project
 
 Existing project work must start from code graph and impact radius:
