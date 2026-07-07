@@ -26,7 +26,7 @@ def _format_tags(tags: Any) -> str:
     cleaned = [
         render_code_span(render_cell(c))
         for tag in tags
-        if (c := str(tag).replace("|", "").strip())
+        if (c := str(tag).strip())
     ]
     return ", ".join(cleaned) if cleaned else "—"
 

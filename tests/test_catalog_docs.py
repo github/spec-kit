@@ -7,7 +7,8 @@ import re
 from unittest.mock import MagicMock, patch
 
 import pytest
-from typer.testing import CliRunner
+import typer
+from click.testing import CliRunner
 
 from specify_cli.catalog_docs import (
     escape_url_for_markdown_link,
@@ -158,10 +159,36 @@ def test_integrations_docs_label_and_url_sources():
         assert rows["codex"][1] == "https://github.com/openai/codex"
 
 
+def test_integrations_docs_missing_url_warns_about_install_url_fallback():
+    fake_registry = {
+        "missing": MagicMock(
+            config={
+                "name": "Missing Docs",
+                "install_url": "https://example.com/install",
+            }
+        ),
+    }
+
+    with _get_catalog_docs_patches(
+        fake_registry=fake_registry,
+        fake_doc_urls={},
+        fake_notes={},
+    ):
+        with pytest.warns(
+            UserWarning,
+            match="fall back to each integration's install_url",
+        ):
+            rows = list_integrations_for_docs(warn_on_missing=True)
+
+    assert rows == [
+        ("missing", "Missing Docs", "https://example.com/install", "")
+    ]
+
+
 def test_cli_integration_search_markdown_success():
     """Test that `integration search --markdown` outputs the markdown table."""
     with _get_catalog_docs_patches():
-        result = runner.invoke(app, ["integration", "search", "--markdown"])
+        result = runner.invoke(typer.main.get_command(app), ["integration", "search", "--markdown"])
         assert result.exit_code == 0
         lines = result.stdout.splitlines()
         assert len(lines) > 2  # At least header, separator, and one data row
@@ -191,7 +218,7 @@ def test_cli_integration_search_markdown_with_filters_warns():
     """Test that `integration search --markdown` with filters warns."""
     with _get_catalog_docs_patches():
         result = runner.invoke(
-            app,
+            typer.main.get_command(app),
             [
                 "integration",
                 "search",
@@ -211,7 +238,7 @@ def test_cli_integration_search_markdown_with_filters_warns():
 def test_cli_integration_search_markdown_stdout_is_clean():
     """Test that stdout contains only the markdown table with proper format."""
     with _get_catalog_docs_patches():
-        result = runner.invoke(app, ["integration", "search", "--markdown"])
+        result = runner.invoke(typer.main.get_command(app), ["integration", "search", "--markdown"])
         assert result.exit_code == 0
         stdout = result.stdout
         lines = stdout.splitlines()

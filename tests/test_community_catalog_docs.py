@@ -117,13 +117,14 @@ def test_tags_containing_pipe_and_newline_do_not_break_table(tmp_path: Path) -> 
         "foo": {"name": "Foo", "description": "", "tags": ["foo|bar\nbaz"], "verified": False, "repository": ""},
     })
     table = render_community_extensions_table(path=f)
-    # pipe stripped from tag value, newline normalized
-    assert "`foobar baz`" in table
+    # pipe escaped in tag value, newline normalized
+    assert "`foo\\|bar baz`" in table
     # id falls back to the dict key when "id" field is absent
     assert "`foo`" in table
     # row is well-formed: 5-column table has exactly 6 pipe separators per row
+    # because we are now escaping pipes in values (\|), we expect 7 pipes if one value has an escaped pipe
     foo_row = next(line for line in table.split("\n") if line.startswith("| ") and "Foo" in line)
-    assert foo_row.count("|") == 6
+    assert foo_row.count("|") == 7
 
 
 def test_non_list_tags_renders_em_dash(tmp_path: Path) -> None:

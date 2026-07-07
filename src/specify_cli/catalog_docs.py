@@ -156,8 +156,11 @@ def list_integrations_for_docs(
 ) -> list[tuple[str, str, str | None, str]]:
     """List all integrations with their documentation URLs and notes.
 
-    Returns all integrations in the registry. Missing entries in INTEGRATION_DOC_URLS
-    default to None; if `warn_on_missing` is True, emits a warning for these.
+    Returns all integrations in the registry. Entries missing from
+    INTEGRATION_DOC_URLS fall back to each integration's install_url when
+    available, otherwise render without a documentation link. If
+    `warn_on_missing` is True, emits a warning for these missing explicit
+    overrides.
     If `warn_on_extra` is True, emits a warning for stale keys in the doc maps that
     are no longer in the registry. Missing notes entries default to empty string.
     """
@@ -170,9 +173,10 @@ def list_integrations_for_docs(
         import warnings
         warnings.warn(
             f"Integration(s) missing from INTEGRATION_DOC_URLS: "
-            f"{', '.join(missing)}. They will be included in the docs table "
-            "without documentation links. Add them to INTEGRATION_DOC_URLS in "
-            "catalog_docs.py if a link should be available.",
+            f"{', '.join(missing)}. They will fall back to each integration's "
+            "install_url when available and render without a documentation "
+            "link otherwise. Add explicit overrides to INTEGRATION_DOC_URLS in "
+            "catalog_docs.py if a different docs URL should be shown.",
             stacklevel=2,
         )
 
