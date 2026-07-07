@@ -4761,11 +4761,14 @@ class TestWorkflowRegistry:
         reg_path.write_text(bad_content, encoding="utf-8")
 
         registry = WorkflowRegistry(project_dir)
-        assert registry.data == {"schema_version": "1.0", "workflows": {}}
+        assert registry.data == {
+            "schema_version": WorkflowRegistry.SCHEMA_VERSION,
+            "workflows": {},
+        }
         # None of these should raise on the recovered-default shape.
         assert registry.is_installed("x") is False
         assert registry.get("x") is None
-        assert registry.list() == {} or registry.list() == []
+        assert registry.list() == {}  # list() always returns a dict
         registry.remove("x")
         registry.add("x", {"name": "X"})
         assert registry.is_installed("x")
