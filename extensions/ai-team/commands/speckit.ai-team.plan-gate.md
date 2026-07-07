@@ -48,7 +48,8 @@ Confirm the architect-owned plan is safe to turn into developer tasks.
    - dependency strategy;
    - release and operations owner when relevant.
 6. Check privacy:
-   - raw customer demand remains in enhancement repository;
+   - raw customer demand remains in requirements-internal;
+   - feature plans reference the published requirement URL;
    - public plan contains only implementation-appropriate context.
 7. Write `.specify/ai-team/gates/<feature-slug>/plan-gate.md`.
 
@@ -60,7 +61,9 @@ Confirm the architect-owned plan is safe to turn into developer tasks.
 - **Feature**:
 - **Work type**: new project / existing project feature / bug-driven / refactor / migration
 - **Plan status**: pass / revise / blocked
-- **Enhancement repo boundary**:
+- **Requirements boundary**:
+- **Published requirement URL**:
+- **Requirements-internal leakage check**:
 - **Coding repo boundary**:
 
 ## Code Graph Impact

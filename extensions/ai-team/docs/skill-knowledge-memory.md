@@ -1,7 +1,7 @@
 # Skill, Knowledge, and Memory Support
 
-AI Team SDD work needs three external support layers around the coding and
-enhancement repositories.
+AI Team SDD work needs three external support layers around the requirements
+and coding repositories.
 
 ```text
 Skill = how to perform repeatable work
@@ -165,9 +165,9 @@ When sources disagree, use this order:
 ```
 
 These files may stay local or be committed depending on repository privacy.
-Enterprise teams should keep customer-sensitive memory in the enhancement
-repository and publish only sanitized plan-level knowledge to the coding
-repository.
+Enterprise teams should keep customer-sensitive memory in requirements-internal,
+publish only sanitized requirement knowledge to requirements-published, and
+commit only coding-safe plan-level knowledge to the coding repository.
 
 ## References To Review
 

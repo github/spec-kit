@@ -1,0 +1,94 @@
+schema_version: "1.0"
+workflow:
+  id: "ai-team-sdd"
+  name: "AI Team SDD Cycle"
+  version: "0.1.0"
+  author: "AI Team Template"
+  description: "Runs an enterprise AI Team SDD flow with optional Spec Kit init bootstrap, requirements URL routing, gates, and evidence."
+
+requires:
+  speckit_version: ">=0.12.4"
+  integrations:
+    any:
+      - "codex"
+      - "claude"
+      - "cursor-agent"
+      - "trae"
+
+inputs:
+  request:
+    type: string
+    required: true
+    prompt: "Describe the bug, feature, or template change"
+  integration:
+    type: string
+    default: "codex"
+    enum: ["codex", "claude", "cursor-agent", "trae"]
+  bootstrap_workspace:
+    type: boolean
+    default: false
+  force_bootstrap:
+    type: boolean
+    default: false
+  published_requirement_url:
+    type: string
+    default: ""
+
+steps:
+  - id: bootstrap-if-requested
+    type: if
+    condition: "{{ inputs.bootstrap_workspace == true }}"
+    then:
+      - id: bootstrap
+        type: init
+        here: true
+        integration: "{{ inputs.integration }}"
+        integration_options: "--skills"
+        force: "{{ inputs.force_bootstrap }}"
+        ignore_agent_tools: true
+
+  - id: workspace
+    command: speckit.ai-team.workspace
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }}"
+
+  - id: route
+    command: speckit.ai-team.start
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+
+  - id: review-route
+    type: gate
+    message: "Review the Task Context Package and route before continuing."
+    options: [approve, revise, reject]
+    on_reject: abort
+
+  - id: requirement-or-impact-note
+    command: speckit.ai-team.impact
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+    continue_on_error: true
+
+  - id: plan-gate
+    command: speckit.ai-team.plan-gate
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+    continue_on_error: true
+
+  - id: task-gate
+    command: speckit.ai-team.task-gate
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+    continue_on_error: true
+
+  - id: evidence
+    command: speckit.ai-team.evidence
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+    continue_on_error: true

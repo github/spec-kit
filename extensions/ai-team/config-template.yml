@@ -1,38 +1,82 @@
 # AI Team SDD Collaboration configuration.
 # Copy is installed to `.specify/extensions/ai-team/ai-team-config.yml`.
 
+bootstrap:
+  # Workspace creation must reuse Spec Kit init instead of copying template
+  # repositories into a product workspace.
+  use_specify_init: true
+  recommended_extensions:
+    - ai-team
+    - agent-context
+    - bug
+
+agent_tools:
+  # AI Team defaults to the agent integrations already supported by Spec Kit.
+  # Cursor is represented by Spec Kit's `cursor-agent` integration key.
+  supported_integrations:
+    - codex
+    - claude
+    - cursor-agent
+    - trae
+  auto_detect_from_specify_init: true
+
 repositories:
-  # Enhancement repository stores customer/private demand, feature issues,
-  # status labels, wave plans, and approval history. Enterprise teams often keep
-  # this private.
-  enhancement:
-    role: enhancement
+  # Private requirements repository stores raw customer demand, drafts,
+  # commercial context, approval discussion, and internal scheduling. Do not
+  # record this repository in coding-repository committed files.
+  requirements_internal:
+    role: requirements-internal
     remote: ""
-    visibility: private
+    visibility: strict-private
+    record_in_coding_repository: false
     stores:
       - raw customer demand
-      - feature issues
+      - private drafts
+      - commercial context
       - approval comments
       - wave plan
-      - acceptance expectations
+      - release scheduling
+
+  # Published requirements repository stores only reviewed, sanitized
+  # requirement/RFC documents. The coding repository may consume this repository
+  # through a read-only Git submodule.
+  requirements_published:
+    role: requirements-published
+    remote: ""
+    visibility: public-readonly
+    local_submodule_path: requirements
+    authoritative_reference: published_url
+    stores:
+      - published requirements
+      - RFCs
+      - public acceptance intent
+      - status labels or frontmatter
+      - stable URLs
 
   # Coding repository stores source code, public implementation plans, tasks,
-  # self-tests, evidence, and implementation PRs.
+  # self-tests, evidence, implementation PRs, and optionally a read-only
+  # submodule pointing at requirements-published.
   coding:
     role: coding
     remote: ""
     visibility: project-controlled
+    requirements_submodule_path: requirements
     stores:
       - source code
       - public plan
       - tasks
       - self-test evidence
       - implementation PRs
+      - read-only published requirements submodule
 
 privacy:
   raw_customer_demand_public: false
   public_plan_allowed: true
+  coding_repo_may_record_requirements_internal: false
+  feature_requires_published_requirement_url: true
+  local_requirements_submodule_is_cache_only: true
   public_artifacts:
+    - published requirement URL
     - plan.md
     - tasks.md
     - quickstart.md
@@ -41,6 +85,7 @@ privacy:
     - raw customer request
     - commercial context
     - sensitive acceptance discussion
+    - internal requirement draft URL
 
 roles:
   specify:

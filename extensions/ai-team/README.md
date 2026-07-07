@@ -13,7 +13,10 @@ and adds enterprise collaboration constraints:
 
 - role isolation across SDD phases;
 - document handoffs between roles;
-- private enhancement repository and project coding repository separation;
+- private requirements, published requirements, and coding repository
+  separation;
+- URL-oriented requirement references, with the coding repository consuming only
+  published requirement URLs and optional read-only submodule content;
 - code graph and scope control for existing projects;
 - strict build planning for new projects;
 - self-test and Evidence Board output;
@@ -33,15 +36,25 @@ Roles communicate through documents, not hidden conversation state.
 ## Repository Boundary
 
 Enterprise customers often do not want raw demand publicly visible. This
-extension assumes two logical repositories:
+extension assumes three logical repositories:
 
 | Repository | Purpose |
 |---|---|
-| enhancement repository | private feature issues, customer context, approval history, wave plan |
-| coding repository | source code, public plan, tasks, implementation PR, Evidence Board |
+| requirements-internal | private drafts, raw demand, approval discussion, wave plan, commercial context |
+| requirements-published | sanitized public requirement/RFC documents with stable URLs |
+| coding repository | source code, public plan, tasks, implementation PR, Evidence Board, optional read-only requirements submodule |
 
-The repositories may be physically the same for a small team, but the role must
-still be explicit in `.specify/extensions/ai-team/ai-team-config.yml`.
+The coding repository may include `requirements/` as a Git submodule pointing to
+`requirements-published`. Feature work links the published requirement URL as
+the authoritative work item; local submodule paths are only a cache for reading
+published content.
+
+The coding repository must not record or depend on `requirements-internal`.
+Private repository paths belong in private operator context or the internal
+requirements repository, not in committed coding-repository files.
+
+Use [docs/repository-boundary.md](docs/repository-boundary.md) for the full
+repository model.
 
 ## Existing Project vs New Project
 
@@ -69,11 +82,31 @@ New project work needs a stricter build-from-zero plan:
 | Command | Use |
 |---|---|
 | `speckit.ai-team.workspace` | create or update repository role and privacy boundary config |
+| `speckit.ai-team.start` | route a plain request to bug, feature, or template workflow |
+| `speckit.ai-team.requirement` | publish or refine the sanitized requirement URL needed for feature work |
+| `speckit.ai-team.impact` | inspect code graph or source-structure impact before code edits |
 | `speckit.ai-team.handoff` | create role-isolated handoff documents between phases |
 | `speckit.ai-team.plan-gate` | review architecture plan readiness before tasks |
 | `speckit.ai-team.task-gate` | review task readiness before implementation |
+| `speckit.ai-team.feature-review` | help maintainers and the technical committee assess published requirement readiness |
+| `speckit.ai-team.checks` | produce portable CI/CD evidence on any git platform |
 | `speckit.ai-team.evidence` | produce Evidence Board after implementation |
+| `speckit.ai-team.pr` | prepare a PR in the correct repository with linked work item and evidence |
+| `speckit.ai-team.review` | help human reviewers assess boundary safety and evidence |
+| `speckit.ai-team.retrospect` | turn failures into durable process improvements |
 | `speckit.ai-team.support` | audit Skill, Knowledge, and Memory support layers |
+
+## Workflow
+
+The bundled `ai-team-sdd` workflow gives teams a resumable skeleton:
+
+```text
+optional Spec Kit init bootstrap -> workspace contract -> request routing
+-> code graph impact -> plan/task gates -> Evidence Board
+```
+
+Workspace creation uses Spec Kit's own `init` step. AI Team does not copy
+template repositories into product repositories.
 
 ## Skill, Knowledge, Memory Support
 

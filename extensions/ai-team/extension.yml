@@ -4,7 +4,7 @@ extension:
   id: ai-team
   name: "AI Team SDD Collaboration"
   version: "0.1.0"
-  description: "Enterprise AI Team workflow for Spec-Driven Development with role-isolated handoffs, coding/enhancement repository boundaries, build-from-zero planning, self-test evidence, and failure evolution."
+  description: "Enterprise AI Team workflow for Spec-Driven Development with role-isolated handoffs, requirements/coding repository boundaries, build-from-zero planning, self-test evidence, and failure evolution."
   author: AI Team Template
   repository: https://github.com/EuphoriaYan/spec-kit
   license: MIT
@@ -21,7 +21,16 @@ provides:
   commands:
     - name: speckit.ai-team.workspace
       file: commands/speckit.ai-team.workspace.md
-      description: "Create or update the AI Team workspace contract for coding/enhancement repository roles and project privacy boundaries."
+      description: "Create or update the AI Team workspace contract for requirements/coding repository roles and project privacy boundaries."
+    - name: speckit.ai-team.start
+      file: commands/speckit.ai-team.start.md
+      description: "Route a plain-language request to the correct AI Team bug, requirement, or template workflow and create a Task Context Package."
+    - name: speckit.ai-team.requirement
+      file: commands/speckit.ai-team.requirement.md
+      description: "Create or refine private requirement context and publish the sanitized requirement URL required before feature implementation."
+    - name: speckit.ai-team.impact
+      file: commands/speckit.ai-team.impact.md
+      description: "Produce code graph or source-structure impact evidence before source edits."
     - name: speckit.ai-team.handoff
       file: commands/speckit.ai-team.handoff.md
       description: "Create role-isolated SDD handoff records between specify, plan, tasks, and implementation roles."
@@ -31,9 +40,24 @@ provides:
     - name: speckit.ai-team.task-gate
       file: commands/speckit.ai-team.task-gate.md
       description: "Review generated tasks for phase isolation, self-test mapping, existing-project impact, and new-project build-plan completeness."
+    - name: speckit.ai-team.feature-review
+      file: commands/speckit.ai-team.feature-review.md
+      description: "Help maintainers and the technical committee assess published requirement readiness before coding."
+    - name: speckit.ai-team.checks
+      file: commands/speckit.ai-team.checks.md
+      description: "Run or reconstruct portable CI/CD evidence when platform CI is unavailable or insufficient."
     - name: speckit.ai-team.evidence
       file: commands/speckit.ai-team.evidence.md
       description: "Produce an Evidence Board after implementation and record self-test, scope, and failure-evolution follow-ups."
+    - name: speckit.ai-team.pr
+      file: commands/speckit.ai-team.pr.md
+      description: "Prepare a pull request in the correct repository with linked work item and evidence."
+    - name: speckit.ai-team.review
+      file: commands/speckit.ai-team.review.md
+      description: "Help human reviewers assess PR architecture fit, boundary safety, evidence, and merge readiness."
+    - name: speckit.ai-team.retrospect
+      file: commands/speckit.ai-team.retrospect.md
+      description: "Convert failed PRs, checks, incidents, or repeated AI mistakes into durable process improvements."
     - name: speckit.ai-team.support
       file: commands/speckit.ai-team.support.md
       description: "Audit and maintain the external Skill, Knowledge, and Memory support layers for AI Team SDD work."
@@ -74,3 +98,5 @@ tags:
   - collaboration
   - memory
   - knowledge
+  - evidence
+  - code-graph

@@ -30,6 +30,7 @@ whole AI diff.
    - quickstart validation results when present.
 3. Produce an Evidence Board:
    - linked work item;
+   - published requirement URL for feature work;
    - repo role;
    - changed nodes;
    - impact radius;
@@ -59,6 +60,7 @@ whole AI diff.
 - **Feature**:
 - **Repository role**:
 - **Linked work item**:
+- **Published requirement URL**:
 - **Implementation status**:
 
 ## Scope and Impact
@@ -87,6 +89,7 @@ whole AI diff.
 Stop before claiming implementation success when:
 
 - behavior changed but no self-test or validation evidence exists;
+- feature work lacks a published requirement URL;
 - changed nodes or impact radius cannot be stated;
 - skipped checks have vague reasons;
 - a failed review/test/incident has no follow-up owner.
