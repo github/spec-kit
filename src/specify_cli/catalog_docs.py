@@ -144,7 +144,7 @@ def list_integrations_for_docs(
             f"{', '.join(missing)}. They will be included in the docs table "
             "without documentation links. Add them to INTEGRATION_DOC_URLS in "
             "catalog_docs.py if a link should be available.",
-            stacklevel=2
+            stacklevel=2,
         )
 
     # Warn if there are stale keys in doc maps not in the registry (when enabled)
@@ -164,7 +164,7 @@ def list_integrations_for_docs(
                 f"{', '.join(stale_keys)}. Consider removing them from "
                 "INTEGRATION_DOC_URLS, INTEGRATION_LABEL_OVERRIDES, and "
                 "INTEGRATION_NOTES.",
-                stacklevel=2
+                stacklevel=2,
             )
 
     rows: list[tuple[str, str, str | None, str]] = []
