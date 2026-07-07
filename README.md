@@ -34,6 +34,11 @@ Upstream Spec Kit documentation remains as reference until a local AI Team page
 replaces it. When commands or links disagree, prefer this repository's AI Team
 extension docs under [`extensions/ai-team/`](extensions/ai-team/).
 
+AI Team adds role-isolated SDD, repository-boundary rules for private and
+published requirements, durable Task Context Packages for resume, replaceable
+code graph adapters for impact analysis, and portable evidence gates for
+enterprise teams.
+
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)

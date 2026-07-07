@@ -23,6 +23,8 @@ architect, and developer agents must communicate through written artifacts.
 
 1. Locate the active feature directory from `.specify/feature.json`.
 2. Read:
+   - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+     present;
    - `spec.md`;
    - `plan.md` if present;
    - `tasks.md` if present;
@@ -41,6 +43,8 @@ architect, and developer agents must communicate through written artifacts.
 6. For feature work, include the published requirement URL as the authoritative
    work item. A local `requirements/` submodule path may be listed only as a
    supporting source that was read.
+7. Update the Task Context Package with the handoff artifact path, current
+   phase, and next command.
 
 ## Handoff Shape
 
@@ -48,6 +52,8 @@ architect, and developer agents must communicate through written artifacts.
 # AI Team Handoff: <phase>
 
 - **Feature**:
+- **Task ID**:
+- **Context Path**:
 - **From role**:
 - **To role**:
 - **Source artifacts**:

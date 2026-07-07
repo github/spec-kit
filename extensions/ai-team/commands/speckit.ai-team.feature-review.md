@@ -23,6 +23,8 @@ feature approval authority unless explicitly delegated.
 
 ## Review Questions
 
+- Is there a Task Context Package tying this review to the requirement and
+  intended coding repository?
 - Is the user problem or product goal concrete?
 - Is the published requirement URL stable and accessible from the coding repo?
 - Is private customer demand excluded from public artifacts?
@@ -49,6 +51,8 @@ feature approval authority unless explicitly delegated.
 
 ```text
 Feature review:
+- task id:
+- context path:
 - published requirement URL:
 - recommended decision:
 - reason:

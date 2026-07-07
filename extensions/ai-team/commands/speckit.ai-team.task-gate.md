@@ -21,6 +21,8 @@ hidden context from product or architecture roles.
 
 1. Locate the active feature directory from `.specify/feature.json`.
 2. Read:
+   - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+     present;
    - `spec.md`;
    - `plan.md`;
    - `tasks.md`;
@@ -43,6 +45,8 @@ hidden context from product or architecture roles.
 5. For existing projects, ensure tasks stay inside the plan gate's impact
    radius unless an owner-approved expansion task is present.
 6. Write `.specify/ai-team/gates/<feature-slug>/task-gate.md`.
+7. Update the Task Context Package with task gate status, task artifact path,
+   current phase, and next command.
 
 ## Output Shape
 
@@ -50,6 +54,8 @@ hidden context from product or architecture roles.
 # AI Team Task Gate
 
 - **Feature**:
+- **Task ID**:
+- **Context Path**:
 - **Published requirement URL**:
 - **Task status**: pass / revise / blocked
 - **Context isolation**: pass / fail

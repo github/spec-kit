@@ -21,17 +21,19 @@ Check in this order:
    requirements-published, private drafts in requirements-internal.
 2. Work item: bug fix links a coding issue or bug slug; feature links a stable
    published requirement URL.
-3. Privacy: coding PRs do not expose raw customer demand or internal drafts.
-4. Boundary: touched files stay inside approved modules and do not edit another
+3. Task context: `.specify/ai-team/tasks/<task-id>/context-pack.md` and
+   `state.yml` match the PR and evidence.
+4. Privacy: coding PRs do not expose raw customer demand or internal drafts.
+5. Boundary: touched files stay inside approved modules and do not edit another
    module's internals to avoid an interface request.
-5. Architecture: dependency direction, state ownership, and public contracts
+6. Architecture: dependency direction, state ownership, and public contracts
    are preserved.
-6. Compatibility: SPI/API, config, wire schema, metrics, examples,
+7. Compatibility: SPI/API, config, wire schema, metrics, examples,
    dependencies, release notes, and migrations are handled.
-7. Tests: self-tests match changed behavior.
-8. Evidence: task context, code graph, changed nodes, commands, skipped checks,
+8. Tests: self-tests match changed behavior.
+9. Evidence: task context, code graph, changed nodes, commands, skipped checks,
    uncovered paths, and residual risks are recorded.
-9. Minimality: unrelated cleanup and local AI files are absent.
+10. Minimality: unrelated cleanup and local AI files are absent.
 
 ## Findings Format
 

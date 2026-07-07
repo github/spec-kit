@@ -23,6 +23,8 @@ whole AI diff.
 1. Locate the active feature directory from `.specify/feature.json` when
    available.
 2. Read:
+   - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+     present;
    - `spec.md`, `plan.md`, `tasks.md`;
    - AI Team handoffs and gates when present;
    - implementation diff;
@@ -51,6 +53,8 @@ whole AI diff.
    - evidence missing;
    - human decision missing.
 5. Write `.specify/ai-team/evidence/<feature-slug>/evidence-board.md`.
+6. Update the Task Context Package with evidence artifact path, skipped checks,
+   current phase, and next command.
 
 ## Output Shape
 
@@ -58,6 +62,8 @@ whole AI diff.
 # AI Team Evidence Board
 
 - **Feature**:
+- **Task ID**:
+- **Context Path**:
 - **Repository role**:
 - **Linked work item**:
 - **Published requirement URL**:

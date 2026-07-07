@@ -30,6 +30,8 @@ Read when present:
   requirements repository;
 - code graph or source-structure evidence when code, classes, SPI/API, or
   modules are named.
+- `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when the
+  request is resuming existing work.
 
 ## Routing
 
@@ -61,8 +63,8 @@ is a published requirement URL.
 
 ## Task Context Package
 
-Return this block and store it in the relevant issue, PR, or SDD artifact when
-the repository has a documented location for it.
+Return this block and persist it through `speckit.ai-team.context` under
+`.specify/ai-team/tasks/<task-id>/`.
 
 ```text
 Task Context Package:
@@ -70,20 +72,36 @@ Task Context Package:
 - request:
 - classification: bug fix / feature / template change / unclear
 - required work item:
+- coding issue URL or bug slug:
 - published requirement URL:
 - coding repository:
 - requirements published repository:
 - requirements submodule path:
 - private requirements context used: no / yes, allowed because ...
 - active AI integration:
+- workflow run id:
+- current phase:
+- last completed command:
 - source snapshot or code graph version:
+- context path:
+- state file:
 - likely modules:
 - reusable components:
 - required commands:
 - expected evidence:
 - stop conditions:
 - next command:
+- resume command:
 ```
+
+After creating or updating the package, return the next command:
+
+- bug fix with enough issue context: `speckit.bug.assess` or
+  `speckit.ai-team.codegraph` when source impact is not trivial;
+- feature without a published requirement URL: `speckit.ai-team.requirement`;
+- feature with a published requirement URL: `speckit.specify` or
+  `speckit.ai-team.codegraph` when existing code is named;
+- interrupted work: `speckit.ai-team.context task_id=<task-id> resume=true`.
 
 ## Stop Conditions
 

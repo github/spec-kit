@@ -36,6 +36,8 @@ submodule path.
 ## Required Reading
 
 - `.specify/extensions/ai-team/ai-team-config.yml`;
+- `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+  the feature was already routed from a coding workspace;
 - private requirement issue or draft only when the current operator has access;
 - published requirements conventions under the published repository;
 - coding repository module index only enough to name likely affected modules.
@@ -56,13 +58,17 @@ submodule path.
    - acceptance expectations;
    - privacy note describing what was intentionally excluded.
 4. Publish to `requirements-published` and capture the stable URL.
-5. Return the URL and hand off to `speckit.ai-team.feature-review` or
+5. Update or create the Task Context Package with the published requirement
+   URL, status, approval route, current wave, and next command.
+6. Return the URL and hand off to `speckit.ai-team.feature-review` or
    `speckit.specify`.
 
 ## Output Shape
 
 ```text
 Requirement publication:
+- task id:
+- context path:
 - private source used: no / yes
 - published requirement URL:
 - status: draft / accepted / working / rejected / closed / superseded

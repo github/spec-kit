@@ -30,27 +30,33 @@ must not link private requirement drafts or rely on local paths such as
 
 1. Run `git status --short --branch`.
 2. Confirm the current repository role.
-3. Exclude:
+3. Load the Task Context Package from `.specify/ai-team/tasks/<task-id>/`
+   when present.
+4. Exclude:
    - `.ai-local/`;
    - local prompts or scratch notes;
    - private requirements drafts from coding repository PRs;
    - generated reports unless the repository explicitly tracks them.
-4. Confirm links:
+5. Confirm links:
    - bug fix links a coding issue or bug slug;
    - feature links a published requirement URL;
    - requirement publication links the internal source only in the private
      repository.
-5. Confirm evidence:
+6. Confirm evidence:
    - Task Context Package;
    - code graph impact when applicable;
    - commands and tests;
    - Evidence Board or portable checks;
    - skipped verification.
+7. Update the Task Context Package with PR URL, current phase, and next
+   command when a PR is created.
 
 ## PR Description Shape
 
 ```text
 AI Team PR:
+- task id:
+- context path:
 - repository role:
 - work reason: bug fix / feature / requirement publication / template change
 - linked coding issue:

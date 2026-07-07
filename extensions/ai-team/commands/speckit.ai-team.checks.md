@@ -27,19 +27,25 @@ $ARGUMENTS
 
 1. Identify the target repository role: coding, requirements-published,
    requirements-internal, or template.
-2. Identify changed files and PR base.
-3. Confirm feature PRs link the published requirement URL, not a local
+2. Load `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md`
+   when present.
+3. Identify changed files and PR base.
+4. Confirm feature PRs link the published requirement URL, not a local
    submodule path.
-4. Run repository governance checks.
-5. Run build and self-tests for touched source/test/example/module docs.
-6. Run boundary evidence when public contracts or cross-module behavior changed.
-7. Record skipped checks with concrete reasons.
-8. Hand evidence to `speckit.ai-team.pr` or `speckit.ai-team.review`.
+5. Run repository governance checks.
+6. Run build and self-tests for touched source/test/example/module docs.
+7. Run boundary evidence when public contracts or cross-module behavior changed.
+8. Record skipped checks with concrete reasons.
+9. Update the Task Context Package with checks, skipped checks, current phase,
+   and next command.
+10. Hand evidence to `speckit.ai-team.pr` or `speckit.ai-team.review`.
 
 ## Evidence Board Output
 
 ```text
 Evidence Board:
+- task id:
+- context path:
 - repository:
 - role:
 - task goal:

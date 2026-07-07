@@ -20,6 +20,8 @@ Confirm the architect-owned plan is safe to turn into developer tasks.
 
 1. Locate the active feature directory from `.specify/feature.json`.
 2. Read:
+   - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+     present;
    - `spec.md`;
    - `plan.md`;
    - `research.md` when present;
@@ -52,6 +54,8 @@ Confirm the architect-owned plan is safe to turn into developer tasks.
    - feature plans reference the published requirement URL;
    - public plan contains only implementation-appropriate context.
 7. Write `.specify/ai-team/gates/<feature-slug>/plan-gate.md`.
+8. Update the Task Context Package with plan gate status, code graph artifact,
+   current phase, and next command.
 
 ## Output Shape
 
@@ -59,6 +63,8 @@ Confirm the architect-owned plan is safe to turn into developer tasks.
 # AI Team Plan Gate
 
 - **Feature**:
+- **Task ID**:
+- **Context Path**:
 - **Work type**: new project / existing project feature / bug-driven / refactor / migration
 - **Plan status**: pass / revise / blocked
 - **Requirements boundary**:

@@ -4,7 +4,7 @@ workflow:
   name: "AI Team SDD Cycle"
   version: "0.1.0"
   author: "AI Team Template"
-  description: "Runs an enterprise AI Team SDD flow with optional Spec Kit init bootstrap, requirements URL routing, gates, and evidence."
+  description: "Runs an enterprise AI Team SDD flow with optional Spec Kit init bootstrap, durable task context resume, code graph impact, gates, and evidence."
 
 requires:
   speckit_version: ">=0.12.4"
@@ -30,9 +30,26 @@ inputs:
   force_bootstrap:
     type: boolean
     default: false
+  task_id:
+    type: string
+    default: ""
+  work_type:
+    type: string
+    default: "auto"
+    enum: ["auto", "bug", "feature", "template"]
+  coding_issue_url:
+    type: string
+    default: ""
+  bug_slug:
+    type: string
+    default: ""
   published_requirement_url:
     type: string
     default: ""
+  resume_from:
+    type: string
+    default: "auto"
+    enum: ["auto", "intake", "specified", "planned", "tasks-ready", "implementing", "evidence", "pr", "review"]
 
 steps:
   - id: bootstrap-if-requested
@@ -53,42 +70,55 @@ steps:
     input:
       args: "{{ inputs.request }}"
 
+  - id: context-open
+    command: speckit.ai-team.context
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+
   - id: route
     command: speckit.ai-team.start
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
   - id: review-route
     type: gate
-    message: "Review the Task Context Package and route before continuing."
+    message: "Review the Task Context Package, route, and resume point before continuing."
     options: [approve, revise, reject]
     on_reject: abort
 
-  - id: requirement-or-impact-note
+  - id: codegraph
+    command: speckit.ai-team.codegraph
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+    continue_on_error: true
+
+  - id: impact
     command: speckit.ai-team.impact
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: plan-gate
     command: speckit.ai-team.plan-gate
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: task-gate
     command: speckit.ai-team.task-gate
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: evidence
     command: speckit.ai-team.evidence
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} published_requirement_url={{ inputs.published_requirement_url }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true

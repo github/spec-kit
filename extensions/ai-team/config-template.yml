@@ -20,6 +20,39 @@ agent_tools:
     - trae
   auto_detect_from_specify_init: true
 
+task_context:
+  # Durable task context survives interrupted sessions and tool switches.
+  root: .specify/ai-team/tasks
+  context_pack_file: context-pack.md
+  state_file: state.yml
+  artifact_dir: artifacts
+  allow_reconstruct_from_published_requirement_url: true
+  allow_reconstruct_from_bug_slug: true
+
+code_graph:
+  # Adapters may be local tools, MCP tools, or hosted services. All of them
+  # should normalize into the same artifact shape.
+  root: .specify/ai-team/codegraph
+  default_adapter_order:
+    - scip
+    - joern
+    - codeql
+    - tree-sitter-source
+  normalized_outputs:
+    - nodes.jsonl
+    - edges.jsonl
+    - summary.md
+    - adapter-report.md
+  require_for:
+    - public interface change
+    - class add or delete
+    - cross-module semantic change
+    - dependency direction change
+    - resumed task with changed source snapshot
+  license_review_required_for:
+    - jqassistant
+    - universal-ctags
+
 repositories:
   # Private requirements repository stores raw customer demand, drafts,
   # commercial context, approval discussion, and internal scheduling. Do not

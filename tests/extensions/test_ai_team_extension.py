@@ -34,7 +34,9 @@ def test_ai_team_extension_command_files_exist():
     assert command_names == {
         "speckit.ai-team.workspace",
         "speckit.ai-team.start",
+        "speckit.ai-team.context",
         "speckit.ai-team.requirement",
+        "speckit.ai-team.codegraph",
         "speckit.ai-team.impact",
         "speckit.ai-team.handoff",
         "speckit.ai-team.plan-gate",
@@ -70,6 +72,16 @@ def test_ai_team_config_template_defines_repository_and_role_contracts():
         "claude",
         "cursor-agent",
         "trae",
+    }
+    assert config["task_context"]["root"] == ".specify/ai-team/tasks"
+    assert config["task_context"]["context_pack_file"] == "context-pack.md"
+    assert config["task_context"]["state_file"] == "state.yml"
+    assert config["code_graph"]["root"] == ".specify/ai-team/codegraph"
+    assert set(config["code_graph"]["normalized_outputs"]) == {
+        "nodes.jsonl",
+        "edges.jsonl",
+        "summary.md",
+        "adapter-report.md",
     }
     assert (
         config["repositories"]["requirements_internal"]["record_in_coding_repository"]
@@ -113,6 +125,31 @@ def test_ai_team_repository_boundary_document_exists():
     assert "not a local submodule path" in text
 
 
+def test_ai_team_task_context_document_exists():
+    context_doc = EXTENSION_ROOT / "docs" / "task-context-package.md"
+
+    assert context_doc.exists()
+    text = context_doc.read_text(encoding="utf-8")
+    assert "Task Context Package" in text
+    assert ".specify/ai-team/tasks/<task-id>/" in text
+    assert "specify workflow resume <run-id>" in text
+    assert "published requirement URL" in text
+
+
+def test_ai_team_code_graph_adapter_document_exists():
+    graph_doc = EXTENSION_ROOT / "docs" / "code-graph-adapters.md"
+
+    assert graph_doc.exists()
+    text = graph_doc.read_text(encoding="utf-8")
+    assert "Adapter Contract" in text
+    assert "SCIP" in text
+    assert "Joern" in text
+    assert "CodeQL" in text
+    assert "tree-sitter" in text
+    assert "nodes.jsonl" in text
+    assert "edges.jsonl" in text
+
+
 def test_ai_team_workflow_is_bundled_and_uses_init_step():
     workflow = REPO_ROOT / "workflows" / "ai-team-sdd" / "workflow.yml"
     catalog = json.loads(
@@ -128,3 +165,12 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     steps = data["steps"]
     assert steps[0]["type"] == "if"
     assert steps[0]["then"][0]["type"] == "init"
+    assert "task_id" in data["inputs"]
+    assert "resume_from" in data["inputs"]
+    step_ids = [step["id"] for step in steps]
+    assert "context-open" in step_ids
+    assert "codegraph" in step_ids
+    context_step = next(step for step in steps if step["id"] == "context-open")
+    assert context_step["command"] == "speckit.ai-team.context"
+    codegraph_step = next(step for step in steps if step["id"] == "codegraph")
+    assert codegraph_step["command"] == "speckit.ai-team.codegraph"

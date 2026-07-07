@@ -45,7 +45,7 @@ This independent distribution includes an enterprise AI Team extension:
 
 | Extension | Purpose |
 |---|---|
-| `ai-team` | Adds role-isolated SDD handoffs, requirements/coding repository boundaries, plan/task gates, self-test evidence, and failure evolution for enterprise AI Team Coding. |
+| `ai-team` | Adds role-isolated SDD handoffs, requirements/coding repository boundaries, durable task context for resume, code graph adapters, plan/task gates, self-test evidence, and failure evolution for enterprise AI Team Coding. |
 
 Install it in a Spec Kit project with:
 

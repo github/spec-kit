@@ -33,7 +33,7 @@ $ARGUMENTS
 2. Reconstruct the expected flow:
    - work item;
    - published requirement URL or bug slug;
-   - task context;
+   - task context from `.specify/ai-team/tasks/<task-id>/`;
    - code graph impact;
    - evidence;
    - human decision.
@@ -46,11 +46,15 @@ $ARGUMENTS
    - add a code graph overlay note;
    - record decision memory or curated attempt memory.
 5. Separate immediate fix from process improvement.
+6. Update the Task Context Package with failure class, durable improvement,
+   current phase, and follow-up command when the task is not done.
 
 ## Output Shape
 
 ```text
 Failure retrospective:
+- task id:
+- context path:
 - failure source:
 - linked issue or PR:
 - published requirement URL or bug slug:
