@@ -410,9 +410,13 @@ def _byte_length(value: str) -> int:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
 
-    feature_description = " ".join(args.description_parts).strip()
+    feature_description = " ".join(args.description_parts)
     if not feature_description:
         _err(USAGE)
+        return 1
+    feature_description = feature_description.strip()
+    if not feature_description:
+        _err("Error: Feature description cannot be empty or contain only whitespace")
         return 1
 
     project_root = _find_project_root(SCRIPT_DIR)

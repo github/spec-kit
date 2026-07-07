@@ -277,6 +277,8 @@ class TestCreateFeatureBranchParity:
         b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "   ")
         p = _run_py("create-new-feature-branch", py_proj, "--json", "   ")
         assert b.returncode == p.returncode == 1
+        assert p.stderr.strip() == b.stderr.strip()
+        assert "cannot be empty or contain only whitespace" in p.stderr
 
     def test_specify_init_dir_resolves_target_project(self, tmp_path: Path):
         _, py_proj = _twin_projects(tmp_path)
