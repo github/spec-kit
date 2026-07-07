@@ -244,7 +244,7 @@ def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
 
 def _split_top_level(text: str, sep: str) -> list[str]:
     """Split *text* on each occurrence of *sep* that lies outside any quoted
-    string or nested bracket.
+    string or nested brackets.
 
     Used to break a filter chain (``a | map('x') | join(',')``) into its
     individual filter segments without splitting on a ``|`` that appears inside
