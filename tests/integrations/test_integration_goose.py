@@ -71,8 +71,15 @@ class TestGooseCommandPlaceholderResolution:
 
         recipe = tmp_path / ".goose" / "recipes" / "speckit.example.yaml"
         assert recipe.exists(), "goose recipe should be generated"
-        content = recipe.read_text(encoding="utf-8")
-        # Placeholders must be resolved, not emitted verbatim.
-        assert "{SCRIPT}" not in content
-        assert "__AGENT__" not in content
-        assert "$ARGUMENTS" not in content
+        # Parse the recipe and assert the prompt actually got the correct
+        # replacements — not merely that the literal tokens are absent (which
+        # a wrong-but-token-free output could also satisfy).
+        data = yaml.safe_load(recipe.read_text(encoding="utf-8"))
+        prompt = data["prompt"]
+        assert ".specify/scripts/" in prompt  # {SCRIPT} -> resolved script path
+        assert "agent goose" in prompt  # __AGENT__ -> agent name
+        assert "{{args}}" in prompt  # $ARGUMENTS -> goose args token
+        # And the raw placeholders must not survive.
+        assert "{SCRIPT}" not in prompt
+        assert "__AGENT__" not in prompt
+        assert "$ARGUMENTS" not in prompt
