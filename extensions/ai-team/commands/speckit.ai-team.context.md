@@ -38,6 +38,9 @@ Use a stable `task-id`:
 - coding issue number, bug slug, or bug report slug for bug fixes;
 - explicit `task_id=<value>` when the work item has no stable ID yet.
 
+Use `extensions/ai-team/docs/task-field-spec.md` or the installed equivalent as
+the field naming contract.
+
 Do not store raw customer demand or private enhancement draft paths in public
 coding repository context packs.
 
@@ -65,7 +68,9 @@ Task Context Package:
 - task id:
 - work type: bug fix / feature / new project / template change / unclear
 - work item:
-- coding issue URL or bug slug:
+- work item type:
+- coding issue URL:
+- bug slug:
 - handoff requirement URL:
 - published requirement URL, deprecated alias:
 - coding repository:

@@ -77,7 +77,9 @@ speckit.ai-team.context task_id=<task-id> resume=true
 ```
 
 Use [docs/task-context-package.md](docs/task-context-package.md) for the
-storage format, phase model, and resume protocol.
+storage format, phase model, and resume protocol. Use
+[docs/task-field-spec.md](docs/task-field-spec.md) for canonical `task_id`,
+`bug_slug`, `coding_issue_url`, and `handoff_requirement_url` rules.
 
 ## User Journeys
 
@@ -86,7 +88,7 @@ step-by-step journeys. The short version:
 
 | Journey | Work item | Main path |
 |---|---|---|
-| existing project bug fix | coding issue or bug slug | context -> code graph when needed -> impact -> bug assess/fix/test -> checks/evidence -> PR |
+| existing project bug fix | coding issue or bug slug | `ai-team-bugfix`: context -> route gate -> code graph -> impact gate -> bug assess -> assessment gate -> bug fix -> fix gate -> bug test -> checks/evidence -> PR |
 | existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> specify/plan/tasks/implement -> evidence -> PR |
 | new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> specify/plan with strict build plan -> thin slice -> evidence |
 | resume from middle | workflow run ID or task ID | workflow resume for paused runs, or `speckit.ai-team.context task_id=<task-id> resume=true` for cross-session recovery |
@@ -94,13 +96,13 @@ step-by-step journeys. The short version:
 
 ### Chat Aliases
 
-When users work in a chat-first AI coding tool, use the same workflow name for
-every path:
+When users work in a chat-first AI coding tool, use these stable workflow
+aliases instead of asking the user to remember command details:
 
 | Chat alias | Maps to |
 |---|---|
 | `ai-team-sdd feature path` | `work_type=feature` plus a coding issue URL or handoff requirement URL |
-| `ai-team-sdd bug path` | `work_type=bug` plus a coding issue URL or bug slug |
+| `ai-team-bugfix path` | `task_id=BUG-<repo-slug>-<issue-number>`, `bug_slug=bug-<repo-slug>-<issue-number>`, and an optional coding issue URL |
 | `ai-team-sdd new-project path` | `work_type=new-project` plus a public project issue/charter or handoff requirement URL |
 | `ai-team-sdd resume path` | `task_id=<task-id>` plus `resume_from=<phase>` or workflow run resume |
 
@@ -113,23 +115,25 @@ https://example.com/org/project/issues/456
 Use the ai-team-sdd feature path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-015
 
-Use the ai-team-sdd bug path for this coding issue:
+Use the ai-team-bugfix path with task_id=BUG-project-alpha-123 and bug_slug=bug-project-alpha-123 for this coding issue:
 https://example.com/org/project/issues/123
 ```
 
 ### Existing Project Bug Fix
 
-Bug fixes must link a coding repository issue or bug slug. The reporter may
-describe only symptoms; the AI agent uses source evidence and code graph impact
-to find the likely module. The actual bug lifecycle uses the bundled bug
-extension:
+Bug fixes should use the dedicated `ai-team-bugfix` workflow. Bug work should
+link a coding repository issue when possible and must provide both a stable
+`task_id` and a deterministic `bug_slug`. The reporter may describe only
+symptoms; the AI agent uses source evidence and code graph impact to find the
+likely module. The actual bug lifecycle uses the bundled bug extension:
 
 ```text
 speckit.bug.assess -> speckit.bug.fix -> speckit.bug.test
 ```
 
-AI Team adds the task context, code graph impact, portable checks, Evidence
-Board, PR description, and review gates around that bug lifecycle.
+AI Team adds task context, route review, code graph impact, architecture impact
+review, assessment review, fix-scope review, portable checks, Evidence Board,
+PR description, and review support around that bug lifecycle.
 
 ### Existing Project New Feature
 
@@ -212,7 +216,8 @@ New project work needs a stricter build-from-zero plan:
 
 ## Workflow
 
-The bundled `ai-team-sdd` workflow gives teams a resumable skeleton:
+The bundled `ai-team-sdd` workflow gives feature and new-project work a
+resumable skeleton:
 
 ```text
 optional Spec Kit init bootstrap -> workspace contract -> request routing
@@ -220,13 +225,24 @@ optional Spec Kit init bootstrap -> workspace contract -> request routing
 -> Evidence Board
 ```
 
+The bundled `ai-team-bugfix` workflow gives bug work a deterministic path:
+
+```text
+optional Spec Kit init bootstrap -> workspace contract -> task context package
+-> request routing -> route gate -> code graph -> impact -> impact gate
+-> bug assessment -> assessment gate -> bug fix -> fix gate -> bug test
+-> portable checks -> Evidence Board
+```
+
 Workspace creation uses Spec Kit's own `init` step. AI Team does not copy
 template repositories into product repositories.
 
-The workflow accepts `task_id`, `work_type`, `coding_issue_url`, `bug_slug`,
+`ai-team-sdd` accepts `task_id`, `work_type`, `coding_issue_url`,
 `handoff_requirement_url`, backward-compatible `published_requirement_url`, and
-`resume_from` so a user can restart from the middle after a requirement
-approval, bug triage, plan gate, task gate, or implementation interruption.
+`resume_from` so a user can restart feature or new-project work from the
+middle. `ai-team-bugfix` accepts `task_id`, `bug_slug`, `coding_issue_url`, and
+`resume_from` so a user can restart after route review, impact review, bug
+assessment, fix review, testing, evidence, PR, or final review.
 
 ## Skill, Knowledge, Memory Support
 
@@ -249,10 +265,14 @@ full model and `speckit.ai-team.support` to audit a project.
 
 ```bash
 specify extension add ai-team
+specify workflow add ai-team-sdd
+specify workflow add ai-team-bugfix
 ```
 
 For local development:
 
 ```bash
 specify extension add --dev /path/to/spec-kit/extensions/ai-team
+specify workflow add /path/to/spec-kit/workflows/ai-team-sdd
+specify workflow add /path/to/spec-kit/workflows/ai-team-bugfix
 ```

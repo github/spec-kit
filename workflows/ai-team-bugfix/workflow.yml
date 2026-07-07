@@ -1,0 +1,148 @@
+schema_version: "1.0"
+workflow:
+  id: "ai-team-bugfix"
+  name: "AI Team Bug Fix"
+  version: "0.1.0"
+  author: "AI Team Template"
+  description: "Runs an AI Team bug-fix flow with durable task context, source impact review, bug assessment, fix, verification, checks, and evidence."
+
+requires:
+  speckit_version: ">=0.12.4"
+  integrations:
+    any:
+      - "codex"
+      - "claude"
+      - "cursor-agent"
+      - "trae"
+
+inputs:
+  request:
+    type: string
+    required: true
+    prompt: "Describe the bug or provide the coding issue URL"
+  integration:
+    type: string
+    default: "codex"
+    enum: ["codex", "claude", "cursor-agent", "trae"]
+  bootstrap_workspace:
+    type: boolean
+    default: false
+  force_bootstrap:
+    type: boolean
+    default: false
+  task_id:
+    type: string
+    required: true
+    prompt: "AI Team task ID, for example BUG-project-alpha-123"
+  coding_issue_url:
+    type: string
+    default: ""
+  bug_slug:
+    type: string
+    required: true
+    prompt: "Bug slug for .specify/bugs/<slug>/, for example bug-project-alpha-123"
+  resume_from:
+    type: string
+    default: "auto"
+    enum: ["auto", "intake", "assessed", "impact-reviewed", "fixing", "testing", "evidence", "pr", "review"]
+
+steps:
+  - id: bootstrap-if-requested
+    type: if
+    condition: "{{ inputs.bootstrap_workspace == true }}"
+    then:
+      - id: bootstrap
+        type: init
+        here: true
+        integration: "{{ inputs.integration }}"
+        integration_options: "--skills"
+        force: "{{ inputs.force_bootstrap }}"
+        ignore_agent_tools: true
+
+  - id: workspace
+    command: speckit.ai-team.workspace
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }}"
+
+  - id: context-open
+    command: speckit.ai-team.context
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+
+  - id: route
+    command: speckit.ai-team.start
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+
+  - id: review-route
+    type: gate
+    message: "Review the bug work item, task_id, bug_slug, and Task Context Package before source impact analysis."
+    options: [approve, revise, reject]
+    on_reject: abort
+
+  - id: codegraph
+    command: speckit.ai-team.codegraph
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+    continue_on_error: true
+
+  - id: impact
+    command: speckit.ai-team.impact
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+    continue_on_error: true
+
+  - id: review-impact
+    type: gate
+    message: "Review source impact and decide whether architecture-level, public-contract, or cross-module changes are allowed for this bug fix."
+    options: [approve, revise, reject]
+    on_reject: abort
+
+  - id: bug-assess
+    command: speckit.bug.assess
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} coding_issue_url={{ inputs.coding_issue_url }} slug={{ inputs.bug_slug }} task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }}"
+
+  - id: review-assessment
+    type: gate
+    message: "Review the bug assessment, root-cause hypothesis, and proposed remediation before source edits."
+    options: [approve, revise, reject]
+    on_reject: abort
+
+  - id: bug-fix
+    command: speckit.bug.fix
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "slug={{ inputs.bug_slug }} task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }}"
+
+  - id: review-fix
+    type: gate
+    message: "Review fix scope and deviations from assessment before verification."
+    options: [approve, revise, reject]
+    on_reject: abort
+
+  - id: bug-test
+    command: speckit.bug.test
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "slug={{ inputs.bug_slug }} task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }}"
+
+  - id: checks
+    command: speckit.ai-team.checks
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+    continue_on_error: true
+
+  - id: evidence
+    command: speckit.ai-team.evidence
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+    continue_on_error: true

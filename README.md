@@ -67,13 +67,14 @@ For detailed steps, start with
 ### AI Team Quick Start
 
 Install this distribution, initialize the coding repository, and add the AI
-Team extension and workflow:
+Team extension and workflows:
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
 specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
 specify workflow add ai-team-sdd
+specify workflow add ai-team-bugfix
 ```
 
 Use `--integration claude`, `--integration cursor-agent`, or `--integration
@@ -83,9 +84,10 @@ Examples:
 
 ```bash
 # Existing project bug fix
-specify workflow run ai-team-sdd \
-  --input request="Fix the upload timeout reported by support" \
-  --input work_type=bug \
+specify workflow run ai-team-bugfix \
+  --input request="Fix the upload timeout reported by customer support" \
+  --input task_id=BUG-project-alpha-123 \
+  --input bug_slug=bug-project-alpha-123 \
   --input coding_issue_url="https://example.com/org/project/issues/123"
 
 # Existing project public feature
@@ -107,15 +109,15 @@ specify workflow run ai-team-sdd \
   --input bootstrap_workspace=true \
   --input handoff_requirement_url="https://example.com/enhancements/rfcs/REQ-2026-020"
 
-# Resume by workflow run state
-specify workflow resume <run-id>
-
 # Resume by durable task context after tool or chat loss
 speckit.ai-team.context task_id=<task-id> resume=true
+
+# Resume by workflow run state
+specify workflow resume <run-id>
 ```
 
-For chat-first tools, use the same `ai-team-sdd` name for every path. These
-phrases are aliases for the workflow inputs above:
+For chat-first tools, use stable path aliases. These phrases are aliases for the
+workflow inputs above:
 
 ```text
 Use the ai-team-sdd feature path for this public coding issue:
@@ -124,7 +126,7 @@ https://example.com/org/project/issues/456
 Use the ai-team-sdd feature path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-015
 
-Use the ai-team-sdd bug path for this coding issue:
+Use the ai-team-bugfix path with task_id=BUG-project-alpha-123 and bug_slug=bug-project-alpha-123 for this coding issue:
 https://example.com/org/project/issues/123
 
 Use the ai-team-sdd new-project path for this internal handoff requirement:

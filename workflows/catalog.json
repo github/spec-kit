@@ -20,6 +20,15 @@
       "version": "0.1.0",
       "url": "https://raw.githubusercontent.com/EuphoriaYan/spec-kit/main/workflows/ai-team-sdd/workflow.yml",
       "tags": ["sdd", "ai-team", "enterprise", "requirements"]
+    },
+    "ai-team-bugfix": {
+      "id": "ai-team-bugfix",
+      "name": "AI Team Bug Fix",
+      "description": "Runs AI Team bug fix with task identity, source impact review, bug assessment, fix, verification, checks, and evidence",
+      "author": "AI Team Template",
+      "version": "0.1.0",
+      "url": "https://raw.githubusercontent.com/EuphoriaYan/spec-kit/main/workflows/ai-team-bugfix/workflow.yml",
+      "tags": ["bugfix", "ai-team", "enterprise", "evidence"]
     }
   }
 }

@@ -9,13 +9,19 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXTENSION_ROOT = REPO_ROOT / "extensions" / "ai-team"
 WORKFLOW_PATH = REPO_ROOT / "workflows" / "ai-team-sdd" / "workflow.yml"
+BUGFIX_WORKFLOW_PATH = REPO_ROOT / "workflows" / "ai-team-bugfix" / "workflow.yml"
 
 
-def _run_ai_team_workflow_to_route_gate(tmp_path: Path, inputs: dict, run_id: str):
+def _run_ai_team_workflow_to_route_gate(
+    tmp_path: Path,
+    inputs: dict,
+    run_id: str,
+    workflow_path: Path = WORKFLOW_PATH,
+):
     from specify_cli.workflows.base import RunStatus
     from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
 
-    definition = WorkflowDefinition.from_yaml(WORKFLOW_PATH)
+    definition = WorkflowDefinition.from_yaml(workflow_path)
     engine = WorkflowEngine(tmp_path)
     mock_result = MagicMock()
     mock_result.returncode = 0
@@ -173,6 +179,20 @@ def test_ai_team_task_context_document_exists():
     assert "coding issue URL" in text
 
 
+def test_ai_team_task_field_spec_document_exists():
+    field_doc = EXTENSION_ROOT / "docs" / "task-field-spec.md"
+
+    assert field_doc.exists()
+    text = field_doc.read_text(encoding="utf-8")
+    assert "BUG-<repo-slug>-<issue-number>" in text
+    assert "FEAT-<repo-slug>-<issue-number>" in text
+    assert "REQ-YYYY-NNN" in text
+    assert "bug_slug" in text
+    assert "coding_issue_url" in text
+    assert "handoff_requirement_url" in text
+    assert "published_requirement_url" in text
+
+
 def test_ai_team_code_graph_adapter_document_exists():
     graph_doc = EXTENSION_ROOT / "docs" / "code-graph-adapters.md"
 
@@ -199,7 +219,7 @@ def test_ai_team_user_journeys_document_exists():
     assert "Resume From The Middle" in text
     assert "speckit.ai-team.context task_id=<task-id> resume=true" in text
     assert "ai-team-sdd feature path" in text
-    assert "ai-team-sdd bug path" in text
+    assert "ai-team-bugfix path" in text
     assert "ai-team-sdd new-project path" in text
     assert "ai-team-sdd resume path" in text
 
@@ -214,7 +234,9 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     data = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
     assert data["workflow"]["id"] == "ai-team-sdd"
     assert "ai-team-sdd" in catalog["workflows"]
+    assert "ai-team-bugfix" in catalog["workflows"]
     assert "workflows/ai-team-sdd" in pyproject
+    assert "workflows/ai-team-bugfix" in pyproject
     steps = data["steps"]
     assert steps[0]["type"] == "if"
     assert steps[0]["then"][0]["type"] == "init"
@@ -222,6 +244,8 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert "handoff_requirement_url" in data["inputs"]
     assert "published_requirement_url" in data["inputs"]
     assert "resume_from" in data["inputs"]
+    assert "bug_slug" not in data["inputs"]
+    assert "bug" not in data["inputs"]["work_type"]["enum"]
     assert "new-project" in data["inputs"]["work_type"]["enum"]
     step_ids = [step["id"] for step in steps]
     assert "context-open" in step_ids
@@ -231,23 +255,52 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     codegraph_step = next(step for step in steps if step["id"] == "codegraph")
     assert codegraph_step["command"] == "speckit.ai-team.codegraph"
 
+    assert BUGFIX_WORKFLOW_PATH.exists()
+    bugfix = yaml.safe_load(BUGFIX_WORKFLOW_PATH.read_text(encoding="utf-8"))
+    assert bugfix["workflow"]["id"] == "ai-team-bugfix"
+    assert "task_id" in bugfix["inputs"]
+    assert "bug_slug" in bugfix["inputs"]
+    assert "coding_issue_url" in bugfix["inputs"]
+    bugfix_step_ids = [step["id"] for step in bugfix["steps"]]
+    assert "review-route" in bugfix_step_ids
+    assert "review-impact" in bugfix_step_ids
+    assert "bug-assess" in bugfix_step_ids
+    assert "review-assessment" in bugfix_step_ids
+    assert "bug-fix" in bugfix_step_ids
+    assert "review-fix" in bugfix_step_ids
+    assert "bug-test" in bugfix_step_ids
+    assert "checks" in bugfix_step_ids
+    assert "evidence" in bugfix_step_ids
+
+
+def test_ai_team_bugfix_workflow_routes_to_first_gate(tmp_path):
+    run_id = "ai-team-bugfix-bug-project-alpha-123"
+    state = _run_ai_team_workflow_to_route_gate(
+        tmp_path,
+        {
+            "request": "Fix upload timeout reported by support",
+            "task_id": "BUG-project-alpha-123",
+            "bug_slug": "bug-project-alpha-123",
+            "coding_issue_url": "https://example.com/org/project/issues/123",
+        },
+        run_id,
+        workflow_path=BUGFIX_WORKFLOW_PATH,
+    )
+
+    context_args = state.step_results["context-open"]["input"]["args"]
+    route_args = state.step_results["route"]["input"]["args"]
+
+    for args in (context_args, route_args):
+        assert f"workflow_run_id={run_id}" in args
+        assert "work_type=bug" in args
+        assert "task_id=BUG-project-alpha-123" in args
+        assert "bug_slug=bug-project-alpha-123" in args
+        assert "coding_issue_url=https://example.com/org/project/issues/123" in args
+
 
 @pytest.mark.parametrize(
     ("case_name", "inputs", "expected_fragments"),
     [
-        (
-            "existing project bug fix",
-            {
-                "request": "Fix upload timeout reported by support",
-                "work_type": "bug",
-                "coding_issue_url": "https://example.com/org/project/issues/123",
-            },
-            [
-                "work_type=bug",
-                "coding_issue_url=https://example.com/org/project/issues/123",
-                "handoff_requirement_url=",
-            ],
-        ),
         (
             "existing project public feature",
             {

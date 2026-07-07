@@ -25,6 +25,9 @@ cross-session recovery.
 
 ## Task Identity
 
+Use [task-field-spec.md](task-field-spec.md) for canonical field names,
+`task_id` patterns, and bug `bug_slug` rules.
+
 | Work type | Stable identity |
 |---|---|
 | bug fix | coding issue URL, issue number, or `.specify/bugs/<slug>/` |

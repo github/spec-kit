@@ -19,7 +19,7 @@ inputs:
   request:
     type: string
     required: true
-    prompt: "Describe the bug, feature, or template change"
+    prompt: "Describe the feature, new project, or template change"
   integration:
     type: string
     default: "codex"
@@ -36,11 +36,8 @@ inputs:
   work_type:
     type: string
     default: "auto"
-    enum: ["auto", "bug", "feature", "new-project", "template"]
+    enum: ["auto", "feature", "new-project", "template"]
   coding_issue_url:
-    type: string
-    default: ""
-  bug_slug:
     type: string
     default: ""
   published_requirement_url:
@@ -77,13 +74,13 @@ steps:
     command: speckit.ai-team.context
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
   - id: route
     command: speckit.ai-team.start
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
   - id: review-route
     type: gate
@@ -95,33 +92,33 @@ steps:
     command: speckit.ai-team.codegraph
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: impact
     command: speckit.ai-team.impact
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: plan-gate
     command: speckit.ai-team.plan-gate
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: task-gate
     command: speckit.ai-team.task-gate
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: evidence
     command: speckit.ai-team.evidence
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true

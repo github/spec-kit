@@ -24,6 +24,7 @@ Read when present:
 
 - `.specify/init-options.json` and `.specify/integration.json`;
 - `.specify/extensions/ai-team/ai-team-config.yml`;
+- `extensions/ai-team/docs/task-field-spec.md` or installed equivalent;
 - `AGENTS.md`, `CLAUDE.md`, Cursor rules, Trae rules, or the active agent file;
 - the coding issue URL, bug slug, or handoff requirement URL named by the user;
 - internal enhancement handoff content only when the active repository and
@@ -44,11 +45,19 @@ Read when present:
 | change AI Team rules, commands, templates, examples, or workflow | template change | this repository PR |
 | unclear | ask one focused question | no edits |
 
-Bug fixes use the bundled bug extension:
+Bug fixes should use the dedicated `ai-team-bugfix` workflow when the user wants
+an end-to-end bug path. This start command only routes and records context; the
+workflow adds route review, impact review, assessment review, and fix-scope
+gates around the bundled bug extension:
 
 ```text
 speckit.bug.assess -> speckit.bug.fix -> speckit.bug.test
 ```
+
+For deterministic bug workflows, require both:
+
+- `task_id=BUG-<repo-slug>-<issue-number>` for AI Team task context;
+- `bug_slug=bug-<repo-slug>-<issue-number>` for `.specify/bugs/<bug_slug>/`.
 
 Features use the SDD path:
 
@@ -89,7 +98,9 @@ Task Context Package:
 - request:
 - classification: bug fix / feature / new project / template change / unclear
 - required work item:
-- coding issue URL or bug slug:
+- work item type:
+- coding issue URL:
+- bug slug:
 - handoff requirement URL:
 - published requirement URL, deprecated alias:
 - coding repository:

@@ -13,6 +13,7 @@ repository, and add the AI Team extension:
 specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
 specify workflow add ai-team-sdd
+specify workflow add ai-team-bugfix
 ```
 
 Use the integration that matches the active agent: `codex`, `claude`,
@@ -34,12 +35,13 @@ The workspace contract should name:
 
 ## Chat Alias Convention
 
-Use one workflow name in chat-first tools, then name the path:
+Use stable workflow aliases in chat-first tools so users do not need to
+remember command details:
 
 | Chat alias | Workflow input |
 |---|---|
 | `ai-team-sdd feature path` | `work_type=feature` |
-| `ai-team-sdd bug path` | `work_type=bug` |
+| `ai-team-bugfix path` | `task_id=BUG-<repo-slug>-<issue-number>`, `bug_slug=bug-<repo-slug>-<issue-number>`, and optional `coding_issue_url` |
 | `ai-team-sdd new-project path` | `work_type=new-project` |
 | `ai-team-sdd resume path` | `task_id=<task-id>` and `resume_from=<phase>` |
 
@@ -52,7 +54,7 @@ https://example.com/org/project/issues/456
 Use the ai-team-sdd feature path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-015
 
-Use the ai-team-sdd bug path for this coding issue:
+Use the ai-team-bugfix path with task_id=BUG-project-alpha-123 and bug_slug=bug-project-alpha-123 for this coding issue:
 https://example.com/org/project/issues/123
 
 Use the ai-team-sdd new-project path for this internal handoff requirement:
@@ -66,14 +68,16 @@ Use the ai-team-sdd resume path for task_id=REQ-2026-015 from tasks-ready.
 Use this journey when existing behavior is broken, flaky, regressed, or throws
 errors.
 
-The work item is a coding repository issue, issue URL, or bug slug. The reporter
-does not need to understand code internals. The AI agent and maintainer derive
-the likely source impact from the codebase.
+The preferred path is the dedicated `ai-team-bugfix` workflow. The work item is
+a coding repository issue, issue URL, or bug slug. The reporter does not need to
+understand code internals. The AI agent and maintainer derive the likely source
+impact from the codebase.
 
 ```bash
-specify workflow run ai-team-sdd \
+specify workflow run ai-team-bugfix \
   --input request="Fix the upload timeout reported by customer support" \
-  --input work_type=bug \
+  --input task_id=BUG-project-alpha-123 \
+  --input bug_slug=bug-project-alpha-123 \
   --input coding_issue_url="https://example.com/org/project/issues/123"
 ```
 
@@ -81,20 +85,25 @@ Flow:
 
 1. `speckit.ai-team.context` creates or loads the Task Context Package.
 2. `speckit.ai-team.start` classifies the request as a bug fix and records the
-   coding issue or bug slug.
-3. `speckit.ai-team.codegraph` runs when the likely fix touches more than a
+   coding issue and bug slug.
+3. `review-route` confirms this is a bug, not a hidden feature request.
+4. `speckit.ai-team.codegraph` runs when the likely fix touches more than a
    trivial local file.
-4. `speckit.ai-team.impact` identifies owner module, nearby callers/callees,
-   tests, reuse candidates, and stop conditions.
-5. Run the bug extension for the actual bug workflow:
+5. `speckit.ai-team.impact` identifies owner module, nearby callers/callees,
+   tests, reuse candidates, public contract risks, and stop conditions.
+6. `review-impact` decides whether architecture-level, public-contract, or
+   cross-module changes are allowed for this bug fix.
+7. Run the bug extension for the actual bug workflow, with human gates between
+   assessment, fix, and verification:
 
    ```text
-   speckit.bug.assess -> speckit.bug.fix -> speckit.bug.test
+   speckit.bug.assess -> review-assessment
+   -> speckit.bug.fix -> review-fix -> speckit.bug.test
    ```
 
-6. Run `speckit.ai-team.checks` and `speckit.ai-team.evidence`.
-7. Submit with `speckit.ai-team.pr`, linking the coding issue.
-8. Review with `speckit.ai-team.review`.
+8. Run `speckit.ai-team.checks` and `speckit.ai-team.evidence`.
+9. Submit with `speckit.ai-team.pr`, linking the coding issue.
+10. Review with `speckit.ai-team.review`.
 
 Stop for human decision when expected behavior is actually a new product
 behavior, source impact cannot be stated, or the fix needs public SPI/API,
