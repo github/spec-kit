@@ -406,7 +406,7 @@ specify init . --force --integration copilot
 specify init --here --force --integration copilot
 ```
 
-The CLI will check if the selected integration requires a specific CLI tool to be installed on your machine. If you do not have the required tool installed, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
+The CLI checks that the selected integration's required CLI tool is installed on your machine when that integration has `requires_cli: True`. If you do not have the required tool installed, or you prefer to get the templates without checking for the right tools, use `--ignore-agent-tools` with your command:
 
 ```bash
 specify init <project_name> --integration copilot --ignore-agent-tools
