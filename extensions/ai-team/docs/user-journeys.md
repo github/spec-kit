@@ -7,14 +7,18 @@ features, new projects, and interrupted work.
 ## Common Setup
 
 Install Spec Kit from this independent distribution, initialize the coding
-repository, and add the AI Team extension:
+repository, and add the AI Team extension, handoff-spec preset, and workflows:
 
 ```bash
 specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
+specify preset add ai-team-handoff-spec
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
+
+The `ai-team-handoff-spec` preset appends effective spec reading rules to native
+SDD commands. Without it, core commands do not know about `spec.override.md`.
 
 Use the integration that matches the active agent: `codex`, `claude`,
 `cursor-agent`, or `trae`.

@@ -68,15 +68,19 @@ For detailed steps, start with
 ### AI Team Quick Start
 
 Install this distribution, initialize the coding repository, and add the AI
-Team extension and workflows:
+Team extension, handoff-spec preset, and workflows:
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
 specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
+specify preset add ai-team-handoff-spec
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
+
+The `ai-team-handoff-spec` preset appends effective spec reading rules to native
+SDD commands. Without it, core commands do not know about `spec.override.md`.
 
 Use `--integration claude`, `--integration cursor-agent`, or `--integration
 trae` when those tools are active.

@@ -51,7 +51,13 @@ Install it in a Spec Kit project with:
 
 ```bash
 specify extension add ai-team
+specify preset add ai-team-handoff-spec
+specify workflow add ai-team-sdd
+specify workflow add ai-team-bugfix
 ```
+
+The `ai-team-handoff-spec` preset is required for handoff URL and
+`spec.override.md` support in native SDD commands.
 
 ### Option 1: Curated Catalog (Recommended for Organizations)
 
