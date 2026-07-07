@@ -370,6 +370,26 @@ def test_python_missing_config_matching_bash(tmp_path: Path) -> None:
 
 
 @requires_posix_bash
+def test_python_unparseable_config_matching_bash(tmp_path: Path) -> None:
+    repo_a = tmp_path / "proj-a"
+    repo_b = tmp_path / "proj-b"
+    for repo in (repo_a, repo_b):
+        cfg_dir = repo / ".specify" / "extensions" / "agent-context"
+        cfg_dir.mkdir(parents=True)
+        (cfg_dir / "agent-context-config.yml").write_text(
+            "context_file: [unclosed\n", encoding="utf-8"
+        )
+
+    bash = run_bash(repo_a)
+    py = run_python(repo_b)
+
+    assert_parity(bash, py, repo_a, repo_b)
+    assert py.returncode == 0
+    assert "cannot update context." in py.stderr
+    assert "agent-context: skipping update (see above for details)." in py.stderr
+
+
+@requires_posix_bash
 def test_python_empty_config_matching_bash(tmp_path: Path) -> None:
     repo_a, repo_b = twin_projects(tmp_path)
 

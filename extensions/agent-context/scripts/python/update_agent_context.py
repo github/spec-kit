@@ -45,7 +45,7 @@ def _collect_context_files(data: dict, project_root: str) -> list[str]:
     """Resolve the managed context files from config, mirroring the bash logic."""
     context_files: list[str] = []
     seen: set[str] = set()
-    case_insensitive = sys.platform.startswith(("win32", "cygwin"))
+    case_insensitive = sys.platform.startswith(("win32", "cygwin", "msys"))
 
     def add(value: object) -> None:
         if not isinstance(value, str):
