@@ -38,11 +38,23 @@ provides:
       strategy: prepend
       description: "Prefer spec.override.md in plan template when present"
 
+    - type: template
+      name: constitution-template
+      file: templates/constitution-template.md
+      strategy: replace
+      description: "Generic repository compliance and boundary baseline constitution"
+
     - type: command
       name: speckit.bug.test
       file: commands/bug-test-evidence-append.md
       strategy: append
       description: "Composite checks and evidence board after bug verification"
+
+    - type: command
+      name: speckit.constitution
+      file: commands/speckit.constitution.md
+      strategy: replace
+      description: "Amend baseline constitution incrementally; seed from preset template when placeholders remain"
 
 tags:
   - ai-team
