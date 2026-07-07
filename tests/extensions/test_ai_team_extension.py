@@ -194,6 +194,10 @@ def test_ai_team_user_journeys_document_exists():
     assert "New Project From Zero" in text
     assert "Resume From The Middle" in text
     assert "speckit.ai-team.context task_id=<task-id> resume=true" in text
+    assert "ai-team-sdd feature path" in text
+    assert "ai-team-sdd bug path" in text
+    assert "ai-team-sdd new-project path" in text
+    assert "ai-team-sdd resume path" in text
 
 
 def test_ai_team_workflow_is_bundled_and_uses_init_step():

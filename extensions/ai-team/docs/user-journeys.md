@@ -32,6 +32,32 @@ The workspace contract should name:
 - rules that prevent requirements-internal paths or raw customer demand from
   being committed to the coding repository.
 
+## Chat Alias Convention
+
+Use one workflow name in chat-first tools, then name the path:
+
+| Chat alias | Workflow input |
+|---|---|
+| `ai-team-sdd feature path` | `work_type=feature` |
+| `ai-team-sdd bug path` | `work_type=bug` |
+| `ai-team-sdd new-project path` | `work_type=new-project` |
+| `ai-team-sdd resume path` | `task_id=<task-id>` and `resume_from=<phase>` |
+
+Recommended user prompts:
+
+```text
+Use the ai-team-sdd feature path for this published requirement URL:
+https://example.com/requirements/rfcs/REQ-2026-015
+
+Use the ai-team-sdd bug path for this coding issue:
+https://example.com/org/project/issues/123
+
+Use the ai-team-sdd new-project path for this published project charter:
+https://example.com/requirements/rfcs/REQ-2026-020
+
+Use the ai-team-sdd resume path for task_id=REQ-2026-015 from tasks-ready.
+```
+
 ## Journey 1: Existing Project Bug Fix
 
 Use this journey when existing behavior is broken, flaky, regressed, or throws

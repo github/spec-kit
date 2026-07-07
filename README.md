@@ -108,6 +108,22 @@ specify workflow resume <run-id>
 speckit.ai-team.context task_id=<task-id> resume=true
 ```
 
+For chat-first tools, use the same `ai-team-sdd` name for every path. These
+phrases are aliases for the workflow inputs above:
+
+```text
+Use the ai-team-sdd feature path for this published requirement URL:
+https://example.com/requirements/rfcs/REQ-2026-015
+
+Use the ai-team-sdd bug path for this coding issue:
+https://example.com/org/project/issues/123
+
+Use the ai-team-sdd new-project path for this published project charter:
+https://example.com/requirements/rfcs/REQ-2026-020
+
+Use the ai-team-sdd resume path for task_id=REQ-2026-015 from tasks-ready.
+```
+
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)

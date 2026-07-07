@@ -95,6 +95,28 @@ step-by-step journeys. The short version:
 | resume from middle | workflow run ID or task ID | workflow resume for paused runs, or `speckit.ai-team.context task_id=<task-id> resume=true` for cross-session recovery |
 | failed review/check/incident | PR, check, incident, or repeated AI mistake | retrospect -> update command, gate, knowledge, memory, graph, or test evidence |
 
+### Chat Aliases
+
+When users work in a chat-first AI coding tool, use the same workflow name for
+every path:
+
+| Chat alias | Maps to |
+|---|---|
+| `ai-team-sdd feature path` | `work_type=feature` plus a published requirement URL |
+| `ai-team-sdd bug path` | `work_type=bug` plus a coding issue URL or bug slug |
+| `ai-team-sdd new-project path` | `work_type=new-project` plus a published project charter or requirement URL |
+| `ai-team-sdd resume path` | `task_id=<task-id>` plus `resume_from=<phase>` or workflow run resume |
+
+Recommended prompts:
+
+```text
+Use the ai-team-sdd feature path for this published requirement URL:
+https://example.com/requirements/rfcs/REQ-2026-015
+
+Use the ai-team-sdd bug path for this coding issue:
+https://example.com/org/project/issues/123
+```
+
 ### Existing Project Bug Fix
 
 Bug fixes must link a coding repository issue or bug slug. The reporter may
