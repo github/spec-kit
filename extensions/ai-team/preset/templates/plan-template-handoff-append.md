@@ -1,1 +1,0 @@
-**Note (AI Team handoff preset)**: When `spec.override.md` exists beside `spec.md`, treat the override as the effective feature specification input for this plan; `spec.md` remains the public baseline or URL pointer.

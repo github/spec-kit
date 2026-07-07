@@ -65,8 +65,8 @@ Features use the SDD path:
 ```text
 coding issue or handoff requirement URL -> speckit.specify
 -> review-spec gate -> speckit.ai-team.handoff -> speckit.plan
--> speckit.checklist (composite plan gate via preset) -> review-plan gate
--> speckit.tasks -> speckit.analyze (composite task gate via preset)
+-> speckit.ai-team.plan-check -> review-plan gate
+-> speckit.tasks -> speckit.analyze (native cross-artifact check)
 -> review-tasks gate -> speckit.implement -> speckit.converge (composite checks + evidence via preset)
 ```
 
@@ -85,8 +85,8 @@ must keep a stricter build-from-zero plan:
 project charter, coding issue, or handoff requirement URL -> specify init/bootstrap
 -> speckit.ai-team.workspace -> speckit.ai-team.context
 -> speckit.specify -> speckit.ai-team.handoff -> speckit.plan
--> speckit.checklist (composite plan gate via preset) -> review-plan gate
--> speckit.tasks -> speckit.analyze (composite task gate via preset)
+-> speckit.ai-team.plan-check -> review-plan gate
+-> speckit.tasks -> speckit.analyze (native cross-artifact check)
 -> review-tasks gate -> speckit.implement -> speckit.converge (composite checks + evidence via preset)
 ```
 

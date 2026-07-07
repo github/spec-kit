@@ -15,7 +15,7 @@
     "ai-team-sdd": {
       "id": "ai-team-sdd",
       "name": "AI Team SDD Cycle",
-      "description": "Runs enterprise AI Team SDD with native Spec Kit SDD commands, optional init bootstrap, durable task context resume, code graph impact, gates, checks, and evidence",
+      "description": "Runs enterprise AI Team SDD with native Spec Kit commands, plan-check command, composite task/evidence via preset, durable task context, and code graph impact",
       "author": "AI Team Template",
       "version": "0.1.0",
       "url": "https://raw.githubusercontent.com/EuphoriaYan/spec-kit/main/workflows/ai-team-sdd/workflow.yml",
@@ -24,7 +24,7 @@
     "ai-team-bugfix": {
       "id": "ai-team-bugfix",
       "name": "AI Team Bug Fix",
-      "description": "Runs AI Team bug fix with task identity, source impact review, bug assessment, fix, verification, checks, and evidence",
+      "description": "Runs AI Team bug fix with task identity, impact review, bug lifecycle, and composite checks/evidence via preset on speckit.bug.test",
       "author": "AI Team Template",
       "version": "0.1.0",
       "url": "https://raw.githubusercontent.com/EuphoriaYan/spec-kit/main/workflows/ai-team-bugfix/workflow.yml",

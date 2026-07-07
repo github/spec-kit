@@ -4,7 +4,7 @@ workflow:
   name: "AI Team SDD Cycle"
   version: "0.1.0"
   author: "AI Team Template"
-  description: "Runs an enterprise AI Team SDD flow by reusing native Spec Kit SDD commands, durable task context resume, code graph impact, gates, checks, and evidence."
+  description: "Runs an enterprise AI Team SDD flow with native SDD commands, speckit.ai-team.plan-check, composite checks/evidence via preset on converge, durable task context resume, and code graph impact."
 
 requires:
   speckit_version: ">=0.12.4"
@@ -120,41 +120,71 @@ steps:
     input:
       args: "{{ inputs.request }} task_id={{ inputs.task_id }} phase=specified work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
-  - id: plan
-    command: speckit.plan
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+  - id: plan-cycle
+    type: do-while
+    condition: "{{ steps.review-plan.output.choice == 'revise' }}"
+    max_iterations: 10
+    steps:
+      - id: plan
+        type: if
+        condition: "{{ steps.review-plan.output.choice == 'revise' }}"
+        then:
+          - id: plan-revise
+            command: speckit.plan
+            integration: "{{ inputs.integration }}"
+            input:
+              args: "task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }} Revise plan.md only using plan_check and Required Plan Revisions in context-pack.md. Patch the listed issues; do not rewrite unrelated sections or re-plan from spec unless a listed revision requires it."
+        else:
+          - id: plan-initial
+            command: speckit.plan
+            integration: "{{ inputs.integration }}"
+            input:
+              args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
-  - id: checklist
-    command: speckit.checklist
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      - id: plan-check
+        command: speckit.ai-team.plan-check
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
-  - id: review-plan
-    type: gate
-    message: "Review native checklist and composite AI Team plan gate (preset) before task generation."
-    options: [approve, revise, reject]
-    on_reject: abort
+      - id: review-plan
+        type: gate
+        message: "Review the Plan Check Report in chat. Approve to generate tasks, revise to re-run plan and plan-check, or reject to abort."
+        options: [approve, revise, reject]
+        on_reject: abort
 
-  - id: tasks
-    command: speckit.tasks
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+  - id: task-cycle
+    type: do-while
+    condition: "{{ steps.review-tasks.output.choice == 'revise' }}"
+    max_iterations: 10
+    steps:
+      - id: tasks
+        type: if
+        condition: "{{ steps.review-tasks.output.choice == 'revise' }}"
+        then:
+          - id: tasks-revise
+            command: speckit.tasks
+            integration: "{{ inputs.integration }}"
+            input:
+              args: "task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }} Revise tasks.md only using native analyze findings and the analyze section in context-pack.md when present. Patch the listed issues; do not regenerate tasks from spec unless a listed revision requires it."
+        else:
+          - id: tasks-initial
+            command: speckit.tasks
+            integration: "{{ inputs.integration }}"
+            input:
+              args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
-  - id: analyze
-    command: speckit.analyze
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      - id: analyze
+        command: speckit.analyze
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
-  - id: review-tasks
-    type: gate
-    message: "Review native analyze and composite AI Team task gate (preset) before implementation."
-    options: [approve, revise, reject]
-    on_reject: abort
+      - id: review-tasks
+        type: gate
+        message: "Review the native analyze report before implementation. Revise re-runs tasks and analyze."
+        options: [approve, revise, reject]
+        on_reject: abort
 
   - id: implement
     command: speckit.implement

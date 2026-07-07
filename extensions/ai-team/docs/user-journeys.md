@@ -12,16 +12,37 @@ repository, and add the AI Team extension, handoff-spec preset, and workflows:
 ```bash
 specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
+specify extension add bug
 specify preset add ai-team-handoff-spec
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset appends handoff spec rules and composite AI Team
-gates to native SDD commands (plan gate in checklist, task gate in analyze,
-checks/evidence in converge or bug.test). Install the `bug` extension for bugfix
-composite evidence. Without it, core commands do not know about
-`spec.override.md` or AI Team policy overlays.
+The `ai-team-handoff-spec` preset composes handoff spec rules and composite AI Team
+gates into native SDD commands (checks/evidence in converge
+or bug.test). Plan check is `speckit.ai-team.plan-check` (chat report, not preset).
+The `bug` extension is required for bugfix composite evidence on `speckit.bug.test`.
+Without the preset, core commands do not know about `spec.override.md` or AI Team
+policy overlays.
+
+## SDD checks: extension, preset, and workflow
+
+AI Team feature work uses three cooperating layers:
+
+| Layer | What runs | Typical output |
+|---|---|---|
+| **Extension** | `speckit.ai-team.plan-check` after `speckit.plan` | Plan Check Report in **chat**; `plan_check` summary in task context |
+| **Preset** | `ai-team-handoff-spec` on `converge`, `bug.test` | Handoff spec rules; composite checks, Evidence Board |
+| **Workflow** | `review-plan`, `review-tasks`, … | **Human** approve / revise / reject |
+
+The bundled `ai-team-sdd` workflow does **not** include core `speckit.checklist`.
+Checklist files (`checklists/*.md`) and checkbox gating in `speckit.implement` are
+Spec Kit core behavior when you run checklist manually — they are not part of the
+default AI Team SDD path.
+
+**Revise loop:** When `review-plan` returns revise, update `plan.md` via
+`speckit.plan`, re-run `speckit.ai-team.plan-check`, and approve only when the
+Plan Check Report status is `pass`.
 
 Use the integration that matches the active agent: `codex`, `claude`,
 `cursor-agent`, or `trae`.
@@ -146,14 +167,16 @@ Flow:
 6. `speckit.ai-team.handoff` creates the specify-to-plan handoff so roles do not
    depend on hidden chat.
 7. `speckit.plan` creates the architecture plan.
-8. `speckit.checklist` runs the native requirements-quality checklist and the
-   composite AI Team plan gate (via preset) before the `review-plan` gate.
-9. `speckit.tasks` generates implementation tasks.
-10. `speckit.analyze` runs the native cross-artifact consistency check and the
-    composite AI Team task gate (via preset) before the `review-tasks` gate.
-11. `speckit.implement` changes code; `speckit.converge` checks remaining work
+8. `speckit.ai-team.plan-check` outputs a Plan Check Report in chat and updates task
+   context before the `review-plan` gate.
+9. A human approves or revises at the `review-plan` gate. On **revise**, the
+   workflow re-runs steps 7–8 (`plan-cycle` do-while) before continuing.
+10. `speckit.tasks` generates implementation tasks.
+11. `speckit.analyze` runs the native cross-artifact consistency check before the
+    `review-tasks` gate.
+12. `speckit.implement` changes code; `speckit.converge` checks remaining work
     and runs composite checks plus Evidence Board (via preset).
-12. `speckit.ai-team.pr` and `speckit.ai-team.review` close the evidence loop.
+13. `speckit.ai-team.pr` and `speckit.ai-team.review` close the evidence loop.
 
 Stop when the feature lacks an accountable public work item, crosses approved
 scope, or needs private customer context that should move to an internal
@@ -212,10 +235,10 @@ specify workflow run ai-team-sdd \
 ```
 
 New projects still follow the same native SDD command spine with composite gates
-via preset: `speckit.checklist` (plan gate), `speckit.analyze` (task gate), and
-`speckit.converge` (checks + evidence). The plan gate is stricter for new projects:
-it must establish the project skeleton, architecture spine, dependency strategy,
-runnable thin slice, self-test strategy, and evidence strategy before broad feature
+via preset: `speckit.converge` (checks + evidence). Native `speckit.analyze` is read-only.
+`speckit.ai-team.plan-check` (chat report) is stricter for new projects: it must
+establish the project skeleton, architecture spine, dependency strategy, runnable
+thin slice, self-test strategy, and evidence strategy before broad feature
 construction.
 
 Stop for human decision when the project has no charter, work item, or

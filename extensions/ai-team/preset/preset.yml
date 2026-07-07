@@ -4,7 +4,7 @@ preset:
   id: ai-team-handoff-spec
   name: "AI Team Handoff Spec Reading Rules"
   version: "1.0.0"
-  description: "Append AI Team handoff spec reading rules and composite plan/task/evidence gates into native SDD commands."
+  description: "Prepend handoff spec reading rules and append composite checks/evidence into native SDD commands."
   author: AI Team Template
   repository: https://github.com/EuphoriaYan/spec-kit
   license: MIT
@@ -16,51 +16,33 @@ provides:
   templates:
     - type: command
       name: speckit.plan
-      file: commands/plan-handoff-append.md
-      strategy: append
-      description: "AI Team handoff spec sync and effective spec reading for plan"
+      file: commands/plan-handoff-prepend.md
+      strategy: prepend
+      description: "Handoff spec reading for plan"
 
     - type: command
       name: speckit.tasks
-      file: commands/tasks-handoff-append.md
-      strategy: append
-      description: "Read effective spec when generating tasks"
-
-    - type: command
-      name: speckit.checklist
-      file: commands/checklist-handoff-append.md
-      strategy: append
-      description: "Read effective spec and run AI Team plan gate after native checklist"
-
-    - type: command
-      name: speckit.analyze
-      file: commands/analyze-handoff-append.md
-      strategy: append
-      description: "Analyze against effective spec and run AI Team task gate"
-
-    - type: command
-      name: speckit.implement
-      file: commands/implement-handoff-append.md
-      strategy: append
-      description: "Implement using effective spec context"
+      file: commands/tasks-handoff-prepend.md
+      strategy: prepend
+      description: "Handoff spec reading for tasks"
 
     - type: command
       name: speckit.converge
-      file: commands/converge-handoff-append.md
-      strategy: append
-      description: "Converge against effective spec plus AI Team checks and evidence board"
+      file: commands/converge-handoff-wrap.md
+      strategy: wrap
+      description: "Handoff spec before converge and composite checks and evidence after"
 
     - type: template
       name: plan-template
-      file: templates/plan-template-handoff-append.md
-      strategy: append
-      description: "Note override input in plan template"
+      file: templates/plan-template-handoff-prepend.md
+      strategy: prepend
+      description: "Prefer spec.override.md in plan template when present"
 
     - type: command
       name: speckit.bug.test
       file: commands/bug-test-evidence-append.md
       strategy: append
-      description: "Run AI Team checks and Evidence Board after bug verification"
+      description: "Composite checks and evidence board after bug verification"
 
 tags:
   - ai-team

@@ -90,9 +90,9 @@ step-by-step journeys. The short version:
 
 | Journey | Work item | Main path |
 |---|---|---|
-| existing project bug fix | coding issue or bug slug | `ai-team-bugfix`: context -> route gate -> code graph -> impact gate -> bug assess -> assessment gate -> bug fix -> fix gate -> bug test -> checks/evidence -> PR |
-| existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> native SDD -> AI Team gates -> checks/evidence -> PR |
-| new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> native SDD with strict build plan -> thin slice -> checks/evidence |
+| existing project bug fix | coding issue or bug slug | `ai-team-bugfix`: context -> route gate -> code graph -> impact gate -> bug assess -> assessment gate -> bug fix -> fix gate -> `speckit.bug.test` (composite checks/evidence) -> PR |
+| existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> native SDD with plan check, task gate, and converge evidence -> PR |
+| new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> native SDD with plan-check, task gate (preset), and converge evidence -> thin slice -> PR |
 | resume from middle | workflow run ID or task ID | workflow resume for paused runs, or `speckit.ai-team.context task_id=<task-id> resume=true` for cross-session recovery |
 | failed review/check/incident | PR, check, incident, or repeated AI mistake | retrospect -> update command, gate, knowledge, memory, graph, or test evidence |
 
@@ -134,8 +134,9 @@ speckit.bug.assess -> speckit.bug.fix -> speckit.bug.test
 ```
 
 AI Team adds task context, route review, code graph impact, architecture impact
-review, assessment review, fix-scope review, portable checks, Evidence Board,
-PR description, and review support around that bug lifecycle.
+review, assessment review, fix-scope review, and composite checks/Evidence Board
+(via preset inside `speckit.bug.test`), plus PR description and review support
+around that bug lifecycle.
 
 ### Existing Project New Feature
 
@@ -149,10 +150,10 @@ enhancement draft paths.
 
 ### New Project From Zero
 
-New projects use `work_type=new-project`. They still follow SDD, but the plan
-gate is stricter: it must establish the project skeleton, architecture spine,
-dependency strategy, runnable thin slice, self-test strategy, and evidence
-strategy before broad feature construction.
+New projects use `work_type=new-project`. They still follow SDD, but
+`speckit.ai-team.plan-check` is stricter: it must establish the project skeleton,
+architecture spine, dependency strategy, runnable thin slice, self-test strategy,
+and evidence strategy before broad feature construction.
 
 ### Resume From Middle
 
@@ -205,6 +206,7 @@ New project work needs a stricter build-from-zero plan:
 | `speckit.ai-team.requirement` | create or refine internal enhancement context and sanitized handoff requirements |
 | `speckit.ai-team.codegraph` | generate or attach the code graph slice used for impact and gates |
 | `speckit.ai-team.impact` | inspect code graph or source-structure impact before code edits |
+| `speckit.ai-team.plan-check` | assess plan readiness after `speckit.plan`; chat report only (no gate file) |
 | `speckit.ai-team.handoff` | create role-isolated handoff documents between phases |
 | `speckit.ai-team.feature-review` | help maintainers and the technical committee assess internal enhancement handoff readiness |
 | `speckit.ai-team.pr` | prepare a PR in the correct repository with linked work item and evidence |
@@ -221,10 +223,31 @@ resumable path that reuses Spec Kit's native SDD commands:
 optional Spec Kit init bootstrap -> workspace contract -> request routing
 -> task context package -> route gate -> code graph -> impact
 -> speckit.specify -> review-spec gate -> AI Team handoff -> speckit.plan
--> speckit.checklist (native + composite plan gate via preset) -> review-plan gate
--> speckit.tasks -> speckit.analyze (native + composite task gate via preset)
+-> speckit.ai-team.plan-check -> review-plan gate
+-> speckit.tasks -> speckit.analyze (native cross-artifact report)
 -> review-tasks gate -> speckit.implement -> speckit.converge (native + checks + evidence via preset)
 ```
+
+### Plan check, preset, and workflow gates
+
+| Step | Type | Writes files? | Human decision |
+|---|---|---|---|
+| `speckit.ai-team.plan-check` | extension command | Updates `task-context.yml` (`plan_check`) and `context-pack.md` only | No — produces chat report |
+| `review-plan` | workflow gate | No | Yes — approve / revise / reject before `tasks` |
+| `speckit.analyze` | native cross-artifact check | Read-only chat report | No — produces analyze report |
+| `review-tasks` | workflow gate | No | Yes — approve / revise / reject before `implement` |
+
+Plan check does **not** run core `speckit.checklist` and does **not** create
+`checklists/*.md` or `plan-check.md`. Cross-artifact consistency before
+implementation is covered by native `speckit.analyze`.
+
+At `review-plan`, choose **revise** when the Plan Check Report recommends changes;
+the workflow **re-runs** `speckit.plan` and `speckit.ai-team.plan-check` automatically
+(`plan-cycle` do-while loop). On revise, `speckit.plan` receives a fixed revision
+prompt (task id only) to patch `plan.md` from `plan_check` and `context-pack.md`,
+not the original spec/request args. At `review-tasks`, **revise** re-runs
+`speckit.tasks` and `speckit.analyze` (`task-cycle` loop) with the same pattern for
+`tasks.md` and native analyze findings.
 
 The bundled `ai-team-bugfix` workflow gives bug work a deterministic path:
 
@@ -263,23 +286,30 @@ full model and `speckit.ai-team.support` to audit a project.
 
 ## Installation
 
-AI Team handoff spec behavior requires **three** installs (extension, preset, workflow):
+AI Team handoff spec and composite gates require **extension + preset + workflow**
+installs (plus `bug` for bugfix):
 
 ```bash
 specify extension add ai-team
+specify extension add bug
 specify preset add ai-team-handoff-spec
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset appends to native SDD and bug commands:
+The `ai-team-handoff-spec` preset composes into native SDD and bug commands:
 
-- effective spec (`spec.override.md`) reading rules for handoff URLs
-- plan gate inside `speckit.checklist`, task gate inside `speckit.analyze`
-- checks and Evidence Board inside `speckit.converge` (feature) or `speckit.bug.test` (bugfix)
+- **prepend** on `plan`, `tasks`, `plan-template`: prefer `spec.override.md` when reading requirements
+- **wrap** on `converge`: handoff spec before core steps, composite checks / evidence after
+- **append** on `bug.test`: checks and evidence board after bug verification
 
-Without the preset, core commands do not know about `spec.override.md` or AI Team gates.
-Install the `bug` extension for bugfix composite evidence on `speckit.bug.test`.
+Plan check is **`speckit.ai-team.plan-check`** (extension command, chat report only).
+It is **not** part of the preset and is **not** core `speckit.checklist`.
+
+Without the preset, core commands do not know about `spec.override.md` or AI Team
+checks / evidence rules.
+The `bug` extension supplies `speckit.bug.test`, which receives composite checks
+and Evidence Board rules from the preset during bugfix workflows.
 
 For local development:
 

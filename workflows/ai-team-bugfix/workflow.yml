@@ -4,7 +4,7 @@ workflow:
   name: "AI Team Bug Fix"
   version: "0.1.0"
   author: "AI Team Template"
-  description: "Runs an AI Team bug-fix flow with durable task context, source impact review, bug assessment, fix, verification, checks, and evidence."
+  description: "Runs an AI Team bug-fix flow with durable task context, source impact review, bug lifecycle, and composite checks/evidence via preset on speckit.bug.test."
 
 requires:
   speckit_version: ">=0.12.4"

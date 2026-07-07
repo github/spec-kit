@@ -47,9 +47,22 @@ but adds team controls around them:
 
 ```text
 intake -> task context -> requirement or bug work item -> code graph impact
--> specify -> plan -> checklist -> tasks -> analyze -> implement -> converge
--> checks/evidence -> PR/review
+-> specify -> review-spec gate -> plan
+-> plan-check (chat report) -> review-plan gate -> tasks
+-> analyze (native cross-artifact report) -> review-tasks gate
+-> implement -> converge (composite checks/evidence) -> PR/review
 ```
+
+**Three layers** in the feature path:
+
+| Layer | Example | Output |
+|---|---|---|
+| Extension command | `speckit.ai-team.plan-check` | Plan Check Report in chat; `plan_check` in task context |
+| Preset (optional) | `ai-team-handoff-spec` on `converge` / `bug.test` | Handoff spec rules; composite checks / evidence |
+| Workflow human gate | `review-plan`, `review-tasks` | You approve, revise, or reject before the next SDD step |
+
+The `ai-team-sdd` workflow does **not** run core `speckit.checklist`. Requirement-quality
+checklists remain available as a manual Spec Kit command when you want them.
 
 The exact path depends on the user journey:
 
@@ -74,16 +87,31 @@ Team extension, handoff-spec preset, and workflows:
 uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
 specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
+specify extension add bug
 specify preset add ai-team-handoff-spec
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset appends handoff spec rules and composite AI Team
-gates to native commands: plan gate in `speckit.checklist`, task gate in
-`speckit.analyze`, checks/evidence in `speckit.converge` (feature) or
-`speckit.bug.test` (bugfix, requires `bug` extension). Without it, core commands
-do not know about `spec.override.md` or AI Team policy overlays.
+The `bug` extension is required for `ai-team-bugfix` (composite checks/evidence run
+inside `speckit.bug.test`).
+
+**Extension:** `speckit.ai-team.plan-check` runs after `speckit.plan`, outputs a
+Plan Check Report in chat (no gate markdown file), and records `plan_check` in the
+Task Context Package.
+
+**Preset:** `ai-team-handoff-spec` composes handoff spec rules and composite AI Team
+logic into native commands: checks/evidence in `speckit.converge` (feature) or
+`speckit.bug.test` (bugfix). `speckit.analyze` stays native (read-only report).
+
+**Workflow gates:** `review-plan` and `review-tasks` are human decision points.
+Choose **revise** at either gate and the workflow loops automatically (`plan-cycle`
+or `task-cycle` do-while). Revise iterations pass a fixed patch instruction (plus
+`task_id`) instead of the original request/spec URLs — agents revise from
+`plan_check`, `context-pack.md`, or native analyze findings already on disk.
+
+Without the preset, core commands do not know about `spec.override.md` or AI Team
+policy overlays.
 
 Use `--integration claude`, `--integration cursor-agent`, or `--integration
 trae` when those tools are active.

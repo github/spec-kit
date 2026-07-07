@@ -41,7 +41,7 @@ reviewers. This command does not approve architecture changes.
    - examples;
    - generated code.
 6. Estimate change radius and likely changed files or classes.
-7. Write or return the impact note for plan gate, implementation, checks, PR,
+7. Write or return the impact note for plan check, implementation, checks, PR,
    or review.
 8. Update the Task Context Package with the impact artifact path, source
    snapshot, current phase, and recommended next command.

@@ -12,6 +12,20 @@ WORKFLOW_PATH = REPO_ROOT / "workflows" / "ai-team-sdd" / "workflow.yml"
 BUGFIX_WORKFLOW_PATH = REPO_ROOT / "workflows" / "ai-team-bugfix" / "workflow.yml"
 
 
+def _collect_step_ids(steps: list) -> list[str]:
+    """Return step ids from a workflow, including nested control-flow bodies."""
+    ids: list[str] = []
+    for step in steps:
+        step_id = step.get("id")
+        if step_id:
+            ids.append(step_id)
+        for key in ("then", "else", "steps"):
+            nested = step.get(key)
+            if isinstance(nested, list):
+                ids.extend(_collect_step_ids(nested))
+    return ids
+
+
 def _run_ai_team_workflow_to_route_gate(
     tmp_path: Path,
     inputs: dict,
@@ -73,13 +87,12 @@ def test_ai_team_extension_command_files_exist():
     assert set(manifest["requires"]["commands"]) == {
         "speckit.specify",
         "speckit.plan",
-        "speckit.checklist",
         "speckit.tasks",
         "speckit.analyze",
         "speckit.implement",
         "speckit.converge",
     }
-    assert manifest["hooks"]["before_checklist"]["command"] == "speckit.ai-team.handoff-spec.resolve"
+    assert "before_checklist" not in manifest["hooks"]
     assert "after_checklist" not in manifest["hooks"]
     assert "after_analyze" not in manifest["hooks"]
     assert "after_implement" not in manifest["hooks"]
@@ -92,6 +105,7 @@ def test_ai_team_extension_command_files_exist():
         "speckit.ai-team.requirement",
         "speckit.ai-team.codegraph",
         "speckit.ai-team.impact",
+        "speckit.ai-team.plan-check",
         "speckit.ai-team.handoff",
         "speckit.ai-team.handoff-spec-sync",
         "speckit.ai-team.handoff-spec.resolve",
@@ -317,15 +331,17 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert "bug_slug" not in data["inputs"]
     assert "bug" not in data["inputs"]["work_type"]["enum"]
     assert "new-project" in data["inputs"]["work_type"]["enum"]
-    step_ids = [step["id"] for step in steps]
+    step_ids = _collect_step_ids(steps)
     assert "context-open" in step_ids
     assert "codegraph" in step_ids
     assert "specify" in step_ids
     assert "review-spec" in step_ids
+    assert "plan-cycle" in step_ids
     assert "plan" in step_ids
-    assert "checklist" in step_ids
-    assert "plan-gate" not in step_ids
+    assert "plan-check" in step_ids
+    assert "checklist" not in step_ids
     assert "review-plan" in step_ids
+    assert "task-cycle" in step_ids
     assert "tasks" in step_ids
     assert "analyze" in step_ids
     assert "task-gate" not in step_ids
@@ -334,13 +350,49 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert "converge" in step_ids
     assert "checks" not in step_ids
     assert "evidence" not in step_ids
+
+    plan_cycle = next(step for step in steps if step["id"] == "plan-cycle")
+    assert plan_cycle["type"] == "do-while"
+    assert plan_cycle["condition"] == "{{ steps.review-plan.output.choice == 'revise' }}"
+    plan_cycle_ids = [s["id"] for s in plan_cycle["steps"]]
+    assert plan_cycle_ids == ["plan", "plan-check", "review-plan"]
+    plan_if = next(s for s in plan_cycle["steps"] if s["id"] == "plan")
+    assert plan_if["type"] == "if"
+    assert plan_if["condition"] == "{{ steps.review-plan.output.choice == 'revise' }}"
+    plan_revise = plan_if["then"][0]
+    plan_initial = plan_if["else"][0]
+    assert plan_revise["id"] == "plan-revise"
+    assert plan_initial["id"] == "plan-initial"
+    assert "Revise plan.md only" in plan_revise["input"]["args"]
+    assert "inputs.request" not in plan_revise["input"]["args"]
+    assert "{{ inputs.request }}" in plan_initial["input"]["args"]
+
+    task_cycle = next(step for step in steps if step["id"] == "task-cycle")
+    assert task_cycle["type"] == "do-while"
+    assert task_cycle["condition"] == "{{ steps.review-tasks.output.choice == 'revise' }}"
+    task_cycle_ids = [s["id"] for s in task_cycle["steps"]]
+    assert task_cycle_ids == ["tasks", "analyze", "review-tasks"]
+    tasks_if = next(s for s in task_cycle["steps"] if s["id"] == "tasks")
+    assert tasks_if["type"] == "if"
+    tasks_revise = tasks_if["then"][0]
+    tasks_initial = tasks_if["else"][0]
+    assert tasks_revise["id"] == "tasks-revise"
+    assert tasks_initial["id"] == "tasks-initial"
+    assert "Revise tasks.md only" in tasks_revise["input"]["args"]
+    assert "{{ inputs.request }}" in tasks_initial["input"]["args"]
     context_step = next(step for step in steps if step["id"] == "context-open")
     assert context_step["command"] == "speckit.ai-team.context"
     codegraph_step = next(step for step in steps if step["id"] == "codegraph")
     assert codegraph_step["command"] == "speckit.ai-team.codegraph"
-    checklist_step = next(step for step in steps if step["id"] == "checklist")
-    assert checklist_step["command"] == "speckit.checklist"
-    analyze_step = next(step for step in steps if step["id"] == "analyze")
+    plan_check_step = next(
+        step
+        for step in plan_cycle["steps"]
+        if step["id"] == "plan-check"
+    )
+    assert plan_check_step["command"] == "speckit.ai-team.plan-check"
+    analyze_step = next(
+        step for step in task_cycle["steps"] if step["id"] == "analyze"
+    )
     assert analyze_step["command"] == "speckit.analyze"
     converge_step = next(step for step in steps if step["id"] == "converge")
     assert converge_step["command"] == "speckit.converge"

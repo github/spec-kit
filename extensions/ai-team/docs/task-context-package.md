@@ -48,14 +48,33 @@ private trace in approved channels.
 |---|---|---|
 | `intake` | request received and task identity is being resolved | `speckit.ai-team.start` |
 | `specified` | requirement or bug intent is clear enough for planning | `speckit.ai-team.handoff` or `speckit.plan` |
-| `planned` | architecture plan exists and awaits checklist with composite plan gate | `speckit.checklist` |
-| `tasks-ready` | developer tasks are generated and await analysis with composite task gate | `speckit.analyze` |
+| `planned` | architecture plan exists; plan check may be complete; awaits `review-plan` gate | `speckit.tasks` after approve, or `speckit.plan` on revise |
+| `tasks-ready` | developer tasks are generated and await native analyze | `speckit.analyze` |
 | `implementing` | code is being changed | `speckit.implement` or `speckit.converge` |
 | `evidence` | implementation exists and evidence is being assembled | `speckit.converge` (composite checks + evidence via preset) or `speckit.ai-team.pr` |
 | `pr` | PR is prepared or open | `speckit.ai-team.review` |
 | `review` | human review is active | `speckit.ai-team.retrospect` if failure repeats |
 | `done` | merged or intentionally closed with evidence | none |
 | `blocked` | missing work item, owner decision, or evidence blocks progress | ask human |
+
+## Plan check summary (`plan_check`)
+
+After `speckit.ai-team.plan-check`, the command updates `task-context.yml`:
+
+```yaml
+plan_check:
+  status: pass | revise | blocked
+  change_radius: local | module | cross-module | architecture | not-applicable
+  work_type: new-project | existing-project-feature | bug-driven | refactor | migration
+  summary: "<one-line conclusion>"
+```
+
+The full Plan Check Report stays in **chat**. A short summary also goes to
+`context-pack.md`. Native `speckit.analyze` covers cross-artifact consistency before
+implementation — there is no `plan-check.md`, `plan-gate.md`, or preset task-gate overlay.
+
+Legacy task context that used `plan_gate` should be migrated to `plan_check`
+manually if you resume old work.
 
 ## Resume Protocol
 

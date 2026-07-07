@@ -79,10 +79,10 @@ def test_ai_team_handoff_spec_hooks_registered():
     assert hooks["before_plan"]["command"] == "speckit.ai-team.handoff-spec-sync"
     assert hooks["before_plan"]["priority"] == 5
     assert hooks["before_tasks"]["command"] == "speckit.ai-team.handoff-spec.resolve"
-    assert hooks["before_checklist"]["command"] == "speckit.ai-team.handoff-spec.resolve"
+    assert "before_checklist" not in hooks
 
 
-def test_ai_team_handoff_spec_preset_append_files():
+def test_ai_team_handoff_spec_preset_files():
     preset = yaml.safe_load((PRESET_ROOT / "preset.yml").read_text(encoding="utf-8"))
     assert preset["preset"]["id"] == "ai-team-handoff-spec"
     entries = preset["provides"]["templates"]
@@ -90,38 +90,37 @@ def test_ai_team_handoff_spec_preset_append_files():
     assert names == {
         "speckit.plan",
         "speckit.tasks",
-        "speckit.checklist",
-        "speckit.analyze",
-        "speckit.implement",
         "speckit.converge",
         "speckit.bug.test",
         "plan-template",
     }
     by_name = {e["name"]: e for e in entries}
+    expected_strategies = {
+        "speckit.plan": "prepend",
+        "speckit.tasks": "prepend",
+        "speckit.converge": "wrap",
+        "speckit.bug.test": "append",
+        "plan-template": "prepend",
+    }
     for entry in entries:
         rel = entry["file"]
         text = (PRESET_ROOT / rel).read_text(encoding="utf-8")
-        if entry["name"] == "plan-template":
+        name = entry["name"]
+        assert entry.get("strategy") == expected_strategies[name]
+        if name == "plan-template":
             assert "spec.override" in text or "handoff" in text.lower()
-        elif entry["name"] == "speckit.bug.test":
-            assert "Evidence Board" in text
-            assert "Checks" in text
+        elif name == "speckit.bug.test":
+            assert "evidence board" in text.lower()
+            assert "checks" in text.lower()
         else:
-            assert "EFFECTIVE_SPEC" in text or "spec.override.md" in text
-        assert entry.get("strategy") == "append"
-    checklist_text = (PRESET_ROOT / by_name["speckit.checklist"]["file"]).read_text(
-        encoding="utf-8"
-    )
-    assert "Plan Gate" in checklist_text
-    analyze_text = (PRESET_ROOT / by_name["speckit.analyze"]["file"]).read_text(
-        encoding="utf-8"
-    )
-    assert "Task Gate" in analyze_text
+            assert "spec.override.md" in text
+        if expected_strategies[name] == "wrap":
+            assert "{CORE_TEMPLATE}" in text
     converge_text = (PRESET_ROOT / by_name["speckit.converge"]["file"]).read_text(
         encoding="utf-8"
     )
-    assert "Evidence Board" in converge_text
-    assert "Checks" in converge_text
+    assert "evidence board" in converge_text.lower()
+    assert "checks" in converge_text.lower()
 
 
 @requires_bash

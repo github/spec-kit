@@ -121,6 +121,11 @@ artifacts:
   code_graph:
   impact:
   evidence:
+plan_check:
+  status:
+  change_radius:
+  work_type:
+  summary:
 updated_at:
 ```
 

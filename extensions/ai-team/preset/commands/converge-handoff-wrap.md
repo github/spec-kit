@@ -1,18 +1,12 @@
-## AI Team Effective Spec (preset: ai-team-handoff-spec)
+## Handoff spec
 
-For converge, read the effective spec as the requirement source:
+When loading requirement content, prefer `$FEATURE_DIR/spec.override.md` if it exists; do not use a handoff URL in `spec.md` as the requirement body.
 
-1. **Preferred**: `EFFECTIVE_SPEC` from hook JSON
-2. **Fallback**: `$FEATURE_DIR/spec.override.md` if present
-3. **Else**: `$FEATURE_DIR/spec.md`
+{CORE_TEMPLATE}
 
-Do not modify `spec.md`, `spec.override.md`, or `plan.md` during converge.
+## Checks
 
-Never commit `spec.override.md`.
-
-## AI Team Checks (composite — after native converge)
-
-After native converge completes, continue in this run with portable checks:
+After native converge completes (Phase 1), continue in this run with portable checks (Phase 2). Phase 1 rules still apply: append-only to `tasks.md`; do not modify `spec.md`, `spec.override.md`, or `plan.md`.
 
 | Level | When | Evidence |
 |---|---|---|
@@ -27,17 +21,15 @@ After native converge completes, continue in this run with portable checks:
 3. Run governance, build/self-test, and boundary checks for touched areas.
 4. Record skipped checks with concrete reasons and update the Task Context Package.
 
-## AI Team Evidence Board (composite — same run as converge)
+## Evidence board
 
-After checks (or when checks are skipped with documented reasons), produce the Evidence
-Board in this run:
+After checks (or when checks are skipped with documented reasons), produce the evidence board in this run:
 
-1. Read task context, effective spec, plan/tasks, handoffs, gates, implementation diff,
-   native converge output, and test results.
-2. Write `.specify/ai-team/evidence/<feature-slug>/evidence-board.md` using this shape:
+1. Read task context, `spec.override.md` or `spec.md`, plan/tasks, handoffs, gates, implementation diff, native converge output, and test results.
+2. Write `.specify/ai-team/evidence/<feature-slug>/evidence-board.md`:
 
 ```markdown
-# AI Team Evidence Board
+# Evidence Board
 
 - **Feature**:
 - **Task ID**:
@@ -68,8 +60,6 @@ Board in this run:
 ## Failure Evolution Follow-Up
 ```
 
-3. Update the Task Context Package with evidence path and next command (`speckit.ai-team.pr`
-   when ready).
+3. Update the Task Context Package with evidence path and next command (`speckit.ai-team.pr` when ready).
 
-Stop before claiming implementation success when behavior changed without self-test evidence,
-feature work lacks a work item anchor, or skipped checks have vague reasons.
+Stop before claiming implementation success when behavior changed without self-test evidence, feature work lacks a work item anchor, or skipped checks have vague reasons.

@@ -7,7 +7,7 @@ scripts:
 
 # Handoff Spec Resolve
 
-Lightweight resolver for tasks, checklist, analyze, implement, and converge.
+Lightweight resolver for tasks, analyze, implement, and converge.
 Does not fetch remote content unless override is missing while a handoff URL is
 configured (error with remediation).
 

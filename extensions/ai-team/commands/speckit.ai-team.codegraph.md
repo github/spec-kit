@@ -1,5 +1,5 @@
 ---
-description: "Generate or attach the code graph slice used by impact analysis, plan gates, task gates, and evidence."
+description: "Generate or attach the code graph slice used by impact analysis, plan checks, task gates, and evidence."
 ---
 
 # AI Team Code Graph
@@ -98,8 +98,9 @@ contains, imports, calls, implements, extends, reads_config, tests, depends_on
 6. Update `.specify/ai-team/tasks/<task-id>/task-context.yml` with the code graph
    artifact path and next command.
 7. Hand the graph artifact to `speckit.ai-team.impact`, `speckit.plan`,
-   `speckit.checklist`, `speckit.analyze`, or `speckit.converge` (composite gates
-   and evidence run inside those commands when preset `ai-team-handoff-spec` is installed).
+   `speckit.ai-team.plan-check`, `speckit.analyze`, or `speckit.converge`
+   (composite checks and evidence run inside converge when preset
+   `ai-team-handoff-spec` is installed).
 
 ## Stop Conditions
 
