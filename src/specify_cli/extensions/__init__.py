@@ -1435,7 +1435,11 @@ class ExtensionManager:
         # preserved configs and the backup-restore path never runs. Capture
         # them here and write them back after the fresh copytree, mirroring
         # the *-config filter the --force restore path uses.
-        preserved_configs: dict[str, bytes] = {}
+        # Capture (bytes, mode) so we can restore permissions too — config
+        # files may hold secrets (API keys), and recreating them with default
+        # perms could widen access. Mirrors the --force restore's shutil.copy2
+        # (which preserves mode/mtime).
+        preserved_configs: dict[str, tuple[bytes, int]] = {}
         if dest_dir.exists():
             for cfg_file in dest_dir.iterdir():
                 if (
@@ -1446,7 +1450,10 @@ class ExtensionManager:
                         or cfg_file.name.endswith("-config.local.yml")
                     )
                 ):
-                    preserved_configs[cfg_file.name] = cfg_file.read_bytes()
+                    preserved_configs[cfg_file.name] = (
+                        cfg_file.read_bytes(),
+                        cfg_file.stat().st_mode,
+                    )
 
         # Install extension (dest_dir computed above during self-install guard)
         if dest_dir.exists():
@@ -1455,11 +1462,17 @@ class ExtensionManager:
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
-        # Restore configs preserved from a keep-config leftover (see above).
-        # The --force backup-restore below (did_remove) still takes precedence
-        # for that path, which uses .backup/ rather than an in-place leftover.
-        for name, data in preserved_configs.items():
-            (dest_dir / name).write_bytes(data)
+        # Restore configs preserved from a keep-config leftover (see above),
+        # preserving the original file mode. The --force backup-restore below
+        # (did_remove) still takes precedence for that path, which uses
+        # .backup/ rather than an in-place leftover.
+        for name, (data, mode) in preserved_configs.items():
+            dest_cfg = dest_dir / name
+            dest_cfg.write_bytes(data)
+            try:
+                os.chmod(dest_cfg, mode & 0o7777)  # permission bits only
+            except OSError:
+                pass
 
         # Register commands with AI agents
         registered_commands = {}

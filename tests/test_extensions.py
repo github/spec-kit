@@ -1568,6 +1568,9 @@ class TestExtensionManager:
         ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
         config_file = ext_dir / "test-ext-config.yml"
         config_file.write_text("api_key: MY-CUSTOMIZED-VALUE")
+        # Restrictive perms — a config may hold secrets; the restore must not
+        # widen them (POSIX only; Windows chmod ignores group/other bits).
+        config_file.chmod(0o600)
 
         # keep-config removal: registry entry dropped, config left in place.
         assert manager.remove("test-ext", keep_config=True) is True
@@ -1579,6 +1582,9 @@ class TestExtensionManager:
         # The user's config must survive the reinstall (was silently wiped).
         assert config_file.exists()
         assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
+        # ...and keep its original (restrictive) mode, not default perms.
+        if platform.system() != "Windows":
+            assert config_file.stat().st_mode & 0o777 == 0o600
 
 
 # ===== CommandRegistrar Tests =====
