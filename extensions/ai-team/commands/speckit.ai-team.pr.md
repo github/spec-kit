@@ -31,7 +31,7 @@ drafts or rely on local paths as the authoritative work item.
 
 1. Run `git status --short --branch`.
 2. Confirm the current repository role.
-3. Load the Task Context Package from `.specify/ai-team/tasks/<task-id>/`
+3. Load the Work Context Package from `.specify/ai-team/work/<work_slug>/`
    when present.
 4. Exclude:
    - `.ai-local/`;
@@ -47,13 +47,13 @@ drafts or rely on local paths as the authoritative work item.
    - internal enhancement records link private source material only inside the
      internal repository.
 6. Confirm evidence:
-   - Task Context Package;
+   - Work Context Package;
    - code graph impact when applicable;
    - `spec.override.md` is ignored when internal handoff context was used;
    - commands and tests;
    - Evidence Board or portable checks;
    - skipped verification.
-7. Update the Task Context Package with PR URL, current phase, and next
+7. Update the Work Context Package with PR URL, current phase, and next
    command when a PR is created.
 
 ## PR Description Shape

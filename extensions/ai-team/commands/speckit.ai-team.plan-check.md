@@ -26,9 +26,9 @@ Confirm the architect-owned plan is safe to turn into developer tasks. The human
 ## Steps
 
 1. Locate the active feature directory from `.specify/feature.json`.
-2. Read task context, `spec.override.md` or `spec.md`, `plan.md`, `research.md`,
+2. Read work context, `spec.override.md` or `spec.md`, `plan.md`, `research.md`,
    `data-model.md`, `contracts/`, `ai-team-config.yml`, code graph and impact
-   artifacts from `.specify/ai-team/tasks/<task-id>/task-context.yml` when present.
+   artifacts from `.specify/ai-team/work/<work_slug>/work-context.yml` when present.
 3. Classify the work: new project / existing feature / bug-driven / refactor / migration.
 4. For existing projects, assess code graph impact (owner module, contracts,
    callers/callees, reuse candidates, changed nodes, change radius).
@@ -37,7 +37,7 @@ Confirm the architect-owned plan is safe to turn into developer tasks. The human
 6. Check privacy: no raw customer demand in public plans; feature plans link a coding
    issue, allowed handoff requirement, or public-safe summary.
 7. Output the **Plan Check Report** in chat (structure below).
-8. Update `.specify/ai-team/tasks/<task-id>/task-context.yml` with:
+8. Update `.specify/ai-team/work/<work_slug>/work-context.yml` with:
 
 ```yaml
 plan_check:

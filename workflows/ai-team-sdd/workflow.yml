@@ -4,7 +4,7 @@ workflow:
   name: "AI Team SDD Cycle"
   version: "0.1.0"
   author: "AI Team Template"
-  description: "Runs an enterprise AI Team SDD flow with native SDD commands, speckit.ai-team.plan-check, composite checks/evidence via preset on converge, durable task context resume, and code graph impact."
+  description: "Runs an enterprise AI Team SDD flow with native SDD commands, speckit.ai-team.plan-check, composite checks/evidence via preset on converge, durable work context resume, and code graph impact."
 
 requires:
   speckit_version: ">=0.12.4"
@@ -30,7 +30,7 @@ inputs:
   force_bootstrap:
     type: boolean
     default: false
-  task_id:
+  work_slug:
     type: string
     default: ""
   work_type:
@@ -74,11 +74,11 @@ steps:
     command: speckit.ai-team.context
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
   - id: review-context
     type: gate
-    message: "Review the Task Context Package, work item, and resume point before continuing."
+    message: "Review the Work Context Package, work item, and resume point before continuing."
     options: [approve, revise, reject]
     on_reject: abort
 
@@ -86,21 +86,21 @@ steps:
     command: speckit.ai-team.codegraph
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: impact
     command: speckit.ai-team.impact
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: specify
     command: speckit.specify
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
   - id: review-spec
     type: gate
@@ -112,7 +112,7 @@ steps:
     command: speckit.ai-team.handoff
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} phase=specified work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} phase=specified work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
   - id: plan-cycle
     type: do-while
@@ -127,19 +127,19 @@ steps:
             command: speckit.plan
             integration: "{{ inputs.integration }}"
             input:
-              args: "task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }} Revise plan.md only using plan_check and Required Plan Revisions in context-pack.md. Patch the listed issues; do not rewrite unrelated sections or re-plan from spec unless a listed revision requires it."
+              args: "work_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }} Revise plan.md only using plan_check and Required Plan Revisions in context-pack.md. Patch the listed issues; do not rewrite unrelated sections or re-plan from spec unless a listed revision requires it."
         else:
           - id: plan-initial
             command: speckit.plan
             integration: "{{ inputs.integration }}"
             input:
-              args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+              args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
       - id: plan-check
         command: speckit.ai-team.plan-check
         integration: "{{ inputs.integration }}"
         input:
-          args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+          args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
       - id: review-plan
         type: gate
@@ -160,19 +160,19 @@ steps:
             command: speckit.tasks
             integration: "{{ inputs.integration }}"
             input:
-              args: "task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }} Revise tasks.md only using native analyze findings and the analyze section in context-pack.md when present. Patch the listed issues; do not regenerate tasks from spec unless a listed revision requires it."
+              args: "work_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }} Revise tasks.md only using native analyze findings and the analyze section in context-pack.md when present. Patch the listed issues; do not regenerate tasks from spec unless a listed revision requires it."
         else:
           - id: tasks-initial
             command: speckit.tasks
             integration: "{{ inputs.integration }}"
             input:
-              args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+              args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
       - id: analyze
         command: speckit.analyze
         integration: "{{ inputs.integration }}"
         input:
-          args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+          args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
       - id: review-tasks
         type: gate
@@ -184,10 +184,10 @@ steps:
     command: speckit.implement
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
   - id: converge
     command: speckit.converge
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"

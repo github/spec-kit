@@ -26,10 +26,10 @@ provides:
       description: "Create or update the AI Team workspace contract for coding repository and internal enhancement boundaries."
     - name: speckit.ai-team.start
       file: commands/speckit.ai-team.start.md
-      description: "Route a plain-language request to the correct AI Team bug, requirement, or template workflow and create a Task Context Package."
+      description: "Route a plain-language request to the correct AI Team bug, requirement, or template workflow and create a Work Context Package."
     - name: speckit.ai-team.context
       file: commands/speckit.ai-team.context.md
-      description: "Open, update, or reconstruct the durable Task Context Package so interrupted AI Team SDD work can resume."
+      description: "Open, update, or reconstruct the durable Work Context Package so interrupted AI Team SDD work can resume."
     - name: speckit.ai-team.requirement
       file: commands/speckit.ai-team.requirement.md
       description: "Create or refine internal enhancement context and sanitized handoff requirements for confidential feature work."

@@ -1,5 +1,5 @@
 ---
-description: "Route a plain-language request to the correct AI Team bug, feature, requirement, or template workflow and create a Task Context Package."
+description: "Route a plain-language request to the correct AI Team bug, feature, requirement, or template workflow and create a Work Context Package."
 ---
 
 # AI Team Start
@@ -14,7 +14,7 @@ $ARGUMENTS
 
 ## Goal
 
-Create a Task Context Package and choose the next command. Do not start from a
+Create a Work Context Package and choose the next command. Do not start from a
 blank prompt and do not inspect private enhancement context unless the active
 repository role allows it.
 
@@ -25,14 +25,14 @@ Read when present:
 - `.specify/init-options.json` and `.specify/integration.json`;
 - `.specify/extensions/ai-team/ai-team-config.yml`;
 - `extensions/ai-team/docs/issue-workflow.md` or installed equivalent;
-- `extensions/ai-team/docs/task-field-spec.md` or installed equivalent;
+- `extensions/ai-team/docs/work-field-spec.md` or installed equivalent;
 - `AGENTS.md`, `CLAUDE.md`, Cursor rules, Trae rules, or the active agent file;
 - the coding issue URL, bug slug, or handoff requirement URL named by the user;
 - internal enhancement handoff content only when the active repository and
   operator are allowed to read it;
 - code graph or source-structure evidence when code, classes, SPI/API, or
   modules are named;
-- `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when the
+- `.specify/ai-team/work/<work_slug>/work-context.yml` and `context-pack.md` when the
   request is resuming existing work.
 
 ## Routing
@@ -55,10 +55,9 @@ gates around the bundled bug extension:
 speckit.bug.assess -> speckit.bug.fix -> speckit.bug.test
 ```
 
-For deterministic bug workflows, require both:
+For deterministic bug workflows, require:
 
-- `task_id=BUG-<repo-slug>-<issue-number>` for AI Team task context;
-- `bug_slug=bug-<repo-slug>-<issue-number>` for `.specify/bugs/<bug_slug>/`.
+- `work_slug=bug-<repo-slug>-<issue-number>` (equals `bug_slug` for `.specify/bugs/<bug_slug>/`).
 
 Features use the SDD path:
 
@@ -93,14 +92,14 @@ project charter, coding issue, or handoff requirement URL -> specify init/bootst
 The first implementation wave should produce a runnable thin slice before
 adding breadth.
 
-## Task Context Package
+## Work Context Package
 
 Return this block and persist it through `speckit.ai-team.context` under
-`.specify/ai-team/tasks/<task-id>/`.
+`.specify/ai-team/work/<work_slug>/`.
 
 ```text
-Task Context Package:
-- task id:
+Work Context Package:
+- work slug:
 - request:
 - classification: bug fix / feature / new project / template change / unclear
 - required work item:
@@ -120,7 +119,7 @@ Task Context Package:
 - last completed command:
 - source snapshot or code graph version:
 - context path:
-- task context file:
+- work context file:
 - likely modules:
 - reusable components:
 - required commands:
@@ -141,13 +140,13 @@ After creating or updating the package, return the next command:
   `speckit.ai-team.codegraph` when existing code is named;
 - new project with an approved charter, coding issue, or handoff requirement
   URL: `speckit.specify` after workspace bootstrap;
-- interrupted work: `speckit.ai-team.context task_id=<task-id> resume=true`.
+- interrupted work: `speckit.ai-team.context work_slug=<work_slug> resume=true`.
 
 ## Stop Conditions
 
 Stop and ask when:
 
-- a feature has no coding issue, handoff requirement, or approved task ID;
+- a feature has no coding issue, handoff requirement, or approved work slug;
 - an enhancement-internal issue is not `type/feature` or is a bug fix;
 - raw customer demand would enter the coding repository;
 - a code change crosses module boundaries without code graph or source

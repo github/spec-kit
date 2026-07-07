@@ -19,7 +19,7 @@ $ARGUMENTS
 
 ## Execution
 
-1. If the parent command or task context provides
+1. If the parent command or work context provides
    `handoff_requirement_url=<https-url>` or deprecated
    `published_requirement_url=<https-url>`, export it before running the script:
 

@@ -23,7 +23,7 @@ and adds enterprise collaboration constraints:
 - self-test and Evidence Board output;
 - failure evolution after review, test, incident, or repeated AI mistakes.
 - external Skill, Knowledge, and Memory support layers around the project.
-- durable Task Context Packages so interrupted work can resume from a work item
+- durable Work Context Packages so interrupted work can resume from a work item
   instead of hidden chat context.
 - replaceable code graph adapters for source-grounded impact analysis.
 
@@ -57,30 +57,33 @@ Use [docs/repository-boundary.md](docs/repository-boundary.md) for the full
 repository model and [docs/issue-workflow.md](docs/issue-workflow.md) for issue
 type/state labels.
 
-## Task Context and Resume
+## Work Context and Resume
 
-Every AI Team task should have a durable Task Context Package:
+Every AI Team work unit should have a durable Work Context Package:
 
 ```text
-.specify/ai-team/tasks/<task-id>/context-pack.md
-.specify/ai-team/tasks/<task-id>/task-context.yml
+.specify/ai-team/work/<work_slug>/context-pack.md
+.specify/ai-team/work/<work_slug>/work-context.yml
+.specify/ai-team/work/<work_slug>/handoffs/
+.specify/ai-team/work/<work_slug>/codegraph/
+.specify/ai-team/work/<work_slug>/evidence/
 ```
 
-For feature work, `<task-id>` comes from the coding issue, handoff requirement
-URL, or requirement ID. For bug fixes, it comes from the coding issue or bug
-slug.
+For feature work, `<work_slug>` is the basename of the Spec Kit feature directory
+(for example `003-user-auth` under `specs/`). For bug fixes, `<work_slug>` equals
+`bug_slug`.
 
 If the workflow pauses at a gate, resume the same run with
 `specify workflow resume <run-id>`. If the terminal, AI tool, or chat context is
-lost, reload the task with:
+lost, reload the work with:
 
 ```bash
-speckit.ai-team.context task_id=<task-id> resume=true
+speckit.ai-team.context work_slug=<work_slug> resume=true
 ```
 
-Use [docs/task-context-package.md](docs/task-context-package.md) for the
+Use [docs/work-context-package.md](docs/work-context-package.md) for the
 storage format, phase model, and resume protocol. Use
-[docs/task-field-spec.md](docs/task-field-spec.md) for canonical `task_id`,
+[docs/work-field-spec.md](docs/work-field-spec.md) for canonical `work_slug`,
 `bug_slug`, `coding_issue_url`, and `handoff_requirement_url` rules.
 
 ## User Journeys
@@ -93,7 +96,7 @@ step-by-step journeys. The short version:
 | existing project bug fix | coding issue or bug slug | `ai-team-bugfix`: context -> context gate -> code graph -> impact gate -> bug assess -> assessment gate -> bug fix -> fix gate -> `speckit.bug.test` (composite checks/evidence) -> PR |
 | existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> native SDD with plan check, task gate, and converge evidence -> PR |
 | new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> native SDD with plan-check, task gate (preset), and converge evidence -> thin slice -> PR |
-| resume from middle | workflow run ID or task ID | workflow resume for paused runs, or `speckit.ai-team.context task_id=<task-id> resume=true` for cross-session recovery |
+| resume from middle | workflow run ID or work slug | workflow resume for paused runs, or `speckit.ai-team.context work_slug=<work_slug> resume=true` for cross-session recovery |
 | failed review/check/incident | PR, check, incident, or repeated AI mistake | retrospect -> update command, gate, knowledge, memory, graph, or test evidence |
 
 ### Chat Aliases
@@ -104,9 +107,9 @@ aliases instead of asking the user to remember command details:
 | Chat alias | Maps to |
 |---|---|
 | `ai-team-sdd feature path` | `work_type=feature` plus a coding issue URL or handoff requirement URL |
-| `ai-team-bugfix path` | `task_id=BUG-<repo-slug>-<issue-number>`, `bug_slug=bug-<repo-slug>-<issue-number>`, and an optional coding issue URL |
+| `ai-team-bugfix path` | `work_slug=bug-<repo-slug>-<issue-number>` and an optional coding issue URL |
 | `ai-team-sdd new-project path` | `work_type=new-project` plus a public project issue/charter or handoff requirement URL |
-| `ai-team-sdd resume path` | `task_id=<task-id>` plus `resume_from=<phase>` or workflow run resume |
+| `ai-team-sdd resume path` | `work_slug=<work_slug>` plus `resume_from=<phase>` or workflow run resume |
 
 Recommended prompts:
 
@@ -117,15 +120,15 @@ https://example.com/org/project/issues/456
 Use the ai-team-sdd feature path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-015
 
-Use the ai-team-bugfix path with task_id=BUG-project-alpha-123 and bug_slug=bug-project-alpha-123 for this coding issue:
+Use the ai-team-bugfix path with work_slug=bug-project-alpha-123 for this coding issue:
 https://example.com/org/project/issues/123
 ```
 
 ### Existing Project Bug Fix
 
 Bug fixes should use the dedicated `ai-team-bugfix` workflow. Bug work should
-link a coding repository issue when possible and must provide both a stable
-`task_id` and a deterministic `bug_slug`. The reporter may describe only
+link a coding repository issue when possible and must provide a stable
+`work_slug` (equal to `bug_slug`). The reporter may describe only
 symptoms; the AI agent uses source evidence and code graph impact to find the
 likely module. The actual bug lifecycle uses the bundled bug extension:
 
@@ -133,7 +136,7 @@ likely module. The actual bug lifecycle uses the bundled bug extension:
 speckit.bug.assess -> speckit.bug.fix -> speckit.bug.test
 ```
 
-AI Team adds task context, route review, code graph impact, architecture impact
+AI Team adds work context, route review, code graph impact, architecture impact
 review, assessment review, fix-scope review, and composite checks/Evidence Board
 (via preset inside `speckit.bug.test`), plus PR description and review support
 around that bug lifecycle.
@@ -164,10 +167,10 @@ specify workflow status <run-id>
 specify workflow resume <run-id>
 ```
 
-Use the AI Team Task Context Package when switching terminal, AI tool, or chat:
+Use the AI Team Work Context Package when switching terminal, AI tool, or chat:
 
 ```text
-speckit.ai-team.context task_id=<task-id> resume=true
+speckit.ai-team.context work_slug=<work_slug> resume=true
 ```
 
 ## Existing Project vs New Project
@@ -202,7 +205,7 @@ New project work needs a stricter build-from-zero plan:
 |---|---|
 | `speckit.ai-team.workspace` | create or update repository role and privacy boundary config |
 | `speckit.ai-team.start` | chat-first routing to bug, feature, or template workflow (not a bundled workflow step) |
-| `speckit.ai-team.context` | open, update, or reconstruct a durable Task Context Package |
+| `speckit.ai-team.context` | open, update, or reconstruct a durable Work Context Package |
 | `speckit.ai-team.requirement` | create or refine internal enhancement context and sanitized handoff requirements |
 | `speckit.ai-team.codegraph` | generate or attach the code graph slice used for impact and gates |
 | `speckit.ai-team.impact` | inspect code graph or source-structure impact before code edits |
@@ -221,7 +224,7 @@ resumable path that reuses Spec Kit's native SDD commands:
 
 ```text
 optional Spec Kit init bootstrap -> workspace contract -> request routing
--> task context package -> context gate -> code graph -> impact
+-> work context package -> context gate -> code graph -> impact
 -> speckit.specify -> review-spec gate -> AI Team handoff -> speckit.plan
 -> speckit.ai-team.plan-check -> review-plan gate
 -> speckit.tasks -> speckit.analyze (native cross-artifact report)
@@ -232,7 +235,7 @@ optional Spec Kit init bootstrap -> workspace contract -> request routing
 
 | Step | Type | Writes files? | Human decision |
 |---|---|---|---|
-| `speckit.ai-team.plan-check` | extension command | Updates `task-context.yml` (`plan_check`) and `context-pack.md` only | No — produces chat report |
+| `speckit.ai-team.plan-check` | extension command | Updates `work-context.yml` (`plan_check`) and `context-pack.md` only | No — produces chat report |
 | `review-plan` | workflow gate | No | Yes — approve / revise / reject before `tasks` |
 | `speckit.analyze` | native cross-artifact check | Read-only chat report | No — produces analyze report |
 | `review-tasks` | workflow gate | No | Yes — approve / revise / reject before `implement` |
@@ -244,7 +247,7 @@ implementation is covered by native `speckit.analyze`.
 At `review-plan`, choose **revise** when the Plan Check Report recommends changes;
 the workflow **re-runs** `speckit.plan` and `speckit.ai-team.plan-check` automatically
 (`plan-cycle` do-while loop). On revise, `speckit.plan` receives a fixed revision
-prompt (task id only) to patch `plan.md` from `plan_check` and `context-pack.md`,
+prompt (work slug only) to patch `plan.md` from `plan_check` and `context-pack.md`,
 not the original spec/request args. At `review-tasks`, **revise** re-runs
 `speckit.tasks` and `speckit.analyze` (`task-cycle` loop) with the same pattern for
 `tasks.md` and native analyze findings.
@@ -252,18 +255,18 @@ not the original spec/request args. At `review-tasks`, **revise** re-runs
 The bundled `ai-team-bugfix` workflow gives bug work a deterministic path:
 
 ```text
-optional Spec Kit init bootstrap -> workspace contract -> task context package
--> task context package -> context gate -> code graph -> impact -> impact gate
+optional Spec Kit init bootstrap -> workspace contract -> work context package
+-> work context package -> context gate -> code graph -> impact -> impact gate
 -> bug assessment -> assessment gate -> bug fix -> fix gate -> speckit.bug.test (composite checks + evidence via preset)
 ```
 
 Workspace creation uses Spec Kit's own `init` step. AI Team does not copy
 template repositories into product repositories.
 
-`ai-team-sdd` accepts `task_id`, `work_type`, `coding_issue_url`,
+`ai-team-sdd` accepts `work_slug`, `work_type`, `coding_issue_url`,
 `handoff_requirement_url`, backward-compatible `published_requirement_url`, and
 `resume_from` so a user can restart feature or new-project work from the
-middle. `ai-team-bugfix` accepts `task_id`, `bug_slug`, `coding_issue_url`, and
+middle. `ai-team-bugfix` accepts `work_slug`, `coding_issue_url`, and
 `resume_from` so a user can restart after context review, impact review, bug
 assessment, fix review, testing, evidence, PR, or final review.
 

@@ -17,7 +17,7 @@ $ARGUMENTS
 
 | Class | Meaning | Likely improvement |
 |---|---|---|
-| context missing | AI did not load the right requirement, module, or owner | Task Context Package or auto-load rule |
+| context missing | AI did not load the right requirement, module, or owner | Work Context Package or auto-load rule |
 | graph missing | AI misunderstood source structure or impact radius | code graph slice or impact command update |
 | skill missing | workflow lacked a step or decision gate | command/skill update |
 | hook missing | repeated mechanical mistake was not blocked early | hook or script |
@@ -33,7 +33,7 @@ $ARGUMENTS
 2. Reconstruct the expected flow:
    - work item;
    - coding issue, handoff requirement URL, or bug slug;
-   - task context from `.specify/ai-team/tasks/<task-id>/`;
+   - work context from `.specify/ai-team/work/<work_slug>/`;
    - code graph impact;
    - evidence;
    - human decision.
@@ -46,7 +46,7 @@ $ARGUMENTS
    - add a code graph overlay note;
    - record decision memory or curated attempt memory.
 5. Separate immediate fix from process improvement.
-6. Update the Task Context Package with failure class, durable improvement,
+6. Update the Work Context Package with failure class, durable improvement,
    current phase, and follow-up command when the task is not done.
 
 ## Output Shape

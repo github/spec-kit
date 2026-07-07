@@ -37,7 +37,7 @@ Feature implementation references either:
 ## Required Reading
 
 - `.specify/extensions/ai-team/ai-team-config.yml`;
-- `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
+- `.specify/ai-team/work/<work_slug>/work-context.yml` and `context-pack.md` when
   the feature was already routed from a coding workspace;
 - [docs/issue-workflow.md](../docs/issue-workflow.md) or installed equivalent;
 - private enhancement issue or draft only when the current operator has access;
@@ -72,7 +72,7 @@ Feature implementation references either:
    - privacy note describing what was intentionally excluded;
    - whether the coding repository may link the handoff URL or must use a
      public-safe summary.
-6. Update or create the Task Context Package with the handoff requirement URL,
+6. Update or create the Work Context Package with the handoff requirement URL,
    status, approval route, current wave, and next command.
 7. Return the handoff URL and hand off to `speckit.ai-team.feature-review` or
    `speckit.specify`.

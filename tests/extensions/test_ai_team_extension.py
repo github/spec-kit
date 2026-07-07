@@ -142,10 +142,10 @@ def test_ai_team_config_template_defines_repository_and_role_contracts():
         "cursor-agent",
         "trae",
     }
-    assert config["task_context"]["root"] == ".specify/ai-team/tasks"
-    assert config["task_context"]["context_pack_file"] == "context-pack.md"
-    assert config["task_context"]["task_context_file"] == "task-context.yml"
-    assert config["code_graph"]["root"] == ".specify/ai-team/codegraph"
+    assert config["work_context"]["root"] == ".specify/ai-team/work"
+    assert config["work_context"]["context_pack_file"] == "context-pack.md"
+    assert config["work_context"]["work_context_file"] == "work-context.yml"
+    assert "root" not in config["code_graph"]
     assert set(config["code_graph"]["normalized_outputs"]) == {
         "nodes.jsonl",
         "edges.jsonl",
@@ -235,28 +235,27 @@ def test_ai_team_issue_workflow_document_exists():
     assert "state/superseded" in text
 
 
-def test_ai_team_task_context_document_exists():
-    context_doc = EXTENSION_ROOT / "docs" / "task-context-package.md"
+def test_ai_team_work_context_document_exists():
+    context_doc = EXTENSION_ROOT / "docs" / "work-context-package.md"
 
     assert context_doc.exists()
     text = context_doc.read_text(encoding="utf-8")
-    assert "Task Context Package" in text
-    assert ".specify/ai-team/tasks/<task-id>/" in text
-    assert "task-context.yml" in text
+    assert "Work Context Package" in text
+    assert ".specify/ai-team/work/<work_slug>/" in text
+    assert "work-context.yml" in text
     assert ".specify/workflows/runs/<run-id>/state.json" in text
     assert "specify workflow resume <run-id>" in text
     assert "handoff requirement URL" in text
     assert "coding issue URL" in text
 
 
-def test_ai_team_task_field_spec_document_exists():
-    field_doc = EXTENSION_ROOT / "docs" / "task-field-spec.md"
+def test_ai_team_work_field_spec_document_exists():
+    field_doc = EXTENSION_ROOT / "docs" / "work-field-spec.md"
 
     assert field_doc.exists()
     text = field_doc.read_text(encoding="utf-8")
-    assert "BUG-<repo-slug>-<issue-number>" in text
-    assert "FEAT-<repo-slug>-<issue-number>" in text
-    assert "REQ-YYYY-NNN" in text
+    assert "work_slug" in text
+    assert "003-user-auth" in text
     assert "bug_slug" in text
     assert "coding_issue_url" in text
     assert "handoff_requirement_url" in text
@@ -305,7 +304,7 @@ def test_ai_team_user_journeys_document_exists():
     assert "Existing Project Confidential Enterprise Feature" in text
     assert "New Project From Zero" in text
     assert "Resume From The Middle" in text
-    assert "speckit.ai-team.context task_id=<task-id> resume=true" in text
+    assert "speckit.ai-team.context work_slug=<work_slug> resume=true" in text
     assert "ai-team-sdd feature path" in text
     assert "ai-team-bugfix path" in text
     assert "ai-team-sdd new-project path" in text
@@ -328,7 +327,7 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     steps = data["steps"]
     assert steps[0]["type"] == "if"
     assert steps[0]["then"][0]["type"] == "init"
-    assert "task_id" in data["inputs"]
+    assert "work_slug" in data["inputs"]
     assert "handoff_requirement_url" in data["inputs"]
     assert "published_requirement_url" in data["inputs"]
     assert "resume_from" in data["inputs"]
@@ -406,8 +405,8 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert BUGFIX_WORKFLOW_PATH.exists()
     bugfix = yaml.safe_load(BUGFIX_WORKFLOW_PATH.read_text(encoding="utf-8"))
     assert bugfix["workflow"]["id"] == "ai-team-bugfix"
-    assert "task_id" in bugfix["inputs"]
-    assert "bug_slug" in bugfix["inputs"]
+    assert "work_slug" in bugfix["inputs"]
+    assert "bug_slug" not in bugfix["inputs"]
     assert "coding_issue_url" in bugfix["inputs"]
     bugfix_step_ids = [step["id"] for step in bugfix["steps"]]
     assert "review-context" in bugfix_step_ids
@@ -428,8 +427,7 @@ def test_ai_team_bugfix_workflow_pauses_at_context_gate(tmp_path):
         tmp_path,
         {
             "request": "Fix upload timeout reported by support",
-            "task_id": "BUG-project-alpha-123",
-            "bug_slug": "bug-project-alpha-123",
+            "work_slug": "bug-project-alpha-123",
             "coding_issue_url": "https://example.com/org/project/issues/123",
         },
         run_id,
@@ -440,7 +438,7 @@ def test_ai_team_bugfix_workflow_pauses_at_context_gate(tmp_path):
 
     assert f"workflow_run_id={run_id}" in context_args
     assert "work_type=bug" in context_args
-    assert "task_id=BUG-project-alpha-123" in context_args
+    assert "work_slug=bug-project-alpha-123" in context_args
     assert "bug_slug=bug-project-alpha-123" in context_args
     assert "coding_issue_url=https://example.com/org/project/issues/123" in context_args
 
@@ -492,13 +490,13 @@ def test_ai_team_bugfix_workflow_pauses_at_context_gate(tmp_path):
             "resume from task gate",
             {
                 "request": "Continue REQ-2026-015 after task gate approval",
-                "task_id": "REQ-2026-015",
+                "work_slug": "003-search-export",
                 "work_type": "feature",
                 "resume_from": "tasks-ready",
                 "handoff_requirement_url": "https://example.com/enhancements/rfcs/REQ-2026-015",
             },
             [
-                "task_id=REQ-2026-015",
+                "work_slug=003-search-export",
                 "work_type=feature",
                 "resume_from=tasks-ready",
                 "handoff_requirement_url=https://example.com/enhancements/rfcs/REQ-2026-015",

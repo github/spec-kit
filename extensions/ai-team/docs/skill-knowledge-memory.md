@@ -82,7 +82,7 @@ Useful knowledge mechanisms:
 - dependency and license inventory for open-source component decisions.
 
 Knowledge should be indexed by task. An agent should not need to read every doc;
-it should load the relevant knowledge slice for the current Task Context Package.
+it should load the relevant knowledge slice for the current Work Context Package.
 
 ## Memory Layer
 

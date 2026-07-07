@@ -59,19 +59,19 @@ function Get-HandoffRequirementUrl {
     $fromArgs = Get-HandoffUrlFromText -Text $ArgsText
     if ($fromArgs) { return $fromArgs }
 
-    $tasksRoot = Join-Path $RepoRoot '.specify/ai-team/tasks'
-    $taskId = $null
-    if ($ArgsText -match 'task_id=([^\s`"'>]+)') { $taskId = $Matches[1] }
-    if ($taskId) {
-        $ctx = Join-Path $tasksRoot "$taskId/task-context.yml"
+    $workRoot = Join-Path $RepoRoot '.specify/ai-team/work'
+    $workSlug = $null
+    if ($ArgsText -match 'work_slug=([^\s`"'>]+)') { $workSlug = $Matches[1] }
+    if ($workSlug) {
+        $ctx = Join-Path $workRoot "$workSlug/work-context.yml"
         if (Test-Path $ctx) {
             $url = Get-HandoffUrlFromText -Text (Get-Content -LiteralPath $ctx -Raw)
             if ($url) { return $url }
         }
     }
-    if (Test-Path $tasksRoot) {
-        Get-ChildItem -Path $tasksRoot -Directory | ForEach-Object {
-            $ctx = Join-Path $_.FullName 'task-context.yml'
+    if (Test-Path $workRoot) {
+        Get-ChildItem -Path $workRoot -Directory | ForEach-Object {
+            $ctx = Join-Path $_.FullName 'work-context.yml'
             if (Test-Path $ctx) {
                 $url = Get-HandoffUrlFromText -Text (Get-Content -LiteralPath $ctx -Raw)
                 if ($url) { return $url }

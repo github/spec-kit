@@ -31,7 +31,7 @@ AI Team feature work uses three cooperating layers:
 
 | Layer | What runs | Typical output |
 |---|---|---|
-| **Extension** | `speckit.ai-team.plan-check` after `speckit.plan` | Plan Check Report in **chat**; `plan_check` summary in task context |
+| **Extension** | `speckit.ai-team.plan-check` after `speckit.plan` | Plan Check Report in **chat**; `plan_check` summary in work context |
 | **Preset** | `ai-team-handoff-spec` on `converge`, `bug.test` | Handoff spec rules; composite checks, Evidence Board |
 | **Workflow** | `review-plan`, `review-tasks`, … | **Human** approve / revise / reject |
 
@@ -71,9 +71,9 @@ remember command details:
 | Chat alias | Workflow input |
 |---|---|
 | `ai-team-sdd feature path` | `work_type=feature` |
-| `ai-team-bugfix path` | `task_id=BUG-<repo-slug>-<issue-number>`, `bug_slug=bug-<repo-slug>-<issue-number>`, and optional `coding_issue_url` |
+| `ai-team-bugfix path` | `work_slug=bug-<repo-slug>-<issue-number>` and optional `coding_issue_url` |
 | `ai-team-sdd new-project path` | `work_type=new-project` |
-| `ai-team-sdd resume path` | `task_id=<task-id>` and `resume_from=<phase>` |
+| `ai-team-sdd resume path` | `work_slug=<work_slug>` and `resume_from=<phase>` |
 
 Recommended user prompts:
 
@@ -84,13 +84,13 @@ https://example.com/org/project/issues/456
 Use the ai-team-sdd feature path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-015
 
-Use the ai-team-bugfix path with task_id=BUG-project-alpha-123 and bug_slug=bug-project-alpha-123 for this coding issue:
+Use the ai-team-bugfix path with work_slug=bug-project-alpha-123 for this coding issue:
 https://example.com/org/project/issues/123
 
 Use the ai-team-sdd new-project path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-020
 
-Use the ai-team-sdd resume path for task_id=REQ-2026-015 from tasks-ready.
+Use the ai-team-sdd resume path for work_slug=003-search-export from tasks-ready.
 ```
 
 ## Journey 1: Existing Project Bug Fix
@@ -107,16 +107,15 @@ the likely source impact from the codebase.
 ```bash
 specify workflow run ai-team-bugfix \
   --input request="Fix the upload timeout reported by customer support" \
-  --input task_id=BUG-project-alpha-123 \
-  --input bug_slug=bug-project-alpha-123 \
+  --input work_slug=bug-project-alpha-123 \
   --input coding_issue_url="https://example.com/org/project/issues/123"
 ```
 
 Flow:
 
-1. `speckit.ai-team.context` creates or loads the Task Context Package from
-   workflow inputs (`task_id`, `bug_slug`, `coding_issue_url`).
-2. `review-context` confirms the bug work item and Task Context Package before
+1. `speckit.ai-team.context` creates or loads the Work Context Package from
+   workflow inputs (`work_slug`, `coding_issue_url`).
+2. `review-context` confirms the bug work item and Work Context Package before
    source impact analysis.
 3. `speckit.ai-team.codegraph` runs when the likely fix touches more than a
    trivial local file.
@@ -160,7 +159,7 @@ Flow:
 
 1. `speckit.ai-team.context` records the coding issue URL and current phase from
    workflow inputs.
-2. `review-context` confirms the Task Context Package and work item before code
+2. `review-context` confirms the Work Context Package and work item before code
    graph and SDD steps.
 3. `speckit.ai-team.codegraph` builds or attaches the source graph slice.
 4. `speckit.ai-team.impact` constrains likely modules, public contracts, tests,
@@ -169,7 +168,7 @@ Flow:
 6. `speckit.ai-team.handoff` creates the specify-to-plan handoff so roles do not
    depend on hidden chat.
 7. `speckit.plan` creates the architecture plan.
-8. `speckit.ai-team.plan-check` outputs a Plan Check Report in chat and updates task
+8. `speckit.ai-team.plan-check` outputs a Plan Check Report in chat and updates work
    context before the `review-plan` gate.
 9. A human approves or revises at the `review-plan` gate. On **revise**, the
    workflow re-runs steps 7–8 (`plan-cycle` do-while) before continuing.
@@ -264,7 +263,7 @@ specify workflow resume <run-id>
 Resume by task ID when the chat, terminal, or AI tool changed:
 
 ```text
-speckit.ai-team.context task_id=<task-id> resume=true
+speckit.ai-team.context work_slug=<work_slug> resume=true
 ```
 
 The task ID can be:
@@ -272,7 +271,7 @@ The task ID can be:
 - handoff requirement ID or URL slug;
 - coding issue number or URL slug;
 - `.specify/bugs/<slug>`;
-- explicit `task_id=<value>` recorded earlier.
+- explicit `work_slug=<value>` recorded earlier.
 
 On resume, compare the recorded source snapshot, work item, code graph artifact,
 and current repository state. If source or work item changed, rerun

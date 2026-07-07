@@ -1,41 +1,46 @@
-# Task Context Package
+# Work Context Package
 
-The Task Context Package is the durable handoff unit for AI Team SDD work. It
+The Work Context Package is the durable handoff unit for AI Team SDD work. It
 ties one bug fix, feature, or template change to the current phase, source
 snapshot, graph evidence, required human decisions, and next command.
 
 It exists because AI agents may stop, switch tools, lose chat context, or enter
-the task after a human approval step. Recovery must come from repository facts,
+the work after a human approval step. Recovery must come from repository facts,
 not from hidden conversation memory.
 
 ## Storage
 
-Store task context in the coding repository:
+Store work context in the coding repository:
 
 ```text
-.specify/ai-team/tasks/<task-id>/
+.specify/ai-team/work/<work_slug>/
+|-- work-context.yml
 |-- context-pack.md
-|-- task-context.yml
-`-- artifacts/
+|-- handoffs/
+|-- codegraph/
+|-- evidence/
 ```
 
+Spec Kit SDD artifacts remain under `specs/<work_slug>/`. Bug extension artifacts
+remain under `.specify/bugs/<bug_slug>/` when `work_type=bug`.
+
 Use `.specify/workflows/runs/<run-id>/state.json` for Spec Kit's workflow
-engine state. Use `.specify/ai-team/tasks/<task-id>/` for AI Team task identity
+engine state. Use `.specify/ai-team/work/<work_slug>/` for AI Team work identity
 and cross-session recovery.
 
-## Task Identity
+## Work Identity
 
-Use [task-field-spec.md](task-field-spec.md) for canonical field names,
-`task_id` patterns, and bug `bug_slug` rules.
+Use [work-field-spec.md](work-field-spec.md) for canonical field names,
+`work_slug` rules, and bug `bug_slug` rules.
 
 | Work type | Stable identity |
 |---|---|
 | bug fix | coding issue URL, issue number, or `.specify/bugs/<slug>/` |
-| public feature | coding issue URL, issue number, or SDD feature request |
+| public feature | coding issue URL, issue number, or SDD feature directory basename |
 | confidential enterprise feature | handoff requirement URL or requirement ID |
-| new project | public project issue/charter, handoff requirement URL, or explicit project task ID |
+| new project | public project issue/charter, handoff requirement URL, or explicit work slug |
 | template change | distribution repository issue or PR |
-| unclear intake | explicit temporary `task_id=<value>` until clarified |
+| unclear intake | explicit temporary `work_slug=<value>` until clarified |
 
 Feature work must use a stable work item. Public feature work can use a coding
 repository issue. Confidential enterprise work can use a sanitized handoff
@@ -46,7 +51,7 @@ private trace in approved channels.
 
 | Phase | Meaning | Typical next command |
 |---|---|---|
-| `intake` | request received and task identity is being resolved | `speckit.ai-team.context` (workflow) or `speckit.ai-team.start` (chat-first routing) |
+| `intake` | request received and work identity is being resolved | `speckit.ai-team.context` (workflow) or `speckit.ai-team.start` (chat-first routing) |
 | `specified` | requirement or bug intent is clear enough for planning | `speckit.ai-team.handoff` or `speckit.plan` |
 | `planned` | architecture plan exists; plan check may be complete; awaits `review-plan` gate | `speckit.tasks` after approve, or `speckit.plan` on revise |
 | `tasks-ready` | developer tasks are generated and await native analyze | `speckit.analyze` |
@@ -59,7 +64,7 @@ private trace in approved channels.
 
 ## Plan check summary (`plan_check`)
 
-After `speckit.ai-team.plan-check`, the command updates `task-context.yml`:
+After `speckit.ai-team.plan-check`, the command updates `work-context.yml`:
 
 ```yaml
 plan_check:
@@ -73,20 +78,17 @@ The full Plan Check Report stays in **chat**. A short summary also goes to
 `context-pack.md`. Native `speckit.analyze` covers cross-artifact consistency before
 implementation — there is no `plan-check.md`, `plan-gate.md`, or preset task-gate overlay.
 
-Legacy task context that used `plan_gate` should be migrated to `plan_check`
-manually if you resume old work.
-
 ## Resume Protocol
 
-1. Run `speckit.ai-team.context task_id=<task-id> resume=true`.
+1. Run `speckit.ai-team.context work_slug=<work_slug> resume=true`.
 2. If a paused workflow run is recorded, inspect it with
    `specify workflow status <run-id>` and resume it with
    `specify workflow resume <run-id>` when appropriate.
-3. If there is no usable workflow run, load `task-context.yml`, `context-pack.md`,
+3. If there is no usable workflow run, load `work-context.yml`, `context-pack.md`,
    current feature artifacts, bug artifacts, and code graph artifacts.
 4. Compare the recorded source snapshot and work item or bug state to current
    repository state.
-5. Run the `next_command` from `task-context.yml` only when the stop conditions are
+5. Run the `next_command` from `work-context.yml` only when the stop conditions are
    clear.
 
 If the source, work item, or context pack changed while the work was paused,

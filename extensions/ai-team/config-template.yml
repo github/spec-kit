@@ -20,12 +20,11 @@ agent_tools:
     - trae
   auto_detect_from_specify_init: true
 
-task_context:
-  # Durable task context survives interrupted sessions and tool switches.
-  root: .specify/ai-team/tasks
+work_context:
+  # Durable work context survives interrupted sessions and tool switches.
+  root: .specify/ai-team/work
   context_pack_file: context-pack.md
-  task_context_file: task-context.yml
-  artifact_dir: artifacts
+  work_context_file: work-context.yml
   allow_reconstruct_from_handoff_requirement_url: true
   allow_reconstruct_from_bug_slug: true
 
@@ -48,8 +47,7 @@ issue_workflow:
 
 code_graph:
   # Adapters may be local tools, MCP tools, or hosted services. All of them
-  # should normalize into the same artifact shape.
-  root: .specify/ai-team/codegraph
+  # should normalize into the same artifact shape under work/<work_slug>/codegraph/.
   default_adapter_order:
     - scip
     - joern

@@ -1,7 +1,7 @@
 # Issue Workflow
 
 AI Team work is tracked with repository issues and labels. Issues are the
-human-visible work ledger; Task Context Packages are only the AI reload context.
+human-visible work ledger; Work Context Packages are only the AI reload context.
 
 ## Repository Roles
 
@@ -33,7 +33,7 @@ Every AI Team issue should have exactly one state label:
 | `state/superseded` | replaced by another issue or requirement | terminal |
 
 Do not use issue title, branch name, or local file path as the stable identity.
-Use the issue URL plus the task ID rules in [task-field-spec.md](task-field-spec.md).
+Use the issue URL plus the work slug rules in [work-field-spec.md](work-field-spec.md).
 
 ## Handoff URLs
 

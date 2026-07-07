@@ -90,19 +90,19 @@ _read_url_from_spec_frontmatter() {
     _parse_url_from_text "$(head -40 "$spec_file")"
 }
 
-_read_url_from_task_context() {
+_read_url_from_work_context() {
     local repo_root="$1"
     local args_text="${2:-}"
-    local task_id="" tasks_root="$repo_root/.specify/ai-team/tasks"
-    if [[ "$args_text" =~ task_id=([^[:space:]\"\'\>]+) ]]; then
-        task_id="${BASH_REMATCH[1]}"
+    local work_slug="" work_root="$repo_root/.specify/ai-team/work"
+    if [[ "$args_text" =~ work_slug=([^[:space:]\"\'\>]+) ]]; then
+        work_slug="${BASH_REMATCH[1]}"
     fi
-    if [[ -n "$task_id" && -f "$tasks_root/$task_id/task-context.yml" ]]; then
-        _parse_url_from_text "$(cat "$tasks_root/$task_id/task-context.yml")" && return 0
+    if [[ -n "$work_slug" && -f "$work_root/$work_slug/work-context.yml" ]]; then
+        _parse_url_from_text "$(cat "$work_root/$work_slug/work-context.yml")" && return 0
     fi
-    if [[ -d "$tasks_root" ]]; then
+    if [[ -d "$work_root" ]]; then
         local ctx url
-        for ctx in "$tasks_root"/*/task-context.yml; do
+        for ctx in "$work_root"/*/work-context.yml; do
             [[ -f "$ctx" ]] || continue
             if url=$(_parse_url_from_text "$(cat "$ctx")"); then
                 echo "$url"
@@ -121,7 +121,7 @@ resolve_handoff_requirement_url() {
     url=$(_extract_https_url "${HANDOFF_REQUIREMENT_URL:-}") && { echo "$url"; return 0; }
     url=$(_extract_https_url "${PUBLISHED_REQUIREMENT_URL:-}") && { echo "$url"; return 0; }
     url=$(_parse_url_from_text "$args_text") && { echo "$url"; return 0; }
-    url=$(_read_url_from_task_context "$repo_root" "$args_text") && { echo "$url"; return 0; }
+    url=$(_read_url_from_work_context "$repo_root" "$args_text") && { echo "$url"; return 0; }
 
     local feature_dir spec_file
     handoff_spec_load_core

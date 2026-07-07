@@ -24,7 +24,7 @@ feature approval authority unless explicitly delegated.
 
 ## Review Questions
 
-- Is there a Task Context Package tying this review to the requirement and
+- Is there a Work Context Package tying this review to the requirement and
   intended coding repository?
 - Is the user problem or product goal concrete?
 - Is the work item stable: public coding issue, allowed handoff URL, or

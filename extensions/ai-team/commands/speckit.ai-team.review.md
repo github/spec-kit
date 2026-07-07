@@ -22,8 +22,8 @@ Check in this order:
 2. Work item: bug fix links a coding issue or bug slug; public feature links a
    coding issue; confidential feature links an allowed handoff requirement or
    public-safe summary.
-3. Task context: `.specify/ai-team/tasks/<task-id>/context-pack.md` and
-   `task-context.yml` match the PR and evidence.
+3. Work context: `.specify/ai-team/work/<work_slug>/context-pack.md` and
+   `work-context.yml` match the PR and evidence.
 4. Privacy: coding PRs do not expose raw customer demand or internal drafts.
    Confirm `spec.override.md` is untracked when internal handoff context was
    used.
@@ -34,7 +34,7 @@ Check in this order:
 7. Compatibility: SPI/API, config, wire schema, metrics, examples,
    dependencies, release notes, and migrations are handled.
 8. Tests: self-tests match changed behavior.
-9. Evidence: task context, code graph, changed nodes, commands, skipped checks,
+9. Evidence: work context, code graph, changed nodes, commands, skipped checks,
    uncovered paths, and residual risks are recorded.
 10. Minimality: unrelated cleanup and local AI files are absent.
 
@@ -57,7 +57,7 @@ Evidence checked:
 - coding issue or handoff requirement URL:
 - public-safe summary:
 - modules:
-- task context:
+- work context:
 - code graph or fallback:
 - changed nodes and impact radius:
 - commands:

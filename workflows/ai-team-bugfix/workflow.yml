@@ -4,7 +4,7 @@ workflow:
   name: "AI Team Bug Fix"
   version: "0.1.0"
   author: "AI Team Template"
-  description: "Runs an AI Team bug-fix flow with durable task context, source impact review, bug lifecycle, and composite checks/evidence via preset on speckit.bug.test."
+  description: "Runs an AI Team bug-fix flow with durable work context, source impact review, bug lifecycle, and composite checks/evidence via preset on speckit.bug.test."
 
 requires:
   speckit_version: ">=0.12.4"
@@ -30,17 +30,13 @@ inputs:
   force_bootstrap:
     type: boolean
     default: false
-  task_id:
+  work_slug:
     type: string
     required: true
-    prompt: "AI Team task ID, for example BUG-project-alpha-123"
+    prompt: "Work slug (equals bug_slug), for example bug-project-alpha-123"
   coding_issue_url:
     type: string
     default: ""
-  bug_slug:
-    type: string
-    required: true
-    prompt: "Bug slug for .specify/bugs/<slug>/, for example bug-project-alpha-123"
   resume_from:
     type: string
     default: "auto"
@@ -69,11 +65,11 @@ steps:
     command: speckit.ai-team.context
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.work_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
   - id: review-context
     type: gate
-    message: "Review the bug work item, task_id, bug_slug, and Task Context Package before source impact analysis."
+    message: "Review the bug work item, work_slug, and Work Context Package before source impact analysis."
     options: [approve, revise, reject]
     on_reject: abort
 
@@ -81,14 +77,14 @@ steps:
     command: speckit.ai-team.codegraph
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.work_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: impact
     command: speckit.ai-team.impact
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.work_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
   - id: review-impact
@@ -101,7 +97,7 @@ steps:
     command: speckit.bug.assess
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} coding_issue_url={{ inputs.coding_issue_url }} slug={{ inputs.bug_slug }} task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} coding_issue_url={{ inputs.coding_issue_url }} slug={{ inputs.work_slug }} work_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }}"
 
   - id: review-assessment
     type: gate
@@ -113,7 +109,7 @@ steps:
     command: speckit.bug.fix
     integration: "{{ inputs.integration }}"
     input:
-      args: "slug={{ inputs.bug_slug }} task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }}"
+      args: "slug={{ inputs.work_slug }} work_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }}"
 
   - id: review-fix
     type: gate
@@ -125,4 +121,4 @@ steps:
     command: speckit.bug.test
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} slug={{ inputs.bug_slug }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} slug={{ inputs.work_slug }} work_slug={{ inputs.work_slug }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.work_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"

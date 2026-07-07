@@ -18,17 +18,17 @@ After native converge completes (Phase 1), continue in this run with portable ch
 | contract or boundary | SPI/API, config, schema, cross-module behavior | code graph impact and contract tests when available |
 | release scoped | release notes, deployment, dependency/security impact | release verification or explicit deferral |
 
-1. Identify repository role and load task context when present.
+1. Identify repository role and load work context when present.
 2. Confirm feature work links the correct coding issue or allowed handoff requirement.
 3. Run governance, build/self-test, and boundary checks for touched areas.
-4. Record skipped checks with concrete reasons and update the Task Context Package.
+4. Record skipped checks with concrete reasons and update the Work Context Package.
 
 ## Evidence board
 
 After checks (or when checks are skipped with documented reasons), produce the evidence board in this run:
 
-1. Read task context, `spec.override.md` or `spec.md`, plan/tasks, handoffs, gates, implementation diff, native converge output, and test results.
-2. Write `.specify/ai-team/evidence/<feature-slug>/evidence-board.md`:
+1. Read work context, `spec.override.md` or `spec.md`, plan/tasks, handoffs, gates, implementation diff, native converge output, and test results.
+2. Write `.specify/ai-team/work/<work_slug>/evidence/evidence-board.md`:
 
 ```markdown
 # Evidence Board
@@ -62,6 +62,6 @@ After checks (or when checks are skipped with documented reasons), produce the e
 ## Failure Evolution Follow-Up
 ```
 
-3. Update the Task Context Package with evidence path and next command (`speckit.ai-team.pr` when ready).
+3. Update the Work Context Package with evidence path and next command (`speckit.ai-team.pr` when ready).
 
 Stop before claiming implementation success when behavior changed without self-test evidence, feature work lacks a work item anchor, or skipped checks have vague reasons.

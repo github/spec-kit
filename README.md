@@ -35,7 +35,7 @@ replaces it. When commands or links disagree, prefer this repository's AI Team
 extension docs under [`extensions/ai-team/`](extensions/ai-team/).
 
 AI Team adds role-isolated SDD, repository-boundary rules for coding issues and
-internal-only enhancement traceability, durable Task Context Packages for
+internal-only enhancement traceability, durable Work Context Packages for
 resume, replaceable code graph adapters for impact analysis, and portable
 evidence gates for enterprise teams.
 
@@ -46,7 +46,7 @@ or Trae to collaborate on enterprise software. It keeps the Spec Kit SDD phases
 but adds team controls around them:
 
 ```text
-intake -> task context -> requirement or bug work item -> code graph impact
+intake -> work context -> requirement or bug work item -> code graph impact
 -> specify -> review-spec gate -> plan
 -> plan-check (chat report) -> review-plan gate -> tasks
 -> analyze (native cross-artifact report) -> review-tasks gate
@@ -57,7 +57,7 @@ intake -> task context -> requirement or bug work item -> code graph impact
 
 | Layer | Example | Output |
 |---|---|---|
-| Extension command | `speckit.ai-team.plan-check` | Plan Check Report in chat; `plan_check` in task context |
+| Extension command | `speckit.ai-team.plan-check` | Plan Check Report in chat; `plan_check` in work context |
 | Preset (optional) | `ai-team-handoff-spec` on `converge` / `bug.test` | Handoff spec rules; composite checks / evidence |
 | Workflow human gate | `review-plan`, `review-tasks` | You approve, revise, or reject before the next SDD step |
 
@@ -71,8 +71,8 @@ The exact path depends on the user journey:
 | existing project bug fix | current behavior is broken, flaky, regressed, or throws errors | coding issue URL or bug slug |
 | existing project new feature | adding public behavior to an existing repository | coding issue URL for public work, or internal handoff requirement URL for confidential enterprise traceability |
 | new project from zero | creating a new repository, service, product, or application | public project issue/charter, or handoff requirement URL for confidential enterprise work |
-| resume from middle | work stopped after approval, gate, failed check, tool switch, or lost chat | workflow run ID or Task Context Package task ID |
-| failure evolution | repeated AI mistake, failed review, failed check, escaped bug, or incident | failed PR, check, incident, or task ID |
+| resume from middle | work stopped after approval, gate, failed check, tool switch, or lost chat | workflow run ID or Work Context Package work slug |
+| failure evolution | repeated AI mistake, failed review, failed check, escaped bug, or incident | failed PR, check, incident, or work slug |
 
 For detailed steps, start with
 [`extensions/ai-team/README.md`](extensions/ai-team/) and
@@ -98,7 +98,7 @@ inside `speckit.bug.test`).
 
 **Extension:** `speckit.ai-team.plan-check` runs after `speckit.plan`, outputs a
 Plan Check Report in chat (no gate markdown file), and records `plan_check` in the
-Task Context Package.
+Work Context Package.
 
 **Preset:** `ai-team-handoff-spec` composes handoff spec rules and composite AI Team
 logic into native commands: checks/evidence in `speckit.converge` (feature) or
@@ -107,7 +107,7 @@ logic into native commands: checks/evidence in `speckit.converge` (feature) or
 **Workflow gates:** `review-plan` and `review-tasks` are human decision points.
 Choose **revise** at either gate and the workflow loops automatically (`plan-cycle`
 or `task-cycle` do-while). Revise iterations pass a fixed patch instruction (plus
-`task_id`) instead of the original request/spec URLs — agents revise from
+`work_slug`) instead of the original request/spec URLs — agents revise from
 `plan_check`, `context-pack.md`, or native analyze findings already on disk.
 
 Without the preset, core commands do not know about `spec.override.md` or AI Team
@@ -122,8 +122,7 @@ Examples:
 # Existing project bug fix
 specify workflow run ai-team-bugfix \
   --input request="Fix the upload timeout reported by customer support" \
-  --input task_id=BUG-project-alpha-123 \
-  --input bug_slug=bug-project-alpha-123 \
+  --input work_slug=bug-project-alpha-123 \
   --input coding_issue_url="https://example.com/org/project/issues/123"
 
 # Existing project public feature
@@ -145,8 +144,8 @@ specify workflow run ai-team-sdd \
   --input bootstrap_workspace=true \
   --input handoff_requirement_url="https://example.com/enhancements/rfcs/REQ-2026-020"
 
-# Resume by durable task context after tool or chat loss
-speckit.ai-team.context task_id=<task-id> resume=true
+# Resume by durable work context after tool or chat loss
+speckit.ai-team.context work_slug=<work_slug> resume=true
 
 # Resume by workflow run state
 specify workflow resume <run-id>
@@ -162,13 +161,13 @@ https://example.com/org/project/issues/456
 Use the ai-team-sdd feature path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-015
 
-Use the ai-team-bugfix path with task_id=BUG-project-alpha-123 and bug_slug=bug-project-alpha-123 for this coding issue:
+Use the ai-team-bugfix path with work_slug=bug-project-alpha-123 for this coding issue:
 https://example.com/org/project/issues/123
 
 Use the ai-team-sdd new-project path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-020
 
-Use the ai-team-sdd resume path for task_id=REQ-2026-015 from tasks-ready.
+Use the ai-team-sdd resume path for work_slug=003-search-export from tasks-ready.
 ```
 
 ## Table of Contents
