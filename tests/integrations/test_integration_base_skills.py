@@ -141,6 +141,40 @@ class SkillsIntegrationTests:
             assert isinstance(fm["description"], str)
             assert len(fm["description"]) > 0, f"{f} has empty description"
 
+    def test_skill_frontmatter_preserves_multiline_description(
+        self, tmp_path, monkeypatch
+    ):
+        """A multiline (block-scalar) description must round-trip exactly.
+
+        The hand-built SKILL.md frontmatter used to only escape backslash and
+        quote, so a block-scalar description was emitted with raw newlines inside
+        a double-quoted scalar and reparsed with those newlines collapsed to
+        spaces. The description must survive byte-for-byte."""
+        i = get_integration(self.KEY)
+        template = tmp_path / "sample.md"
+        template.write_text(
+            "---\n"
+            "description: |\n"
+            "  first line\n"
+            "  second line\n"
+            "scripts:\n"
+            "  sh: scripts/bash/x.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) == 1
+
+        content = skill_files[0].read_text(encoding="utf-8")
+        fm = yaml.safe_load(content.split("---", 2)[1])
+        assert "\n" in fm["description"]
+        assert fm["description"] == "first line\nsecond line\n"
+
     def test_templates_are_processed(self, tmp_path):
         """Skill body must have placeholders replaced, not raw templates."""
         i = get_integration(self.KEY)
