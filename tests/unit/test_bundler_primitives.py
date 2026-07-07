@@ -196,3 +196,22 @@ def test_bundled_preset_pin_mismatch_refuses(tmp_path: Path, monkeypatch):
     with pytest.raises(BundlerError, match="pinned to version 2.0.0"):
         manager.install(ComponentRef(kind="presets", id="my-preset", version="2.0.0"))
     assert called == []
+
+
+def test_bundled_preset_pin_match_installs(tmp_path: Path, monkeypatch):
+    import specify_cli._assets as assets
+    from specify_cli.presets import PresetManager
+
+    bundled = _write_manifest(tmp_path / "preset", "preset", "1.0.0")
+    monkeypatch.setattr(assets, "_locate_bundled_preset", lambda cid: bundled)
+    called: list = []
+    monkeypatch.setattr(
+        PresetManager, "install_from_directory",
+        lambda self, *a, **k: called.append(a),
+    )
+
+    manager = primitive_manager("presets", tmp_path, allow_network=False)
+    # matching pin, and unpinned, both proceed to install
+    manager.install(ComponentRef(kind="presets", id="my-preset", version="1.0.0"))
+    manager.install(ComponentRef(kind="presets", id="my-preset", version=None))
+    assert len(called) == 2
