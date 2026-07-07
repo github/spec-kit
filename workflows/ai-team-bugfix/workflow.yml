@@ -131,18 +131,4 @@ steps:
     command: speckit.bug.test
     integration: "{{ inputs.integration }}"
     input:
-      args: "slug={{ inputs.bug_slug }} task_id={{ inputs.task_id }} workflow_run_id={{ context.run_id }}"
-
-  - id: checks
-    command: speckit.ai-team.checks
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
-    continue_on_error: true
-
-  - id: evidence
-    command: speckit.ai-team.evidence
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
-    continue_on_error: true
+      args: "{{ inputs.request }} slug={{ inputs.bug_slug }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"

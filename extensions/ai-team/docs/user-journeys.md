@@ -17,8 +17,11 @@ specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset appends effective spec reading rules to native
-SDD commands. Without it, core commands do not know about `spec.override.md`.
+The `ai-team-handoff-spec` preset appends handoff spec rules and composite AI Team
+gates to native SDD commands (plan gate in checklist, task gate in analyze,
+checks/evidence in converge or bug.test). Install the `bug` extension for bugfix
+composite evidence. Without it, core commands do not know about
+`spec.override.md` or AI Team policy overlays.
 
 Use the integration that matches the active agent: `codex`, `claude`,
 `cursor-agent`, or `trae`.
@@ -108,7 +111,8 @@ Flow:
    -> speckit.bug.fix -> review-fix -> speckit.bug.test
    ```
 
-8. Run `speckit.ai-team.checks` and `speckit.ai-team.evidence`.
+8. `speckit.bug.test` verifies the fix and runs composite checks plus Evidence Board
+   (via preset) before PR preparation.
 9. Submit with `speckit.ai-team.pr`, linking the coding issue.
 10. Review with `speckit.ai-team.review`.
 
@@ -142,17 +146,14 @@ Flow:
 6. `speckit.ai-team.handoff` creates the specify-to-plan handoff so roles do not
    depend on hidden chat.
 7. `speckit.plan` creates the architecture plan.
-8. `speckit.checklist` runs the native requirements-quality checklist, then
-   `speckit.ai-team.plan-gate` overlays code graph, privacy, owner, and
-   build-from-zero checks before the `review-plan` gate.
+8. `speckit.checklist` runs the native requirements-quality checklist and the
+   composite AI Team plan gate (via preset) before the `review-plan` gate.
 9. `speckit.tasks` generates implementation tasks.
-10. `speckit.analyze` runs the native cross-artifact consistency check, then
-    `speckit.ai-team.task-gate` overlays task ownership, self-test, evidence,
-    and impact-radius checks before the `review-tasks` gate.
-11. `speckit.implement` changes code and `speckit.converge` checks whether
-    planned work is complete or more tasks are needed.
-12. `speckit.ai-team.checks`, `speckit.ai-team.evidence`,
-    `speckit.ai-team.pr`, and `speckit.ai-team.review` close the evidence loop.
+10. `speckit.analyze` runs the native cross-artifact consistency check and the
+    composite AI Team task gate (via preset) before the `review-tasks` gate.
+11. `speckit.implement` changes code; `speckit.converge` checks remaining work
+    and runs composite checks plus Evidence Board (via preset).
+12. `speckit.ai-team.pr` and `speckit.ai-team.review` close the evidence loop.
 
 Stop when the feature lacks an accountable public work item, crosses approved
 scope, or needs private customer context that should move to an internal
@@ -210,12 +211,12 @@ specify workflow run ai-team-sdd \
   --input handoff_requirement_url="https://example.com/enhancements/rfcs/REQ-2026-020"
 ```
 
-New projects still follow the same native SDD command spine:
-`speckit.specify`, `speckit.plan`, `speckit.checklist`, `speckit.tasks`,
-`speckit.analyze`, `speckit.implement`, and `speckit.converge`. The AI Team
-plan gate is stricter for new projects: it must establish the project skeleton,
-architecture spine, dependency strategy, runnable thin slice, self-test
-strategy, and evidence strategy before broad feature construction.
+New projects still follow the same native SDD command spine with composite gates
+via preset: `speckit.checklist` (plan gate), `speckit.analyze` (task gate), and
+`speckit.converge` (checks + evidence). The plan gate is stricter for new projects:
+it must establish the project skeleton, architecture spine, dependency strategy,
+runnable thin slice, self-test strategy, and evidence strategy before broad feature
+construction.
 
 Stop for human decision when the project has no charter, work item, or
 accountable owner; the plan starts with broad feature construction before a

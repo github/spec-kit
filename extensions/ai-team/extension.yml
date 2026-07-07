@@ -49,21 +49,9 @@ provides:
     - name: speckit.ai-team.handoff-spec.resolve
       file: commands/speckit.ai-team.handoff-spec.resolve.md
       description: "Resolve effective spec path (spec.override.md when present) for downstream SDD commands."
-    - name: speckit.ai-team.plan-gate
-      file: commands/speckit.ai-team.plan-gate.md
-      description: "Review the architecture plan gate for code graph impact, public plan safety, and build-from-zero readiness."
-    - name: speckit.ai-team.task-gate
-      file: commands/speckit.ai-team.task-gate.md
-      description: "Review generated tasks for phase isolation, self-test mapping, existing-project impact, and new-project build-plan completeness."
     - name: speckit.ai-team.feature-review
       file: commands/speckit.ai-team.feature-review.md
       description: "Help maintainers and the technical committee assess internal enhancement handoff readiness before coding."
-    - name: speckit.ai-team.checks
-      file: commands/speckit.ai-team.checks.md
-      description: "Run or reconstruct portable CI/CD evidence when platform CI is unavailable or insufficient."
-    - name: speckit.ai-team.evidence
-      file: commands/speckit.ai-team.evidence.md
-      description: "Produce an Evidence Board after implementation and record self-test, scope, and failure-evolution follow-ups."
     - name: speckit.ai-team.pr
       file: commands/speckit.ai-team.pr.md
       description: "Prepare a pull request in the correct repository with linked work item and evidence."
@@ -119,21 +107,6 @@ hooks:
     optional: true
     prompt: "Create an AI Team specify-to-plan handoff with role isolation?"
     description: "Preserve customer/product context as a document handoff before architecture planning."
-  after_checklist:
-    command: speckit.ai-team.plan-gate
-    optional: true
-    prompt: "Run the AI Team plan gate after the native checklist?"
-    description: "Overlay architecture, code graph, public/private repository boundaries, owner review, and build-from-zero readiness on top of the native checklist."
-  after_analyze:
-    command: speckit.ai-team.task-gate
-    optional: true
-    prompt: "Run the AI Team task gate after native analysis?"
-    description: "Overlay task ownership, self-test evidence, impact radius, and strict build plan obligations on top of the native analysis."
-  after_implement:
-    command: speckit.ai-team.evidence
-    optional: true
-    prompt: "Generate the AI Team Evidence Board?"
-    description: "Summarize implementation evidence, converge/check output, scope control, and failure-evolution follow-ups."
 
 tags:
   - ai-team

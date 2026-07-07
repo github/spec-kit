@@ -79,12 +79,10 @@ def test_ai_team_extension_command_files_exist():
         "speckit.implement",
         "speckit.converge",
     }
-    assert manifest["hooks"]["after_checklist"]["command"] == (
-        "speckit.ai-team.plan-gate"
-    )
-    assert manifest["hooks"]["after_analyze"]["command"] == (
-        "speckit.ai-team.task-gate"
-    )
+    assert manifest["hooks"]["before_checklist"]["command"] == "speckit.ai-team.handoff-spec.resolve"
+    assert "after_checklist" not in manifest["hooks"]
+    assert "after_analyze" not in manifest["hooks"]
+    assert "after_implement" not in manifest["hooks"]
 
     command_names = {command["name"] for command in manifest["provides"]["commands"]}
     assert command_names == {
@@ -97,11 +95,7 @@ def test_ai_team_extension_command_files_exist():
         "speckit.ai-team.handoff",
         "speckit.ai-team.handoff-spec-sync",
         "speckit.ai-team.handoff-spec.resolve",
-        "speckit.ai-team.plan-gate",
-        "speckit.ai-team.task-gate",
         "speckit.ai-team.feature-review",
-        "speckit.ai-team.checks",
-        "speckit.ai-team.evidence",
         "speckit.ai-team.pr",
         "speckit.ai-team.review",
         "speckit.ai-team.retrospect",
@@ -330,15 +324,16 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert "review-spec" in step_ids
     assert "plan" in step_ids
     assert "checklist" in step_ids
-    assert "plan-gate" in step_ids
+    assert "plan-gate" not in step_ids
     assert "review-plan" in step_ids
     assert "tasks" in step_ids
     assert "analyze" in step_ids
-    assert "task-gate" in step_ids
+    assert "task-gate" not in step_ids
     assert "review-tasks" in step_ids
     assert "implement" in step_ids
     assert "converge" in step_ids
-    assert "checks" in step_ids
+    assert "checks" not in step_ids
+    assert "evidence" not in step_ids
     context_step = next(step for step in steps if step["id"] == "context-open")
     assert context_step["command"] == "speckit.ai-team.context"
     codegraph_step = next(step for step in steps if step["id"] == "codegraph")
@@ -364,8 +359,8 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert "bug-fix" in bugfix_step_ids
     assert "review-fix" in bugfix_step_ids
     assert "bug-test" in bugfix_step_ids
-    assert "checks" in bugfix_step_ids
-    assert "evidence" in bugfix_step_ids
+    assert "checks" not in bugfix_step_ids
+    assert "evidence" not in bugfix_step_ids
 
 
 def test_ai_team_bugfix_workflow_routes_to_first_gate(tmp_path):

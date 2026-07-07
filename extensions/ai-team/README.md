@@ -206,11 +206,7 @@ New project work needs a stricter build-from-zero plan:
 | `speckit.ai-team.codegraph` | generate or attach the code graph slice used for impact and gates |
 | `speckit.ai-team.impact` | inspect code graph or source-structure impact before code edits |
 | `speckit.ai-team.handoff` | create role-isolated handoff documents between phases |
-| `speckit.ai-team.plan-gate` | review AI Team plan policy after native `speckit.checklist` and before tasks |
-| `speckit.ai-team.task-gate` | review AI Team task policy after native `speckit.analyze` and before implementation |
 | `speckit.ai-team.feature-review` | help maintainers and the technical committee assess internal enhancement handoff readiness |
-| `speckit.ai-team.checks` | produce portable CI/CD evidence on any git platform |
-| `speckit.ai-team.evidence` | produce Evidence Board after implementation |
 | `speckit.ai-team.pr` | prepare a PR in the correct repository with linked work item and evidence |
 | `speckit.ai-team.review` | help human reviewers assess boundary safety and evidence |
 | `speckit.ai-team.retrospect` | turn failures into durable process improvements |
@@ -225,10 +221,9 @@ resumable path that reuses Spec Kit's native SDD commands:
 optional Spec Kit init bootstrap -> workspace contract -> request routing
 -> task context package -> route gate -> code graph -> impact
 -> speckit.specify -> review-spec gate -> AI Team handoff -> speckit.plan
--> speckit.checklist -> AI Team plan gate -> review-plan gate
--> speckit.tasks -> speckit.analyze -> AI Team task gate
--> review-tasks gate -> speckit.implement -> speckit.converge
--> portable checks -> Evidence Board
+-> speckit.checklist (native + composite plan gate via preset) -> review-plan gate
+-> speckit.tasks -> speckit.analyze (native + composite task gate via preset)
+-> review-tasks gate -> speckit.implement -> speckit.converge (native + checks + evidence via preset)
 ```
 
 The bundled `ai-team-bugfix` workflow gives bug work a deterministic path:
@@ -236,8 +231,7 @@ The bundled `ai-team-bugfix` workflow gives bug work a deterministic path:
 ```text
 optional Spec Kit init bootstrap -> workspace contract -> task context package
 -> request routing -> route gate -> code graph -> impact -> impact gate
--> bug assessment -> assessment gate -> bug fix -> fix gate -> bug test
--> portable checks -> Evidence Board
+-> bug assessment -> assessment gate -> bug fix -> fix gate -> speckit.bug.test (composite checks + evidence via preset)
 ```
 
 Workspace creation uses Spec Kit's own `init` step. AI Team does not copy
@@ -278,8 +272,14 @@ specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset appends effective spec reading rules to native
-SDD commands. Without it, core commands do not know about `spec.override.md`.
+The `ai-team-handoff-spec` preset appends to native SDD and bug commands:
+
+- effective spec (`spec.override.md`) reading rules for handoff URLs
+- plan gate inside `speckit.checklist`, task gate inside `speckit.analyze`
+- checks and Evidence Board inside `speckit.converge` (feature) or `speckit.bug.test` (bugfix)
+
+Without the preset, core commands do not know about `spec.override.md` or AI Team gates.
+Install the `bug` extension for bugfix composite evidence on `speckit.bug.test`.
 
 For local development:
 

@@ -65,10 +65,9 @@ Features use the SDD path:
 ```text
 coding issue or handoff requirement URL -> speckit.specify
 -> review-spec gate -> speckit.ai-team.handoff -> speckit.plan
--> speckit.checklist -> speckit.ai-team.plan-gate -> review-plan gate
--> speckit.tasks -> speckit.analyze -> speckit.ai-team.task-gate
--> review-tasks gate -> speckit.implement -> speckit.converge
--> speckit.ai-team.checks -> speckit.ai-team.evidence
+-> speckit.checklist (composite plan gate via preset) -> review-plan gate
+-> speckit.tasks -> speckit.analyze (composite task gate via preset)
+-> review-tasks gate -> speckit.implement -> speckit.converge (composite checks + evidence via preset)
 ```
 
 If the user has only a private draft or raw customer request, route to
@@ -86,10 +85,9 @@ must keep a stricter build-from-zero plan:
 project charter, coding issue, or handoff requirement URL -> specify init/bootstrap
 -> speckit.ai-team.workspace -> speckit.ai-team.context
 -> speckit.specify -> speckit.ai-team.handoff -> speckit.plan
--> speckit.checklist -> speckit.ai-team.plan-gate -> review-plan gate
--> speckit.tasks -> speckit.analyze -> speckit.ai-team.task-gate
--> review-tasks gate -> speckit.implement -> speckit.converge
--> speckit.ai-team.checks -> speckit.ai-team.evidence
+-> speckit.checklist (composite plan gate via preset) -> review-plan gate
+-> speckit.tasks -> speckit.analyze (composite task gate via preset)
+-> review-tasks gate -> speckit.implement -> speckit.converge (composite checks + evidence via preset)
 ```
 
 The first implementation wave should produce a runnable thin slice before

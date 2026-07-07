@@ -48,10 +48,10 @@ private trace in approved channels.
 |---|---|---|
 | `intake` | request received and task identity is being resolved | `speckit.ai-team.start` |
 | `specified` | requirement or bug intent is clear enough for planning | `speckit.ai-team.handoff` or `speckit.plan` |
-| `planned` | architecture plan exists and awaits checklist and AI Team plan review | `speckit.checklist` or `speckit.ai-team.plan-gate` |
-| `tasks-ready` | developer tasks are generated and await analysis and AI Team task review | `speckit.analyze` or `speckit.ai-team.task-gate` |
+| `planned` | architecture plan exists and awaits checklist with composite plan gate | `speckit.checklist` |
+| `tasks-ready` | developer tasks are generated and await analysis with composite task gate | `speckit.analyze` |
 | `implementing` | code is being changed | `speckit.implement` or `speckit.converge` |
-| `evidence` | implementation exists and evidence is being assembled | `speckit.ai-team.evidence` |
+| `evidence` | implementation exists and evidence is being assembled | `speckit.converge` (composite checks + evidence via preset) or `speckit.ai-team.pr` |
 | `pr` | PR is prepared or open | `speckit.ai-team.review` |
 | `review` | human review is active | `speckit.ai-team.retrospect` if failure repeats |
 | `done` | merged or intentionally closed with evidence | none |

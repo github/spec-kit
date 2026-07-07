@@ -46,7 +46,7 @@ org/
 | route a user request | current workspace | `speckit.ai-team.start` |
 | plan/implement feature | coding repository | `speckit.specify`, `speckit.plan`, `speckit.tasks`, `speckit.implement` |
 | inspect impact before code edits | coding repository | `speckit.ai-team.impact` |
-| verify and submit | coding repository | `speckit.ai-team.checks`, `speckit.ai-team.pr` |
+| verify and submit | coding repository | `speckit.converge` or `speckit.bug.test` (composite checks via preset), `speckit.ai-team.pr` |
 
 ## Feature Reference Shape
 

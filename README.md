@@ -79,8 +79,11 @@ specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset appends effective spec reading rules to native
-SDD commands. Without it, core commands do not know about `spec.override.md`.
+The `ai-team-handoff-spec` preset appends handoff spec rules and composite AI Team
+gates to native commands: plan gate in `speckit.checklist`, task gate in
+`speckit.analyze`, checks/evidence in `speckit.converge` (feature) or
+`speckit.bug.test` (bugfix, requires `bug` extension). Without it, core commands
+do not know about `spec.override.md` or AI Team policy overlays.
 
 Use `--integration claude`, `--integration cursor-agent`, or `--integration
 trae` when those tools are active.

@@ -130,17 +130,11 @@ steps:
     command: speckit.checklist
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
-
-  - id: plan-gate
-    command: speckit.ai-team.plan-gate
-    integration: "{{ inputs.integration }}"
-    input:
       args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
   - id: review-plan
     type: gate
-    message: "Review native checklist output plus AI Team plan gate before task generation."
+    message: "Review native checklist and composite AI Team plan gate (preset) before task generation."
     options: [approve, revise, reject]
     on_reject: abort
 
@@ -154,17 +148,11 @@ steps:
     command: speckit.analyze
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
-
-  - id: task-gate
-    command: speckit.ai-team.task-gate
-    integration: "{{ inputs.integration }}"
-    input:
       args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
   - id: review-tasks
     type: gate
-    message: "Review native analyze output plus AI Team task gate before implementation."
+    message: "Review native analyze and composite AI Team task gate (preset) before implementation."
     options: [approve, revise, reject]
     on_reject: abort
 
@@ -178,18 +166,4 @@ steps:
     command: speckit.converge
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
-
-  - id: checks
-    command: speckit.ai-team.checks
-    integration: "{{ inputs.integration }}"
-    input:
       args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
-    continue_on_error: true
-
-  - id: evidence
-    command: speckit.ai-team.evidence
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
-    continue_on_error: true

@@ -94,13 +94,34 @@ def test_ai_team_handoff_spec_preset_append_files():
         "speckit.analyze",
         "speckit.implement",
         "speckit.converge",
+        "speckit.bug.test",
         "plan-template",
     }
+    by_name = {e["name"]: e for e in entries}
     for entry in entries:
         rel = entry["file"]
         text = (PRESET_ROOT / rel).read_text(encoding="utf-8")
-        assert "EFFECTIVE_SPEC" in text or "spec.override.md" in text
+        if entry["name"] == "plan-template":
+            assert "spec.override" in text or "handoff" in text.lower()
+        elif entry["name"] == "speckit.bug.test":
+            assert "Evidence Board" in text
+            assert "Checks" in text
+        else:
+            assert "EFFECTIVE_SPEC" in text or "spec.override.md" in text
         assert entry.get("strategy") == "append"
+    checklist_text = (PRESET_ROOT / by_name["speckit.checklist"]["file"]).read_text(
+        encoding="utf-8"
+    )
+    assert "Plan Gate" in checklist_text
+    analyze_text = (PRESET_ROOT / by_name["speckit.analyze"]["file"]).read_text(
+        encoding="utf-8"
+    )
+    assert "Task Gate" in analyze_text
+    converge_text = (PRESET_ROOT / by_name["speckit.converge"]["file"]).read_text(
+        encoding="utf-8"
+    )
+    assert "Evidence Board" in converge_text
+    assert "Checks" in converge_text
 
 
 @requires_bash

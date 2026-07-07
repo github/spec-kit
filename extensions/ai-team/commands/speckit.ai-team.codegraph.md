@@ -98,8 +98,8 @@ contains, imports, calls, implements, extends, reads_config, tests, depends_on
 6. Update `.specify/ai-team/tasks/<task-id>/task-context.yml` with the code graph
    artifact path and next command.
 7. Hand the graph artifact to `speckit.ai-team.impact`, `speckit.plan`,
-   `speckit.ai-team.plan-gate`, `speckit.ai-team.task-gate`, or
-   `speckit.ai-team.evidence`.
+   `speckit.checklist`, `speckit.analyze`, or `speckit.converge` (composite gates
+   and evidence run inside those commands when preset `ai-team-handoff-spec` is installed).
 
 ## Stop Conditions
 
