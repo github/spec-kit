@@ -24,6 +24,12 @@ on Spec Kit. AI Team changes are developed and reviewed in
 `EuphoriaYan/spec-kit`; do not open upstream pull requests to `github/spec-kit`
 for this work.
 
+The upstream base is locked to `github/spec-kit` release `v0.12.5`
+(`12efa87`). This was the final upstream alignment point. Do not add an
+`upstream` remote or periodically rebase/merge from `github/spec-kit` unless
+the AI Team maintainers explicitly decide to perform a new one-time baseline
+alignment.
+
 Upstream Spec Kit documentation remains as reference until a local AI Team page
 replaces it. When commands or links disagree, prefer this repository's AI Team
 extension docs under [`extensions/ai-team/`](extensions/ai-team/).
