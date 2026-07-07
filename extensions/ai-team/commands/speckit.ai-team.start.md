@@ -74,9 +74,10 @@ coding issue or handoff requirement URL -> speckit.specify
 If the user has only a private draft or raw customer request, route to
 `speckit.ai-team.requirement` first. Code implementation must wait until there
 is an accepted handoff requirement or a public-safe coding issue/summary.
-When `handoff_requirement_url` is passed to `speckit.plan`, the plan command
-must fetch the URL, merge it with `spec.md` into ignored `spec.override.md`,
-and treat the override as the effective spec for later SDD commands.
+When `handoff_requirement_url` is passed to `speckit.plan`, the mandatory
+`before_plan` hook (`speckit.ai-team.handoff-spec-sync`) fetches the URL,
+bootstraps or preserves `spec.md`, merges into ignored `spec.override.md`, and
+downstream commands read the effective spec per preset `ai-team-handoff-spec`.
 
 New projects use the same SDD path but must set `work_type=new-project` and
 must keep a stricter build-from-zero plan:

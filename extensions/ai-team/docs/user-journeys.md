@@ -182,8 +182,9 @@ specify workflow run ai-team-sdd \
 The coding repository should not record raw customer demand or private
 enhancement draft paths. Public coding repositories should use a public-safe
 summary instead of confidential internal links. Private coding repositories may
-pass `handoff_requirement_url` to `speckit.plan`; the plan command fetches the
-URL and merges it with `spec.md` into ignored `spec.override.md`.
+pass `handoff_requirement_url` to `speckit.plan`; the `before_plan` hook
+(`speckit.ai-team.handoff-spec-sync`) fetches the URL and merges it with
+`spec.md` into ignored `spec.override.md` when the preset is installed.
 
 Stop for human decision when no accepted handoff exists, the handoff contains
 raw customer demand, Technical Committee acceptance is missing, owner review is

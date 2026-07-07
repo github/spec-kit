@@ -64,7 +64,7 @@ Identify inconsistencies, duplications, ambiguities, and underspecified items ac
 
 Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
 
-- SPEC = FEATURE_DIR/spec.override.md if it exists, otherwise FEATURE_DIR/spec.md
+- SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md
 - TASKS = FEATURE_DIR/tasks.md
 
@@ -75,7 +75,7 @@ For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot
 
 Load only the minimal necessary context from each artifact:
 
-**From effective spec (`spec.override.md` if present, otherwise `spec.md`):**
+**From spec.md:**
 
 - Overview/Context
 - Functional Requirements

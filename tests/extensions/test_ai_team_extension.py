@@ -95,6 +95,8 @@ def test_ai_team_extension_command_files_exist():
         "speckit.ai-team.codegraph",
         "speckit.ai-team.impact",
         "speckit.ai-team.handoff",
+        "speckit.ai-team.handoff-spec-sync",
+        "speckit.ai-team.handoff-spec.resolve",
         "speckit.ai-team.plan-gate",
         "speckit.ai-team.task-gate",
         "speckit.ai-team.feature-review",
@@ -251,32 +253,20 @@ def test_ai_team_task_field_spec_document_exists():
     assert "issue.state_label" in text
 
 
-def test_native_templates_support_private_spec_override():
-    plan_command = (REPO_ROOT / "templates" / "commands" / "plan.md").read_text(
-        encoding="utf-8"
-    )
-    task_command = (REPO_ROOT / "templates" / "commands" / "tasks.md").read_text(
-        encoding="utf-8"
-    )
-    analyze_command = (REPO_ROOT / "templates" / "commands" / "analyze.md").read_text(
-        encoding="utf-8"
-    )
-    implement_command = (
-        REPO_ROOT / "templates" / "commands" / "implement.md"
-    ).read_text(encoding="utf-8")
-    converge_command = (
-        REPO_ROOT / "templates" / "commands" / "converge.md"
-    ).read_text(encoding="utf-8")
-    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
-
-    assert "handoff_requirement_url=<https-url>" in plan_command
-    assert "FEATURE_DIR/spec.override.md" in plan_command
-    assert "**/spec.override.md" in plan_command
-    assert "spec.override.md" in task_command
-    assert "spec.override.md" in analyze_command
-    assert "spec.override.md" in implement_command
-    assert "spec.override.md" in converge_command
-    assert "**/spec.override.md" in gitignore
+def test_core_templates_exclude_handoff_spec_override():
+    """Core command templates must not embed AI Team handoff / override logic."""
+    for rel in (
+        "templates/commands/plan.md",
+        "templates/commands/tasks.md",
+        "templates/commands/checklist.md",
+        "templates/commands/analyze.md",
+        "templates/commands/implement.md",
+        "templates/commands/converge.md",
+        "templates/plan-template.md",
+    ):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        assert "handoff_requirement_url" not in text, rel
+        assert "spec.override.md" not in text, rel
 
 
 def test_ai_team_code_graph_adapter_document_exists():

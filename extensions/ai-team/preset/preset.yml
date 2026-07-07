@@ -1,0 +1,62 @@
+schema_version: "1.0"
+
+preset:
+  id: ai-team-handoff-spec
+  name: "AI Team Handoff Spec Reading Rules"
+  version: "1.0.0"
+  description: "Append effective spec (spec.override.md) reading rules for AI Team remote handoff workflows."
+  author: AI Team Template
+  repository: https://github.com/EuphoriaYan/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.12.4"
+
+provides:
+  templates:
+    - type: command
+      name: speckit.plan
+      file: commands/plan-handoff-append.md
+      strategy: append
+      description: "AI Team handoff spec sync and effective spec reading for plan"
+
+    - type: command
+      name: speckit.tasks
+      file: commands/tasks-handoff-append.md
+      strategy: append
+      description: "Read effective spec when generating tasks"
+
+    - type: command
+      name: speckit.checklist
+      file: commands/checklist-handoff-append.md
+      strategy: append
+      description: "Read effective spec when generating checklists"
+
+    - type: command
+      name: speckit.analyze
+      file: commands/analyze-handoff-append.md
+      strategy: append
+      description: "Analyze against effective spec"
+
+    - type: command
+      name: speckit.implement
+      file: commands/implement-handoff-append.md
+      strategy: append
+      description: "Implement using effective spec context"
+
+    - type: command
+      name: speckit.converge
+      file: commands/converge-handoff-append.md
+      strategy: append
+      description: "Converge against effective spec"
+
+    - type: template
+      name: plan-template
+      file: templates/plan-template-handoff-append.md
+      strategy: append
+      description: "Note override input in plan template"
+
+tags:
+  - ai-team
+  - handoff
+  - remote-spec

@@ -27,7 +27,7 @@ build-from-zero readiness.
 2. Read:
    - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
      present;
-   - `spec.override.md` when present, otherwise `spec.md`;
+   - effective spec per preset `ai-team-handoff-spec` (`EFFECTIVE_SPEC` / `spec.override.md` when present, otherwise `spec.md`);
    - `plan.md`;
    - native checklist output when present;
    - `research.md` when present;

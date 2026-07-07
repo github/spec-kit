@@ -56,9 +56,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Goal
 
 Close the gap between what a feature's specification, plan, and tasks call for and what the
-codebase currently implements. Read the effective spec (`spec.override.md` when present,
-otherwise `spec.md`), `plan.md`, and `tasks.md` as the **sole source of intent**
-(with the constitution as governing constraints), assess the current
+codebase currently implements. Read `spec.md`, `plan.md`, and `tasks.md` as the **sole
+source of intent** (with the constitution as governing constraints), assess the current
 state of the code, determine which requirements, acceptance criteria, plan decisions, and
 existing tasks are unmet, incomplete, or only partially satisfied, and **append each piece
 of remaining work as a new, traceable task** at the bottom of `tasks.md` so that
@@ -73,7 +72,7 @@ of the code relative to the feature's artifacts — no git, no branch comparison
 **APPEND-ONLY, NEVER REWRITE**: The command's **only** write is appending a new
 `## Phase N: Convergence` section to `tasks.md`. It MUST NOT:
 
-- modify `spec.md`, `spec.override.md`, or `plan.md` in any way;
+- modify `spec.md` or `plan.md` in any way;
 - rewrite, renumber, reorder, or delete any existing task (including tasks from a prior
   Convergence phase);
 - modify, create, or delete any application code — completing the appended tasks is the
@@ -93,7 +92,7 @@ skip constitution checks gracefully rather than failing.
 
 Run `{SCRIPT}` once from repo root and parse JSON for FEATURE_DIR and AVAILABLE_DOCS. Derive absolute paths:
 
-- SPEC = FEATURE_DIR/spec.override.md if it exists, otherwise FEATURE_DIR/spec.md
+- SPEC = FEATURE_DIR/spec.md
 - PLAN = FEATURE_DIR/plan.md
 - TASKS = FEATURE_DIR/tasks.md
 - CONSTITUTION = `/memory/constitution.md` (if present)
@@ -106,7 +105,7 @@ For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot
 
 Load only the minimal necessary context from each artifact:
 
-**From effective spec (`spec.override.md` if present, otherwise `spec.md`):**
+**From spec.md:**
 
 - Functional Requirements (FR-###)
 - Success Criteria (SC-###) — include only items requiring buildable work; exclude

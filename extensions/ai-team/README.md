@@ -269,16 +269,23 @@ full model and `speckit.ai-team.support` to audit a project.
 
 ## Installation
 
+AI Team handoff spec behavior requires **three** installs (extension, preset, workflow):
+
 ```bash
 specify extension add ai-team
+specify preset add ai-team-handoff-spec
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
+
+The `ai-team-handoff-spec` preset appends effective spec reading rules to native
+SDD commands. Without it, core commands do not know about `spec.override.md`.
 
 For local development:
 
 ```bash
 specify extension add --dev /path/to/spec-kit/extensions/ai-team
+specify preset add --dev /path/to/spec-kit/extensions/ai-team/preset
 specify workflow add /path/to/spec-kit/workflows/ai-team-sdd
 specify workflow add /path/to/spec-kit/workflows/ai-team-bugfix
 ```

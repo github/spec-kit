@@ -27,7 +27,7 @@ self-test, evidence, and impact-radius obligations.
 2. Read:
    - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
      present;
-   - `spec.override.md` when present, otherwise `spec.md`;
+   - effective spec per preset `ai-team-handoff-spec` (`EFFECTIVE_SPEC` / `spec.override.md` when present, otherwise `spec.md`);
    - `plan.md`;
    - `tasks.md`;
    - native analyze report when present;

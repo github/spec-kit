@@ -3,8 +3,6 @@
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
-or `/specs/[###-feature-name]/spec.override.md` when a private handoff URL was
-merged during planning.
 
 **Note**: This template is filled in by the `__SPECKIT_COMMAND_PLAN__` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
