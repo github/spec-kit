@@ -1178,12 +1178,18 @@ class YamlIntegration(IntegrationBase):
             default_flow_style=False,
         ).strip()
 
-        # Indent the body for YAML block scalar
+        # Indent the body for YAML block scalar. Use an explicit indentation
+        # indicator ("|2") rather than a bare "|": YAML infers a plain block
+        # scalar's indentation from its first non-empty line, so a body whose
+        # first line is itself indented (e.g. a markdown code block or a nested
+        # list item) would make the parser expect that deeper indent for the
+        # whole block and reject the later, less-indented lines. Pinning the
+        # indent to 2 keeps the recipe parseable whatever the body looks like.
         indented = "\n".join(f"  {line}" for line in body.split("\n"))
 
         lines = [
             header_yaml,
-            "prompt: |",
+            "prompt: |2",
             indented,
             "",
             f"# Source: {source_id}",

@@ -48,6 +48,19 @@ def _multi_install_safe_pairs() -> list[tuple[str, str]]:
     ]
 
 
+def _multi_install_safe_orders() -> list[list[str]]:
+    safe_keys = _multi_install_safe_keys()
+    if len(safe_keys) < 2:
+        return [safe_keys]
+    return [safe_keys[index:] + safe_keys[:index] for index in range(len(safe_keys))]
+
+
+def _multi_install_safe_order_id(ordered_keys: list[str]) -> str:
+    if not ordered_keys:
+        return "no-safe-integrations"
+    return f"init-{ordered_keys[0]}"
+
+
 def _posix_path(value: str | None) -> str | None:
     if not value:
         return None
@@ -82,16 +95,6 @@ def _paths_overlap(first: str | None, second: str | None) -> bool:
         pass
     try:
         right.relative_to(left)
-        return True
-    except ValueError:
-        return False
-
-
-def _path_is_inside(path: str | None, directory: str | None) -> bool:
-    if not path or not directory:
-        return False
-    try:
-        PurePosixPath(path).relative_to(PurePosixPath(directory))
         return True
     except ValueError:
         return False
@@ -162,6 +165,15 @@ class TestRegistrarKeyAlignment:
 class TestMultiInstallSafeContracts:
     """Declared safe integrations must stay isolated from each other."""
 
+    def test_safe_install_orders_rotate_each_integration_through_init(self):
+        safe_keys = _multi_install_safe_keys()
+        orders = _multi_install_safe_orders()
+
+        assert len(safe_keys) >= 2
+        assert [order[0] for order in orders] == safe_keys
+        assert len({tuple(order) for order in orders}) == len(safe_keys)
+        assert all(sorted(order) == safe_keys for order in orders)
+
     @pytest.mark.parametrize("key", _multi_install_safe_keys())
     def test_safe_integrations_have_static_isolated_paths(self, key):
         assert _integration_root_dir(key), (
@@ -187,62 +199,77 @@ class TestMultiInstallSafeContracts:
             f"{_integration_commands_dir(second)!r}"
         )
 
-    @pytest.mark.parametrize(("first", "second"), _multi_install_safe_pairs())
+    @pytest.mark.parametrize(
+        "ordered_keys",
+        _multi_install_safe_orders(),
+        ids=_multi_install_safe_order_id,
+    )
     def test_safe_integrations_have_disjoint_manifests(
         self,
         tmp_path,
-        first,
-        second,
+        ordered_keys,
     ):
-        for initial, additional in ((first, second), (second, first)):
-            project_root = tmp_path / f"project-{initial}-{additional}"
-            project_root.mkdir()
-            runner = CliRunner()
+        # The pairwise disjointness contract is only meaningful with at least
+        # two safe integrations. Guard so a shrunken registry fails loudly here
+        # rather than passing vacuously (or tripping over ordered_keys[0] below).
+        assert len(ordered_keys) >= 2, (
+            f"expected at least two multi-install-safe integrations, got {ordered_keys}"
+        )
 
-            original_cwd = os.getcwd()
-            try:
-                os.chdir(project_root)
-                init_result = runner.invoke(
-                    app,
-                    [
-                        "init",
-                        "--here",
-                        "--integration",
-                        initial,
-                        "--script",
-                        "sh",
-                        "--ignore-agent-tools",
-                    ],
-                    catch_exceptions=False,
-                )
-                assert init_result.exit_code == 0, init_result.output
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        runner = CliRunner()
 
+        # Install every safe integration once into a single project, then assert
+        # pairwise manifest isolation. Each safe integration writes only to its
+        # own (disjoint) directories and always records what it writes, so a
+        # manifest's contents are independent of install order and of which other
+        # integrations are co-installed. The parametrized rotations keep the
+        # aggregate setup while placing each safe integration first once, so each
+        # one still exercises the `specify init --integration ...` path.
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(project_root)
+            init_result = runner.invoke(
+                app,
+                [
+                    "init",
+                    "--here",
+                    "--integration",
+                    ordered_keys[0],
+                    "--script",
+                    "sh",
+                    "--ignore-agent-tools",
+                ],
+                catch_exceptions=False,
+            )
+            assert init_result.exit_code == 0, init_result.output
+
+            for key in ordered_keys[1:]:
                 install_result = runner.invoke(
                     app,
-                    ["integration", "install", additional, "--script", "sh"],
+                    ["integration", "install", key, "--script", "sh"],
                     catch_exceptions=False,
                 )
                 assert install_result.exit_code == 0, install_result.output
-            finally:
-                os.chdir(original_cwd)
+        finally:
+            os.chdir(original_cwd)
 
-            initial_manifest = json.loads(
-                (
-                    project_root / ".specify" / "integrations" / f"{initial}.manifest.json"
-                ).read_text(encoding="utf-8")
+        integrations_dir = project_root / ".specify" / "integrations"
+        manifests = {}
+        for key in ordered_keys:
+            manifest = json.loads(
+                (integrations_dir / f"{key}.manifest.json").read_text(encoding="utf-8")
             )
-            additional_manifest = json.loads(
-                (
-                    project_root / ".specify" / "integrations" / f"{additional}.manifest.json"
-                ).read_text(encoding="utf-8")
-            )
+            files = manifest.get("files", {})
+            assert isinstance(files, dict), f"{key} manifest files must be an object"
+            manifests[key] = set(files.keys())
 
-            initial_files = set(initial_manifest.get("files", {}))
-            additional_files = set(additional_manifest.get("files", {}))
-
-            assert initial_files.isdisjoint(additional_files), (
-                f"{initial} and {additional} are declared multi-install safe but both manage "
-                f"these files: {sorted(initial_files & additional_files)}"
+        for first, second in _multi_install_safe_pairs():
+            overlap = manifests[first] & manifests[second]
+            assert not overlap, (
+                f"{first} and {second} are declared multi-install safe but both manage "
+                f"these files: {sorted(overlap)}"
             )
 
 

@@ -1075,9 +1075,11 @@ class ExtensionManager:
                         pass  # best-effort cleanup
                 continue
             frontmatter, body = registrar.parse_frontmatter(content)
-            frontmatter = registrar._adjust_script_paths(frontmatter)
+            frontmatter = registrar._adjust_script_paths(
+                frontmatter, extension_id=manifest.id
+            )
             body = registrar.resolve_skill_placeholders(
-                selected_ai, frontmatter, body, self.project_root
+                selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
 
             original_desc = frontmatter.get("description", "")
@@ -1958,6 +1960,7 @@ class CommandRegistrar:
             project_root,
             context_note=context_note,
             link_outputs=link_outputs,
+            extension_id=manifest.id,
         )
 
     def register_commands_for_all_agents(
@@ -1978,6 +1981,7 @@ class CommandRegistrar:
             context_note=context_note,
             link_outputs=link_outputs,
             create_missing_active_skills_dir=create_missing_active_skills_dir,
+            extension_id=manifest.id,
         )
 
     def unregister_commands(
@@ -2688,7 +2692,12 @@ class ConfigManager:
             return {}
 
         try:
-            return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+            # Coerce a non-mapping root (list/scalar, or None for an empty
+            # file) to {} so callers that iterate/merge the result — e.g.
+            # _merge_configs' .items() — never crash. Mirrors the same
+            # non-dict-root guard in get_project_config().
+            return data if isinstance(data, dict) else {}
         except (yaml.YAMLError, OSError, UnicodeError):
             return {}
 

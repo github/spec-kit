@@ -260,6 +260,60 @@ class TestExpressions:
         ctx = StepContext(inputs={"text": "uses }} syntax"})
         assert evaluate_expression("{{ inputs.text | contains('}}') }}", ctx) is True
 
+    def test_multi_expression_with_literal_close_brace_in_argument(self):
+        """A multi-expression template with a literal ``}}`` inside a string
+        argument must interpolate, not raise. #3208/#3228 hardened the single-
+        expression fast path for literal braces but left the interpolation path
+        on ``_EXPR_PATTERN``, whose non-greedy body stops at the first ``}}`` --
+        so the block was captured truncated and the filter parser raised
+        ValueError."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        # ``}}`` in the default fallback of the second block.
+        result = evaluate_expression(
+            "{{ inputs.name }}: {{ inputs.missing | default('}}') }}", ctx
+        )
+        assert result == "Bob: }}"
+        # ``}}`` in the first block, expression following it.
+        result = evaluate_expression(
+            "{{ inputs.missing | default('}}') }} / {{ inputs.name }}", ctx
+        )
+        assert result == "}} / Bob"
+
+    def test_multi_expression_with_literal_open_brace_in_argument(self):
+        """A literal ``{{`` inside a string argument in a multi-expression
+        template must not confuse block detection either."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        result = evaluate_expression(
+            "{{ inputs.name }} {{ inputs.missing | default('{{') }}", ctx
+        )
+        assert result == "Bob {{"
+
+    def test_multi_expression_unbalanced_quote_still_raises(self):
+        """A malformed block (an unbalanced quote in a filter arg) must still
+        surface a ValueError, not be silently emitted verbatim.
+
+        The quote-aware scan never finds a block-closing ``}}`` when a quote is
+        left open, but a raw ``}}`` is still present in the tail. It must fall
+        back to that raw delimiter and evaluate — same as the old regex path —
+        so a typo fails loudly instead of being hidden (Copilot review on
+        #3307)."""
+        import pytest
+
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        with pytest.raises(ValueError):
+            evaluate_expression(
+                "{{ inputs.name }} {{ inputs.missing | default('oops }}", ctx
+            )
+
     def test_comparison_equals(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -287,6 +341,35 @@ class TestExpressions:
         )
         assert evaluate_expression("{{ steps.plan.output.task_count > 5 }}", ctx) is True
         assert evaluate_expression("{{ steps.plan.output.task_count < 5 }}", ctx) is False
+
+    def test_ordering_comparison_of_non_numeric_strings(self):
+        """`<`/`>`/`<=`/`>=` between non-numeric strings must compare
+        lexicographically, not silently return False.
+
+        `_safe_compare` used to coerce both operands to int/float unconditionally;
+        a non-numeric string (date, version tag, name) failed that coercion and
+        the whole comparison returned False. Ordinary strings should order the
+        way Python does; numeric strings must still compare as numbers."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        # ISO dates compare lexicographically (correct chronological order).
+        ctx = StepContext(inputs={"d": "2026-01-01"})
+        assert evaluate_expression("{{ inputs.d < '2026-02-01' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.d > '2026-02-01' }}", ctx) is False
+
+        # Plain string ordering.
+        ctx = StepContext(inputs={"name": "beta"})
+        assert evaluate_expression("{{ inputs.name > 'alpha' }}", ctx) is True
+
+        # Two numeric strings still compare numerically, not lexically
+        # ("10" > "9" is True as numbers; as strings it would be False).
+        ctx = StepContext(inputs={"v": "10"})
+        assert evaluate_expression("{{ inputs.v > '9' }}", ctx) is True
+
+        # A number vs a non-numeric string is genuinely incomparable -> False.
+        ctx = StepContext(inputs={"n": 5})
+        assert evaluate_expression("{{ inputs.n > 'abc' }}", ctx) is False
 
     def test_boolean_and(self):
         from specify_cli.workflows.expressions import evaluate_expression
@@ -3967,6 +4050,48 @@ steps:
     options: [approve, reject]
     on_reject: abort
     continue_on_error: true
+  - id: should-not-run
+    type: shell
+    run: "echo nope"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.ABORTED
+        assert "should-not-run" not in state.step_results
+
+    def test_gate_reject_matches_case_insensitively(
+        self, project_dir, monkeypatch
+    ):
+        """A capitalised reject option (`options: [Approve, Reject]`) still
+        aborts the run. `validate` accepts a reject choice case-insensitively,
+        so the runtime reject check must agree — a case-sensitive comparison
+        would treat the echoed `Reject` as approval and silently run
+        downstream steps.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps.gate import GateStep
+
+        # `_prompt` echoes the option's original casing, so the operator
+        # picking "Reject" hands `execute` the capitalised string.
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(lambda _msg, _opts: "Reject")
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "gate-reject-case"
+  name: "Gate Reject Case"
+  version: "1.0.0"
+steps:
+  - id: gate-step
+    type: gate
+    message: "Approve?"
+    options: [Approve, Reject]
+    on_reject: abort
   - id: should-not-run
     type: shell
     run: "echo nope"

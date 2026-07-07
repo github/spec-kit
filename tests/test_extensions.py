@@ -31,6 +31,7 @@ from specify_cli.extensions import (
     ExtensionRegistry,
     ExtensionManager,
     CommandRegistrar,
+    ConfigManager,
     HookExecutor,
     ExtensionCatalog,
     ExtensionError,
@@ -1146,10 +1147,12 @@ class TestExtensionManager:
             context_note=None,
             link_outputs=False,
             create_missing_active_skills_dir=False,
+            extension_id=None,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
             )
+            captured["extension_id"] = extension_id
             return {}
 
         monkeypatch.setattr(
@@ -1163,6 +1166,7 @@ class TestExtensionManager:
         registrar.register_commands_for_all_agents(manifest, extension_dir, project_dir)
 
         assert captured["create_missing_active_skills_dir"] is False
+        assert captured["extension_id"] == manifest.id
 
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
@@ -1694,6 +1698,29 @@ $ARGUMENTS
         assert adjusted["scripts"]["sh"] == ".specify/extensions/test-ext/scripts/setup.sh {ARGS}"
         assert adjusted["scripts"]["ps"] == ".specify/scripts/powershell/setup-plan.ps1 {ARGS}"
 
+    def test_adjust_script_paths_rewrites_extension_top_level_scripts(self):
+        """Extension command-local scripts should resolve under the installed extension."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        original = {
+            "scripts": {
+                "sh": "scripts/bash/resolve-skill.sh {ARGS}",
+                "ps": "../../scripts/powershell/setup-plan.ps1 -Json",
+            }
+        }
+
+        adjusted = registrar._adjust_script_paths(original, extension_id="test-ext")
+
+        assert (
+            adjusted["scripts"]["sh"]
+            == ".specify/extensions/test-ext/scripts/bash/resolve-skill.sh {ARGS}"
+        )
+        assert (
+            adjusted["scripts"]["ps"]
+            == ".specify/scripts/powershell/setup-plan.ps1 -Json"
+        )
+
     def test_rewrite_project_relative_paths_preserves_extension_local_body_paths(self):
         """Body rewrites should preserve extension-local assets while fixing top-level refs."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
@@ -1707,6 +1734,24 @@ $ARGUMENTS
 
         assert ".specify/extensions/test-ext/templates/spec.md" in rewritten
         assert ".specify/scripts/bash/setup-plan.sh" in rewritten
+
+    def test_rewrite_project_relative_paths_uses_extension_context_for_scripts(self):
+        """Extension source bodies treat top-level scripts/ as extension-local."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        body = (
+            "Run scripts/bash/ensure-skills.sh\n"
+            "Fallback ../../scripts/bash/setup-plan.sh\n"
+            "Read templates/checklist.md\n"
+        )
+
+        rewritten = AgentCommandRegistrar.rewrite_project_relative_paths(
+            body, extension_id="test-ext"
+        )
+
+        assert ".specify/extensions/test-ext/scripts/bash/ensure-skills.sh" in rewritten
+        assert ".specify/scripts/bash/setup-plan.sh" in rewritten
+        assert ".specify/templates/checklist.md" in rewritten
 
     def test_render_toml_command_handles_embedded_triple_double_quotes(self):
         """TOML renderer should stay valid when body includes triple double-quotes."""
@@ -7492,3 +7537,52 @@ def test_extension_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, mo
     )
     assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/7"
     assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v1"]
+
+
+class TestConfigManagerNonMappingYaml:
+    """A non-mapping YAML config root must not crash config/hook resolution."""
+
+    def _make(self, tmp_path, body: str):
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "jira-config.yml").write_text(body, encoding="utf-8")
+        return ConfigManager(tmp_path, "jira")
+
+    def test_get_config_coerces_list_root(self, tmp_path):
+        """A YAML list root previously raised AttributeError in _merge_configs."""
+        cm = self._make(tmp_path, "- foo\n- bar\n")
+        assert cm.get_config() == {}
+
+    def test_get_config_coerces_scalar_root(self, tmp_path):
+        cm = self._make(tmp_path, "just a string\n")
+        assert cm.get_config() == {}
+
+    def test_has_value_and_get_value_do_not_raise(self, tmp_path):
+        cm = self._make(tmp_path, "- foo\n")
+        assert cm.has_value("anything") is False
+        assert cm.get_value("anything") is None
+
+    def test_valid_local_config_layers_over_list_root_project_config(self, tmp_path):
+        """A malformed project config must not block a valid local config."""
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "jira-config.yml").write_text("- foo\n- bar\n", encoding="utf-8")
+        (ext_dir / "local-config.yml").write_text(
+            "notifications:\n  enabled: true\n", encoding="utf-8"
+        )
+        cm = ConfigManager(tmp_path, "jira")
+        assert cm.get_value("notifications.enabled") is True
+
+    def test_hook_condition_returns_false_without_raising(self, tmp_path):
+        """`config.x is set` on a scalar-root config must evaluate cleanly.
+
+        Before the fix, _merge_configs raised AttributeError and the
+        exception was swallowed by should_execute_hook, silently disabling
+        every config-based hook for the extension. Assert on
+        _evaluate_condition directly so the crash isn't masked.
+        """
+        ext_dir = tmp_path / ".specify" / "extensions" / "jira"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "jira-config.yml").write_text("just a string\n", encoding="utf-8")
+        executor = HookExecutor(tmp_path)
+        assert executor._evaluate_condition("config.x is set", "jira") is False

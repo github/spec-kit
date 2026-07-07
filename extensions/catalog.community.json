@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-01T00:00:00Z",
+  "updated_at": "2026-07-06T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -669,6 +669,40 @@
       "stars": 0,
       "created_at": "2026-04-11T18:00:00Z",
       "updated_at": "2026-04-11T18:00:00Z"
+    },
+    "charter": {
+      "name": "Charter",
+      "id": "charter",
+      "description": "Compose modular project constitutions from shared fragment registries. Centralize governance rules, select per-project fragments, track upstream changes, and keep multi-project setups consistent.",
+      "author": "Fyloss",
+      "version": "0.3.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-charter/archive/refs/tags/v0.3.1.zip",
+      "repository": "https://github.com/Fyloss/spec-kit-charter",
+      "homepage": "https://github.com/Fyloss/spec-kit-charter",
+      "documentation": "https://github.com/Fyloss/spec-kit-charter/tree/master/docs",
+      "changelog": "https://github.com/Fyloss/spec-kit-charter/blob/master/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.11.9"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "constitution",
+        "governance",
+        "modular",
+        "fragments",
+        "registry"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-06T00:00:00Z",
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "ci-guard": {
       "name": "CI Guard",
@@ -2679,8 +2713,8 @@
       "id": "ralph",
       "description": "Autonomous implementation loop using AI agent CLI",
       "author": "Rubiss",
-      "version": "1.1.1",
-      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.1.1.zip",
+      "version": "1.2.1",
+      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.2.1.zip",
       "repository": "https://github.com/Rubiss-Projects/spec-kit-ralph",
       "homepage": "https://github.com/Rubiss-Projects/spec-kit-ralph",
       "documentation": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/README.md",
@@ -2689,7 +2723,7 @@
       "category": "code",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.8.5",
         "tools": [
           {
             "name": "copilot",
@@ -2697,6 +2731,10 @@
           },
           {
             "name": "codex",
+            "required": false
+          },
+          {
+            "name": "claude",
             "required": false
           },
           {
@@ -2714,13 +2752,14 @@
         "automation",
         "loop",
         "copilot",
-        "codex"
+        "codex",
+        "claude"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
-      "updated_at": "2026-06-05T03:11:06Z"
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "reconcile": {
       "name": "Reconcile Extension",

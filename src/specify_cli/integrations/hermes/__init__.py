@@ -253,6 +253,11 @@ class HermesIntegration(SkillsIntegration):
         """
         args = [self._resolve_executable(), "chat", "-Q"]
 
+        # Operator-supplied SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS go here —
+        # after the base command but before Spec Kit's canonical -m/--json/-s/-q
+        # flags — so they can't displace or clobber them (mirrors opencode).
+        self._apply_extra_args_env_var(args)
+
         if model:
             args.extend(["-m", model])
         if output_json:
