@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.6] - 2026-07-07
+
+### Changed
+
+- fix(bundler): validate catalog URLs in `catalog add` (HTTPS-only, require host) (#3367)
+- Update Ralph Loop extension to v1.2.1 (#3365)
+- fix extension-local script path rewriting (#3364)
+- Add Charter extension to community catalog (#3363)
+- feat(scripts): add Python check-prerequisites PoC (#3302)
+- test: reduce registry manifest test repetition (#3146)
+- fix(integrations): hermes honors SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS (#3346)
+- fix(extensions): coerce non-mapping YAML config roots to {} in ConfigManager (#3345)
+- fix(yaml): pin goose recipe prompt block-scalar indentation (#3343)
+- chore: release 0.12.5, begin 0.12.6.dev0 development (#3381)
+
 ## [0.12.5] - 2026-07-06
 
 ### Changed
