@@ -306,9 +306,12 @@ class TestResolveCommandRefs:
 class TestResolvePythonInterpreter:
     def test_returns_python_on_path(self, monkeypatch):
         # Positive: when python3 is on PATH it is preferred over python.
+        # Pin a POSIX platform so the Windows stub probe (tested separately
+        # below) does not reject the fake PATH entries on Windows CI.
         def fake_which(name):
             return f"/usr/bin/{name}" if name in ("python3", "python") else None
 
+        monkeypatch.setattr("specify_cli.integrations.base.sys.platform", "linux")
         monkeypatch.setattr(
             "specify_cli.integrations.base.shutil.which", fake_which
         )
@@ -318,6 +321,7 @@ class TestResolvePythonInterpreter:
         def fake_which(name):
             return "/usr/bin/python" if name == "python" else None
 
+        monkeypatch.setattr("specify_cli.integrations.base.sys.platform", "linux")
         monkeypatch.setattr(
             "specify_cli.integrations.base.shutil.which", fake_which
         )
@@ -369,6 +373,7 @@ class TestResolvePythonInterpreter:
 
     def test_ignores_missing_venv(self, monkeypatch, tmp_path):
         # Negative: no venv directory -> PATH resolution is used instead.
+        monkeypatch.setattr("specify_cli.integrations.base.sys.platform", "linux")
         monkeypatch.setattr(
             "specify_cli.integrations.base.shutil.which",
             lambda name: "/usr/bin/python3" if name == "python3" else None,
@@ -456,6 +461,7 @@ class TestProcessTemplatePyScriptType:
     def test_py_prefixes_interpreter(self, monkeypatch):
         # Positive: py script type prefixes a resolved interpreter and the
         # script path is rewritten to the .specify location.
+        monkeypatch.setattr("specify_cli.integrations.base.sys.platform", "linux")
         monkeypatch.setattr(
             "specify_cli.integrations.base.shutil.which",
             lambda name: "/usr/bin/python3" if name == "python3" else None,
