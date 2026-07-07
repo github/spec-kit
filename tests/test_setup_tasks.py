@@ -494,7 +494,7 @@ def _install_broken_json_tool_stubs(repo: Path) -> Path:
 def test_bash_command_hint_falls_back_to_awk_when_jq_and_python3_broken(
     tasks_repo: Path,
 ) -> None:
-    """Separator resolution survives a broken python3 stub with no jq (#3304).
+    """Separator resolution survives broken jq and python3 stubs (#3304).
 
     `get_invoke_separator` historically selected python3 by availability and
     had no text fallback, so a Windows Store python3 stub made it silently

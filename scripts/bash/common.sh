@@ -318,13 +318,14 @@ PY
                                 if (c=="{") depth++
                                 else if (c=="}") { depth--; if (depth==0) break }
                             }
-                            if (match(obj, /"invoke_separator"[ \t\r\n]*:[ \t\r\n]*"[.-]"/)) {
+                            if (match(obj, /"invoke_separator"[ \t\r\n]*:[ \t\r\n]*"[-.]"/)) {
                                 tok=substr(obj,RSTART,RLENGTH); s=substr(tok,length(tok)-1,1)
                                 if (s=="." || s=="-") sep=s
                             }
                         }
                     }
                     print sep
+                }
             ' "$integration_json" 2>/dev/null)
             case "$awk_separator" in
                 "."|"-") separator="$awk_separator" ;;
