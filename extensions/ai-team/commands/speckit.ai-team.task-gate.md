@@ -4,7 +4,8 @@ description: "Review generated tasks for phase isolation, self-test mapping, exi
 
 # AI Team Task Gate
 
-Run this after `speckit.tasks` and before `speckit.implement`.
+Run this after `speckit.tasks` and the native `speckit.analyze`, before
+`speckit.implement`.
 
 ## User Input
 
@@ -15,17 +16,21 @@ $ARGUMENTS
 ## Goal
 
 Confirm developer-owned tasks are ready for implementation without relying on
-hidden context from product or architecture roles.
+hidden context from product or architecture roles. This is an AI Team policy
+overlay, not a replacement for Spec Kit's native analysis: use
+`speckit.analyze` for spec/plan/task consistency, then use this gate for owner,
+self-test, evidence, and impact-radius obligations.
 
 ## Steps
 
 1. Locate the active feature directory from `.specify/feature.json`.
 2. Read:
-   - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+   - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
      present;
    - `spec.md`;
    - `plan.md`;
    - `tasks.md`;
+   - native analyze report when present;
    - the coding issue or handoff requirement URL referenced by the feature;
    - AI Team handoff and plan gate files when present.
 3. Verify tasks:

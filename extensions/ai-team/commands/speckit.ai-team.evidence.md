@@ -4,7 +4,8 @@ description: "Produce an Evidence Board after implementation and record self-tes
 
 # AI Team Evidence Board
 
-Run this after `speckit.implement`, before PR submission, or after a failed
+Run this after `speckit.implement`, native `speckit.converge`, and
+`speckit.ai-team.checks`, before PR submission, or after a failed
 review/test/incident when evidence must be reconstructed.
 
 ## User Input
@@ -16,18 +17,21 @@ $ARGUMENTS
 ## Goal
 
 Make implementation evidence reviewable without asking humans to rediscover the
-whole AI diff.
+whole AI diff. This Evidence Board aggregates native SDD artifacts, converge
+results, portable check output, code graph impact, and AI Team policy gates; it
+does not replace `speckit.converge`.
 
 ## Steps
 
 1. Locate the active feature directory from `.specify/feature.json` when
    available.
 2. Read:
-   - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+   - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
      present;
    - `spec.md`, `plan.md`, `tasks.md`;
    - AI Team handoffs and gates when present;
    - implementation diff;
+   - native converge output when present;
    - test results and self-test notes;
    - quickstart validation results when present.
 3. Produce an Evidence Board:

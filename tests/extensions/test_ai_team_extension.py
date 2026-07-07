@@ -70,6 +70,22 @@ def test_ai_team_extension_command_files_exist():
         (EXTENSION_ROOT / "extension.yml").read_text(encoding="utf-8")
     )
 
+    assert set(manifest["requires"]["commands"]) == {
+        "speckit.specify",
+        "speckit.plan",
+        "speckit.checklist",
+        "speckit.tasks",
+        "speckit.analyze",
+        "speckit.implement",
+        "speckit.converge",
+    }
+    assert manifest["hooks"]["after_checklist"]["command"] == (
+        "speckit.ai-team.plan-gate"
+    )
+    assert manifest["hooks"]["after_analyze"]["command"] == (
+        "speckit.ai-team.task-gate"
+    )
+
     command_names = {command["name"] for command in manifest["provides"]["commands"]}
     assert command_names == {
         "speckit.ai-team.workspace",
@@ -114,7 +130,7 @@ def test_ai_team_config_template_defines_repository_and_role_contracts():
     }
     assert config["task_context"]["root"] == ".specify/ai-team/tasks"
     assert config["task_context"]["context_pack_file"] == "context-pack.md"
-    assert config["task_context"]["state_file"] == "state.yml"
+    assert config["task_context"]["task_context_file"] == "task-context.yml"
     assert config["code_graph"]["root"] == ".specify/ai-team/codegraph"
     assert set(config["code_graph"]["normalized_outputs"]) == {
         "nodes.jsonl",
@@ -174,6 +190,8 @@ def test_ai_team_task_context_document_exists():
     text = context_doc.read_text(encoding="utf-8")
     assert "Task Context Package" in text
     assert ".specify/ai-team/tasks/<task-id>/" in text
+    assert "task-context.yml" in text
+    assert ".specify/workflows/runs/<run-id>/state.json" in text
     assert "specify workflow resume <run-id>" in text
     assert "handoff requirement URL" in text
     assert "coding issue URL" in text
@@ -250,10 +268,29 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     step_ids = [step["id"] for step in steps]
     assert "context-open" in step_ids
     assert "codegraph" in step_ids
+    assert "specify" in step_ids
+    assert "review-spec" in step_ids
+    assert "plan" in step_ids
+    assert "checklist" in step_ids
+    assert "plan-gate" in step_ids
+    assert "review-plan" in step_ids
+    assert "tasks" in step_ids
+    assert "analyze" in step_ids
+    assert "task-gate" in step_ids
+    assert "review-tasks" in step_ids
+    assert "implement" in step_ids
+    assert "converge" in step_ids
+    assert "checks" in step_ids
     context_step = next(step for step in steps if step["id"] == "context-open")
     assert context_step["command"] == "speckit.ai-team.context"
     codegraph_step = next(step for step in steps if step["id"] == "codegraph")
     assert codegraph_step["command"] == "speckit.ai-team.codegraph"
+    checklist_step = next(step for step in steps if step["id"] == "checklist")
+    assert checklist_step["command"] == "speckit.checklist"
+    analyze_step = next(step for step in steps if step["id"] == "analyze")
+    assert analyze_step["command"] == "speckit.analyze"
+    converge_step = next(step for step in steps if step["id"] == "converge")
+    assert converge_step["command"] == "speckit.converge"
 
     assert BUGFIX_WORKFLOW_PATH.exists()
     bugfix = yaml.safe_load(BUGFIX_WORKFLOW_PATH.read_text(encoding="utf-8"))

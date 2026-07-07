@@ -27,7 +27,7 @@ $ARGUMENTS
 
 1. Identify the target repository role: coding, enhancement-internal, or
    template.
-2. Load `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md`
+2. Load `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md`
    when present.
 3. Identify changed files and PR base.
 4. Confirm feature PRs link the correct work item: coding issue for public

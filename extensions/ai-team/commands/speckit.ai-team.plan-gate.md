@@ -4,7 +4,8 @@ description: "Review the architecture plan gate for code graph impact, public pl
 
 # AI Team Plan Gate
 
-Run this after `speckit.plan` and before `speckit.tasks`.
+Run this after `speckit.plan` and the native `speckit.checklist`, before
+`speckit.tasks`.
 
 ## User Input
 
@@ -14,16 +15,21 @@ $ARGUMENTS
 
 ## Goal
 
-Confirm the architect-owned plan is safe to turn into developer tasks.
+Confirm the architect-owned plan is safe to turn into developer tasks. This is
+an AI Team policy overlay, not a replacement for Spec Kit's native checklist:
+use `speckit.checklist` for requirements completeness and clarity, then use
+this gate for code graph impact, privacy boundary, owner review, and
+build-from-zero readiness.
 
 ## Steps
 
 1. Locate the active feature directory from `.specify/feature.json`.
 2. Read:
-   - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+   - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
      present;
    - `spec.md`;
    - `plan.md`;
+   - native checklist output when present;
    - `research.md` when present;
    - `data-model.md` and `contracts/` when present;
    - `.specify/extensions/ai-team/ai-team-config.yml` when present;

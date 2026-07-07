@@ -19,6 +19,12 @@ Make the current work item, phase, evidence, and next command recoverable from
 repository files instead of hidden chat context. Use this command at task start,
 before resuming interrupted work, and after each major SDD phase changes state.
 
+This is not the Spec Kit workflow engine state and it is not long-term AI
+memory. Workflow execution state stays under
+`.specify/workflows/runs/<run-id>/state.json`. AI Team context stays under
+`.specify/ai-team/tasks/<task-id>/` and exists only to reconstruct the task
+context that an AI coding tool should load.
+
 ## Durable Location
 
 Store task context under the coding repository:
@@ -26,7 +32,7 @@ Store task context under the coding repository:
 ```text
 .specify/ai-team/tasks/<task-id>/
 |-- context-pack.md
-|-- state.yml
+|-- task-context.yml
 `-- artifacts/
 ```
 
@@ -50,14 +56,15 @@ coding repository context packs.
 |---|---|
 | Same workflow run paused at a gate | run `specify workflow resume <run_id>` |
 | Different terminal/session/tool, same task | run `speckit.ai-team.context task_id=<task-id> resume=true` |
-| Only coding issue URL is known | reconstruct from the URL, feature artifacts, and state files |
-| Only handoff requirement URL is known | reconstruct from the URL, allowed handoff content, feature artifacts, and state files |
+| Only coding issue URL is known | reconstruct from the URL, feature artifacts, and context files |
+| Only handoff requirement URL is known | reconstruct from the URL, allowed handoff content, feature artifacts, and context files |
 | Only bug issue or bug slug is known | reconstruct from `.specify/bugs/<slug>/` and linked issue evidence |
 | Context pack conflicts with current source or work item | stop and ask for human reconciliation |
 
 Spec Kit workflow run state remains authoritative for the mechanics of a paused
 workflow run. The Task Context Package is the AI Team bridge across chat loss,
-tool switching, manual command execution, and issue-driven re-entry.
+tool switching, manual command execution, issue-driven re-entry, and context
+insertion for chat-first tools.
 
 ## Required Fields
 
@@ -91,7 +98,7 @@ Task Context Package:
 - resume command:
 ```
 
-`state.yml` must mirror the fields needed by tools:
+`task-context.yml` must mirror the fields needed by tools:
 
 ```yaml
 task_id:
@@ -120,11 +127,11 @@ updated_at:
 ## Workflow
 
 1. Locate `.specify/extensions/ai-team/ai-team-config.yml` and integration
-   state when present.
+   metadata when present.
 2. Resolve `task_id`, `work_type`, `coding_issue_url`,
    `handoff_requirement_url`, deprecated `published_requirement_url`,
-   `bug_slug`, and `workflow_run_id` from arguments and existing state.
-3. If `resume=true`, load `state.yml` and `context-pack.md`; otherwise create
+   `bug_slug`, and `workflow_run_id` from arguments and existing task context.
+3. If `resume=true`, load `task-context.yml` and `context-pack.md`; otherwise create
    them if missing.
 4. Reconcile the context pack with current source, current work item, bug
    report, and active feature files.
@@ -161,7 +168,7 @@ Stop and ask when:
   approved task ID;
 - the context pack contains private enhancement content in a public coding
   repository;
-- `state.yml` and `context-pack.md` disagree about work type, work item, or
+- `task-context.yml` and `context-pack.md` disagree about work type, work item, or
   phase;
 - current source or work item changed since the recorded source snapshot and
   the impact radius is unknown.

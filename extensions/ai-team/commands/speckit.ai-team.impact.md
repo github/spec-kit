@@ -21,7 +21,7 @@ reviewers. This command does not approve architecture changes.
 ## Workflow
 
 1. Locate the coding repository and active requirement or bug work item from
-   `.specify/ai-team/tasks/<task-id>/state.yml` when present.
+   `.specify/ai-team/tasks/<task-id>/task-context.yml` when present.
 2. Run or load `speckit.ai-team.codegraph` output for the task. If the graph is
    missing, create a source-structure fallback and record confidence.
 3. Load the smallest source/code graph slice that includes:

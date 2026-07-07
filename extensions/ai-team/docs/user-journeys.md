@@ -133,10 +133,18 @@ Flow:
 5. `speckit.specify` writes the feature spec from the public issue.
 6. `speckit.ai-team.handoff` creates the specify-to-plan handoff so roles do not
    depend on hidden chat.
-7. `speckit.plan`, `speckit.ai-team.plan-gate`, `speckit.tasks`,
-   `speckit.ai-team.task-gate`, and `speckit.implement` complete SDD.
-8. `speckit.ai-team.checks`, `speckit.ai-team.evidence`, `speckit.ai-team.pr`,
-   and `speckit.ai-team.review` close the evidence loop.
+7. `speckit.plan` creates the architecture plan.
+8. `speckit.checklist` runs the native requirements-quality checklist, then
+   `speckit.ai-team.plan-gate` overlays code graph, privacy, owner, and
+   build-from-zero checks before the `review-plan` gate.
+9. `speckit.tasks` generates implementation tasks.
+10. `speckit.analyze` runs the native cross-artifact consistency check, then
+    `speckit.ai-team.task-gate` overlays task ownership, self-test, evidence,
+    and impact-radius checks before the `review-tasks` gate.
+11. `speckit.implement` changes code and `speckit.converge` checks whether
+    planned work is complete or more tasks are needed.
+12. `speckit.ai-team.checks`, `speckit.ai-team.evidence`,
+    `speckit.ai-team.pr`, and `speckit.ai-team.review` close the evidence loop.
 
 Stop when the feature lacks an accountable public work item, crosses approved
 scope, or needs private customer context that should move to an internal
@@ -188,10 +196,12 @@ specify workflow run ai-team-sdd \
   --input handoff_requirement_url="https://example.com/enhancements/rfcs/REQ-2026-020"
 ```
 
-New projects still follow SDD, but the plan gate is stricter: it must establish
-the project skeleton, architecture spine, dependency strategy, runnable thin
-slice, self-test strategy, and evidence strategy before broad feature
-construction.
+New projects still follow the same native SDD command spine:
+`speckit.specify`, `speckit.plan`, `speckit.checklist`, `speckit.tasks`,
+`speckit.analyze`, `speckit.implement`, and `speckit.converge`. The AI Team
+plan gate is stricter for new projects: it must establish the project skeleton,
+architecture spine, dependency strategy, runnable thin slice, self-test
+strategy, and evidence strategy before broad feature construction.
 
 Stop for human decision when the project has no charter, work item, or
 accountable owner; the plan starts with broad feature construction before a
@@ -228,7 +238,7 @@ On resume, compare the recorded source snapshot, work item, code graph artifact,
 and current repository state. If source or work item changed, rerun
 `speckit.ai-team.codegraph` and `speckit.ai-team.impact`.
 
-Stop for human reconciliation when state files disagree, the work item changed
+Stop for human reconciliation when context files disagree, the work item changed
 while paused, source changed and impact evidence is stale, or the recorded next
 command would skip a required human gate.
 

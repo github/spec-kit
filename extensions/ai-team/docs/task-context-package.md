@@ -15,13 +15,13 @@ Store task context in the coding repository:
 ```text
 .specify/ai-team/tasks/<task-id>/
 |-- context-pack.md
-|-- state.yml
+|-- task-context.yml
 `-- artifacts/
 ```
 
-Use `.specify/workflows/runs/<run-id>/` for Spec Kit's workflow engine state.
-Use `.specify/ai-team/tasks/<task-id>/` for AI Team task identity and
-cross-session recovery.
+Use `.specify/workflows/runs/<run-id>/state.json` for Spec Kit's workflow
+engine state. Use `.specify/ai-team/tasks/<task-id>/` for AI Team task identity
+and cross-session recovery.
 
 ## Task Identity
 
@@ -48,9 +48,9 @@ private trace in approved channels.
 |---|---|---|
 | `intake` | request received and task identity is being resolved | `speckit.ai-team.start` |
 | `specified` | requirement or bug intent is clear enough for planning | `speckit.ai-team.handoff` or `speckit.plan` |
-| `planned` | architecture plan exists and awaits task generation | `speckit.ai-team.plan-gate` |
-| `tasks-ready` | developer tasks are generated and gated | `speckit.implement` |
-| `implementing` | code is being changed | `speckit.ai-team.checks` |
+| `planned` | architecture plan exists and awaits checklist and AI Team plan review | `speckit.checklist` or `speckit.ai-team.plan-gate` |
+| `tasks-ready` | developer tasks are generated and await analysis and AI Team task review | `speckit.analyze` or `speckit.ai-team.task-gate` |
+| `implementing` | code is being changed | `speckit.implement` or `speckit.converge` |
 | `evidence` | implementation exists and evidence is being assembled | `speckit.ai-team.evidence` |
 | `pr` | PR is prepared or open | `speckit.ai-team.review` |
 | `review` | human review is active | `speckit.ai-team.retrospect` if failure repeats |
@@ -63,11 +63,11 @@ private trace in approved channels.
 2. If a paused workflow run is recorded, inspect it with
    `specify workflow status <run-id>` and resume it with
    `specify workflow resume <run-id>` when appropriate.
-3. If there is no usable workflow run, load `state.yml`, `context-pack.md`,
+3. If there is no usable workflow run, load `task-context.yml`, `context-pack.md`,
    current feature artifacts, bug artifacts, and code graph artifacts.
 4. Compare the recorded source snapshot and work item or bug state to current
    repository state.
-5. Run the `next_command` from `state.yml` only when the stop conditions are
+5. Run the `next_command` from `task-context.yml` only when the stop conditions are
    clear.
 
 If the source, work item, or context pack changed while the work was paused,

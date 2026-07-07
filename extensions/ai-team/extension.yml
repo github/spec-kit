@@ -14,8 +14,11 @@ requires:
   commands:
     - speckit.specify
     - speckit.plan
+    - speckit.checklist
     - speckit.tasks
+    - speckit.analyze
     - speckit.implement
+    - speckit.converge
 
 provides:
   commands:
@@ -80,21 +83,21 @@ hooks:
     optional: true
     prompt: "Create an AI Team specify-to-plan handoff with role isolation?"
     description: "Preserve customer/product context as a document handoff before architecture planning."
-  after_plan:
+  after_checklist:
     command: speckit.ai-team.plan-gate
     optional: true
-    prompt: "Run the AI Team plan gate before task generation?"
-    description: "Check architecture, code graph, public/private repository boundaries, and build-from-zero readiness."
-  after_tasks:
+    prompt: "Run the AI Team plan gate after the native checklist?"
+    description: "Overlay architecture, code graph, public/private repository boundaries, owner review, and build-from-zero readiness on top of the native checklist."
+  after_analyze:
     command: speckit.ai-team.task-gate
     optional: true
-    prompt: "Run the AI Team task gate before implementation?"
-    description: "Check task phases, self-test evidence, and strict build plan obligations."
+    prompt: "Run the AI Team task gate after native analysis?"
+    description: "Overlay task ownership, self-test evidence, impact radius, and strict build plan obligations on top of the native analysis."
   after_implement:
     command: speckit.ai-team.evidence
     optional: true
     prompt: "Generate the AI Team Evidence Board?"
-    description: "Summarize implementation evidence, scope control, and failure-evolution follow-ups."
+    description: "Summarize implementation evidence, converge/check output, scope control, and failure-evolution follow-ups."
 
 tags:
   - ai-team

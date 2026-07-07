@@ -37,7 +37,7 @@ Feature implementation references either:
 ## Required Reading
 
 - `.specify/extensions/ai-team/ai-team-config.yml`;
-- `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+- `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
   the feature was already routed from a coding workspace;
 - private enhancement issue or draft only when the current operator has access;
 - handoff RFC conventions under the internal enhancement repository;

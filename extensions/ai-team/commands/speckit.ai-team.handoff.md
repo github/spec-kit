@@ -23,7 +23,7 @@ architect, and developer agents must communicate through written artifacts.
 
 1. Locate the active feature directory from `.specify/feature.json`.
 2. Read:
-   - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when
+   - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
      present;
    - `spec.md`;
    - `plan.md` if present;

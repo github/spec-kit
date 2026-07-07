@@ -23,7 +23,7 @@ Check in this order:
    coding issue; confidential feature links an allowed handoff requirement or
    public-safe summary.
 3. Task context: `.specify/ai-team/tasks/<task-id>/context-pack.md` and
-   `state.yml` match the PR and evidence.
+   `task-context.yml` match the PR and evidence.
 4. Privacy: coding PRs do not expose raw customer demand or internal drafts.
 5. Boundary: touched files stay inside approved modules and do not edit another
    module's internals to avoid an interface request.

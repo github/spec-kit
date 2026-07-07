@@ -47,7 +47,8 @@ but adds team controls around them:
 
 ```text
 intake -> task context -> requirement or bug work item -> code graph impact
--> specify -> plan -> tasks -> implement -> checks/evidence -> PR/review
+-> specify -> plan -> checklist -> tasks -> analyze -> implement -> converge
+-> checks/evidence -> PR/review
 ```
 
 The exact path depends on the user journey:

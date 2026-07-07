@@ -23,7 +23,7 @@ record a fallback source-structure slice. It does not approve design changes.
 
 Read when present:
 
-- `.specify/ai-team/tasks/<task-id>/state.yml`;
+- `.specify/ai-team/tasks/<task-id>/task-context.yml`;
 - `.specify/ai-team/tasks/<task-id>/context-pack.md`;
 - `.specify/extensions/ai-team/ai-team-config.yml`;
 - coding issue or handoff requirement URL for feature work;
@@ -95,7 +95,7 @@ contains, imports, calls, implements, extends, reads_config, tests, depends_on
    service result.
 5. Normalize output to `nodes.jsonl`, `edges.jsonl`, `summary.md`, and
    `adapter-report.md`.
-6. Update `.specify/ai-team/tasks/<task-id>/state.yml` with the code graph
+6. Update `.specify/ai-team/tasks/<task-id>/task-context.yml` with the code graph
    artifact path and next command.
 7. Hand the graph artifact to `speckit.ai-team.impact`, `speckit.plan`,
    `speckit.ai-team.plan-gate`, `speckit.ai-team.task-gate`, or

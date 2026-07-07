@@ -61,7 +61,7 @@ Every AI Team task should have a durable Task Context Package:
 
 ```text
 .specify/ai-team/tasks/<task-id>/context-pack.md
-.specify/ai-team/tasks/<task-id>/state.yml
+.specify/ai-team/tasks/<task-id>/task-context.yml
 ```
 
 For feature work, `<task-id>` comes from the coding issue, handoff requirement
@@ -89,8 +89,8 @@ step-by-step journeys. The short version:
 | Journey | Work item | Main path |
 |---|---|---|
 | existing project bug fix | coding issue or bug slug | `ai-team-bugfix`: context -> route gate -> code graph -> impact gate -> bug assess -> assessment gate -> bug fix -> fix gate -> bug test -> checks/evidence -> PR |
-| existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> specify/plan/tasks/implement -> evidence -> PR |
-| new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> specify/plan with strict build plan -> thin slice -> evidence |
+| existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> native SDD -> AI Team gates -> checks/evidence -> PR |
+| new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> native SDD with strict build plan -> thin slice -> checks/evidence |
 | resume from middle | workflow run ID or task ID | workflow resume for paused runs, or `speckit.ai-team.context task_id=<task-id> resume=true` for cross-session recovery |
 | failed review/check/incident | PR, check, incident, or repeated AI mistake | retrospect -> update command, gate, knowledge, memory, graph, or test evidence |
 
@@ -204,8 +204,8 @@ New project work needs a stricter build-from-zero plan:
 | `speckit.ai-team.codegraph` | generate or attach the code graph slice used for impact and gates |
 | `speckit.ai-team.impact` | inspect code graph or source-structure impact before code edits |
 | `speckit.ai-team.handoff` | create role-isolated handoff documents between phases |
-| `speckit.ai-team.plan-gate` | review architecture plan readiness before tasks |
-| `speckit.ai-team.task-gate` | review task readiness before implementation |
+| `speckit.ai-team.plan-gate` | review AI Team plan policy after native `speckit.checklist` and before tasks |
+| `speckit.ai-team.task-gate` | review AI Team task policy after native `speckit.analyze` and before implementation |
 | `speckit.ai-team.feature-review` | help maintainers and the technical committee assess internal enhancement handoff readiness |
 | `speckit.ai-team.checks` | produce portable CI/CD evidence on any git platform |
 | `speckit.ai-team.evidence` | produce Evidence Board after implementation |
@@ -217,12 +217,16 @@ New project work needs a stricter build-from-zero plan:
 ## Workflow
 
 The bundled `ai-team-sdd` workflow gives feature and new-project work a
-resumable skeleton:
+resumable path that reuses Spec Kit's native SDD commands:
 
 ```text
 optional Spec Kit init bootstrap -> workspace contract -> request routing
--> task context package -> code graph -> impact -> plan/task gates
--> Evidence Board
+-> task context package -> route gate -> code graph -> impact
+-> speckit.specify -> review-spec gate -> AI Team handoff -> speckit.plan
+-> speckit.checklist -> AI Team plan gate -> review-plan gate
+-> speckit.tasks -> speckit.analyze -> AI Team task gate
+-> review-tasks gate -> speckit.implement -> speckit.converge
+-> portable checks -> Evidence Board
 ```
 
 The bundled `ai-team-bugfix` workflow gives bug work a deterministic path:

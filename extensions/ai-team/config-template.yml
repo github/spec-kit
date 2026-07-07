@@ -24,7 +24,7 @@ task_context:
   # Durable task context survives interrupted sessions and tool switches.
   root: .specify/ai-team/tasks
   context_pack_file: context-pack.md
-  state_file: state.yml
+  task_context_file: task-context.yml
   artifact_dir: artifacts
   allow_reconstruct_from_handoff_requirement_url: true
   allow_reconstruct_from_bug_slug: true

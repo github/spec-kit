@@ -31,7 +31,7 @@ Read when present:
   operator are allowed to read it;
 - code graph or source-structure evidence when code, classes, SPI/API, or
   modules are named;
-- `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when the
+- `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when the
   request is resuming existing work.
 
 ## Routing
@@ -63,9 +63,11 @@ Features use the SDD path:
 
 ```text
 coding issue or handoff requirement URL -> speckit.specify
--> speckit.ai-team.handoff -> speckit.plan -> speckit.ai-team.plan-gate
--> speckit.tasks -> speckit.ai-team.task-gate -> speckit.implement
--> speckit.ai-team.evidence
+-> review-spec gate -> speckit.ai-team.handoff -> speckit.plan
+-> speckit.checklist -> speckit.ai-team.plan-gate -> review-plan gate
+-> speckit.tasks -> speckit.analyze -> speckit.ai-team.task-gate
+-> review-tasks gate -> speckit.implement -> speckit.converge
+-> speckit.ai-team.checks -> speckit.ai-team.evidence
 ```
 
 If the user has only a private draft or raw customer request, route to
@@ -79,9 +81,10 @@ must keep a stricter build-from-zero plan:
 project charter, coding issue, or handoff requirement URL -> specify init/bootstrap
 -> speckit.ai-team.workspace -> speckit.ai-team.context
 -> speckit.specify -> speckit.ai-team.handoff -> speckit.plan
--> speckit.ai-team.plan-gate -> speckit.tasks
--> speckit.ai-team.task-gate -> speckit.implement
--> speckit.ai-team.evidence
+-> speckit.checklist -> speckit.ai-team.plan-gate -> review-plan gate
+-> speckit.tasks -> speckit.analyze -> speckit.ai-team.task-gate
+-> review-tasks gate -> speckit.implement -> speckit.converge
+-> speckit.ai-team.checks -> speckit.ai-team.evidence
 ```
 
 The first implementation wave should produce a runnable thin slice before
@@ -112,7 +115,7 @@ Task Context Package:
 - last completed command:
 - source snapshot or code graph version:
 - context path:
-- state file:
+- task context file:
 - likely modules:
 - reusable components:
 - required commands:
