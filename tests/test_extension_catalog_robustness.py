@@ -105,6 +105,62 @@ def test_search_skips_entries_without_valid_id(project_dir, monkeypatch, bad_id)
     assert "Ghost Ext" not in result.output
 
 
+def test_search_count_excludes_invalid_id_entries(project_dir, monkeypatch):
+    """The "Found N" count must match what actually renders.
+
+    Counting raw results before filtering invalid-id entries misreports the
+    total (e.g. "Found 3" while only one entry prints). The count must be taken
+    after dropping entries without a valid id.
+    """
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "search",
+        lambda self, **kwargs: [
+            {"id": None, "name": "Ghost One", "version": "1.0.0", "description": "d"},
+            {"id": "", "name": "Ghost Two", "version": "1.0.0", "description": "d"},
+            {"id": "real-ext", "name": "Real Ext", "version": "1.0.0", "description": "d"},
+        ],
+    )
+
+    result = runner.invoke(app, ["extension", "search"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0, result.output
+    assert "Found 1 extension(s)" in result.output
+    assert "real-ext" in result.output
+    assert "Ghost" not in result.output
+
+
+def test_search_catalog_name_null_does_not_render_none(project_dir, monkeypatch):
+    """An explicit null _catalog_name must not print "Catalog: None".
+
+    ``ext.get("_catalog_name", "")`` only substitutes on an absent key; an
+    explicit ``null`` reaches ``str()`` → "None", which is truthy and prints a
+    bogus "Catalog: None" line. Use _catalog_str so null/blank fall back to "".
+    """
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "search",
+        lambda self, **kwargs: [{
+            "id": "real-ext",
+            "name": "Real Ext",
+            "version": "1.0.0",
+            "description": "d",
+            "_catalog_name": None,
+        }],
+    )
+
+    result = runner.invoke(app, ["extension", "search"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0, result.output
+    assert "real-ext" in result.output
+    assert "Catalog: None" not in result.output
+    assert "None" not in result.output
+
+
 def test_search_escapes_markup_in_stars(project_dir, monkeypatch):
     """Catalog-controlled `stars` must be escaped, not parsed as Rich markup."""
     monkeypatch.chdir(project_dir)
@@ -126,6 +182,45 @@ def test_search_escapes_markup_in_stars(project_dir, monkeypatch):
     assert result.exit_code == 0, result.output
     # Escaped markup is rendered literally rather than swallowed by Rich.
     assert "[red]999[/red]" in result.output
+
+
+def test_add_download_status_null_name_version_no_none(project_dir, monkeypatch):
+    """The catalog download status line must not render the literal "None".
+
+    When a catalog entry sets name/version to explicit JSON null, ``.get()``
+    returns None and reaches ``str()`` → "None". The status line must use
+    _catalog_str so null/blank fall back to the resolved id / "unknown".
+    """
+    monkeypatch.chdir(project_dir)
+
+    import specify_cli.extensions._commands as cmds
+
+    # Force the catalog branch (no bundled match) and resolve to a null-field entry.
+    monkeypatch.setattr(cmds, "_locate_bundled_extension", lambda *a, **k: None)
+    monkeypatch.setattr(
+        cmds,
+        "_resolve_catalog_extension",
+        lambda extension, catalog, action: (
+            {"id": "null-ext", "name": None, "version": None},
+            None,
+        ),
+    )
+
+    # Stop the flow right after the status line prints.
+    def _boom(self, ext_id, *args, **kwargs):
+        raise RuntimeError("stop after status line")
+
+    monkeypatch.setattr(ExtensionCatalog, "download_extension", _boom)
+
+    result = runner.invoke(
+        app, ["extension", "add", "null-ext"], obj={"project_root": project_dir}
+    )
+
+    assert "Downloading" in result.output
+    # Falls back to the resolved id and "unknown", never the literal "None".
+    assert "null-ext" in result.output
+    assert "vunknown" in result.output
+    assert "None" not in result.output
 
 
 def test_info_tolerates_missing_fields_and_non_dict_sections(project_dir, monkeypatch):
