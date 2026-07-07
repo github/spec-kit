@@ -15,4 +15,4 @@ Community projects that extend, visualize, or build on Spec Kit:
 
 - **[cc-spec-kit](https://github.com/speckit-community/cc-spec-kit)** — Community-maintained plugin for Claude Code and GitHub Copilot CLI that installs Spec Kit skills via the plugin marketplace.
 
-- **[spectatui](https://github.com/tinesoft/spectatui)** — A terminal UI (TUI) dashboard for GitHub Spec-Kit — track features, manage specifications, integrations, presets, workflows, extensions and monitor AI agent workflows, attach to existing ai sessions or launch new ones, all right from within your terminal. Keyboard and mouse support. Light/Dark themes support. Highly customizable and blazing fast. Backed by the `specify` CLI in your PATH. 
+- **[spectatui](https://github.com/tinesoft/spectatui)** — A terminal UI (TUI) dashboard for Spec Kit that lets you track features, manage specifications, integrations, presets, workflows, and extensions, and monitor AI agent workflows. Attach to existing AI sessions or launch new ones right from your terminal. Keyboard and mouse support. Light/dark theme support. Highly customizable and blazing fast. Requires the `specify` CLI in your PATH.
