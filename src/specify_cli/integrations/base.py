@@ -1252,7 +1252,7 @@ class YamlIntegration(IntegrationBase):
         # back to an escaped double-quoted scalar for those bodies.
         if _YAML_BLOCK_SCALAR_UNSAFE.search(body):
             prompt_yaml = yaml.safe_dump(
-                {"prompt": body}, allow_unicode=True, default_style='"', width=float("inf")
+                {"prompt": body}, allow_unicode=True, default_style='"', width=sys.maxsize
             ).strip()
             lines = [
                 header_yaml,
