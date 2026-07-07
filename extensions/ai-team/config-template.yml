@@ -29,6 +29,23 @@ task_context:
   allow_reconstruct_from_handoff_requirement_url: true
   allow_reconstruct_from_bug_slug: true
 
+issue_workflow:
+  type_labels:
+    enhancement_internal_allowed:
+      - type/feature
+    coding_allowed:
+      - type/feature
+      - type/bug
+  state_labels:
+    - state/draft
+    - state/accepted
+    - state/working
+    - state/finished
+    - state/rejected
+    - state/closed
+    - state/superseded
+  enhancement_internal_allows_bugfix: false
+
 code_graph:
   # Adapters may be local tools, MCP tools, or hosted services. All of them
   # should normalize into the same artifact shape.
@@ -60,7 +77,8 @@ repositories:
   enhancement_internal:
     role: enhancement-internal
     remote: ""
-    visibility: strict-private
+    visibility: internal-only
+    customer_visible: false
     raw_demand_record_in_coding_repository: false
     stores:
       - raw customer demand
@@ -95,6 +113,7 @@ privacy:
   public_feature_may_start_from_coding_issue: true
   internal_feature_requires_handoff_or_public_safe_summary: true
   local_handoff_submodule_is_cache_only: true
+  private_handoff_override_file: spec.override.md
   public_artifacts:
     - public coding issue URL
     - public-safe handoff summary

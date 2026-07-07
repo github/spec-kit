@@ -22,11 +22,12 @@ agent can distinguish:
 - the coding repository: source code, public issues, public-safe plan, tasks,
   implementation PR, self-test evidence, and Evidence Board;
 - the optional internal enhancement repository: confidential enterprise demand,
-  approval discussion, wave plan, commercial context, and sanitized handoff
-  RFCs.
+  approval discussion, wave plan, commercial context, and internal handoff
+  URLs.
 
 Public feature requests may start directly in the coding repository. The
-internal enhancement repository is only needed when demand cannot be public.
+internal enhancement repository is internal-only, not customer-visible, and is
+used for traceability when demand cannot be public.
 
 ## Bootstrap Rule
 
@@ -70,8 +71,11 @@ After extension installation, run this command and then run
 6. Confirm work-item references:
    - bug fixes link coding issues or bug slugs;
    - public feature work links coding issues or SDD feature requests;
-   - confidential enterprise feature work uses an accepted handoff requirement
-     URL only where visibility allows it, otherwise a public-safe summary.
+   - confidential enterprise feature work uses an accepted enhancement-internal
+     issue or handoff URL only where visibility allows it, otherwise a
+     public-safe summary;
+   - enhancement-internal issues use `type/feature` only; bug fixes are routed
+     to coding repository issues.
 7. Record the role model:
    - specify role: product manager / customer manager;
    - plan role: architect;

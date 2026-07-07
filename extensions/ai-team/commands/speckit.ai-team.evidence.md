@@ -28,7 +28,8 @@ does not replace `speckit.converge`.
 2. Read:
    - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
      present;
-   - `spec.md`, `plan.md`, `tasks.md`;
+   - `spec.override.md` when present, otherwise `spec.md`;
+   - `plan.md`, `tasks.md`;
    - AI Team handoffs and gates when present;
    - implementation diff;
    - native converge output when present;
@@ -47,6 +48,7 @@ does not replace `speckit.converge`.
    - rollback or recovery note;
    - human review points;
    - skipped checks and reasons.
+   - whether `spec.override.md` was used and confirmed ignored by git.
 4. If review comments, failed tests, incidents, or repeated AI mistakes exist,
    add a Failure Evolution section:
    - context missing;

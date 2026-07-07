@@ -14,6 +14,8 @@ tools, PR reviews, and human approval pauses.
 | `bug_slug` | bug workflows | bug extension slug used by `.specify/bugs/<bug_slug>/` |
 | `handoff_requirement_url` | confidential enterprise feature | sanitized internal enhancement handoff URL |
 | `published_requirement_url` | legacy only | deprecated compatibility alias for `handoff_requirement_url` |
+| `issue.type_label` | issue-backed tasks | `type/feature` or `type/bug`; enhancement-internal allows `type/feature` only |
+| `issue.state_label` | issue-backed tasks | one of the AI Team `state/*` labels |
 
 Do not use a mutable issue title, chat summary, local file path, or branch name
 as the stable identity.
@@ -88,6 +90,20 @@ work_item:
   type: internal_handoff
   handoff_requirement_url: https://example.com/enhancements/rfcs/REQ-2026-015
 ```
+
+Enhancement-internal feature issues must use `type/feature` and exactly one of:
+
+```text
+state/draft
+state/accepted
+state/working
+state/finished
+state/rejected
+state/closed
+state/superseded
+```
+
+Bug fixes must use coding repository issues, not enhancement-internal issues.
 
 Public coding repositories should not link confidential internal demand records
 unless the organization explicitly allows it. Use a public-safe summary in the

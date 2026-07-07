@@ -44,6 +44,7 @@ env/
 .genreleases/
 *.zip
 sdd-*/
+**/spec.override.md
 docs/dev
 
 # Extension system

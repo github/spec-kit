@@ -19,13 +19,13 @@ $ARGUMENTS
 
 ## Goal
 
-Move confidential feature intent through the internal enhancement repository
-without leaking raw customer demand into the coding repository.
+Move confidential feature intent through the internal-only enhancement
+repository without leaking raw customer demand into the coding repository.
 
 ## Repository Model
 
 ```text
-enhancement-internal    private demand, approval discussion, wave plan, handoff RFCs
+enhancement-internal    internal-only feature traceability, approval, wave plan, handoff URLs
 coding repository       source, public issues, public-safe plans, evidence, PRs
 ```
 
@@ -39,6 +39,7 @@ Feature implementation references either:
 - `.specify/extensions/ai-team/ai-team-config.yml`;
 - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
   the feature was already routed from a coding workspace;
+- [docs/issue-workflow.md](../docs/issue-workflow.md) or installed equivalent;
 - private enhancement issue or draft only when the current operator has access;
 - handoff RFC conventions under the internal enhancement repository;
 - coding repository module index only enough to name likely affected modules.
@@ -50,8 +51,14 @@ Feature implementation references either:
 2. If the feature is public, prefer a coding repository issue and return to
    `speckit.ai-team.start`.
 3. Work in `enhancement-internal` when raw demand, commercial context, or
-   unapproved acceptance discussion is needed.
-4. Produce a sanitized handoff requirement with:
+   unapproved acceptance discussion is needed. The issue must use `type/feature`
+   and exactly one state label from `state/draft`, `state/accepted`,
+   `state/working`, `state/finished`, `state/rejected`, `state/closed`, or
+   `state/superseded`.
+4. Reject or reroute any enhancement-internal issue labeled `type/bug` or
+   describing a bug fix. Bug fixes belong in coding repository issues and the
+   `ai-team-bugfix` workflow.
+5. Produce a sanitized handoff requirement with:
    - problem or goal;
    - user scenario and value;
    - scope and non-goals;
@@ -65,9 +72,9 @@ Feature implementation references either:
    - privacy note describing what was intentionally excluded;
    - whether the coding repository may link the handoff URL or must use a
      public-safe summary.
-5. Update or create the Task Context Package with the handoff requirement URL,
+6. Update or create the Task Context Package with the handoff requirement URL,
    status, approval route, current wave, and next command.
-6. Return the handoff URL and hand off to `speckit.ai-team.feature-review` or
+7. Return the handoff URL and hand off to `speckit.ai-team.feature-review` or
    `speckit.specify`.
 
 ## Output Shape
@@ -80,7 +87,8 @@ Requirement handoff:
 - handoff requirement URL:
 - public-safe summary:
 - coding repository may link handoff URL: yes / no / not applicable
-- status: draft / accepted / working / rejected / closed / superseded
+- type label: type/feature
+- state label: state/draft / state/accepted / state/working / state/finished / state/rejected / state/closed / state/superseded
 - approval route:
 - current wave:
 - affected coding repository:
@@ -96,6 +104,7 @@ Stop before coding when:
 
 - confidential enterprise work has no accepted handoff requirement or
   public-safe summary;
+- an enhancement-internal issue is labeled or behaving as a bug fix;
 - raw customer demand would be copied into the coding repository;
 - the handoff requirement has no status or approval route;
 - public SPI/API, dependency, license, security, compatibility, or migration

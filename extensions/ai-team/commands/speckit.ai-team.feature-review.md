@@ -29,6 +29,8 @@ feature approval authority unless explicitly delegated.
 - Is the user problem or product goal concrete?
 - Is the work item stable: public coding issue, allowed handoff URL, or
   public-safe summary?
+- Does the issue use `type/feature` and exactly one valid state label?
+- If the work item is in enhancement-internal, confirm it is not a bug fix.
 - Is private customer demand excluded from public artifacts?
 - Are scope and non-goals explicit?
 - Are likely modules, maintainers, owners, and reviewers named?
@@ -56,6 +58,8 @@ Feature review:
 - task id:
 - context path:
 - coding issue or handoff requirement URL:
+- issue type label:
+- issue state label:
 - public-safe summary:
 - recommended decision:
 - reason:
@@ -77,6 +81,8 @@ Stop instead of recommending acceptance when:
 
 - the coding repository or modules are unknown;
 - the approval route is missing;
+- the issue is not labeled `type/feature`, has multiple state labels, or is an
+  enhancement-internal bug fix;
 - the feature asks "should we build this?" with no technical committee or
   delegated product authority;
 - the first wave requires invented semantics;

@@ -145,6 +145,28 @@ def test_ai_team_config_template_defines_repository_and_role_contracts():
         is False
     )
     assert (
+        config["repositories"]["enhancement_internal"]["visibility"]
+        == "internal-only"
+    )
+    assert config["repositories"]["enhancement_internal"]["customer_visible"] is False
+    assert config["issue_workflow"]["type_labels"][
+        "enhancement_internal_allowed"
+    ] == ["type/feature"]
+    assert set(config["issue_workflow"]["type_labels"]["coding_allowed"]) == {
+        "type/feature",
+        "type/bug",
+    }
+    assert set(config["issue_workflow"]["state_labels"]) == {
+        "state/draft",
+        "state/accepted",
+        "state/working",
+        "state/finished",
+        "state/rejected",
+        "state/closed",
+        "state/superseded",
+    }
+    assert config["issue_workflow"]["enhancement_internal_allows_bugfix"] is False
+    assert (
         config["repositories"]["coding"]["enhancement_handoff_submodule_path"] == ""
     )
     assert config["privacy"]["raw_customer_demand_public"] is False
@@ -154,6 +176,7 @@ def test_ai_team_config_template_defines_repository_and_role_contracts():
         config["privacy"]["internal_feature_requires_handoff_or_public_safe_summary"]
         is True
     )
+    assert config["privacy"]["private_handoff_override_file"] == "spec.override.md"
     assert set(config["roles"]) == {"specify", "plan", "tasks_and_implement"}
     assert all(role["context_isolation"] is True for role in config["roles"].values())
 
@@ -181,6 +204,21 @@ def test_ai_team_repository_boundary_document_exists():
     assert "coding issue URL" in text
     assert "Handoff requirement" in text
     assert "Do not use a local path" in text
+    assert "type/feature" in text
+    assert "type/bug" in text
+
+
+def test_ai_team_issue_workflow_document_exists():
+    issue_doc = EXTENSION_ROOT / "docs" / "issue-workflow.md"
+
+    assert issue_doc.exists()
+    text = issue_doc.read_text(encoding="utf-8")
+    assert "enhancement_internal" in text
+    assert "`type/feature` only" in text
+    assert "`type/bug`" in text
+    assert "state/draft" in text
+    assert "state/finished" in text
+    assert "state/superseded" in text
 
 
 def test_ai_team_task_context_document_exists():
@@ -209,6 +247,36 @@ def test_ai_team_task_field_spec_document_exists():
     assert "coding_issue_url" in text
     assert "handoff_requirement_url" in text
     assert "published_requirement_url" in text
+    assert "issue.type_label" in text
+    assert "issue.state_label" in text
+
+
+def test_native_templates_support_private_spec_override():
+    plan_command = (REPO_ROOT / "templates" / "commands" / "plan.md").read_text(
+        encoding="utf-8"
+    )
+    task_command = (REPO_ROOT / "templates" / "commands" / "tasks.md").read_text(
+        encoding="utf-8"
+    )
+    analyze_command = (REPO_ROOT / "templates" / "commands" / "analyze.md").read_text(
+        encoding="utf-8"
+    )
+    implement_command = (
+        REPO_ROOT / "templates" / "commands" / "implement.md"
+    ).read_text(encoding="utf-8")
+    converge_command = (
+        REPO_ROOT / "templates" / "commands" / "converge.md"
+    ).read_text(encoding="utf-8")
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert "handoff_requirement_url=<https-url>" in plan_command
+    assert "FEATURE_DIR/spec.override.md" in plan_command
+    assert "**/spec.override.md" in plan_command
+    assert "spec.override.md" in task_command
+    assert "spec.override.md" in analyze_command
+    assert "spec.override.md" in implement_command
+    assert "spec.override.md" in converge_command
+    assert "**/spec.override.md" in gitignore
 
 
 def test_ai_team_code_graph_adapter_document_exists():

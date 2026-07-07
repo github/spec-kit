@@ -37,6 +37,7 @@ drafts or rely on local paths as the authoritative work item.
    - `.ai-local/`;
    - local prompts or scratch notes;
    - private enhancement drafts from coding repository PRs;
+   - `spec.override.md`;
    - generated reports unless the repository explicitly tracks them.
 5. Confirm links:
    - bug fix links a coding issue or bug slug;
@@ -48,6 +49,7 @@ drafts or rely on local paths as the authoritative work item.
 6. Confirm evidence:
    - Task Context Package;
    - code graph impact when applicable;
+   - `spec.override.md` is ignored when internal handoff context was used;
    - commands and tests;
    - Evidence Board or portable checks;
    - skipped verification.

@@ -27,7 +27,7 @@ build-from-zero readiness.
 2. Read:
    - `.specify/ai-team/tasks/<task-id>/task-context.yml` and `context-pack.md` when
      present;
-   - `spec.md`;
+   - `spec.override.md` when present, otherwise `spec.md`;
    - `plan.md`;
    - native checklist output when present;
    - `research.md` when present;
@@ -59,6 +59,8 @@ build-from-zero readiness.
    - raw customer demand remains in enhancement-internal;
    - feature plans reference a coding issue, allowed handoff requirement, or
      public-safe summary;
+   - `spec.override.md` is ignored by git when it contains internal handoff
+     context;
    - public plan contains only implementation-appropriate context.
 7. Write `.specify/ai-team/gates/<feature-slug>/plan-gate.md`.
 8. Update the Task Context Package with plan gate status, code graph artifact,

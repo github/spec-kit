@@ -44,16 +44,18 @@ extension assumes two primary repository roles:
 
 | Repository | Purpose |
 |---|---|
-| enhancement-internal | confidential enterprise demand, approval discussion, wave plan, commercial context, sanitized handoff RFCs |
+| enhancement-internal | internal-only traceability for confidential enterprise feature demand, approval discussion, wave plan, commercial context, sanitized handoff URLs |
 | coding repository | source code, public issues, public-safe plan, tasks, implementation PR, Evidence Board |
 
-Public feature requests can start directly as coding repository issues. Internal
-enhancement records are used only when the demand cannot be public. Coding
-repository PRs should link internal handoff URLs only where repository
-visibility allows it; public repositories should carry public-safe summaries.
+Public feature requests can start directly as coding repository issues.
+Enhancement-internal issues are internal-only and must be `type/feature`; bug
+fixes are filed in the coding repository. Coding repository PRs should link
+internal handoff URLs only where repository visibility allows it; public
+repositories should carry public-safe summaries.
 
 Use [docs/repository-boundary.md](docs/repository-boundary.md) for the full
-repository model.
+repository model and [docs/issue-workflow.md](docs/issue-workflow.md) for issue
+type/state labels.
 
 ## Task Context and Resume
 

@@ -116,7 +116,8 @@ You **MUST** consider the user input before proceeding (if not empty).
    - Infer any missing context from spec/plan/tasks (do NOT hallucinate)
 
 5. **Load feature context**: Read from FEATURE_DIR:
-   - spec.md: Feature requirements and scope
+   - effective spec: use spec.override.md when it exists, otherwise spec.md
+     for feature requirements and scope
    - plan.md (if exists): Technical details, dependencies
    - tasks.md (if exists): Implementation tasks
 

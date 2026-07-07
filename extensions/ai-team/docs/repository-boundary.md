@@ -1,11 +1,11 @@
 # Repository Boundary
 
-AI Team SDD separates public coding work from confidential enterprise demand.
+AI Team SDD separates coding work from internal confidential demand records.
 
 ```text
 org/
-|-- enhancement-internal/      # strict-permission internal enhancement repo
-|   |-- issues/                # private discussion, approval, wave plan
+|-- enhancement-internal/      # strict-permission internal traceability repo
+|   |-- issues/                # private feature demand, approval, wave plan
 |   `-- rfcs/
 |       `-- REQ-2026-015.md    # sanitized handoff requirement
 `-- project-alpha/             # coding repository
@@ -16,20 +16,25 @@ org/
 
 ## Rules
 
-1. Public feature requests can start directly as coding repository issues or SDD
-   feature requests.
-2. Confidential enterprise requirements start in `enhancement-internal`, not in
-   the coding repository.
-3. Internal enhancement issues own raw demand, private drafts, approval
+1. Coding repositories use issues for both bug fixes and public features.
+2. `enhancement-internal` is internal-only and exists for traceability of
+   confidential feature demand; enterprise customers do not need visibility.
+3. Enhancement-internal issues must use `type/feature`; bug fixes are forbidden
+   there and must be filed in the coding repository.
+4. Coding repository issues use `type/bug` for bug fixes and `type/feature` for
+   feature work.
+5. Both repositories use the state label lifecycle in
+   [issue-workflow.md](issue-workflow.md).
+6. Internal enhancement issues own raw demand, private drafts, approval
    discussion, wave planning, commercial context, and private acceptance notes.
-4. Sanitized handoff RFCs under `enhancement-internal/rfcs/` are the stable
-   bridge from private demand to coding work.
-5. Public coding repositories must not record internal enhancement issue URLs,
+7. Sanitized handoff RFCs under `enhancement-internal/rfcs/` or allowed issue
+   URLs are the stable bridge from private demand to coding work.
+8. Public coding repositories must not record internal enhancement issue URLs,
    raw customer demand, commercial context, or private acceptance notes. Use a
    public-safe summary instead.
-6. Private coding repositories may link an internal handoff URL when the
+9. Private coding repositories may link an internal handoff URL when the
    organization allows it.
-7. Local paths are never the authoritative work-item identity. Use a coding
+10. Local paths are never the authoritative work-item identity. Use a coding
    issue URL, handoff URL, or explicit task ID.
 
 ## Command Mapping

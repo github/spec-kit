@@ -24,6 +24,7 @@ Read when present:
 
 - `.specify/init-options.json` and `.specify/integration.json`;
 - `.specify/extensions/ai-team/ai-team-config.yml`;
+- `extensions/ai-team/docs/issue-workflow.md` or installed equivalent;
 - `extensions/ai-team/docs/task-field-spec.md` or installed equivalent;
 - `AGENTS.md`, `CLAUDE.md`, Cursor rules, Trae rules, or the active agent file;
 - the coding issue URL, bug slug, or handoff requirement URL named by the user;
@@ -38,9 +39,9 @@ Read when present:
 
 | Request type | Route | Required work item |
 |---|---|---|
-| existing behavior is broken, flaky, regressed, or throws errors | bug fix | coding issue or bug slug |
-| new public capability, scenario, integration, or public behavior in an existing project | feature | coding issue URL or SDD feature request |
-| confidential enterprise feature or roadmap work in an existing project | feature | accepted handoff requirement URL or public-safe summary |
+| existing behavior is broken, flaky, regressed, or throws errors | bug fix | coding issue or bug slug with `type/bug` |
+| new public capability, scenario, integration, or public behavior in an existing project | feature | coding issue URL or SDD feature request with `type/feature` |
+| confidential enterprise feature or roadmap work in an existing project | feature | accepted enhancement-internal issue or handoff URL with `type/feature` |
 | create a new product, service, repository, or application from zero | new project | public project issue/charter or handoff requirement URL |
 | change AI Team rules, commands, templates, examples, or workflow | template change | this repository PR |
 | unclear | ask one focused question | no edits |
@@ -73,6 +74,9 @@ coding issue or handoff requirement URL -> speckit.specify
 If the user has only a private draft or raw customer request, route to
 `speckit.ai-team.requirement` first. Code implementation must wait until there
 is an accepted handoff requirement or a public-safe coding issue/summary.
+When `handoff_requirement_url` is passed to `speckit.plan`, the plan command
+must fetch the URL, merge it with `spec.md` into ignored `spec.override.md`,
+and treat the override as the effective spec for later SDD commands.
 
 New projects use the same SDD path but must set `work_type=new-project` and
 must keep a stricter build-from-zero plan:
@@ -101,6 +105,8 @@ Task Context Package:
 - request:
 - classification: bug fix / feature / new project / template change / unclear
 - required work item:
+- issue type label:
+- issue state label:
 - work item type:
 - coding issue URL:
 - bug slug:
@@ -143,6 +149,7 @@ After creating or updating the package, return the next command:
 Stop and ask when:
 
 - a feature has no coding issue, handoff requirement, or approved task ID;
+- an enhancement-internal issue is not `type/feature` or is a bug fix;
 - raw customer demand would enter the coding repository;
 - a code change crosses module boundaries without code graph or source
   structure evidence;

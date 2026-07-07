@@ -28,10 +28,12 @@ speckit.ai-team.workspace
 The workspace contract should name:
 
 - coding repository;
-- optional internal enhancement repository for confidential enterprise demand;
+- optional internal-only enhancement repository for confidential enterprise
+  demand traceability;
 - optional handoff URL pattern for sanitized internal RFCs;
 - rules that prevent private enhancement drafts or raw customer demand from
   being committed to public coding repositories.
+- issue type/state label policy from [issue-workflow.md](issue-workflow.md).
 
 ## Chat Alias Convention
 
@@ -69,9 +71,10 @@ Use this journey when existing behavior is broken, flaky, regressed, or throws
 errors.
 
 The preferred path is the dedicated `ai-team-bugfix` workflow. The work item is
-a coding repository issue, issue URL, or bug slug. The reporter does not need to
-understand code internals. The AI agent and maintainer derive the likely source
-impact from the codebase.
+a coding repository issue, issue URL, or bug slug. Coding bug issues use
+`type/bug`; enhancement-internal must not be used for bug fixes. The reporter
+does not need to understand code internals. The AI agent and maintainer derive
+the likely source impact from the codebase.
 
 ```bash
 specify workflow run ai-team-bugfix \
@@ -114,7 +117,8 @@ config, schema, state-owner, or cross-module semantic changes.
 Use this journey when the requested feature can be discussed in the coding
 repository.
 
-The work item is a public coding repository issue or SDD feature request:
+The work item is a public coding repository issue or SDD feature request.
+Public feature issues use `type/feature` and exactly one `state/*` label:
 
 ```bash
 specify workflow run ai-team-sdd \
@@ -154,6 +158,9 @@ enhancement issue.
 
 Use this journey when the demand comes from an enterprise customer, private
 roadmap, commercial context, or other source that cannot be public.
+`enhancement_internal` is internal-only and used for traceability; enterprise
+customers do not need visibility into it. Enhancement-internal issues use
+`type/feature` only.
 
 Start in the internal enhancement repository:
 
@@ -174,7 +181,9 @@ specify workflow run ai-team-sdd \
 
 The coding repository should not record raw customer demand or private
 enhancement draft paths. Public coding repositories should use a public-safe
-summary instead of confidential internal links.
+summary instead of confidential internal links. Private coding repositories may
+pass `handoff_requirement_url` to `speckit.plan`; the plan command fetches the
+URL and merges it with `spec.md` into ignored `spec.override.md`.
 
 Stop for human decision when no accepted handoff exists, the handoff contains
 raw customer demand, Technical Committee acceptance is missing, owner review is
