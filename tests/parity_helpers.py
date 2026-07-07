@@ -90,7 +90,7 @@ def run(
         capture_output=True,
         text=True,
         check=False,
-        env=env or clean_env(),
+        env=env if env is not None else clean_env(),
     )
 
 
