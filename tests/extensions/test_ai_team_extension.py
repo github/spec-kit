@@ -1,11 +1,45 @@
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import pytest
 import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXTENSION_ROOT = REPO_ROOT / "extensions" / "ai-team"
+WORKFLOW_PATH = REPO_ROOT / "workflows" / "ai-team-sdd" / "workflow.yml"
+
+
+def _run_ai_team_workflow_to_route_gate(tmp_path: Path, inputs: dict, run_id: str):
+    from specify_cli.workflows.base import RunStatus
+    from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+    definition = WorkflowDefinition.from_yaml(WORKFLOW_PATH)
+    engine = WorkflowEngine(tmp_path)
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = ""
+    mock_result.stderr = ""
+
+    with (
+        patch(
+            "specify_cli.workflows.steps.command.shutil.which",
+            return_value="/usr/bin/codex",
+        ),
+        patch(
+            "specify_cli.integrations.base.shutil.which",
+            return_value="/usr/bin/codex",
+        ),
+        patch("subprocess.run", return_value=mock_result),
+    ):
+        state = engine.execute(definition, inputs, run_id=run_id)
+
+    assert state.status == RunStatus.PAUSED
+    assert state.step_results["context-open"]["status"] == "completed"
+    assert state.step_results["route"]["status"] == "completed"
+    assert state.step_results["review-route"]["status"] == "paused"
+    return state
 
 
 def test_ai_team_extension_manifest_and_catalog_are_in_sync():
@@ -163,14 +197,13 @@ def test_ai_team_user_journeys_document_exists():
 
 
 def test_ai_team_workflow_is_bundled_and_uses_init_step():
-    workflow = REPO_ROOT / "workflows" / "ai-team-sdd" / "workflow.yml"
     catalog = json.loads(
         (REPO_ROOT / "workflows" / "catalog.json").read_text(encoding="utf-8")
     )
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
-    assert workflow.exists()
-    data = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    assert WORKFLOW_PATH.exists()
+    data = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
     assert data["workflow"]["id"] == "ai-team-sdd"
     assert "ai-team-sdd" in catalog["workflows"]
     assert "workflows/ai-team-sdd" in pyproject
@@ -187,3 +220,88 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert context_step["command"] == "speckit.ai-team.context"
     codegraph_step = next(step for step in steps if step["id"] == "codegraph")
     assert codegraph_step["command"] == "speckit.ai-team.codegraph"
+
+
+@pytest.mark.parametrize(
+    ("case_name", "inputs", "expected_fragments"),
+    [
+        (
+            "existing project bug fix",
+            {
+                "request": "Fix upload timeout reported by support",
+                "work_type": "bug",
+                "coding_issue_url": "https://example.com/org/project/issues/123",
+            },
+            [
+                "work_type=bug",
+                "coding_issue_url=https://example.com/org/project/issues/123",
+                "published_requirement_url=",
+            ],
+        ),
+        (
+            "existing project feature",
+            {
+                "request": "Implement REQ-2026-015 search result export",
+                "work_type": "feature",
+                "published_requirement_url": "https://example.com/requirements/rfcs/REQ-2026-015",
+            },
+            [
+                "work_type=feature",
+                "published_requirement_url=https://example.com/requirements/rfcs/REQ-2026-015",
+                "coding_issue_url=",
+            ],
+        ),
+        (
+            "new project from zero",
+            {
+                "request": "Create the initial customer notification service",
+                "work_type": "new-project",
+                "bootstrap_workspace": True,
+                "published_requirement_url": "https://example.com/requirements/rfcs/REQ-2026-020",
+            },
+            [
+                "work_type=new-project",
+                "published_requirement_url=https://example.com/requirements/rfcs/REQ-2026-020",
+                "resume_from=auto",
+            ],
+        ),
+        (
+            "resume from task gate",
+            {
+                "request": "Continue REQ-2026-015 after task gate approval",
+                "task_id": "REQ-2026-015",
+                "work_type": "feature",
+                "resume_from": "tasks-ready",
+                "published_requirement_url": "https://example.com/requirements/rfcs/REQ-2026-015",
+            },
+            [
+                "task_id=REQ-2026-015",
+                "work_type=feature",
+                "resume_from=tasks-ready",
+                "published_requirement_url=https://example.com/requirements/rfcs/REQ-2026-015",
+            ],
+        ),
+    ],
+)
+def test_ai_team_workflow_routes_core_user_journeys(
+    tmp_path, case_name, inputs, expected_fragments
+):
+    run_id = "ai-team-" + case_name.replace(" ", "-")
+    state = _run_ai_team_workflow_to_route_gate(tmp_path, inputs, run_id)
+
+    context_args = state.step_results["context-open"]["input"]["args"]
+    route_args = state.step_results["route"]["input"]["args"]
+
+    assert f"workflow_run_id={run_id}" in context_args
+    assert f"workflow_run_id={run_id}" in route_args
+    for fragment in expected_fragments:
+        assert fragment in context_args
+        assert fragment in route_args
+
+    bootstrap_result = state.step_results["bootstrap-if-requested"]["output"][
+        "condition_result"
+    ]
+    assert bootstrap_result is (inputs.get("bootstrap_workspace") is True)
+    if inputs.get("bootstrap_workspace") is True:
+        assert state.step_results["bootstrap"]["status"] == "completed"
+        assert "--integration" in state.step_results["bootstrap"]["output"]["argv"]
