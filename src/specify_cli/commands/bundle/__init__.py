@@ -746,11 +746,16 @@ def _resolve_manifest_path(path: Path | None) -> Path:
 def _download_manifest(resolved, *, offline: bool):
     """Resolve a bundle's manifest from its catalog ``download_url``.
 
-    Local/``file://`` URLs always work offline and may point at a ``.zip``
-    artifact, a bundle directory, or a ``bundle.yml`` (handled by
-    :func:`_local_manifest_source`). Remote ``https://`` URLs are fetched with
-    the shared authenticated, redirect-validated HTTP client, and only when not
-    ``--offline``.
+    Catalog ``download_url``s are HTTPS-only (``http`` allowed for localhost),
+    matching the extensions/presets/workflows catalog systems. Remote URLs are
+    fetched with the shared authenticated, redirect-validated HTTP client, and
+    only when not ``--offline``.
+
+    Local and ``file://`` sources are intentionally not resolved here: to
+    install a bundle from disk, pass the path positionally
+    (``specify bundle install ./path/to/bundle.yml`` — a bundle directory or a
+    ``.zip`` artifact also works), which :func:`_local_manifest_source` handles
+    before catalog resolution and which never touches ``download_url``.
     """
     from urllib.parse import urlparse
 
@@ -763,36 +768,28 @@ def _download_manifest(resolved, *, offline: bool):
     parsed = urlparse(url)
     scheme = parsed.scheme.lower()
 
-    # On Windows an absolute path like ``C:\bundle.yml`` parses with a
-    # single-letter ``scheme``; treat it as a local file, not a URL scheme.
+    # ``file://`` URLs and bare filesystem paths (including Windows drive paths
+    # like ``C:\bundle.yml``, which urlparse reads as a single-letter scheme)
+    # are not valid catalog download URLs. Catalog URLs are HTTPS-only across
+    # every catalog system; installing from disk is done by passing the path
+    # positionally, which never reaches URL resolution. Give an actionable
+    # error rather than accepting a scheme the rest of the codebase rejects.
     if scheme in ("", "file") or re.match(r"^[A-Za-z]:[\\/]", url):
-        if scheme == "file":
-            # Raw ``parsed.path`` keeps the leading slash of ``file:///C:/x``
-            # (yielding ``\C:\x`` on Windows) and skips percent-decoding
-            # (``my%20bundles``). Reuse the adapters helper that already
-            # handles drive letters, UNC hosts, and percent-encoding for
-            # catalog ``file://`` URLs.
-            from ...bundler.services.adapters import _file_url_to_path
+        raise BundlerError(
+            f"Catalog entry '{resolved.entry.id}' has a local/file:// download_url "
+            f"({url}); catalog download URLs must be HTTPS (http for localhost). "
+            "To install a bundle from disk, pass the path directly: "
+            "'specify bundle install <path-to-bundle.yml | bundle-dir | .zip>'."
+        )
 
-            local = _file_url_to_path(parsed)
-        else:
-            local = Path(url)
-        manifest = _local_manifest_source(str(local))
-        if manifest is None:
-            raise BundlerError(f"Bundle manifest not found: {local}")
-        return manifest
-
-    if scheme in ("http", "https"):
-        if offline:
-            raise BundlerError(
-                f"Network access disabled; cannot download bundle '{resolved.entry.id}' "
-                f"from {url}."
-            )
-        return _download_remote_manifest(resolved.entry.id, url)
-
-    raise BundlerError(
-        f"Unsupported download_url scheme for bundle '{resolved.entry.id}': {url}"
-    )
+    if offline:
+        raise BundlerError(
+            f"Network access disabled; cannot download bundle '{resolved.entry.id}' "
+            f"from {url}."
+        )
+    # HTTPS-only (http for localhost) is enforced by _require_https inside
+    # _download_remote_manifest, matching the other catalog systems.
+    return _download_remote_manifest(resolved.entry.id, url)
 
 
 def _require_https(label: str, url: str) -> None:

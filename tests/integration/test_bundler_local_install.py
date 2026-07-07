@@ -114,14 +114,10 @@ def test_install_bundled_extension_from_zip_offline(tmp_path: Path):
         os.chdir(previous)
 
 
-def test_download_manifest_resolves_file_url(tmp_path: Path):
-    """A catalog ``file://`` download_url must resolve to the manifest.
-
-    ``Path(parsed.path)`` kept the leading slash of ``file:///C:/x``
-    (yielding a ``/C:/x``-style path on Windows, which never exists) and skipped
-    percent-decoding, so ``my%20bundles`` stayed encoded on every OS.
-    The space in the directory name below makes the failure reproduce on
-    POSIX CI too, not just Windows.
+def test_download_manifest_rejects_file_url(tmp_path: Path):
+    """A catalog ``file://`` download_url is rejected — catalog URLs are
+    HTTPS-only, matching extensions/presets/workflows. Disk installs go through
+    the positional path (see the local-source tests above), not download_url.
     """
     from types import SimpleNamespace
 
@@ -132,12 +128,12 @@ def test_download_manifest_resolves_file_url(tmp_path: Path):
         entry=SimpleNamespace(id="demo-bundle", download_url=manifest_path.as_uri())
     )
 
-    manifest = _download_manifest(resolved, offline=True)
-    assert manifest.bundle.id == "demo-bundle"
+    with pytest.raises(BundlerError, match="bundle install"):
+        _download_manifest(resolved, offline=True)
 
 
-def test_download_manifest_bare_windows_path_still_resolves(tmp_path: Path):
-    """The non-URL branch (bare absolute path) keeps working unchanged."""
+def test_download_manifest_rejects_bare_path(tmp_path: Path):
+    """A bare filesystem path download_url is likewise rejected."""
     from types import SimpleNamespace
 
     from specify_cli.commands.bundle import _download_manifest
@@ -147,5 +143,14 @@ def test_download_manifest_bare_windows_path_still_resolves(tmp_path: Path):
         entry=SimpleNamespace(id="demo-bundle", download_url=str(manifest_path))
     )
 
-    manifest = _download_manifest(resolved, offline=True)
+    with pytest.raises(BundlerError, match="bundle install"):
+        _download_manifest(resolved, offline=True)
+
+
+def test_local_install_still_resolves_via_positional_path(tmp_path: Path):
+    """The supported local route — a positional path, not a download_url —
+    still resolves the manifest via _local_manifest_source."""
+    manifest_path = write_manifest(tmp_path / "my bundles")
+    manifest = _local_manifest_source(str(manifest_path))
+    assert manifest is not None
     assert manifest.bundle.id == "demo-bundle"
