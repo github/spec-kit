@@ -1321,6 +1321,17 @@ class TestShellStep:
             errors = step.validate({"id": "qa", "run": "echo hi", "timeout": bad})
             assert any("'timeout' must be a positive number" in e for e in errors)
 
+    def test_validate_rejects_non_finite_timeout(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        # inf/nan are floats and slip past a plain ``> 0`` check (``nan <= 0``
+        # is False), but ``subprocess.run(timeout=...)`` would then fail at
+        # runtime. YAML ``.inf``/``.nan`` scalars parse to these via safe_load.
+        for bad in (float("inf"), float("-inf"), float("nan")):
+            errors = step.validate({"id": "qa", "run": "echo hi", "timeout": bad})
+            assert any("'timeout' must be a positive number" in e for e in errors)
+
     def test_validate_accepts_positive_numeric_timeout(self):
         from specify_cli.workflows.steps.shell import ShellStep
 
