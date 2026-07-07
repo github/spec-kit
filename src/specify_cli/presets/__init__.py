@@ -2702,7 +2702,11 @@ class PresetResolver:
                     # Declared file missing: skip this pack's convention fallback.
                     continue
                 if manifest_found_entry:
-                    # Manifest lists the template without a file: nothing here.
+                    # Manifest lists this template but with an empty/falsey
+                    # ``file`` value (``file`` is a required key per
+                    # PresetManifest._validate(), so this is a non-usable path,
+                    # not a truly absent one). Don't fall through to convention
+                    # — mirrors collect_all_layers().
                     continue
                 for subdir in subdirs:
                     if subdir:
