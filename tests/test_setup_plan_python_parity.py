@@ -94,6 +94,41 @@ def test_python_missing_template_matches_bash(tmp_path: Path) -> None:
 
 
 @requires_bash
+def test_python_broken_registry_falls_back_to_dir_scan_matches_bash(
+    tmp_path: Path,
+) -> None:
+    """Unorderable priority values must fall back to the directory scan,
+    which skips hidden preset dirs, in both implementations."""
+    repo_a = _setup_repo(tmp_path, "proj-a", template=False)
+    repo_b = _setup_repo(tmp_path, "proj-b", template=False)
+    for repo in (repo_a, repo_b):
+        presets = repo / ".specify" / "presets"
+        for name, body in ((".hidden", "# hidden\n"), ("alpha", "# preset plan\n")):
+            (presets / name / "templates").mkdir(parents=True)
+            (presets / name / "templates" / "plan-template.md").write_text(
+                body, encoding="utf-8"
+            )
+        (presets / ".registry").write_text(
+            '{"presets": {"alpha": {"priority": "high"}, "beta": {"priority": 1}}}',
+            encoding="utf-8",
+        )
+
+    bash = run(bash_cmd(repo_a, SCRIPT, "--json"), repo_a)
+    py = run(py_cmd(repo_b, SCRIPT, "--json"), repo_b)
+
+    assert py.returncode == bash.returncode == 0
+    assert normalize_repo_paths(py.stdout, repo_b) == normalize_repo_paths(
+        bash.stdout, repo_a
+    )
+    assert normalize_repo_paths(py.stderr, repo_b) == normalize_repo_paths(
+        bash.stderr, repo_a
+    )
+    for repo in (repo_a, repo_b):
+        plan = repo / "specs" / "001-my-feature" / "plan.md"
+        assert plan.read_text(encoding="utf-8") == "# preset plan\n"
+
+
+@requires_bash
 def test_python_missing_feature_context_matches_bash(tmp_path: Path) -> None:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)

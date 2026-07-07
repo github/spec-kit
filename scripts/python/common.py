@@ -185,25 +185,30 @@ def get_feature_paths(
 def _sorted_preset_ids(presets_dir: Path) -> list[str]:
     registry = presets_dir / ".registry"
     if registry.is_file():
+        # Mirrors bash: any failure while reading or sorting the registry
+        # (invalid JSON, non-dict shapes, unorderable priority values) falls
+        # back to the directory scan below.
         try:
             data = json.loads(registry.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            data = None
-        if isinstance(data, dict):
             presets = data.get("presets", {})
-            if isinstance(presets, dict):
-                return [
-                    pid
-                    for pid, meta in sorted(
-                        presets.items(),
-                        key=lambda kv: kv[1].get("priority", 10)
-                        if isinstance(kv[1], dict)
-                        else 10,
-                    )
-                    if isinstance(meta, dict) and meta.get("enabled", True) is not False
-                ]
+            return [
+                pid
+                for pid, meta in sorted(
+                    presets.items(),
+                    key=lambda kv: kv[1].get("priority", 10)
+                    if isinstance(kv[1], dict)
+                    else 10,
+                )
+                if isinstance(meta, dict) and meta.get("enabled", True) is not False
+            ]
+        except Exception:
+            pass
     try:
-        return sorted(p.name for p in presets_dir.iterdir() if p.is_dir())
+        return sorted(
+            p.name
+            for p in presets_dir.iterdir()
+            if p.is_dir() and not p.name.startswith(".")
+        )
     except OSError:
         return []
 
