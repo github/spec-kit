@@ -26,7 +26,7 @@ def _collect_step_ids(steps: list) -> list[str]:
     return ids
 
 
-def _run_ai_team_workflow_to_route_gate(
+def _run_ai_team_workflow_to_context_gate(
     tmp_path: Path,
     inputs: dict,
     run_id: str,
@@ -57,8 +57,8 @@ def _run_ai_team_workflow_to_route_gate(
 
     assert state.status == RunStatus.PAUSED
     assert state.step_results["context-open"]["status"] == "completed"
-    assert state.step_results["route"]["status"] == "completed"
-    assert state.step_results["review-route"]["status"] == "paused"
+    assert state.step_results["review-context"]["status"] == "paused"
+    assert "route" not in state.step_results
     return state
 
 
@@ -93,6 +93,11 @@ def test_ai_team_extension_command_files_exist():
         "speckit.converge",
     }
     assert "before_checklist" not in manifest["hooks"]
+    assert "before_tasks" not in manifest["hooks"]
+    assert "before_analyze" not in manifest["hooks"]
+    assert "before_implement" not in manifest["hooks"]
+    assert "before_converge" not in manifest["hooks"]
+    assert manifest["hooks"]["before_plan"]["command"] == "speckit.ai-team.handoff-spec-sync"
     assert "after_checklist" not in manifest["hooks"]
     assert "after_analyze" not in manifest["hooks"]
     assert "after_implement" not in manifest["hooks"]
@@ -108,7 +113,6 @@ def test_ai_team_extension_command_files_exist():
         "speckit.ai-team.plan-check",
         "speckit.ai-team.handoff",
         "speckit.ai-team.handoff-spec-sync",
-        "speckit.ai-team.handoff-spec.resolve",
         "speckit.ai-team.feature-review",
         "speckit.ai-team.pr",
         "speckit.ai-team.review",
@@ -332,6 +336,8 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert "bug" not in data["inputs"]["work_type"]["enum"]
     assert "new-project" in data["inputs"]["work_type"]["enum"]
     step_ids = _collect_step_ids(steps)
+    assert "route" not in step_ids
+    assert "review-context" in step_ids
     assert "context-open" in step_ids
     assert "codegraph" in step_ids
     assert "specify" in step_ids
@@ -404,7 +410,8 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert "bug_slug" in bugfix["inputs"]
     assert "coding_issue_url" in bugfix["inputs"]
     bugfix_step_ids = [step["id"] for step in bugfix["steps"]]
-    assert "review-route" in bugfix_step_ids
+    assert "review-context" in bugfix_step_ids
+    assert "route" not in bugfix_step_ids
     assert "review-impact" in bugfix_step_ids
     assert "bug-assess" in bugfix_step_ids
     assert "review-assessment" in bugfix_step_ids
@@ -415,9 +422,9 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert "evidence" not in bugfix_step_ids
 
 
-def test_ai_team_bugfix_workflow_routes_to_first_gate(tmp_path):
+def test_ai_team_bugfix_workflow_pauses_at_context_gate(tmp_path):
     run_id = "ai-team-bugfix-bug-project-alpha-123"
-    state = _run_ai_team_workflow_to_route_gate(
+    state = _run_ai_team_workflow_to_context_gate(
         tmp_path,
         {
             "request": "Fix upload timeout reported by support",
@@ -430,14 +437,12 @@ def test_ai_team_bugfix_workflow_routes_to_first_gate(tmp_path):
     )
 
     context_args = state.step_results["context-open"]["input"]["args"]
-    route_args = state.step_results["route"]["input"]["args"]
 
-    for args in (context_args, route_args):
-        assert f"workflow_run_id={run_id}" in args
-        assert "work_type=bug" in args
-        assert "task_id=BUG-project-alpha-123" in args
-        assert "bug_slug=bug-project-alpha-123" in args
-        assert "coding_issue_url=https://example.com/org/project/issues/123" in args
+    assert f"workflow_run_id={run_id}" in context_args
+    assert "work_type=bug" in context_args
+    assert "task_id=BUG-project-alpha-123" in context_args
+    assert "bug_slug=bug-project-alpha-123" in context_args
+    assert "coding_issue_url=https://example.com/org/project/issues/123" in context_args
 
 
 @pytest.mark.parametrize(
@@ -501,20 +506,17 @@ def test_ai_team_bugfix_workflow_routes_to_first_gate(tmp_path):
         ),
     ],
 )
-def test_ai_team_workflow_routes_core_user_journeys(
+def test_ai_team_workflow_passes_journey_inputs_to_context(
     tmp_path, case_name, inputs, expected_fragments
 ):
     run_id = "ai-team-" + case_name.replace(" ", "-")
-    state = _run_ai_team_workflow_to_route_gate(tmp_path, inputs, run_id)
+    state = _run_ai_team_workflow_to_context_gate(tmp_path, inputs, run_id)
 
     context_args = state.step_results["context-open"]["input"]["args"]
-    route_args = state.step_results["route"]["input"]["args"]
 
     assert f"workflow_run_id={run_id}" in context_args
-    assert f"workflow_run_id={run_id}" in route_args
     for fragment in expected_fragments:
         assert fragment in context_args
-        assert fragment in route_args
 
     bootstrap_result = state.step_results["bootstrap-if-requested"]["output"][
         "condition_result"

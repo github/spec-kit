@@ -1,4 +1,4 @@
-# AI Team extension: shared helpers for handoff spec sync/resolve (PowerShell)
+# AI Team extension: shared helpers for handoff spec sync (PowerShell)
 
 function Find-HandoffSpecProjectRoot {
     param([string]$StartDir)

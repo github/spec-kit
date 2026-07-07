@@ -114,17 +114,17 @@ specify workflow run ai-team-bugfix \
 
 Flow:
 
-1. `speckit.ai-team.context` creates or loads the Task Context Package.
-2. `speckit.ai-team.start` classifies the request as a bug fix and records the
-   coding issue and bug slug.
-3. `review-route` confirms this is a bug, not a hidden feature request.
-4. `speckit.ai-team.codegraph` runs when the likely fix touches more than a
+1. `speckit.ai-team.context` creates or loads the Task Context Package from
+   workflow inputs (`task_id`, `bug_slug`, `coding_issue_url`).
+2. `review-context` confirms the bug work item and Task Context Package before
+   source impact analysis.
+3. `speckit.ai-team.codegraph` runs when the likely fix touches more than a
    trivial local file.
-5. `speckit.ai-team.impact` identifies owner module, nearby callers/callees,
+4. `speckit.ai-team.impact` identifies owner module, nearby callers/callees,
    tests, reuse candidates, public contract risks, and stop conditions.
-6. `review-impact` decides whether architecture-level, public-contract, or
+5. `review-impact` decides whether architecture-level, public-contract, or
    cross-module changes are allowed for this bug fix.
-7. Run the bug extension for the actual bug workflow, with human gates between
+6. Run the bug extension for the actual bug workflow, with human gates between
    assessment, fix, and verification:
 
    ```text
@@ -132,10 +132,10 @@ Flow:
    -> speckit.bug.fix -> review-fix -> speckit.bug.test
    ```
 
-8. `speckit.bug.test` verifies the fix and runs composite checks plus Evidence Board
+7. `speckit.bug.test` verifies the fix and runs composite checks plus Evidence Board
    (via preset) before PR preparation.
-9. Submit with `speckit.ai-team.pr`, linking the coding issue.
-10. Review with `speckit.ai-team.review`.
+8. Submit with `speckit.ai-team.pr`, linking the coding issue.
+9. Review with `speckit.ai-team.review`.
 
 Stop for human decision when expected behavior is actually a new product
 behavior, source impact cannot be stated, or the fix needs public SPI/API,
@@ -158,8 +158,10 @@ specify workflow run ai-team-sdd \
 
 Flow:
 
-1. `speckit.ai-team.context` records the coding issue URL and current phase.
-2. `speckit.ai-team.start` routes the work as an existing-project feature.
+1. `speckit.ai-team.context` records the coding issue URL and current phase from
+   workflow inputs.
+2. `review-context` confirms the Task Context Package and work item before code
+   graph and SDD steps.
 3. `speckit.ai-team.codegraph` builds or attaches the source graph slice.
 4. `speckit.ai-team.impact` constrains likely modules, public contracts, tests,
    and reuse candidates.

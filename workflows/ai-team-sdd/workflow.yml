@@ -76,15 +76,9 @@ steps:
     input:
       args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
-  - id: route
-    command: speckit.ai-team.start
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
-
-  - id: review-route
+  - id: review-context
     type: gate
-    message: "Review the Task Context Package, route, and resume point before continuing."
+    message: "Review the Task Context Package, work item, and resume point before continuing."
     options: [approve, revise, reject]
     on_reject: abort
 

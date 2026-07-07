@@ -71,13 +71,7 @@ steps:
     input:
       args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
-  - id: route
-    command: speckit.ai-team.start
-    integration: "{{ inputs.integration }}"
-    input:
-      args: "{{ inputs.request }} task_id={{ inputs.task_id }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.bug_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
-
-  - id: review-route
+  - id: review-context
     type: gate
     message: "Review the bug work item, task_id, bug_slug, and Task Context Package before source impact analysis."
     options: [approve, revise, reject]

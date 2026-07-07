@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AI Team extension: shared helpers for handoff spec sync/resolve.
+# AI Team extension: shared helpers for handoff spec sync.
 
 set -e
 

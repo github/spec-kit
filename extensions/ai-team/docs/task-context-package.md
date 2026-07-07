@@ -46,7 +46,7 @@ private trace in approved channels.
 
 | Phase | Meaning | Typical next command |
 |---|---|---|
-| `intake` | request received and task identity is being resolved | `speckit.ai-team.start` |
+| `intake` | request received and task identity is being resolved | `speckit.ai-team.context` (workflow) or `speckit.ai-team.start` (chat-first routing) |
 | `specified` | requirement or bug intent is clear enough for planning | `speckit.ai-team.handoff` or `speckit.plan` |
 | `planned` | architecture plan exists; plan check may be complete; awaits `review-plan` gate | `speckit.tasks` after approve, or `speckit.plan` on revise |
 | `tasks-ready` | developer tasks are generated and await native analyze | `speckit.analyze` |

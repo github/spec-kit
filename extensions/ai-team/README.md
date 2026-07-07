@@ -90,7 +90,7 @@ step-by-step journeys. The short version:
 
 | Journey | Work item | Main path |
 |---|---|---|
-| existing project bug fix | coding issue or bug slug | `ai-team-bugfix`: context -> route gate -> code graph -> impact gate -> bug assess -> assessment gate -> bug fix -> fix gate -> `speckit.bug.test` (composite checks/evidence) -> PR |
+| existing project bug fix | coding issue or bug slug | `ai-team-bugfix`: context -> context gate -> code graph -> impact gate -> bug assess -> assessment gate -> bug fix -> fix gate -> `speckit.bug.test` (composite checks/evidence) -> PR |
 | existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> native SDD with plan check, task gate, and converge evidence -> PR |
 | new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> native SDD with plan-check, task gate (preset), and converge evidence -> thin slice -> PR |
 | resume from middle | workflow run ID or task ID | workflow resume for paused runs, or `speckit.ai-team.context task_id=<task-id> resume=true` for cross-session recovery |
@@ -201,7 +201,7 @@ New project work needs a stricter build-from-zero plan:
 | Command | Use |
 |---|---|
 | `speckit.ai-team.workspace` | create or update repository role and privacy boundary config |
-| `speckit.ai-team.start` | route a plain request to bug, feature, or template workflow |
+| `speckit.ai-team.start` | chat-first routing to bug, feature, or template workflow (not a bundled workflow step) |
 | `speckit.ai-team.context` | open, update, or reconstruct a durable Task Context Package |
 | `speckit.ai-team.requirement` | create or refine internal enhancement context and sanitized handoff requirements |
 | `speckit.ai-team.codegraph` | generate or attach the code graph slice used for impact and gates |
@@ -221,7 +221,7 @@ resumable path that reuses Spec Kit's native SDD commands:
 
 ```text
 optional Spec Kit init bootstrap -> workspace contract -> request routing
--> task context package -> route gate -> code graph -> impact
+-> task context package -> context gate -> code graph -> impact
 -> speckit.specify -> review-spec gate -> AI Team handoff -> speckit.plan
 -> speckit.ai-team.plan-check -> review-plan gate
 -> speckit.tasks -> speckit.analyze (native cross-artifact report)
@@ -253,7 +253,7 @@ The bundled `ai-team-bugfix` workflow gives bug work a deterministic path:
 
 ```text
 optional Spec Kit init bootstrap -> workspace contract -> task context package
--> request routing -> route gate -> code graph -> impact -> impact gate
+-> task context package -> context gate -> code graph -> impact -> impact gate
 -> bug assessment -> assessment gate -> bug fix -> fix gate -> speckit.bug.test (composite checks + evidence via preset)
 ```
 
@@ -264,7 +264,7 @@ template repositories into product repositories.
 `handoff_requirement_url`, backward-compatible `published_requirement_url`, and
 `resume_from` so a user can restart feature or new-project work from the
 middle. `ai-team-bugfix` accepts `task_id`, `bug_slug`, `coding_issue_url`, and
-`resume_from` so a user can restart after route review, impact review, bug
+`resume_from` so a user can restart after context review, impact review, bug
 assessment, fix review, testing, evidence, PR, or final review.
 
 ## Skill, Knowledge, Memory Support

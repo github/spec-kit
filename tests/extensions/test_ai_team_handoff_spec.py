@@ -1,4 +1,4 @@
-"""Tests for AI Team handoff spec sync/resolve scripts and preset."""
+"""Tests for AI Team handoff spec sync scripts and preset."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 EXTENSION_ROOT = REPO_ROOT / "extensions" / "ai-team"
 COMMON_SH = REPO_ROOT / "scripts" / "bash" / "common.sh"
 SYNC_SH = EXTENSION_ROOT / "scripts" / "bash" / "sync-handoff-spec.sh"
-RESOLVE_SH = EXTENSION_ROOT / "scripts" / "bash" / "resolve-handoff-spec.sh"
 PRESET_ROOT = EXTENSION_ROOT / "preset"
 
 
@@ -30,7 +29,6 @@ def _install_handoff_repo(repo: Path, feature_dir: str = "specs/001-test") -> Pa
     for name in (
         "handoff-spec-common.sh",
         "sync-handoff-spec.sh",
-        "resolve-handoff-spec.sh",
     ):
         shutil.copy(EXTENSION_ROOT / "scripts" / "bash" / name, ext_scripts / name)
     (repo / ".specify" / "feature.json").write_text(
@@ -56,21 +54,6 @@ def _run_sync(repo: Path, env: dict, *args: str) -> subprocess.CompletedProcess[
     )
 
 
-def _run_resolve(repo: Path, env: dict | None = None) -> subprocess.CompletedProcess[str]:
-    resolve_sh = repo / ".specify" / "extensions" / "ai-team" / "scripts" / "bash" / "resolve-handoff-spec.sh"
-    clean = {k: v for k, v in os.environ.items() if not k.startswith("SPECIFY_")}
-    if env:
-        clean.update(env)
-    return subprocess.run(
-        ["bash", str(resolve_sh), "--json"],
-        cwd=repo,
-        env=clean,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
 def test_ai_team_handoff_spec_hooks_registered():
     manifest = yaml.safe_load(
         (EXTENSION_ROOT / "extension.yml").read_text(encoding="utf-8")
@@ -78,7 +61,10 @@ def test_ai_team_handoff_spec_hooks_registered():
     hooks = manifest["hooks"]
     assert hooks["before_plan"]["command"] == "speckit.ai-team.handoff-spec-sync"
     assert hooks["before_plan"]["priority"] == 5
-    assert hooks["before_tasks"]["command"] == "speckit.ai-team.handoff-spec.resolve"
+    assert "before_tasks" not in hooks
+    assert "before_analyze" not in hooks
+    assert "before_implement" not in hooks
+    assert "before_converge" not in hooks
     assert "before_checklist" not in hooks
 
 
@@ -102,6 +88,7 @@ def test_ai_team_handoff_spec_preset_files():
         "speckit.bug.test": "append",
         "plan-template": "prepend",
     }
+    handoff_stop = "remote handoff pointer and `spec.override.md` is missing"
     for entry in entries:
         rel = entry["file"]
         text = (PRESET_ROOT / rel).read_text(encoding="utf-8")
@@ -109,11 +96,13 @@ def test_ai_team_handoff_spec_preset_files():
         assert entry.get("strategy") == expected_strategies[name]
         if name == "plan-template":
             assert "spec.override" in text or "handoff" in text.lower()
+            assert handoff_stop in text
         elif name == "speckit.bug.test":
             assert "evidence board" in text.lower()
             assert "checks" in text.lower()
         else:
             assert "spec.override.md" in text
+            assert handoff_stop in text
         if expected_strategies[name] == "wrap":
             assert "{CORE_TEMPLATE}" in text
     converge_text = (PRESET_ROOT / by_name["speckit.converge"]["file"]).read_text(
@@ -200,15 +189,3 @@ def test_sync_merges_existing_spec_baseline(tmp_path: Path):
     override_text = (feat / "spec.override.md").read_text(encoding="utf-8")
     assert "Public baseline (from spec.md)" in override_text
     assert "Handoff requirement (fetched)" in override_text
-
-
-@requires_bash
-def test_resolve_returns_effective_override(tmp_path: Path):
-    repo = tmp_path / "proj"
-    feat = _install_handoff_repo(repo)
-    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
-    (feat / "spec.override.md").write_text("# override\n", encoding="utf-8")
-    result = _run_resolve(repo)
-    assert result.returncode == 0, result.stderr
-    data = json.loads(result.stdout)
-    assert data["EFFECTIVE_SPEC"].endswith("spec.override.md")

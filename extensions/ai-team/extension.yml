@@ -48,9 +48,6 @@ provides:
     - name: speckit.ai-team.handoff-spec-sync
       file: commands/speckit.ai-team.handoff-spec-sync.md
       description: "Fetch handoff requirement URL and build gitignored spec.override.md before planning."
-    - name: speckit.ai-team.handoff-spec.resolve
-      file: commands/speckit.ai-team.handoff-spec.resolve.md
-      description: "Resolve effective spec path (spec.override.md when present) for downstream SDD commands."
     - name: speckit.ai-team.feature-review
       file: commands/speckit.ai-team.feature-review.md
       description: "Help maintainers and the technical committee assess internal enhancement handoff readiness before coding."
@@ -79,26 +76,6 @@ hooks:
     priority: 5
     optional: false
     description: "Fetch handoff requirement URL and build spec.override.md before native planning."
-  before_tasks:
-    command: speckit.ai-team.handoff-spec.resolve
-    priority: 5
-    optional: false
-    description: "Resolve effective spec path before task generation."
-  before_analyze:
-    command: speckit.ai-team.handoff-spec.resolve
-    priority: 5
-    optional: false
-    description: "Resolve effective spec path before cross-artifact analysis."
-  before_implement:
-    command: speckit.ai-team.handoff-spec.resolve
-    priority: 5
-    optional: false
-    description: "Resolve effective spec path before implementation."
-  before_converge:
-    command: speckit.ai-team.handoff-spec.resolve
-    priority: 5
-    optional: false
-    description: "Resolve effective spec path before converge."
   after_specify:
     command: speckit.ai-team.handoff
     optional: true
