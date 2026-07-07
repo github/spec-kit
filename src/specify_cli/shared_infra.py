@@ -347,7 +347,7 @@ def refresh_shared_templates(
 
     if skipped_files:
         console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} modified or untracked shared template file(s) were not updated:"
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} modified, untracked, or preserved (recovered) shared template file(s) were not updated:"
         )
         for rel in skipped_files:
             console.print(f"    {rel}")
