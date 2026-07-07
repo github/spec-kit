@@ -277,7 +277,15 @@ def extension_list(
             console.print("[dim]The catalog may be temporarily unavailable. Try again later.[/dim]")
             raise typer.Exit(1)
 
-        available_exts = [ext for ext in results if ext.get("id") not in installed_ids]
+        # Use _catalog_id() (not raw ext.get("id")) so entries with a
+        # missing/blank/null id are excluded up front. Otherwise they inflate
+        # available_exts, get skipped by the print loop, and leave the section
+        # header with no rows and no "No additional extensions" fallback.
+        available_exts = [
+            ext
+            for ext in results
+            if (ext_id := _catalog_id(ext)) and ext_id not in installed_ids
+        ]
 
         console.print("\n[bold cyan]Available Extensions:[/bold cyan]\n")
         if not available_exts:
@@ -674,7 +682,9 @@ def extension_add(
 
                         # Download extension ZIP (use resolved ID, not original argument which may be display name)
                         extension_id = ext_info['id']
-                        console.print(f"Downloading {_escape_markup(str(ext_info.get('name', extension_id)))} v{_escape_markup(str(ext_info.get('version', 'unknown')))}...")
+                        dl_name = _escape_markup(_catalog_str(ext_info, "name", extension_id))
+                        dl_version = _escape_markup(_catalog_str(ext_info, "version", "unknown"))
+                        console.print(f"Downloading {dl_name} v{dl_version}...")
                         zip_path = catalog.download_extension(extension_id)
 
                         try:
@@ -821,16 +831,18 @@ def extension_search(
                 console.print("  • specify extension search (show all)")
             raise typer.Exit(0)
 
+        # Catalog entries are untrusted; a missing/blank id cannot be installed
+        # or referenced. Filter those out before counting so the "Found N"
+        # count matches what actually renders (the loop below would skip them).
+        results = [ext for ext in results if _catalog_id(ext)]
+        if not results:
+            console.print("\n[yellow]No extensions found matching criteria[/yellow]")
+            raise typer.Exit(0)
+
         console.print(f"\n[green]Found {len(results)} extension(s):[/green]\n")
 
         for ext in results:
-            # Catalog entries are untrusted; a missing/blank id cannot be
-            # installed or referenced, so skip it rather than emit a bogus
-            # install hint or crash on ext['id'].
             extension_id = _catalog_id(ext)
-            if not extension_id:
-                continue
-
             # Extension header
             verified_badge = " [green]✓ Verified[/green]" if ext.get("verified") else ""
             console.print(f"[bold]{_escape_markup(_catalog_str(ext, 'name', '(unnamed)'))}[/bold] (v{_escape_markup(_catalog_str(ext, 'version', '?'))}){verified_badge}")
@@ -842,8 +854,9 @@ def extension_search(
                 tags_str = ", ".join(str(t) for t in ext['tags'])
                 console.print(f"  [dim]Tags:[/dim] {_escape_markup(tags_str)}")
 
-            # Source catalog
-            catalog_name = _escape_markup(str(ext.get("_catalog_name", "")))
+            # Source catalog. Use _catalog_str so an explicit JSON null or blank
+            # _catalog_name falls back to "" instead of rendering "None".
+            catalog_name = _escape_markup(_catalog_str(ext, "_catalog_name"))
             install_allowed = ext.get("_install_allowed", True)
             if catalog_name:
                 if install_allowed:

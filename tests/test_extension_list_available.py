@@ -181,6 +181,33 @@ def test_list_available_skips_entries_without_valid_id(project_dir, monkeypatch,
     assert "Ghost Ext" not in result.output
 
 
+def test_list_available_all_invalid_ids_reports_empty(project_dir, monkeypatch):
+    """When every catalog entry has an invalid id, report no additional extensions.
+
+    The emptiness check and the print loop must use the same notion of a valid
+    id (``_catalog_id()``). If emptiness were judged by raw ``ext.get("id")``,
+    entries with a blank/null id would inflate the list, get skipped by the
+    loop, and leave the "Available Extensions" header with no rows and no
+    "No additional extensions" fallback.
+    """
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [])
+    monkeypatch.setattr(ExtensionCatalog, "search", lambda self: [
+        {"id": None, "name": "Ghost One"},
+        {"id": "", "name": "Ghost Two"},
+        {"id": "   ", "name": "Ghost Three"},
+    ])
+
+    result = runner.invoke(app, ["extension", "list", "--available"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0
+    assert "Available Extensions:" in result.output
+    assert "No additional extensions available" in result.output
+    # None of the id-less entries leak into the output.
+    assert "Ghost" not in result.output
+
+
 def test_list_all_shows_installed_and_available(project_dir, monkeypatch):
     """--all lists installed extensions and available catalog extensions."""
     monkeypatch.chdir(project_dir)
