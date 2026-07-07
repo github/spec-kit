@@ -26,14 +26,15 @@ hidden context from product or architecture roles.
    - `spec.md`;
    - `plan.md`;
    - `tasks.md`;
-   - the published requirement URL referenced by the feature;
+   - the coding issue or handoff requirement URL referenced by the feature;
    - AI Team handoff and plan gate files when present.
 3. Verify tasks:
    - each task has an ID, phase, file path, and dependency position;
    - tasks are ordered by SDD phase and user story where applicable;
    - no task requires hidden product or architect chat context;
    - public interface changes have contract or compatibility tasks;
-   - feature implementation tasks link the published requirement URL;
+   - feature implementation tasks link the coding issue, allowed handoff
+     requirement, or approved task ID;
    - self-test tasks exist for changed behavior;
    - evidence tasks exist before PR submission.
 4. For new projects, ensure tasks create a runnable spine before breadth:
@@ -56,7 +57,7 @@ hidden context from product or architecture roles.
 - **Feature**:
 - **Task ID**:
 - **Context Path**:
-- **Published requirement URL**:
+- **Coding issue or handoff requirement URL**:
 - **Task status**: pass / revise / blocked
 - **Context isolation**: pass / fail
 - **New-project strict build plan**: pass / not applicable / fail
@@ -78,8 +79,8 @@ hidden context from product or architecture roles.
 Stop before implementation when:
 
 - tasks depend on hidden chat context;
-- feature tasks use only a local requirements submodule path instead of a
-  published requirement URL;
+- feature tasks use only a local file path instead of a coding issue, handoff
+  requirement, or approved task ID;
 - self-test or evidence tasks are missing for behavior changes;
 - new-project tasks do not produce a runnable thin slice early;
 - existing-project tasks exceed the approved impact radius.

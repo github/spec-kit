@@ -26,7 +26,7 @@ task_context:
   context_pack_file: context-pack.md
   state_file: state.yml
   artifact_dir: artifacts
-  allow_reconstruct_from_published_requirement_url: true
+  allow_reconstruct_from_handoff_requirement_url: true
   allow_reconstruct_from_bug_slug: true
 
 code_graph:
@@ -54,14 +54,14 @@ code_graph:
     - universal-ctags
 
 repositories:
-  # Private requirements repository stores raw customer demand, drafts,
-  # commercial context, approval discussion, and internal scheduling. Do not
-  # record this repository in coding-repository committed files.
-  requirements_internal:
-    role: requirements-internal
+  # Internal enhancement repository stores confidential enterprise demand,
+  # drafts, approval discussion, wave planning, and sanitized handoff RFCs.
+  # Do not record private raw-demand paths in public coding-repository files.
+  enhancement_internal:
+    role: enhancement-internal
     remote: ""
     visibility: strict-private
-    record_in_coding_repository: false
+    raw_demand_record_in_coding_repository: false
     stores:
       - raw customer demand
       - private drafts
@@ -69,47 +69,35 @@ repositories:
       - approval comments
       - wave plan
       - release scheduling
-
-  # Published requirements repository stores only reviewed, sanitized
-  # requirement/RFC documents. The coding repository may consume this repository
-  # through a read-only Git submodule.
-  requirements_published:
-    role: requirements-published
-    remote: ""
-    visibility: public-readonly
-    local_submodule_path: requirements
-    authoritative_reference: published_url
-    stores:
-      - published requirements
-      - RFCs
-      - public acceptance intent
-      - status labels or frontmatter
-      - stable URLs
+      - sanitized handoff RFCs
+      - internal status labels
 
   # Coding repository stores source code, public implementation plans, tasks,
-  # self-tests, evidence, implementation PRs, and optionally a read-only
-  # submodule pointing at requirements-published.
+  # self-tests, evidence, implementation PRs, and public feature issues.
   coding:
     role: coding
     remote: ""
     visibility: project-controlled
-    requirements_submodule_path: requirements
+    enhancement_handoff_submodule_path: ""
     stores:
       - source code
+      - public feature issues
       - public plan
       - tasks
       - self-test evidence
       - implementation PRs
-      - read-only published requirements submodule
+      - public-safe summaries for internal enhancement work
 
 privacy:
   raw_customer_demand_public: false
   public_plan_allowed: true
-  coding_repo_may_record_requirements_internal: false
-  feature_requires_published_requirement_url: true
-  local_requirements_submodule_is_cache_only: true
+  coding_repo_may_record_raw_internal_demand: false
+  public_feature_may_start_from_coding_issue: true
+  internal_feature_requires_handoff_or_public_safe_summary: true
+  local_handoff_submodule_is_cache_only: true
   public_artifacts:
-    - published requirement URL
+    - public coding issue URL
+    - public-safe handoff summary
     - plan.md
     - tasks.md
     - quickstart.md

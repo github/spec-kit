@@ -1,12 +1,13 @@
 ---
-description: "Help maintainers and the technical committee assess published requirement readiness before coding."
+description: "Help maintainers and the technical committee assess feature work-item readiness before coding."
 ---
 
 # AI Team Feature Review
 
-Help a maintainer or technical committee review a published requirement before
-it is accepted for implementation. This command does not approve on behalf of
-humans.
+Help a maintainer or technical committee review a feature work item before it
+is accepted for implementation. Public work may start from a coding issue.
+Confidential enterprise work should start from an internal enhancement handoff.
+This command does not approve on behalf of humans.
 
 ## User Input
 
@@ -26,7 +27,8 @@ feature approval authority unless explicitly delegated.
 - Is there a Task Context Package tying this review to the requirement and
   intended coding repository?
 - Is the user problem or product goal concrete?
-- Is the published requirement URL stable and accessible from the coding repo?
+- Is the work item stable: public coding issue, allowed handoff URL, or
+  public-safe summary?
 - Is private customer demand excluded from public artifacts?
 - Are scope and non-goals explicit?
 - Are likely modules, maintainers, owners, and reviewers named?
@@ -53,7 +55,8 @@ feature approval authority unless explicitly delegated.
 Feature review:
 - task id:
 - context path:
-- published requirement URL:
+- coding issue or handoff requirement URL:
+- public-safe summary:
 - recommended decision:
 - reason:
 - affected coding repository:

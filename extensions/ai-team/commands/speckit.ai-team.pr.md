@@ -18,13 +18,14 @@ $ARGUMENTS
 | Changed thing | Submit to |
 |---|---|
 | source code, tests, examples, public plan, tasks, evidence | coding repository |
-| published requirement or RFC text | requirements-published repository |
-| private drafts, raw demand, approval discussion | requirements-internal repository |
+| internal enhancement issue, handoff RFC, private drafts, raw demand, approval discussion | enhancement-internal repository |
 | AI Team rules, commands, templates, workflows | this distribution repository |
 
-Coding repository feature PRs must link the published requirement URL. They
-must not link private requirement drafts or rely on local paths such as
-`requirements/rfcs/REQ-...md` as the authoritative work item.
+Coding repository feature PRs must link the correct work item. Public feature
+work links a coding issue or SDD feature request. Confidential enterprise work
+links an allowed handoff requirement URL, or carries a public-safe summary when
+the coding repository is public. Coding PRs must not link private enhancement
+drafts or rely on local paths as the authoritative work item.
 
 ## Pre-Submit Checklist
 
@@ -35,13 +36,15 @@ must not link private requirement drafts or rely on local paths such as
 4. Exclude:
    - `.ai-local/`;
    - local prompts or scratch notes;
-   - private requirements drafts from coding repository PRs;
+   - private enhancement drafts from coding repository PRs;
    - generated reports unless the repository explicitly tracks them.
 5. Confirm links:
    - bug fix links a coding issue or bug slug;
-   - feature links a published requirement URL;
-   - requirement publication links the internal source only in the private
-     repository.
+   - public feature links a coding issue;
+   - confidential feature links an allowed handoff requirement or public-safe
+     summary;
+   - internal enhancement records link private source material only inside the
+     internal repository.
 6. Confirm evidence:
    - Task Context Package;
    - code graph impact when applicable;
@@ -60,7 +63,8 @@ AI Team PR:
 - repository role:
 - work reason: bug fix / feature / requirement publication / template change
 - linked coding issue:
-- published requirement URL:
+- handoff requirement URL:
+- public-safe summary:
 - target module:
 - public interface impact:
 - code graph impact:
@@ -77,7 +81,7 @@ AI Team PR:
 Stop before staging when:
 
 - the current repo role is unclear;
-- a coding feature PR lacks a published requirement URL;
+- a coding feature PR lacks a coding issue, handoff requirement, or approved task ID;
 - private requirement content is present in the coding repo diff;
 - evidence is missing for changed behavior;
 - the current branch is the repository default branch.

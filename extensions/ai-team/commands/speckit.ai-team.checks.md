@@ -25,13 +25,14 @@ $ARGUMENTS
 
 ## Workflow
 
-1. Identify the target repository role: coding, requirements-published,
-   requirements-internal, or template.
+1. Identify the target repository role: coding, enhancement-internal, or
+   template.
 2. Load `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md`
    when present.
 3. Identify changed files and PR base.
-4. Confirm feature PRs link the published requirement URL, not a local
-   submodule path.
+4. Confirm feature PRs link the correct work item: coding issue for public
+   work, or allowed handoff requirement/public-safe summary for confidential
+   enterprise work.
 5. Run repository governance checks.
 6. Run build and self-tests for touched source/test/example/module docs.
 7. Run boundary evidence when public contracts or cross-module behavior changed.
@@ -50,7 +51,7 @@ Evidence Board:
 - role:
 - task goal:
 - linked work item:
-- published requirement URL:
+- coding issue or handoff requirement URL:
 - base:
 - code graph location or fallback:
 - reused components:
@@ -75,6 +76,6 @@ Stop and ask when:
 
 - the target repository or base branch is unknown;
 - required build commands are missing;
-- feature evidence lacks a published requirement URL;
+- feature evidence lacks a coding issue, handoff requirement, or approved task ID;
 - public interface changes lack owner or contract evidence;
 - dependency, license, or security-impact changes lack review evidence.

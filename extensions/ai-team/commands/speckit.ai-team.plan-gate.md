@@ -50,8 +50,9 @@ Confirm the architect-owned plan is safe to turn into developer tasks.
    - dependency strategy;
    - release and operations owner when relevant.
 6. Check privacy:
-   - raw customer demand remains in requirements-internal;
-   - feature plans reference the published requirement URL;
+   - raw customer demand remains in enhancement-internal;
+   - feature plans reference a coding issue, allowed handoff requirement, or
+     public-safe summary;
    - public plan contains only implementation-appropriate context.
 7. Write `.specify/ai-team/gates/<feature-slug>/plan-gate.md`.
 8. Update the Task Context Package with plan gate status, code graph artifact,
@@ -67,9 +68,9 @@ Confirm the architect-owned plan is safe to turn into developer tasks.
 - **Context Path**:
 - **Work type**: new project / existing project feature / bug-driven / refactor / migration
 - **Plan status**: pass / revise / blocked
-- **Requirements boundary**:
-- **Published requirement URL**:
-- **Requirements-internal leakage check**:
+- **Work item boundary**:
+- **Coding issue or handoff requirement URL**:
+- **Enhancement-internal leakage check**:
 - **Coding repo boundary**:
 
 ## Code Graph Impact

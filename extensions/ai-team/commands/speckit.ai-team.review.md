@@ -17,10 +17,11 @@ $ARGUMENTS
 
 Check in this order:
 
-1. Repository route: code changes in coding repo, published requirements in
-   requirements-published, private drafts in requirements-internal.
-2. Work item: bug fix links a coding issue or bug slug; feature links a stable
-   published requirement URL.
+1. Repository route: code changes in coding repo; internal enhancement issues,
+   handoff RFCs, private drafts, and raw demand in enhancement-internal.
+2. Work item: bug fix links a coding issue or bug slug; public feature links a
+   coding issue; confidential feature links an allowed handoff requirement or
+   public-safe summary.
 3. Task context: `.specify/ai-team/tasks/<task-id>/context-pack.md` and
    `state.yml` match the PR and evidence.
 4. Privacy: coding PRs do not expose raw customer demand or internal drafts.
@@ -51,7 +52,8 @@ Merge recommendation: approve / request changes / split / architecture review
 
 Evidence checked:
 - work item:
-- published requirement URL:
+- coding issue or handoff requirement URL:
+- public-safe summary:
 - modules:
 - task context:
 - code graph or fallback:
@@ -67,7 +69,7 @@ Evidence checked:
 Recommend request-changes or architecture review when:
 
 - required work item is missing;
-- coding feature PR lacks a published requirement URL;
+- coding feature PR lacks a coding issue, handoff requirement, or approved task ID;
 - private requirement content leaks into the coding repository;
 - owner approval is missing for public contracts or cross-module semantics;
 - code graph or source structure evidence is required but absent;

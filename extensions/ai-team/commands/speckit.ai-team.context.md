@@ -15,10 +15,9 @@ $ARGUMENTS
 
 ## Goal
 
-Make the current requirement, bug fix, phase, evidence, and next command
-recoverable from repository files instead of hidden chat context. Use this
-command at task start, before resuming interrupted work, and after each major
-SDD phase changes state.
+Make the current work item, phase, evidence, and next command recoverable from
+repository files instead of hidden chat context. Use this command at task start,
+before resuming interrupted work, and after each major SDD phase changes state.
 
 ## Durable Location
 
@@ -33,13 +32,14 @@ Store task context under the coding repository:
 
 Use a stable `task-id`:
 
-- published requirement ID or URL slug for feature work;
-- published project charter or requirement ID for new-project work;
+- coding issue number or URL slug for public feature work;
+- handoff requirement ID or URL slug for confidential enterprise feature work;
+- public project issue/charter or handoff requirement ID for new-project work;
 - coding issue number, bug slug, or bug report slug for bug fixes;
 - explicit `task_id=<value>` when the work item has no stable ID yet.
 
-Do not store private requirements repository paths or raw customer demand in
-the coding repository context pack.
+Do not store raw customer demand or private enhancement draft paths in public
+coding repository context packs.
 
 ## Resume Modes
 
@@ -47,9 +47,10 @@ the coding repository context pack.
 |---|---|
 | Same workflow run paused at a gate | run `specify workflow resume <run_id>` |
 | Different terminal/session/tool, same task | run `speckit.ai-team.context task_id=<task-id> resume=true` |
-| Only published requirement URL is known | reconstruct from the URL, feature artifacts, and state files |
+| Only coding issue URL is known | reconstruct from the URL, feature artifacts, and state files |
+| Only handoff requirement URL is known | reconstruct from the URL, allowed handoff content, feature artifacts, and state files |
 | Only bug issue or bug slug is known | reconstruct from `.specify/bugs/<slug>/` and linked issue evidence |
-| Context pack conflicts with current source or requirement | stop and ask for human reconciliation |
+| Context pack conflicts with current source or work item | stop and ask for human reconciliation |
 
 Spec Kit workflow run state remains authoritative for the mechanics of a paused
 workflow run. The Task Context Package is the AI Team bridge across chat loss,
@@ -65,10 +66,10 @@ Task Context Package:
 - work type: bug fix / feature / new project / template change / unclear
 - work item:
 - coding issue URL or bug slug:
-- published requirement URL:
+- handoff requirement URL:
+- published requirement URL, deprecated alias:
 - coding repository:
-- requirements published repository:
-- requirements submodule path:
+- internal enhancement repository:
 - active AI integration:
 - workflow run id:
 - current phase: intake / specified / planned / tasks-ready / implementing / evidence / pr / review / done / blocked
@@ -91,8 +92,9 @@ Task Context Package:
 task_id:
 work_type:
 work_item:
-  published_requirement_url:
   coding_issue_url:
+  handoff_requirement_url:
+  published_requirement_url:
   bug_slug:
 repository_role:
 active_integration:
@@ -114,13 +116,13 @@ updated_at:
 
 1. Locate `.specify/extensions/ai-team/ai-team-config.yml` and integration
    state when present.
-2. Resolve `task_id`, `work_type`, `published_requirement_url`,
-   `coding_issue_url`, `bug_slug`, and `workflow_run_id` from arguments and
-   existing state.
+2. Resolve `task_id`, `work_type`, `coding_issue_url`,
+   `handoff_requirement_url`, deprecated `published_requirement_url`,
+   `bug_slug`, and `workflow_run_id` from arguments and existing state.
 3. If `resume=true`, load `state.yml` and `context-pack.md`; otherwise create
    them if missing.
-4. Reconcile the context pack with current source, current published
-   requirement, bug report, and active feature files.
+4. Reconcile the context pack with current source, current work item, bug
+   report, and active feature files.
 5. Update `phase`, `last_completed_command`, `next_command`, and artifact
    locations when arguments include newer phase evidence.
 6. Return the resume summary and next command.
@@ -148,11 +150,13 @@ AI Team Context:
 
 Stop and ask when:
 
-- the task cannot be mapped to a bug issue/slug, published requirement URL, or
-  explicit task ID;
-- a feature tries to resume without a published requirement URL;
-- the context pack contains private requirement content in a coding repository;
+- the task cannot be mapped to a bug issue/slug, coding issue URL, handoff
+  requirement URL, or explicit task ID;
+- a feature tries to resume without a coding issue, handoff requirement, or
+  approved task ID;
+- the context pack contains private enhancement content in a public coding
+  repository;
 - `state.yml` and `context-pack.md` disagree about work type, work item, or
   phase;
-- current source or published requirement has changed since the recorded source
-  snapshot and the impact radius is unknown.
+- current source or work item changed since the recorded source snapshot and
+  the impact radius is unknown.

@@ -24,7 +24,7 @@ $ARGUMENTS
 | gate missing | risky change reached PR without evidence | policy or PR gate |
 | evidence missing | tests or reports did not prove behavior | self-test, contract test, or Evidence Board |
 | human decision missing | AI decided something that needed authority | maintainer, technical committee, or architecture route |
-| privacy leak | private requirement context entered public/coding artifacts | repository boundary or publication gate |
+| privacy leak | private requirement context entered public/coding artifacts | repository boundary or handoff gate |
 
 ## Workflow
 
@@ -32,7 +32,7 @@ $ARGUMENTS
    correction.
 2. Reconstruct the expected flow:
    - work item;
-   - published requirement URL or bug slug;
+   - coding issue, handoff requirement URL, or bug slug;
    - task context from `.specify/ai-team/tasks/<task-id>/`;
    - code graph impact;
    - evidence;
@@ -57,7 +57,7 @@ Failure retrospective:
 - context path:
 - failure source:
 - linked issue or PR:
-- published requirement URL or bug slug:
+- coding issue, handoff requirement URL, or bug slug:
 - expected flow:
 - actual failure:
 - failure class:

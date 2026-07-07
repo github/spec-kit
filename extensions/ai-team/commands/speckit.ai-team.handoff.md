@@ -28,7 +28,7 @@ architect, and developer agents must communicate through written artifacts.
    - `spec.md`;
    - `plan.md` if present;
    - `tasks.md` if present;
-   - the published requirement URL referenced by the feature;
+   - the coding issue or handoff requirement URL referenced by the feature;
    - `.specify/extensions/ai-team/ai-team-config.yml` when present.
 3. Decide the handoff direction:
    - specify to plan;
@@ -40,8 +40,8 @@ architect, and developer agents must communicate through written artifacts.
 5. Include only information the next role should know. Do not copy raw customer
    or private commercial context into a public coding repository handoff unless
    the workspace contract allows it.
-6. For feature work, include the published requirement URL as the authoritative
-   work item. A local `requirements/` submodule path may be listed only as a
+6. For feature work, include the coding issue or allowed handoff requirement as
+   the authoritative work item. A local file path may be listed only as a
    supporting source that was read.
 7. Update the Task Context Package with the handoff artifact path, current
    phase, and next command.
@@ -57,7 +57,7 @@ architect, and developer agents must communicate through written artifacts.
 - **From role**:
 - **To role**:
 - **Source artifacts**:
-- **Published requirement URL**:
+- **Coding issue or handoff requirement URL**:
 - **Allowed context**:
 - **Private context excluded**:
 - **Decision status**:

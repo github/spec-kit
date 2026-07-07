@@ -13,10 +13,11 @@ and adds enterprise collaboration constraints:
 
 - role isolation across SDD phases;
 - document handoffs between roles;
-- private requirements, published requirements, and coding repository
-  separation;
-- URL-oriented requirement references, with the coding repository consuming only
-  published requirement URLs and optional read-only submodule content;
+- public coding-repository issues, internal enhancement records, and coding
+  repository separation;
+- URL-oriented work-item references, with public features starting from coding
+  issues and confidential enterprise features using sanitized handoff URLs only
+  where visibility allows;
 - code graph and scope control for existing projects;
 - strict build planning for new projects;
 - self-test and Evidence Board output;
@@ -39,22 +40,17 @@ Roles communicate through documents, not hidden conversation state.
 ## Repository Boundary
 
 Enterprise customers often do not want raw demand publicly visible. This
-extension assumes three logical repositories:
+extension assumes two primary repository roles:
 
 | Repository | Purpose |
 |---|---|
-| requirements-internal | private drafts, raw demand, approval discussion, wave plan, commercial context |
-| requirements-published | sanitized public requirement/RFC documents with stable URLs |
-| coding repository | source code, public plan, tasks, implementation PR, Evidence Board, optional read-only requirements submodule |
+| enhancement-internal | confidential enterprise demand, approval discussion, wave plan, commercial context, sanitized handoff RFCs |
+| coding repository | source code, public issues, public-safe plan, tasks, implementation PR, Evidence Board |
 
-The coding repository may include `requirements/` as a Git submodule pointing to
-`requirements-published`. Feature work links the published requirement URL as
-the authoritative work item; local submodule paths are only a cache for reading
-published content.
-
-The coding repository must not record or depend on `requirements-internal`.
-Private repository paths belong in private operator context or the internal
-requirements repository, not in committed coding-repository files.
+Public feature requests can start directly as coding repository issues. Internal
+enhancement records are used only when the demand cannot be public. Coding
+repository PRs should link internal handoff URLs only where repository
+visibility allows it; public repositories should carry public-safe summaries.
 
 Use [docs/repository-boundary.md](docs/repository-boundary.md) for the full
 repository model.
@@ -68,8 +64,9 @@ Every AI Team task should have a durable Task Context Package:
 .specify/ai-team/tasks/<task-id>/state.yml
 ```
 
-For feature work, `<task-id>` comes from the published requirement URL or
-requirement ID. For bug fixes, it comes from the coding issue or bug slug.
+For feature work, `<task-id>` comes from the coding issue, handoff requirement
+URL, or requirement ID. For bug fixes, it comes from the coding issue or bug
+slug.
 
 If the workflow pauses at a gate, resume the same run with
 `specify workflow resume <run-id>`. If the terminal, AI tool, or chat context is
@@ -90,8 +87,8 @@ step-by-step journeys. The short version:
 | Journey | Work item | Main path |
 |---|---|---|
 | existing project bug fix | coding issue or bug slug | context -> code graph when needed -> impact -> bug assess/fix/test -> checks/evidence -> PR |
-| existing project new feature | published requirement URL | requirement review -> context -> code graph -> specify/plan/tasks/implement -> evidence -> PR |
-| new project from zero | published project charter or requirement URL | bootstrap -> workspace -> context -> specify/plan with strict build plan -> thin slice -> evidence |
+| existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> specify/plan/tasks/implement -> evidence -> PR |
+| new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> specify/plan with strict build plan -> thin slice -> evidence |
 | resume from middle | workflow run ID or task ID | workflow resume for paused runs, or `speckit.ai-team.context task_id=<task-id> resume=true` for cross-session recovery |
 | failed review/check/incident | PR, check, incident, or repeated AI mistake | retrospect -> update command, gate, knowledge, memory, graph, or test evidence |
 
@@ -102,16 +99,19 @@ every path:
 
 | Chat alias | Maps to |
 |---|---|
-| `ai-team-sdd feature path` | `work_type=feature` plus a published requirement URL |
+| `ai-team-sdd feature path` | `work_type=feature` plus a coding issue URL or handoff requirement URL |
 | `ai-team-sdd bug path` | `work_type=bug` plus a coding issue URL or bug slug |
-| `ai-team-sdd new-project path` | `work_type=new-project` plus a published project charter or requirement URL |
+| `ai-team-sdd new-project path` | `work_type=new-project` plus a public project issue/charter or handoff requirement URL |
 | `ai-team-sdd resume path` | `task_id=<task-id>` plus `resume_from=<phase>` or workflow run resume |
 
 Recommended prompts:
 
 ```text
-Use the ai-team-sdd feature path for this published requirement URL:
-https://example.com/requirements/rfcs/REQ-2026-015
+Use the ai-team-sdd feature path for this public coding issue:
+https://example.com/org/project/issues/456
+
+Use the ai-team-sdd feature path for this internal handoff requirement:
+https://example.com/enhancements/rfcs/REQ-2026-015
 
 Use the ai-team-sdd bug path for this coding issue:
 https://example.com/org/project/issues/123
@@ -133,13 +133,13 @@ Board, PR description, and review gates around that bug lifecycle.
 
 ### Existing Project New Feature
 
-Feature work must link a published requirement URL from the
-requirements-published repository. If the only available input is a private
-draft or raw customer request, run `speckit.ai-team.requirement` and
-`speckit.ai-team.feature-review` before coding.
+Feature work must link a work item. Public feature work can use a coding
+repository issue. Confidential enterprise feature work should use
+`speckit.ai-team.requirement` and `speckit.ai-team.feature-review` to produce a
+sanitized handoff requirement before coding.
 
-The coding repository should not record requirements-internal paths or raw
-customer demand.
+The coding repository should not record raw customer demand or private
+enhancement draft paths.
 
 ### New Project From Zero
 
@@ -196,13 +196,13 @@ New project work needs a stricter build-from-zero plan:
 | `speckit.ai-team.workspace` | create or update repository role and privacy boundary config |
 | `speckit.ai-team.start` | route a plain request to bug, feature, or template workflow |
 | `speckit.ai-team.context` | open, update, or reconstruct a durable Task Context Package |
-| `speckit.ai-team.requirement` | publish or refine the sanitized requirement URL needed for feature work |
+| `speckit.ai-team.requirement` | create or refine internal enhancement context and sanitized handoff requirements |
 | `speckit.ai-team.codegraph` | generate or attach the code graph slice used for impact and gates |
 | `speckit.ai-team.impact` | inspect code graph or source-structure impact before code edits |
 | `speckit.ai-team.handoff` | create role-isolated handoff documents between phases |
 | `speckit.ai-team.plan-gate` | review architecture plan readiness before tasks |
 | `speckit.ai-team.task-gate` | review task readiness before implementation |
-| `speckit.ai-team.feature-review` | help maintainers and the technical committee assess published requirement readiness |
+| `speckit.ai-team.feature-review` | help maintainers and the technical committee assess internal enhancement handoff readiness |
 | `speckit.ai-team.checks` | produce portable CI/CD evidence on any git platform |
 | `speckit.ai-team.evidence` | produce Evidence Board after implementation |
 | `speckit.ai-team.pr` | prepare a PR in the correct repository with linked work item and evidence |
@@ -224,9 +224,9 @@ Workspace creation uses Spec Kit's own `init` step. AI Team does not copy
 template repositories into product repositories.
 
 The workflow accepts `task_id`, `work_type`, `coding_issue_url`, `bug_slug`,
-`published_requirement_url`, and `resume_from` so a user can restart from the
-middle after a requirement approval, bug triage, plan gate, task gate, or
-implementation interruption.
+`handoff_requirement_url`, backward-compatible `published_requirement_url`, and
+`resume_from` so a user can restart from the middle after a requirement
+approval, bug triage, plan gate, task gate, or implementation interruption.
 
 ## Skill, Knowledge, Memory Support
 

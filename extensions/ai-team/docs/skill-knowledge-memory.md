@@ -165,9 +165,10 @@ When sources disagree, use this order:
 ```
 
 These files may stay local or be committed depending on repository privacy.
-Enterprise teams should keep customer-sensitive memory in requirements-internal,
-publish only sanitized requirement knowledge to requirements-published, and
-commit only coding-safe plan-level knowledge to the coding repository.
+Enterprise teams should keep customer-sensitive memory in the internal
+enhancement repository, expose only sanitized handoff knowledge where visibility
+allows it, and commit only coding-safe plan-level knowledge to the coding
+repository.
 
 ## References To Review
 

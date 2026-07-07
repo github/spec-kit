@@ -28,14 +28,16 @@ cross-session recovery.
 | Work type | Stable identity |
 |---|---|
 | bug fix | coding issue URL, issue number, or `.specify/bugs/<slug>/` |
-| feature | published requirement URL or requirement ID |
-| new project | published project charter URL, published requirement URL, or explicit project task ID |
+| public feature | coding issue URL, issue number, or SDD feature request |
+| confidential enterprise feature | handoff requirement URL or requirement ID |
+| new project | public project issue/charter, handoff requirement URL, or explicit project task ID |
 | template change | distribution repository issue or PR |
 | unclear intake | explicit temporary `task_id=<value>` until clarified |
 
-Feature work must use a published requirement URL. A local `requirements/`
-submodule path may be used for reading, but it is not the authoritative work
-item.
+Feature work must use a stable work item. Public feature work can use a coding
+repository issue. Confidential enterprise work can use a sanitized handoff
+requirement URL where visibility allows it, or a public-safe summary plus
+private trace in approved channels.
 
 ## Phase Model
 
@@ -60,12 +62,12 @@ item.
    `specify workflow resume <run-id>` when appropriate.
 3. If there is no usable workflow run, load `state.yml`, `context-pack.md`,
    current feature artifacts, bug artifacts, and code graph artifacts.
-4. Compare the recorded source snapshot and requirement or bug state to current
+4. Compare the recorded source snapshot and work item or bug state to current
    repository state.
 5. Run the `next_command` from `state.yml` only when the stop conditions are
    clear.
 
-If the source, requirement, or context pack changed while the work was paused,
+If the source, work item, or context pack changed while the work was paused,
 run `speckit.ai-team.codegraph` and `speckit.ai-team.impact` again before
 continuing implementation.
 

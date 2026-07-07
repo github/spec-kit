@@ -4,7 +4,7 @@ extension:
   id: ai-team
   name: "AI Team SDD Collaboration"
   version: "0.1.0"
-  description: "Enterprise AI Team workflow for Spec-Driven Development with role-isolated handoffs, requirements/coding repository boundaries, build-from-zero planning, self-test evidence, and failure evolution."
+  description: "Enterprise AI Team workflow for Spec-Driven Development with role-isolated handoffs, public coding issue/internal enhancement boundaries, build-from-zero planning, self-test evidence, and failure evolution."
   author: AI Team Template
   repository: https://github.com/EuphoriaYan/spec-kit
   license: MIT
@@ -21,7 +21,7 @@ provides:
   commands:
     - name: speckit.ai-team.workspace
       file: commands/speckit.ai-team.workspace.md
-      description: "Create or update the AI Team workspace contract for requirements/coding repository roles and project privacy boundaries."
+      description: "Create or update the AI Team workspace contract for coding repository and internal enhancement boundaries."
     - name: speckit.ai-team.start
       file: commands/speckit.ai-team.start.md
       description: "Route a plain-language request to the correct AI Team bug, requirement, or template workflow and create a Task Context Package."
@@ -30,7 +30,7 @@ provides:
       description: "Open, update, or reconstruct the durable Task Context Package so interrupted AI Team SDD work can resume."
     - name: speckit.ai-team.requirement
       file: commands/speckit.ai-team.requirement.md
-      description: "Create or refine private requirement context and publish the sanitized requirement URL required before feature implementation."
+      description: "Create or refine internal enhancement context and sanitized handoff requirements for confidential feature work."
     - name: speckit.ai-team.codegraph
       file: commands/speckit.ai-team.codegraph.md
       description: "Generate or attach the code graph slice used by impact analysis, plan gates, task gates, and evidence."
@@ -48,7 +48,7 @@ provides:
       description: "Review generated tasks for phase isolation, self-test mapping, existing-project impact, and new-project build-plan completeness."
     - name: speckit.ai-team.feature-review
       file: commands/speckit.ai-team.feature-review.md
-      description: "Help maintainers and the technical committee assess published requirement readiness before coding."
+      description: "Help maintainers and the technical committee assess internal enhancement handoff readiness before coding."
     - name: speckit.ai-team.checks
       file: commands/speckit.ai-team.checks.md
       description: "Run or reconstruct portable CI/CD evidence when platform CI is unavailable or insufficient."

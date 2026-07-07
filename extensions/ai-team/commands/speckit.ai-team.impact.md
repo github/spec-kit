@@ -59,7 +59,7 @@ cross-module semantic changes unless a human owner accepts the risk.
 Code graph impact:
 - task id:
 - work item:
-- published requirement URL or bug slug:
+- coding issue, handoff requirement URL, or bug slug:
 - context path:
 - code graph version or fallback snapshot:
 - code graph artifact:

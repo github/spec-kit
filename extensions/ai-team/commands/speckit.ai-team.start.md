@@ -1,5 +1,5 @@
 ---
-description: "Route a plain-language request to the correct AI Team bug, requirement, or template workflow and create a Task Context Package."
+description: "Route a plain-language request to the correct AI Team bug, feature, requirement, or template workflow and create a Task Context Package."
 ---
 
 # AI Team Start
@@ -15,7 +15,7 @@ $ARGUMENTS
 ## Goal
 
 Create a Task Context Package and choose the next command. Do not start from a
-blank prompt and do not inspect private requirements unless the active
+blank prompt and do not inspect private enhancement context unless the active
 repository role allows it.
 
 ## Required Context
@@ -25,11 +25,11 @@ Read when present:
 - `.specify/init-options.json` and `.specify/integration.json`;
 - `.specify/extensions/ai-team/ai-team-config.yml`;
 - `AGENTS.md`, `CLAUDE.md`, Cursor rules, Trae rules, or the active agent file;
-- the published requirement URL named by the user;
-- `requirements/` only when it is a Git submodule pointing at the published
-  requirements repository;
+- the coding issue URL, bug slug, or handoff requirement URL named by the user;
+- internal enhancement handoff content only when the active repository and
+  operator are allowed to read it;
 - code graph or source-structure evidence when code, classes, SPI/API, or
-  modules are named.
+  modules are named;
 - `.specify/ai-team/tasks/<task-id>/state.yml` and `context-pack.md` when the
   request is resuming existing work.
 
@@ -38,8 +38,9 @@ Read when present:
 | Request type | Route | Required work item |
 |---|---|---|
 | existing behavior is broken, flaky, regressed, or throws errors | bug fix | coding issue or bug slug |
-| new capability, scenario, integration, public behavior, or roadmap work in an existing project | feature | published requirement URL |
-| create a new product, service, repository, or application from zero | new project | published requirement URL or approved project charter |
+| new public capability, scenario, integration, or public behavior in an existing project | feature | coding issue URL or SDD feature request |
+| confidential enterprise feature or roadmap work in an existing project | feature | accepted handoff requirement URL or public-safe summary |
+| create a new product, service, repository, or application from zero | new project | public project issue/charter or handoff requirement URL |
 | change AI Team rules, commands, templates, examples, or workflow | template change | this repository PR |
 | unclear | ask one focused question | no edits |
 
@@ -52,21 +53,21 @@ speckit.bug.assess -> speckit.bug.fix -> speckit.bug.test
 Features use the SDD path:
 
 ```text
-published requirement URL -> speckit.specify -> speckit.ai-team.handoff
--> speckit.plan -> speckit.ai-team.plan-gate -> speckit.tasks
--> speckit.ai-team.task-gate -> speckit.implement
+coding issue or handoff requirement URL -> speckit.specify
+-> speckit.ai-team.handoff -> speckit.plan -> speckit.ai-team.plan-gate
+-> speckit.tasks -> speckit.ai-team.task-gate -> speckit.implement
 -> speckit.ai-team.evidence
 ```
 
 If the user has only a private draft or raw customer request, route to
 `speckit.ai-team.requirement` first. Code implementation must wait until there
-is a published requirement URL.
+is an accepted handoff requirement or a public-safe coding issue/summary.
 
 New projects use the same SDD path but must set `work_type=new-project` and
 must keep a stricter build-from-zero plan:
 
 ```text
-project charter or published requirement URL -> specify init/bootstrap
+project charter, coding issue, or handoff requirement URL -> specify init/bootstrap
 -> speckit.ai-team.workspace -> speckit.ai-team.context
 -> speckit.specify -> speckit.ai-team.handoff -> speckit.plan
 -> speckit.ai-team.plan-gate -> speckit.tasks
@@ -89,11 +90,11 @@ Task Context Package:
 - classification: bug fix / feature / new project / template change / unclear
 - required work item:
 - coding issue URL or bug slug:
-- published requirement URL:
+- handoff requirement URL:
+- published requirement URL, deprecated alias:
 - coding repository:
-- requirements published repository:
-- requirements submodule path:
-- private requirements context used: no / yes, allowed because ...
+- internal enhancement repository:
+- private enhancement context used: no / yes, allowed because ...
 - active AI integration:
 - workflow run id:
 - current phase:
@@ -114,18 +115,20 @@ After creating or updating the package, return the next command:
 
 - bug fix with enough issue context: `speckit.bug.assess` or
   `speckit.ai-team.codegraph` when source impact is not trivial;
-- feature without a published requirement URL: `speckit.ai-team.requirement`;
-- feature with a published requirement URL: `speckit.specify` or
+- public feature with a coding issue URL: `speckit.specify` or
   `speckit.ai-team.codegraph` when existing code is named;
-- new project with an approved charter or published requirement URL:
-  `speckit.specify` after workspace bootstrap;
+- confidential feature without an accepted handoff: `speckit.ai-team.requirement`;
+- confidential feature with a handoff requirement URL: `speckit.specify` or
+  `speckit.ai-team.codegraph` when existing code is named;
+- new project with an approved charter, coding issue, or handoff requirement
+  URL: `speckit.specify` after workspace bootstrap;
 - interrupted work: `speckit.ai-team.context task_id=<task-id> resume=true`.
 
 ## Stop Conditions
 
 Stop and ask when:
 
-- a feature has no published requirement URL;
+- a feature has no coding issue, handoff requirement, or approved task ID;
 - raw customer demand would enter the coding repository;
 - a code change crosses module boundaries without code graph or source
   structure evidence;

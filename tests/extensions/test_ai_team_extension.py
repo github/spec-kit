@@ -96,8 +96,7 @@ def test_ai_team_config_template_defines_repository_and_role_contracts():
     )
 
     assert set(config["repositories"]) == {
-        "requirements_internal",
-        "requirements_published",
+        "enhancement_internal",
         "coding",
     }
     assert config["bootstrap"]["use_specify_init"] is True
@@ -118,17 +117,21 @@ def test_ai_team_config_template_defines_repository_and_role_contracts():
         "adapter-report.md",
     }
     assert (
-        config["repositories"]["requirements_internal"]["record_in_coding_repository"]
+        config["repositories"]["enhancement_internal"][
+            "raw_demand_record_in_coding_repository"
+        ]
         is False
     )
     assert (
-        config["repositories"]["requirements_published"]["authoritative_reference"]
-        == "published_url"
+        config["repositories"]["coding"]["enhancement_handoff_submodule_path"] == ""
     )
-    assert config["repositories"]["coding"]["requirements_submodule_path"] == "requirements"
     assert config["privacy"]["raw_customer_demand_public"] is False
-    assert config["privacy"]["coding_repo_may_record_requirements_internal"] is False
-    assert config["privacy"]["feature_requires_published_requirement_url"] is True
+    assert config["privacy"]["coding_repo_may_record_raw_internal_demand"] is False
+    assert config["privacy"]["public_feature_may_start_from_coding_issue"] is True
+    assert (
+        config["privacy"]["internal_feature_requires_handoff_or_public_safe_summary"]
+        is True
+    )
     assert set(config["roles"]) == {"specify", "plan", "tasks_and_implement"}
     assert all(role["context_isolation"] is True for role in config["roles"].values())
 
@@ -152,11 +155,10 @@ def test_ai_team_repository_boundary_document_exists():
 
     assert boundary_doc.exists()
     text = boundary_doc.read_text(encoding="utf-8")
-    assert "requirements-published" in text
-    assert "requirements-internal" in text
-    assert "Git submodule" in text
-    assert "published requirement URL" in text
-    assert "not a local submodule path" in text
+    assert "enhancement-internal" in text
+    assert "coding issue URL" in text
+    assert "Handoff requirement" in text
+    assert "Do not use a local path" in text
 
 
 def test_ai_team_task_context_document_exists():
@@ -167,7 +169,8 @@ def test_ai_team_task_context_document_exists():
     assert "Task Context Package" in text
     assert ".specify/ai-team/tasks/<task-id>/" in text
     assert "specify workflow resume <run-id>" in text
-    assert "published requirement URL" in text
+    assert "handoff requirement URL" in text
+    assert "coding issue URL" in text
 
 
 def test_ai_team_code_graph_adapter_document_exists():
@@ -190,7 +193,8 @@ def test_ai_team_user_journeys_document_exists():
     assert journeys_doc.exists()
     text = journeys_doc.read_text(encoding="utf-8")
     assert "Existing Project Bug Fix" in text
-    assert "Existing Project New Feature" in text
+    assert "Existing Project Public Feature" in text
+    assert "Existing Project Confidential Enterprise Feature" in text
     assert "New Project From Zero" in text
     assert "Resume From The Middle" in text
     assert "speckit.ai-team.context task_id=<task-id> resume=true" in text
@@ -215,6 +219,8 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
     assert steps[0]["type"] == "if"
     assert steps[0]["then"][0]["type"] == "init"
     assert "task_id" in data["inputs"]
+    assert "handoff_requirement_url" in data["inputs"]
+    assert "published_requirement_url" in data["inputs"]
     assert "resume_from" in data["inputs"]
     assert "new-project" in data["inputs"]["work_type"]["enum"]
     step_ids = [step["id"] for step in steps]
@@ -239,19 +245,32 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
             [
                 "work_type=bug",
                 "coding_issue_url=https://example.com/org/project/issues/123",
-                "published_requirement_url=",
+                "handoff_requirement_url=",
             ],
         ),
         (
-            "existing project feature",
+            "existing project public feature",
             {
-                "request": "Implement REQ-2026-015 search result export",
+                "request": "Implement public search result export",
                 "work_type": "feature",
-                "published_requirement_url": "https://example.com/requirements/rfcs/REQ-2026-015",
+                "coding_issue_url": "https://example.com/org/project/issues/456",
             },
             [
                 "work_type=feature",
-                "published_requirement_url=https://example.com/requirements/rfcs/REQ-2026-015",
+                "coding_issue_url=https://example.com/org/project/issues/456",
+                "handoff_requirement_url=",
+            ],
+        ),
+        (
+            "existing project confidential feature",
+            {
+                "request": "Implement REQ-2026-015 search result export",
+                "work_type": "feature",
+                "handoff_requirement_url": "https://example.com/enhancements/rfcs/REQ-2026-015",
+            },
+            [
+                "work_type=feature",
+                "handoff_requirement_url=https://example.com/enhancements/rfcs/REQ-2026-015",
                 "coding_issue_url=",
             ],
         ),
@@ -261,11 +280,11 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
                 "request": "Create the initial customer notification service",
                 "work_type": "new-project",
                 "bootstrap_workspace": True,
-                "published_requirement_url": "https://example.com/requirements/rfcs/REQ-2026-020",
+                "handoff_requirement_url": "https://example.com/enhancements/rfcs/REQ-2026-020",
             },
             [
                 "work_type=new-project",
-                "published_requirement_url=https://example.com/requirements/rfcs/REQ-2026-020",
+                "handoff_requirement_url=https://example.com/enhancements/rfcs/REQ-2026-020",
                 "resume_from=auto",
             ],
         ),
@@ -276,13 +295,13 @@ def test_ai_team_workflow_is_bundled_and_uses_init_step():
                 "task_id": "REQ-2026-015",
                 "work_type": "feature",
                 "resume_from": "tasks-ready",
-                "published_requirement_url": "https://example.com/requirements/rfcs/REQ-2026-015",
+                "handoff_requirement_url": "https://example.com/enhancements/rfcs/REQ-2026-015",
             },
             [
                 "task_id=REQ-2026-015",
                 "work_type=feature",
                 "resume_from=tasks-ready",
-                "published_requirement_url=https://example.com/requirements/rfcs/REQ-2026-015",
+                "handoff_requirement_url=https://example.com/enhancements/rfcs/REQ-2026-015",
             ],
         ),
     ],

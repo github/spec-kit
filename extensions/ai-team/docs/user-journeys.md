@@ -1,8 +1,8 @@
 # AI Team User Journeys
 
-This document explains how users enter AI Team SDD work and how the repository
-artifacts connect across bug fixes, existing-project features, new projects,
-and interrupted work.
+This document explains how users enter AI Team SDD work and how artifacts
+connect across bug fixes, public feature requests, confidential enterprise
+features, new projects, and interrupted work.
 
 ## Common Setup
 
@@ -18,7 +18,7 @@ specify workflow add ai-team-sdd
 Use the integration that matches the active agent: `codex`, `claude`,
 `cursor-agent`, or `trae`.
 
-Then configure the repository roles with `speckit.ai-team.workspace`:
+Then configure repository roles with `speckit.ai-team.workspace`:
 
 ```text
 speckit.ai-team.workspace
@@ -27,10 +27,10 @@ speckit.ai-team.workspace
 The workspace contract should name:
 
 - coding repository;
-- requirements-published repository or published requirement URL pattern;
-- optional read-only `requirements/` submodule path;
-- rules that prevent requirements-internal paths or raw customer demand from
-  being committed to the coding repository.
+- optional internal enhancement repository for confidential enterprise demand;
+- optional handoff URL pattern for sanitized internal RFCs;
+- rules that prevent private enhancement drafts or raw customer demand from
+  being committed to public coding repositories.
 
 ## Chat Alias Convention
 
@@ -46,14 +46,17 @@ Use one workflow name in chat-first tools, then name the path:
 Recommended user prompts:
 
 ```text
-Use the ai-team-sdd feature path for this published requirement URL:
-https://example.com/requirements/rfcs/REQ-2026-015
+Use the ai-team-sdd feature path for this public coding issue:
+https://example.com/org/project/issues/456
+
+Use the ai-team-sdd feature path for this internal handoff requirement:
+https://example.com/enhancements/rfcs/REQ-2026-015
 
 Use the ai-team-sdd bug path for this coding issue:
 https://example.com/org/project/issues/123
 
-Use the ai-team-sdd new-project path for this published project charter:
-https://example.com/requirements/rfcs/REQ-2026-020
+Use the ai-team-sdd new-project path for this internal handoff requirement:
+https://example.com/enhancements/rfcs/REQ-2026-020
 
 Use the ai-team-sdd resume path for task_id=REQ-2026-015 from tasks-ready.
 ```
@@ -62,8 +65,6 @@ Use the ai-team-sdd resume path for task_id=REQ-2026-015 from tasks-ready.
 
 Use this journey when existing behavior is broken, flaky, regressed, or throws
 errors.
-
-### Entry
 
 The work item is a coding repository issue, issue URL, or bug slug. The reporter
 does not need to understand code internals. The AI agent and maintainer derive
@@ -76,7 +77,7 @@ specify workflow run ai-team-sdd \
   --input coding_issue_url="https://example.com/org/project/issues/123"
 ```
 
-### Flow
+Flow:
 
 1. `speckit.ai-team.context` creates or loads the Task Context Package.
 2. `speckit.ai-team.start` classifies the request as a bug fix and records the
@@ -95,132 +96,104 @@ specify workflow run ai-team-sdd \
 7. Submit with `speckit.ai-team.pr`, linking the coding issue.
 8. Review with `speckit.ai-team.review`.
 
-### Stop Conditions
+Stop for human decision when expected behavior is actually a new product
+behavior, source impact cannot be stated, or the fix needs public SPI/API,
+config, schema, state-owner, or cross-module semantic changes.
 
-Stop for human decision when:
+## Journey 2: Existing Project Public Feature
 
-- the expected behavior is actually a new product behavior;
-- the fix needs public SPI/API, config, schema, state-owner, or cross-module
-  semantic changes;
-- source impact cannot be stated from code graph or source evidence;
-- there is no coding issue, bug slug, or equivalent bug work item.
+Use this journey when the requested feature can be discussed in the coding
+repository.
 
-## Journey 2: Existing Project New Feature
+The work item is a public coding repository issue or SDD feature request:
 
-Use this journey when a user wants a new capability, public behavior,
-integration, scenario, or roadmap item in an existing project.
+```bash
+specify workflow run ai-team-sdd \
+  --input request="Implement public search result export" \
+  --input work_type=feature \
+  --input coding_issue_url="https://example.com/org/project/issues/456"
+```
 
-### Entry
+Flow:
 
-The work item is a published requirement URL from the requirements-published
-repository. Private drafts and customer discussions stay in
-requirements-internal.
+1. `speckit.ai-team.context` records the coding issue URL and current phase.
+2. `speckit.ai-team.start` routes the work as an existing-project feature.
+3. `speckit.ai-team.codegraph` builds or attaches the source graph slice.
+4. `speckit.ai-team.impact` constrains likely modules, public contracts, tests,
+   and reuse candidates.
+5. `speckit.specify` writes the feature spec from the public issue.
+6. `speckit.ai-team.handoff` creates the specify-to-plan handoff so roles do not
+   depend on hidden chat.
+7. `speckit.plan`, `speckit.ai-team.plan-gate`, `speckit.tasks`,
+   `speckit.ai-team.task-gate`, and `speckit.implement` complete SDD.
+8. `speckit.ai-team.checks`, `speckit.ai-team.evidence`, `speckit.ai-team.pr`,
+   and `speckit.ai-team.review` close the evidence loop.
 
-If the user only has raw demand, start with:
+Stop when the feature lacks an accountable public work item, crosses approved
+scope, or needs private customer context that should move to an internal
+enhancement issue.
+
+## Journey 3: Existing Project Confidential Enterprise Feature
+
+Use this journey when the demand comes from an enterprise customer, private
+roadmap, commercial context, or other source that cannot be public.
+
+Start in the internal enhancement repository:
 
 ```text
 speckit.ai-team.requirement
 speckit.ai-team.feature-review
 ```
 
-After the technical committee accepts or delegates the feature decision, start
-the coding workflow:
+After the Technical Committee accepts the feature and the maintainer prepares a
+sanitized handoff, start the coding workflow:
 
 ```bash
 specify workflow run ai-team-sdd \
   --input request="Implement REQ-2026-015 search result export" \
   --input work_type=feature \
-  --input published_requirement_url="https://example.com/requirements/rfcs/REQ-2026-015"
+  --input handoff_requirement_url="https://example.com/enhancements/rfcs/REQ-2026-015"
 ```
 
-### Flow
+The coding repository should not record raw customer demand or private
+enhancement draft paths. Public coding repositories should use a public-safe
+summary instead of confidential internal links.
 
-1. `speckit.ai-team.context` records the published requirement URL and current
-   phase.
-2. `speckit.ai-team.start` routes the work as an existing-project feature.
-3. `speckit.ai-team.codegraph` builds or attaches the source graph slice.
-4. `speckit.ai-team.impact` constrains likely modules, public contracts, tests,
-   and reuse candidates.
-5. `speckit.specify` writes the feature spec from the published requirement.
-6. `speckit.ai-team.handoff` creates the specify-to-plan handoff so the
-   architect does not depend on hidden product-manager chat.
-7. `speckit.plan` creates the public technical plan.
-8. `speckit.ai-team.plan-gate` checks architecture fit, privacy, code graph
-   impact, compatibility, and owner decisions.
-9. `speckit.tasks` creates developer tasks.
-10. `speckit.ai-team.task-gate` checks task order, self-test mapping, and
-    impact radius.
-11. `speckit.implement` changes code.
-12. `speckit.ai-team.checks`, `speckit.ai-team.evidence`, `speckit.ai-team.pr`,
-    and `speckit.ai-team.review` close the evidence loop.
+Stop for human decision when no accepted handoff exists, the handoff contains
+raw customer demand, Technical Committee acceptance is missing, owner review is
+missing, or plan/tasks exceed the approved wave.
 
-### Stop Conditions
-
-Stop for human decision when:
-
-- no published requirement URL exists;
-- the requirement is still private or contains raw customer demand;
-- technical committee acceptance or delegated approval is missing;
-- code graph impact crosses module or public interface boundaries without
-  owner review;
-- plan or tasks exceed the approved wave.
-
-## Journey 3: New Project From Zero
+## Journey 4: New Project From Zero
 
 Use this journey when creating a new repository, service, application, or
 product from scratch.
 
-### Entry
-
-The work item should be a published project charter or published requirement
-URL. If the charter starts in private discussion, publish a sanitized version
-first through `speckit.ai-team.requirement`.
+The work item may be a public project issue/charter or an internal handoff
+requirement.
 
 ```bash
 specify workflow run ai-team-sdd \
   --input request="Create the initial customer notification service" \
   --input work_type=new-project \
   --input bootstrap_workspace=true \
-  --input published_requirement_url="https://example.com/requirements/rfcs/REQ-2026-020"
+  --input handoff_requirement_url="https://example.com/enhancements/rfcs/REQ-2026-020"
 ```
 
-### Flow
+New projects still follow SDD, but the plan gate is stricter: it must establish
+the project skeleton, architecture spine, dependency strategy, runnable thin
+slice, self-test strategy, and evidence strategy before broad feature
+construction.
 
-1. Bootstrap the project with Spec Kit `init` through the workflow or by running
-   `specify init` directly.
-2. `speckit.ai-team.workspace` records repository roles and privacy boundaries.
-3. `speckit.ai-team.context` creates the Task Context Package.
-4. `speckit.specify` writes the product spec from the published charter.
-5. `speckit.ai-team.handoff` isolates the specify-to-plan transition.
-6. `speckit.plan` creates the architecture plan.
-7. `speckit.ai-team.plan-gate` requires a strict build-from-zero plan:
-   project skeleton, architecture spine, dependency strategy, runnable thin
-   slice, self-test strategy, evidence strategy, and release/operations owner
-   when relevant.
-8. `speckit.tasks` creates tasks that produce the runnable spine before breadth.
-9. `speckit.ai-team.task-gate` blocks tasks that delay build/run/test setup too
-   long.
-10. `speckit.implement` builds the first wave.
-11. `speckit.ai-team.checks` and `speckit.ai-team.evidence` prove the thin
-    slice runs.
+Stop for human decision when the project has no charter, work item, or
+accountable owner; the plan starts with broad feature construction before a
+runnable thin slice; or required runtime, deployment, security, data, or
+operations ownership is unclear.
 
-### Stop Conditions
-
-Stop for human decision when:
-
-- the project has no charter, published requirement URL, or accountable owner;
-- the plan starts with broad feature construction before a runnable thin slice;
-- required runtime, deployment, security, data, or operations ownership is
-  unclear;
-- dependency/license review is missing for load-bearing components.
-
-## Journey 4: Resume From The Middle
+## Journey 5: Resume From The Middle
 
 Use this journey when work was interrupted by human review, tool switching,
 closed terminal, lost chat context, failed CI, review comments, or a paused
 workflow gate.
-
-### Entry
 
 Resume by workflow run ID when the same run paused:
 
@@ -237,32 +210,20 @@ speckit.ai-team.context task_id=<task-id> resume=true
 
 The task ID can be:
 
-- published requirement ID or URL slug;
+- handoff requirement ID or URL slug;
 - coding issue number or URL slug;
 - `.specify/bugs/<slug>`;
 - explicit `task_id=<value>` recorded earlier.
 
-### Flow
+On resume, compare the recorded source snapshot, work item, code graph artifact,
+and current repository state. If source or work item changed, rerun
+`speckit.ai-team.codegraph` and `speckit.ai-team.impact`.
 
-1. Load `.specify/ai-team/tasks/<task-id>/state.yml`.
-2. Load `.specify/ai-team/tasks/<task-id>/context-pack.md`.
-3. Compare the recorded source snapshot, published requirement or bug issue,
-   code graph artifact, and current repository state.
-4. If source or requirement changed, rerun `speckit.ai-team.codegraph` and
-   `speckit.ai-team.impact`.
-5. Continue from `next_command` only when stop conditions are clear.
-6. Update the context pack after every major phase.
+Stop for human reconciliation when state files disagree, the work item changed
+while paused, source changed and impact evidence is stale, or the recorded next
+command would skip a required human gate.
 
-### Stop Conditions
-
-Stop for human reconciliation when:
-
-- `state.yml` and `context-pack.md` disagree;
-- the published requirement or coding issue changed while the work was paused;
-- source changed and the existing impact evidence is stale;
-- the recorded next command would skip a required human gate.
-
-## Journey 5: Failure Evolution
+## Journey 6: Failure Evolution
 
 Use this journey when a PR fails review, CI fails, a test escapes, or the AI
 agent repeats a mistake.
@@ -275,6 +236,3 @@ Classify the failure as context missing, graph missing, skill missing, hook
 missing, gate missing, evidence missing, human decision missing, or privacy
 leak. Then update the smallest durable artifact: command, gate, knowledge map,
 memory entry, test, code graph adapter, or review checklist.
-
-The goal is not to make the prompt larger. The goal is to make the next run
-load the right context, graph, gate, or evidence automatically.

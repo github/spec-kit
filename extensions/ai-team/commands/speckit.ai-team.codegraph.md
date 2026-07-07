@@ -26,7 +26,7 @@ Read when present:
 - `.specify/ai-team/tasks/<task-id>/state.yml`;
 - `.specify/ai-team/tasks/<task-id>/context-pack.md`;
 - `.specify/extensions/ai-team/ai-team-config.yml`;
-- published requirement URL for feature work;
+- coding issue or handoff requirement URL for feature work;
 - coding issue or bug slug for bug fixes;
 - project source files, build files, module docs, and existing tests.
 

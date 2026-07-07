@@ -1,43 +1,43 @@
 # Repository Boundary
 
-AI Team SDD separates private demand, published requirements, and code.
+AI Team SDD separates public coding work from confidential enterprise demand.
 
 ```text
 org/
-|-- requirements-published/    # public/read-only requirement repository
+|-- enhancement-internal/      # strict-permission internal enhancement repo
+|   |-- issues/                # private discussion, approval, wave plan
 |   `-- rfcs/
-|       `-- REQ-2024-015.md
-|-- requirements-internal/     # strict-permission private repository
-|   `-- drafts/
+|       `-- REQ-2026-015.md    # sanitized handoff requirement
 `-- project-alpha/             # coding repository
+    |-- issues/456             # public feature or bug work item
     |-- src/
-    `-- requirements/          # Git submodule -> requirements-published
-        `-- rfcs/
-            `-- REQ-2024-015.md
+    `-- .specify/
 ```
 
 ## Rules
 
-1. The coding repository pulls only `requirements-published`, normally through
-   a read-only Git submodule such as `requirements/`.
-2. The coding repository does not know `requirements-internal` exists. Do not
-   commit private repository URLs, paths, branch names, issue links, or raw
-   customer demand into coding artifacts.
-3. New feature implementation references the stable published requirement URL,
-   not a local submodule path.
-4. Local submodule files are a cache for reading published content. They are not
-   the authoritative work-item identity.
-5. Private drafts, approval discussion, commercial context, and unpublished
-   acceptance details stay in `requirements-internal`.
-6. Public SDD artifacts may include plan, tasks, code graph impact, Evidence
-   Board, and sanitized acceptance intent only after publication.
+1. Public feature requests can start directly as coding repository issues or SDD
+   feature requests.
+2. Confidential enterprise requirements start in `enhancement-internal`, not in
+   the coding repository.
+3. Internal enhancement issues own raw demand, private drafts, approval
+   discussion, wave planning, commercial context, and private acceptance notes.
+4. Sanitized handoff RFCs under `enhancement-internal/rfcs/` are the stable
+   bridge from private demand to coding work.
+5. Public coding repositories must not record internal enhancement issue URLs,
+   raw customer demand, commercial context, or private acceptance notes. Use a
+   public-safe summary instead.
+6. Private coding repositories may link an internal handoff URL when the
+   organization allows it.
+7. Local paths are never the authoritative work-item identity. Use a coding
+   issue URL, handoff URL, or explicit task ID.
 
 ## Command Mapping
 
 | Work | Repository | Command |
 |---|---|---|
-| create or refine private feature intent | requirements-internal | `speckit.ai-team.requirement` |
-| publish sanitized requirement/RFC | requirements-published | `speckit.ai-team.requirement` |
+| create or refine confidential feature intent | enhancement-internal | `speckit.ai-team.requirement` |
+| create sanitized handoff requirement | enhancement-internal | `speckit.ai-team.requirement` |
 | route a user request | current workspace | `speckit.ai-team.start` |
 | plan/implement feature | coding repository | `speckit.specify`, `speckit.plan`, `speckit.tasks`, `speckit.implement` |
 | inspect impact before code edits | coding repository | `speckit.ai-team.impact` |
@@ -45,17 +45,24 @@ org/
 
 ## Feature Reference Shape
 
-Use a URL:
+Public feature work can use a coding issue URL:
 
 ```text
-Published requirement: https://example.com/org/requirements-published/rfcs/REQ-2024-015.md
+Coding issue: https://example.com/org/project/issues/456
+```
+
+Confidential enterprise feature work can use an internal handoff URL only where
+visibility allows it:
+
+```text
+Handoff requirement: https://example.com/org/enhancement-internal/rfcs/REQ-2026-015.md
 ```
 
 Do not use a local path as the authoritative feature reference:
 
 ```text
-requirements/rfcs/REQ-2024-015.md
+rfcs/REQ-2026-015.md
 ```
 
-The local path may appear only as supporting evidence that the published
-requirements submodule was read.
+The local path may appear only as supporting evidence that the approved handoff
+artifact was read.
