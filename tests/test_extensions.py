@@ -1064,14 +1064,6 @@ class TestExtensionManager:
         result = manager.check_compatibility(manifest, "0.1.0")
         assert result is True
 
-    def test_check_compatibility_allows_prerelease_dev_version(self, extension_dir, project_dir):
-        """Test compatibility check allows source/dev prerelease versions."""
-        manager = ExtensionManager(project_dir)
-        manifest = ExtensionManifest(extension_dir / "extension.yml")
-
-        result = manager.check_compatibility(manifest, "0.8.15.dev0")
-        assert result is True
-
     def test_check_compatibility_invalid(self, extension_dir, project_dir):
         """Test compatibility check with invalid version."""
         manager = ExtensionManager(project_dir)

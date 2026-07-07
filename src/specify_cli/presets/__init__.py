@@ -573,18 +573,16 @@ class PresetManager:
         """
         required = manifest.requires_speckit_version
         try:
-            specifier = SpecifierSet(required)
-            # Intentionally allow prereleases only for source/dev spec-kit installs
-            # so they can satisfy preset compatibility checks, while still
-            # preserving normal PEP 440 rules for RC/beta builds.
-            if not specifier.contains(current, prereleases=True if current.is_devrelease else None):
-                raise PresetCompatibilityError(
-                    f"Preset requires spec-kit {required}, "
-                    f"but {speckit_version} is installed.\n"
-                    f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
-                )
+            SpecifierSet(required)  # Just to validate
         except InvalidSpecifier:
             raise PresetCompatibilityError(f"Invalid version specifier: {required}")
+
+        if not version_satisfies(speckit_version, required):
+            raise PresetCompatibilityError(
+                f"Preset requires spec-kit {required}, "
+                f"but {speckit_version} is installed.\n"
+                f"Upgrade spec-kit with: {REINSTALL_COMMAND}"
+            )
 
         return True
 
