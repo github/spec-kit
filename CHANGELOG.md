@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.7] - 2026-07-07
+
+### Changed
+
+- fix(bundler): bundle update uninstalls components dropped by new version (#3353)
+- fix(workflows): route run/resume errors to stderr under --json (#3352)
+- fix(workflows): fan-in validate() rejects non-mapping output (#3349)
+- fix(workflows): shell step validate() rejects non-string run (#3348)
+- fix(integrations): agy honors SPECKIT_INTEGRATION_AGY_EXTRA_ARGS (#3347)
+- Add Orchestration Task Context Management extension to community catalog (#3372)
+- Update DocGuard — CDD Enforcement extension to v0.30.0 (#3371)
+- Update Ripple extension to v1.1.0 (#3370)
+- feat(integrations): generalize post-processing to all format types (#3311)
+- chore: release 0.12.6, begin 0.12.7.dev0 development (#3393)
+
 ## [0.12.6] - 2026-07-07
 
 ### Changed
