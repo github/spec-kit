@@ -7665,6 +7665,9 @@ class TestConfigManagerEnvPrefixCollision:
         monkeypatch.setenv("SPECKIT_TESTEXT_CONNECTION", "x")
         monkeypatch.setenv("SPECKIT_TESTEXT_CONNECTION_URL", "y")
         executor = HookExecutor(tmp_path)
-        assert executor._evaluate_condition(
-            "config.connection.url is set", "testext"
+        # Exercise the public API: before the fix the TypeError was swallowed
+        # by should_execute_hook's `except Exception: return False`, so the
+        # hook was silently disabled (False); after the fix it returns True.
+        assert executor.should_execute_hook(
+            {"condition": "config.connection.url is set", "extension": "testext"}
         ) is True
