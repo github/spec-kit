@@ -261,9 +261,9 @@ class CommandRegistrar:
         # Control characters TOML forbids in raw form (and bare CR) cannot
         # appear in either multiline form, so those bodies also route to the
         # escaped basic string.
-        from specify_cli.integrations.base import _TOML_FORBIDDEN_CTRL
+        from specify_cli.integrations.base import toml_contains_forbidden_ctrl
 
-        has_forbidden_ctrl = bool(_TOML_FORBIDDEN_CTRL.search(body))
+        has_forbidden_ctrl = toml_contains_forbidden_ctrl(body)
         if '"""' not in body and "\\" not in body and not has_forbidden_ctrl:
             toml_lines.append('prompt = """')
             toml_lines.append(body)

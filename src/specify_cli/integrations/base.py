@@ -55,6 +55,11 @@ _CORE_COMMAND_TEMPLATE_RANK = {
 _TOML_FORBIDDEN_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\r(?!\n)")
 
 
+def toml_contains_forbidden_ctrl(value: str) -> bool:
+    """Return True if *value* contains characters TOML forbids raw."""
+    return bool(_TOML_FORBIDDEN_CTRL.search(value))
+
+
 def toml_escape_basic(value: str) -> str:
     """Escape *value* for a TOML basic string (quotes not included).
 
@@ -988,7 +993,7 @@ class TomlIntegration(IntegrationBase):
         in raw form (or a bare CR) always use the escaped basic string,
         since no other form can represent them.
         """
-        if _TOML_FORBIDDEN_CTRL.search(value):
+        if toml_contains_forbidden_ctrl(value):
             return f'"{toml_escape_basic(value)}"'
 
         if "\n" not in value and "\r" not in value:
