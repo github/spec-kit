@@ -3,16 +3,21 @@
 # Automatically commit changes after a Spec Kit command completes.
 # Checks per-command config keys in git-config.yml before committing.
 #
-# Usage: auto-commit.sh <event_name>
+# Usage: auto-commit.sh <event_name> [generated_message]
 #   e.g.: auto-commit.sh after_specify
+#   e.g.: auto-commit.sh after_specify "feat: add OAuth specification"  (commit_style: conventional)
 
 set -e
 
 EVENT_NAME="${1:-}"
 if [ -z "$EVENT_NAME" ]; then
-    echo "Usage: $0 <event_name>" >&2
+    echo "Usage: $0 <event_name> [generated_message]" >&2
     exit 1
 fi
+
+# Optional second argument: an agent-generated commit message (used when
+# commit_style: conventional is configured).
+GENERATED_MESSAGE="${2:-}"
 
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -46,8 +51,13 @@ fi
 _config_file="$REPO_ROOT/.specify/extensions/git/git-config.yml"
 _enabled=false
 _commit_msg=""
+_commit_style="fixed"
 
 if [ -f "$_config_file" ]; then
+    # Top-level scalar key: commit_style (fixed | conventional)
+    _style_val=$(grep '^commit_style:' "$_config_file" 2>/dev/null | sed 's/^commit_style:[[:space:]]*//' | sed 's/^["'\'']//' | sed 's/["'\'']*$//' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+    [ -n "$_style_val" ] && _commit_style="$_style_val"
+
     # Parse the auto_commit section for this event.
     # Look for auto_commit.<event_name>.enabled and .message
     # Also check auto_commit.default as fallback.
@@ -121,6 +131,17 @@ fi
 if git diff --quiet HEAD 2>/dev/null && git diff --cached --quiet 2>/dev/null && [ -z "$(git ls-files --others --exclude-standard 2>/dev/null)" ]; then
     echo "[specify] No changes to commit after $EVENT_NAME" >&2
     exit 0
+fi
+
+# In conventional mode, the commit message must be supplied by the agent
+# (via the generated_message argument); never fall back to the fixed message.
+if [ "$_commit_style" = "conventional" ]; then
+    if [ -n "$GENERATED_MESSAGE" ]; then
+        _commit_msg="$GENERATED_MESSAGE"
+    else
+        echo "[specify] Error: commit_style is 'conventional' but no generated commit message was supplied; skipped auto-commit" >&2
+        exit 1
+    fi
 fi
 
 # Derive a human-readable command name from the event

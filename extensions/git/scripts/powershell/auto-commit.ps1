@@ -3,11 +3,16 @@
 # Automatically commit changes after a Spec Kit command completes.
 # Checks per-command config keys in git-config.yml before committing.
 #
-# Usage: auto-commit.ps1 <event_name>
+# Usage: auto-commit.ps1 <event_name> [generated_message]
 #   e.g.: auto-commit.ps1 after_specify
+#   e.g.: auto-commit.ps1 after_specify "feat: add OAuth specification"  (commit_style: conventional)
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [string]$EventName
+    [string]$EventName,
+
+    # Optional agent-generated commit message (used when commit_style: conventional is configured).
+    [Parameter(Position = 1, Mandatory = $false)]
+    [string]$GeneratedMessage = ""
 )
 $ErrorActionPreference = 'Stop'
 
@@ -55,8 +60,18 @@ if (-not $isRepo) {
 $configFile = Join-Path $repoRoot ".specify/extensions/git/git-config.yml"
 $enabled = $false
 $commitMsg = ""
+$commitStyle = "fixed"
 
 if (Test-Path $configFile) {
+    # Top-level scalar key: commit_style (fixed | conventional)
+    foreach ($line in Get-Content $configFile) {
+        if ($line -match '^commit_style:\s*(.+)$') {
+            $styleVal = $matches[1].Trim() -replace '^["'']' -replace '["'']$'
+            if ($styleVal) { $commitStyle = $styleVal.ToLower() }
+            break
+        }
+    }
+
     # Parse YAML to find auto_commit section
     $inAutoCommit = $false
     $inEvent = $false
@@ -138,6 +153,17 @@ try {
 if ($d1 -eq 0 -and $d2 -eq 0 -and -not $untracked) {
     Write-Host "[specify] No changes to commit after $EventName" -ForegroundColor DarkGray
     exit 0
+}
+
+# In conventional mode, the commit message must be supplied by the agent
+# (via the GeneratedMessage argument); never fall back to the fixed message.
+if ($commitStyle -eq 'conventional') {
+    if ($GeneratedMessage) {
+        $commitMsg = $GeneratedMessage
+    } else {
+        Write-Warning "[specify] Error: commit_style is 'conventional' but no generated commit message was supplied; skipped auto-commit"
+        exit 1
+    }
 }
 
 # Derive a human-readable command name from the event

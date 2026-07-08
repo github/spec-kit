@@ -1091,6 +1091,93 @@ class TestAutoCommitBash:
         assert "\u2713" not in result.stderr, "Must not use Unicode checkmark"
 
 
+@requires_bash
+class TestAutoCommitBashCommitStyle:
+    """Tests for the `commit_style: conventional` option (issue #3390)."""
+
+    def test_fixed_is_default_when_commit_style_absent(self, tmp_path: Path):
+        """Omitting commit_style preserves the fixed/static message behavior."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+
+    def test_conventional_uses_generated_message(self, tmp_path: Path):
+        """commit_style: conventional uses the generated_message argument as the commit message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_conventional_without_generated_message_fails(self, tmp_path: Path):
+        """commit_style: conventional fails clearly instead of falling back to the fixed message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode != 0
+        assert "conventional" in result.stderr.lower()
+
+        # No commit should have been made, and the fixed message must not be used.
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_conventional_skips_cleanly_with_no_changes(self, tmp_path: Path):
+        """No pending changes short-circuits before the missing-message failure."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        subprocess.run(["git", "add", "."], cwd=project, check=True)
+        subprocess.run(["git", "commit", "-m", "setup", "-q"], cwd=project, check=True)
+
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "No changes" in result.stderr
+
+
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestAutoCommitPowerShell:
     def test_disabled_by_default(self, tmp_path: Path):
@@ -1149,6 +1236,75 @@ class TestAutoCommitPowerShell:
         result = _run_pwsh("auto-commit.ps1", project, "after_plan")
         assert result.returncode == 0
         assert "\u2713" not in result.stdout, "Must not use Unicode checkmark"
+
+
+@pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
+class TestAutoCommitPowerShellCommitStyle:
+    """Tests for the `commit_style: conventional` option (issue #3390)."""
+
+    def test_fixed_is_default_when_commit_style_absent(self, tmp_path: Path):
+        """Omitting commit_style preserves the fixed/static message behavior."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+
+    def test_conventional_uses_generated_message(self, tmp_path: Path):
+        """commit_style: conventional uses the generated_message argument as the commit message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_conventional_without_generated_message_fails(self, tmp_path: Path):
+        """commit_style: conventional fails clearly instead of falling back to the fixed message."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode != 0
+        assert "conventional" in result.stderr.lower()
+
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" not in log.stdout
 
 
 # ── auto-commit.ps1 CRLF warning tests (issue #2253) ────────────────────────
