@@ -133,6 +133,19 @@ def test_python_timestamp_number_warning_matches_bash(repo: Path) -> None:
     )
 
 
+def test_python_invalid_number_fails_cleanly(repo: Path) -> None:
+    # Deliberate deviation from bash: the bash twin dies with an arithmetic
+    # expansion error for a non-integer --number, while the Python port
+    # reports a clean error. Pin exit code and message so the intended
+    # non-parity behavior can't regress silently.
+    args = ("--json", "--dry-run", "--number", "abc", "add rate limiting")
+    py = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert py.returncode == 1
+    assert py.stdout == ""
+    assert py.stderr == "Error: --number must be an integer, got 'abc'\n"
+
+
 @requires_bash
 def test_python_branch_truncation_matches_bash(repo: Path) -> None:
     args = ("--json", "--dry-run", "--short-name", "a" * 300, "x")
