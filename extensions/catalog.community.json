@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-06T00:00:00Z",
+  "updated_at": "2026-07-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1179,6 +1179,39 @@
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
       "updated_at": "2026-03-13T00:00:00Z"
+    },
+    "ears": {
+      "name": "EARS Requirements Syntax",
+      "id": "ears",
+      "description": "Author, lint, and convert requirements using EARS (Easy Approach to Requirements Syntax) - the five industry-standard sentence patterns for unambiguous, testable requirements.",
+      "author": "dhruv-15-03",
+      "version": "1.0.0",
+      "download_url": "https://github.com/dhruv-15-03/spec-kit-ears/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/dhruv-15-03/spec-kit-ears",
+      "homepage": "https://github.com/dhruv-15-03/spec-kit-ears",
+      "documentation": "https://github.com/dhruv-15-03/spec-kit-ears/blob/main/README.md",
+      "changelog": "https://github.com/dhruv-15-03/spec-kit-ears/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "ears",
+        "requirements",
+        "specification",
+        "quality"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-08T00:00:00Z",
+      "updated_at": "2026-07-08T00:00:00Z"
     },
     "extensify": {
       "name": "Extensify",
