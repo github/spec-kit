@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-06T00:00:00Z",
+  "updated_at": "2026-07-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2293,6 +2293,47 @@
       "stars": 0,
       "created_at": "2026-05-04T02:51:52Z",
       "updated_at": "2026-06-18T00:00:00Z"
+    },
+    "multi-repo-sync": {
+      "name": "Multi-Repo Branch Sync",
+      "id": "multi-repo-sync",
+      "description": "Creates the feature branch in affected sub-repositories and git submodules via plan/tasks hooks",
+      "author": "Fyloss",
+      "version": "1.0.0",
+      "download_url": "https://github.com/fyloss/spec-kit-multi-repo-sync/releases/download/v1.0.0/spec-kit-multi-repo-sync.zip",
+      "repository": "https://github.com/fyloss/spec-kit-multi-repo-sync",
+      "homepage": "https://github.com/fyloss/spec-kit-multi-repo-sync",
+      "documentation": "https://github.com/fyloss/spec-kit-multi-repo-sync/blob/main/README.md",
+      "changelog": "https://github.com/fyloss/spec-kit-multi-repo-sync/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "version": ">=2.31",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 2
+      },
+      "tags": [
+        "git",
+        "branching",
+        "multi-repo",
+        "submodules",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-08T00:00:00Z",
+      "updated_at": "2026-07-08T00:00:00Z"
     },
     "multi-sites": {
       "name": "Multi-Sites Spec Kit",
