@@ -1,0 +1,62 @@
+schema_version: "1.0"
+
+preset:
+  id: ai-team-handoff-spec
+  name: "AI Team Handoff Spec Reading Rules"
+  version: "1.0.0"
+  description: "Prepend handoff spec reading rules and append composite checks/evidence into native SDD commands."
+  author: AI Team Template
+  repository: https://github.com/EuphoriaYan/spec-kit
+  license: MIT
+
+requires:
+  speckit_version: ">=0.12.4"
+
+provides:
+  templates:
+    - type: command
+      name: speckit.plan
+      file: commands/plan-handoff-prepend.md
+      strategy: prepend
+      description: "Handoff spec reading for plan"
+
+    - type: command
+      name: speckit.tasks
+      file: commands/tasks-handoff-prepend.md
+      strategy: prepend
+      description: "Handoff spec reading for tasks"
+
+    - type: command
+      name: speckit.converge
+      file: commands/converge-handoff-wrap.md
+      strategy: wrap
+      description: "Handoff spec before converge and composite checks and evidence after"
+
+    - type: template
+      name: plan-template
+      file: templates/plan-template-handoff-prepend.md
+      strategy: prepend
+      description: "Prefer spec.override.md in plan template when present"
+
+    - type: template
+      name: constitution-template
+      file: templates/constitution-template.md
+      strategy: replace
+      description: "Generic repository compliance and boundary baseline constitution"
+
+    - type: command
+      name: speckit.bug.test
+      file: commands/bug-test-evidence-append.md
+      strategy: append
+      description: "Composite checks and evidence board after bug verification"
+
+    - type: command
+      name: speckit.constitution
+      file: commands/speckit.constitution.md
+      strategy: replace
+      description: "Amend baseline constitution incrementally; seed from preset template when placeholders remain"
+
+tags:
+  - ai-team
+  - handoff
+  - remote-spec

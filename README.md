@@ -17,6 +17,159 @@
 
 ---
 
+## AI Team Independent Distribution
+
+This repository is maintained as an independent AI Team SDD distribution based
+on Spec Kit. AI Team changes are developed and reviewed in
+`EuphoriaYan/spec-kit`; do not open upstream pull requests to `github/spec-kit`
+for this work.
+
+The upstream base is locked to `github/spec-kit` release `v0.12.5`
+(`12efa87`). This was the final upstream alignment point. Do not add an
+`upstream` remote or periodically rebase/merge from `github/spec-kit` unless
+the AI Team maintainers explicitly decide to perform a new one-time baseline
+alignment.
+
+Upstream Spec Kit documentation remains as reference until a local AI Team page
+replaces it. When commands or links disagree, prefer this repository's AI Team
+extension docs under [`extensions/ai-team/`](extensions/ai-team/).
+
+AI Team adds role-isolated SDD, repository-boundary rules for coding issues and
+internal-only enhancement traceability, durable Work Context Packages for
+resume, replaceable code graph adapters for impact analysis, and portable
+evidence gates for enterprise teams.
+
+### AI Team Working Model
+
+This distribution is designed for teams using Codex, Claude Code, Cursor Agent,
+or Trae to collaborate on enterprise software. It keeps the Spec Kit SDD phases
+but adds team controls around them:
+
+```text
+intake -> work context -> requirement or bug work item -> code graph impact
+-> specify -> review-spec gate -> plan
+-> plan-check (chat report) -> review-plan gate -> tasks
+-> analyze (native cross-artifact report) -> review-tasks gate
+-> implement -> converge (composite checks/evidence) -> PR/review
+```
+
+**Three layers** in the feature path:
+
+| Layer | Example | Output |
+|---|---|---|
+| Extension command | `speckit.ai-team.plan-check` | Plan Check Report in chat; `plan_check` in work context |
+| Preset (optional) | `ai-team-handoff-spec` on `converge` / `bug.test` | Handoff spec rules; composite checks / evidence |
+| Workflow human gate | `review-plan`, `review-tasks` | You approve, revise, or reject before the next SDD step |
+
+The `ai-team-sdd` workflow does **not** run core `speckit.checklist`. Requirement-quality
+checklists remain available as a manual Spec Kit command when you want them.
+
+The exact path depends on the user journey:
+
+| Journey | When to use | Required anchor |
+|---|---|---|
+| existing project bug fix | current behavior is broken, flaky, regressed, or throws errors | coding issue URL or bug slug |
+| existing project new feature | adding public behavior to an existing repository | coding issue URL for public work, or internal handoff requirement URL for confidential enterprise traceability |
+| new project from zero | creating a new repository, service, product, or application | public project issue/charter, or handoff requirement URL for confidential enterprise work |
+| resume from middle | work stopped after approval, gate, failed check, tool switch, or lost chat | workflow run ID or Work Context Package work slug |
+| failure evolution | repeated AI mistake, failed review, failed check, escaped bug, or incident | failed PR, check, incident, or work slug |
+
+For detailed steps, start with
+[`extensions/ai-team/README.md`](extensions/ai-team/) and
+[`extensions/ai-team/docs/user-journeys.md`](extensions/ai-team/docs/user-journeys.md).
+
+### AI Team Quick Start
+
+Install this distribution, initialize the coding repository, and add the AI
+Team extension, handoff-spec preset, and workflows:
+
+```bash
+uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
+specify init . --integration codex --integration-options="--skills"
+specify extension add ai-team
+specify extension add bug
+specify preset add ai-team-handoff-spec
+specify workflow add ai-team-sdd
+specify workflow add ai-team-bugfix
+```
+
+The `bug` extension is required for `ai-team-bugfix` (composite checks/evidence run
+inside `speckit.bug.test`).
+
+**Extension:** `speckit.ai-team.plan-check` runs after `speckit.plan`, outputs a
+Plan Check Report in chat (no gate markdown file), and records `plan_check` in the
+Work Context Package.
+
+**Preset:** `ai-team-handoff-spec` composes handoff spec rules and composite AI Team
+logic into native commands: checks/evidence in `speckit.converge` (feature) or
+`speckit.bug.test` (bugfix). `speckit.analyze` stays native (read-only report).
+
+**Workflow gates:** `review-plan` and `review-tasks` are human decision points.
+Choose **revise** at either gate and the workflow loops automatically (`plan-cycle`
+or `task-cycle` do-while). Revise iterations pass a fixed patch instruction (plus
+`work_slug`) instead of the original request/spec URLs — agents revise from
+`plan_check`, `context-pack.md`, or native analyze findings already on disk.
+
+Without the preset, core commands do not know about `spec.override.md` or AI Team
+policy overlays.
+
+Use `--integration claude`, `--integration cursor-agent`, or `--integration
+trae` when those tools are active.
+
+Examples:
+
+```bash
+# Existing project bug fix
+specify workflow run ai-team-bugfix \
+  --input request="Fix the upload timeout reported by customer support" \
+  --input work_slug=bug-project-alpha-123 \
+  --input coding_issue_url="https://example.com/org/project/issues/123"
+
+# Existing project public feature
+specify workflow run ai-team-sdd \
+  --input request="Implement public search result export" \
+  --input work_type=feature \
+  --input coding_issue_url="https://example.com/org/project/issues/456"
+
+# Existing project confidential enterprise feature
+specify workflow run ai-team-sdd \
+  --input request="Implement REQ-2026-015 search result export" \
+  --input work_type=feature \
+  --input handoff_requirement_url="https://example.com/enhancements/rfcs/REQ-2026-015"
+
+# New project
+specify workflow run ai-team-sdd \
+  --input request="Create the initial customer notification service" \
+  --input work_type=new-project \
+  --input bootstrap_workspace=true \
+  --input handoff_requirement_url="https://example.com/enhancements/rfcs/REQ-2026-020"
+
+# Resume by durable work context after tool or chat loss
+speckit.ai-team.context work_slug=<work_slug> resume=true
+
+# Resume by workflow run state
+specify workflow resume <run-id>
+```
+
+For chat-first tools, use stable path aliases. These phrases are aliases for the
+workflow inputs above:
+
+```text
+Use the ai-team-sdd feature path for this public coding issue:
+https://example.com/org/project/issues/456
+
+Use the ai-team-sdd feature path for this internal handoff requirement:
+https://example.com/enhancements/rfcs/REQ-2026-015
+
+Use the ai-team-bugfix path with work_slug=bug-project-alpha-123 for this coding issue:
+https://example.com/org/project/issues/123
+
+Use the ai-team-sdd new-project path for this internal handoff requirement:
+https://example.com/enhancements/rfcs/REQ-2026-020
+
+Use the ai-team-sdd resume path for work_slug=003-search-export from tasks-ready.
+```
+
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
@@ -45,10 +198,10 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify CLI
 
-Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the tag or branch used by this independent distribution:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
 ```
 
 See the [Installation Guide](./docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.

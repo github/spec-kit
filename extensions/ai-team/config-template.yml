@@ -1,0 +1,159 @@
+# AI Team SDD Collaboration configuration.
+# Copy is installed to `.specify/extensions/ai-team/ai-team-config.yml`.
+
+bootstrap:
+  # Workspace creation must reuse Spec Kit init instead of copying template
+  # repositories into a product workspace.
+  use_specify_init: true
+  recommended_extensions:
+    - ai-team
+    - agent-context
+    - bug
+
+agent_tools:
+  # AI Team defaults to the agent integrations already supported by Spec Kit.
+  # Cursor is represented by Spec Kit's `cursor-agent` integration key.
+  supported_integrations:
+    - codex
+    - claude
+    - cursor-agent
+    - trae
+  auto_detect_from_specify_init: true
+
+work_context:
+  # Durable work context survives interrupted sessions and tool switches.
+  root: .specify/ai-team/work
+  context_pack_file: context-pack.md
+  work_context_file: work-context.yml
+  allow_reconstruct_from_handoff_requirement_url: true
+  allow_reconstruct_from_bug_slug: true
+
+issue_workflow:
+  type_labels:
+    enhancement_internal_allowed:
+      - type/feature
+    coding_allowed:
+      - type/feature
+      - type/bug
+  state_labels:
+    - state/draft
+    - state/accepted
+    - state/working
+    - state/finished
+    - state/rejected
+    - state/closed
+    - state/superseded
+  enhancement_internal_allows_bugfix: false
+
+code_graph:
+  # Adapters may be local tools, MCP tools, or hosted services. All of them
+  # should normalize into the same artifact shape under work/<work_slug>/codegraph/.
+  default_adapter_order:
+    - scip
+    - joern
+    - codeql
+    - tree-sitter-source
+  normalized_outputs:
+    - nodes.jsonl
+    - edges.jsonl
+    - summary.md
+    - adapter-report.md
+  require_for:
+    - public interface change
+    - class add or delete
+    - cross-module semantic change
+    - dependency direction change
+    - resumed task with changed source snapshot
+  license_review_required_for:
+    - jqassistant
+    - universal-ctags
+
+repositories:
+  # Internal enhancement repository stores confidential enterprise demand,
+  # drafts, approval discussion, wave planning, and sanitized handoff RFCs.
+  # Do not record private raw-demand paths in public coding-repository files.
+  enhancement_internal:
+    role: enhancement-internal
+    remote: ""
+    visibility: internal-only
+    customer_visible: false
+    raw_demand_record_in_coding_repository: false
+    stores:
+      - raw customer demand
+      - private drafts
+      - commercial context
+      - approval comments
+      - wave plan
+      - release scheduling
+      - sanitized handoff RFCs
+      - internal status labels
+
+  # Coding repository stores source code, public implementation plans, tasks,
+  # self-tests, evidence, implementation PRs, and public feature issues.
+  coding:
+    role: coding
+    remote: ""
+    visibility: project-controlled
+    enhancement_handoff_submodule_path: ""
+    stores:
+      - source code
+      - public feature issues
+      - public plan
+      - tasks
+      - self-test evidence
+      - implementation PRs
+      - public-safe summaries for internal enhancement work
+
+privacy:
+  raw_customer_demand_public: false
+  public_plan_allowed: true
+  coding_repo_may_record_raw_internal_demand: false
+  public_feature_may_start_from_coding_issue: true
+  internal_feature_requires_handoff_or_public_safe_summary: true
+  local_handoff_submodule_is_cache_only: true
+  private_handoff_override_file: spec.override.md
+  public_artifacts:
+    - public coding issue URL
+    - public-safe handoff summary
+    - plan.md
+    - tasks.md
+    - quickstart.md
+    - Evidence Board
+  private_artifacts:
+    - raw customer request
+    - commercial context
+    - sensitive acceptance discussion
+    - internal requirement draft URL
+
+roles:
+  specify:
+    name: product-manager-or-customer-manager
+    owns:
+      - problem
+      - user scenario
+      - acceptance intent
+    context_isolation: true
+  plan:
+    name: architect
+    owns:
+      - architecture plan
+      - public/private boundary
+      - code graph impact
+      - build-from-zero strategy
+    context_isolation: true
+  tasks_and_implement:
+    name: developer
+    owns:
+      - tasks
+      - implementation
+      - self-test evidence
+      - pull request
+    context_isolation: true
+
+gates:
+  require_role_handoff: true
+  require_code_graph_for_existing_project: true
+  require_strict_build_plan_for_new_project: true
+  require_selftest_mapping: true
+  require_evidence_board: true
+  require_failure_evolution_followup: true

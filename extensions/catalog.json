@@ -17,6 +17,22 @@
         "core"
       ]
     },
+    "ai-team": {
+      "name": "AI Team SDD Collaboration",
+      "id": "ai-team",
+      "version": "0.1.0",
+      "description": "Enterprise AI Team workflow for Spec-Driven Development with role-isolated handoffs, repository boundaries, durable task context resume, code graph adapters, self-test evidence, and failure evolution.",
+      "author": "AI Team Template",
+      "repository": "https://github.com/EuphoriaYan/spec-kit",
+      "bundled": true,
+      "tags": [
+        "ai-team",
+        "enterprise",
+        "sdd",
+        "governance",
+        "collaboration"
+      ]
+    },
     "bug": {
       "name": "Bug Triage Workflow",
       "id": "bug",

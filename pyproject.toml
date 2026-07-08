@@ -42,9 +42,13 @@ packages = ["src/specify_cli"]
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/git" = "specify_cli/core_pack/extensions/git"
 "extensions/agent-context" = "specify_cli/core_pack/extensions/agent-context"
+"extensions/ai-team" = "specify_cli/core_pack/extensions/ai-team"
 "extensions/bug" = "specify_cli/core_pack/extensions/bug"
-# Bundled workflows (auto-installed during `specify init`)
+# Bundled workflows. `speckit` is auto-installed during `specify init`; others
+# are available through workflow add/run.
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
+"workflows/ai-team-sdd" = "specify_cli/core_pack/workflows/ai-team-sdd"
+"workflows/ai-team-bugfix" = "specify_cli/core_pack/workflows/ai-team-bugfix"
 # Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
 "presets/lean" = "specify_cli/core_pack/presets/lean"
 
@@ -83,4 +87,3 @@ extend-select = [
     "S604",  # call-with-shell-equals-true
     "S605",  # start-process-with-a-shell
 ]
-
