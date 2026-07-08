@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
-import re
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -91,27 +90,18 @@ def test_integrations_reference_doc_matches_renderer():
     committed_table = doc_text[start:end].rstrip("\n")
     rendered_table = render_integrations_table().rstrip("\n")
 
-    def parse_table(table: str) -> list[list[str]]:
+    def normalize_table(table: str) -> list[list[str]]:
         rows: list[list[str]] = []
         for line in table.splitlines():
             if not line.startswith("| "):
                 continue
-            parts = [
-                part.strip()
-                for part in re.split(r"(?<!\\)\|", line.strip("|"))
-            ]
+            parts = [part.strip() for part in line.strip().strip("|").split("|")]
             if parts and set(parts[0]) == {"-"}:
                 continue
-            if len(parts) == 3:
-                rows.append(parts)
+            rows.append(parts)
         return rows
 
-    committed_rows = parse_table(committed_table)
-    rendered_rows = parse_table(rendered_table)
-    committed_rows.sort(key=lambda row: row[1])
-    rendered_rows.sort(key=lambda row: row[1])
-
-    assert committed_rows == rendered_rows
+    assert normalize_table(committed_table) == normalize_table(rendered_table)
 
 
 def test_render_cell_escapes_pipes_and_normalizes_newlines():
@@ -219,3 +209,17 @@ def test_cli_integration_search_markdown_stdout_is_clean():
         assert lines[0] == "| Agent | Key | Notes |"
         # Ensure stderr has no error messages
         assert "error" not in result.stderr.lower()
+
+
+def test_cli_integration_search_markdown_failure_exits_nonzero():
+    """Test that render failures return a clean non-zero exit."""
+    with _get_catalog_docs_patches():
+        with patch(
+            "specify_cli.catalog_docs.render_integrations_table",
+            side_effect=ValueError("boom"),
+        ):
+            result = runner.invoke(app, ["integration", "search", "--markdown"])
+
+    assert result.exit_code == 1
+    assert "Error rendering integrations table: boom" in result.stderr
+    assert result.stdout == ""

@@ -30,6 +30,7 @@ import os
 import sys
 import json
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.panel import Panel
@@ -512,9 +513,48 @@ _register_integration_cmds(app)
 # Re-export selected helpers to preserve the public import surface.
 from .integrations._helpers import (  # noqa: E402
     _clear_init_options_for_integration as _clear_init_options_for_integration,
+    _cli_error_detail as _cli_error_detail,
+    _cli_phase_label as _cli_phase_label,
+    _get_speckit_version as _get_speckit_version,
+    _MANIFEST_READ_ERRORS as _MANIFEST_READ_ERRORS,
+    _parse_integration_options as _parse_integration_options,
+    _read_integration_json as _read_integration_json,
+    _refresh_init_options_speckit_version as _refresh_init_options_speckit_version,
+    _register_extensions_for_agent as _register_extensions_for_agent,
+    _remove_integration_json as _remove_integration_json,
+    _resolve_integration_options as _resolve_integration_options,
+    _resolve_integration_script_type as _resolve_integration_script_type,
+    _resolve_script_type as _resolve_script_type,
+    _set_default_integration as _set_default_integration,
+    _set_default_integration_or_exit as _set_default_integration_or_exit,
+    _SharedTemplateRefreshError as _SharedTemplateRefreshError,
+    _unregister_extensions_for_agent as _unregister_extensions_for_agent,
     _update_init_options_for_integration as _update_init_options_for_integration,
+    _write_integration_json as _write_integration_json,
 )
 from ._project import _resolve_init_dir_override as _resolve_init_dir_override  # noqa: E402
+from .integration_runtime import (  # noqa: E402
+    invoke_separator_for_integration as _invoke_separator_for_integration,
+    with_integration_setting as _with_integration_setting,
+)
+from .integration_state import (  # noqa: E402
+    dedupe_integration_keys as _dedupe_integration_keys,
+    default_integration_key as _default_integration_key,
+    installed_integration_keys as _installed_integration_keys,
+    integration_settings as _integration_settings,
+)
+
+
+integration_app = typer.Typer(
+    name="integration",
+    help="Manage coding agent integrations",
+    add_completion=False,
+)
+integration_catalog_app = typer.Typer(
+    name="catalog",
+    help="Manage integration catalog sources",
+    add_completion=False,
+)
 
 
 def _require_specify_project() -> Path:
@@ -539,317 +579,6 @@ def _require_specify_project() -> Path:
         "Run this command from a Spec Kit project root or set SPECIFY_INIT_DIR to one."
     )
     raise typer.Exit(1)
-
-@integration_app.command("list")
-def integration_list(
-    catalog: bool = typer.Option(False, "--catalog", help="Browse full catalog (built-in + community)"),
-):
-    """List available integrations and installed status."""
-    from .integrations import INTEGRATION_REGISTRY
-
-    project_root = _require_specify_project()
-    current = _read_integration_json(project_root)
-    default_key = _default_integration_key(current)
-    installed_keys = set(_installed_integration_keys(current))
-
-    if catalog:
-        from .integrations.catalog import IntegrationCatalog, IntegrationCatalogError
-
-        ic = IntegrationCatalog(project_root)
-        try:
-            entries = ic.search()
-        except IntegrationCatalogError as exc:
-            console.print(f"[red]Error:[/red] {exc}")
-            raise typer.Exit(1)
-
-        if not entries:
-            console.print("[yellow]No integrations found in catalog.[/yellow]")
-            return
-
-        table = Table(title="Integration Catalog")
-        table.add_column("ID", style="cyan")
-        table.add_column("Name")
-        table.add_column("Version")
-        table.add_column("Source")
-        table.add_column("Status")
-        table.add_column("Multi-install Safe")
-
-        for entry in sorted(entries, key=lambda e: e["id"]):
-            eid = entry["id"]
-            cat_name = entry.get("_catalog_name", "")
-            install_allowed = entry.get("_install_allowed", True)
-            if eid == default_key:
-                status = "[green]installed (default)[/green]"
-            elif eid in installed_keys:
-                status = "[green]installed[/green]"
-            elif eid in INTEGRATION_REGISTRY:
-                status = "built-in"
-            elif install_allowed is False:
-                status = "discovery-only"
-            else:
-                status = ""
-            safe = ""
-            if eid in INTEGRATION_REGISTRY:
-                safe = "yes" if getattr(INTEGRATION_REGISTRY[eid], "multi_install_safe", False) else "no"
-            table.add_row(
-                eid,
-                entry.get("name", eid),
-                entry.get("version", ""),
-                cat_name,
-                status,
-                safe,
-            )
-
-        console.print(table)
-        return
-
-    table = Table(title="Coding Agent Integrations")
-    table.add_column("Key", style="cyan")
-    table.add_column("Name")
-    table.add_column("Status")
-    table.add_column("CLI Required")
-    table.add_column("Multi-install Safe")
-
-    for key in sorted(INTEGRATION_REGISTRY.keys()):
-        integration = INTEGRATION_REGISTRY[key]
-        cfg = integration.config or {}
-        name = cfg.get("name", key)
-        requires_cli = cfg.get("requires_cli", False)
-
-        if key == default_key:
-            status = "[green]installed (default)[/green]"
-        elif key in installed_keys:
-            status = "[green]installed[/green]"
-        else:
-            status = ""
-
-        cli_req = "yes" if requires_cli else "no (IDE)"
-        safe = "yes" if getattr(integration, "multi_install_safe", False) else "no"
-        table.add_row(key, name, status, cli_req, safe)
-
-    console.print(table)
-
-    if installed_keys:
-        console.print(f"\n[dim]Default integration:[/dim] [cyan]{default_key or 'none'}[/cyan]")
-        console.print(f"[dim]Installed integrations:[/dim] [cyan]{', '.join(sorted(installed_keys))}[/cyan]")
-    else:
-        console.print("\n[yellow]No integration currently installed.[/yellow]")
-        console.print("Install one with: [cyan]specify integration install <key>[/cyan]")
-
-
-@integration_app.command("install")
-def integration_install(
-    key: str = typer.Argument(help="Integration key to install (e.g. claude, copilot)"),
-    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
-    force: bool = typer.Option(False, "--force", help="Allow multi-install when integrations are not declared safe"),
-    integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
-):
-    """Install an integration into an existing project."""
-    from .integrations import INTEGRATION_REGISTRY, get_integration
-    from .integrations.manifest import IntegrationManifest
-
-    project_root = _require_specify_project()
-    integration = get_integration(key)
-    if integration is None:
-        console.print(f"[red]Error:[/red] Unknown integration '{key}'")
-        available = ", ".join(sorted(INTEGRATION_REGISTRY.keys()))
-        console.print(f"Available integrations: {available}")
-        raise typer.Exit(1)
-
-    current = _read_integration_json(project_root)
-    default_key = _default_integration_key(current)
-    installed_keys = _installed_integration_keys(current)
-
-    if key in installed_keys:
-        console.print(f"[yellow]Integration '{key}' is already installed.[/yellow]")
-        if default_key == key:
-            console.print("It is already the default integration.")
-        else:
-            console.print(
-                f"To make it the default integration, run "
-                f"[cyan]specify integration use {key}[/cyan]."
-            )
-        console.print(
-            f"To refresh its managed files or options, run "
-            f"[cyan]specify integration upgrade {key}[/cyan]."
-        )
-        console.print("No files were changed.")
-        raise typer.Exit(0)
-
-    if installed_keys and not force:
-        unsafe_keys = []
-        for installed_key in installed_keys:
-            installed_integration = get_integration(installed_key)
-            if not installed_integration or not getattr(installed_integration, "multi_install_safe", False):
-                unsafe_keys.append(installed_key)
-        if unsafe_keys or not getattr(integration, "multi_install_safe", False):
-            console.print(
-                f"[red]Error:[/red] Installed integrations: {', '.join(installed_keys)}."
-            )
-            if default_key:
-                console.print(f"Default integration: [cyan]{default_key}[/cyan].")
-            console.print(
-                "Installing multiple integrations is only automatic when all involved "
-                "integrations are declared multi-install safe."
-            )
-            console.print(
-                f"To replace the default integration, run "
-                f"[cyan]specify integration switch {key}[/cyan]."
-            )
-            console.print(
-                f"To install '{key}' alongside the existing integrations anyway, "
-                "retry the same install command with [cyan]--force[/cyan]."
-            )
-            raise typer.Exit(1)
-
-    selected_script = _resolve_script_type(project_root, script)
-
-    # Build parsed options from --integration-options so the integration
-    # can determine its effective invoke separator before shared infra
-    # is installed.
-    raw_options, parsed_options = _resolve_integration_options(
-        integration, current, key, integration_options
-    )
-
-    # Ensure shared infrastructure is present (safe to run unconditionally;
-    # _install_shared_infra merges missing files without overwriting).
-    infra_integration = integration
-    infra_key = key
-    infra_parsed = parsed_options
-    if default_key:
-        default_integration = get_integration(default_key)
-        if default_integration is not None:
-            infra_integration = default_integration
-            infra_key = default_key
-            _, infra_parsed = _resolve_integration_options(
-                default_integration, current, default_key, None
-            )
-    _install_shared_infra_or_exit(
-        project_root,
-        selected_script,
-        invoke_separator=_invoke_separator_for_integration(
-            infra_integration, current, infra_key, infra_parsed
-        ),
-    )
-    if os.name != "nt":
-        ensure_executable_scripts(project_root)
-
-    manifest = IntegrationManifest(
-        integration.key, project_root, version=get_speckit_version()
-    )
-
-    try:
-        integration.setup(
-            project_root, manifest,
-            parsed_options=parsed_options,
-            script_type=selected_script,
-            raw_options=raw_options,
-        )
-        manifest.save()
-        new_installed = _dedupe_integration_keys([*installed_keys, integration.key])
-        new_default = default_key or integration.key
-        settings = _with_integration_setting(
-            current,
-            integration.key,
-            integration,
-            script_type=selected_script,
-            raw_options=raw_options,
-            parsed_options=parsed_options,
-        )
-        _write_integration_json(project_root, new_default, new_installed, settings)
-        if new_default == integration.key:
-            _update_init_options_for_integration(project_root, integration, script_type=selected_script)
-
-    except Exception as e:
-        # Attempt rollback of any files written by setup
-        try:
-            integration.teardown(project_root, manifest, force=True)
-        except Exception as rollback_err:
-            # Suppress so the original setup error remains the primary failure
-            console.print(f"[yellow]Warning:[/yellow] Failed to roll back integration changes: {rollback_err}")
-        if installed_keys:
-            _write_integration_json(
-                project_root, default_key, installed_keys, _integration_settings(current)
-            )
-        else:
-            _remove_integration_json(project_root)
-        console.print(f"[red]Error:[/red] Failed to install integration: {e}")
-        raise typer.Exit(1)
-
-    name = (integration.config or {}).get("name", key)
-    console.print(f"\n[green]✓[/green] Integration '{name}' installed successfully")
-    if default_key:
-        console.print(f"[dim]Default integration remains:[/dim] [cyan]{default_key}[/cyan]")
-
-
-def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, Any] | None:
-    """Parse --integration-options string into a dict matching the integration's declared options.
-
-    Returns ``None`` when no options are provided.
-    """
-    import shlex
-    parsed: dict[str, Any] = {}
-    tokens = shlex.split(raw_options)
-    declared_options = list(integration.options())
-    declared = {opt.name.lstrip("-"): opt for opt in declared_options}
-    allowed = ", ".join(sorted(opt.name for opt in declared_options))
-    i = 0
-    while i < len(tokens):
-        token = tokens[i]
-        if not token.startswith("-"):
-            console.print(f"[red]Error:[/red] Unexpected integration option value '{token}'.")
-            if allowed:
-                console.print(f"Allowed options: {allowed}")
-            raise typer.Exit(1)
-        name = token.lstrip("-")
-        value: str | None = None
-        # Handle --name=value syntax
-        if "=" in name:
-            name, value = name.split("=", 1)
-        opt = declared.get(name)
-        if not opt:
-            console.print(f"[red]Error:[/red] Unknown integration option '{token}'.")
-            if allowed:
-                console.print(f"Allowed options: {allowed}")
-            raise typer.Exit(1)
-        key = name.replace("-", "_")
-        if opt.is_flag:
-            if value is not None:
-                console.print(f"[red]Error:[/red] Option '{opt.name}' is a flag and does not accept a value.")
-                raise typer.Exit(1)
-            parsed[key] = True
-            i += 1
-        elif value is not None:
-            parsed[key] = value
-            i += 1
-        elif i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
-            parsed[key] = tokens[i + 1]
-            i += 2
-        else:
-            console.print(f"[red]Error:[/red] Option '{opt.name}' requires a value.")
-            raise typer.Exit(1)
-    return parsed or None
-
-
-def _update_init_options_for_integration(
-    project_root: Path,
-    integration: Any,
-    script_type: str | None = None,
-) -> None:
-    """Update ``init-options.json`` to reflect *integration* as the active one."""
-    from .integrations.base import SkillsIntegration
-    opts = load_init_options(project_root)
-    opts["integration"] = integration.key
-    opts["ai"] = integration.key
-    opts["context_file"] = integration.context_file
-    if script_type:
-        opts["script"] = script_type
-    if isinstance(integration, SkillsIntegration) or getattr(integration, "_skills_mode", False):
-        opts["ai_skills"] = True
-    else:
-        opts.pop("ai_skills", None)
-    save_init_options(project_root, opts)
-
 
 @integration_app.command("use")
 def integration_use(
