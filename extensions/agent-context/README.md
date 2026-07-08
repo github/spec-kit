@@ -81,4 +81,4 @@ pip install pyyaml
 
 ## Issues
 
-For any other issues, please create an issue in the [official Github repo](https://github.com/github/spec-kit/issues).
+For any other issues, please create an issue in the [official GitHub repo](https://github.com/github/spec-kit/issues).

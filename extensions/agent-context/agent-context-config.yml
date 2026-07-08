@@ -1,13 +1,12 @@
 # Coding Agent Context Extension Configuration
-# These values are populated automatically by `specify init` and `specify integration use` / `specify integration install`.
 
-# WHAT: Single Project-relative path to the main coding agent context file.
-# REQUIREMENT: OPTIONAL. If you leave this entry blank, the bundled update scripts will automatically fill this in based on the active integration's key.
+# WHAT: Single project relative path to the main coding agent context file.
+# REQUIREMENT: OPTIONAL. Use this if you want to manually specify a single context file. If you leave this entry blank, it will use the default context file for the coding agent you picked when you set up Spec Kit. See `agent-context-defaults.json` for the defaults.
 # EXAMPLE: context_file: CLAUDE.md
 context_file: ""
 
-# WHAT: List of project-relative coding agent context file paths managed by this extension. If you have both `context_file` and `context_files`, then `context_files` takes precedence.
-# REQUIREMENT: OPTIONAL. Use this if your project requires you to keep multiple agent files in sync.
+# WHAT: List of project relative paths to the coding agent context files. If you have both `context_file` and `context_files` filled, then this(`context_files`) takes precedence.
+# REQUIREMENT: OPTIONAL. Use this if your project requires you to keep multiple agent context files in sync.
 # EXAMPLE:
 # context_files:
 #   - AGENTS.md
