@@ -25,7 +25,14 @@ class ShellStep(StepBase):
         run_cmd = str(run_cmd)
 
         cwd = context.project_root or "."
+        # Defensive: the engine does not auto-validate step config, so an
+        # invalid ``timeout`` (string, None, ...) would otherwise raise a
+        # TypeError from subprocess.run() and crash the whole run.  Mirror
+        # the engine's handling of unvalidated ``continue_on_error`` by
+        # only honoring well-formed values and falling back to the default.
         timeout = config.get("timeout", 300)
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+            timeout = 300
 
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors

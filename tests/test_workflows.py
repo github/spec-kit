@@ -1349,6 +1349,30 @@ class TestShellStep:
         assert "7 seconds" in result.error
 
     @pytest.mark.parametrize("bad", [0, -5, "600", 1.5, None, True])
+    def test_execute_ignores_unvalidated_bad_timeout(self, bad, monkeypatch):
+        """execute() falls back to 300 when config skipped validation (#3327)."""
+        import subprocess as sp
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        seen = {}
+        real_run = sp.run
+
+        def spy_run(*args, **kwargs):
+            seen["timeout"] = kwargs.get("timeout")
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.steps.shell.subprocess.run", spy_run
+        )
+        result = ShellStep().execute(
+            {"id": "t", "run": "echo hi", "timeout": bad}, StepContext()
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert seen["timeout"] == 300
+
+    @pytest.mark.parametrize("bad", [0, -5, "600", 1.5, None, True])
     def test_validate_rejects_bad_timeout(self, bad):
         from specify_cli.workflows.steps.shell import ShellStep
 
