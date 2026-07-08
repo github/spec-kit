@@ -1,25 +1,25 @@
 # Coding Agent Context Extension Configuration
-# These values are populated automatically by `specify init` and
-# `specify integration use` / `specify integration install`.
+# These values are populated automatically by `specify init` and `specify integration use` / `specify integration install`.
 
-# Path (relative to the project root) to the default coding agent context file
-# managed by this extension (e.g. CLAUDE.md, AGENTS.md,
-# .github/copilot-instructions.md). Set automatically from the active
-# integration and regenerated during `specify init` or integration switches.
+# WHAT: Single Project-relative path to the main coding agent context file.
+# REQUIREMENT: OPTIONAL. If you leave this entry blank, the bundled update scripts will automatically fill this in based on the active integration's key.
 # EXAMPLE: context_file: CLAUDE.md
 context_file: ""
 
-# Optional list of project-relative coding agent context files managed by this
-# extension. When non-empty, this list takes precedence over `context_file`.
-# Use this for projects that intentionally keep multiple agent anchors in sync.
+# WHAT: List of project-relative coding agent context file paths managed by this extension. If you have both `context_file` and `context_files`, then `context_files` takes precedence.
+# REQUIREMENT: OPTIONAL. Use this if your project requires you to keep multiple agent files in sync.
 # EXAMPLE:
 # context_files:
 #   - AGENTS.md
 #   - CLAUDE.md
 context_files: []
 
-# Delimiters for the managed Spec Kit section.
-# Edit these to use custom markers.
+# WHAT: Markers (Delimiters) for the managed Spec Kit section. All information injected by this extension will only be done in between these markers.
+# REQUIREMENT: REQUIRED. Only change if you wish to have a custom marker name.
+# EXAMPLE:
+# context_markers:
+#  start: "<!-- AGENT SPEC KIT CONTEXT START -->"
+#  end: "<!-- AGENT SPEC KIT CONTEXT END -->"
 context_markers:
   start: "<!-- SPECKIT START -->"
   end: "<!-- SPECKIT END -->"
