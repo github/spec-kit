@@ -1314,7 +1314,7 @@ class TestShellStep:
         import subprocess as sp
 
         from specify_cli.workflows.steps.shell import ShellStep
-        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.base import StepContext, StepStatus
 
         seen = {}
         real_run = sp.run
@@ -1326,7 +1326,8 @@ class TestShellStep:
         monkeypatch.setattr(
             "specify_cli.workflows.steps.shell.subprocess.run", spy_run
         )
-        ShellStep().execute({"id": "t", "run": "echo hi"}, StepContext())
+        result = ShellStep().execute({"id": "t", "run": "echo hi"}, StepContext())
+        assert result.status == StepStatus.COMPLETED
         assert seen["timeout"] == 300
 
     def test_timeout_error_reports_configured_value(self, monkeypatch):

@@ -110,7 +110,11 @@ class ShellStep(StepBase):
         if "timeout" in config:
             timeout = config["timeout"]
             # bool is an int subclass, so reject it explicitly.
-            if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+            if (
+                isinstance(timeout, bool)
+                or not isinstance(timeout, int)
+                or timeout <= 0
+            ):
                 errors.append(
                     f"Shell step {config.get('id', '?')!r}: 'timeout' must be a "
                     f"positive integer (seconds) when present, got {timeout!r}."
