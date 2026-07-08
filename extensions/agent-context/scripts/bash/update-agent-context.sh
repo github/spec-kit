@@ -12,7 +12,7 @@
 #
 # When `plan_path` is omitted, the script derives it from `.specify/feature.json`
 # (written by /speckit-specify). Falls back to the most recently modified
-# `specs/*/plan.md` only when feature.json is absent or its plan does not exist yet.
+# `specs/**/plan.md` only when feature.json is absent or its plan does not exist yet.
 
 set -euo pipefail
 
@@ -308,7 +308,7 @@ from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 specs = root / "specs"
 plans = sorted(
-    specs.glob("*/plan.md"),
+    specs.glob("**/plan.md"),
     key=lambda p: p.stat().st_mtime,
     reverse=True,
 )

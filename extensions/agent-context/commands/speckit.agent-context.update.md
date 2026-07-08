@@ -24,4 +24,4 @@ If `context_files` and `context_file` are empty, the command reports nothing to 
 - **Bash**: `.specify/extensions/agent-context/scripts/bash/update-agent-context.sh [plan_path]`
 - **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`
 
-When `plan_path` is omitted, the script auto-detects the most recently modified `specs/*/plan.md`.
+When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (any depth, so scoped layouts like `specs/<scope>/<feature>/plan.md` are found).

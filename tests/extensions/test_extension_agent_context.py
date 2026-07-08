@@ -688,6 +688,62 @@ class TestExtensionSelfSeed:
 _MDC_CONTEXT_FILE = ".cursor/rules/specify-rules.mdc"
 
 
+class TestPlanDiscovery:
+    """Mtime fallback must find plans in nested spec layouts (#3024).
+
+    Repos using SPECIFY_FEATURE_DIRECTORY place plans at
+    ``specs/<scope>/<feature>/plan.md``; a one-level ``specs/*/plan.md``
+    glob never matches those.
+    """
+
+    @staticmethod
+    def _make_plans(project: Path) -> Path:
+        # Older flat plan plus a newer nested plan: recursive discovery
+        # must pick the nested one by mtime.
+        flat = project / "specs" / "old-feature" / "plan.md"
+        flat.parent.mkdir(parents=True)
+        flat.write_text("flat plan\n", encoding="utf-8")
+        os.utime(flat, (1_000_000_000, 1_000_000_000))
+        nested = project / "specs" / "scope" / "new-feature" / "plan.md"
+        nested.parent.mkdir(parents=True)
+        nested.write_text("nested plan\n", encoding="utf-8")
+        return nested
+
+    @requires_bash
+    def test_bash_script_finds_nested_plan(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md"],
+        )
+        self._make_plans(project)
+
+        result = _run_bash_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        content = (project / "AGENTS.md").read_text(encoding="utf-8")
+        assert "specs/scope/new-feature/plan.md" in content
+
+    @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell not available")
+    def test_powershell_script_finds_nested_plan(self, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        _install_agent_context_config(
+            project,
+            context_file="AGENTS.md",
+            context_files=["AGENTS.md"],
+        )
+        self._make_plans(project)
+
+        result = _run_powershell_agent_context_script(project)
+
+        assert result.returncode == 0, result.stderr + result.stdout
+        content = (project / "AGENTS.md").read_text(encoding="utf-8")
+        assert "specs/scope/new-feature/plan.md" in content
+
+
 class TestMdcFrontmatter:
     """Cursor-style ``.mdc`` targets must carry ``alwaysApply: true`` frontmatter
     so the rule file is auto-loaded; non-``.mdc`` targets must not gain any."""
