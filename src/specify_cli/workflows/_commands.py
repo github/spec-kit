@@ -348,6 +348,18 @@ def workflow_run(
         engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     err = _error_console(json_output)
+
+    if not is_file_source:
+        from .catalog import WorkflowRegistry
+
+        installed_meta = WorkflowRegistry(project_root).get(source)
+        if installed_meta is not None and installed_meta.get("enabled", True) is False:
+            err.print(
+                f"[red]Error:[/red] Workflow '{_escape_markup(source)}' is disabled. "
+                f"Enable with: specify workflow enable {_escape_markup(source)}"
+            )
+            raise typer.Exit(1)
+
     try:
         definition = engine.load_workflow(source_path if is_file_source else source)
     except FileNotFoundError:
@@ -570,7 +582,8 @@ def workflow_list():
 
     console.print("\n[bold cyan]Installed Workflows:[/bold cyan]\n")
     for wf_id, wf_data in installed.items():
-        console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}")
+        marker = "" if wf_data.get("enabled", True) else " [red]\\[disabled][/red]"
+        console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}{marker}")
         desc = wf_data.get("description", "")
         if desc:
             console.print(f"    {desc}")
@@ -580,9 +593,11 @@ def workflow_list():
 @workflow_app.command("add")
 def workflow_add(
     source: str = typer.Argument(..., help="Workflow ID, URL, or local path"),
+    dev: bool = typer.Option(False, "--dev", help="Install from a local workflow YAML file or directory"),
+    from_url: str | None = typer.Option(None, "--from", help="Install from a custom URL"),
 ):
     """Install a workflow from catalog, URL, or local path."""
-    from .catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
+    from .catalog import WorkflowRegistry
     from .engine import WorkflowDefinition
 
     project_root = _require_specify_project()
@@ -594,7 +609,9 @@ def workflow_add(
     _reject_unsafe_dir(project_root / ".specify", ".specify")
     _reject_unsafe_dir(workflows_dir, ".specify/workflows")
 
-    def _validate_and_install_local(yaml_path: Path, source_label: str) -> None:
+    def _validate_and_install_local(
+        yaml_path: Path, source_label: str, expected_id: str | None = None
+    ) -> None:
         """Validate and install a workflow from a local YAML file."""
         try:
             definition = WorkflowDefinition.from_yaml(yaml_path)
@@ -621,6 +638,13 @@ def workflow_add(
                 console.print(f"  \u2022 {err}")
             raise typer.Exit(1)
 
+        if expected_id is not None and definition.id != expected_id:
+            console.print(
+                f"[red]Error:[/red] Workflow ID in YAML ({definition.id!r}) "
+                f"does not match the requested workflow ID ({expected_id!r})."
+            )
+            raise typer.Exit(1)
+
         dest_dir = _safe_workflow_id_dir(workflows_dir, definition.id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         import shutil
@@ -633,16 +657,40 @@ def workflow_add(
         })
         console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
 
-    # Try as URL (http/https)
-    if source.startswith("http://") or source.startswith("https://"):
+    # Explicit local install (mirrors `extension add --dev`). --dev takes
+    # precedence over --from so a URL that would be ignored is never fetched.
+    if dev:
+        dev_path = Path(source).expanduser()
+        if dev_path.is_file() and dev_path.suffix in (".yml", ".yaml"):
+            _validate_and_install_local(dev_path, str(dev_path))
+            return
+        if dev_path.is_dir():
+            dev_wf_file = dev_path / "workflow.yml"
+            if not dev_wf_file.exists():
+                console.print(f"[red]Error:[/red] No workflow.yml found in {_escape_markup(source)}")
+                raise typer.Exit(1)
+            _validate_and_install_local(dev_wf_file, str(dev_path))
+            return
+        console.print(
+            "[red]Error:[/red] --dev source must be a workflow YAML file or a "
+            f"directory containing workflow.yml: {_escape_markup(source)}"
+        )
+        raise typer.Exit(1)
+
+    # Try as URL (http/https) — either the positional source is a URL, or an
+    # explicit --from URL names where to fetch it (mirrors `extension add --from`).
+    download_url = from_url or (
+        source if source.startswith(("http://", "https://")) else None
+    )
+    if download_url is not None:
         from ipaddress import ip_address
         from urllib.parse import urlparse
         from specify_cli.authentication.http import open_url as _open_url
 
         try:
-            parsed_src = urlparse(source)
+            parsed_src = urlparse(download_url)
         except ValueError:
-            console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(source)}")
+            console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(download_url)}")
             raise typer.Exit(1)
         src_host = parsed_src.hostname or ""
         src_loopback = src_host == "localhost"
@@ -661,15 +709,15 @@ def workflow_add(
 
         _wf_url_extra_headers = None
         _resolved_wf_url = _resolve_gh_asset(
-            source, _open_url, timeout=30, github_hosts=_github_provider_hosts()
+            download_url, _open_url, timeout=30, github_hosts=_github_provider_hosts()
         )
         if _resolved_wf_url:
-            source = _resolved_wf_url
+            download_url = _resolved_wf_url
             _wf_url_extra_headers = {"Accept": "application/octet-stream"}
 
         import tempfile
         try:
-            with _open_url(source, timeout=30, extra_headers=_wf_url_extra_headers) as resp:
+            with _open_url(download_url, timeout=30, extra_headers=_wf_url_extra_headers) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -692,7 +740,13 @@ def workflow_add(
             console.print(f"[red]Error:[/red] Failed to download workflow: {exc}")
             raise typer.Exit(1)
         try:
-            _validate_and_install_local(tmp_path, source)
+            # When installed via --from, the positional argument names the
+            # workflow the user expects — enforce it like the catalog branch.
+            _validate_and_install_local(
+                tmp_path,
+                download_url,
+                expected_id=source if from_url else None,
+            )
         finally:
             tmp_path.unlink(missing_ok=True)
         return
@@ -712,25 +766,42 @@ def workflow_add(
             return
 
     # Try from catalog
+    _install_workflow_from_catalog(project_root, registry, workflows_dir, source)
+
+
+def _install_workflow_from_catalog(
+    project_root: Path,
+    registry: Any,
+    workflows_dir: Path,
+    workflow_id: str,
+) -> None:
+    """Download, validate, and register a catalog workflow.
+
+    Shared by ``workflow add`` and ``workflow update``. Raises ``typer.Exit``
+    on any failure; the registry entry is only written on full success.
+    """
+    from .catalog import WorkflowCatalog, WorkflowCatalogError
+    from .engine import WorkflowDefinition
+
     catalog = WorkflowCatalog(project_root)
     try:
-        info = catalog.get_workflow_info(source)
+        info = catalog.get_workflow_info(workflow_id)
     except WorkflowCatalogError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
 
     if not info:
-        console.print(f"[red]Error:[/red] Workflow '{source}' not found in catalog")
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' not found in catalog")
         raise typer.Exit(1)
 
     if not info.get("_install_allowed", True):
-        console.print(f"[yellow]Warning:[/yellow] Workflow '{source}' is from a discovery-only catalog")
+        console.print(f"[yellow]Warning:[/yellow] Workflow '{workflow_id}' is from a discovery-only catalog")
         console.print("Direct installation is not enabled for this catalog source.")
         raise typer.Exit(1)
 
     workflow_url = info.get("url")
     if not workflow_url:
-        console.print(f"[red]Error:[/red] Workflow '{source}' does not have an install URL in the catalog")
+        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' does not have an install URL in the catalog")
         raise typer.Exit(1)
 
     # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
@@ -750,14 +821,14 @@ def workflow_add(
             pass
     if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
         console.print(
-            f"[red]Error:[/red] Workflow '{source}' has an invalid install URL. "
+            f"[red]Error:[/red] Workflow '{workflow_id}' has an invalid install URL. "
             "Only HTTPS URLs are allowed, except HTTP for localhost/loopback."
         )
         raise typer.Exit(1)
 
     # Reject path traversal, symlinked <id>, and a symlinked workflow.yml leaf
     # before any mkdir/download writes beneath the install directory.
-    workflow_dir = _safe_workflow_id_dir(workflows_dir, source)
+    workflow_dir = _safe_workflow_id_dir(workflows_dir, workflow_id)
     workflow_file = workflow_dir / "workflow.yml"
 
     try:
@@ -791,7 +862,7 @@ def workflow_add(
                     import shutil
                     shutil.rmtree(workflow_dir, ignore_errors=True)
                 console.print(
-                    f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
+                    f"[red]Error:[/red] Workflow '{workflow_id}' redirected to non-HTTPS URL: {final_url}"
                 )
                 raise typer.Exit(1)
             workflow_file.write_bytes(response.read())
@@ -799,7 +870,7 @@ def workflow_add(
         if workflow_dir.exists():
             import shutil
             shutil.rmtree(workflow_dir, ignore_errors=True)
-        console.print(f"[red]Error:[/red] Failed to install workflow '{source}' from catalog: {exc}")
+        console.print(f"[red]Error:[/red] Failed to install workflow '{workflow_id}' from catalog: {exc}")
         raise typer.Exit(1)
 
     # Validate the downloaded workflow before registering
@@ -822,25 +893,25 @@ def workflow_add(
         raise typer.Exit(1)
 
     # Enforce that the workflow's internal ID matches the catalog key
-    if definition.id and definition.id != source:
+    if definition.id and definition.id != workflow_id:
         import shutil
         shutil.rmtree(workflow_dir, ignore_errors=True)
         console.print(
             f"[red]Error:[/red] Workflow ID in YAML ({definition.id!r}) "
-            f"does not match catalog key ({source!r}). "
+            f"does not match catalog key ({workflow_id!r}). "
             f"The catalog entry may be misconfigured."
         )
         raise typer.Exit(1)
 
-    registry.add(source, {
-        "name": definition.name or info.get("name", source),
+    registry.add(workflow_id, {
+        "name": definition.name or info.get("name", workflow_id),
         "version": definition.version or info.get("version", "0.0.0"),
         "description": definition.description or info.get("description", ""),
         "source": "catalog",
         "catalog_name": info.get("_catalog_name", ""),
         "url": workflow_url,
     })
-    console.print(f"[green]✓[/green] Workflow '{info.get('name', source)}' installed from catalog")
+    console.print(f"[green]✓[/green] Workflow '{info.get('name', workflow_id)}' installed from catalog")
 
 
 @workflow_app.command("remove")
@@ -904,10 +975,163 @@ def workflow_remove(
     console.print(f"[green]✓[/green] Workflow '{workflow_id}' removed")
 
 
+@workflow_app.command("update")
+def workflow_update(
+    workflow_id: str | None = typer.Argument(None, help="Workflow ID to update (default: all)"),
+):
+    """Update installed workflow(s) to the latest catalog version."""
+    from packaging import version as pkg_version
+
+    from .catalog import WorkflowCatalog, WorkflowCatalogError, WorkflowRegistry
+
+    project_root = _require_specify_project()
+    registry = WorkflowRegistry(project_root)
+    workflows_dir = project_root / ".specify" / "workflows"
+    _reject_unsafe_dir(project_root / ".specify", ".specify")
+    _reject_unsafe_dir(workflows_dir, ".specify/workflows")
+
+    installed = registry.list()
+    if workflow_id:
+        if not registry.is_installed(workflow_id):
+            console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
+            raise typer.Exit(1)
+        targets = [workflow_id]
+    else:
+        targets = list(installed)
+
+    if not targets:
+        console.print("[yellow]No workflows installed[/yellow]")
+        raise typer.Exit(0)
+
+    catalog = WorkflowCatalog(project_root)
+    console.print("🔄 Checking for updates...\n")
+
+    updates_available: list[dict[str, str]] = []
+    for wf_id in targets:
+        safe_id = _escape_markup(str(wf_id))
+        metadata = installed.get(wf_id) or {}
+        if metadata.get("source") != "catalog":
+            console.print(f"⚠  {safe_id}: Installed from a local path or URL — re-add to update (skipping)")
+            continue
+        try:
+            installed_version = pkg_version.Version(str(metadata.get("version")))
+        except pkg_version.InvalidVersion:
+            console.print(
+                f"⚠  {safe_id}: Invalid installed version '{_escape_markup(str(metadata.get('version')))}' in registry (skipping)"
+            )
+            continue
+        try:
+            info = catalog.get_workflow_info(wf_id)
+        except WorkflowCatalogError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1)
+        if not info:
+            console.print(f"⚠  {safe_id}: Not found in catalog (skipping)")
+            continue
+        if not info.get("_install_allowed", True):
+            console.print(
+                f"⚠  {safe_id}: Updates not allowed from '{_escape_markup(str(info.get('_catalog_name', 'catalog')))}' (skipping)"
+            )
+            continue
+        try:
+            catalog_version = pkg_version.Version(str(info.get("version")))
+        except pkg_version.InvalidVersion:
+            console.print(
+                f"⚠  {safe_id}: Invalid catalog version '{_escape_markup(str(info.get('version')))}' (skipping)"
+            )
+            continue
+        if catalog_version > installed_version:
+            updates_available.append(
+                {"id": wf_id, "installed": str(installed_version), "available": str(catalog_version)}
+            )
+        else:
+            console.print(f"✓ {safe_id}: Up to date (v{installed_version})")
+
+    if not updates_available:
+        console.print("\n[green]All workflows are up to date![/green]")
+        raise typer.Exit(0)
+
+    console.print("\n[bold]Updates available:[/bold]\n")
+    for update in updates_available:
+        console.print(
+            f"  • {_escape_markup(update['id'])}: {update['installed']} → {update['available']}"
+        )
+    console.print()
+    if not typer.confirm("Update these workflows?"):
+        console.print("Cancelled")
+        raise typer.Exit(0)
+
+    console.print()
+    failed: list[str] = []
+    for update in updates_available:
+        # Installed workflows are a single workflow.yml — back it up so a
+        # failed download/validation doesn't destroy the working copy.
+        wf_dir = _safe_workflow_id_dir(workflows_dir, update["id"])
+        wf_file = wf_dir / "workflow.yml"
+        backup = wf_file.read_bytes() if wf_file.is_file() else None
+        try:
+            _install_workflow_from_catalog(project_root, registry, workflows_dir, update["id"])
+        except typer.Exit:
+            if backup is not None:
+                wf_dir.mkdir(parents=True, exist_ok=True)
+                wf_file.write_bytes(backup)
+            failed.append(update["id"])
+
+    if failed:
+        console.print(
+            f"\n[red]Failed to update:[/red] {', '.join(_escape_markup(f) for f in failed)}"
+        )
+        raise typer.Exit(1)
+
+
+@workflow_app.command("enable")
+def workflow_enable(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to enable"),
+):
+    """Enable a disabled workflow."""
+    from .catalog import WorkflowRegistry
+
+    project_root = _require_specify_project()
+    registry = WorkflowRegistry(project_root)
+    metadata = registry.get(workflow_id)
+    if metadata is None:
+        console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
+        raise typer.Exit(1)
+    if metadata.get("enabled", True):
+        console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already enabled[/yellow]")
+        raise typer.Exit(0)
+    metadata["enabled"] = True
+    registry.add(workflow_id, metadata)
+    console.print(f"[green]✓[/green] Workflow '{_escape_markup(workflow_id)}' enabled")
+
+
+@workflow_app.command("disable")
+def workflow_disable(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to disable"),
+):
+    """Disable a workflow without removing it."""
+    from .catalog import WorkflowRegistry
+
+    project_root = _require_specify_project()
+    registry = WorkflowRegistry(project_root)
+    metadata = registry.get(workflow_id)
+    if metadata is None:
+        console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
+        raise typer.Exit(1)
+    if not metadata.get("enabled", True):
+        console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already disabled[/yellow]")
+        raise typer.Exit(0)
+    metadata["enabled"] = False
+    registry.add(workflow_id, metadata)
+    console.print(f"[green]✓[/green] Workflow '{_escape_markup(workflow_id)}' disabled")
+    console.print(f"To re-enable: specify workflow enable {_escape_markup(workflow_id)}")
+
+
 @workflow_app.command("search")
 def workflow_search(
     query: str | None = typer.Argument(None, help="Search query"),
     tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
+    author: str | None = typer.Option(None, "--author", help="Filter by author"),
 ):
     """Search workflow catalogs."""
     from .catalog import WorkflowCatalog, WorkflowCatalogError
@@ -916,7 +1140,7 @@ def workflow_search(
     catalog = WorkflowCatalog(project_root)
 
     try:
-        results = catalog.search(query=query, tag=tag)
+        results = catalog.search(query=query, tag=tag, author=author)
     except WorkflowCatalogError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)

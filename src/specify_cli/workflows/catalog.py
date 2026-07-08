@@ -427,6 +427,7 @@ class WorkflowCatalog:
         self,
         query: str | None = None,
         tag: str | None = None,
+        author: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search workflows across all configured catalogs."""
         merged = self._get_merged_workflows()
@@ -450,6 +451,10 @@ class WorkflowCatalog:
                 tags = raw_tags if isinstance(raw_tags, list) else []
                 normalized_tags = [t.lower() for t in tags if isinstance(t, str)]
                 if tag.lower() not in normalized_tags:
+                    continue
+            if author:
+                wf_author = wf_data.get("author", "")
+                if not isinstance(wf_author, str) or wf_author.lower() != author.lower():
                     continue
             results.append(wf_data)
         return results

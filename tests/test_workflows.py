@@ -7194,3 +7194,380 @@ class TestWorkflowAddNonStringScalars:
         assert result.exit_code == 1
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "Step ID" in result.output
+
+
+class TestWorkflowCliAlignment:
+    """CLI alignment with extension/preset commands (#2342)."""
+
+    WORKFLOW_YAML = """
+schema_version: "1.0"
+workflow:
+  id: "align-wf"
+  name: "Align Workflow"
+  version: "{version}"
+  description: "CLI alignment test workflow"
+steps:
+  - id: step-one
+    type: shell
+    run: "echo hello"
+"""
+
+    def _write_workflow_dir(self, base, version="1.0.0"):
+        d = base / "wf-src"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version=version), encoding="utf-8"
+        )
+        return d
+
+    def _install_dev(self, runner, app, project_dir):
+        src = self._write_workflow_dir(project_dir)
+        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+        assert result.exit_code == 0, result.output
+        return src
+
+    # -- add --dev -----------------------------------------------------
+
+    def test_add_dev_directory_installs(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+        assert WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_dev_yaml_file_installs(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        src = self._write_workflow_dir(project_dir)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(src / "workflow.yml"), "--dev"])
+        assert result.exit_code == 0, result.output
+        assert WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_dev_missing_path_errors(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(project_dir / "missing"), "--dev"])
+        assert result.exit_code != 0
+        assert "--dev" in result.output
+
+    def test_add_dev_dir_without_workflow_yml_errors(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        empty = project_dir / "empty-src"
+        empty.mkdir()
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(empty), "--dev"])
+        assert result.exit_code != 0
+        assert "No workflow.yml found" in result.output
+
+    # -- add --from ----------------------------------------------------
+
+    class _FakeResponse:
+        def __init__(self, data, url="https://example.com/workflow.yml"):
+            self._data = data
+            self._url = url
+
+        def read(self):
+            return self._data
+
+        def geturl(self):
+            return self._url
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def test_add_from_url_installs(self, project_dir, monkeypatch):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+        assert result.exit_code == 0, result.output
+        assert WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_from_url_id_mismatch_errors(self, project_dir, monkeypatch):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "other-id", "--from", "https://example.com/workflow.yml"],
+            )
+        assert result.exit_code != 0
+        assert "does not match" in result.output
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    # -- search --author -----------------------------------------------
+
+    def test_search_author_filters(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        workflows = {
+            "wf-a": {"name": "Workflow A", "version": "1.0.0", "description": "", "author": "alice"},
+            "wf-b": {"name": "Workflow B", "version": "1.0.0", "description": "", "author": "bob"},
+        }
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "_get_merged_workflows",
+            lambda self, force_refresh=False: {k: dict(v) for k, v in workflows.items()},
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "search", "--author", "Alice"])
+        assert result.exit_code == 0, result.output
+        assert "wf-a" in result.output
+        assert "wf-b" not in result.output
+
+    # -- update ----------------------------------------------------------
+
+    def test_update_no_workflows_installed(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "update"])
+        assert result.exit_code == 0, result.output
+        assert "No workflows installed" in result.output
+
+    def test_update_not_installed_errors(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "update", "ghost"])
+        assert result.exit_code != 0
+        assert "not installed" in result.output
+
+    def test_update_skips_non_catalog_sources(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+        result = runner.invoke(app, ["workflow", "update"])
+        assert result.exit_code == 0, result.output
+        assert "re-add to update" in result.output
+
+    def test_update_installs_newer_catalog_version(self, project_dir, monkeypatch):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry = WorkflowRegistry(project_dir)
+        registry.add("align-wf", {
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "description": "CLI alignment test workflow",
+            "source": "catalog",
+            "catalog_name": "test-catalog",
+            "url": "https://example.com/workflow.yml",
+        })
+        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+        ):
+            result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert result.exit_code == 0, result.output
+        assert "1.0.0" in result.output and "2.0.0" in result.output
+        meta = WorkflowRegistry(project_dir).get("align-wf")
+        assert meta["version"] == "2.0.0"
+        assert "2.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
+
+    def test_update_up_to_date_reports_and_exits_zero(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        WorkflowRegistry(project_dir).add("align-wf", {
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "description": "",
+            "source": "catalog",
+            "url": "https://example.com/workflow.yml",
+        })
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+            },
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "update"])
+        assert result.exit_code == 0, result.output
+        assert "Up to date" in result.output
+        assert "All workflows are up to date!" in result.output
+
+    def test_update_restores_backup_on_failed_download(self, project_dir, monkeypatch):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        WorkflowRegistry(project_dir).add("align-wf", {
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "description": "",
+            "source": "catalog",
+            "url": "https://example.com/workflow.yml",
+        })
+        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        wf_dir.mkdir(parents=True)
+        original = self.WORKFLOW_YAML.format(version="1.0.0")
+        (wf_dir / "workflow.yml").write_text(original, encoding="utf-8")
+
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+            },
+        )
+
+        def boom(url, timeout=None, extra_headers=None):
+            raise OSError("network down")
+
+        runner = CliRunner()
+        with patch("specify_cli.authentication.http.open_url", side_effect=boom):
+            result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert result.exit_code != 0
+        assert "Failed to update" in result.output
+        # Working copy and registry version are untouched
+        assert (wf_dir / "workflow.yml").read_text(encoding="utf-8") == original
+        assert WorkflowRegistry(project_dir).get("align-wf")["version"] == "1.0.0"
+
+    # -- enable / disable ------------------------------------------------
+
+    def test_disable_blocks_run_enable_restores(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
+        assert result.exit_code == 0, result.output
+        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is False
+
+        result = runner.invoke(app, ["workflow", "run", "align-wf"])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
+        result = runner.invoke(app, ["workflow", "enable", "align-wf"])
+        assert result.exit_code == 0, result.output
+        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is True
+
+        result = runner.invoke(app, ["workflow", "run", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+    def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+        runner.invoke(app, ["workflow", "disable", "align-wf"])
+        result = runner.invoke(app, ["workflow", "list"])
+        assert result.exit_code == 0, result.output
+        assert "[disabled]" in result.output
+
+    def test_enable_disable_not_installed_errors(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        for cmd in ("enable", "disable"):
+            result = runner.invoke(app, ["workflow", cmd, "ghost"])
+            assert result.exit_code != 0
+            assert "not installed" in result.output
+
+    def test_enable_disable_idempotent_warnings(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        result = runner.invoke(app, ["workflow", "enable", "align-wf"])
+        assert result.exit_code == 0
+        assert "already enabled" in result.output
+
+        runner.invoke(app, ["workflow", "disable", "align-wf"])
+        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
+        assert result.exit_code == 0
+        assert "already disabled" in result.output
