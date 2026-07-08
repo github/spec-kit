@@ -307,14 +307,14 @@ import sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 specs = root / "specs"
-plans = sorted(
+plan = max(
     specs.glob("**/plan.md"),
     key=lambda p: p.stat().st_mtime,
-    reverse=True,
+    default=None,
 )
-if plans:
+if plan:
     try:
-        print(plans[0].relative_to(root).as_posix())
+        print(plan.relative_to(root).as_posix())
     except ValueError:
         print("")
 else:
