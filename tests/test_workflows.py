@@ -1286,6 +1286,81 @@ class TestShellStep:
         assert step.validate({"id": "s", "run": "echo hi"}) == []
         assert step.validate({"id": "s", "run": "{{ steps.x.output }}"}) == []
 
+    def test_timeout_is_configurable(self, monkeypatch):
+        """A 'timeout' field overrides the 300s default (#3327)."""
+        import subprocess as sp
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        seen = {}
+        real_run = sp.run
+
+        def spy_run(*args, **kwargs):
+            seen["timeout"] = kwargs.get("timeout")
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.steps.shell.subprocess.run", spy_run
+        )
+        step = ShellStep()
+        result = step.execute(
+            {"id": "t", "run": "echo hi", "timeout": 1800}, StepContext()
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert seen["timeout"] == 1800
+
+    def test_timeout_defaults_to_300(self, monkeypatch):
+        import subprocess as sp
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext
+
+        seen = {}
+        real_run = sp.run
+
+        def spy_run(*args, **kwargs):
+            seen["timeout"] = kwargs.get("timeout")
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.steps.shell.subprocess.run", spy_run
+        )
+        ShellStep().execute({"id": "t", "run": "echo hi"}, StepContext())
+        assert seen["timeout"] == 300
+
+    def test_timeout_error_reports_configured_value(self, monkeypatch):
+        import subprocess as sp
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        def raise_timeout(*args, **kwargs):
+            raise sp.TimeoutExpired(cmd="x", timeout=kwargs.get("timeout"))
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.steps.shell.subprocess.run", raise_timeout
+        )
+        result = ShellStep().execute(
+            {"id": "t", "run": "sleep 999", "timeout": 7}, StepContext()
+        )
+        assert result.status == StepStatus.FAILED
+        assert "7 seconds" in result.error
+
+    @pytest.mark.parametrize("bad", [0, -5, "600", 1.5, None, True])
+    def test_validate_rejects_bad_timeout(self, bad):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        errors = ShellStep().validate({"id": "s", "run": "echo hi", "timeout": bad})
+        assert any("'timeout'" in e for e in errors)
+
+    def test_validate_accepts_positive_int_timeout(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        assert (
+            ShellStep().validate({"id": "s", "run": "echo hi", "timeout": 1800}) == []
+        )
+
 
     def test_output_format_json_exposes_data(self, tmp_path):
         from specify_cli.workflows.steps.shell import ShellStep
