@@ -2687,6 +2687,25 @@ steps:
         errors = validate_workflow(definition)
         assert any("Step ID" in e and "string" in e for e in errors)
 
+    def test_falsey_non_string_scalars_report_typed_errors(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: 0
+  name: false
+  version: 0.0
+steps:
+  - id: 0
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'workflow.id' must be a string" in e for e in errors)
+        assert any("'workflow.name' must be a string" in e for e in errors)
+        assert any("'workflow.version' must be a string" in e for e in errors)
+        assert any("Step ID must be a string" in e for e in errors)
+        assert not any("missing" in e for e in errors)
+
     def test_unquoted_schema_version_accepted(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 

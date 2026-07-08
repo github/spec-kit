@@ -140,8 +140,10 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     # -- Top-level fields -------------------------------------------------
     # YAML parses unquoted scalars like ``id: 123`` or ``version: 1.0`` as
     # int/float; check types before regex/string operations so authoring
-    # mistakes surface as validation errors instead of tracebacks.
-    if not definition.id:
+    # mistakes surface as validation errors instead of tracebacks. Only
+    # ``None``/empty-string count as missing so falsey non-strings
+    # (``id: 0``, ``name: false``) still get the typed error.
+    if definition.id is None or definition.id == "":
         errors.append("Workflow is missing 'workflow.id'.")
     elif not isinstance(definition.id, str):
         errors.append(
@@ -154,7 +156,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"with hyphens."
         )
 
-    if not definition.name:
+    if definition.name is None or definition.name == "":
         errors.append("Workflow is missing 'workflow.name'.")
     elif not isinstance(definition.name, str):
         errors.append(
@@ -162,7 +164,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"{type(definition.name).__name__} ({definition.name!r})."
         )
 
-    if not definition.version:
+    if definition.version is None or definition.version == "":
         errors.append("Workflow is missing 'workflow.version'.")
     elif not isinstance(definition.version, str):
         errors.append(
@@ -277,7 +279,7 @@ def _validate_steps(
             continue
 
         step_id = step_config.get("id")
-        if not step_id:
+        if step_id is None or step_id == "":
             errors.append("Step is missing 'id' field.")
             continue
         if not isinstance(step_id, str):
