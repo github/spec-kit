@@ -2535,17 +2535,26 @@ class ExtensionCatalog(CatalogStackBase):
 
         results = []
 
+        def _search_text(value: Any) -> str:
+            return value if isinstance(value, str) else ""
+
+        def _search_tags(value: Any) -> List[str]:
+            if not isinstance(value, list):
+                return []
+            return [tag for tag in value if isinstance(tag, str)]
+
         for ext_data in all_extensions:
             ext_id = ext_data["id"]
+            tags = _search_tags(ext_data.get("tags", []))
 
             # Apply filters
             if verified_only and not ext_data.get("verified", False):
                 continue
 
-            if author and ext_data.get("author", "").lower() != author.lower():
+            if author and _search_text(ext_data.get("author")).lower() != author.lower():
                 continue
 
-            if tag and tag.lower() not in [t.lower() for t in ext_data.get("tags", [])]:
+            if tag and tag.lower() not in [t.lower() for t in tags]:
                 continue
 
             if query:
@@ -2553,11 +2562,11 @@ class ExtensionCatalog(CatalogStackBase):
                 query_lower = query.lower()
                 searchable_text = " ".join(
                     [
-                        ext_data.get("name", ""),
-                        ext_data.get("description", ""),
-                        ext_id,
+                        _search_text(ext_data.get("name")),
+                        _search_text(ext_data.get("description")),
+                        _search_text(ext_id),
                     ]
-                    + ext_data.get("tags", [])
+                    + tags
                 ).lower()
 
                 if query_lower not in searchable_text:
