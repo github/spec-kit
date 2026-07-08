@@ -1023,7 +1023,13 @@ def workflow_catalog_add(
     project_root = _require_specify_project()
     catalog = WorkflowCatalog(project_root)
     try:
-        catalog.add_catalog(url, name, priority, install_allowed, description)
+        catalog.add_catalog(
+            url,
+            name,
+            priority=priority,
+            install_allowed=install_allowed,
+            description=description,
+        )
     except WorkflowValidationError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
@@ -1683,7 +1689,13 @@ def workflow_step_catalog_add(
 
     catalog = StepCatalog(project_root)
     try:
-        catalog.add_catalog(url, name, priority, install_allowed, description)
+        catalog.add_catalog(
+            url,
+            name,
+            priority=priority,
+            install_allowed=install_allowed,
+            description=description,
+        )
     except StepValidationError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
