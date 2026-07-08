@@ -1,10 +1,10 @@
 """Tests for BobIntegration."""
 
-from .test_integration_base_markdown import MarkdownIntegrationTests
+from .test_integration_base_skills import SkillsIntegrationTests
 
 
-class TestBobIntegration(MarkdownIntegrationTests):
+class TestBobIntegration(SkillsIntegrationTests):
     KEY = "bob"
     FOLDER = ".bob/"
-    COMMANDS_SUBDIR = "commands"
-    REGISTRAR_DIR = ".bob/commands"
+    COMMANDS_SUBDIR = "skills"
+    REGISTRAR_DIR = ".bob/skills"
