@@ -50,6 +50,30 @@ _CORE_COMMAND_TEMPLATE_RANK = {
     command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)
 }
 
+# TOML forbids these raw in every string form: C0 controls other than tab
+# and newline, DEL, and a bare CR that is not part of a CRLF pair.
+_TOML_FORBIDDEN_CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]|\r(?!\n)")
+
+
+def toml_escape_basic(value: str) -> str:
+    """Escape *value* for a TOML basic string (quotes not included).
+
+    Escapes backslashes, quotes, common whitespace escapes, and the
+    control characters TOML forbids in raw form (as ``\\uXXXX``).
+    """
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return re.sub(
+        r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]",
+        lambda match: f"\\u{ord(match.group()):04X}",
+        escaped,
+    )
+
 
 # ---------------------------------------------------------------------------
 # IntegrationOption
@@ -960,8 +984,13 @@ class TomlIntegration(IntegrationBase):
         Uses a basic string for single-line values, multiline basic
         strings for values containing newlines, and falls back to a
         literal string or escaped basic string when delimiters appear in
-        the content.
+        the content.  Values containing control characters TOML forbids
+        in raw form (or a bare CR) always use the escaped basic string,
+        since no other form can represent them.
         """
+        if _TOML_FORBIDDEN_CTRL.search(value):
+            return f'"{toml_escape_basic(value)}"'
+
         if "\n" not in value and "\r" not in value:
             escaped = value.replace("\\", "\\\\").replace('"', '\\"')
             return f'"{escaped}"'
@@ -974,17 +1003,7 @@ class TomlIntegration(IntegrationBase):
         if "'''" not in value and not value.endswith("'"):
             return "'''\n" + value + "'''"
 
-        return (
-            '"'
-            + (
-                value.replace("\\", "\\\\")
-                .replace('"', '\\"')
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
-            )
-            + '"'
-        )
+        return f'"{toml_escape_basic(value)}"'
 
     @staticmethod
     def _render_toml(description: str, body: str) -> str:

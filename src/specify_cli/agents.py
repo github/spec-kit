@@ -258,11 +258,17 @@ class CommandRegistrar:
         # ``C:\\Users\\...`` whose ``\\U`` reads as an invalid unicode escape) would
         # produce unparseable TOML — route those to the *literal* form ('''...'''),
         # which does not process escapes, or to the escaped basic string.
-        if '"""' not in body and "\\" not in body:
+        # Control characters TOML forbids in raw form (and bare CR) cannot
+        # appear in either multiline form, so those bodies also route to the
+        # escaped basic string.
+        from specify_cli.integrations.base import _TOML_FORBIDDEN_CTRL
+
+        has_forbidden_ctrl = bool(_TOML_FORBIDDEN_CTRL.search(body))
+        if '"""' not in body and "\\" not in body and not has_forbidden_ctrl:
             toml_lines.append('prompt = """')
             toml_lines.append(body)
             toml_lines.append('"""')
-        elif "'''" not in body:
+        elif "'''" not in body and not has_forbidden_ctrl:
             toml_lines.append("prompt = '''")
             toml_lines.append(body)
             toml_lines.append("'''")
@@ -274,14 +280,9 @@ class CommandRegistrar:
     @staticmethod
     def _render_basic_toml_string(value: str) -> str:
         """Render *value* as a TOML basic string literal."""
-        escaped = (
-            value.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        )
-        return f'"{escaped}"'
+        from specify_cli.integrations.base import toml_escape_basic
+
+        return f'"{toml_escape_basic(value)}"'
 
     def render_yaml_command(
         self,
