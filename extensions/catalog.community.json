@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-06T00:00:00Z",
+  "updated_at": "2026-07-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -854,7 +854,10 @@
       "requires": {
         "speckit_version": ">=0.9.5",
         "tools": [
-          { "name": "python3", "required": false }
+          {
+            "name": "python3",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -1108,8 +1111,8 @@
       "id": "docguard",
       "description": "The only doc-integrity engine with an MCP server, SARIF output, and a deterministic zero-LLM core. Validates, scores, and traces documentation against code — 24 validators, stable finding codes, GitHub Action with PR annotations, spec-kit hooks. Pure Node.js, one pinned dep.",
       "author": "raccioly",
-      "version": "0.30.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.30.0/spec-kit-docguard-v0.30.0.zip",
+      "version": "0.31.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.31.0/spec-kit-docguard-v0.31.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1145,7 +1148,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-07-06T00:00:00Z"
+      "updated_at": "2026-07-08T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1661,12 +1664,31 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "bash", "version": ">=4.4", "required": true },
-          { "name": "git", "required": true },
-          { "name": "curl", "required": true },
-          { "name": "jq", "required": true },
-          { "name": "gitleaks", "required": false },
-          { "name": "trufflehog", "required": false }
+          {
+            "name": "bash",
+            "version": ">=4.4",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "curl",
+            "required": true
+          },
+          {
+            "name": "jq",
+            "required": true
+          },
+          {
+            "name": "gitleaks",
+            "required": false
+          },
+          {
+            "name": "trufflehog",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -3861,8 +3883,14 @@
       "requires": {
         "speckit_version": ">=0.2.0",
         "tools": [
-          { "name": "gh", "required": true },
-          { "name": "python3", "required": true }
+          {
+            "name": "gh",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -4156,11 +4184,27 @@
       "requires": {
         "speckit_version": ">=0.10.0",
         "tools": [
-          { "name": "rtk", "required": false },
-          { "name": "headroom", "required": false },
-          { "name": "token-router", "required": false },
-          { "name": "ollama", "required": false },
-          { "name": "python", "version": ">=3.10", "required": false }
+          {
+            "name": "rtk",
+            "required": false
+          },
+          {
+            "name": "headroom",
+            "required": false
+          },
+          {
+            "name": "token-router",
+            "required": false
+          },
+          {
+            "name": "ollama",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.10",
+            "required": false
+          }
         ]
       },
       "provides": {
