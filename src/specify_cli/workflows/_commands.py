@@ -601,7 +601,12 @@ def workflow_add(
         except (ValueError, yaml.YAMLError) as exc:
             console.print(f"[red]Error:[/red] Invalid workflow YAML: {exc}")
             raise typer.Exit(1)
-        if not definition.id or not definition.id.strip():
+        # Non-string ids (e.g. unquoted ``id: 123``) fall through to
+        # validate_workflow below, which reports a typed error instead of
+        # crashing on ``.strip()`` here.
+        if not definition.id or (
+            isinstance(definition.id, str) and not definition.id.strip()
+        ):
             console.print("[red]Error:[/red] Workflow definition has an empty or missing 'id'")
             raise typer.Exit(1)
 
