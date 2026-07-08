@@ -131,7 +131,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     # -- Schema version ---------------------------------------------------
     # str() so an unquoted ``schema_version: 1.0`` (YAML float) is accepted —
     # rejecting it would print "Unsupported schema_version 1.0. Expected '1.0'."
-    if str(definition.schema_version) not in ("1.0", "1"):
+    if str(definition.schema_version) != "1.0":
         errors.append(
             f"Unsupported schema_version {definition.schema_version!r}. "
             f"Expected '1.0'."
