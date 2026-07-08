@@ -7490,6 +7490,33 @@ steps:
         assert result.exit_code == 0, result.output
         assert "corrupted" in result.output
 
+    def test_list_skips_corrupted_registry_entry(self, project_dir, monkeypatch):
+        import json
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry_path = WorkflowRegistry(project_dir).registry_path
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "workflows": {
+                        "broken": "not-a-dict",
+                        "ok": {"name": "OK Workflow", "version": "1.0.0"},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "list"])
+        assert result.exit_code == 0, result.output
+        assert "corrupted" in result.output
+        assert "OK Workflow" in result.output
+
     def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
         import json
         from typer.testing import CliRunner

@@ -582,6 +582,9 @@ def workflow_list():
 
     console.print("\n[bold cyan]Installed Workflows:[/bold cyan]\n")
     for wf_id, wf_data in installed.items():
+        if not isinstance(wf_data, dict):
+            console.print(f"  [yellow]Warning:[/yellow] Skipping corrupted registry entry '{wf_id}'.\n")
+            continue
         marker = "" if wf_data.get("enabled", True) else " [red]\\[disabled][/red]"
         console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}{marker}")
         desc = wf_data.get("description", "")
@@ -866,6 +869,8 @@ def _install_workflow_from_catalog(
                 )
                 raise typer.Exit(1)
             workflow_file.write_bytes(response.read())
+    except typer.Exit:
+        raise
     except Exception as exc:
         if workflow_dir.exists():
             import shutil
