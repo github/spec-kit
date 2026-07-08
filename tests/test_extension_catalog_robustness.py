@@ -77,6 +77,46 @@ def test_search_json_null_fields_render_placeholders_not_none(project_dir, monke
     assert "None" not in result.output
 
 
+def test_catalog_search_tolerates_null_fields_and_malformed_tags(project_dir, monkeypatch):
+    """Real catalog search must tolerate malformed remote catalog fields."""
+    catalog = ExtensionCatalog(project_dir)
+
+    good_entry = {
+        "id": "good-ext",
+        "name": "Good Extension",
+        "description": "Matches query text",
+        "author": "Jane",
+        "tags": ["tools", None, 123],
+    }
+    scalar_tags_entry = {
+        "id": "scalar-tags",
+        "name": "Scalar Tags",
+        "description": "Malformed tags should not be searched",
+        "author": "Jane",
+        "tags": "tools",
+    }
+
+    monkeypatch.setattr(
+        catalog,
+        "_get_merged_extensions",
+        lambda: [
+            {
+                "id": "null-fields",
+                "name": None,
+                "description": None,
+                "author": None,
+                "tags": None,
+            },
+            scalar_tags_entry,
+            good_entry,
+        ],
+    )
+
+    assert catalog.search(query="query text") == [good_entry]
+    assert catalog.search(author="Jane") == [scalar_tags_entry, good_entry]
+    assert catalog.search(tag="tools") == [good_entry]
+
+
 @pytest.mark.parametrize("bad_id", [None, "", "   "])
 def test_search_skips_entries_without_valid_id(project_dir, monkeypatch, bad_id):
     """Entries with a missing/blank/null id are skipped entirely.
