@@ -16,7 +16,7 @@ from specify_cli.integrations.base import IntegrationBase
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "commands"
 
 SCRIPTED_TEMPLATES = sorted(
-    p.name for p in TEMPLATES_DIR.glob("*.md") if "\nscripts:\n" in p.read_text()
+    p.name for p in TEMPLATES_DIR.glob("*.md") if "\nscripts:\n" in p.read_text(encoding="utf-8")
 )
 
 
@@ -37,7 +37,7 @@ def test_scripted_templates_discovered():
 
 @pytest.mark.parametrize("name", SCRIPTED_TEMPLATES)
 def test_template_declares_py_script(name: str):
-    content = (TEMPLATES_DIR / name).read_text()
+    content = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
     assert re.search(r"^\s*py: scripts/python/\S+\.py", content, re.MULTILINE), (
         f"{name} has a scripts: block but no py: line"
     )
@@ -45,7 +45,7 @@ def test_template_declares_py_script(name: str):
 
 @pytest.mark.parametrize("name", SCRIPTED_TEMPLATES)
 def test_template_renders_python_invocation(name: str):
-    content = (TEMPLATES_DIR / name).read_text()
+    content = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
     result = IntegrationBase.process_template(content, "agent", "py")
     assert "{SCRIPT}" not in result
     assert re.search(
@@ -56,7 +56,7 @@ def test_template_renders_python_invocation(name: str):
 @pytest.mark.parametrize("name", SCRIPTED_TEMPLATES)
 def test_sh_rendering_unchanged(name: str):
     # Negative: adding py: lines must not leak into sh rendering.
-    content = (TEMPLATES_DIR / name).read_text()
+    content = (TEMPLATES_DIR / name).read_text(encoding="utf-8")
     result = IntegrationBase.process_template(content, "agent", "sh")
     assert "{SCRIPT}" not in result
     assert "scripts/python" not in result
