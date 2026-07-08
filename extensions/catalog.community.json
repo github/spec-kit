@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-06T00:00:00Z",
+  "updated_at": "2026-07-08T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1212,6 +1212,47 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-04-23T00:00:00Z"
+    },
+    "figma": {
+      "name": "Spec Kit Figma",
+      "id": "figma",
+      "description": "Agent-agnostic SpecKit extension that grounds spec, plan & task generation in Figma design context — REST + optional MCP, single/mono/multi-repo, macOS/Linux/Windows.",
+      "author": "Fyloss",
+      "version": "1.6.0",
+      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip",
+      "repository": "https://github.com/Fyloss/spec-kit-figma",
+      "homepage": "https://github.com/Fyloss/spec-kit-figma",
+      "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/INSTALL.md",
+      "changelog": "https://github.com/Fyloss/spec-kit-figma/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "git", "required": true },
+          { "name": "bash", "required": false },
+          { "name": "curl", "required": false },
+          { "name": "jq", "required": false },
+          { "name": "pwsh", "required": false }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 6
+      },
+      "tags": [
+        "figma",
+        "design",
+        "frontend",
+        "ui",
+        "design-system"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-08T00:00:00Z",
+      "updated_at": "2026-07-08T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
