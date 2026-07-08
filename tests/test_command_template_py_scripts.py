@@ -60,3 +60,24 @@ def test_sh_rendering_unchanged(name: str):
     result = IntegrationBase.process_template(content, "agent", "sh")
     assert "{SCRIPT}" not in result
     assert "scripts/python" not in result
+
+
+def test_install_shared_infra_copies_python_scripts(tmp_path):
+    # --script py must install scripts/python/ into .specify/scripts/python/
+    # so the rendered invocations point at files that exist.
+    from rich.console import Console
+
+    from specify_cli.shared_infra import install_shared_infra
+
+    install_shared_infra(
+        tmp_path,
+        "py",
+        version="0.0.0",
+        core_pack=None,
+        repo_root=Path(__file__).resolve().parents[1],
+        console=Console(quiet=True),
+        force=False,
+    )
+    dest = tmp_path / ".specify" / "scripts" / "python"
+    assert (dest / "check_prerequisites.py").is_file()
+    assert not (tmp_path / ".specify" / "scripts" / "powershell").exists()
