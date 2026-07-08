@@ -7435,6 +7435,80 @@ steps:
         assert meta["version"] == "2.0.0"
         assert "2.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
 
+    def test_update_preserves_disabled_state(self, project_dir, monkeypatch):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        WorkflowRegistry(project_dir).add("align-wf", {
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "description": "",
+            "source": "catalog",
+            "url": "https://example.com/workflow.yml",
+            "enabled": False,
+        })
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+            },
+        )
+        data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+        ):
+            result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert result.exit_code == 0, result.output
+        meta = WorkflowRegistry(project_dir).get("align-wf")
+        assert meta["version"] == "2.0.0"
+        assert meta["enabled"] is False
+
+    def test_update_skips_corrupted_registry_entry(self, project_dir, monkeypatch):
+        import json
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry_path = WorkflowRegistry(project_dir).registry_path
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(
+            json.dumps({"schema_version": "1.0", "workflows": {"broken": "not-a-dict"}}),
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "update"])
+        assert result.exit_code == 0, result.output
+        assert "corrupted" in result.output
+
+    def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
+        import json
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry_path = WorkflowRegistry(project_dir).registry_path
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(
+            json.dumps({"schema_version": "1.0", "workflows": {"broken": "not-a-dict"}}),
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        for cmd in ("enable", "disable"):
+            result = runner.invoke(app, ["workflow", cmd, "broken"])
+            assert result.exit_code != 0
+            assert "corrupted" in result.output
+
     def test_update_up_to_date_reports_and_exits_zero(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app

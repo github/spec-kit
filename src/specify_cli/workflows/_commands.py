@@ -353,7 +353,7 @@ def workflow_run(
         from .catalog import WorkflowRegistry
 
         installed_meta = WorkflowRegistry(project_root).get(source)
-        if installed_meta is not None and installed_meta.get("enabled", True) is False:
+        if isinstance(installed_meta, dict) and installed_meta.get("enabled", True) is False:
             err.print(
                 f"[red]Error:[/red] Workflow '{_escape_markup(source)}' is disabled. "
                 f"Enable with: specify workflow enable {_escape_markup(source)}"
@@ -903,14 +903,19 @@ def _install_workflow_from_catalog(
         )
         raise typer.Exit(1)
 
-    registry.add(workflow_id, {
+    entry = {
         "name": definition.name or info.get("name", workflow_id),
         "version": definition.version or info.get("version", "0.0.0"),
         "description": definition.description or info.get("description", ""),
         "source": "catalog",
         "catalog_name": info.get("_catalog_name", ""),
         "url": workflow_url,
-    })
+    }
+    # Preserve a prior disabled state across updates/reinstalls.
+    existing = registry.get(workflow_id)
+    if isinstance(existing, dict) and existing.get("enabled", True) is False:
+        entry["enabled"] = False
+    registry.add(workflow_id, entry)
     console.print(f"[green]✓[/green] Workflow '{info.get('name', workflow_id)}' installed from catalog")
 
 
@@ -1009,7 +1014,10 @@ def workflow_update(
     updates_available: list[dict[str, str]] = []
     for wf_id in targets:
         safe_id = _escape_markup(str(wf_id))
-        metadata = installed.get(wf_id) or {}
+        metadata = installed.get(wf_id)
+        if not isinstance(metadata, dict):
+            console.print(f"⚠  {safe_id}: Registry entry is corrupted (skipping)")
+            continue
         if metadata.get("source") != "catalog":
             console.print(f"⚠  {safe_id}: Installed from a local path or URL — re-add to update (skipping)")
             continue
@@ -1097,6 +1105,11 @@ def workflow_enable(
     if metadata is None:
         console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
         raise typer.Exit(1)
+    if not isinstance(metadata, dict):
+        console.print(
+            f"[red]Error:[/red] Registry entry for '{_escape_markup(workflow_id)}' is corrupted"
+        )
+        raise typer.Exit(1)
     if metadata.get("enabled", True):
         console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already enabled[/yellow]")
         raise typer.Exit(0)
@@ -1117,6 +1130,11 @@ def workflow_disable(
     metadata = registry.get(workflow_id)
     if metadata is None:
         console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
+        raise typer.Exit(1)
+    if not isinstance(metadata, dict):
+        console.print(
+            f"[red]Error:[/red] Registry entry for '{_escape_markup(workflow_id)}' is corrupted"
+        )
         raise typer.Exit(1)
     if not metadata.get("enabled", True):
         console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already disabled[/yellow]")
