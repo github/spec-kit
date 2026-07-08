@@ -64,6 +64,7 @@ def py_cmd(repo: Path, script: str, *args: str) -> list[str]:
 
 
 def ps_cmd(repo: Path, script: str, *args: str) -> list[str]:
+    assert POWERSHELL_EXE, "no PowerShell available; guard the test with HAS_POWERSHELL"
     return [
         POWERSHELL_EXE,
         "-NoProfile",
