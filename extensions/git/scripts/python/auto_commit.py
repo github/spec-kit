@@ -52,7 +52,12 @@ def _parse_auto_commit_config(
     in_auto_commit = False
     in_event = False
 
-    content = config_file.read_text(encoding="utf-8")
+    try:
+        content = config_file.read_text(encoding="utf-8")
+    except OSError:
+        # Unreadable config is treated like a missing one: auto-commit
+        # stays disabled instead of crashing with a traceback.
+        return False, ""
     for line in content.splitlines():
         if line.startswith("auto_commit:"):
             in_auto_commit = True

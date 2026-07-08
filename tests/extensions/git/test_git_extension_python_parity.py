@@ -78,6 +78,7 @@ def _assert_parity(
     py_result: subprocess.CompletedProcess,
     *,
     stdout: bool = True,
+    stderr: bool = True,
 ) -> None:
     assert py_result.returncode == bash_result.returncode, (
         f"exit codes diverge: bash={bash_result.returncode} py={py_result.returncode}\n"
@@ -85,6 +86,8 @@ def _assert_parity(
     )
     if stdout:
         assert py_result.stdout == bash_result.stdout
+    if stderr:
+        assert py_result.stderr == bash_result.stderr
 
 
 @requires_bash
@@ -445,6 +448,25 @@ class TestAutoCommitParity:
         p = _run_py("auto-commit", py_proj, "after_specify")
         _assert_parity(b, p)
         assert self._last_message(py_proj) == "seed"
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX file permissions")
+    def test_unreadable_config_skips_auto_commit(self, tmp_path: Path):
+        """An unreadable config behaves like a missing one: no traceback, no commit."""
+        if os.geteuid() == 0:
+            pytest.skip("root bypasses file permissions")
+        proj = _setup_py_project(tmp_path / "proj")
+        config = _write_config(
+            proj, "auto_commit:\n  after_specify:\n    enabled: true\n"
+        )
+        self._dirty(proj)
+        config.chmod(0o000)
+        try:
+            p = _run_py("auto-commit", proj, "after_specify")
+        finally:
+            config.chmod(0o644)
+        assert p.returncode == 0
+        assert "Traceback" not in p.stderr
+        assert self._last_message(proj) == "seed"
 
     def test_missing_event_argument_errors(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
