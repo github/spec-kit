@@ -1435,11 +1435,12 @@ class ExtensionManager:
         # preserved configs and the backup-restore path never runs. Capture
         # them here and write them back after the fresh copytree, mirroring
         # the *-config filter the --force restore path uses.
-        # Capture (bytes, mode) so we can restore permissions too — config
-        # files may hold secrets (API keys), and recreating them with default
-        # perms could widen access. Mirrors the --force restore's shutil.copy2
-        # (which preserves mode/mtime).
-        preserved_configs: dict[str, tuple[bytes, int]] = {}
+        # Capture (bytes, mode, atime, mtime) so restore preserves both
+        # permissions and timestamps — truly mirroring the --force restore's
+        # shutil.copy2 (which preserves mode/mtime). Config files may hold
+        # secrets (API keys); recreating them with default perms could widen
+        # access.
+        preserved_configs: dict[str, tuple[bytes, int, float, float]] = {}
         if dest_dir.exists():
             for cfg_file in dest_dir.iterdir():
                 if (
@@ -1450,9 +1451,12 @@ class ExtensionManager:
                         or cfg_file.name.endswith("-config.local.yml")
                     )
                 ):
+                    st = cfg_file.stat()
                     preserved_configs[cfg_file.name] = (
                         cfg_file.read_bytes(),
-                        cfg_file.stat().st_mode,
+                        st.st_mode,
+                        st.st_atime,
+                        st.st_mtime,
                     )
 
         # Install extension (dest_dir computed above during self-install guard)
@@ -1463,14 +1467,15 @@ class ExtensionManager:
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
         # Restore configs preserved from a keep-config leftover (see above),
-        # preserving the original file mode. The --force backup-restore below
-        # (did_remove) still takes precedence for that path, which uses
-        # .backup/ rather than an in-place leftover.
-        for name, (data, mode) in preserved_configs.items():
+        # preserving the original file mode and timestamps. The --force
+        # backup-restore below (did_remove) still takes precedence for that
+        # path, which uses .backup/ rather than an in-place leftover.
+        for name, (data, mode, atime, mtime) in preserved_configs.items():
             dest_cfg = dest_dir / name
             dest_cfg.write_bytes(data)
             try:
                 os.chmod(dest_cfg, mode & 0o7777)  # permission bits only
+                os.utime(dest_cfg, (atime, mtime))  # and timestamps
             except OSError:
                 pass
 

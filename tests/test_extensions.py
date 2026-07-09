@@ -1571,6 +1571,9 @@ class TestExtensionManager:
         # Restrictive perms — a config may hold secrets; the restore must not
         # widen them (POSIX only; Windows chmod ignores group/other bits).
         config_file.chmod(0o600)
+        # Distinctive mtime to prove timestamps survive too (mirrors copy2).
+        old_mtime = 1_600_000_000
+        os.utime(config_file, (old_mtime, old_mtime))
 
         # keep-config removal: registry entry dropped, config left in place.
         assert manager.remove("test-ext", keep_config=True) is True
@@ -1582,7 +1585,9 @@ class TestExtensionManager:
         # The user's config must survive the reinstall (was silently wiped).
         assert config_file.exists()
         assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
-        # ...and keep its original (restrictive) mode, not default perms.
+        # ...and keep its original mtime (copy2-style timestamp preservation).
+        assert config_file.stat().st_mtime == old_mtime
+        # ...and its original (restrictive) mode, not default perms.
         if platform.system() != "Windows":
             assert config_file.stat().st_mode & 0o777 == 0o600
 
