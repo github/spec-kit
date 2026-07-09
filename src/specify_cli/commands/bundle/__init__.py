@@ -782,13 +782,18 @@ def _download_manifest(resolved, *, offline: bool):
             "'specify bundle install <path-to-bundle.yml | bundle-dir | .zip>'."
         )
 
+    # Validate the scheme/host *before* the offline gate so an invalid or
+    # non-HTTPS download_url reports the real problem in every mode, rather
+    # than a misleading "Network access disabled" under --offline.
+    # (_download_remote_manifest re-checks this, but only once network access
+    # is permitted.) HTTPS-only, http allowed for localhost.
+    _require_https(f"bundle '{resolved.entry.id}'", url)
+
     if offline:
         raise BundlerError(
             f"Network access disabled; cannot download bundle '{resolved.entry.id}' "
             f"from {url}."
         )
-    # HTTPS-only (http for localhost) is enforced by _require_https inside
-    # _download_remote_manifest, matching the other catalog systems.
     return _download_remote_manifest(resolved.entry.id, url)
 
 

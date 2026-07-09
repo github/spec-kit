@@ -154,3 +154,20 @@ def test_local_install_still_resolves_via_positional_path(tmp_path: Path):
     manifest = _local_manifest_source(str(manifest_path))
     assert manifest is not None
     assert manifest.bundle.id == "demo-bundle"
+
+
+def test_download_manifest_rejects_non_https_url_even_offline(tmp_path: Path):
+    """A non-HTTPS download_url must report the HTTPS problem, not a misleading
+    'Network access disabled', even under --offline (scheme is validated before
+    the offline gate)."""
+    from types import SimpleNamespace
+
+    from specify_cli.commands.bundle import _download_manifest
+
+    resolved = SimpleNamespace(
+        entry=SimpleNamespace(
+            id="demo-bundle", download_url="http://example.com/bundle.zip"
+        )
+    )
+    with pytest.raises(BundlerError, match="HTTPS"):
+        _download_manifest(resolved, offline=True)
