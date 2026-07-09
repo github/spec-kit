@@ -606,6 +606,10 @@ def workflow_add(
     project_root = _require_specify_project()
     registry = WorkflowRegistry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
+    # With --from, source names the expected workflow ID: validate it up
+    # front so a URL/path/typo fails without a network fetch.
+    if from_url is not None and not dev:
+        _validate_workflow_id_or_exit(source)
     # Reject a symlinked .specify / .specify/workflows before any write so an
     # install can't escape the project root (covers the local, URL, and
     # catalog branches below — all write beneath workflows_dir).
@@ -643,8 +647,8 @@ def workflow_add(
 
         if expected_id is not None and definition.id != expected_id:
             console.print(
-                f"[red]Error:[/red] Workflow ID in YAML ({definition.id!r}) "
-                f"does not match the requested workflow ID ({expected_id!r})."
+                f"[red]Error:[/red] Workflow ID in YAML ({_escape_markup(repr(definition.id))}) "
+                f"does not match the requested workflow ID ({_escape_markup(repr(expected_id))})."
             )
             raise typer.Exit(1)
 
@@ -902,8 +906,8 @@ def _install_workflow_from_catalog(
         import shutil
         shutil.rmtree(workflow_dir, ignore_errors=True)
         console.print(
-            f"[red]Error:[/red] Workflow ID in YAML ({definition.id!r}) "
-            f"does not match catalog key ({workflow_id!r}). "
+            f"[red]Error:[/red] Workflow ID in YAML ({_escape_markup(repr(definition.id))}) "
+            f"does not match catalog key ({_escape_markup(repr(workflow_id))}). "
             f"The catalog entry may be misconfigured."
         )
         raise typer.Exit(1)

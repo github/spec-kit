@@ -7332,6 +7332,30 @@ steps:
         assert "does not match" in result.output
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
+    def test_add_from_rejects_invalid_source_id_without_fetch(self, project_dir, monkeypatch):
+        """--from with a non-workflow-id source (URL, path, uppercase) fails before any network fetch."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        calls: list[str] = []
+
+        def _fake_open(url, timeout=None, extra_headers=None):
+            calls.append(url)
+            raise AssertionError(f"network fetch attempted: {url}")
+
+        runner = CliRunner()
+        with patch("specify_cli.authentication.http.open_url", side_effect=_fake_open):
+            for bad_source in ("https://x/y.yml", "./local.yml", "BadCase"):
+                result = runner.invoke(
+                    app,
+                    ["workflow", "add", bad_source, "--from", "https://example.com/workflow.yml"],
+                )
+                assert result.exit_code != 0
+                assert "Invalid workflow ID" in result.output
+        assert calls == []
+
     # -- search --author -----------------------------------------------
 
     def test_search_author_filters(self, project_dir, monkeypatch):
