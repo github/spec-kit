@@ -7541,6 +7541,73 @@ steps:
         assert "corrupted" in result.output
         assert "OK Workflow" in result.output
 
+    def test_list_escapes_rich_markup_in_registry_fields(self, project_dir, monkeypatch):
+        """User-editable name/description/id fields must not be parsed as Rich markup."""
+        import json
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry_path = WorkflowRegistry(project_dir).registry_path
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "workflows": {
+                        "ok": {
+                            "name": "Bracket [Test]",
+                            "version": "1.0.0",
+                            "description": "desc [with] brackets",
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "list"])
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Test]" in result.output
+        assert "desc [with] brackets" in result.output
+
+    def test_update_reports_unsafe_registry_id_per_workflow(self, project_dir, monkeypatch):
+        """An unsafe workflow id in the registry must fail that one entry, not abort the whole update."""
+        import json
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry, WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        registry_path = WorkflowRegistry(project_dir).registry_path
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "workflows": {
+                        "../evil": {
+                            "name": "Bad",
+                            "version": "0.0.1",
+                            "source": "catalog",
+                            "url": "https://example.com/evil.yml",
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {"version": "9.9.9", "url": "https://example.com/evil.yml", "_install_allowed": True},
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert result.exit_code != 0
+        assert "Failed to update" in result.output
+
     def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
         import json
         from typer.testing import CliRunner

@@ -582,14 +582,17 @@ def workflow_list():
 
     console.print("\n[bold cyan]Installed Workflows:[/bold cyan]\n")
     for wf_id, wf_data in installed.items():
+        safe_id = _escape_markup(wf_id)
         if not isinstance(wf_data, dict):
-            console.print(f"  [yellow]Warning:[/yellow] Skipping corrupted registry entry '{wf_id}'.\n")
+            console.print(f"  [yellow]Warning:[/yellow] Skipping corrupted registry entry '{safe_id}'.\n")
             continue
         marker = "" if wf_data.get("enabled", True) else " [red]\\[disabled][/red]"
-        console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}{marker}")
+        name = _escape_markup(str(wf_data.get("name", wf_id)))
+        version = _escape_markup(str(wf_data.get("version", "?")))
+        console.print(f"  [bold]{name}[/bold] ({safe_id}) v{version}{marker}")
         desc = wf_data.get("description", "")
         if desc:
-            console.print(f"    {desc}")
+            console.print(f"    {_escape_markup(str(desc))}")
         console.print()
 
 
@@ -790,6 +793,8 @@ def _install_workflow_from_catalog(
     from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowDefinition
 
+    safe_wf_id = _escape_markup(workflow_id)
+
     catalog = WorkflowCatalog(project_root)
     try:
         info = catalog.get_workflow_info(workflow_id)
@@ -798,17 +803,17 @@ def _install_workflow_from_catalog(
         raise typer.Exit(1)
 
     if not info:
-        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' not found in catalog")
+        console.print(f"[red]Error:[/red] Workflow '{safe_wf_id}' not found in catalog")
         raise typer.Exit(1)
 
     if not info.get("_install_allowed", True):
-        console.print(f"[yellow]Warning:[/yellow] Workflow '{workflow_id}' is from a discovery-only catalog")
+        console.print(f"[yellow]Warning:[/yellow] Workflow '{safe_wf_id}' is from a discovery-only catalog")
         console.print("Direct installation is not enabled for this catalog source.")
         raise typer.Exit(1)
 
     workflow_url = info.get("url")
     if not workflow_url:
-        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' does not have an install URL in the catalog")
+        console.print(f"[red]Error:[/red] Workflow '{safe_wf_id}' does not have an install URL in the catalog")
         raise typer.Exit(1)
 
     # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
@@ -828,7 +833,7 @@ def _install_workflow_from_catalog(
             pass
     if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
         console.print(
-            f"[red]Error:[/red] Workflow '{workflow_id}' has an invalid install URL. "
+            f"[red]Error:[/red] Workflow '{safe_wf_id}' has an invalid install URL. "
             "Only HTTPS URLs are allowed, except HTTP for localhost/loopback."
         )
         raise typer.Exit(1)
@@ -869,7 +874,7 @@ def _install_workflow_from_catalog(
                     import shutil
                     shutil.rmtree(workflow_dir, ignore_errors=True)
                 console.print(
-                    f"[red]Error:[/red] Workflow '{workflow_id}' redirected to non-HTTPS URL: {final_url}"
+                    f"[red]Error:[/red] Workflow '{safe_wf_id}' redirected to non-HTTPS URL: {_escape_markup(final_url)}"
                 )
                 raise typer.Exit(1)
             workflow_file.write_bytes(response.read())
@@ -879,7 +884,7 @@ def _install_workflow_from_catalog(
         if workflow_dir.exists():
             import shutil
             shutil.rmtree(workflow_dir, ignore_errors=True)
-        console.print(f"[red]Error:[/red] Failed to install workflow '{workflow_id}' from catalog: {exc}")
+        console.print(f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     # Validate the downloaded workflow before registering
@@ -1083,13 +1088,16 @@ def workflow_update(
     for update in updates_available:
         # Installed workflows are a single workflow.yml — back it up so a
         # failed download/validation doesn't destroy the working copy.
-        wf_dir = _safe_workflow_id_dir(workflows_dir, update["id"])
-        wf_file = wf_dir / "workflow.yml"
-        backup = wf_file.read_bytes() if wf_file.is_file() else None
+        wf_dir: Path | None = None
+        wf_file: Path | None = None
+        backup: bytes | None = None
         try:
+            wf_dir = _safe_workflow_id_dir(workflows_dir, update["id"])
+            wf_file = wf_dir / "workflow.yml"
+            backup = wf_file.read_bytes() if wf_file.is_file() else None
             _install_workflow_from_catalog(project_root, registry, workflows_dir, update["id"])
         except typer.Exit:
-            if backup is not None:
+            if backup is not None and wf_dir is not None and wf_file is not None:
                 wf_dir.mkdir(parents=True, exist_ok=True)
                 wf_file.write_bytes(backup)
             failed.append(update["id"])
