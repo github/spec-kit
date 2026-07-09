@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.8] - 2026-07-08
+
+### Changed
+
+- [extension] Add LLM Wiki extension to community catalog (#3361)
+- Docs: Document missing CLI flags and integrations (#3182)
+- Docs: Remove Cursor from CLI check list in README (#3184)
+- feat(extensions): port update-agent-context to Python (#3387)
+- fix(scripts): fall through to grep/sed when python3 is a broken stub in feature.json parser (#3312)
+- fix(toml): escape control characters so generated command files parse (#3341)
+- fix(cli): exit cleanly on malformed IPv6 URLs in `extension`/`preset`/`workflow add` (#3369)
+- fix(github-http): return None on malformed GHES port instead of raising (#3379)
+- fix(integrations): guard _sha256 against unreadable managed files (#3376)
+- chore: release 0.12.7, begin 0.12.8.dev0 development (#3398)
+
 ## [0.12.7] - 2026-07-07
 
 ### Changed

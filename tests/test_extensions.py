@@ -1795,6 +1795,25 @@ $ARGUMENTS
 
         assert parsed["description"] == "first line\nsecond line\n"
 
+    def test_render_toml_command_escapes_control_characters(self):
+        """Control characters and a lone CR must be escaped so the TOML parses.
+
+        TOML forbids literal control characters (U+0000–U+001F except tab and
+        newline, plus U+007F) in any string, and treats a bare CR outside a
+        CRLF pair as illegal. The renderer used to emit these raw — into a
+        basic string (single-line) or a ``\"\"\"`` multiline string (for a lone
+        CR) — producing a command file that fails to parse."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        body = "start\x00null\x01ctrl\x1besc\x7fdel\rlone-cr end"
+        output = registrar.render_toml_command(
+            {"description": "d"}, body, "extension:test-ext"
+        )
+
+        parsed = tomllib.loads(output)
+        assert parsed["prompt"] == body
+
     def test_render_toml_command_preserves_backslashes_in_body(self):
         """A backslash in the body (e.g. a Windows path) must not break TOML.
 

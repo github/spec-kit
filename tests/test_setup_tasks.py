@@ -466,6 +466,68 @@ def test_bash_command_hint_preserves_hyphens_inside_segments(tasks_repo: Path) -
     assert result.stdout.strip() == "/speckit.jira.sync-status"
 
 
+def _install_broken_json_tool_stubs(repo: Path) -> Path:
+    """Create a bin dir with `jq` and `python3` stubs that exist but fail.
+
+    Mimics stock Windows + Git Bash, where a JSON tool may be missing or broken
+    and `python3` resolves to the Microsoft Store App Execution Alias stub: both
+    satisfy `command -v` yet fail at runtime (the alias exits 49). Prepending
+    this to PATH forces the invoke-separator parser past jq and python3 to its
+    awk text fallback (#3304).
+    """
+    stub_dir = repo / "_broken_bin"
+    stub_dir.mkdir(exist_ok=True)
+    for name in ("jq", "python3"):
+        stub = stub_dir / name
+        stub.write_text(
+            "#!/bin/sh\n"
+            'echo "simulated broken interpreter/tool" >&2\n'
+            "exit 49\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        stub.chmod(0o755)
+    return stub_dir
+
+
+@requires_bash
+def test_bash_command_hint_falls_back_to_awk_when_jq_and_python3_broken(
+    tasks_repo: Path,
+) -> None:
+    """Separator resolution survives broken jq and python3 stubs (#3304).
+
+    `get_invoke_separator` historically selected python3 by availability and
+    had no text fallback, so a Windows Store python3 stub made it silently
+    return "." even for `-`-separator integrations (e.g. forge), yielding a
+    wrong hint like `/speckit.plan`. The awk fallback must recover `-`.
+    """
+    _write_integration_state(tasks_repo, "forge", "-")
+    stub_dir = _install_broken_json_tool_stubs(tasks_repo)
+
+    script = tasks_repo / ".specify" / "scripts" / "bash" / "common.sh"
+    env = _clean_env()
+    env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; format_speckit_command "$2" "$PWD"',
+            "bash",
+            str(script),
+            "plan",
+        ],
+        cwd=tasks_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "/speckit-plan"
+
+
 @requires_bash
 def test_bash_command_hint_caches_invoke_separator_per_process(tasks_repo: Path) -> None:
     _write_integration_state(tasks_repo, "claude", "-")

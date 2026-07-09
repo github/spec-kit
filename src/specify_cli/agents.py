@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from ._init_options import is_ai_skills_enabled, load_init_options
+from ._toml_string import escape_toml_basic as _escape_toml_basic
+from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ._utils import relative_extension_path_violation
 
 
@@ -258,7 +260,12 @@ class CommandRegistrar:
         # ``C:\\Users\\...`` whose ``\\U`` reads as an invalid unicode escape) would
         # produce unparseable TOML — route those to the *literal* form ('''...'''),
         # which does not process escapes, or to the escaped basic string.
-        if '"""' not in body and "\\" not in body:
+        # Control characters (U+0000–U+001F except tab/newline, U+007F) and a bare
+        # CR are illegal in every TOML string form, so a body containing them must
+        # go to the escaped basic string regardless of which delimiters it uses.
+        if self._has_illegal_toml_control(body):
+            toml_lines.append(f"prompt = {self._render_basic_toml_string(body)}")
+        elif '"""' not in body and "\\" not in body:
             toml_lines.append('prompt = """')
             toml_lines.append(body)
             toml_lines.append('"""')
@@ -271,17 +278,11 @@ class CommandRegistrar:
 
         return "\n".join(toml_lines)
 
-    @staticmethod
-    def _render_basic_toml_string(value: str) -> str:
-        """Render *value* as a TOML basic string literal."""
-        escaped = (
-            value.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
-        )
-        return f'"{escaped}"'
+    # Control-char detection and basic-string escaping are shared with the
+    # gemini/tabnine renderer in ``specify_cli.integrations.base`` via
+    # ``specify_cli._toml_string`` so the two never drift apart.
+    _has_illegal_toml_control = staticmethod(_has_illegal_toml_control)
+    _render_basic_toml_string = staticmethod(_escape_toml_basic)
 
     def render_yaml_command(
         self,
@@ -700,6 +701,12 @@ class CommandRegistrar:
                 )
                 output = self.render_toml_command(frontmatter, body, source_id)
             elif agent_config["format"] == "yaml":
+                body = self.resolve_skill_placeholders(
+                    agent_name, frontmatter, body, project_root
+                )
+                body = self._convert_argument_placeholder(
+                    body, "$ARGUMENTS", agent_config["args"]
+                )
                 output = self.render_yaml_command(
                     frontmatter, body, source_id, cmd_name
                 )
