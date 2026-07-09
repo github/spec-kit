@@ -962,6 +962,51 @@ class TestPresetResolver:
         assert result == pack_dir / "custom" / "spec.md"
         assert "Manifest-declared Spec" in result.read_text()
 
+    def test_resolve_skips_convention_when_manifest_file_missing(self, project_dir):
+        """When the manifest declares a file: that does not exist, resolve()
+        must NOT fall back to a convention file in the same pack (that would
+        mask a typo) — it skips the pack and resolves core instead."""
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        # Manifest declares custom/spec.md (MISSING); a convention file exists
+        # in the pack and must NOT be used.
+        (pack_dir / "templates").mkdir(parents=True)
+        (pack_dir / "templates" / "spec-template.md").write_text(
+            "# Stray Convention Spec\n", encoding="utf-8"
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a missing file path",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result is not None
+        content = result.read_text()
+        assert "Stray Convention Spec" not in content  # pack convention skipped
+        assert "Core Spec Template" in content  # fell through to core
+
     def test_resolve_override_takes_priority_over_pack(self, project_dir, pack_dir):
         """Test that overrides take priority over installed packs."""
         # Install the pack
