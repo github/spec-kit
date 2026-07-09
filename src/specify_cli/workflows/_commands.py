@@ -747,7 +747,7 @@ def workflow_add(
         except typer.Exit:
             raise
         except Exception as exc:
-            console.print(f"[red]Error:[/red] Failed to download workflow: {exc}")
+            console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         try:
             # When installed via --from, the positional argument names the
