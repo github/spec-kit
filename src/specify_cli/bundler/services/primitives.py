@@ -33,12 +33,13 @@ DEFAULT_PRIORITY = 10
 def _assert_pinned_version(
     kind: str, component_id: str, pinned: str | None, advertised: object
 ) -> None:
-    """Refuse to install when the catalog version differs from the manifest pin.
+    """Refuse to install when the resolved version differs from the manifest pin.
 
     Bundle manifests pin component versions for reproducibility; installing
-    whatever the active catalog currently serves would silently violate the
-    pin. When the catalog advertises no version we cannot enforce the pin, so
-    installation proceeds (the catalog, not the bundler, owns that gap).
+    whatever the resolved source (catalog *or* bundled asset) provides would
+    silently violate the pin. When the source advertises no version we cannot
+    enforce the pin, so installation proceeds (the source, not the bundler,
+    owns that gap).
     """
     if not pinned or advertised is None:
         return
@@ -54,9 +55,33 @@ def _assert_pinned_version(
     if not matches:
         raise BundlerError(
             f"{kind} '{component_id}' is pinned to version {pinned} in the bundle "
-            f"manifest, but the active catalog serves {actual}. Update the bundle's "
-            "pinned version or the catalog before installing."
+            f"manifest, but the resolved version is {actual}. Update the bundle's "
+            "pinned version or the source before installing."
         )
+
+
+def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
+    """Best-effort read of a bundled asset's declared version from its manifest.
+
+    Returns ``None`` when the manifest is missing/unreadable/invalid, which
+    ``_assert_pinned_version`` treats as "cannot enforce" (proceed) — matching
+    the catalog "advertises no version" escape hatch.
+    """
+    try:
+        import yaml
+
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            section = data.get(root_key)
+            if isinstance(section, dict):
+                version = section.get("version")
+                # Only a non-empty string is a usable version; anything else
+                # (missing / non-string / whitespace) means "cannot enforce".
+                if isinstance(version, str) and version.strip():
+                    return version
+    except Exception:  # noqa: BLE001 - unreadable/invalid manifest: skip pin
+        return None
+    return None
 
 
 class _KindManager(Protocol):
@@ -134,6 +159,15 @@ class _PresetKindManager:
 
         bundled = _locate_bundled_preset(component.id)
         if bundled is not None:
+            # Enforce the manifest pin against the bundled asset's own version,
+            # mirroring the catalog path below (the bundled path previously
+            # skipped the pin entirely).
+            _assert_pinned_version(
+                "Preset",
+                component.id,
+                component.version,
+                _bundled_manifest_version(bundled / "preset.yml", "preset"),
+            )
             self._manager.install_from_directory(bundled, speckit_version, priority)
             return
 
@@ -198,6 +232,15 @@ class _ExtensionKindManager:
 
         bundled = _locate_bundled_extension(component.id)
         if bundled is not None:
+            # Enforce the manifest pin against the bundled asset's own version,
+            # mirroring the catalog path below (the bundled path previously
+            # skipped the pin entirely).
+            _assert_pinned_version(
+                "Extension",
+                component.id,
+                component.version,
+                _bundled_manifest_version(bundled / "extension.yml", "extension"),
+            )
             self._manager.install_from_directory(
                 bundled, speckit_version, priority=priority
             )
