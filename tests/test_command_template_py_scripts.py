@@ -39,6 +39,17 @@ def _pin_interpreter(monkeypatch):
         "specify_cli.integrations.base.shutil.which",
         lambda name: "/usr/bin/python3" if name == "python3" else None,
     )
+    # On Windows, ``resolve_python_interpreter`` guards the ``which`` result
+    # with a real ``_interpreter_runs`` subprocess probe (#3304). The mocked
+    # ``/usr/bin/python3`` path does not exist on a Windows runner, so the
+    # probe would fail and the resolver would fall back to ``sys.executable``
+    # (a ``...python.exe`` path), breaking the ``python3``-anchored assertion.
+    # Pin the probe to True so the interpreter token stays ``python3`` on all
+    # platforms.
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.IntegrationBase._interpreter_runs",
+        staticmethod(lambda path: True),
+    )
 
 
 def test_py_templates_discovered():
