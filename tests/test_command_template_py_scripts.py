@@ -47,7 +47,8 @@ def _pin_interpreter(monkeypatch):
     # Pin the probe to True so the interpreter token stays ``python3`` on all
     # platforms.
     monkeypatch.setattr(
-        "specify_cli.integrations.base.IntegrationBase._interpreter_runs",
+        IntegrationBase,
+        "_interpreter_runs",
         staticmethod(lambda path: True),
     )
 

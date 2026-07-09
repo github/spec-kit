@@ -21,8 +21,9 @@ from rich.markup import escape as _escape_markup
 from rich.panel import Panel
 from rich.table import Table
 
-from .._console import console
 from .._assets import get_speckit_version
+from .._console import console
+from . import EXTENSION_ID_PATTERN
 
 extension_app = typer.Typer(
     name="extension",
@@ -59,7 +60,18 @@ def _catalog_id(ext: dict) -> str:
     valid one. An empty result means callers should skip the install hint (and
     ideally the entry) rather than emit a command ``download_extension()`` will
     refuse."""
-    return _catalog_str(ext, "id")
+    extension_id = _catalog_str(ext, "id")
+    if extension_id and EXTENSION_ID_PATTERN.fullmatch(extension_id):
+        return extension_id
+    return ""
+
+
+def _catalog_tags(ext: dict) -> list[str]:
+    """Return renderable catalog tags from an untrusted catalog entry."""
+    tags = ext.get("tags")
+    if not isinstance(tags, list):
+        return []
+    return [tag for tag in tags if isinstance(tag, str)]
 
 
 # Root helpers re-fetched at call time so test monkeypatching of
@@ -850,8 +862,9 @@ def extension_search(
 
             # Metadata
             console.print(f"\n  [dim]Author:[/dim] {_escape_markup(_catalog_str(ext, 'author', 'Unknown'))}")
-            if ext.get('tags'):
-                tags_str = ", ".join(str(t) for t in ext['tags'])
+            tags = _catalog_tags(ext)
+            if tags:
+                tags_str = ", ".join(tags)
                 console.print(f"  [dim]Tags:[/dim] {_escape_markup(tags_str)}")
 
             # Source catalog. Use _catalog_str so an explicit JSON null or blank
@@ -1043,8 +1056,9 @@ def _print_extension_info(ext_info: dict, manager):
         console.print()
 
     # Tags
-    if ext_info.get('tags'):
-        tags_str = ", ".join(str(t) for t in ext_info['tags'])
+    tags = _catalog_tags(ext_info)
+    if tags:
+        tags_str = ", ".join(tags)
         console.print(f"[bold]Tags:[/bold] {_escape_markup(tags_str)}")
         console.print()
 

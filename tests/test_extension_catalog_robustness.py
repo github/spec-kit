@@ -77,6 +77,52 @@ def test_search_json_null_fields_render_placeholders_not_none(project_dir, monke
     assert "None" not in result.output
 
 
+def test_search_renders_only_string_list_tags(project_dir, monkeypatch):
+    """`extension search` must treat catalog tags as untrusted data.
+
+    Non-list tags are ignored entirely; list tags render only string members.
+    This prevents scalar tags from crashing or printing as comma-separated
+    characters.
+    """
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "search",
+        lambda self, **kwargs: [
+            {
+                "id": "int-tags",
+                "name": "Int Tags",
+                "version": "1.0.0",
+                "description": "d",
+                "tags": 123,
+            },
+            {
+                "id": "string-tags",
+                "name": "String Tags",
+                "version": "1.0.0",
+                "description": "d",
+                "tags": "abc",
+            },
+            {
+                "id": "mixed-tags",
+                "name": "Mixed Tags",
+                "version": "1.0.0",
+                "description": "d",
+                "tags": ["safe", None, 123, "ok"],
+            },
+        ],
+    )
+
+    result = runner.invoke(app, ["extension", "search"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Tags:") == 1
+    assert "safe, ok" in result.output
+    assert "a, b, c" not in result.output
+    assert "123" not in result.output
+
+
 def test_catalog_search_tolerates_null_fields_and_malformed_tags(project_dir, monkeypatch):
     """Real catalog search must tolerate malformed remote catalog fields."""
     catalog = ExtensionCatalog(project_dir)
@@ -117,13 +163,13 @@ def test_catalog_search_tolerates_null_fields_and_malformed_tags(project_dir, mo
     assert catalog.search(tag="tools") == [good_entry]
 
 
-@pytest.mark.parametrize("bad_id", [None, "", "   "])
+@pytest.mark.parametrize("bad_id", [None, "", "   ", "../escape", "foo/bar", "Bad_ID"])
 def test_search_skips_entries_without_valid_id(project_dir, monkeypatch, bad_id):
-    """Entries with a missing/blank/null id are skipped entirely.
+    """Entries with a missing/blank/null/invalid-format id are skipped entirely.
 
     Such an id cannot be installed (``download_extension()`` refuses it) and
-    previously crashed on ``ext['id']`` when absent. Skip the whole entry
-    rather than emit a bogus/dangling install hint.
+    missing ids previously crashed on ``ext['id']``. Skip the whole entry
+    rather than emit a bogus install hint.
     """
     monkeypatch.chdir(project_dir)
 
@@ -141,7 +187,7 @@ def test_search_skips_entries_without_valid_id(project_dir, monkeypatch, bad_id)
     assert result.exit_code == 0, result.output
     assert "real-ext" in result.output
     assert "specify extension add real-ext" in result.output
-    # The id-less entry is dropped: no header, no dangling install hint.
+    # The invalid-id entry is dropped: no header, no bogus install hint.
     assert "Ghost Ext" not in result.output
 
 
@@ -294,6 +340,30 @@ def test_info_tolerates_missing_fields_and_non_dict_sections(project_dir, monkey
     assert "Provides:" not in result.output
     # stars is escaped.
     assert "[bold]42[/bold]" in result.output
+
+
+def test_info_renders_only_string_list_tags(project_dir, monkeypatch):
+    """`extension info` uses the same untrusted tag rendering as search."""
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [])
+    monkeypatch.setattr(
+        ExtensionCatalog,
+        "get_extension_info",
+        lambda self, ext_id: {
+            "id": "mixed-tags",
+            "name": "Mixed Tags",
+            "version": "1.0.0",
+            "description": "d",
+            "tags": ["safe", None, 123, "ok"],
+        },
+    )
+
+    result = runner.invoke(app, ["extension", "info", "mixed-tags"], obj={"project_root": project_dir})
+
+    assert result.exit_code == 0, result.output
+    assert "Tags: safe, ok" in result.output
+    assert "123" not in result.output
 
 
 def test_download_rejects_catalog_id_path_traversal(project_dir, monkeypatch):
