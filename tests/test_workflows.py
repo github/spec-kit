@@ -601,6 +601,73 @@ class TestExpressions:
         ):
             evaluate_expression("{{ inputs.tags | map }}", ctx)
 
+    def test_chained_filters_apply_left_to_right(self):
+        # Filters chain: each filter's result feeds the next. `map` yields a
+        # list and `join` is the only filter that renders a list to a string,
+        # so `map('name') | join(', ')` is the canonical pairing — it must not
+        # raise. Previously the pipe parser split only at the first `|` and
+        # handed the whole tail (`map('name') | join(', ')`) to one filter,
+        # which the `name(arg)` regex mangled into a ValueError.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "rows": [{"name": "a"}, {"name": "b"}],
+                "tags": ["x", "y"],
+                "missing": None,
+            }
+        )
+        assert (
+            evaluate_expression(
+                "{{ inputs.rows | map('name') | join(', ') }}", ctx
+            )
+            == "a, b"
+        )
+        # A three-link chain: map -> join -> contains.
+        assert (
+            evaluate_expression(
+                "{{ inputs.rows | map('name') | join(', ') | contains('a') }}",
+                ctx,
+            )
+            is True
+        )
+        # default's fallback then flows into the next filter.
+        assert (
+            evaluate_expression(
+                "{{ inputs.missing | default('x') | contains('x') }}", ctx
+            )
+            is True
+        )
+
+    def test_chained_filter_error_in_later_link_raises(self):
+        # A mis-wired filter anywhere in the chain must fail loudly, not just
+        # the first link.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"rows": [{"name": "a"}]})
+        with pytest.raises(ValueError, match="unknown filter 'bogus'"):
+            evaluate_expression(
+                "{{ inputs.rows | map('name') | bogus }}", ctx
+            )
+
+    def test_pipe_in_quoted_arg_is_not_a_filter_separator(self):
+        # A literal `|` inside a quoted operand or filter argument must not be
+        # mistaken for a filter-chain separator — the top-level split has to
+        # respect quotes.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"mode": "a|b", "tags": ["a|b", "c"]})
+        assert evaluate_expression("{{ inputs.mode == 'a|b' }}", ctx) is True
+        # `|` inside a filter argument stays part of the argument.
+        assert (
+            evaluate_expression("{{ inputs.tags | join(' | ') }}", ctx)
+            == "a|b | c"
+        )
+
     def test_condition_evaluation(self):
         from specify_cli.workflows.expressions import evaluate_condition
         from specify_cli.workflows.base import StepContext
