@@ -83,4 +83,3 @@ extend-select = [
     "S604",  # call-with-shell-equals-true
     "S605",  # start-process-with-a-shell
 ]
-
