@@ -2755,8 +2755,13 @@ class ConfigManager:
             if not key.startswith(prefix):
                 continue
 
-            # Remove prefix and split into parts
-            config_path = key[len(prefix) :].lower().split("_")
+            # Remove prefix and split into parts. Drop empty components from a
+            # malformed name (e.g. ``SPECKIT_<EXT>_`` with no key, or
+            # consecutive underscores ``SPECKIT_X__Y``) so we never create an
+            # entry under an empty key.
+            config_path = [p for p in key[len(prefix) :].lower().split("_") if p]
+            if not config_path:
+                continue
 
             # Build nested dict. Two env vars can collide on a prefix, e.g.
             # SPECKIT_X_CONNECTION=a and SPECKIT_X_CONNECTION_URL=b. Guard the

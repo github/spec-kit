@@ -7671,3 +7671,13 @@ class TestConfigManagerEnvPrefixCollision:
         assert executor.should_execute_hook(
             {"condition": "config.connection.url is set", "extension": "testext"}
         ) is True
+
+    def test_malformed_env_names_ignored(self, tmp_path, monkeypatch):
+        """A name with no key (SPECKIT_X_) or empty parts (consecutive
+        underscores) must not create an entry under an empty key."""
+        monkeypatch.setenv("SPECKIT_TESTEXT_", "orphan")  # no key at all
+        monkeypatch.setenv("SPECKIT_TESTEXT_A__B", "z")   # empty middle part
+        cm = ConfigManager(tmp_path, "testext")
+        cfg = cm._get_env_config()
+        assert "" not in cfg
+        assert cfg == {"a": {"b": "z"}}
