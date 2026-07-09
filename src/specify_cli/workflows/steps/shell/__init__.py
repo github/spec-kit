@@ -27,10 +27,28 @@ class ShellStep(StepBase):
         cwd = context.project_root or "."
 
         # Per-step execution timeout in seconds; defaults to 300 for backward
-        # compatibility. ``validate`` guarantees a positive number when the
-        # field is present, so ``execute`` can pass it straight through.
+        # compatibility. Validate here as well so callers that skip
+        # WorkflowEngine.validate() don't crash in subprocess.run().
         timeout = config.get("timeout", 300)
+        if "timeout" in config:
+            import math
 
+            # bool is a subclass of int, but ``timeout: true`` is a config
+            # error rather than a duration — reject it explicitly.
+            if (
+                isinstance(timeout, bool)
+                or not isinstance(timeout, (int, float))
+                or not math.isfinite(timeout)
+                or timeout <= 0
+            ):
+                return StepResult(
+                    status=StepStatus.FAILED,
+                    error=(
+                        f"Shell step {config.get('id', '?')!r}: 'timeout' must be a "
+                        f"positive number of seconds, got {timeout!r}."
+                    ),
+                    output={"exit_code": -1, "stdout": "", "stderr": "invalid timeout"},
+                )
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors
         # control commands; catalog-installed workflows should be reviewed
