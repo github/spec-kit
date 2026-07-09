@@ -11,7 +11,6 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
-import re
 import shutil
 import stat
 import tempfile
@@ -25,8 +24,8 @@ from rich.markup import escape as _escape_markup
 from rich.panel import Panel
 from rich.table import Table
 
-from .._console import console
 from .._assets import get_speckit_version
+from .._console import console
 from .._download_security import (
     archive_format_from_name,
     detect_archive_format,
@@ -35,6 +34,7 @@ from .._download_security import (
     safe_extract_archive,
 )
 from .._init_options import is_ai_skills_enabled
+from . import EXTENSION_ID_PATTERN
 
 extension_app = typer.Typer(
     name="extension",
@@ -61,9 +61,22 @@ def _catalog_str(ext: dict, key: str, fallback: str = "") -> str:
 
 
 def _catalog_id(ext: dict) -> str:
-    """Return an installable catalog ID, or an empty string when invalid."""
+    """Return a usable extension id, or "" when the catalog entry lacks a
+    valid one. An empty result means callers should skip the install hint (and
+    ideally the entry) rather than emit a command ``download_extension()`` will
+    refuse."""
     extension_id = _catalog_str(ext, "id")
-    return extension_id if re.fullmatch(r"[a-z0-9-]+", extension_id) else ""
+    if extension_id and EXTENSION_ID_PATTERN.fullmatch(extension_id):
+        return extension_id
+    return ""
+
+
+def _catalog_tags(ext: dict) -> list[str]:
+    """Return renderable catalog tags from an untrusted catalog entry."""
+    tags = ext.get("tags")
+    if not isinstance(tags, list):
+        return []
+    return [tag.strip() for tag in tags if isinstance(tag, str) and tag.strip()]
 
 
 def _catalog_number(value) -> str:
@@ -1300,12 +1313,7 @@ def extension_search(
 
             # Metadata
             console.print(f"\n  [dim]Author:[/dim] {_escape_markup(_catalog_str(ext, 'author', 'Unknown'))}")
-            ext_tags = ext.get('tags', [])
-            tags = (
-                [tag.strip() for tag in ext_tags if isinstance(tag, str) and tag.strip()]
-                if isinstance(ext_tags, list)
-                else []
-            )
+            tags = _catalog_tags(ext)
             if tags:
                 tags_str = ", ".join(tags)
                 console.print(f"  [dim]Tags:[/dim] {_escape_markup(tags_str)}")
@@ -1521,9 +1529,9 @@ def _print_extension_info(ext_info: dict, manager):
         console.print()
 
     # Tags
-    info_tags = ext_info.get('tags', [])
-    if isinstance(info_tags, list) and info_tags:
-        tags_str = ", ".join(str(t) for t in info_tags)
+    tags = _catalog_tags(ext_info)
+    if tags:
+        tags_str = ", ".join(tags)
         console.print(f"[bold]Tags:[/bold] {_escape_markup(tags_str)}")
         console.print()
 

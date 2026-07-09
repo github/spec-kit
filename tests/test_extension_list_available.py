@@ -155,13 +155,13 @@ def test_list_available_json_null_fields_render_placeholders_not_none(project_di
     assert "None" not in result.output
 
 
-@pytest.mark.parametrize("bad_id", [None, "", "   "])
+@pytest.mark.parametrize("bad_id", [None, "", "   ", "../escape", "foo/bar", "Bad_ID"])
 def test_list_available_skips_entries_without_valid_id(project_dir, monkeypatch, bad_id):
-    """Entries with a missing/blank/null id are skipped entirely.
+    """Entries with a missing/blank/null/invalid-format id are skipped entirely.
 
     Such an id cannot be installed (``download_extension()`` would refuse it),
-    so printing an install hint like ``specify extension add`` with no id — or
-    with ``None`` — only misleads the user. Skip the whole entry.
+    so printing an install hint like ``specify extension add`` with an invalid
+    id only misleads the user. Skip the whole entry.
     """
     monkeypatch.chdir(project_dir)
 
@@ -177,7 +177,7 @@ def test_list_available_skips_entries_without_valid_id(project_dir, monkeypatch,
     # The valid entry still renders with its install hint...
     assert "real-ext" in result.output
     assert "specify extension add real-ext" in result.output
-    # ...but the id-less entry is dropped: no name, no dangling install hint.
+    # ...but the invalid-id entry is dropped: no name, no bogus install hint.
     assert "Ghost Ext" not in result.output
 
 
@@ -197,6 +197,7 @@ def test_list_available_all_invalid_ids_reports_empty(project_dir, monkeypatch):
         {"id": None, "name": "Ghost One"},
         {"id": "", "name": "Ghost Two"},
         {"id": "   ", "name": "Ghost Three"},
+        {"id": "../escape", "name": "Ghost Four"},
     ])
 
     result = runner.invoke(app, ["extension", "list", "--available"], obj={"project_root": project_dir})
@@ -204,7 +205,7 @@ def test_list_available_all_invalid_ids_reports_empty(project_dir, monkeypatch):
     assert result.exit_code == 0
     assert "Available Extensions:" in result.output
     assert "No additional extensions available" in result.output
-    # None of the id-less entries leak into the output.
+    # None of the invalid-id entries leak into the output.
     assert "Ghost" not in result.output
 
 
