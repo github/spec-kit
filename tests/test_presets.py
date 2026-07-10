@@ -3186,9 +3186,9 @@ class TestPresetSkills:
         assert "preset:self-test" in content, "Skill should reference preset source"
         assert "disable-model-invocation: false" in content
 
-        # Verify it was recorded in registry
+        # Verify it was recorded in registry, keyed by the active agent
         metadata = manager.registry.get("self-test")
-        assert "speckit-specify" in metadata.get("registered_skills", [])
+        assert "speckit-specify" in metadata.get("registered_skills", {}).get("claude", [])
 
     def _install_arg_hint_preset(self, project_dir, temp_dir, ai, skills_dir, description, arg_hint):
         """Install a preset whose command declares argument-hint; return the SKILL.md path."""
@@ -3645,7 +3645,7 @@ class TestPresetSkills:
 
         assert (skills_dir / "speckit-specify").is_file()
         metadata = manager.registry.get("self-test")
-        assert "speckit-specify" not in metadata.get("registered_skills", [])
+        assert "speckit-specify" not in metadata.get("registered_skills", {}).get("qwen", [])
 
     def test_no_skills_registered_when_no_skill_dir_exists(self, project_dir, temp_dir):
         """Skills should not be created when no existing skill dir is found."""
@@ -3656,7 +3656,7 @@ class TestPresetSkills:
         install_self_test_preset(manager)
 
         metadata = manager.registry.get("self-test")
-        assert metadata.get("registered_skills", []) == []
+        assert metadata.get("registered_skills", {}) == {}
 
     def test_extension_skill_override_matches_hyphenated_multisegment_name(self, project_dir, temp_dir):
         """Preset overrides for speckit.<ext>.<cmd> should target speckit-<ext>-<cmd> skills."""
@@ -3704,7 +3704,7 @@ class TestPresetSkills:
         assert "# Speckit Fakeext Cmd Skill" in content
 
         metadata = manager.registry.get("ext-skill-override")
-        assert "speckit-fakeext-cmd" in metadata.get("registered_skills", [])
+        assert "speckit-fakeext-cmd" in metadata.get("registered_skills", {}).get("codex", [])
 
     def test_extension_skill_restored_on_preset_remove(self, project_dir, temp_dir):
         """Preset removal should restore an extension-backed skill instead of deleting it."""
@@ -3867,7 +3867,7 @@ class TestPresetSkills:
         assert "name: speckit.specify" in content
 
         metadata = manager.registry.get("self-test")
-        assert "speckit.specify" in metadata.get("registered_skills", [])
+        assert "speckit.specify" in metadata.get("registered_skills", {}).get("kimi", [])
 
     def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi presets should still propagate command overrides to existing skills."""
@@ -3887,7 +3887,7 @@ class TestPresetSkills:
         assert "name: speckit-specify" in content
 
         metadata = manager.registry.get("self-test")
-        assert "speckit-specify" in metadata.get("registered_skills", [])
+        assert "speckit-specify" in metadata.get("registered_skills", {}).get("kimi", [])
 
     def test_kimi_new_skill_created_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi native skills should still receive brand-new preset commands."""
@@ -3936,7 +3936,7 @@ class TestPresetSkills:
         assert "name: speckit-research" in content
 
         metadata = manager.registry.get("kimi-new-skill")
-        assert "speckit-research" in metadata.get("registered_skills", [])
+        assert "speckit-research" in metadata.get("registered_skills", {}).get("kimi", [])
 
     def test_kimi_preset_skill_override_resolves_script_placeholders(self, project_dir, temp_dir):
         """Kimi preset skill overrides should resolve placeholders and rewrite project paths."""
@@ -4192,12 +4192,14 @@ class TestPresetSkills:
         must restore both agents' directories, not just the currently
         active one.
 
-        ``registered_skills`` is a flat list of skill names shared across
-        agents, so it can't tell which agent directories a preset actually
-        touched. Before the fix, ``_unregister_skills`` only restored the
-        currently active agent's skills directory; a preset used first
-        under Claude and later switched to Codex would have its Claude
-        override left behind permanently on removal (#2948).
+        ``registered_skills`` records exactly which agent directories the
+        preset wrote to (``{agent_name: [skill_name, ...]}``); switching to
+        codex and re-registering adds a "codex" entry alongside the
+        original "claude" entry, so removal restores both. Before the
+        provenance fix, ``_unregister_skills`` only restored the currently
+        active agent's skills directory; a preset used first under Claude
+        and later switched to Codex would have its Claude override left
+        behind permanently on removal (#2948).
         """
         self._write_init_options(project_dir, ai="claude", ai_skills=True)
 
@@ -4243,6 +4245,13 @@ class TestPresetSkills:
             "sanity: the previous agent's registration is preserved on switch"
         )
 
+        metadata = manager.registry.get("multi-skill-agent-preset")
+        registered_skills = metadata.get("registered_skills", {})
+        assert set(registered_skills) == {"claude", "codex"}, (
+            "registered_skills must record both agent directories this "
+            "preset actually wrote to (#2948)"
+        )
+
         assert manager.remove("multi-skill-agent-preset") is True
 
         for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
@@ -4253,6 +4262,160 @@ class TestPresetSkills:
                 "not orphaned permanently (#2948)"
             )
             assert "Core specify body" in content
+
+    def test_symlinked_skills_dir_rejected_on_removal(self, project_dir, temp_dir):
+        """Removal must validate a recorded skill directory before touching it.
+
+        If an agent's skills directory is replaced with a symlink escaping
+        the project root between install and removal, restoration must
+        refuse to write/rmtree through it rather than trusting the
+        recorded agent name blindly. The unsafe directory is skipped
+        best-effort; removal still succeeds and doesn't crash (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "symlink-guard-preset", "speckit.specify",
+            "Symlink guard test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        metadata = manager.registry.get("symlink-guard-preset")
+        assert "speckit-specify" in metadata.get("registered_skills", {}).get("claude", [])
+
+        # Simulate the claude skills directory being replaced with a symlink
+        # that escapes the project root, containing an external
+        # "speckit-specify" directory that must not be touched.
+        outside_target = temp_dir / "outside-claude-skills"
+        outside_skill_dir = outside_target / "speckit-specify"
+        outside_skill_dir.mkdir(parents=True)
+        sentinel = outside_skill_dir / "SKILL.md"
+        sentinel.write_text("do-not-touch")
+        shutil.rmtree(claude_skills_dir)
+        claude_skills_dir.symlink_to(outside_target, target_is_directory=True)
+
+        assert manager.remove("symlink-guard-preset") is True
+
+        assert sentinel.read_text() == "do-not-touch", (
+            "removal must not follow a symlinked skills directory outside "
+            "the project root (#2948)"
+        )
+        assert outside_skill_dir.is_dir(), (
+            "the external directory must not be rmtree'd through a "
+            "symlinked skills path"
+        )
+        assert claude_skills_dir.is_symlink(), (
+            "the symlink itself should be left alone, not rmtree'd through"
+        )
+
+    def test_preset_removal_does_not_touch_other_presets_skill_dir(
+        self, project_dir, temp_dir
+    ):
+        """Removing a preset must only touch directories it actually wrote to.
+
+        Preset A is installed while Claude is active and preset B is
+        installed while Codex is active; both override the same command
+        name, so both materialize a ``speckit-specify`` skill, but in
+        *different* agent directories. Before the provenance fix, removing
+        B enumerated every existing skill-mode directory (including
+        Claude's) and restored/overwrote anything named ``speckit-specify``
+        found there, corrupting A's override even though B never touched
+        Claude's directory (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "preset-a", "speckit.specify", "Preset A", "preset A body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_a_dir, "0.1.5")
+
+        claude_skill_file = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:preset-a" in claude_skill_file.read_text()
+
+        # Switch to codex and install a second preset overriding the same
+        # command; codex's skills directory is entirely separate.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "preset-b", "speckit.specify", "Preset B", "preset B body",
+        )
+        manager.install_from_directory(preset_b_dir, "0.1.5")
+
+        metadata_b = manager.registry.get("preset-b")
+        assert "claude" not in metadata_b.get("registered_skills", {}), (
+            "preset B never wrote to claude's skills directory and must "
+            "not record it as touched"
+        )
+
+        assert manager.remove("preset-b") is True
+
+        assert "preset:preset-a" in claude_skill_file.read_text(), (
+            "removing preset B must not disturb preset A's Claude override (#2948)"
+        )
+
+    def test_copilot_skills_registration_restored_after_process_restart(
+        self, project_dir, temp_dir
+    ):
+        """Copilot skills-mode registrations must restore even when the
+        transient ``_skills_mode`` integration attribute has been reset,
+        simulating a fresh CLI process.
+
+        ``_skills_mode`` is set during ``setup()`` and is never persisted;
+        after switching the active agent and running ``preset remove`` in
+        a brand-new process, a naive "is this integration currently in
+        skills mode" check would be False even though Copilot's
+        ``.github/skills`` directory holds a live override this preset
+        wrote. Restoration must rely on the persisted per-agent provenance
+        recorded at write time, not on runtime integration state (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(copilot_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "copilot-fresh-process-preset", "speckit.specify",
+            "Copilot fresh process test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = copilot_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:copilot-fresh-process-preset" in skill_file.read_text()
+
+        metadata = manager.registry.get("copilot-fresh-process-preset")
+        assert "copilot" in metadata.get("registered_skills", {})
+
+        # Switch the active agent away from copilot, then simulate a fresh
+        # CLI process (a brand-new PresetManager, so any transient
+        # `_skills_mode` state set during a prior setup() call is gone)
+        # removing the preset.
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        fresh_manager = PresetManager(project_dir)
+
+        assert fresh_manager.remove("copilot-fresh-process-preset") is True
+
+        assert "preset:copilot-fresh-process-preset" not in skill_file.read_text(), (
+            "removal must restore copilot's .github/skills override even "
+            "when copilot's transient skills-mode state isn't set in this "
+            "process (#2948)"
+        )
+        assert "Core specify body" in skill_file.read_text()
 
 
 class TestPresetSetPriority:

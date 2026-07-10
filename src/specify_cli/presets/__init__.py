@@ -16,7 +16,7 @@ import zipfile
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Dict, List, Any
+from typing import TYPE_CHECKING, Optional, Dict, List, Any, Union
 
 if TYPE_CHECKING:
     from ..agents import CommandRegistrar
@@ -774,15 +774,14 @@ class PresetManager:
                     updates["registered_commands"] = merged_commands
 
                 registered_skills = self._register_skills(manifest, pack_dir)
-                if registered_skills:
-                    existing_skills = metadata.get("registered_skills", [])
-                    if not isinstance(existing_skills, list):
-                        existing_skills = []
-                    merged_skills = list(
-                        dict.fromkeys(existing_skills + registered_skills)
-                    )
-                    if merged_skills != existing_skills:
-                        updates["registered_skills"] = merged_skills
+                existing_skills = self._normalize_registered_skills(
+                    metadata.get("registered_skills"), fallback_agent=agent_name
+                )
+                merged_skills = copy.deepcopy(existing_skills)
+                if registered_skills.get(agent_name):
+                    merged_skills[agent_name] = registered_skills[agent_name]
+                if merged_skills != existing_skills:
+                    updates["registered_skills"] = merged_skills
 
                 if updates:
                     self.registry.update(pack_id, updates)
@@ -1159,7 +1158,16 @@ class PresetManager:
                     for _pid, meta in presets_by_priority:
                         if not isinstance(meta, dict):
                             continue
-                        if skill_name in meta.get("registered_skills", []):
+                        recorded = meta.get("registered_skills", [])
+                        if isinstance(recorded, dict):
+                            in_any_agent = any(
+                                skill_name in names
+                                for names in recorded.values()
+                                if isinstance(names, list)
+                            )
+                        else:
+                            in_any_agent = skill_name in recorded
+                        if in_any_agent:
                             was_managed = True
                             break
                     if was_managed:
@@ -1373,7 +1381,7 @@ class PresetManager:
         self,
         manifest: "PresetManifest",
         preset_dir: Path,
-    ) -> List[str]:
+    ) -> Dict[str, List[str]]:
         """Generate SKILL.md files for preset command overrides.
 
         For every command template in the preset, checks whether a
@@ -1388,13 +1396,16 @@ class PresetManager:
             preset_dir: Installed preset directory.
 
         Returns:
-            List of skill names that were written (for registry storage).
+            ``{agent_name: [skill_name, ...]}`` for the single active
+            agent skills were written for (empty if none were written),
+            matching the shape ``registered_commands`` already uses so the
+            two can be tracked/restored consistently (#2948).
         """
         command_templates = [
             t for t in manifest.templates if t.get("type") == "command"
         ]
         if not command_templates:
-            return []
+            return {}
 
         # Filter out extension command overrides if the extension isn't installed,
         # matching the same logic used by _register_commands().
@@ -1409,11 +1420,11 @@ class PresetManager:
             filtered.append(cmd)
 
         if not filtered:
-            return []
+            return {}
 
         skills_dir = self._get_skills_dir()
         if not skills_dir:
-            return []
+            return {}
 
         from .. import SKILL_DESCRIPTIONS, load_init_options
         from ..agents import CommandRegistrar
@@ -1423,8 +1434,8 @@ class PresetManager:
         if not isinstance(init_opts, dict):
             init_opts = {}
         selected_ai = init_opts.get("ai")
-        if not isinstance(selected_ai, str):
-            return []
+        if not isinstance(selected_ai, str) or not selected_ai:
+            return {}
         ai_skills_enabled = is_ai_skills_enabled(init_opts)
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai)
@@ -1525,68 +1536,115 @@ class PresetManager:
                 skill_file.write_text(skill_content, encoding="utf-8")
                 written.append(target_skill_name)
 
-        return written
+        return {selected_ai: written} if written else {}
 
-    def _tracked_skill_agent_dirs(self) -> List[tuple]:
-        """Return (skills_dir, agent_name) pairs for every skill-mode
-        integration directory that currently exists under the project root.
+    @staticmethod
+    def _normalize_registered_skills(
+        value: Any, fallback_agent: Optional[str] = None
+    ) -> Dict[str, List[str]]:
+        """Normalize a ``registered_skills`` registry value to per-agent form.
 
-        ``registered_skills`` only tracks skill *names*, not which agent
-        directories they were written under, so a preset used first under
-        one skill-mode agent and later switched to another can have live
-        overrides in both directories at removal time. Restoring every
-        existing skill-mode directory (instead of only the currently active
-        one) ensures none of them are left permanently orphaned.
+        The registry stores ``registered_skills`` as ``Dict[str, List[str]]``
+        (agent name -> skill names actually written for that agent),
+        mirroring ``registered_commands``. Older registries predate that
+        provenance and stored a flat ``List[str]`` with no record of which
+        agent directory the names were written under; since that can't be
+        recovered, ``fallback_agent`` (when given) attributes the legacy
+        list to the agent currently being processed so the format
+        self-migrates on the next write. Without a fallback agent, legacy
+        lists are dropped rather than guessed at.
+        """
+        if isinstance(value, dict):
+            return {
+                agent: list(names)
+                for agent, names in value.items()
+                if isinstance(agent, str) and isinstance(names, list)
+            }
+        if isinstance(value, list) and value and fallback_agent:
+            return {fallback_agent: [n for n in value if isinstance(n, str)]}
+        return {}
 
-        Multiple integration keys can share the same physical directory
-        (e.g. ``agy``/``codex``/``zed`` all use ``.agents/skills``); only one
-        representative agent name is kept per unique resolved directory so
-        each physical directory is processed exactly once.
+    def _safe_skills_dir_for_agent(self, agent_name: str) -> Optional[Path]:
+        """Resolve ``agent_name``'s skills directory, validated for safety.
+
+        Unlike :meth:`_get_skills_dir` (which resolves only the *currently
+        active* integration via init-options), this resolves an arbitrary
+        agent's directory from persisted provenance so a preset's skill
+        registrations can be restored/cleaned up under an agent that isn't
+        currently active. The candidate directory is validated through the
+        project's shared symlink/containment guard before any file in it is
+        touched; directories that don't exist or fail validation are
+        skipped rather than raising.
         """
         from .. import _get_skills_dir as _resolve_skills_dir
-        from ..integrations import INTEGRATION_REGISTRY
-        from ..integrations.base import SkillsIntegration
+        from ..shared_infra import _ensure_safe_shared_directory
 
-        seen: Dict[Path, str] = {}
-        for key in sorted(INTEGRATION_REGISTRY):
-            integration = INTEGRATION_REGISTRY[key]
-            if not (
-                isinstance(integration, SkillsIntegration)
-                or getattr(integration, "_skills_mode", False)
-            ):
-                continue
-            skills_dir = _resolve_skills_dir(self.project_root, key)
-            if not skills_dir.is_dir():
-                continue
-            try:
-                resolved = skills_dir.resolve()
-            except OSError:
-                continue
-            seen.setdefault(resolved, key)
+        skills_dir = _resolve_skills_dir(self.project_root, agent_name)
+        try:
+            _ensure_safe_shared_directory(
+                self.project_root, skills_dir,
+                create=False, context="preset skills directory",
+            )
+        except (ValueError, OSError):
+            return None
+        return skills_dir
 
-        return [(path, agent) for path, agent in seen.items()]
-
-    def _unregister_skills(self, skill_names: List[str], preset_dir: Path) -> None:
+    def _unregister_skills(
+        self,
+        registered_skills: Union[Dict[str, List[str]], List[str]],
+        preset_dir: Path,
+    ) -> None:
         """Restore original SKILL.md files after a preset is removed.
 
         For each skill that was overridden by the preset, attempts to
         regenerate the skill from the core command template.  If no core
         template exists, the skill directory is removed.
 
-        Restores across every existing skill-mode agent directory (see
-        :meth:`_tracked_skill_agent_dirs`), not just the currently active
-        integration, so switching integrations before removal can't leave a
-        preset override behind permanently.
+        ``registered_skills`` records exactly which agent directories this
+        preset actually wrote to (see :meth:`_register_skills`), so removal
+        restores precisely those directories rather than guessing at every
+        skill-mode agent that happens to exist on disk. Each directory is
+        re-resolved and safety-validated at removal time (see
+        :meth:`_safe_skills_dir_for_agent`) since it may belong to an agent
+        that isn't currently active.
 
         Args:
-            skill_names: List of skill names written by the preset.
+            registered_skills: Per-agent skill names written by the preset
+                (``{agent_name: [skill_name, ...]}``), or a legacy flat
+                ``List[str]`` from a registry written before this
+                provenance tracking existed.
             preset_dir: The preset's installed directory (may already be deleted).
         """
-        if not skill_names:
+        if not registered_skills:
             return
 
-        for skills_dir, agent_name in self._tracked_skill_agent_dirs():
-            self._unregister_skills_in_dir(skill_names, skills_dir, agent_name)
+        if isinstance(registered_skills, dict):
+            for agent_name, skill_names in registered_skills.items():
+                if not skill_names:
+                    continue
+                skills_dir = self._safe_skills_dir_for_agent(agent_name)
+                if skills_dir is None:
+                    continue
+                self._unregister_skills_in_dir(skill_names, skills_dir, agent_name)
+            return
+
+        # Legacy flat-list format: no record of which agent directory these
+        # names were written under, so best-effort restore is limited to the
+        # currently active agent's directory (the pre-provenance behaviour).
+        skills_dir = self._get_skills_dir()
+        if not skills_dir:
+            return
+        from .. import load_init_options
+
+        init_opts = load_init_options(self.project_root)
+        if not isinstance(init_opts, dict):
+            init_opts = {}
+        selected_ai = init_opts.get("ai")
+        self._unregister_skills_in_dir(
+            registered_skills,
+            skills_dir,
+            selected_ai if isinstance(selected_ai, str) else None,
+        )
 
     def _unregister_skills_in_dir(
         self, skill_names: List[str], skills_dir: Path, selected_ai: Optional[str]
@@ -1760,11 +1818,11 @@ class PresetManager:
             "enabled": True,
             "priority": priority,
             "registered_commands": {},
-            "registered_skills": [],
+            "registered_skills": {},
         })
 
         registered_commands: Dict[str, List[str]] = {}
-        registered_skills: List[str] = []
+        registered_skills: Dict[str, List[str]] = {}
         try:
             # Register command overrides with AI agents and persist the result
             # immediately so cleanup can recover even if installation stops
