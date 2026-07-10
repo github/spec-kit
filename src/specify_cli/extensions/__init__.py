@@ -1472,9 +1472,27 @@ class ExtensionManager:
         # path, which uses .backup/ rather than an in-place leftover.
         for name, (data, mode, atime, mtime) in preserved_configs.items():
             dest_cfg = dest_dir / name
+            # Never write *through* a symlink (or a non-regular-file) at this
+            # path: if dest_cfg is a symlink — copied with symlinks=True, or
+            # swapped in by a racing process between the copytree above and
+            # here — write_bytes() would follow it and clobber an arbitrary
+            # target outside the extension dir. Drop any non-regular entry
+            # first so write_bytes() always creates a fresh regular file.
+            try:
+                if dest_cfg.is_symlink():
+                    dest_cfg.unlink()  # remove the link itself, never follow it
+                elif dest_cfg.is_dir():
+                    shutil.rmtree(dest_cfg)
+            except OSError:
+                continue  # can't make the path safe — skip rather than clobber
             dest_cfg.write_bytes(data)
+            # Restore mode and timestamps independently: a failure to set one
+            # must not prevent the other, since either can succeed on its own.
             try:
                 os.chmod(dest_cfg, mode & 0o7777)  # permission bits only
+            except OSError:
+                pass
+            try:
                 os.utime(dest_cfg, (atime, mtime))  # and timestamps
             except OSError:
                 pass

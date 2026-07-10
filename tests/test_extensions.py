@@ -1591,6 +1591,98 @@ class TestExtensionManager:
         if platform.system() != "Windows":
             assert config_file.stat().st_mode & 0o777 == 0o600
 
+    def test_reinstall_config_restore_does_not_follow_symlink(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """The keep-config restore must never write *through* a symlink. If the
+        config path is a symlink at restore time (e.g. swapped in between the
+        copytree and the restore), the write must not follow it and clobber the
+        external target — it must replace the link with a fresh regular file."""
+        # Probe symlink capability (Windows usually needs privilege).
+        probe_target = project_dir / "_probe_target"
+        probe_link = project_dir / "_probe_link"
+        try:
+            probe_target.write_text("x")
+            probe_link.symlink_to(probe_target)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not supported in this environment")
+        finally:
+            probe_link.unlink(missing_ok=True)
+            probe_target.unlink(missing_ok=True)
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("api_key: MY-CUSTOMIZED-VALUE")
+
+        # keep-config removal: registry entry dropped, config left in place.
+        assert manager.remove("test-ext", keep_config=True) is True
+
+        # A victim file outside the extension dir that the symlink points at.
+        victim = project_dir / "victim.txt"
+        victim.write_text("DO-NOT-OVERWRITE")
+
+        # Simulate the config path being a symlink to the victim right after the
+        # fresh copytree (the TOCTOU / symlinks=True case the guard defends).
+        real_copytree = shutil.copytree
+
+        def copytree_then_symlink(src, dst, *args, **kwargs):
+            result = real_copytree(src, dst, *args, **kwargs)
+            link = Path(dst) / "test-ext-config.yml"
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            link.symlink_to(victim)
+            return result
+
+        monkeypatch.setattr(shutil, "copytree", copytree_then_symlink)
+
+        # Reinstall: restore must drop the symlink, not follow it.
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # The victim outside the extension dir is untouched.
+        assert victim.read_text() == "DO-NOT-OVERWRITE"
+        # The config path is now a regular file (not a symlink) with the
+        # preserved content written in place.
+        assert not config_file.is_symlink()
+        assert config_file.is_file()
+        assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
+
+    def test_reinstall_config_restore_replaces_directory_at_path(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Cross-platform guard check: if a directory occupies the config path at
+        restore time, write_bytes() would raise (uncaught, crashing the whole
+        reinstall). The guard must clear the directory and write a fresh regular
+        file. Exercises the same non-regular-file guard as the symlink case, but
+        needs no symlink privilege so it runs everywhere (incl. Windows)."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("api_key: MY-CUSTOMIZED-VALUE")
+        assert manager.remove("test-ext", keep_config=True) is True
+
+        # Simulate a directory occupying the config path right after copytree.
+        real_copytree = shutil.copytree
+
+        def copytree_then_dir(src, dst, *args, **kwargs):
+            result = real_copytree(src, dst, *args, **kwargs)
+            clash = Path(dst) / "test-ext-config.yml"
+            clash.mkdir()
+            (clash / "sentinel").write_text("stray")
+            return result
+
+        monkeypatch.setattr(shutil, "copytree", copytree_then_dir)
+
+        # Must not raise, and must restore a regular file with preserved content.
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        assert config_file.is_file()
+        assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
+
 
 # ===== CommandRegistrar Tests =====
 
