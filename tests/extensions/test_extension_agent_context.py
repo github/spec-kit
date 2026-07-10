@@ -22,9 +22,16 @@ from tests.conftest import requires_bash
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 EXT_DIR = PROJECT_ROOT / "extensions" / "agent-context"
 BASH = shutil.which("bash")
-POWERSHELL = (
-    shutil.which("pwsh") or shutil.which("powershell.exe") or shutil.which("powershell")
-)
+if os.name == "nt":
+    POWERSHELL = (
+        shutil.which("pwsh")
+        or shutil.which("powershell.exe")
+        or shutil.which("powershell")
+    )
+else:
+    # Do not treat Windows PowerShell exposed through WSL interop as a native
+    # Linux runner. It cannot consume Linux cwd/temp paths used by these tests.
+    POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
 
 
 def _write_ext_config(project_root: Path, **overrides: object) -> None:

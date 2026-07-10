@@ -22,7 +22,7 @@ handoff_spec_repo_root() {
 }
 
 handoff_spec_load_core() {
-    local repo_root="$1"
+    local repo_root="${1:-$(handoff_spec_repo_root)}"
     # shellcheck source=/dev/null
     source "$repo_root/.specify/scripts/bash/common.sh"
 }

@@ -78,7 +78,9 @@ def test_ai_team_handoff_spec_preset_files():
         "speckit.tasks",
         "speckit.converge",
         "speckit.bug.test",
+        "speckit.constitution",
         "plan-template",
+        "constitution-template",
     }
     by_name = {e["name"]: e for e in entries}
     expected_strategies = {
@@ -86,7 +88,9 @@ def test_ai_team_handoff_spec_preset_files():
         "speckit.tasks": "prepend",
         "speckit.converge": "wrap",
         "speckit.bug.test": "append",
+        "speckit.constitution": "replace",
         "plan-template": "prepend",
+        "constitution-template": "replace",
     }
     handoff_stop = "remote handoff pointer and `spec.override.md` is missing"
     for entry in entries:
@@ -97,6 +101,12 @@ def test_ai_team_handoff_spec_preset_files():
         if name == "plan-template":
             assert "spec.override" in text or "handoff" in text.lower()
             assert handoff_stop in text
+        elif name == "constitution-template":
+            assert "Scope and Authority" in text
+            assert "Governance" in text
+        elif name == "speckit.constitution":
+            assert "amend-first" in text
+            assert ".specify/memory/constitution.md" in text
         elif name == "speckit.bug.test":
             assert "evidence board" in text.lower()
             assert "checks" in text.lower()
@@ -133,7 +143,7 @@ def test_sync_bootstraps_spec_and_writes_override(tmp_path: Path, monkeypatch: p
     fake_curl = tmp_path / "curl"
     fake_curl.write_text(
         "#!/usr/bin/env bash\n"
-        'cp "$MOCK_FETCH_SOURCE" "$5"\n',
+        'cp "$MOCK_FETCH_SOURCE" "${!#}"\n',
         encoding="utf-8",
     )
     fake_curl.chmod(0o755)
@@ -172,7 +182,7 @@ def test_sync_merges_existing_spec_baseline(tmp_path: Path):
     fake_curl = tmp_path / "curl"
     fake_curl.write_text(
         "#!/usr/bin/env bash\n"
-        'cp "$MOCK_FETCH_SOURCE" "$5"\n',
+        'cp "$MOCK_FETCH_SOURCE" "${!#}"\n',
         encoding="utf-8",
     )
     fake_curl.chmod(0o755)
