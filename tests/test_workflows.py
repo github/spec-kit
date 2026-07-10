@@ -4539,6 +4539,33 @@ class TestWorkflowCatalog:
             "description": "Workflow source",
         }
 
+    def test_add_catalog_coerces_string_priority_override(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog(
+            "https://example.com/new-catalog.json",
+            "my-catalog",
+            priority="7",
+        )
+
+        data = yaml.safe_load(
+            (project_dir / ".specify" / "workflow-catalogs.yml").read_text()
+        )
+        assert data["catalogs"][0]["priority"] == 7
+
+    def test_add_catalog_rejects_bool_priority_override(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        catalog = WorkflowCatalog(project_dir)
+
+        with pytest.raises(WorkflowValidationError, match=r"expected integer, got True"):
+            catalog.add_catalog(
+                "https://example.com/new-catalog.json",
+                "my-catalog",
+                priority=True,
+            )
+
     def test_catalog_add_cli_accepts_metadata_options(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -4618,6 +4645,30 @@ class TestWorkflowCatalog:
 
         catalog = WorkflowCatalog(project_dir)
         with pytest.raises(WorkflowValidationError, match="expected a mapping"):
+            catalog.get_active_catalogs()
+
+    def test_load_catalog_config_rejects_bool_priority(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "custom",
+                            "url": "https://example.com/wf-catalog.json",
+                            "priority": True,
+                            "install_allowed": True,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match=r"expected integer, got True"):
             catalog.get_active_catalogs()
 
     def test_add_catalog_malformed_yaml_raises(self, project_dir):
@@ -5039,6 +5090,33 @@ class TestStepCatalog:
             "description": "Step source",
         }
 
+    def test_add_catalog_coerces_string_priority_override(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog(
+            "https://example.com/new-steps.json",
+            "my-steps",
+            priority="7",
+        )
+
+        data = yaml.safe_load(
+            (project_dir / ".specify" / "step-catalogs.yml").read_text()
+        )
+        assert data["catalogs"][0]["priority"] == 7
+
+    def test_add_catalog_rejects_bool_priority_override(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+
+        with pytest.raises(StepValidationError, match=r"expected integer, got True"):
+            catalog.add_catalog(
+                "https://example.com/new-steps.json",
+                "my-steps",
+                priority=True,
+            )
+
     def test_catalog_add_cli_accepts_metadata_options(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -5166,6 +5244,30 @@ class TestStepCatalog:
         assert len(configs) == 2
         assert configs[0]["name"] == "default"
         assert isinstance(configs[0]["install_allowed"], bool)
+
+    def test_load_catalog_config_rejects_bool_priority(self, project_dir):
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "custom",
+                            "url": "https://example.com/step-catalog.json",
+                            "priority": True,
+                            "install_allowed": True,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match=r"expected integer, got True"):
+            catalog.get_active_catalogs()
 
     def test_search_with_mock_catalog(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import StepCatalog

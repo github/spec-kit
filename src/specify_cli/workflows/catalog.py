@@ -50,6 +50,27 @@ class WorkflowCatalogEntry:
     description: str = ""
 
 
+def _normalize_catalog_priority(
+    value: Any,
+    *,
+    catalog_name: str | int,
+    error_cls: type[Exception],
+) -> int:
+    """Normalize a catalog priority to int and reject bool explicitly."""
+    if isinstance(value, bool):
+        raise error_cls(
+            f"Invalid priority for catalog '{catalog_name}': "
+            f"expected integer, got {value!r}"
+        )
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise error_cls(
+            f"Invalid priority for catalog '{catalog_name}': "
+            f"expected integer, got {value!r}"
+        ) from exc
+
+
 # ---------------------------------------------------------------------------
 # WorkflowRegistry
 # ---------------------------------------------------------------------------
@@ -210,14 +231,11 @@ class WorkflowCatalog:
             if not url:
                 continue
             self._validate_catalog_url(url)
-            try:
-                priority = int(item.get("priority", idx + 1))
-            except (TypeError, ValueError):
-                raise WorkflowValidationError(
-                    f"Invalid priority for catalog "
-                    f"'{item.get('name', idx + 1)}': "
-                    f"expected integer, got {item.get('priority')!r}"
-                )
+            priority = _normalize_catalog_priority(
+                item.get("priority", idx + 1),
+                catalog_name=item.get("name", idx + 1),
+                error_cls=WorkflowValidationError,
+            )
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):
                 install_allowed = raw_install.strip().lower() in (
@@ -516,28 +534,33 @@ class WorkflowCatalog:
                     f"Catalog URL already configured: {url}"
                 )
 
-        # Derive priority from the highest existing priority + 1.
-        # Coerce existing priorities to int with a safe fallback so a user-edited
-        # workflow-catalogs.yml with a non-integer priority (e.g. "1") doesn't blow up.
-        def _coerce_priority(value: Any) -> int:
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                return 0
-
         max_priority = max(
             (
-                _coerce_priority(cat.get("priority", 0))
-                for cat in catalogs
+                _normalize_catalog_priority(
+                    cat["priority"],
+                    catalog_name=cat.get("name", idx + 1),
+                    error_cls=WorkflowValidationError,
+                )
+                for idx, cat in enumerate(catalogs)
                 if isinstance(cat, dict)
+                if "priority" in cat
             ),
             default=0,
         )
+        catalog_name = name or f"catalog-{len(catalogs) + 1}"
         catalogs.append(
             {
-                "name": name or f"catalog-{len(catalogs) + 1}",
+                "name": catalog_name,
                 "url": url,
-                "priority": max_priority + 1 if priority is None else priority,
+                "priority": (
+                    max_priority + 1
+                    if priority is None
+                    else _normalize_catalog_priority(
+                        priority,
+                        catalog_name=catalog_name,
+                        error_cls=WorkflowValidationError,
+                    )
+                ),
                 "install_allowed": install_allowed,
                 "description": description,
             }
@@ -832,14 +855,11 @@ class StepCatalog:
             if not url:
                 continue
             self._validate_catalog_url(url)
-            try:
-                priority = int(item.get("priority", idx + 1))
-            except (TypeError, ValueError):
-                raise StepValidationError(
-                    f"Invalid priority for catalog "
-                    f"'{item.get('name', idx + 1)}': "
-                    f"expected integer, got {item.get('priority')!r}"
-                )
+            priority = _normalize_catalog_priority(
+                item.get("priority", idx + 1),
+                catalog_name=item.get("name", idx + 1),
+                error_cls=StepValidationError,
+            )
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):
                 install_allowed = raw_install.strip().lower() in (
@@ -1130,27 +1150,33 @@ class StepCatalog:
                     f"Catalog URL already configured: {url}"
                 )
 
-        # Coerce existing priorities to int with a safe fallback so a user-edited
-        # step-catalogs.yml with a non-integer priority (e.g. "1") doesn't blow up.
-        def _coerce_priority(value: Any) -> int:
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                return 0
-
         max_priority = max(
             (
-                _coerce_priority(cat.get("priority", 0))
-                for cat in catalogs
+                _normalize_catalog_priority(
+                    cat["priority"],
+                    catalog_name=cat.get("name", idx + 1),
+                    error_cls=StepValidationError,
+                )
+                for idx, cat in enumerate(catalogs)
                 if isinstance(cat, dict)
+                if "priority" in cat
             ),
             default=0,
         )
+        catalog_name = name or f"catalog-{len(catalogs) + 1}"
         catalogs.append(
             {
-                "name": name or f"catalog-{len(catalogs) + 1}",
+                "name": catalog_name,
                 "url": url,
-                "priority": max_priority + 1 if priority is None else priority,
+                "priority": (
+                    max_priority + 1
+                    if priority is None
+                    else _normalize_catalog_priority(
+                        priority,
+                        catalog_name=catalog_name,
+                        error_cls=StepValidationError,
+                    )
+                ),
                 "install_allowed": install_allowed,
                 "description": description,
             }
