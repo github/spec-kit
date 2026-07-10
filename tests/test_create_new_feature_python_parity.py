@@ -147,6 +147,19 @@ def test_python_invalid_number_fails_cleanly(repo: Path) -> None:
 
 
 @requires_bash
+def test_python_negative_number_matches_bash(repo: Path) -> None:
+    # bash's $((10#$BRANCH_NUMBER)) rejects signed values, so a negative
+    # --number must fail cleanly rather than produce a "-01-..." prefix.
+    args = ("--json", "--dry-run", "--number", "-1", "add rate limiting")
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    py = run(py_cmd(repo, SCRIPT, *args), repo)
+
+    assert py.returncode == bash.returncode == 1
+    assert py.stdout == bash.stdout == ""
+    assert py.stderr == "Error: --number must be an integer, got '-1'\n"
+
+
+@requires_bash
 def test_python_branch_truncation_matches_bash(repo: Path) -> None:
     args = ("--json", "--dry-run", "--short-name", "a" * 300, "x")
     bash = run(bash_cmd(repo, SCRIPT, *args), repo)

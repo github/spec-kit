@@ -202,14 +202,16 @@ def main(argv: list[str] | None = None) -> int:
         feature_num = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     else:
         if branch_number:
-            try:
-                number = int(branch_number, 10)
-            except ValueError:
+            # Mirrors bash: $((10#$BRANCH_NUMBER)) only accepts unsigned
+            # decimal digits, rejecting signs, whitespace, and other
+            # characters that int() would otherwise tolerate.
+            if not re.fullmatch(r"[0-9]+", branch_number):
                 print(
                     f"Error: --number must be an integer, got '{branch_number}'",
                     file=sys.stderr,
                 )
                 return 1
+            number = int(branch_number, 10)
         else:
             number = _get_highest_from_specs(specs_dir) + 1
         feature_num = f"{number:03d}"
