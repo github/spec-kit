@@ -93,12 +93,22 @@ class WorkflowRegistry:
         from datetime import datetime, timezone
 
         existing = self.data["workflows"].get(workflow_id, {})
+        had_entry = workflow_id in self.data["workflows"]
         metadata["installed_at"] = existing.get(
             "installed_at", datetime.now(timezone.utc).isoformat()
         )
         metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
         self.data["workflows"][workflow_id] = metadata
-        self.save()
+        try:
+            self.save()
+        except OSError:
+            # Roll back the in-memory mutation so a later successful save
+            # cannot persist metadata for a write that failed.
+            if had_entry:
+                self.data["workflows"][workflow_id] = existing
+            else:
+                del self.data["workflows"][workflow_id]
+            raise
 
     def remove(self, workflow_id: str) -> bool:
         """Remove an installed workflow entry. Returns True if found."""

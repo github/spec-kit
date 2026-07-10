@@ -374,7 +374,7 @@ def workflow_run(
 
     if registered_id is not None:
         installed_meta = WorkflowRegistry(project_root).get(registered_id)
-        if isinstance(installed_meta, dict) and installed_meta.get("enabled", True) is False:
+        if isinstance(installed_meta, dict) and not installed_meta.get("enabled", True):
             err.print(
                 f"[red]Error:[/red] Workflow '{_escape_markup(registered_id)}' is disabled. "
                 f"Enable with: specify workflow enable {_escape_markup(registered_id)}"
@@ -983,7 +983,7 @@ def _install_workflow_from_catalog(
     }
     # Preserve a prior disabled state across updates/reinstalls.
     existing = registry.get(workflow_id)
-    if isinstance(existing, dict) and existing.get("enabled", True) is False:
+    if isinstance(existing, dict) and not existing.get("enabled", True):
         entry["enabled"] = False
     registry.add(workflow_id, entry)
     console.print(
@@ -1085,6 +1085,7 @@ def workflow_update(
     console.print("🔄 Checking for updates...\n")
 
     updates_available: list[dict[str, str]] = []
+    checked = 0
     for wf_id in targets:
         safe_id = _escape_markup(str(wf_id))
         metadata = installed.get(wf_id)
@@ -1122,14 +1123,19 @@ def workflow_update(
             )
             continue
         if catalog_version > installed_version:
+            checked += 1
             updates_available.append(
                 {"id": wf_id, "installed": str(installed_version), "available": str(catalog_version)}
             )
         else:
+            checked += 1
             console.print(f"✓ {safe_id}: Up to date (v{installed_version})")
 
     if not updates_available:
-        console.print("\n[green]All workflows are up to date![/green]")
+        if checked:
+            console.print("\n[green]All workflows are up to date![/green]")
+        else:
+            console.print("\n[yellow]No workflows were eligible for update[/yellow]")
         raise typer.Exit(0)
 
     console.print("\n[bold]Updates available:[/bold]\n")

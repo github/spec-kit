@@ -7533,6 +7533,47 @@ steps:
         result = runner.invoke(app, ["workflow", "update"])
         assert result.exit_code == 0, result.output
         assert "re-add to update" in result.output
+        # Every target was skipped — must not claim everything is up to date.
+        assert "No workflows were eligible for update" in result.output
+        assert "up to date!" not in result.output
+
+    def test_registry_add_rolls_back_memory_on_save_failure(self, project_dir, monkeypatch):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
+
+        def boom():
+            raise OSError("disk full")
+
+        monkeypatch.setattr(registry, "save", boom)
+        with pytest.raises(OSError):
+            registry.add("align-wf", {"version": "2.0.0", "source": "catalog"})
+        assert registry.get("align-wf")["version"] == "1.0.0"
+
+        with pytest.raises(OSError):
+            registry.add("other-wf", {"version": "1.0.0", "source": "catalog"})
+        assert registry.get("other-wf") is None
+
+    def test_run_refuses_falsy_non_bool_enabled(self, project_dir, monkeypatch):
+        """"enabled": 0 shows as disabled in list — run must agree."""
+        import json as json_mod
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        registry = WorkflowRegistry(project_dir)
+        registry.data["workflows"]["align-wf"]["enabled"] = 0
+        registry.registry_path.write_text(json_mod.dumps(registry.data), encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "run", "align-wf"])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
 
     def test_update_installs_newer_catalog_version(self, project_dir, monkeypatch):
         from unittest.mock import patch
