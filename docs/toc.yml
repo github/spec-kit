@@ -47,6 +47,8 @@
       href: concepts/sdd.md
     - name: Spec Persistence Models
       href: concepts/spec-persistence.md
+    - name: Evidence Verification Pattern
+      href: concepts/evidence-verification.md
     - name: Handling Complex Features
       href: concepts/complex-features.md
 
