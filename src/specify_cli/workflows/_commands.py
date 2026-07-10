@@ -626,7 +626,7 @@ def workflow_add(
         try:
             definition = WorkflowDefinition.from_yaml(yaml_path)
         except (ValueError, yaml.YAMLError) as exc:
-            console.print(f"[red]Error:[/red] Invalid workflow YAML: {exc}")
+            console.print(f"[red]Error:[/red] Invalid workflow YAML: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         # Non-string ids (e.g. unquoted ``id: 123`` or ``id: 0``) fall through
         # to validate_workflow below, which reports a typed error instead of
@@ -739,7 +739,9 @@ def workflow_add(
                         # Redirect host is not an IP literal; keep loopback as determined above.
                         pass
                 if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
-                    console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
+                    console.print(
+                        f"[red]Error:[/red] URL redirected to non-HTTPS: {_escape_markup(final_url)}"
+                    )
                     raise typer.Exit(1)
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
                     tmp.write(resp.read())
@@ -770,7 +772,7 @@ def workflow_add(
         elif source_path.is_dir():
             wf_file = source_path / "workflow.yml"
             if not wf_file.exists():
-                console.print(f"[red]Error:[/red] No workflow.yml found in {source}")
+                console.print(f"[red]Error:[/red] No workflow.yml found in {_escape_markup(source)}")
                 raise typer.Exit(1)
             _validate_and_install_local(wf_file, str(source_path))
             return
@@ -893,7 +895,7 @@ def _install_workflow_from_catalog(
     except (ValueError, yaml.YAMLError) as exc:
         import shutil
         shutil.rmtree(workflow_dir, ignore_errors=True)
-        console.print(f"[red]Error:[/red] Downloaded workflow is invalid: {exc}")
+        console.print(f"[red]Error:[/red] Downloaded workflow is invalid: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     from .engine import validate_workflow

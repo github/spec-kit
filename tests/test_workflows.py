@@ -7300,6 +7300,40 @@ steps:
         assert result.exit_code != 0
         assert "No workflow.yml found" in result.output
 
+    def test_add_local_dir_without_workflow_yml_errors(self, project_dir, monkeypatch):
+        """Same as the --dev case, but for the plain local-path fallback (no --dev)."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        empty = project_dir / "empty-src-[bracket]"
+        empty.mkdir()
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(empty)])
+        assert result.exit_code != 0
+        assert "No workflow.yml found" in result.output
+        assert "[bracket]" in result.output
+
+    def test_add_yaml_parse_error_escapes_rich_markup(self, project_dir, monkeypatch):
+        """A YAML syntax error can quote the offending line verbatim; brackets in it must not be Rich markup."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        monkeypatch.chdir(project_dir)
+        bad = project_dir / "bad.yml"
+        bad.write_text("workflow:\n  id: wf\n", encoding="utf-8")
+        runner = CliRunner()
+        with patch.object(
+            WorkflowDefinition,
+            "from_yaml",
+            side_effect=ValueError('bad snippet: "New [Feature]"'),
+        ):
+            result = runner.invoke(app, ["workflow", "add", str(bad)])
+        assert result.exit_code != 0
+        assert 'bad snippet: "New [Feature]"' in result.output
+
     # -- add --from ----------------------------------------------------
 
     class _FakeResponse:
@@ -7359,6 +7393,26 @@ steps:
         assert result.exit_code != 0
         assert "does not match" in result.output
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_from_url_non_https_redirect_escapes_rich_markup(self, project_dir, monkeypatch):
+        """A redirect to a non-HTTPS IPv6 literal (legally bracketed) must not be parsed as Rich markup."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        redirected_url = "http://[2001:db8::1]/workflow.yml"
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(b"", redirected_url),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+        assert result.exit_code != 0
+        assert redirected_url in result.output
 
     def test_add_from_rejects_invalid_source_id_without_fetch(self, project_dir, monkeypatch):
         """--from with a non-workflow-id source (URL, path, uppercase) fails before any network fetch."""
@@ -7513,6 +7567,57 @@ steps:
         meta = WorkflowRegistry(project_dir).get("align-wf")
         assert meta["version"] == "2.0.0"
         assert "2.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
+
+    def test_update_downloaded_invalid_yaml_escapes_rich_markup(self, project_dir, monkeypatch):
+        """A malformed downloaded workflow can quote the offending line verbatim; escape it before printing."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        monkeypatch.chdir(project_dir)
+        registry = WorkflowRegistry(project_dir)
+        registry.add("align-wf", {
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "description": "CLI alignment test workflow",
+            "source": "catalog",
+            "catalog_name": "test-catalog",
+            "url": "https://example.com/workflow.yml",
+        })
+        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(b"", url),
+        ), patch.object(
+            WorkflowDefinition,
+            "from_yaml",
+            side_effect=ValueError('bad snippet: "New [Feature]"'),
+        ):
+            result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert 'bad snippet: "New [Feature]"' in result.output
+        assert "Failed to update" in result.output
+        # The previously installed workflow must survive a failed update.
+        assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
 
     def test_update_preserves_disabled_state(self, project_dir, monkeypatch):
         from unittest.mock import patch
