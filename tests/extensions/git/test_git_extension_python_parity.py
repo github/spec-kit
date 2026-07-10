@@ -51,15 +51,26 @@ def _setup_py_project(tmp_path: Path, *, git: bool = True) -> Path:
     return project
 
 
-def _run_py(script_name: str, cwd: Path, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
-    """Run an extension Python script."""
+def _run_py(
+    script_name: str,
+    cwd: Path,
+    *args: str,
+    env_extra: dict | None = None,
+    run_cwd: Path | None = None,
+) -> subprocess.CompletedProcess:
+    """Run an extension Python script.
+
+    ``run_cwd`` overrides the working directory while the script path is
+    still resolved against ``cwd``, for tests that invoke a project's script
+    from outside that project.
+    """
     script = (
         cwd / ".specify" / "extensions" / "git" / "scripts" / "python" / PY_SCRIPTS[script_name]
     )
     env = {**os.environ, **_GIT_ENV, **(env_extra or {})}
     return subprocess.run(
         [sys.executable, str(script), *args],
-        cwd=cwd,
+        cwd=run_cwd or cwd,
         capture_output=True,
         text=True,
         env=env,
@@ -287,10 +298,12 @@ class TestCreateFeatureBranchParity:
         _, py_proj = _twin_projects(tmp_path)
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
+        # Run from outside the project so SPECIFY_INIT_DIR is what resolves it.
         p = _run_py(
             "create-new-feature-branch", py_proj,
             "--json", "--dry-run", "init dir feature",
             env_extra={"SPECIFY_INIT_DIR": str(py_proj)},
+            run_cwd=elsewhere,
         )
         assert p.returncode == 0
         assert json.loads(p.stdout)["FEATURE_NUM"] == "001"
@@ -514,7 +527,7 @@ class TestGitCommonPython:
             ("2026031-143022-slug", False),
         ],
     )
-    def test_check_feature_branch(self, git_common, branch: str, expected: bool, capsys):
+    def test_check_feature_branch(self, git_common, branch: str, expected: bool):
         assert git_common.check_feature_branch(branch, True) is expected
 
     def test_check_feature_branch_no_git_warns_but_passes(self, git_common, capsys):
