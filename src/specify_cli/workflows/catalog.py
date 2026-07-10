@@ -70,6 +70,10 @@ class WorkflowRegistry:
         self.project_root = project_root
         self.workflows_dir = project_root / ".specify" / "workflows"
         self.registry_path = self.workflows_dir / self.REGISTRY_FILE
+        # Set before _load() so a read failure (distinct from a corrupted or
+        # missing file) can flip it to block a later save() from silently
+        # persisting an empty registry over unreadable-but-intact data.
+        self._load_error = False
         self.data = self._load()
 
     def _has_symlinked_parent(self) -> bool:
@@ -95,15 +99,23 @@ class WorkflowRegistry:
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
                     data = json.load(f)
-                # Validate shape: must be a dict with a dict "workflows" field.
-                if not isinstance(data, dict):
-                    return default_registry
-                if not isinstance(data.get("workflows"), dict):
-                    data["workflows"] = {}
-                return data
-            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
+            except OSError:
+                # An I/O failure (e.g. permissions, transient FS issue) is not
+                # the same as a corrupted file: the real data may still be
+                # intact on disk. Flag it so save() refuses to overwrite that
+                # data with this in-memory default instead of silently
+                # discarding every prior entry.
+                self._load_error = True
+                return default_registry
+            except (json.JSONDecodeError, ValueError, UnicodeError):
                 # Corrupted registry file — reset to default
                 return default_registry
+            # Validate shape: must be a dict with a dict "workflows" field.
+            if not isinstance(data, dict):
+                return default_registry
+            if not isinstance(data.get("workflows"), dict):
+                data["workflows"] = {}
+            return data
         return default_registry
 
     def save(self) -> None:
@@ -113,6 +125,12 @@ class WorkflowRegistry:
         if self._has_symlinked_parent() or self.registry_path.is_symlink():
             raise OSError(
                 "Refusing to write workflow registry through a symlinked path."
+            )
+        if self._load_error:
+            raise OSError(
+                f"Refusing to save workflow registry at {self.registry_path}: "
+                "the existing file could not be read, so saving now would "
+                "discard its contents."
             )
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
         # Unique, exclusive temp then replace: a failed dump cannot truncate

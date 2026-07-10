@@ -825,7 +825,7 @@ def workflow_add(
             return
         elif source_path.is_dir():
             wf_file = source_path / "workflow.yml"
-            if not wf_file.exists():
+            if not wf_file.is_file():
                 console.print(f"[red]Error:[/red] No workflow.yml found in {_escape_markup(source)}")
                 raise typer.Exit(1)
             _validate_and_install_local(wf_file, str(source_path))

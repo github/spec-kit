@@ -4746,6 +4746,33 @@ class TestWorkflowRegistry:
         registry2 = WorkflowRegistry(project_dir)
         assert registry2.is_installed("test-wf")
 
+    def test_load_read_oserror_refuses_to_save_over_existing_data(self, project_dir, monkeypatch):
+        """A transient read failure (e.g. temporarily unreadable file) must not be
+        treated the same as a corrupted/missing registry: saving afterwards would
+        silently discard every previously persisted workflow entry."""
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        import builtins
+
+        registry1 = WorkflowRegistry(project_dir)
+        registry1.add("test-wf", {"name": "Test", "version": "1.0.0"})
+        registry_path = registry1.registry_path
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == registry_path and "r" in mode:
+                raise OSError("simulated read failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        registry2 = WorkflowRegistry(project_dir)
+        # The in-memory view may fall back to empty, but a save must not be
+        # allowed to persist that empty state over the real file on disk.
+        with pytest.raises(OSError):
+            registry2.save()
+        # The original entry must survive on disk untouched.
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        assert "test-wf" in data["workflows"]
+
 
 # ===== Workflow Catalog Tests =====
 
@@ -7313,6 +7340,21 @@ steps:
         assert result.exit_code != 0
         assert "No workflow.yml found" in result.output
         assert "[bracket]" in result.output
+
+    def test_add_local_dir_with_workflow_yml_directory_errors_cleanly(self, project_dir, monkeypatch):
+        """Same as the --dev case, but for the plain local-path fallback (no --dev):
+        a directory named workflow.yml must not reach open() and leak IsADirectoryError."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        src_dir = project_dir / "local-wf"
+        (src_dir / "workflow.yml").mkdir(parents=True)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(src_dir)])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "No workflow.yml found" in result.output
 
     def test_add_yaml_parse_error_escapes_rich_markup(self, project_dir, monkeypatch):
         """A YAML syntax error can quote the offending line verbatim; brackets in it must not be Rich markup."""

@@ -86,10 +86,10 @@ Lists workflows installed in the current project.
 specify workflow add <source>
 ```
 
-| Option   | Description                                            |
-| -------- | ------------------------------------------------------ |
-| `--dev`  | Install from a local workflow YAML file or directory   |
-| `--from` | Install from a custom URL (`<source>` names the expected workflow ID) |
+| Option          | Description                                            |
+| --------------- | ------------------------------------------------------ |
+| `--dev`         | Install from a local workflow YAML file or directory   |
+| `--from <url>`  | Install from a custom URL (`<source>` names the expected workflow ID) |
 
 Installs a workflow from the catalog, a URL (HTTPS required), or a local file path.
 
