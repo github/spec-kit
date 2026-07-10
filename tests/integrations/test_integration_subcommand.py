@@ -1418,6 +1418,41 @@ class TestIntegrationInstall:
             project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
 
+    def test_extension_add_generic_active_does_not_backfill_other_agents(self, tmp_path):
+        """A recorded but unsupported active key (``generic``) must not
+        fall back to registering every detected agent.
+
+        ``generic`` is deliberately excluded from ``AGENT_CONFIGS`` because
+        its output directory is only known via ``--commands-dir``, not a
+        static config. Before the fix, treating that active key like "no
+        active integration recorded" made the fallback register the
+        extension for every other detected agent — exactly the multi-target
+        behavior #2948 is meant to stop.
+        """
+        project = _init_project(
+            tmp_path, "generic",
+            integration_options="--commands-dir .myagent/commands",
+        )
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+            "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" not in registered, (
+            "a recorded but unsupported active key must not target other "
+            "detected agents (#2948)"
+        )
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 
@@ -1623,6 +1658,72 @@ class TestIntegrationUse:
             os.chdir(old_cwd)
         assert result.exit_code != 0
         assert "not installed" in result.output
+
+    def test_use_registers_presets_for_the_newly_active_agent(self, tmp_path):
+        """``integration use`` is the single rescaffold point for presets too.
+
+        Mirrors the extension single-active rule (#2948): a preset command
+        override installed while ``claude`` was active must not target the
+        inactive ``codex`` integration, and switching via ``integration use``
+        must rescaffold it there.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        preset_src = tmp_path / "cmd-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Overridden specify\n---\nOverridden content\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "cmd-preset",
+                "name": "Command Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+
+        (preset_src / "preset.yml").write_text(yaml.dump(manifest_data), encoding="utf-8")
+
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, f"preset add failed: {result.output}"
+
+        registry_path = project / ".specify" / "presets" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "presets"
+        ]["cmd-preset"]["registered_commands"]
+        assert "claude" in registered, "active integration gets the preset command override"
+        assert "codex" not in registered, (
+            "non-active integration must not be registered on preset add (#2948)"
+        )
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "presets"
+        ]["cmd-preset"]["registered_commands"]
+        assert "codex" in registered, "use registers presets for the new active agent"
+        assert "claude" in registered, "the previous agent's registration is preserved"
 
     def test_use_refreshes_shared_templates_between_command_styles(self, tmp_path):
         project = _init_project(tmp_path, "claude")

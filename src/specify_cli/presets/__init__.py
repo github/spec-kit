@@ -28,7 +28,7 @@ from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
-from .._init_options import is_ai_skills_enabled
+from .._init_options import is_ai_skills_enabled, load_init_options
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import verify_archive_sha256
@@ -680,9 +680,83 @@ class PresetManager:
             return {}
 
         registrar = CommandRegistrar()
+
+        # Single-active rule (#2948): preset command overrides register for
+        # the active integration only. A project without a recorded active
+        # integration falls back to detection-based registration for all
+        # agents; a recorded key with no registrar config (e.g. "generic")
+        # naturally yields no matches via only_agent instead of falling back.
+        active_agent = load_init_options(self.project_root).get("ai")
         return registrar.register_commands_for_all_agents(
-            commands_to_register, manifest.id, preset_dir, self.project_root
+            commands_to_register,
+            manifest.id,
+            preset_dir,
+            self.project_root,
+            only_agent=active_agent,
         )
+
+    def register_enabled_presets_for_agent(self, agent_name: str) -> None:
+        """Re-register enabled presets' command overrides and skills for ``agent_name``.
+
+        Mirrors ``ExtensionManager.register_enabled_extensions_for_agent`` for
+        presets (#2948): ``integration use`` / ``switch`` call this for the
+        newly active agent so a preset installed while a different
+        integration was active gets rescaffolded on activation, instead of
+        writing artifacts for inactive integrations at install time.
+        ``_register_commands`` / ``_register_skills`` already resolve the
+        active integration from init-options themselves, so this re-runs them
+        for every enabled preset and merges the fresh result for
+        ``agent_name`` into its stored registry metadata.
+        """
+        if not agent_name:
+            return
+
+        resolver = PresetResolver(self.project_root)
+        for pack_id, metadata in self.registry.list_by_priority():
+            pack_dir = self.presets_dir / pack_id
+            manifest = resolver._get_manifest(pack_dir)
+            if manifest is None:
+                continue
+
+            # Isolate per-preset failures: one preset that fails to register
+            # must not abort registration of the remaining enabled presets.
+            try:
+                updates: Dict[str, Any] = {}
+
+                registered_commands = self._register_commands(manifest, pack_dir)
+                existing_commands = metadata.get("registered_commands", {})
+                if not isinstance(existing_commands, dict):
+                    existing_commands = {}
+                merged_commands = copy.deepcopy(existing_commands)
+                if registered_commands.get(agent_name):
+                    merged_commands[agent_name] = registered_commands[agent_name]
+                if merged_commands != existing_commands:
+                    updates["registered_commands"] = merged_commands
+
+                registered_skills = self._register_skills(manifest, pack_dir)
+                if registered_skills:
+                    existing_skills = metadata.get("registered_skills", [])
+                    if not isinstance(existing_skills, list):
+                        existing_skills = []
+                    merged_skills = list(
+                        dict.fromkeys(existing_skills + registered_skills)
+                    )
+                    if merged_skills != existing_skills:
+                        updates["registered_skills"] = merged_skills
+
+                if updates:
+                    self.registry.update(pack_id, updates)
+            except Exception as pack_err:
+                from .. import _print_cli_warning
+
+                _print_cli_warning(
+                    "register preset artifacts for",
+                    "preset",
+                    pack_id,
+                    pack_err,
+                    continuing="Continuing with the remaining presets.",
+                )
+                continue
 
     def _unregister_commands(self, registered_commands: Dict[str, List[str]]) -> None:
         """Remove previously registered command files from agent directories.

@@ -18,6 +18,7 @@ from ._commands import integration_app, integration_catalog_app
 from ._helpers import (
     _read_integration_json,
     _register_extensions_for_agent,
+    _register_presets_for_agent,
     _resolve_integration_options,
     _set_default_integration_or_exit,
 )
@@ -247,6 +248,11 @@ def integration_use(
         project_root,
         key,
         continuing="The integration was selected, but installed extensions may need re-registration.",
+    )
+    _register_presets_for_agent(
+        project_root,
+        key,
+        continuing="The integration was selected, but installed presets may need re-registration.",
     )
     console.print(f"[green]✓[/green] Default integration set to [bold]{key}[/bold].")
 

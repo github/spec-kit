@@ -28,6 +28,7 @@ from ._helpers import (
     _read_integration_json,
     _refresh_init_options_speckit_version,
     _register_extensions_for_agent,
+    _register_presets_for_agent,
     _remove_integration_json,
     _resolve_integration_options,
     _resolve_integration_script_type,
@@ -127,6 +128,14 @@ def integration_switch(
             target,
             continuing=(
                 "The integration switch succeeded, but installed extensions may "
+                "need re-registration."
+            ),
+        )
+        _register_presets_for_agent(
+            project_root,
+            target,
+            continuing=(
+                "The integration switch succeeded, but installed presets may "
                 "need re-registration."
             ),
         )
@@ -327,6 +336,11 @@ def integration_switch(
         target,
         continuing="The integration switch succeeded, but installed extensions may need re-registration.",
     )
+    _register_presets_for_agent(
+        project_root,
+        target,
+        continuing="The integration switch succeeded, but installed presets may need re-registration.",
+    )
 
     name = (target_integration.config or {}).get("name", target)
     console.print(f"\n[green]✓[/green] Switched to integration '{name}'")
@@ -491,10 +505,10 @@ def integration_upgrade(
         if stale_removed:
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
 
-    # Re-register enabled extensions only when upgrading the *active*
-    # integration, so its extension commands are (re)created after the
-    # upgrade settled (Phase 2 included). Done outside the try/except above
-    # so this best-effort step cannot affect upgrade success. Non-active
+    # Re-register enabled extensions and presets only when upgrading the
+    # *active* integration, so its command artifacts are (re)created after
+    # the upgrade settled (Phase 2 included). Done outside the try/except
+    # above so this best-effort step cannot affect upgrade success. Non-active
     # integrations are rescaffolded by `use` / `switch` instead — the #2886
     # back-fill for non-active agents was removed at maintainer request
     # (#2948).
@@ -503,6 +517,11 @@ def integration_upgrade(
             project_root,
             key,
             continuing="The integration was upgraded, but installed extensions may need re-registration.",
+        )
+        _register_presets_for_agent(
+            project_root,
+            key,
+            continuing="The integration was upgraded, but installed presets may need re-registration.",
         )
 
     name = (integration.config or {}).get("name", key)

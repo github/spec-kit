@@ -419,6 +419,38 @@ def _unregister_extensions_for_agent(
     )
 
 
+def _register_presets_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Register all enabled presets' command overrides/skills for ``agent_key``.
+
+    Presets follow the same single-active rule as extensions (#2948):
+    ``use`` / ``switch`` re-register enabled presets for the agent they
+    activate (rescaffold), so a preset installed while a different
+    integration was active is not left targeting that inactive integration.
+
+    Best-effort: never aborts the surrounding integration operation.
+    """
+    try:
+        from ..presets import PresetManager
+
+        preset_mgr = PresetManager(project_root)
+        preset_mgr.register_enabled_presets_for_agent(agent_key)
+    except Exception as preset_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "register preset artifacts for",
+            "integration",
+            agent_key,
+            preset_err,
+            continuing=continuing,
+        )
+
+
 # ---------------------------------------------------------------------------
 # CLI formatting helpers (re-exported from _commands.py)
 # ---------------------------------------------------------------------------

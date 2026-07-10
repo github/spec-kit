@@ -988,9 +988,12 @@ class ExtensionManager:
         init-options gets command files. Non-active integrations receive them
         when selected via ``integration use`` / ``switch`` (rescaffold).
 
-        Projects without a recorded active integration (pre-init-options
+        Projects without a recorded active integration at all (pre-init-options
         layouts or direct library use) fall back to detection-based
-        registration for all agents.
+        registration for all agents. A *recorded* active key that has no
+        registrar config (e.g. ``generic``, which is deliberately excluded
+        from ``AGENT_CONFIGS``) is not treated as "no active integration" —
+        it must not cause registration to target other detected agents.
 
         Returns:
             Mapping of agent name to registered command names, matching the
@@ -1004,7 +1007,7 @@ class ExtensionManager:
             init_options = {}
         active_agent = init_options.get("ai")
 
-        if not active_agent or active_agent not in registrar.AGENT_CONFIGS:
+        if not active_agent:
             return registrar.register_commands_for_all_agents(
                 manifest,
                 extension_dir,
@@ -1013,9 +1016,15 @@ class ExtensionManager:
                 create_missing_active_skills_dir=True,
             )
 
-        agent_config = registrar.AGENT_CONFIGS[active_agent]
+        # A recorded active key with no registrar config (e.g. "generic",
+        # deliberately excluded from AGENT_CONFIGS) has nothing to register
+        # through this path, but it is still an active integration. Passing
+        # it as only_agent below naturally yields no matches instead of
+        # falling back to registering every detected agent.
+        agent_config = registrar.AGENT_CONFIGS.get(active_agent)
         if (
-            is_ai_skills_enabled(init_options)
+            agent_config
+            and is_ai_skills_enabled(init_options)
             and agent_config.get("extension") != "/SKILL.md"
         ):
             # Active agent runs skills mode: extension artifacts render as
