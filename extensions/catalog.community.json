@@ -1,10 +1,6 @@
 {
   "schema_version": "1.0",
-<<<<<<< HEAD
   "updated_at": "2026-07-10T00:00:00Z",
-=======
-  "updated_at": "2026-07-08T00:00:00Z",
->>>>>>> origin/main
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
