@@ -72,19 +72,48 @@ class WorkflowRegistry:
         self.registry_path = self.workflows_dir / self.REGISTRY_FILE
         self.data = self._load()
 
+    def _has_symlinked_parent(self) -> bool:
+        """Return True if any directory under .specify/workflows is a symlink."""
+        current = self.project_root
+        for part in (".specify", "workflows"):
+            current = current / part
+            if current.is_symlink():
+                return True
+        return False
+
     def _load(self) -> dict[str, Any]:
         """Load registry from disk or create default."""
+        default_registry: dict[str, Any] = {
+            "schema_version": self.SCHEMA_VERSION,
+            "workflows": {},
+        }
+        # Defense-in-depth: refuse to read through symlinked parents or a
+        # symlinked registry file (mirrors StepRegistry._load).
+        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+            return default_registry
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, ValueError):
+                    data = json.load(f)
+                # Validate shape: must be a dict with a dict "workflows" field.
+                if not isinstance(data, dict):
+                    return default_registry
+                if not isinstance(data.get("workflows"), dict):
+                    data["workflows"] = {}
+                return data
+            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
                 # Corrupted registry file — reset to default
-                return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
-        return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
+                return default_registry
+        return default_registry
 
     def save(self) -> None:
         """Persist registry to disk atomically."""
+        # Refuse to write through symlinked parents (mirrors StepRegistry.save
+        # and the CLI-level _reject_unsafe_dir guard).
+        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+            raise OSError(
+                "Refusing to write workflow registry through a symlinked path."
+            )
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
         # Unique, exclusive temp then replace: a failed dump cannot truncate
         # the registry, a pre-created symlink cannot redirect the write, and

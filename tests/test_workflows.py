@@ -7563,6 +7563,44 @@ steps:
         registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
         assert registry.get("align-wf")["version"] == "1.0.0"
 
+    def test_registry_load_normalizes_malformed_workflows_field(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.workflows_dir.mkdir(parents=True, exist_ok=True)
+        registry.registry_path.write_text('{"workflows": "broken"}', encoding="utf-8")
+        fresh = WorkflowRegistry(project_dir)
+        assert fresh.get("anything") is None
+        fresh.add("align-wf", {"version": "1.0.0", "source": "catalog"})
+        assert fresh.get("align-wf")["version"] == "1.0.0"
+
+    def test_registry_save_refuses_symlinked_parent(self, project_dir, tmp_path):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        outside = tmp_path / "outside-specify"
+        outside.mkdir()
+        specify_dir = project_dir / ".specify"
+        if specify_dir.exists():
+            shutil.rmtree(specify_dir)
+        specify_dir.symlink_to(outside)
+        registry = WorkflowRegistry(project_dir)
+        with pytest.raises(OSError, match="symlink"):
+            registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
+        assert not (outside / "workflows").exists()
+
+    def test_add_dev_dir_with_workflow_yml_directory_errors_cleanly(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        dev_dir = project_dir / "dev-wf"
+        (dev_dir / "workflow.yml").mkdir(parents=True)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", "--dev", str(dev_dir)])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "No workflow.yml found" in result.output
+
     def test_registry_save_failure_preserves_file_on_disk(self, project_dir, monkeypatch):
         """A failed dump must not truncate the persisted registry."""
         from specify_cli.workflows.catalog import WorkflowRegistry
