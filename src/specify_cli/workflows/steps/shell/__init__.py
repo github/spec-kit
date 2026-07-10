@@ -25,6 +25,14 @@ class ShellStep(StepBase):
         run_cmd = str(run_cmd)
 
         cwd = context.project_root or "."
+        # Defensive: the engine does not auto-validate step config, so an
+        # invalid ``timeout`` (string, None, ...) would otherwise raise a
+        # TypeError from subprocess.run() and crash the whole run.  Mirror
+        # the engine's handling of unvalidated ``continue_on_error`` by
+        # only honoring well-formed values and falling back to the default.
+        timeout = config.get("timeout", 300)
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+            timeout = 300
 
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors
@@ -37,7 +45,7 @@ class ShellStep(StepBase):
                 capture_output=True,
                 text=True,
                 cwd=cwd,
-                timeout=300,
+                timeout=timeout,
             )
             output = {
                 "exit_code": proc.returncode,
@@ -74,7 +82,7 @@ class ShellStep(StepBase):
         except subprocess.TimeoutExpired:
             return StepResult(
                 status=StepStatus.FAILED,
-                error="Shell command timed out after 300 seconds.",
+                error=f"Shell command timed out after {timeout} seconds.",
                 output={"exit_code": -1, "stdout": "", "stderr": "timeout"},
             )
         except OSError as exc:
@@ -106,4 +114,16 @@ class ShellStep(StepBase):
                 f"Shell step {config.get('id', '?')!r}: 'output_format' must "
                 f"be 'json' when present, got {output_format!r}."
             )
+        if "timeout" in config:
+            timeout = config["timeout"]
+            # bool is an int subclass, so reject it explicitly.
+            if (
+                isinstance(timeout, bool)
+                or not isinstance(timeout, int)
+                or timeout <= 0
+            ):
+                errors.append(
+                    f"Shell step {config.get('id', '?')!r}: 'timeout' must be a "
+                    f"positive integer (seconds) when present, got {timeout!r}."
+                )
         return errors

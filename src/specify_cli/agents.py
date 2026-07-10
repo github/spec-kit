@@ -701,6 +701,12 @@ class CommandRegistrar:
                 )
                 output = self.render_toml_command(frontmatter, body, source_id)
             elif agent_config["format"] == "yaml":
+                body = self.resolve_skill_placeholders(
+                    agent_name, frontmatter, body, project_root
+                )
+                body = self._convert_argument_placeholder(
+                    body, "$ARGUMENTS", agent_config["args"]
+                )
                 output = self.render_yaml_command(
                     frontmatter, body, source_id, cmd_name
                 )

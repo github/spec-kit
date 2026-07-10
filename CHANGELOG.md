@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.9] - 2026-07-09
+
+### Changed
+
+- fix(integrations): skip Windows Store python3 alias stub in resolve_python_interpreter (#3385)
+- fix(integrations): escape control characters in SKILL.md frontmatter (#3399)
+- fix(workflows): apply chained expression filters left-to-right (#3339)
+- fix(scripts): resolve invoke_separator by parse success, not python3 availability (#3304) (#3320)
+- fix(shared-infra): refresh_shared_templates preserves recovered user files (#3378)
+- fix(agents): resolve skill placeholders in Goose (yaml) command output (#3374)
+- fix(bundler): enforce version pin on bundled preset/extension installs (#3377)
+- Update Golden Demo extension to v0.3.0 (#3394)
+- test: isolate integration test home (#3144)
+- chore: release 0.12.8, begin 0.12.9.dev0 development (#3410)
+
 ## [0.12.8] - 2026-07-08
 
 ### Changed
