@@ -65,7 +65,7 @@ field names as long as the concerns are covered.
 | Concern | Example file | Contents | Why it matters |
 |---|---|---|---|
 | Verification status | `verify.json` | Per-task pass/fail, audit verdict, command counts | Answers "did the implementation pass its checks?" without re-running them |
-| Risk findings | `risk.json` | Aggregated findings with severity (high/medium/low) and category | Surfaces what `/speckit.converge` would classify as `missing`, `partial`, `contradicts`, or `unrequested`, plus non-convergence risks |
+| Risk findings | `risk.json` | Aggregated findings with a tool-specific severity (for example high/medium/low), category, and optional `gap_type` | Separates the pack's risk ordering from `/speckit.converge` gap types (`missing`, `partial`, `contradicts`, `unrequested`) while preserving both for review |
 | Change scope | `diffstat.json` | File paths with additions/deletions counts | Shows what the implementation touched, without exposing full diff content |
 | Lineage summary | `lineage.json` | Goal, final status, stop reason, iteration and task counts | Lets a reviewer understand the shape of the work at a glance |
 | Provenance | `attestation.json` | Tool, version, commit, OS, schema epoch | Lets a reviewer judge whether the evidence is current and reproducible |
@@ -133,11 +133,13 @@ A `risk.json` entry, for example, is a bounded record rather than a log dump:
 }
 ```
 
-The `severity` mapping mirrors how `/speckit.converge` grades findings: a
-failed check is high, a warning check is medium, and a lineage-level warning
-is low. A reviewer can read `risk.json` alongside a converge report and expect
-the two to agree on severity ordering, even though they come from different
-tools.
+PatchWarden's `severity` is a tool-specific risk ordering: a failed check is
+high, a warning check is medium, and a lineage-level warning is low. It is not
+a mapping of `/speckit.converge` severities, which use CRITICAL/HIGH/MEDIUM/LOW
+for requirement impact. When both reports are available, retain
+`/speckit.converge`'s independent `gap_type` (`missing`, `partial`,
+`contradicts`, or `unrequested`) alongside any evidence-pack severity so a
+reviewer can compare the different signals without conflating them.
 
 PatchWarden is shown here as a reference, not a recommendation. Any tool that
 emits bounded, traceable, secret-free, provenance-tagged files covering the
