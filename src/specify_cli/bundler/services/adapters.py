@@ -184,6 +184,10 @@ class DefaultPrimitiveInstaller:
         manager = self._manager_for(component, project_root)
         manager.install(component)
 
+    def refresh(self, project_root: Path, component: ComponentRef) -> None:
+        manager = self._manager_for(component, project_root)
+        manager.refresh(component)
+
     def remove(self, project_root: Path, component: ComponentRef) -> None:
         manager = self._manager_for(component, project_root)
         manager.remove(component)
