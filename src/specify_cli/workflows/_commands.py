@@ -374,7 +374,7 @@ def workflow_run(
     if errors:
         err.print("[red]Workflow validation failed:[/red]")
         for verr in errors:
-            err.print(f"  • {verr}")
+            err.print(f"  • {_escape_markup(str(verr))}")
         raise typer.Exit(1)
 
     # Parse inputs
@@ -645,7 +645,7 @@ def workflow_add(
         if errors:
             console.print("[red]Error:[/red] Workflow validation failed:")
             for err in errors:
-                console.print(f"  \u2022 {err}")
+                console.print(f"  \u2022 {_escape_markup(str(err))}")
             raise typer.Exit(1)
 
         if expected_id is not None and definition.id != expected_id:
@@ -903,7 +903,7 @@ def _install_workflow_from_catalog(
         shutil.rmtree(workflow_dir, ignore_errors=True)
         console.print("[red]Error:[/red] Downloaded workflow validation failed:")
         for err in errors:
-            console.print(f"  \u2022 {err}")
+            console.print(f"  \u2022 {_escape_markup(str(err))}")
         raise typer.Exit(1)
 
     # Enforce that the workflow's internal ID matches the catalog key

@@ -5905,6 +5905,34 @@ class TestWorkflowAddSymlinkGuard:
         assert result.exit_code != 0
         assert "symlinked .specify/workflows" in result.output
 
+    def test_add_escapes_rich_markup_in_validation_errors(self, temp_dir, monkeypatch):
+        """User-controlled YAML values in validation errors must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        src = temp_dir / "incoming.yml"
+        src.write_text(
+            """
+schema_version: "1.0"
+workflow:
+  id: "markup-wf"
+  name: "Markup"
+  version: "[bold]bad[/bold]"
+
+steps:
+  - id: step-one
+    command: speckit.specify
+""",
+            encoding="utf-8",
+        )
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code != 0
+        assert "[bold]bad[/bold]" in result.output
+
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_refuses_symlinked_id_dir(self, temp_dir, monkeypatch, sample_workflow_yaml):
         """A symlinked <id> install dir must not let a copy escape the project root."""
