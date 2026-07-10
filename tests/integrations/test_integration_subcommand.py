@@ -2733,6 +2733,30 @@ class TestParseIntegrationOptionsEqualsForm:
         assert excinfo.value.exit_code == 1
         assert "Error: Could not parse integration options: No closing quotation." in capsys.readouterr().out
 
+    def test_bad_option_token_with_rich_markup_exits_cleanly(self):
+        """A bad option token carrying Rich markup must exit cleanly, not crash.
+
+        The token is user-controlled and gets interpolated into console.print.
+        A value like '[/red]foo' parses fine through shlex but is an unexpected
+        value / unknown option — and an unbalanced Rich tag would raise
+        rich.errors.MarkupError inside console.print, leaking a traceback
+        instead of the intended typer.Exit(1). The token must be escaped."""
+        import typer
+
+        from specify_cli.integrations._commands import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        # Unexpected value token carrying markup.
+        with pytest.raises(typer.Exit):
+            _parse_integration_options(integration, "[/red]foo")
+
+        # Unknown option token carrying markup.
+        with pytest.raises(typer.Exit):
+            _parse_integration_options(integration, "--[/red]bad")
+
 
 class TestUninstallNoManifestClearsInitOptions:
     def test_init_options_cleared_on_no_manifest_uninstall(self, tmp_path):
