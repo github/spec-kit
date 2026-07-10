@@ -776,8 +776,10 @@ def _download_manifest(resolved, *, offline: bool):
     # error rather than accepting a scheme the rest of the codebase rejects.
     if scheme in ("", "file") or re.match(r"^[A-Za-z]:[\\/]", url):
         raise BundlerError(
-            f"Catalog entry '{resolved.entry.id}' has a local/file:// download_url "
-            f"({url}); catalog download URLs must be HTTPS (http for localhost). "
+            f"Catalog entry '{resolved.entry.id}' has a non-HTTP(S) download_url "
+            f"({url}); catalog download URLs must be HTTPS (http for localhost) — "
+            "a file:// URL, a local filesystem path, or a scheme-less value "
+            "(e.g. 'example.com/bundle.zip') is not accepted. "
             "To install a bundle from disk, pass the path directly: "
             "'specify bundle install <path-to-bundle.yml | bundle-dir | .zip>'."
         )
