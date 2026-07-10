@@ -2376,6 +2376,149 @@ Run {SCRIPT}
         assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in content
         assert ".specify/scripts/bash/setup-plan.sh" not in content
 
+    @staticmethod
+    def _make_subdir_extension(temp_dir, ext_id="echelon", aliases=None):
+        """Create an extension whose command body references bundled subdirs."""
+        import yaml
+
+        ext_dir = temp_dir / ext_id
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents" / "control").mkdir(parents=True)
+        (ext_dir / "knowledge-base").mkdir()
+        (ext_dir / "templates").mkdir()
+        (ext_dir / "specs" / "001-internal").mkdir(parents=True)
+
+        command = {
+            "name": f"speckit.{ext_id}.run",
+            "file": "commands/run.md",
+            "description": "Run",
+        }
+        if aliases:
+            command["aliases"] = aliases
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": "Echelon",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [command]},
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\ndescription: Run\n---\n\n"
+            "Read agents/control/commander.md for instructions.\n"
+            "Load knowledge-base/agent-scores.yaml for calibration.\n"
+            "Use templates/kill-report.md as output format.\n"
+            "Artifacts go to specs/001-internal/plan.md.\n"
+            "See commands/run.md for the source.\n"
+        )
+        return ext_dir
+
+    def test_codex_skill_registration_rewrites_extension_subdir_paths(
+        self, project_dir, temp_dir
+    ):
+        """Extension-relative subdir refs must point at the installed location."""
+        ext_dir = self._make_subdir_extension(temp_dir)
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-echelon-run" / "SKILL.md").read_text()
+        assert ".specify/extensions/echelon/agents/control/commander.md" in content
+        assert ".specify/extensions/echelon/knowledge-base/agent-scores.yaml" in content
+        assert ".specify/extensions/echelon/templates/kill-report.md" in content
+        assert "Read agents/" not in content
+        # specs/ refs point at the user's project artifacts, never the extension
+        assert "to specs/001-internal/plan.md" in content
+        assert ".specify/extensions/echelon/specs/" not in content
+        # commands/ refs are slash-command sources, not runtime reads
+        assert "See commands/run.md" in content
+
+    def test_skill_registration_rewrites_extension_subdir_paths_in_aliases(
+        self, project_dir, temp_dir
+    ):
+        """Alias skills reuse the rewritten body."""
+        ext_dir = self._make_subdir_extension(
+            temp_dir, ext_id="ext-alias-paths", aliases=["speckit.ext-alias-paths.go"]
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        alias_content = (
+            skills_dir / "speckit-ext-alias-paths-go" / "SKILL.md"
+        ).read_text()
+        assert (
+            ".specify/extensions/ext-alias-paths/agents/control/commander.md"
+            in alias_content
+        )
+        assert "Read agents/" not in alias_content
+
+    def test_markdown_registration_rewrites_extension_subdir_paths(
+        self, project_dir, temp_dir
+    ):
+        """Markdown-format agents get the same rewrite via the shared path."""
+        ext_dir = self._make_subdir_extension(temp_dir, ext_id="ext-md-paths")
+
+        amp_dir = project_dir / ".agents" / "commands"
+        amp_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("amp", manifest, ext_dir, project_dir)
+
+        content = (amp_dir / "speckit.ext-md-paths.run.md").read_text()
+        assert ".specify/extensions/ext-md-paths/agents/control/commander.md" in content
+        assert "Read agents/" not in content
+
+    def test_rewrite_extension_paths_only_rewrites_existing_subdirs(self, temp_dir):
+        """Only directories present in the extension are rewritten."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        ext_dir = temp_dir / "ext-existing"
+        (ext_dir / "agents").mkdir(parents=True)
+        (ext_dir / ".hidden").mkdir()
+
+        text = (
+            "Read agents/one.md then knowledge-base/two.md.\n"
+            "Keep .hidden/secret.md alone.\n"
+        )
+        rewritten = AgentCommandRegistrar.rewrite_extension_paths(
+            text, "ext-existing", ext_dir
+        )
+
+        assert ".specify/extensions/ext-existing/agents/one.md" in rewritten
+        # knowledge-base/ does not exist in this extension: left untouched
+        assert "then knowledge-base/two.md" in rewritten
+        assert ".hidden/secret.md" in rewritten
+        assert ".specify/extensions/ext-existing/.hidden/" not in rewritten
+
+    def test_rewrite_extension_paths_missing_dir_returns_text(self, temp_dir):
+        """A missing extension directory leaves the text unchanged."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        text = "Read agents/one.md."
+        assert (
+            AgentCommandRegistrar.rewrite_extension_paths(
+                text, "gone", temp_dir / "does-not-exist"
+            )
+            == text
+        )
+
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
         # Create .github/agents directory (Copilot project)
