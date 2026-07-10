@@ -7714,6 +7714,55 @@ steps:
         # The previously installed workflow must survive.
         assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
 
+    def test_add_non_string_catalog_url_fails_cleanly(self, project_dir, monkeypatch):
+        """A truthy non-string catalog URL must hit the clean error path, not AttributeError."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": 123,
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", "align-wf"])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "malformed install URL" in result.output
+
+    def test_enable_failed_save_leaves_workflow_disabled(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        def boom(self):
+            raise OSError("disk full")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(WorkflowRegistry, "save", boom)
+            result = runner.invoke(app, ["workflow", "enable", "align-wf"])
+            assert result.exit_code != 0
+
+        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is False
+        result = runner.invoke(app, ["workflow", "enable", "align-wf"])
+        assert result.exit_code == 0, result.output
+        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is True
+
     def test_update_rejects_version_mismatch_from_stale_url(self, project_dir, monkeypatch):
         """A URL serving a different version than the catalog advertised must fail the update."""
         from unittest.mock import patch

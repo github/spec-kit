@@ -846,6 +846,12 @@ def _install_workflow_from_catalog(
     if not workflow_url:
         console.print(f"[red]Error:[/red] Workflow '{safe_wf_id}' does not have an install URL in the catalog")
         raise typer.Exit(1)
+    if not isinstance(workflow_url, str):
+        # Untrusted catalog payload; a non-string would crash urlparse below.
+        console.print(
+            f"[red]Error:[/red] Workflow '{safe_wf_id}' has a malformed install URL."
+        )
+        raise typer.Exit(1)
 
     # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
     from ipaddress import ip_address
@@ -1209,8 +1215,9 @@ def workflow_enable(
     if metadata.get("enabled", True):
         console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already enabled[/yellow]")
         raise typer.Exit(0)
-    metadata["enabled"] = True
-    registry.add(workflow_id, metadata)
+    # Fresh mapping: registry.get() returns the live entry, and mutating it
+    # in place would defeat WorkflowRegistry.add's rollback-on-save-failure.
+    registry.add(workflow_id, {**metadata, "enabled": True})
     console.print(f"[green]✓[/green] Workflow '{_escape_markup(workflow_id)}' enabled")
 
 
@@ -1235,8 +1242,8 @@ def workflow_disable(
     if not metadata.get("enabled", True):
         console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already disabled[/yellow]")
         raise typer.Exit(0)
-    metadata["enabled"] = False
-    registry.add(workflow_id, metadata)
+    # Fresh mapping for the same rollback reason as workflow_enable.
+    registry.add(workflow_id, {**metadata, "enabled": False})
     console.print(f"[green]✓[/green] Workflow '{_escape_markup(workflow_id)}' disabled")
     console.print(f"To re-enable: specify workflow enable {_escape_markup(workflow_id)}")
 
