@@ -352,6 +352,15 @@ def workflow_run(
     if not is_file_source:
         from .catalog import WorkflowRegistry
 
+        # Reject path-equivalent spellings ("align-wf/", "align-wf/.") that
+        # would miss the registry lookup yet still load the installed file,
+        # bypassing the disabled check below.
+        if source in _RESERVED_WORKFLOW_IDS or not _WORKFLOW_ID_PATTERN.match(source):
+            err.print(
+                f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(source))}"
+            )
+            raise typer.Exit(1)
+
         installed_meta = WorkflowRegistry(project_root).get(source)
         if isinstance(installed_meta, dict) and installed_meta.get("enabled", True) is False:
             err.print(

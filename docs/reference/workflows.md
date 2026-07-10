@@ -86,7 +86,29 @@ Lists workflows installed in the current project.
 specify workflow add <source>
 ```
 
+| Option   | Description                                            |
+| -------- | ------------------------------------------------------ |
+| `--dev`  | Install from a local workflow YAML file or directory   |
+| `--from` | Install from a custom URL (`<source>` names the expected workflow ID) |
+
 Installs a workflow from the catalog, a URL (HTTPS required), or a local file path.
+
+## Update Workflows
+
+```bash
+specify workflow update [workflow_id]
+```
+
+Updates one installed catalog workflow — or all of them when no ID is given — to the latest catalog version. Prompts for confirmation and keeps the installed copy if a download or validation fails.
+
+## Enable or Disable a Workflow
+
+```bash
+specify workflow enable <workflow_id>
+specify workflow disable <workflow_id>
+```
+
+Disabled workflows stay installed and listed (marked `[disabled]`) but refuse to run until re-enabled.
 
 ## Remove a Workflow
 
@@ -102,9 +124,10 @@ Removes an installed workflow from the project.
 specify workflow search [query]
 ```
 
-| Option  | Description     |
-| ------- | --------------- |
-| `--tag` | Filter by tag   |
+| Option     | Description       |
+| ---------- | ----------------- |
+| `--tag`    | Filter by tag     |
+| `--author` | Filter by author  |
 
 Searches all active catalogs for workflows matching the query.
 

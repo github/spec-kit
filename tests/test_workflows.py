@@ -8023,6 +8023,23 @@ steps:
         result = runner.invoke(app, ["workflow", "run", "align-wf"])
         assert result.exit_code == 0, result.output
 
+    def test_disable_blocks_run_via_path_equivalent_id(self, project_dir, monkeypatch):
+        """"align-wf/" must not run a disabled workflow by dodging the registry lookup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        for spelling in ("align-wf/", "align-wf/."):
+            result = runner.invoke(app, ["workflow", "run", spelling])
+            assert result.exit_code != 0, spelling
+            assert "Invalid workflow ID" in result.output, spelling
+
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
