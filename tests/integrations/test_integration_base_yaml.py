@@ -204,11 +204,16 @@ class YamlIntegrationTests:
     def test_yaml_prompt_with_control_characters_stays_valid(self):
         """A body containing control characters must still produce parseable YAML.
 
-        YAML forbids C0 control characters (except tab and newline) and DEL
-        in every scalar form; a literal block scalar emits them verbatim,
-        so the generated recipe failed to load. The renderer falls back to
-        an escaped double-quoted scalar for such bodies."""
-        for ch in ("\x08", "\x0c", "\x1b", "\x7f"):
+        YAML forbids C0 control characters (except tab and newline), DEL,
+        and C1 controls in every scalar form, and YAML 1.1 treats NEL
+        (U+0085), LS (U+2028) and PS (U+2029) as line breaks that corrupt a
+        literal block scalar's structure. The renderer falls back to an
+        escaped double-quoted scalar for such bodies."""
+        for ch in (
+            "\x08", "\x0c", "\x1b", "\x7f",
+            "\x80", "\x84", "\x85", "\x86", "\x9f",
+            "\u2028", "\u2029",
+        ):
             body = f"before{ch}after\nsecond line"
             rendered = YamlIntegration._render_yaml("Title", "Desc", body, "src")
             parsed = yaml.safe_load(rendered)
