@@ -3746,6 +3746,85 @@ class TestPresetSkills:
         assert "Read agents/control" not in content
         assert "# Fakeext Cmd Skill" in content
 
+    def test_skill_composed_over_extension_base_rewrites_subdir_paths(
+        self, project_dir, temp_dir
+    ):
+        """When a preset composes (append) over an extension-provided base
+        command, the resulting skill (read from the .composed output) must
+        still resolve the extension's own subdir references (#2101), not
+        just when the extension wins outright (replace)."""
+        self._write_init_options(project_dir, ai="codex")
+        skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(skills_dir, "speckit-fakeext-cmd", body="original extension skill")
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / "ext-base-append-skill"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Preset overlay\n---\n\n## Extra\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-base-append-skill",
+                "name": "Ext Base Append Skill",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": "append",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-fakeext-cmd" / "SKILL.md"
+        content = skill_file.read_text()
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
+
     def test_preset_remove_skips_skill_dir_without_skill_file(self, project_dir, temp_dir):
         """Preset removal should not delete arbitrary directories missing SKILL.md."""
         self._write_init_options(project_dir, ai="codex")
@@ -5946,6 +6025,86 @@ class TestResolveContent:
         content = resolver.resolve_content("spec-template")
         assert content == "# Replaced content\n"
 
+    @pytest.mark.parametrize("strategy", ["append", "prepend", "wrap"])
+    def test_resolve_content_rewrites_extension_base_subdir_paths(
+        self, project_dir, temp_dir, strategy
+    ):
+        """Composing over an extension-provided base command must resolve the
+        extension's own subdir references (agents/, knowledge-base/) to their
+        installed location (#2101), not just when the extension wins outright.
+        """
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / f"ext-base-{strategy}"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        overlay_body = (
+            "{CORE_TEMPLATE}\n## Extra\n" if strategy == "wrap" else "## Extra\n"
+        )
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            f"---\ndescription: Preset overlay\n---\n\n{overlay_body}"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": f"ext-base-{strategy}",
+                "name": "Ext Base",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": strategy,
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.fakeext.cmd", "command")
+        assert content is not None
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
+
 
 class TestCollectAllLayers:
     """Test PresetResolver.collect_all_layers() method."""
@@ -6110,6 +6269,87 @@ class TestRemoveReconciliation:
         assert "preset override content" not in content
         assert ".specify/extensions/fakeext/agents/control/commander.md" in content
         assert "Read agents/control" not in content
+
+    def test_install_composes_extension_command_and_rewrites_subdir_paths_for_non_skill_agent(
+        self, project_dir, temp_dir
+    ):
+        """When a preset overlays (append) an extension-provided base command,
+        the initial composed non-skill-agent command file must have the
+        extension's own subdir references rewritten to their installed
+        location (#2101), matching the live repro: extension body
+        'Read agents/control/commander.md', preset appends to
+        speckit.fakeext.cmd, generated Gemini content retains the bare path."""
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / "ext-cmd-append"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Append fakeext cmd\n---\n\n## Extra\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-cmd-append",
+                "name": "Ext Cmd Append",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": "append",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should exist in gemini dir"
+        content = cmd_files[0].read_text()
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
 
     def test_remove_restores_lower_priority_command(
         self, project_dir, temp_dir, valid_pack_data

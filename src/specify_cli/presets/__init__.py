@@ -3052,6 +3052,8 @@ class PresetResolver:
                     "path": candidate,
                     "source": source,
                     "strategy": "replace",
+                    "extension_id": ext_id,
+                    "extension_dir": ext_dir,
                 })
 
         # Priority 4: Core templates (always "replace")
@@ -3171,10 +3173,32 @@ class PresetResolver:
         if not layers:
             return None
 
+        def _read_layer_content(layer: Dict[str, Any]) -> str:
+            """Read a layer's raw text, rewriting extension-relative subdir
+            references (agents/, knowledge-base/, etc.) to their installed
+            location when the layer is extension-provided (#2101).
+
+            Extension layers are always inserted with strategy "replace"
+            (see collect_all_layers), so a layer only ever needs this
+            rewrite when it wins outright above or serves as the
+            composition base below — never as a mid-stack composing
+            (append/prepend/wrap) layer.
+            """
+            text = layer["path"].read_text(encoding="utf-8")
+            extension_id = layer.get("extension_id")
+            extension_dir = layer.get("extension_dir")
+            if extension_id and extension_dir:
+                from ..agents import CommandRegistrar
+
+                text = CommandRegistrar.rewrite_extension_paths(
+                    text, extension_id, extension_dir
+                )
+            return text
+
         # If the top (highest-priority) layer is replace, it wins entirely —
         # lower layers are irrelevant regardless of their strategies.
         if layers[0]["strategy"] == "replace":
-            return layers[0]["path"].read_text(encoding="utf-8")
+            return _read_layer_content(layers[0])
 
         # Composition: build content bottom-up from the effective base.
         # The base is the nearest replace layer scanning from highest priority
@@ -3197,7 +3221,7 @@ class PresetResolver:
 
         # Convert to reversed_layers index
         base_reversed_idx = len(layers) - 1 - base_layer_idx
-        content = layers[base_layer_idx]["path"].read_text(encoding="utf-8")
+        content = _read_layer_content(layers[base_layer_idx])
         # Compose only the layers above the base (higher priority = lower index in layers,
         # higher index in reversed_layers). Process bottom-up from base+1.
         start_idx = base_reversed_idx + 1
