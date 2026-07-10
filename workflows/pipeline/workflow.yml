@@ -1,0 +1,125 @@
+schema_version: "1.0"
+workflow:
+  id: "pipeline"
+  name: "Guided SDD Pipeline"
+  version: "1.0.0"
+  author: "domattioli"
+  description: >
+    Chains specify → clarify → plan → tasks → analyze → implement → converge
+    into one guided run with a single clarify gate and a post-implement
+    convergence loop.
+
+requires:
+  speckit_version: ">=0.8.5"
+  integrations:
+    any: ["claude", "copilot", "gemini", "opencode"]
+
+inputs:
+  spec:
+    type: string
+    required: true
+    prompt: "Describe what you want to build"
+  integration:
+    type: string
+    default: "auto"
+    prompt: "Integration to use (e.g. claude, copilot, gemini; 'auto' uses the project's initialized integration)"
+  with_constitution:
+    type: boolean
+    default: false
+    prompt: "Add constitution phase to the pipeline?"
+  with_checklist:
+    type: boolean
+    default: false
+    prompt: "Add checklist phase to the pipeline?"
+  skip_clarify:
+    type: boolean
+    default: false
+    prompt: "Skip the clarify gate?"
+
+steps:
+  - id: constitution
+    type: if
+    condition: "{{ inputs.with_constitution }}"
+    then:
+      - id: constitution-run
+        command: speckit.constitution
+        integration: "{{ inputs.integration }}"
+        input: { args: "{{ inputs.spec }}" }
+
+  - id: specify
+    command: speckit.specify
+    integration: "{{ inputs.integration }}"
+    input: { args: "{{ inputs.spec }}" }
+
+  - id: clarify
+    type: if
+    condition: "{{ inputs.skip_clarify == false }}"
+    then:
+      - id: clarify-run
+        command: speckit.clarify
+        integration: "{{ inputs.integration }}"
+        input: { args: "{{ inputs.spec }}" }
+      - id: clarify-gate
+        type: gate
+        message: "Review clarifications before planning."
+        options: [approve, reject]
+        on_reject: abort
+
+  - id: plan
+    command: speckit.plan
+    integration: "{{ inputs.integration }}"
+    input: { args: "{{ inputs.spec }}" }
+
+  - id: checklist
+    type: if
+    condition: "{{ inputs.with_checklist }}"
+    then:
+      - id: checklist-run
+        command: speckit.checklist
+        integration: "{{ inputs.integration }}"
+        input: { args: "{{ inputs.spec }}" }
+
+  - id: tasks
+    command: speckit.tasks
+    integration: "{{ inputs.integration }}"
+    input: { args: "{{ inputs.spec }}" }
+
+  # analyze is a non-destructive cross-artifact consistency check (spec/plan/tasks);
+  # its findings are resolved in the artifacts, not by implement, so it runs as a
+  # single pre-implement pass rather than a fix loop.
+  - id: analyze
+    command: speckit.analyze
+    integration: "{{ inputs.integration }}"
+    continue_on_error: true
+    input: { args: "{{ inputs.spec }}" }
+
+  - id: implement
+    command: speckit.implement
+    integration: "{{ inputs.integration }}"
+    input: { args: "{{ inputs.spec }}" }
+
+  # converge must run after implement (per its contract): it assesses the code
+  # against spec/plan/tasks and appends any remaining work as new tasks. The loop
+  # is bounded rather than condition-driven because prompt-template commands do
+  # not reliably signal findings via exit codes; a `converged` pass leaves
+  # tasks.md untouched, so extra iterations are safe no-ops.
+  - id: converge-first
+    command: speckit.converge
+    integration: "{{ inputs.integration }}"
+    continue_on_error: true
+    input: { args: "{{ inputs.spec }}" }
+
+  - id: converge-loop
+    type: while
+    condition: "{{ steps.converge-first.output.exit_code != 0 }}"
+    max_iterations: 3
+    steps:
+      - id: implement-remaining
+        command: speckit.implement
+        integration: "{{ inputs.integration }}"
+        input: { args: "Complete the appended convergence tasks for {{ inputs.spec }}" }
+      - id: converge-again
+        command: speckit.converge
+        integration: "{{ inputs.integration }}"
+        continue_on_error: true
+        input: { args: "{{ inputs.spec }}" }
