@@ -7379,6 +7379,33 @@ steps:
         assert "wf-a" in result.output
         assert "wf-b" not in result.output
 
+    def test_search_escapes_rich_markup_in_catalog_fields(self, project_dir, monkeypatch):
+        """Catalog-derived name/description/tags must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        workflows = {
+            "wf-a": {
+                "name": "Bracket [Search]",
+                "version": "1.0.0",
+                "description": "desc [with] brackets",
+                "tags": ["tag[1]", "tag2"],
+            },
+        }
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "_get_merged_workflows",
+            lambda self, force_refresh=False: {k: dict(v) for k, v in workflows.items()},
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "search"])
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Search]" in result.output
+        assert "desc [with] brackets" in result.output
+        assert "tag[1]" in result.output
+
     # -- update ----------------------------------------------------------
 
     def test_update_no_workflows_installed(self, project_dir, monkeypatch):

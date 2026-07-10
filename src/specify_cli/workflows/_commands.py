@@ -1197,13 +1197,17 @@ def workflow_search(
 
     console.print(f"\n[bold cyan]Workflows ({len(results)}):[/bold cyan]\n")
     for wf in results:
-        console.print(f"  [bold]{wf.get('name', wf.get('id', '?'))}[/bold] ({wf.get('id', '?')}) v{wf.get('version', '?')}")
+        name = _escape_markup(str(wf.get("name", wf.get("id", "?"))))
+        wf_id = _escape_markup(str(wf.get("id", "?")))
+        version = _escape_markup(str(wf.get("version", "?")))
+        console.print(f"  [bold]{name}[/bold] ({wf_id}) v{version}")
         desc = wf.get("description", "")
         if desc:
-            console.print(f"    {desc}")
+            console.print(f"    {_escape_markup(str(desc))}")
         tags = wf.get("tags", [])
         if tags:
-            console.print(f"    [dim]Tags: {', '.join(tags)}[/dim]")
+            safe_tags = _escape_markup(", ".join(str(t) for t in tags))
+            console.print(f"    [dim]Tags: {safe_tags}[/dim]")
         console.print()
 
 
