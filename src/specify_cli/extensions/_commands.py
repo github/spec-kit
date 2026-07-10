@@ -426,7 +426,11 @@ def extension_add(
     if from_url and not dev:
         from urllib.parse import urlparse
 
-        parsed = urlparse(from_url)
+        try:
+            parsed = urlparse(from_url)
+        except ValueError:
+            console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
+            raise typer.Exit(1)
         is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
 
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):

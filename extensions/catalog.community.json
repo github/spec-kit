@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-01T00:00:00Z",
+  "updated_at": "2026-07-07T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -670,6 +670,40 @@
       "created_at": "2026-04-11T18:00:00Z",
       "updated_at": "2026-04-11T18:00:00Z"
     },
+    "charter": {
+      "name": "Charter",
+      "id": "charter",
+      "description": "Compose modular project constitutions from shared fragment registries. Centralize governance rules, select per-project fragments, track upstream changes, and keep multi-project setups consistent.",
+      "author": "Fyloss",
+      "version": "0.3.1",
+      "download_url": "https://github.com/Fyloss/spec-kit-charter/archive/refs/tags/v0.3.1.zip",
+      "repository": "https://github.com/Fyloss/spec-kit-charter",
+      "homepage": "https://github.com/Fyloss/spec-kit-charter",
+      "documentation": "https://github.com/Fyloss/spec-kit-charter/tree/master/docs",
+      "changelog": "https://github.com/Fyloss/spec-kit-charter/blob/master/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.11.9"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "constitution",
+        "governance",
+        "modular",
+        "fragments",
+        "registry"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-06T00:00:00Z",
+      "updated_at": "2026-07-06T00:00:00Z"
+    },
     "ci-guard": {
       "name": "CI Guard",
       "id": "ci-guard",
@@ -1072,10 +1106,10 @@
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
-      "description": "Canonical-Driven Development enforcement. Validates, scores, and traces project documentation with automated checks, AI-driven workflows, and spec-kit hooks. One pinned runtime dependency; pure Node.js otherwise.",
+      "description": "The only doc-integrity engine with an MCP server, SARIF output, and a deterministic zero-LLM core. Validates, scores, and traces documentation against code — 24 validators, stable finding codes, GitHub Action with PR annotations, spec-kit hooks. Pure Node.js, one pinned dep.",
       "author": "raccioly",
-      "version": "0.28.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.28.0/spec-kit-docguard-v0.28.0.zip",
+      "version": "0.30.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.30.0/spec-kit-docguard-v0.30.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1111,7 +1145,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-06-23T00:00:00Z"
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1364,10 +1398,10 @@
     "golden-demo": {
       "name": "Golden Demo",
       "id": "golden-demo",
-      "description": "Extracts acceptance criteria from specs, builds test vectors, and produces a behavioral drift report — complementary to Architecture Guard and CDD.",
+      "description": "Deterministic behavioral drift oracle. Extracts acceptance criteria, generates fuzz test vectors (seed=42), compares golden Python implementations against real code in any language. CI/CD gatekeeper with warn/strict modes.",
       "author": "jasstt",
-      "version": "0.1.1",
-      "download_url": "https://github.com/jasstt/spec-kit-golden-demo/archive/refs/tags/v0.1.1.zip",
+      "version": "0.3.0",
+      "download_url": "https://github.com/jasstt/spec-kit-golden-demo/archive/refs/tags/v0.3.0.zip",
       "repository": "https://github.com/jasstt/spec-kit-golden-demo",
       "homepage": "https://github.com/jasstt/spec-kit-golden-demo",
       "documentation": "https://github.com/jasstt/spec-kit-golden-demo",
@@ -1378,13 +1412,16 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 2,
+        "commands": 3,
         "hooks": 2
       },
       "tags": [
         "testing",
         "drift-detection",
         "behavioral-oracle",
+        "fuzzing",
+        "ci-cd",
+        "cross-language",
         "tdd",
         "quality"
       ],
@@ -1392,7 +1429,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-24T00:00:00Z",
-      "updated_at": "2026-06-24T00:00:00Z"
+      "updated_at": "2026-07-07T00:00:00Z"
     },
     "harness": {
       "name": "Research Harness",
@@ -2362,6 +2399,39 @@
       "created_at": "2026-04-03T00:00:00Z",
       "updated_at": "2026-04-03T00:00:00Z"
     },
+    "orchestration-task-context-management": {
+      "name": "Orchestration Task Context Management",
+      "id": "orchestration-task-context-management",
+      "description": "Adds subagent work-unit orchestration to generated Spec Kit task files",
+      "author": "Igor Benicio de Mesquita",
+      "version": "0.0.0",
+      "download_url": "https://github.com/benizzio/spec-kit-orchestration-task-context-management/archive/refs/tags/v0.0.0.zip",
+      "repository": "https://github.com/benizzio/spec-kit-orchestration-task-context-management",
+      "homepage": "https://github.com/benizzio/spec-kit-orchestration-task-context-management",
+      "documentation": "https://github.com/benizzio/spec-kit-orchestration-task-context-management/blob/main/README.md",
+      "changelog": "https://github.com/benizzio/spec-kit-orchestration-task-context-management/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.7.2"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "agent",
+        "orchestration",
+        "tasks",
+        "context"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-06T00:00:00Z",
+      "updated_at": "2026-07-06T00:00:00Z"
+    },
     "orchestrator": {
       "name": "Spec Orchestrator",
       "id": "orchestrator",
@@ -2679,8 +2749,8 @@
       "id": "ralph",
       "description": "Autonomous implementation loop using AI agent CLI",
       "author": "Rubiss",
-      "version": "1.1.1",
-      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.1.1.zip",
+      "version": "1.2.1",
+      "download_url": "https://github.com/Rubiss-Projects/spec-kit-ralph/archive/refs/tags/v1.2.1.zip",
       "repository": "https://github.com/Rubiss-Projects/spec-kit-ralph",
       "homepage": "https://github.com/Rubiss-Projects/spec-kit-ralph",
       "documentation": "https://github.com/Rubiss-Projects/spec-kit-ralph/blob/main/README.md",
@@ -2689,7 +2759,7 @@
       "category": "code",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.1.0",
+        "speckit_version": ">=0.8.5",
         "tools": [
           {
             "name": "copilot",
@@ -2697,6 +2767,10 @@
           },
           {
             "name": "codex",
+            "required": false
+          },
+          {
+            "name": "claude",
             "required": false
           },
           {
@@ -2714,13 +2788,14 @@
         "automation",
         "loop",
         "copilot",
-        "codex"
+        "codex",
+        "claude"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-09T00:00:00Z",
-      "updated_at": "2026-06-05T03:11:06Z"
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "reconcile": {
       "name": "Reconcile Extension",
@@ -3047,10 +3122,10 @@
     "ripple": {
       "name": "Ripple",
       "id": "ripple",
-      "description": "Detect side effects that tests can't catch after implementation — delta-anchored analysis across 9 domain-agnostic categories with fix-induced side effect detection",
+      "description": "Detect side effects that tests can't catch after implementation — surface hidden ripple effects across 9 analysis categories",
       "author": "chordpli",
-      "version": "1.0.0",
-      "download_url": "https://github.com/chordpli/spec-kit-ripple/archive/refs/tags/v1.0.0.zip",
+      "version": "1.1.0",
+      "download_url": "https://github.com/chordpli/spec-kit-ripple/archive/refs/tags/v1.1.0.zip",
       "repository": "https://github.com/chordpli/spec-kit-ripple",
       "homepage": "https://github.com/chordpli/spec-kit-ripple",
       "documentation": "https://github.com/chordpli/spec-kit-ripple/blob/main/README.md",
@@ -3059,7 +3134,13 @@
       "category": "code",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.2.0"
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "required": true
+          }
+        ]
       },
       "provides": {
         "commands": 3,
@@ -3076,7 +3157,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-04-20T00:00:00Z",
-      "updated_at": "2026-04-20T00:00:00Z"
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "roadmap": {
       "name": "Spec Roadmap",
@@ -4296,6 +4377,40 @@
       "stars": 0,
       "created_at": "2026-04-13T00:00:00Z",
       "updated_at": "2026-04-13T00:00:00Z"
+    },
+    "wiki": {
+      "name": "LLM Wiki",
+      "id": "wiki",
+      "description": "LLM-maintained compounding project wiki: source ingestion, cited answers, and consistency linting",
+      "author": "formin",
+      "version": "1.0.0",
+      "download_url": "https://github.com/formin/spec-kit-wiki/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/formin/spec-kit-wiki",
+      "homepage": "https://github.com/formin/spec-kit-wiki",
+      "documentation": "https://github.com/formin/spec-kit-wiki/blob/main/README.md",
+      "changelog": "https://github.com/formin/spec-kit-wiki/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 2
+      },
+      "tags": [
+        "wiki",
+        "knowledge-base",
+        "docs",
+        "memory",
+        "context-management"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-06T00:00:00Z",
+      "updated_at": "2026-07-06T00:00:00Z"
     },
     "wireframe": {
       "name": "Wireframe Visual Feedback Loop",

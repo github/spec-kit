@@ -7,7 +7,7 @@ Git repository initialization, feature branch creation, numbering (sequential/ti
 This extension provides Git operations as an optional, self-contained module. It manages:
 
 - **Repository initialization** with configurable commit messages
-- **Feature branch creation** with sequential (`001-feature-name`) or timestamp (`20260319-143022-feature-name`) numbering
+- **Feature branch creation** with sequential (`001-feature-name`) or timestamp (`20260319-143022-feature-name`) numbering and optional templates for branch namespaces
 - **Branch validation** to ensure branches follow naming conventions
 - **Git remote detection** for GitHub integration (e.g., issue creation)
 - **Auto-commit** after core commands (configurable per-command with custom messages)
@@ -53,6 +53,16 @@ Configuration is stored in `.specify/extensions/git/git-config.yml`:
 # Branch numbering strategy: "sequential" or "timestamp"
 branch_numbering: sequential
 
+# Optional branch name template. Leave empty for the default "{number}-{slug}".
+# Supported tokens: {author}, {app}, {number}, {slug}; {slug} must not appear
+# before {number}, and the final path segment must start with {number}-.
+# Example for monorepos: "{author}/{app}/{number}-{slug}"
+branch_template: ""
+
+# Optional shorthand namespace. Leave empty to use branch_template/default behavior.
+# Example: "features/{app}" expands to "features/{app}/{number}-{slug}"
+branch_prefix: ""
+
 # Custom commit message for git init
 init_commit_message: "[Spec Kit] Initial commit"
 
@@ -64,6 +74,10 @@ auto_commit:
     enabled: true
     message: "[Spec Kit] Add specification"
 ```
+
+`{author}` is derived from Git config and sanitized for branch names. `{app}` is derived from the Spec Kit init directory name. Custom templates must not put `{slug}` before `{number}`, and must put `{number}-` at the start of the final path segment so generated names remain valid feature branches. For a monorepo project at `apps/web/.specify/`, a template such as `{author}/{app}/{number}-{slug}` produces branches like `jdoe/web/008-guided-tour`.
+
+For simple namespace-only customization, `branch_prefix` is also accepted as a shorthand and expands to `<branch_prefix>/{number}-{slug}`.
 
 ## Installation
 

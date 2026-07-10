@@ -222,3 +222,39 @@ def test_add_source_allows_local_path_with_colon(tmp_path: Path, monkeypatch):
     # A relative path containing ':' but no '://' is still a local path.
     source = cc.add_source(project, "weird:name.json", policy="install-allowed", priority=50)
     assert source.url.endswith("weird:name.json") or "weird" in source.url
+
+
+def test_add_source_rejects_plain_http_for_non_localhost(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    with pytest.raises(BundlerError, match="HTTPS"):
+        cc.add_source(project, "http://example.com/catalog.json", policy="install-allowed", priority=50)
+
+
+def test_add_source_allows_http_for_localhost(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    source = cc.add_source(project, "http://localhost:8080/c.json", policy="install-allowed", priority=50)
+    assert source.url == "http://localhost:8080/c.json"
+
+
+def test_add_source_rejects_host_less_remote_urls(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    for url in ("https://:8080", "https://user@"):
+        with pytest.raises(BundlerError, match="host"):
+            cc.add_source(project, url, policy="install-allowed", priority=50)
+
+
+def test_add_source_wraps_invalid_ipv6_as_bundler_error(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    with pytest.raises(BundlerError, match="Invalid catalog url"):
+        cc.add_source(project, "https://[::1/c.json", policy="install-allowed", priority=50)
+
+
+def test_remove_source_does_not_crash_on_invalid_ipv6(tmp_path: Path):
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    with pytest.raises(BundlerError, match="No project-scoped catalog source"):
+        cc.remove_source(project, "https://[::1/c.json")

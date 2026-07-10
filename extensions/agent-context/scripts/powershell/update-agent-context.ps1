@@ -12,7 +12,7 @@
 #
 # When `plan_path` is omitted, the script derives it from `.specify/feature.json`
 # (written by /speckit-specify). Falls back to the most recently modified
-# `specs/*/plan.md` only when feature.json is absent or its plan does not exist yet.
+# `specs/**/plan.md` only when feature.json is absent or its plan does not exist yet.
 
 [CmdletBinding()]
 param(
@@ -426,9 +426,7 @@ if (-not $PlanPath) {
     if (-not $PlanPath) {
         try {
             $specsDir = Join-Path $ProjectRoot 'specs'
-            $candidate = Get-ChildItem -Path $specsDir -Directory -ErrorAction SilentlyContinue |
-                ForEach-Object { Get-Item -LiteralPath (Join-Path $_.FullName 'plan.md') -ErrorAction SilentlyContinue } |
-                Where-Object { $_ } |
+            $candidate = Get-ChildItem -Path $specsDir -Recurse -File -Filter 'plan.md' -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1
             if ($candidate) {

@@ -260,6 +260,60 @@ class TestExpressions:
         ctx = StepContext(inputs={"text": "uses }} syntax"})
         assert evaluate_expression("{{ inputs.text | contains('}}') }}", ctx) is True
 
+    def test_multi_expression_with_literal_close_brace_in_argument(self):
+        """A multi-expression template with a literal ``}}`` inside a string
+        argument must interpolate, not raise. #3208/#3228 hardened the single-
+        expression fast path for literal braces but left the interpolation path
+        on ``_EXPR_PATTERN``, whose non-greedy body stops at the first ``}}`` --
+        so the block was captured truncated and the filter parser raised
+        ValueError."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        # ``}}`` in the default fallback of the second block.
+        result = evaluate_expression(
+            "{{ inputs.name }}: {{ inputs.missing | default('}}') }}", ctx
+        )
+        assert result == "Bob: }}"
+        # ``}}`` in the first block, expression following it.
+        result = evaluate_expression(
+            "{{ inputs.missing | default('}}') }} / {{ inputs.name }}", ctx
+        )
+        assert result == "}} / Bob"
+
+    def test_multi_expression_with_literal_open_brace_in_argument(self):
+        """A literal ``{{`` inside a string argument in a multi-expression
+        template must not confuse block detection either."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        result = evaluate_expression(
+            "{{ inputs.name }} {{ inputs.missing | default('{{') }}", ctx
+        )
+        assert result == "Bob {{"
+
+    def test_multi_expression_unbalanced_quote_still_raises(self):
+        """A malformed block (an unbalanced quote in a filter arg) must still
+        surface a ValueError, not be silently emitted verbatim.
+
+        The quote-aware scan never finds a block-closing ``}}`` when a quote is
+        left open, but a raw ``}}`` is still present in the tail. It must fall
+        back to that raw delimiter and evaluate — same as the old regex path —
+        so a typo fails loudly instead of being hidden (Copilot review on
+        #3307)."""
+        import pytest
+
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"name": "Bob", "missing": None})
+        with pytest.raises(ValueError):
+            evaluate_expression(
+                "{{ inputs.name }} {{ inputs.missing | default('oops }}", ctx
+            )
+
     def test_comparison_equals(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -287,6 +341,35 @@ class TestExpressions:
         )
         assert evaluate_expression("{{ steps.plan.output.task_count > 5 }}", ctx) is True
         assert evaluate_expression("{{ steps.plan.output.task_count < 5 }}", ctx) is False
+
+    def test_ordering_comparison_of_non_numeric_strings(self):
+        """`<`/`>`/`<=`/`>=` between non-numeric strings must compare
+        lexicographically, not silently return False.
+
+        `_safe_compare` used to coerce both operands to int/float unconditionally;
+        a non-numeric string (date, version tag, name) failed that coercion and
+        the whole comparison returned False. Ordinary strings should order the
+        way Python does; numeric strings must still compare as numbers."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        # ISO dates compare lexicographically (correct chronological order).
+        ctx = StepContext(inputs={"d": "2026-01-01"})
+        assert evaluate_expression("{{ inputs.d < '2026-02-01' }}", ctx) is True
+        assert evaluate_expression("{{ inputs.d > '2026-02-01' }}", ctx) is False
+
+        # Plain string ordering.
+        ctx = StepContext(inputs={"name": "beta"})
+        assert evaluate_expression("{{ inputs.name > 'alpha' }}", ctx) is True
+
+        # Two numeric strings still compare numerically, not lexically
+        # ("10" > "9" is True as numbers; as strings it would be False).
+        ctx = StepContext(inputs={"v": "10"})
+        assert evaluate_expression("{{ inputs.v > '9' }}", ctx) is True
+
+        # A number vs a non-numeric string is genuinely incomparable -> False.
+        ctx = StepContext(inputs={"n": 5})
+        assert evaluate_expression("{{ inputs.n > 'abc' }}", ctx) is False
 
     def test_boolean_and(self):
         from specify_cli.workflows.expressions import evaluate_expression
@@ -517,6 +600,73 @@ class TestExpressions:
             ValueError, match="filter 'map' used in an unsupported form"
         ):
             evaluate_expression("{{ inputs.tags | map }}", ctx)
+
+    def test_chained_filters_apply_left_to_right(self):
+        # Filters chain: each filter's result feeds the next. `map` yields a
+        # list and `join` is the only filter that renders a list to a string,
+        # so `map('name') | join(', ')` is the canonical pairing — it must not
+        # raise. Previously the pipe parser split only at the first `|` and
+        # handed the whole tail (`map('name') | join(', ')`) to one filter,
+        # which the `name(arg)` regex mangled into a ValueError.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(
+            inputs={
+                "rows": [{"name": "a"}, {"name": "b"}],
+                "tags": ["x", "y"],
+                "missing": None,
+            }
+        )
+        assert (
+            evaluate_expression(
+                "{{ inputs.rows | map('name') | join(', ') }}", ctx
+            )
+            == "a, b"
+        )
+        # A three-link chain: map -> join -> contains.
+        assert (
+            evaluate_expression(
+                "{{ inputs.rows | map('name') | join(', ') | contains('a') }}",
+                ctx,
+            )
+            is True
+        )
+        # default's fallback then flows into the next filter.
+        assert (
+            evaluate_expression(
+                "{{ inputs.missing | default('x') | contains('x') }}", ctx
+            )
+            is True
+        )
+
+    def test_chained_filter_error_in_later_link_raises(self):
+        # A mis-wired filter anywhere in the chain must fail loudly, not just
+        # the first link.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"rows": [{"name": "a"}]})
+        with pytest.raises(ValueError, match="unknown filter 'bogus'"):
+            evaluate_expression(
+                "{{ inputs.rows | map('name') | bogus }}", ctx
+            )
+
+    def test_pipe_in_quoted_arg_is_not_a_filter_separator(self):
+        # A literal `|` inside a quoted operand or filter argument must not be
+        # mistaken for a filter-chain separator — the top-level split has to
+        # respect quotes.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"mode": "a|b", "tags": ["a|b", "c"]})
+        assert evaluate_expression("{{ inputs.mode == 'a|b' }}", ctx) is True
+        # `|` inside a filter argument stays part of the argument.
+        assert (
+            evaluate_expression("{{ inputs.tags | join(' | ') }}", ctx)
+            == "a|b | c"
+        )
 
     def test_condition_evaluation(self):
         from specify_cli.workflows.expressions import evaluate_condition
@@ -1183,6 +1333,25 @@ class TestShellStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'run'" in e for e in errors)
 
+    @pytest.mark.parametrize("bad_run", [None, ["echo", "hi"], 42])
+    def test_validate_rejects_non_string_run(self, bad_run):
+        """A non-string 'run' must be rejected at validation.
+
+        execute() str()-coerces run and invokes it under shell=True, so a
+        null or list run would otherwise run the Python repr as a command.
+        """
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        errors = step.validate({"id": "s", "run": bad_run})
+        assert any("'run' must be a string" in e for e in errors)
+
+    def test_validate_accepts_string_and_expression_run(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        step = ShellStep()
+        assert step.validate({"id": "s", "run": "echo hi"}) == []
+        assert step.validate({"id": "s", "run": "{{ steps.x.output }}"}) == []
 
     def test_output_format_json_exposes_data(self, tmp_path):
         from specify_cli.workflows.steps.shell import ShellStep
@@ -2198,6 +2367,27 @@ class TestFanInStep:
         step = FanInStep()
         errors = step.validate({"id": "test", "wait_for": "not-a-list"})
         assert any("non-empty list" in e for e in errors)
+
+    @pytest.mark.parametrize("bad_output", [["{{ fan_in.results }}"], "{{ x }}", 42])
+    def test_validate_rejects_non_mapping_output(self, bad_output):
+        """A non-mapping 'output' must be rejected: execute() would otherwise
+        silently coerce it to {} and drop the declared aggregation keys."""
+        from specify_cli.workflows.steps.fan_in import FanInStep
+
+        step = FanInStep()
+        errors = step.validate(
+            {"id": "j", "wait_for": ["a"], "output": bad_output}
+        )
+        assert any("'output' must be a mapping" in e for e in errors)
+
+    def test_validate_accepts_mapping_or_absent_output(self):
+        from specify_cli.workflows.steps.fan_in import FanInStep
+
+        step = FanInStep()
+        assert step.validate(
+            {"id": "j", "wait_for": ["a"], "output": {"joined": "{{ x }}"}}
+        ) == []
+        assert step.validate({"id": "j", "wait_for": ["a"]}) == []
 
 
 class TestFanOutConcurrency:
@@ -4077,6 +4267,48 @@ steps:
         assert state.status == RunStatus.ABORTED
         assert "should-not-run" not in state.step_results
 
+    def test_gate_reject_matches_case_insensitively(
+        self, project_dir, monkeypatch
+    ):
+        """A capitalised reject option (`options: [Approve, Reject]`) still
+        aborts the run. `validate` accepts a reject choice case-insensitively,
+        so the runtime reject check must agree — a case-sensitive comparison
+        would treat the echoed `Reject` as approval and silently run
+        downstream steps.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+        from specify_cli.workflows.steps.gate import GateStep
+
+        # `_prompt` echoes the option's original casing, so the operator
+        # picking "Reject" hands `execute` the capitalised string.
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(lambda _msg, _opts: "Reject")
+        )
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "gate-reject-case"
+  name: "Gate Reject Case"
+  version: "1.0.0"
+steps:
+  - id: gate-step
+    type: gate
+    message: "Approve?"
+    options: [Approve, Reject]
+    on_reject: abort
+  - id: should-not-run
+    type: shell
+    run: "echo nope"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.ABORTED
+        assert "should-not-run" not in state.step_results
+
     def test_validation_rejects_non_bool_continue_on_error(self):
         """`continue_on_error` must be a literal boolean; coerced
         strings like `"true"` are rejected at validation time so
@@ -5527,6 +5759,23 @@ class TestWorkflowRemoveGuard:
 
 
 class TestWorkflowAddSymlinkGuard:
+    def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
+        """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify").mkdir(exist_ok=True)
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(
+            app,
+            ["workflow", "add", "https://[::1/wf.yaml"],
+            catch_exceptions=True,
+        )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Invalid URL" in result.output
+
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_add_refuses_symlinked_specify(self, temp_dir, monkeypatch):
         """workflow add must refuse a symlinked .specify (writes could escape root)."""

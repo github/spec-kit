@@ -25,6 +25,14 @@ class ShellStep(StepBase):
         run_cmd = str(run_cmd)
 
         cwd = context.project_root or "."
+        # Defensive: the engine does not auto-validate step config, so an
+        # invalid ``timeout`` (string, None, ...) would otherwise raise a
+        # TypeError from subprocess.run() and crash the whole run.  Mirror
+        # the engine's handling of unvalidated ``continue_on_error`` by
+        # only honoring well-formed values and falling back to the default.
+        timeout = config.get("timeout", 300)
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
+            timeout = 300
 
         # Per-step execution timeout in seconds; defaults to 300 for backward
         # compatibility. Validate here as well so callers that skip
@@ -112,6 +120,16 @@ class ShellStep(StepBase):
         if "run" not in config:
             errors.append(
                 f"Shell step {config.get('id', '?')!r} is missing 'run' field."
+            )
+        elif not isinstance(config["run"], str):
+            # execute() str()-coerces run and invokes it under shell=True, so a
+            # null or list 'run' would run the Python repr ('None', "['echo']")
+            # as a command. Reject non-strings at validation, mirroring the
+            # command-step input/options and gate options type checks. An
+            # expression like "{{ ... }}" is still a str, so it stays valid.
+            errors.append(
+                f"Shell step {config.get('id', '?')!r}: 'run' must be a string, "
+                f"got {type(config['run']).__name__}."
             )
         output_format = config.get("output_format")
         if output_format is not None and output_format != "json":
