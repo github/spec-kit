@@ -69,7 +69,12 @@ def resolve_active_agent_for_registration(
     - Returns the active agent key (a non-empty string) otherwise.
     """
     path = project_path / INIT_OPTIONS_FILE
-    if not path.exists():
+    # A dangling symlink's target doesn't exist, so Path.exists() (which
+    # follows symlinks) returns False even though the path itself is
+    # present as a broken/corrupted entry. Treat any symlink as "present"
+    # so a dangling one fails closed via the invalid-file branch below
+    # instead of being mistaken for "no file at all" (legacy fallback).
+    if not path.is_symlink() and not path.exists():
         return MISSING_INIT_OPTIONS_FILE
 
     active_agent = load_init_options(project_path).get("ai")

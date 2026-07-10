@@ -1525,6 +1525,41 @@ class TestIntegrationInstall:
             "treated like a legacy project missing the file entirely (#2948)"
         )
 
+    def test_extension_add_dangling_init_options_symlink_fails_closed(self, tmp_path):
+        """A dangling init-options.json symlink must fail closed too, not be
+        treated the same as "no file at all".
+
+        ``Path.exists()`` follows symlinks and returns False for a broken
+        symlink whose target doesn't exist, so a naive presence check based
+        on ``Path.exists()`` alone mistakes a dangling symlink for "no file"
+        and falls back to registering every detected agent.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        init_options_path = project / ".specify" / "init-options.json"
+        init_options_path.unlink()
+        init_options_path.symlink_to(project / ".specify" / "does-not-exist.json")
+        assert not init_options_path.exists()  # sanity: dangling
+        assert init_options_path.is_symlink()
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert registered == {}, (
+            "a dangling init-options.json symlink must fail closed, not be "
+            "treated like a legacy project missing the file entirely (#2948)"
+        )
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 

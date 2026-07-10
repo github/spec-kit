@@ -3113,6 +3113,26 @@ class TestResolveActiveAgentForRegistration:
 
         assert resolve_active_agent_for_registration(project_dir) is None
 
+    def test_dangling_symlink_fails_closed(self, project_dir):
+        """A dangling init-options.json symlink must fail closed, not fall
+        back to "no file" (#2948).
+
+        ``Path.exists()`` follows symlinks and returns False for a broken
+        symlink whose target is missing, so a naive presence check treats a
+        dangling symlink the same as "no file at all" and falls back to
+        legacy all-agent registration. The path is present (just broken),
+        so it must be treated as a corrupted file and fail closed instead.
+        """
+        from specify_cli._init_options import resolve_active_agent_for_registration
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.symlink_to(project_dir / ".specify" / "does-not-exist.json")
+
+        assert not opts_file.exists()  # sanity: this is what makes it dangling
+        assert opts_file.is_symlink()
+        assert resolve_active_agent_for_registration(project_dir) is None
+
 
 class TestPresetSkills:
     """Tests for preset skill registration and unregistration.
@@ -4152,6 +4172,53 @@ class TestPresetSkills:
             "but inactive non-skill agent (#2948)"
         )
 
+    def test_use_rescaffold_reconciles_project_override(self, project_dir, temp_dir):
+        """``integration use``/``switch`` rescaffolding must reconcile the
+        full priority stack, not just write each preset's own content.
+
+        Project overrides are the highest-priority layer, above every
+        preset. ``register_enabled_presets_for_agent`` (invoked by
+        ``integration use``/``switch``) calls ``_register_commands`` for
+        each enabled preset directly, the same as ``install_from_directory``
+        — but unlike install/remove, it never followed up with
+        ``_reconcile_composed_commands``. Before the fix, rescaffolding a
+        newly activated agent could leave the preset's raw content in
+        place instead of resolving the real winner (the project override)
+        from the full stack (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "use-reconcile-preset", "speckit.specify",
+            "Preset specify", "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Simulate `integration use gemini`: switch the active agent and
+        # rescaffold enabled presets for it, mirroring what the CLI does.
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        manager.register_enabled_presets_for_agent("gemini")
+
+        cmd_file = gemini_dir / "speckit.specify.toml"
+        assert cmd_file.exists(), "sanity: gemini should get a command file at all"
+        content = cmd_file.read_text()
+        assert "Override body" in content, (
+            "the project override must still win after rescaffold "
+            "reconciliation, not the preset's raw content (#2948)"
+        )
+        assert "Preset body" not in content
+
     def test_copilot_skills_mode_skips_command_registration(self, project_dir, temp_dir):
         """``integration use copilot`` with skills mode enabled must only
         write the SKILL.md mirror, not also copilot's static command file.
@@ -4361,6 +4428,87 @@ class TestPresetSkills:
         assert "preset:preset-a" in claude_skill_file.read_text(), (
             "removing preset B must not disturb preset A's Claude override (#2948)"
         )
+
+    def test_shared_skills_dir_restored_once_using_active_agent(
+        self, project_dir, temp_dir
+    ):
+        """Removal must restore a physical skills directory shared by
+        multiple agents exactly once, using the active agent's renderer.
+
+        Codex and Antigravity (agy) both resolve their skills directory to
+        ``.agents/skills``. Registering a preset under codex, switching to
+        agy, then switching back to codex records provenance for *both*
+        agent keys even though they share one physical directory. Before
+        the fix, ``_unregister_skills`` restored once per recorded agent
+        key rather than once per unique directory, so the directory was
+        written twice on removal with whichever agent was iterated *last*
+        silently winning — regardless of which agent is actually active
+        (#2948).
+        """
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        shared_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(shared_skills_dir, "speckit-specify")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "shared-dir-preset", "speckit.specify",
+            "Shared dir test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Switch to agy (shares .agents/skills with codex) and back to
+        # codex, mirroring `integration use agy` then `integration use
+        # codex`. Both agent keys end up recorded in registered_skills even
+        # though they refer to the same physical directory.
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        manager.register_enabled_presets_for_agent("agy")
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata = manager.registry.get("shared-dir-preset")
+        registered_skills = metadata.get("registered_skills", {})
+        assert set(registered_skills) == {"codex", "agy"}, (
+            "both agent keys must be recorded even though they share one "
+            "physical directory (#2948)"
+        )
+
+        from unittest.mock import patch
+
+        # Exercise `_unregister_skills` directly (the method this fix
+        # changed) rather than the full `remove()` flow, which separately
+        # triggers post-removal reconciliation that may also touch the
+        # active agent's directory — an unrelated call this test isn't
+        # targeting.
+        with patch.object(
+            manager,
+            "_unregister_skills_in_dir",
+            wraps=manager._unregister_skills_in_dir,
+        ) as spy:
+            manager._unregister_skills(registered_skills, preset_dir)
+
+        assert spy.call_count == 1, (
+            "a physical directory shared by multiple recorded agents must "
+            "be restored exactly once, not once per agent key (#2948)"
+        )
+        (_names, called_dir, called_agent), _kwargs = spy.call_args
+        assert called_dir == shared_skills_dir
+        assert called_agent == "codex", (
+            "the currently active agent must be used as the renderer when "
+            "it shares the restored directory, not whichever agent was "
+            "recorded last (#2948)"
+        )
+
+        skill_file = shared_skills_dir / "speckit-specify" / "SKILL.md"
+        content = skill_file.read_text()
+        assert "preset:shared-dir-preset" not in content
+        assert "Core specify body" in content
 
     def test_copilot_skills_registration_restored_after_process_restart(
         self, project_dir, temp_dir

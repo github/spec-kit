@@ -752,6 +752,7 @@ class PresetManager:
             return
 
         resolver = PresetResolver(self.project_root)
+        affected_cmd_names: set = set()
         for pack_id, metadata in reversed(self.registry.list_by_priority()):
             pack_dir = self.presets_dir / pack_id
             manifest = resolver._get_manifest(pack_dir)
@@ -785,6 +786,10 @@ class PresetManager:
 
                 if updates:
                     self.registry.update(pack_id, updates)
+
+                for tmpl in manifest.templates:
+                    if tmpl.get("type") == "command":
+                        affected_cmd_names.add(tmpl["name"])
             except Exception as pack_err:
                 from .. import _print_cli_warning
 
@@ -796,6 +801,29 @@ class PresetManager:
                     continuing="Continuing with the remaining presets.",
                 )
                 continue
+
+        # _register_commands/_register_skills write each preset's own
+        # content directly and rely on reconciliation to resolve the final
+        # winner across the *entire* priority stack (including project
+        # overrides, which always outrank presets). install/remove already
+        # call this; without it here, rescaffolding on `integration use` /
+        # `switch` could leave the highest-precedence preset's raw content
+        # in place even when a project override or a higher-precedence
+        # preset should win (#2948).
+        if affected_cmd_names:
+            try:
+                self._reconcile_composed_commands(list(affected_cmd_names))
+                self._reconcile_skills(list(affected_cmd_names))
+            except Exception as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Post-rescaffold reconciliation failed for '{agent_name}': "
+                    f"{exc}. Agent command files may be stale; re-run "
+                    f"'specify integration use {agent_name}' or reinstall "
+                    f"affected presets to refresh.",
+                    stacklevel=2,
+                )
 
     def _unregister_commands(self, registered_commands: Dict[str, List[str]]) -> None:
         """Remove previously registered command files from agent directories.
@@ -1619,13 +1647,43 @@ class PresetManager:
             return
 
         if isinstance(registered_skills, dict):
+            from .. import load_init_options
+
+            init_opts = load_init_options(self.project_root)
+            active_agent = init_opts.get("ai") if isinstance(init_opts, dict) else None
+            if not isinstance(active_agent, str) or not active_agent:
+                active_agent = None
+
+            # Multiple integration keys can share the same physical
+            # directory (e.g. agy/codex/zed all resolve to
+            # ``.agents/skills``). Restoring that directory once per
+            # recorded agent would have each pass's agent-specific
+            # rendering (frontmatter, post-processing) overwrite the
+            # previous one, with whichever agent is iterated *last* silently
+            # winning regardless of which agent is actually active. Group
+            # provenance by resolved directory so each physical directory is
+            # restored exactly once, using the active agent's renderer when
+            # it shares that directory (otherwise any recorded owner,
+            # chosen deterministically).
+            groups: Dict[Path, Dict[str, Any]] = {}
             for agent_name, skill_names in registered_skills.items():
                 if not skill_names:
                     continue
                 skills_dir = self._safe_skills_dir_for_agent(agent_name)
                 if skills_dir is None:
                     continue
-                self._unregister_skills_in_dir(skill_names, skills_dir, agent_name)
+                group = groups.setdefault(skills_dir, {"agents": [], "names": []})
+                group["agents"].append(agent_name)
+                for name in skill_names:
+                    if name not in group["names"]:
+                        group["names"].append(name)
+
+            for skills_dir, group in groups.items():
+                agents = group["agents"]
+                renderer_agent = (
+                    active_agent if active_agent in agents else sorted(agents)[0]
+                )
+                self._unregister_skills_in_dir(group["names"], skills_dir, renderer_agent)
             return
 
         # Legacy flat-list format: no record of which agent directory these
