@@ -376,19 +376,14 @@ def _register_extensions_for_agent(
     """Register all enabled extensions' commands/skills for ``agent_key``.
 
     ``use`` / ``switch`` re-register enabled extensions for the agent they
-    activate; ``upgrade`` backfills them for the refreshed agent. Plain
-    ``install`` deliberately does not call this helper so adding a secondary
-    integration has no extension side effects until it is selected or upgraded.
-    See issue #2886.
+    activate (rescaffold); ``upgrade`` does so only for the *active*
+    integration. Plain ``install`` and upgrade of a non-active integration
+    deliberately skip this helper so a secondary integration has no extension
+    side effects until it is selected. See issues #2886 and #2948.
 
-    Known limitation: extension *skill* rendering is scoped to the active
-    agent (init-options track a single ``ai`` / ``ai_skills`` pair). A
-    skills-mode agent registered while it is *not* the active agent (e.g.
-    Copilot ``--skills`` registered while non-active) therefore
-    receives command files rather than skills here — matching ``extension
-    add``'s multi-agent behavior. ``use`` / ``switch`` avoid this because they
-    make the target the active agent first. Per-agent skills parity is tracked in
-    #2948.
+    Callers always pass the active agent (use/switch activate the target
+    before registering), so extension *skill* rendering — which is scoped to
+    the active ``ai`` / ``ai_skills`` init-options — matches ``agent_key``.
 
     Best-effort: never aborts the surrounding integration operation. Callers
     invoke it *after* the use/upgrade/switch transaction has committed so a

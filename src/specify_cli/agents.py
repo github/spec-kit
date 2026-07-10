@@ -932,6 +932,7 @@ class CommandRegistrar:
         link_outputs: bool = False,
         create_missing_active_skills_dir: bool = False,
         extension_id: Optional[str] = None,
+        only_agent: Optional[str] = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all detected agents in the project.
 
@@ -949,6 +950,8 @@ class CommandRegistrar:
                 skills directory) and is skipped when safe resolution or
                 creation fails.
             extension_id: Extension id when rendering extension-owned commands.
+            only_agent: If set, restrict registration to this single agent
+                while keeping all detection and recovery safeguards (#2948).
 
         Returns:
             Dictionary mapping agent names to list of registered commands
@@ -972,6 +975,8 @@ class CommandRegistrar:
                 )
         active_created_skills_dir: Optional[Path] = None
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
+            if only_agent is not None and agent_name != only_agent:
+                continue
             active_skills_output = (
                 agent_name == active_skills_agent
                 and agent_config.get("extension") == "/SKILL.md"

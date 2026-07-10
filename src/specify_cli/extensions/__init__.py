@@ -975,6 +975,64 @@ class ExtensionManager:
             return _ensure_usable(agent_skills_dir)
         return _ensure_usable(skills_dir)
 
+    def _register_commands_for_active_agent(
+        self,
+        manifest: ExtensionManifest,
+        extension_dir: Path,
+        link_outputs: bool = False,
+    ) -> Dict[str, List[str]]:
+        """Register extension commands for the active integration only.
+
+        Maintainer-requested behavior for #2948: ``extension add`` treats the
+        project as single-active — only the integration recorded in
+        init-options gets command files. Non-active integrations receive them
+        when selected via ``integration use`` / ``switch`` (rescaffold).
+
+        Projects without a recorded active integration (pre-init-options
+        layouts or direct library use) fall back to detection-based
+        registration for all agents.
+
+        Returns:
+            Mapping of agent name to registered command names, matching the
+            ``registered_commands`` registry shape.
+        """
+        from .. import load_init_options
+
+        registrar = CommandRegistrar()
+        init_options = load_init_options(self.project_root)
+        if not isinstance(init_options, dict):
+            init_options = {}
+        active_agent = init_options.get("ai")
+
+        if not active_agent or active_agent not in registrar.AGENT_CONFIGS:
+            return registrar.register_commands_for_all_agents(
+                manifest,
+                extension_dir,
+                self.project_root,
+                link_outputs=link_outputs,
+                create_missing_active_skills_dir=True,
+            )
+
+        agent_config = registrar.AGENT_CONFIGS[active_agent]
+        if (
+            is_ai_skills_enabled(init_options)
+            and agent_config.get("extension") != "/SKILL.md"
+        ):
+            # Active agent runs skills mode: extension artifacts render as
+            # skills via _register_extension_skills, not as command files.
+            return {}
+
+        # Route through the all-agents pass restricted to the active agent so
+        # detection and missing-skills-dir recovery safeguards still apply.
+        return registrar.register_commands_for_all_agents(
+            manifest,
+            extension_dir,
+            self.project_root,
+            link_outputs=link_outputs,
+            create_missing_active_skills_dir=True,
+            only_agent=active_agent,
+        )
+
     def _register_extension_skills(
         self,
         manifest: ExtensionManifest,
@@ -1404,17 +1462,11 @@ class ExtensionManager:
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
 
-        # Register commands with AI agents
+        # Register commands with AI agents (active integration only, #2948)
         registered_commands = {}
         if register_commands:
-            registrar = CommandRegistrar()
-            # Register for all detected agents
-            registered_commands = registrar.register_commands_for_all_agents(
-                manifest,
-                dest_dir,
-                self.project_root,
-                link_outputs=link_commands,
-                create_missing_active_skills_dir=True,
+            registered_commands = self._register_commands_for_active_agent(
+                manifest, dest_dir, link_outputs=link_commands
             )
 
         # Auto-register extension commands as agent skills when skills mode
@@ -1701,11 +1753,10 @@ class ExtensionManager:
         """Register installed, enabled extensions for ``agent_name``.
 
         Command-file registration is scoped to the explicit ``agent_name``
-        argument, so this method can be used after install, upgrade, or switch.
-        Extension skill rendering is still scoped to the active ``ai`` /
-        ``ai_skills`` settings in init-options, so non-active skills-mode
-        targets receive command files here. Per-agent skills parity is tracked
-        separately in #2948.
+        argument. Since #2948, callers pass the active agent only (``use`` /
+        ``switch`` activate the target first; ``upgrade`` calls it only for
+        the active integration), so extension skill rendering — scoped to the
+        active ``ai`` / ``ai_skills`` init-options — matches ``agent_name``.
         """
         if not agent_name:
             return
@@ -1765,13 +1816,11 @@ class ExtensionManager:
                 # Extension *skills* are only ever rendered for the active agent:
                 # `_register_extension_skills` resolves the skills dir and
                 # frontmatter from init-options["ai"], ignoring ``agent_name``.
-                # When this method runs for a non-active agent — as install/upgrade
-                # now do for a secondary integration (#2886) — the skills pass would
-                # re-render the *active* agent's extension skills as a side effect,
+                # Running the skills pass for a non-active agent would re-render
+                # the *active* agent's extension skills as a side effect,
                 # resurrecting skill files the user deliberately deleted. Skip it
-                # unless the target is the active agent; `switch` is unaffected
-                # because it activates the target before registering. (Rendering
-                # skills for a non-active target is tracked separately in #2948.)
+                # unless the target is the active agent (defense in depth: since
+                # #2948 callers only pass the active agent anyway).
                 if agent_name == active_agent:
                     try:
                         registered_skills = self._register_extension_skills(
@@ -1970,6 +2019,7 @@ class CommandRegistrar:
         project_root: Path,
         link_outputs: bool = False,
         create_missing_active_skills_dir: bool = False,
+        only_agent: Optional[str] = None,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
@@ -1981,6 +2031,7 @@ class CommandRegistrar:
             context_note=context_note,
             link_outputs=link_outputs,
             create_missing_active_skills_dir=create_missing_active_skills_dir,
+            only_agent=only_agent,
             extension_id=manifest.id,
         )
 

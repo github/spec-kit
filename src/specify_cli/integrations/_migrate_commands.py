@@ -491,17 +491,19 @@ def integration_upgrade(
         if stale_removed:
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
 
-    # Re-register enabled extensions for the upgraded agent so its extension
-    # commands are (re)created — including agents installed before this
-    # back-fill existed. Mirrors switch for command registration; see #2886.
-    # Done after the upgrade has fully settled (Phase 2 included) and outside
-    # the try/except above so this best-effort step cannot affect upgrade
-    # success.
-    _register_extensions_for_agent(
-        project_root,
-        key,
-        continuing="The integration was upgraded, but installed extensions may need re-registration.",
-    )
+    # Re-register enabled extensions only when upgrading the *active*
+    # integration, so its extension commands are (re)created after the
+    # upgrade settled (Phase 2 included). Done outside the try/except above
+    # so this best-effort step cannot affect upgrade success. Non-active
+    # integrations are rescaffolded by `use` / `switch` instead — the #2886
+    # back-fill for non-active agents was removed at maintainer request
+    # (#2948).
+    if key == installed_key:
+        _register_extensions_for_agent(
+            project_root,
+            key,
+            continuing="The integration was upgraded, but installed extensions may need re-registration.",
+        )
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")

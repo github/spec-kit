@@ -1371,6 +1371,53 @@ class TestIntegrationInstall:
             project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
         ).exists()
 
+    def test_extension_add_registers_active_integration_only(self, tmp_path):
+        """``extension add`` registers commands for the active integration only.
+
+        Maintainer-requested behavior for #2948: with multiple integrations
+        installed, ``extension add`` must treat the project as single-active —
+        only the current integration gets the new extension's commands.
+        Non-active integrations receive them when selected via
+        ``integration use`` / ``switch`` (rescaffold).
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "claude" in registered, "active integration gets the extension"
+        assert "codex" not in registered, (
+            "non-active integration must not be registered on add (#2948)"
+        )
+        assert (
+            project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+        # Selecting the other integration rescaffolds it with the extension.
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, "use registers extensions for the new active agent"
+        assert (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 
@@ -2492,13 +2539,13 @@ class TestIntegrationUpgrade:
             "shared .sh scripts must be executable after upgrade"
         )
 
-    def test_upgrade_backfills_extension_commands_for_agent(self, tmp_path):
-        """Upgrade re-registers enabled extensions for the upgraded agent.
+    def test_upgrade_does_not_backfill_non_active_integration(self, tmp_path):
+        """Upgrading a non-active integration must not register extensions for it.
 
-        Regression for #2886: agents installed before extension back-fill
-        existed (or whose extension artifacts went missing) should regain the
-        enabled extensions' commands on ``upgrade``, reaching parity with
-        ``switch``.
+        Maintainer-requested behavior for #2948 (reverses the #2886 upgrade
+        back-fill): non-active integrations only receive extension artifacts
+        when selected via ``integration use`` / ``switch``. Upgrade of a
+        non-active integration refreshes its own files and nothing else.
         """
         project = _init_project(tmp_path, "claude")
 
@@ -2511,21 +2558,10 @@ class TestIntegrationUpgrade:
         ])
         assert result.exit_code == 0, result.output
 
-        # Simulate a project created before the install/upgrade back-fill: drop
-        # codex's extension registration and its rendered artifacts.
         registry_path = project / ".specify" / "extensions" / ".registry"
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        registry["extensions"]["git"]["registered_commands"].pop("codex", None)
-        registry_path.write_text(json.dumps(registry), encoding="utf-8")
-        agents_skills = project / ".agents" / "skills"
-        for skill_dir in agents_skills.glob("speckit-git-*"):
-            shutil.rmtree(skill_dir)
-
-        # Precondition: codex is now missing the git extension.
         assert "codex" not in json.loads(registry_path.read_text(encoding="utf-8"))[
             "extensions"
         ]["git"]["registered_commands"]
-        assert not (agents_skills / "speckit-git-feature" / "SKILL.md").exists()
 
         result = _run_in_project(project, [
             "integration", "upgrade", "codex",
@@ -2533,12 +2569,41 @@ class TestIntegrationUpgrade:
         ])
         assert result.exit_code == 0, result.output
 
-        # Upgrade back-filled the git extension for codex.
         registered = json.loads(registry_path.read_text(encoding="utf-8"))[
             "extensions"
         ]["git"]["registered_commands"]
-        assert "codex" in registered, "upgrade should re-register extension commands (#2886)"
-        assert (agents_skills / "speckit-git-feature" / "SKILL.md").exists()
+        assert "codex" not in registered, (
+            "upgrade must not back-fill non-active integrations (#2948)"
+        )
+        assert not (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
+    def test_upgrade_active_integration_reregisters_extensions(self, tmp_path):
+        """Upgrading the active integration restores its extension commands.
+
+        The active integration keeps the re-registration pass on upgrade so
+        missing or stale extension command files are recreated (#2948 scopes
+        the pass to the active integration; #2886 introduced it).
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        cmd_file = project / ".claude" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert cmd_file.exists(), "precondition: extension command registered"
+        cmd_file.unlink()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert cmd_file.exists(), (
+            "upgrade of the active integration re-registers extension commands"
+        )
 
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.
