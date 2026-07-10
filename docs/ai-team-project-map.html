@@ -1,0 +1,2081 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Team SDD 协同开发工作空间</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #647187;
+      --line: #d9e1ec;
+      --paper: #fffefa;
+      --canvas: #e9eef5;
+      --blue: #245cc7;
+      --teal: #068476;
+      --green: #34724f;
+      --amber: #ba7a13;
+      --rose: #b73759;
+      --violet: #6752c7;
+      --slate: #2b3648;
+      --soft-blue: #eaf1ff;
+      --soft-teal: #e8f7f5;
+      --soft-green: #edf7ef;
+      --soft-amber: #fff4df;
+      --soft-rose: #fff0f4;
+      --soft-violet: #f1eeff;
+      --shadow: 0 22px 60px rgba(28, 41, 63, 0.20);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.32) 1px, transparent 1px) 0 0 / 36px 36px,
+        linear-gradient(180deg, rgba(255,255,255,0.28) 1px, transparent 1px) 0 0 / 36px 36px,
+        var(--canvas);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .deck {
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      place-items: center;
+      padding: 28px 28px 18px;
+      gap: 14px;
+    }
+
+    .stage {
+      width: min(94vw, calc((100vh - 118px) * 4 / 3));
+      aspect-ratio: 4 / 3;
+      position: relative;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      overflow: hidden;
+      border: 1px solid rgba(60, 74, 96, 0.18);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+      padding: clamp(28px, 3.8vw, 46px);
+    }
+
+    .slide.active {
+      display: block;
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 10px;
+      background: linear-gradient(90deg, var(--blue), var(--teal), var(--amber), var(--rose), var(--violet));
+    }
+
+    .slide::after {
+      content: attr(data-kicker);
+      position: absolute;
+      right: 28px;
+      bottom: 22px;
+      color: #9aa6b8;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .slide-inner {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: clamp(12px, 1.5vw, 20px);
+    }
+
+    .slide-title {
+      max-width: 82%;
+    }
+
+    .slide-title.wide {
+      max-width: 96%;
+    }
+
+    .eyebrow {
+      margin-bottom: 8px;
+      color: var(--blue);
+      font-size: clamp(13px, 1.45vw, 16px);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(32px, 5.4vw, 60px);
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: clamp(26px, 3.8vw, 44px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      font-size: clamp(17px, 2vw, 22px);
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin-top: 16px;
+      max-width: 760px;
+      color: #344158;
+      font-size: clamp(16px, 1.75vw, 21px);
+      line-height: 1.48;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: clamp(13px, 1.35vw, 16px);
+    }
+
+    .grid {
+      display: grid;
+      gap: clamp(12px, 1.4vw, 18px);
+    }
+
+    .two {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 0.95fr 1.05fr;
+      gap: clamp(22px, 3vw, 44px);
+      align-items: center;
+      min-height: 0;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: clamp(12px, 1.4vw, 18px);
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .panel.blue { background: var(--soft-blue); border-color: #bbcdf2; }
+    .panel.teal { background: var(--soft-teal); border-color: #a9d8d1; }
+    .panel.green { background: var(--soft-green); border-color: #b9d9c3; }
+    .panel.amber { background: var(--soft-amber); border-color: #efd4a2; }
+    .panel.rose { background: var(--soft-rose); border-color: #efbdca; }
+    .panel.violet { background: var(--soft-violet); border-color: #c9c0f2; }
+
+    .panel h3 {
+      margin-bottom: 8px;
+    }
+
+    .panel p,
+    .panel li {
+      color: #40506a;
+      font-size: clamp(13px, 1.32vw, 16px);
+    }
+
+    .facts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .facts.two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .fact {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px 11px;
+      min-width: 0;
+    }
+
+    .fact b {
+      display: block;
+      margin-bottom: 4px;
+      color: #2d3b53;
+      font-size: clamp(12px, 1.22vw, 14px);
+    }
+
+    .fact span {
+      display: block;
+      color: var(--muted);
+      font-size: clamp(10px, 1.05vw, 12px);
+      line-height: 1.35;
+    }
+
+    .read-order {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .read-order div {
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 8px 10px;
+      color: #41516a;
+      font-size: clamp(11px, 1.08vw, 13px);
+    }
+
+    .read-order b {
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      color: #fff;
+      background: var(--blue);
+      font-size: 11px;
+    }
+
+    ul {
+      margin: 10px 0 0;
+      padding-left: 18px;
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 23px;
+      padding: 2px 8px;
+      margin-bottom: 10px;
+      border-radius: 999px;
+      color: #fff;
+      background: var(--blue);
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .tag.teal { background: var(--teal); }
+    .tag.green { background: var(--green); }
+    .tag.amber { background: var(--amber); }
+    .tag.rose { background: var(--rose); }
+    .tag.violet { background: var(--violet); }
+    .tag.slate { background: var(--slate); }
+
+    .mono {
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 0.92em;
+      color: #24324a;
+      overflow-wrap: anywhere;
+    }
+
+    .principles {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .principle {
+      min-height: 76px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 13px;
+    }
+
+    .principle b {
+      display: block;
+      font-size: clamp(14px, 1.6vw, 18px);
+      margin-bottom: 5px;
+    }
+
+    .principle span {
+      color: var(--muted);
+      font-size: clamp(11px, 1.2vw, 14px);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .flow.four-step {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .flow.five-step {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .step {
+      position: relative;
+      min-height: 94px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 13px;
+    }
+
+    .step::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -10px;
+      width: 10px;
+      border-top: 2px solid #a8b5c8;
+    }
+
+    .step:last-child::after {
+      display: none;
+    }
+
+    .num {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 999px;
+      margin-bottom: 8px;
+      color: #fff;
+      background: var(--blue);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .num.teal { background: var(--teal); }
+    .num.green { background: var(--green); }
+    .num.amber { background: var(--amber); }
+    .num.rose { background: var(--rose); }
+    .num.violet { background: var(--violet); }
+
+    .step b {
+      display: block;
+      margin-bottom: 6px;
+      font-size: clamp(13px, 1.45vw, 16px);
+    }
+
+    .step small {
+      display: block;
+      color: var(--muted);
+      font-size: clamp(11px, 1.15vw, 13px);
+      line-height: 1.35;
+    }
+
+    .entry-lanes {
+      display: grid;
+      gap: 8px;
+    }
+
+    .entry-lane {
+      display: grid;
+      grid-template-columns: 150px 1fr 22px 1fr 22px 1fr 22px 1fr;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    .entry-label,
+    .entry-node {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 9px 10px;
+      min-width: 0;
+    }
+
+    .entry-label {
+      display: grid;
+      align-content: center;
+      gap: 5px;
+      font-weight: 850;
+    }
+
+    .entry-label small,
+    .entry-node small {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.28;
+    }
+
+    .entry-node b {
+      display: block;
+      margin-bottom: 3px;
+      color: #172033;
+      font-size: 13px;
+      line-height: 1.22;
+    }
+
+    .entry-arrow {
+      display: grid;
+      place-items: center;
+      color: #1d4ed8;
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    .entry-lane.feature .entry-label,
+    .entry-lane.feature .entry-node {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+    }
+
+    .entry-lane.project .entry-label,
+    .entry-lane.project .entry-node {
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+    }
+
+    .entry-lane.bug .entry-label,
+    .entry-lane.bug .entry-node {
+      background: #fff1f2;
+      border-color: #fecdd3;
+    }
+
+    .entry-note {
+      margin-top: 10px;
+      border: 1px solid #79c5b7;
+      border-radius: 8px;
+      background: #eefbf8;
+      padding: 10px 14px;
+    }
+
+    .entry-note h3 {
+      margin-bottom: 4px;
+      font-size: 18px;
+    }
+
+    .entry-note p {
+      color: #40506a;
+      font-size: 13px;
+      line-height: 1.34;
+    }
+
+    .guardrail-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .guardrail-strip.compact {
+      margin-top: 10px;
+    }
+
+    .guardrail {
+      border: 1px solid #c7d2fe;
+      border-radius: 8px;
+      background: #f8fbff;
+      padding: 8px 9px;
+      min-width: 0;
+    }
+
+    .guardrail b {
+      display: block;
+      margin-bottom: 2px;
+      color: #1f2937;
+      font-size: 12.5px;
+      line-height: 1.2;
+    }
+
+    .guardrail span {
+      display: block;
+      color: #40506a;
+      font-size: 10.5px;
+      line-height: 1.25;
+    }
+
+    .repo-map {
+      display: grid;
+      grid-template-columns: 1fr 0.9fr 1fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .repo-card {
+      min-height: 240px;
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 20px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+    }
+
+    .repo-card h3 {
+      font-size: clamp(18px, 2.2vw, 26px);
+    }
+
+    .repo-card.internal {
+      border-color: #df9aae;
+      background: var(--soft-rose);
+    }
+
+    .repo-card.coding {
+      border-color: #9ac7ad;
+      background: var(--soft-green);
+    }
+
+    .bridge {
+      align-self: center;
+      display: grid;
+      gap: 12px;
+      text-align: center;
+    }
+
+    .arrow-box {
+      border: 1px solid #c2ccda;
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+      color: #35445e;
+      font-weight: 750;
+    }
+
+    .arrow {
+      color: var(--blue);
+      font-size: clamp(34px, 5vw, 56px);
+      line-height: 1;
+    }
+
+    .role-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .role {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 20px;
+      min-height: 292px;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 12px;
+    }
+
+    .role .phase {
+      color: var(--muted);
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-size: 12px;
+    }
+
+    .doc-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .doc {
+      padding: 6px 9px;
+      border: 1px solid #c6d1e1;
+      border-radius: 8px;
+      background: #f7f9fc;
+      color: #344158;
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .tree {
+      margin: 0;
+      max-height: 100%;
+      overflow: hidden;
+      border: 1px solid #28354a;
+      border-radius: 8px;
+      background: #111827;
+      color: #dce8f5;
+      padding: 16px;
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: clamp(11px, 1.15vw, 14px);
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    .tree.dense {
+      padding: 12px;
+      font-size: clamp(9px, 0.9vw, 12px);
+      line-height: 1.34;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 8px;
+      font-size: clamp(12px, 1.25vw, 15px);
+    }
+
+    .matrix th,
+    .matrix td {
+      border: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .matrix th {
+      background: #eef3fa;
+      color: #314059;
+    }
+
+    .matrix td {
+      background: #fff;
+      color: #40506a;
+    }
+
+    .matrix.compact th,
+    .matrix.compact td {
+      padding: 7px 8px;
+      font-size: clamp(10px, 1.08vw, 13px);
+      line-height: 1.34;
+    }
+
+    .privacy-flow-image {
+      display: block;
+      width: 100%;
+      max-height: 340px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .graph-demo {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      align-items: center;
+      margin-top: 16px;
+    }
+
+    .graph-node {
+      min-height: 76px;
+      border: 1px solid #b9c8df;
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      text-align: center;
+      display: grid;
+      place-items: center;
+      position: relative;
+      color: #33425a;
+      font-size: clamp(10px, 1.05vw, 13px);
+      font-weight: 750;
+    }
+
+    .graph-node::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -10px;
+      width: 10px;
+      border-top: 2px solid #8da4c2;
+    }
+
+    .graph-node:last-child::after {
+      display: none;
+    }
+
+    .big-quote {
+      padding: 22px;
+      border-left: 6px solid var(--teal);
+      background: var(--soft-teal);
+      border-radius: 0 8px 8px 0;
+      color: #244a44;
+      font-size: clamp(19px, 2.25vw, 28px);
+      line-height: 1.35;
+      font-weight: 750;
+    }
+
+    .tool-stack {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .tool {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+      font-weight: 850;
+    }
+
+    .tool b {
+      display: block;
+      margin-bottom: 8px;
+      color: #172033;
+      font-size: 16px;
+    }
+
+    .tool span {
+      display: block;
+      margin-bottom: 6px;
+      color: #2757bf;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .tool small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .tool-stack.compact .tool {
+      padding: 8px 10px;
+      min-height: 66px;
+    }
+
+    .tool-stack.compact .tool b {
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .tool-stack.compact .tool span {
+      margin-bottom: 2px;
+      font-size: 10px;
+    }
+
+    .tool-stack.compact .tool small {
+      font-size: 10px;
+      line-height: 1.18;
+    }
+
+    .unify-band {
+      display: grid;
+      grid-template-columns: 1.1fr auto 1fr;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+      border: 1px solid #79c5b7;
+      border-radius: 8px;
+      background: #eefbf8;
+      padding: 10px 14px;
+    }
+
+    .unify-band h3 {
+      margin-bottom: 3px;
+      font-size: 18px;
+    }
+
+    .unify-band p {
+      color: #40506a;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    .unify-arrow {
+      color: #0f8a79;
+      font-size: 28px;
+      font-weight: 900;
+    }
+
+    .install-band {
+      display: grid;
+      grid-template-columns: 1.03fr 1fr;
+      align-items: stretch;
+      gap: 12px;
+      margin-top: 10px;
+      border: 1px solid #a9bff3;
+      border-radius: 8px;
+      background: #f5f8ff;
+      padding: 10px 14px;
+    }
+
+    .install-band h3 {
+      margin-bottom: 4px;
+      font-size: 18px;
+    }
+
+    .install-band p,
+    .install-band li {
+      color: #40506a;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    .install-band ul {
+      margin-top: 0;
+    }
+
+    .setup-flow {
+      display: grid;
+      gap: 6px;
+      margin-top: 7px;
+    }
+
+    .setup-step {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 7px;
+      align-items: start;
+      border: 1px solid #cfe0ff;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 6px 8px;
+    }
+
+    .setup-step b {
+      display: grid;
+      place-items: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: #2563eb;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .setup-step strong {
+      display: inline;
+      margin-right: 6px;
+      color: #1f2937;
+      font-size: 13px;
+    }
+
+    .setup-step span {
+      color: #40506a;
+      font-size: 12.5px;
+      line-height: 1.28;
+    }
+
+    .install-notes {
+      display: grid;
+      gap: 7px;
+    }
+
+    .install-notes ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .command-line {
+      display: block;
+      border: 1px solid #28354a;
+      border-radius: 8px;
+      background: #111827;
+      color: #dce8f5;
+      padding: 12px 14px;
+      font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: clamp(11px, 1.1vw, 13px);
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .example-stack {
+      display: grid;
+      gap: 9px;
+    }
+
+    .example-label {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      margin-bottom: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--blue);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: 0.03em;
+    }
+
+    .example-label.note {
+      background: var(--amber);
+    }
+
+    .example-label.continue {
+      background: var(--teal);
+    }
+
+    .mini-note {
+      border: 1px solid #efd4a2;
+      border-radius: 8px;
+      background: #fff9ec;
+      padding: 9px 10px;
+      color: #4f3b18;
+      font-size: clamp(11px, 1.05vw, 13px);
+      line-height: 1.38;
+    }
+
+    .mini-note b {
+      display: block;
+      margin-bottom: 3px;
+      color: #7a5311;
+    }
+
+    .controls {
+      width: min(94vw, calc((100vh - 118px) * 4 / 3));
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .nav-button {
+      width: 44px;
+      height: 38px;
+      border: 1px solid #bdc8d8;
+      border-radius: 8px;
+      background: #fff;
+      color: var(--slate);
+      cursor: pointer;
+      font-weight: 850;
+      box-shadow: 0 4px 14px rgba(28, 41, 63, 0.10);
+    }
+
+    .nav-button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .progress {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .bar {
+      position: relative;
+      height: 8px;
+      flex: 1;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #cdd7e6;
+    }
+
+    .bar-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--blue), var(--teal));
+      transition: width 160ms ease;
+    }
+
+    .counter {
+      min-width: 64px;
+      color: #38475f;
+      font-size: 13px;
+      font-weight: 850;
+      text-align: right;
+    }
+
+    .dots {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border: 0;
+      border-radius: 999px;
+      background: #aeb9c9;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .dot.active {
+      width: 28px;
+      background: var(--blue);
+    }
+
+    @media screen and (max-width: 980px) {
+      body {
+        overflow: auto;
+      }
+
+      .deck {
+        padding: 14px;
+      }
+
+      .stage,
+      .controls {
+        width: min(96vw, 760px);
+      }
+
+      .slide {
+        padding: 28px;
+      }
+
+      .two,
+      .three,
+      .four,
+      .split,
+      .repo-map,
+      .role-grid,
+      .tool-stack {
+        grid-template-columns: 1fr;
+      }
+
+      .slide-title,
+      .slide-title.wide {
+        max-width: 100%;
+      }
+
+      .flow,
+      .flow.four-step {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .step::after {
+        display: none;
+      }
+
+      .principles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .facts,
+      .facts.two-col {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      @page {
+        size: 10in 7.5in;
+        margin: 0;
+      }
+
+      * {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+
+      body {
+        overflow: visible;
+        background: #fff;
+      }
+
+      .deck {
+        display: block;
+        padding: 0;
+      }
+
+      .stage {
+        width: auto;
+        aspect-ratio: auto;
+      }
+
+      .slide {
+        position: relative;
+        display: block !important;
+        width: 10in;
+        height: 7.5in;
+        margin: 0 auto;
+        page-break-after: always;
+        box-shadow: none;
+      }
+
+      .controls {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="AI Team SDD slide deck">
+    <div class="stage">
+      <section class="slide active" data-kicker="AI Team SDD">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">AI Team Coding Overview</div>
+            <h1>AI Coding 团队协作方式</h1>
+            <p class="lead">
+              这套材料解释：当一个团队用 AI 写代码时，怎样让需求说得清楚、代码改得稳、
+              结果能验证、出问题能追责和复盘。
+            </p>
+          </div>
+          <div>
+            <div class="grid two">
+              <div class="panel teal">
+                <span class="tag teal">为什么用 AI Coding</span>
+                <h3>让开发速度和理解速度一起提升</h3>
+                <ul>
+                  <li>把重复的代码、测试、文档整理交给工具处理。</li>
+                  <li>借助 Code Graph 和上下文包，更快读懂陌生代码。</li>
+                  <li>把“需求 -> 计划 -> 任务 -> 实现 -> 证据”的链路缩短。</li>
+                </ul>
+              </div>
+              <div class="panel amber">
+                <span class="tag amber">为什么需要团队方法</span>
+                <h3>实现成本降低，协作风险上升</h3>
+                <ul>
+                  <li>每个人都能用 AI 快速实现功能，也更容易绕过既有架构。</li>
+                  <li>没有统一流程时，改动范围会失控，公共接口和配置语义被顺手修改。</li>
+                  <li>不同人用不同工具时，可能没看全代码而重复造轮子；工具也可能忽略团队规则，导致架构腐化。</li>
+                </ul>
+              </div>
+            </div>
+            <p class="lead" style="max-width:940px;margin-top:20px">
+              这套方法面向所有参与者：业务、产品、测试、项目经理、架构师、开发和运维都能各看各的部分。
+            </p>
+            <div class="facts">
+              <div class="fact"><b>安装到哪里</b><span>真实 coding repository 的 <span class="mono">.specify/</span>、AI 工具 rules 和 workflow。</span></div>
+              <div class="fact"><b>约束谁</b><span>Codex、Claude Code、Cursor Agent、Trae 等 AI Coding 工具。</span></div>
+              <div class="fact"><b>留下什么</b><span>spec、plan、tasks、work context、code graph、evidence 和复盘结果。</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Why It Matters">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Problems and Safeguards</div>
+            <h2>无限制 AI Coding 的坑，以及这套系统怎么兜住</h2>
+            <p class="lead">
+              左边是直接让 AI 开工时常见的问题；右边是 AI Team SDD 给出的对应保护。
+            </p>
+          </div>
+          <div class="grid two">
+            <div class="panel rose">
+              <span class="tag rose">× 无限制使用</span>
+              <h3>问题和例子</h3>
+              <ul>
+                <li><b>需求没说清：</b>“上传慢”可能是 bug、性能需求，也可能是体验优化。</li>
+                <li><b>影响范围不清：</b>AI 为了让测试通过，顺手改了公共配置语义。</li>
+                <li><b>上下文丢失：</b>隔天换工具继续，没人知道上次为什么这么改。</li>
+                <li><b>验证不足：</b>只跑 happy path，没有失败路径和回滚说明。</li>
+              </ul>
+            </div>
+            <div class="panel green">
+              <span class="tag green">✓ 当前系统</span>
+              <h3>解决方法和例子</h3>
+              <ul>
+                <li><b>先分类：</b>AI 先判断 bug / 新特性 / 支持问题，并生成 issue 草案。</li>
+                <li><b>先看影响：</b>用 Code Graph 看调用链，再决定能不能改接口或跨模块。</li>
+                <li><b>留下工作包：</b>用 Work Context 记录停在哪、下一步读什么。</li>
+                <li><b>留下证据：</b>Evidence Board 写清测试、跳过项、风险和回滚。</li>
+              </ul>
+            </div>
+          </div>
+          <div class="panel amber" style="margin-top:18px">
+            <h3>关键是让保护自动生效</h3>
+            <p>
+              如果规则只写在外部文档里，AI 工具很容易漏读。把规则安装到真实 coding 仓之后，
+              无论团队成员使用 Codex、Claude Code、Cursor Agent 还是 Trae，
+              每次任务启动都会带上分类、影响分析、工作上下文和证据要求。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Tool Access">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">AI Coding Tool Access</div>
+            <h2>落地第一步：把团队流程装进真实 coding 仓</h2>
+            <p class="lead">
+              让每个 AI Coding 工具从同一个项目入口开始工作：先读取团队规则，
+              再进入相同的 skills、workflow 和证据流程。
+            </p>
+          </div>
+          <div class="tool-stack compact">
+            <div class="tool">
+              <b>Codex</b>
+              <span class="mono">--integration codex</span>
+              <small>生成 <span class="mono">.agents/skills/</span></small>
+            </div>
+            <div class="tool">
+              <b>Claude Code</b>
+              <span class="mono">--integration claude</span>
+              <small>生成 <span class="mono">.claude/skills/</span></small>
+            </div>
+            <div class="tool">
+              <b>Cursor Agent</b>
+              <span class="mono">--integration cursor-agent</span>
+              <small>生成 <span class="mono">.cursor/skills/</span></small>
+            </div>
+            <div class="tool">
+              <b>Trae</b>
+              <span class="mono">--integration trae</span>
+              <small>生成 <span class="mono">.trae/skills/</span></small>
+            </div>
+          </div>
+          <div class="unify-band">
+            <div>
+              <h3>统一入口</h3>
+              <p>团队成员可以继续使用各自熟悉的 AI Coding 工具。</p>
+            </div>
+            <div class="unify-arrow">→</div>
+            <div>
+              <h3>统一表现</h3>
+              <p>进入同一套分类、影响分析、Work Context、SDD workflow 和 Evidence Board。</p>
+            </div>
+          </div>
+          <div class="install-band">
+            <div>
+              <h3>自动接入，不是手工逐条执行</h3>
+              <p>使用者只需要选择目标 coding 仓和 AI Coding 工具；接入脚本或平台集成会在背后完成安装。</p>
+              <div class="setup-flow">
+                <div class="setup-step">
+                  <b>1</b>
+                  <span><strong>选择目标</strong>选择 coding 仓，以及 Codex、Claude Code、Cursor Agent 或 Trae。</span>
+                </div>
+                <div class="setup-step">
+                  <b>2</b>
+                  <span><strong>自动安装</strong>平台调用统一接入脚本，生成工具需要读取的入口和技能目录。</span>
+                </div>
+                <div class="setup-step">
+                  <b>3</b>
+                  <span><strong>后续生效</strong>每次任务开始时，AI 工具都会先读到同一套团队规则和 workflow。</span>
+                </div>
+              </div>
+            </div>
+            <div class="install-notes">
+              <h3>系统自动完成</h3>
+              <ul>
+                <li>安装 <span class="mono">ai-team</span> 与 <span class="mono">bug</span> 能力。</li>
+                <li>注册 <span class="mono">ai-team-sdd</span> 与 <span class="mono">ai-team-bugfix</span> workflow。</li>
+                <li>合并项目已有规则，生成 Codex、Claude Code、Cursor Agent、Trae 各自会读取的入口。</li>
+                <li>记录接入配置，后续任务自动带上分类、影响分析、Work Context 和证据要求。</li>
+              </ul>
+              <p>最终会写入 <span class="mono">.specify/</span> 和对应工具的 skills 目录。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Chat First">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Natural Language Entry</div>
+            <h2>一句话启动：没有问题单也能开始</h2>
+          </div>
+          <div class="grid two">
+            <div class="panel teal">
+              <span class="tag teal">Chat First</span>
+              <h3>从目标或现象开始</h3>
+              <div class="example-stack">
+                <div>
+                  <div class="example-label">直接开始时的输入</div>
+                  <code class="command-line">我们希望让管理员可以查看大文件上传失败的原因，请按团队 AI Coding 流程帮我处理。</code>
+                </div>
+                <div>
+                  <div class="example-label continue">修 Bug 时的输入</div>
+                  <code class="command-line">用户反馈“大文件上传经常超时”，帮我先整理问题单，再判断影响范围。</code>
+                </div>
+                <div class="mini-note">
+                  <b>第一步不是改代码</b>
+                  先把一句话整理成工作项：这是 bug、新特性，还是需要补充信息的支持问题；
+                  如果还没有问题单，AI 只生成草稿并等待人确认。
+                </div>
+              </div>
+            </div>
+            <div class="panel amber">
+              <span class="tag amber">Before Coding</span>
+              <h3>先建立工作锚点</h3>
+              <ul>
+                <li>先判断任务类型：bug、新特性，还是支持问题</li>
+                <li>没有现成问题单（issue）时，AI 先写一份草稿</li>
+                <li>把现象、目标、验收点和已知影响写清楚</li>
+                <li>人确认后，再创建 Work Context Package 并进入 SDD</li>
+              </ul>
+            </div>
+          </div>
+          <div class="facts">
+            <div class="fact"><b>没有问题单时</b><span>先让 AI 起草问题单，避免一句话直接变代码。</span></div>
+            <div class="fact"><b>已有工作项时</b><span>把 issue 或任务链接交给 AI，继续已有需求或 bugfix。</span></div>
+            <div class="fact"><b>结束前</b><span>必须有证据、跳过项、边界说明和可回滚说明。</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Who Uses It">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">User Perspectives</div>
+            <h2>不同参与者看到的主流程</h2>
+            <p class="lead">
+              角色之间保持上下文隔离：不同人、不同 AI 会话不默认共享聊天历史，
+              只通过 issue 或文档交接，方便后续权责划分和团队协作。
+            </p>
+          </div>
+          <div class="grid four">
+            <div class="panel blue">
+              <span class="tag">业务 / 产品</span>
+              <h3>从“我要解决什么”开始</h3>
+              <p>输出问题单或需求草案：用户、场景、现象、目标和验收点。</p>
+            </div>
+            <div class="panel amber">
+              <span class="tag amber">维护者 / 技术委员会</span>
+              <h3>从“这件事要不要做”开始</h3>
+              <p>输出决策记录：是否接受、优先级、范围边界、版本排期和负责人。</p>
+            </div>
+            <div class="panel teal">
+              <span class="tag teal">架构 / 模块负责人</span>
+              <h3>从“怎么做才稳”开始</h3>
+              <p>输出 plan 和影响分析：code graph、接口边界、跨模块风险。</p>
+            </div>
+            <div class="panel green">
+              <span class="tag green">开发 / 测试</span>
+              <h3>从“怎么实现和验证”开始</h3>
+              <p>输出实现和证据：tasks、代码、自测结果、证据板和回滚说明。</p>
+            </div>
+          </div>
+          <div class="panel violet" style="margin-top:18px">
+            <h3>共同主线：用 issue / 文档交接，不用聊天记忆交接</h3>
+            <p>
+              需求或问题 -> <span class="mono">issue / spec</span> -> 决策记录 -> <span class="mono">plan</span> 和
+              code graph 影响分析 -> <span class="mono">tasks</span> -> 代码、测试和 evidence。
+              下一角色优先读取这些 issue 和文档，而不是依赖上一轮 AI 对话。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="First User Journey">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Entry Paths</div>
+            <h2>从不同入口进入，大致主流程是什么</h2>
+          </div>
+          <div class="entry-lanes">
+            <div class="entry-lane feature">
+              <div class="entry-label">
+                <span class="tag">公开新需求</span>
+                <small>业务 / 产品提出</small>
+              </div>
+              <div class="entry-node"><b>一句话目标</b><small>用户、场景、期望结果</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>问题单草稿</b><small>AI 整理，维护者确认</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>SDD 文档</b><small>spec、plan、tasks</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>实现与证据</b><small>代码、自测、Evidence</small></div>
+            </div>
+            <div class="entry-lane project">
+              <div class="entry-label">
+                <span class="tag green">从零新项目</span>
+                <small>更靠近新需求</small>
+              </div>
+              <div class="entry-node"><b>项目目标</b><small>产品定位、边界、非目标</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>骨架计划</b><small>目录、模块、最小依赖</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>复用 SDD</b><small>spec、plan、tasks</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>薄切片验证</b><small>running spine 先跑通</small></div>
+            </div>
+            <div class="entry-lane bug">
+              <div class="entry-label">
+                <span class="tag rose">线上 Bug</span>
+                <small>测试 / 客服 / 运维提出</small>
+              </div>
+              <div class="entry-node"><b>现象与影响</b><small>用户影响、日志、复现</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>Bug 问题单</b><small>AI 补齐信息，确认优先级</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>影响分析</b><small>根因假设、code graph</small></div>
+              <div class="entry-arrow">→</div>
+              <div class="entry-node"><b>修复与证据</b><small>修复、自测、回滚说明</small></div>
+            </div>
+          </div>
+          <div class="entry-note">
+            <h3>公开新需求和线上 Bug 是并行入口；新项目复用大部分新需求流程</h3>
+            <p>
+              三条线都不会直接让 AI 改代码。公开新需求和线上 Bug 在时间线上并行推进；
+              从零新项目更接近“新需求”，但要先多确认项目目标、开发边界、最小依赖和 running spine。
+              已有工作项则从对应阶段恢复上下文继续推进。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Glossary">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Plain Glossary</div>
+            <h2>几个关键词，用白话解释</h2>
+          </div>
+          <table class="matrix compact">
+            <thead>
+              <tr>
+                <th>词</th>
+                <th>白话含义</th>
+                <th>为什么重要</th>
+                <th>是否进 git</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">coding repository</td>
+                <td>真正放代码和公开开发材料的项目仓。</td>
+                <td>开发、验证、评审和合入都发生在这里。</td>
+                <td>本身就是 git 仓。</td>
+              </tr>
+              <tr>
+                <td class="mono">Work Item</td>
+                <td>团队要处理的一件事，通常来自 issue。</td>
+                <td>让 AI 和人知道这次到底在解决哪个问题。</td>
+                <td>通常留在 issue 系统，不写成本地文件。</td>
+              </tr>
+              <tr>
+                <td class="mono">specs/</td>
+                <td>某个需求的“需求说明书、设计计划、任务清单”。</td>
+                <td>让 AI 和人围绕同一份书面材料协作。</td>
+                <td>公共安全内容进 git。</td>
+              </tr>
+              <tr>
+                <td class="mono">.specify/</td>
+                <td>项目里的“AI 协作工作台”和流程配置。</td>
+                <td>保存工具、工作流、团队规则、上下文和证据。</td>
+                <td>共享规则进 git；缓存、密钥、本地覆盖不进。</td>
+              </tr>
+              <tr>
+                <td class="mono">Work Context</td>
+                <td>这次任务的“工作包”。</td>
+                <td>让任务中断后还能接上，不依赖聊天记录。</td>
+                <td>可共享摘要可进 git；私有原文不进。</td>
+              </tr>
+              <tr>
+                <td class="mono">Evidence Board</td>
+                <td>做完后的“验收证据板”。</td>
+                <td>说明改了什么、测了什么、没覆盖什么、怎么回滚。</td>
+                <td>随 PR 或 release 进 git。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Project Logic">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Overall Logic</div>
+            <h2>整个项目的基本逻辑</h2>
+            <p class="lead">
+              AI Team SDD 提供一套可安装到真实代码仓里的协作框架，
+              把需求入口、角色分工、架构影响、实现验证和经验复盘串成闭环。
+            </p>
+          </div>
+          <div>
+            <div class="flow">
+              <div class="step"><span class="num">1</span><b>工具分发</b><small>Spec Kit 独立发行版，提供 extension、preset、workflow 和文档</small></div>
+              <div class="step"><span class="num teal">2</span><b>安装到项目</b><small>真实 coding 仓通过 specify init / extension add 接入能力</small></div>
+              <div class="step"><span class="num green">3</span><b>需求进入</b><small>原始需求、线上现象或工作项先变成 issue / spec 锚点</small></div>
+              <div class="step"><span class="num amber">4</span><b>SDD 执行</b><small>Work Context 记录阶段，角色之间靠 issue / 文档交接</small></div>
+              <div class="step"><span class="num rose">5</span><b>证据合入</b><small>Code Graph、self-test、Evidence Board、人工 gate 控制质量</small></div>
+              <div class="step"><span class="num violet">6</span><b>失败进化</b><small>评审、测试、事故和 AI 错误沉淀为规则、技能、知识或测试</small></div>
+            </div>
+            <div class="grid three" style="margin-top:28px">
+              <div class="panel blue">
+                <span class="tag">提供什么</span>
+                <h3>一组可安装能力</h3>
+                <p><span class="mono">extensions/ai-team/</span> 提供命令、hook、脚本和知识文档；<span class="mono">workflows/</span> 提供可恢复流程。</p>
+              </div>
+              <div class="panel teal">
+                <span class="tag teal">约束什么</span>
+                <h3>AI 的行动边界</h3>
+                <p>AI 先确认原始需求或 issue、<span class="mono">work_slug</span>、影响范围和必要证据，再进入实现。</p>
+              </div>
+              <div class="panel green">
+                <span class="tag green">产出什么</span>
+                <h3>可审计的工程轨迹</h3>
+                <p>每个 work item 都能回看：需求怎么来、计划谁批准、改了哪里、测了什么、风险如何回滚。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Problem">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Why</div>
+            <h2>前面看到的问题，后面用四个控制点兜住</h2>
+            <p class="lead">
+              这一页不是重新讲风险，而是把前面的 AI Coding 痛点和后面的 SDD、Code Graph、
+              Work Context、Evidence 串起来。
+            </p>
+          </div>
+          <div class="grid four">
+            <div class="panel blue">
+              <span class="tag">入口控制</span>
+              <h3>一句话不能直接变代码</h3>
+              <p>自然语言先变成问题单、spec 或任务锚点，再进入后续流程。</p>
+            </div>
+            <div class="panel teal">
+              <span class="tag teal">上下文控制</span>
+              <h3>中断后不能靠记忆接续</h3>
+              <p>Work Context 记录当前阶段、下一步、风险和交接摘要。</p>
+            </div>
+            <div class="panel amber">
+              <span class="tag amber">架构控制</span>
+              <h3>先看影响范围再改代码</h3>
+              <p>Code Graph 和 impact gate 让 AI 先看调用链、接口和模块边界。</p>
+            </div>
+            <div class="panel green">
+              <span class="tag green">质量控制</span>
+              <h3>用证据宣布完成</h3>
+              <p>Evidence Board 记录测试、跳过项、风险、回滚和失败复盘。</p>
+            </div>
+          </div>
+          <div class="panel violet" style="margin-top:18px">
+            <h3>后面的页面怎么读</h3>
+            <p>
+              先看下一页的 SDD 链路，再看后续的新特性和 bugfix 两条执行路径；
+              Work Context、Code Graph、控制面和 Evidence 会在后面展开，但它们已经嵌入每条流程。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Repository Model">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Repository Boundary</div>
+            <h2>SDD 链路：从一句原始需求到可验证代码</h2>
+            <p class="lead">
+              issue 不是最早的起点。很多工作先来自一句自然语言，再被整理成问题单和 SDD 文档。
+            </p>
+          </div>
+          <div class="flow five-step">
+            <div class="step"><span class="num">1</span><b>原始需求</b><small>自然语言：管理员想知道大文件上传为什么失败。</small></div>
+            <div class="step"><span class="num teal">2</span><b>Issue</b><small>整理成问题单：目标、用户、验收点、优先级。</small></div>
+            <div class="step"><span class="num green">3</span><b>Spec / Plan / Tasks</b><small>写清需求、影响分析、任务拆分和人工 gate。</small></div>
+            <div class="step"><span class="num amber">4</span><b>Code / Self-Test</b><small>实现上传失败原因展示，并跑最小自测。</small></div>
+            <div class="step"><span class="num rose">5</span><b>Evidence / PR</b><small>提交证据板：改动范围、命令、跳过项、回滚。</small></div>
+          </div>
+          <div class="guardrail-strip compact">
+            <div class="guardrail"><b>Work Context</b><span>记录阶段、恢复点和下一步。</span></div>
+            <div class="guardrail"><b>Code Graph</b><span>先看影响范围和复用候选。</span></div>
+            <div class="guardrail"><b>Human Gate</b><span>边界、架构和风险由人确认。</span></div>
+            <div class="guardrail"><b>Evidence Board</b><span>用测试、跳过项和回滚说话。</span></div>
+          </div>
+          <table class="matrix compact" style="margin-top:16px">
+            <thead>
+              <tr>
+                <th>场景</th>
+                <th>从哪里开始</th>
+                <th>AI 后续读取什么</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>修复 Bug</td>
+                <td>线上现象或 <span class="mono">type/bug</span> 问题单</td>
+                <td>用户影响、复现信息、根因假设、code graph impact</td>
+              </tr>
+              <tr>
+                <td>新特性</td>
+                <td>原始需求或 <span class="mono">type/feature</span> 问题单</td>
+                <td>目标、场景、验收意图、spec/plan/tasks</td>
+              </tr>
+              <tr>
+                <td>从零新项目</td>
+                <td>项目目标、边界和项目启动任务</td>
+                <td>非目标、最小依赖、骨架计划、running spine</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Feature Flow">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Feature / New Project</div>
+            <h2>新特性流程：谁负责哪一步，产出什么</h2>
+            <p class="lead">
+              样例串联：管理员希望看到“大文件上传失败原因”。新项目也复用这条主线，
+              只是前面多做项目目标、边界和 running spine。
+            </p>
+          </div>
+          <div class="flow">
+            <div class="step"><span class="num">1</span><b>原始需求</b><small>业务/产品：管理员要看上传失败原因。</small></div>
+            <div class="step"><span class="num teal">2</span><b>Specify</b><small>产品角色 AI：写成 spec，列出用户、场景、验收点。</small></div>
+            <div class="step"><span class="num green">3</span><b>Plan + Code Graph</b><small>架构角色 AI：看上传链路、接口和配置影响。</small></div>
+            <div class="step"><span class="num amber">4</span><b>Tasks</b><small>开发负责人：拆成查询接口、页面展示、自测任务。</small></div>
+            <div class="step"><span class="num rose">5</span><b>Human Gates</b><small>维护者/模块负责人：确认边界、风险和版本范围。</small></div>
+            <div class="step"><span class="num violet">6</span><b>Implement + Evidence</b><small>开发/测试：改代码、跑自测、写证据板。</small></div>
+          </div>
+          <div class="guardrail-strip compact">
+            <div class="guardrail"><b>Work Context</b><span>每个阶段可中断、可恢复。</span></div>
+            <div class="guardrail"><b>Code Graph</b><span>plan 前确认上传链路影响。</span></div>
+            <div class="guardrail"><b>Human Gate</b><span>跨接口、跨模块先人工确认。</span></div>
+            <div class="guardrail"><b>Evidence Board</b><span>实现后留下自测和风险证据。</span></div>
+          </div>
+          <div class="grid three" style="margin-top:28px">
+            <div class="panel blue">
+              <span class="tag">交接方式</span>
+              <h3>每一步都留下 issue 或文档</h3>
+              <p>上一阶段的聊天不共享；下一角色读取 issue、spec、plan、tasks 和 context。</p>
+            </div>
+            <div class="panel teal">
+              <span class="tag teal">架构边界</span>
+              <h3>跨接口或跨模块必须先停下</h3>
+              <p>如果需要改公共 API、配置语义或依赖方向，先进入 plan gate，不直接实现。</p>
+            </div>
+            <div class="panel green">
+              <span class="tag green">从零新项目</span>
+              <h3>多做前置骨架确认</h3>
+              <p>先确认项目目标、目录、模块、最小依赖和 running spine，再进入同一套 SDD。</p>
+            </div>
+          </div>
+          <table class="matrix compact" style="margin-top:14px">
+            <tbody>
+              <tr>
+                <td><b>本例落点</b></td>
+                <td>spec 写“能查看失败原因”；plan 写影响上传链路；tasks 写接口、展示、自测。</td>
+                <td><b>质量落点</b></td>
+                <td>Evidence Board 写命令结果、失败路径、未覆盖项和回滚方案。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Bugfix Flow">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Bug Fix</div>
+            <h2>Bugfix 流程：从用户现象到受控修复</h2>
+            <p class="lead">
+              样例串联：用户反馈“大文件上传经常超时”。提出问题的人可以不懂代码，
+              AI 和负责人要把现象补成可验证的修复链路。
+            </p>
+          </div>
+          <div class="flow">
+            <div class="step"><span class="num">1</span><b>原始现象</b><small>客服/运维：上传超时，影响大文件用户。</small></div>
+            <div class="step"><span class="num teal">2</span><b>Bug Issue</b><small>AI/维护者：补复现、日志、影响范围和优先级。</small></div>
+            <div class="step"><span class="num green">3</span><b>Context + Impact</b><small>模块负责人：看 code graph，限定是否只做模块内修复。</small></div>
+            <div class="step"><span class="num amber">4</span><b>Root Cause Plan</b><small>开发角色 AI：形成根因假设和最小修复方案。</small></div>
+            <div class="step"><span class="num rose">5</span><b>Fix</b><small>开发者：聚焦改动，不顺手重写上传链路。</small></div>
+            <div class="step"><span class="num violet">6</span><b>Self-Test + Evidence</b><small>开发/测试：复现前后对比，写证据和回滚。</small></div>
+          </div>
+          <div class="guardrail-strip compact">
+            <div class="guardrail"><b>Work Context</b><span>记录 bug 状态和恢复点。</span></div>
+            <div class="guardrail"><b>Code Graph</b><span>先看入口、调用链和配置影响。</span></div>
+            <div class="guardrail"><b>Human Gate</b><span>判断是否升级为特性/架构变更。</span></div>
+            <div class="guardrail"><b>Evidence Board</b><span>记录复现、修复结果和回滚。</span></div>
+          </div>
+          <div class="panel amber" style="margin-top:26px">
+            <h3>Bugfix 的关键人类决策：这还是 bugfix 吗？</h3>
+            <p>
+              如果修复需要改变公共接口、配置语义、数据库结构或跨模块依赖，
+              人类要决定是否升级为新特性或架构变更流程，而不是让 AI 借 bugfix 名义扩大范围。
+            </p>
+          </div>
+          <table class="matrix compact" style="margin-top:14px">
+            <tbody>
+              <tr>
+                <td><b>本例落点</b></td>
+                <td>issue 写“大文件上传超时”；impact 写上传入口、存储客户端、timeout 配置。</td>
+                <td><b>质量落点</b></td>
+                <td>证据写复现命令、修复后结果、未覆盖路径和回滚配置。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Work Context">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Resume</div>
+            <h2>Work Context Package：让工作可以中断和接续</h2>
+            <p class="lead">
+              <span class="mono">specs/</span> 记录某个需求的 SDD 产物；
+              <span class="mono">.specify/ai-team/work/</span> 记录这次协作怎么推进、停在哪、下次从哪里读。
+            </p>
+          </div>
+          <div class="split">
+            <pre class="tree"><code>.specify/
+`-- ai-team/
+    `-- work/
+        `-- &lt;work_slug&gt;/
+            |-- context-pack.md
+            |-- work-context.yml
+            |-- phase-notes/
+            |-- codegraph/
+            |   |-- nodes.jsonl
+            |   |-- edges.jsonl
+            |   `-- summary.md
+            `-- evidence/
+                `-- evidence-board.md</code></pre>
+            <div>
+              <table class="matrix compact">
+                <thead>
+                  <tr>
+                    <th>文件</th>
+                    <th>存什么</th>
+                    <th>下次怎么读</th>
+                    <th>Git 策略</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="mono">work-context.yml</td>
+                    <td>work_slug、类型、URL、phase、next command。</td>
+                    <td>先读它，判断任务是谁、停在哪一步。</td>
+                    <td>可进 git，但不能含密钥或客户原文。</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">context-pack.md</td>
+                    <td>任务摘要、约束、风险、已做决定、待确认问题。</td>
+                    <td>恢复“为什么这么做”和“哪些不能碰”。</td>
+                    <td>可共享摘要可进 git；个人草稿和敏感信息不进。</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">phase-notes/</td>
+                    <td>各角色之间的文档交接记录。</td>
+                    <td>按阶段读取最近一次交接摘要。</td>
+                    <td>可共享交接摘要可进；客户原文不进。</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">codegraph/</td>
+                    <td>影响节点、边、摘要、adapter 版本。</td>
+                    <td>改代码前读 summary；跨模块看 nodes/edges。</td>
+                    <td>摘要通常可进；大 cache 或敏感路径不进。</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">evidence/</td>
+                    <td>构建、自测、跳过项、风险、回滚。</td>
+                    <td>提交前读 evidence-board。</td>
+                    <td>应进 git，作为评审和复盘证据。</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="read-order">
+                <div><b>1</b><span>执行 <span class="mono">speckit.ai-team.context work_slug=&lt;work_slug&gt; resume=true</span>。</span></div>
+                <div><b>2</b><span>按 <span class="mono">work-context.yml</span> 的 phase 选择恢复点，不重新发明流程。</span></div>
+                <div><b>3</b><span>读取最近交接摘要、code graph summary 和 evidence，再决定是否继续或停下问人。</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Code Graph">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Source Projection</div>
+            <h2>Code Graph：让 AI 先理解影响范围，再改代码</h2>
+          </div>
+          <div class="grid three">
+            <div class="panel blue">
+              <span class="tag">Adapter</span>
+              <h3>可替换实现</h3>
+              <p>可以接本地生成器、MCP 工具、托管服务或 source-structure fallback。</p>
+            </div>
+            <div class="panel teal">
+              <span class="tag teal">Normalized Output</span>
+              <h3>统一产物</h3>
+              <p><span class="mono">nodes.jsonl</span>、<span class="mono">edges.jsonl</span>、
+                <span class="mono">summary.md</span>、adapter report。</p>
+            </div>
+            <div class="panel amber">
+              <span class="tag amber">Required When</span>
+              <h3>必须使用的情况</h3>
+              <p>公共接口变更、新增/删除类、跨模块语义、依赖方向变化、恢复任务源代码已变化。</p>
+            </div>
+          </div>
+          <div class="graph-demo">
+            <div class="graph-node"><span class="mono">UploadController</span><br>入口 API</div>
+            <div class="graph-node"><span class="mono">UploadService</span><br>业务编排</div>
+            <div class="graph-node"><span class="mono">ObjectStorageClient</span><br>外部依赖</div>
+            <div class="graph-node"><span class="mono">TimeoutConfig</span><br>配置契约</div>
+          </div>
+          <table class="matrix compact" style="margin-top:14px">
+            <thead>
+              <tr>
+                <th>示例问题</th>
+                <th>Code Graph 让 AI 先看到</th>
+                <th>因此不能随便做什么</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>“大文件上传超时”</td>
+                <td>入口 API、调用链、配置项、外部存储依赖和相关测试。</td>
+                <td>不能直接改公共 timeout 配置语义，除非 plan gate 允许。</td>
+              </tr>
+              <tr>
+                <td>输出文件</td>
+                <td><span class="mono">nodes.jsonl</span>、<span class="mono">edges.jsonl</span>、<span class="mono">summary.md</span>。</td>
+                <td>不能跳过 summary 就扩大搜索范围或跨模块重写。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Control Plane">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Extension / Preset / Workflow</div>
+            <h2>三层控制面：命令、规则注入和人类 Gate</h2>
+            <p class="lead">
+              控制面的作用是把一句话需求变成受约束的工程动作：AI 能调用什么、每个阶段自动遵守什么规则、
+              哪些决定必须交给人。
+            </p>
+          </div>
+          <table class="matrix compact">
+            <thead>
+              <tr>
+                <th>层</th>
+                <th>解决的问题</th>
+                <th>典型文件 / 命令</th>
+                <th>保证什么</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b>Extension Commands</b></td>
+                <td>把 AI 的动作拆成可调用、可审查的步骤。</td>
+                <td class="mono">workspace, context, codegraph, impact, plan-check, review</td>
+                <td>AI 不靠临场发挥推进流程。</td>
+              </tr>
+              <tr>
+                <td><b>Preset Overlay</b></td>
+                <td>给原生 SDD 命令注入团队规则，但不污染 Spec Kit core。</td>
+                <td class="mono">plan prepend, tasks prepend, converge wrap</td>
+                <td>自动补充上下文、检查项和 evidence。</td>
+              </tr>
+              <tr>
+                <td><b>Workflow Gates</b></td>
+                <td>把架构、计划、任务和影响范围的关键判断交给人。</td>
+                <td class="mono">review-context, review-spec, review-plan, review-tasks</td>
+                <td>AI 不能自己批准跨边界变更。</td>
+              </tr>
+              <tr>
+                <td><b>Config</b></td>
+                <td>让不同项目声明自己的仓库、隐私、adapter 和证据策略。</td>
+                <td class="mono">.specify/extensions/ai-team/ai-team-config.yml</td>
+                <td>规则可替换，流程契约保持一致。</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="panel violet" style="margin-top:14px">
+            <h3>一句话</h3>
+            <p>
+              命令层让 AI 有“手”，preset 层让 AI 默认守规则，workflow gate 让关键决定回到人。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Evidence">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Quality Loop</div>
+            <h2>证据板和失败进化：不要用感觉宣布成功</h2>
+          </div>
+          <div class="grid two">
+            <div class="panel green">
+              <span class="tag green">Evidence Board</span>
+              <h3>每次行为变更都要留下证据</h3>
+              <p class="mono">.specify/ai-team/work/&lt;work_slug&gt;/evidence/evidence-board.md</p>
+              <ul>
+                <li>Scope and Impact</li>
+                <li>Code Graph / Source Structure Evidence</li>
+                <li>Self-Test Evidence</li>
+                <li>Commands and Results</li>
+                <li>Uncovered Paths</li>
+                <li>Rollback or Recovery</li>
+              </ul>
+            </div>
+            <div class="panel rose">
+              <span class="tag rose">Stop Conditions</span>
+              <h3>不能继续声称完成的情况</h3>
+              <ul>
+                <li>行为变更没有自测证据</li>
+                <li>新特性没有 work item anchor</li>
+                <li>跳过检查但没有明确理由</li>
+                <li>敏感信息泄露到 coding 仓</li>
+              </ul>
+            </div>
+          </div>
+          <table class="matrix compact" style="margin-top:14px">
+            <thead>
+              <tr>
+                <th>内容</th>
+                <th>必须说明什么</th>
+                <th>作用</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono">## Scope and Impact</td>
+                <td>改了哪些模块、影响哪些接口、code graph 如何支持判断。</td>
+                <td>让评审人和下次恢复的 AI 知道影响半径。</td>
+              </tr>
+              <tr>
+                <td class="mono">## Self-Test Evidence</td>
+                <td>跑了哪些命令、覆盖哪些行为、哪些路径没有覆盖。</td>
+                <td>避免只凭 happy path 宣布成功。</td>
+              </tr>
+              <tr>
+                <td class="mono">## Rollback or Recovery</td>
+                <td>出问题如何回滚、配置如何恢复、风险如何监控。</td>
+                <td>支撑上线后责任和事故处理。</td>
+              </tr>
+              <tr>
+                <td class="mono">speckit.ai-team.retrospect</td>
+                <td>代码评审、CI、测试、事故、重复 AI 错误触发复盘。</td>
+                <td>沉淀到 rules、gates、tests、knowledge 或 code graph overlay。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="slide" data-kicker="Private Handoff">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Extend Case</div>
+            <h2>扩展场景：私有需求如何进入 Plan</h2>
+          </div>
+          <div>
+            <img class="privacy-flow-image" src="assets/ai-team-private-handoff-flow.png" alt="私有需求从 enhancement_internal 到 coding repository 的 AI Team SDD 流程图">
+            <div class="facts">
+              <div class="fact"><b>私有源头</b><span>原始需求、动机、审批讨论留在 <span class="mono">enhancement_internal</span>。</span></div>
+              <div class="fact"><b>本地有效 Spec</b><span><span class="mono">before_plan</span> 生成 <span class="mono">spec.override.md</span>，下游优先读取。</span></div>
+              <div class="fact"><b>公开仓边界</b><span>coding 仓只保留 public-safe plan/tasks/evidence，不保留私有需求正文。</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <div class="controls" aria-label="Slide controls">
+      <button class="nav-button" id="prev" type="button" title="上一页" aria-label="上一页">‹</button>
+      <div class="progress">
+        <div class="bar" aria-hidden="true"><div class="bar-fill" id="barFill"></div></div>
+        <div class="counter" id="counter">1 / 17</div>
+      </div>
+      <button class="nav-button" id="next" type="button" title="下一页" aria-label="下一页">›</button>
+    </div>
+  </main>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const prev = document.getElementById("prev");
+    const next = document.getElementById("next");
+    const counter = document.getElementById("counter");
+    const barFill = document.getElementById("barFill");
+
+    let current = 0;
+    const hashMatch = window.location.hash.match(/^#slide-(\d+)$/);
+    if (hashMatch) {
+      current = Math.min(Math.max(Number(hashMatch[1]) - 1, 0), slides.length - 1);
+    }
+
+    function showSlide(index, updateHash = true) {
+      current = Math.min(Math.max(index, 0), slides.length - 1);
+      slides.forEach((slide, slideIndex) => {
+        slide.classList.toggle("active", slideIndex === current);
+      });
+      prev.disabled = current === 0;
+      next.disabled = current === slides.length - 1;
+      counter.textContent = `${current + 1} / ${slides.length}`;
+      barFill.style.width = `${((current + 1) / slides.length) * 100}%`;
+      if (updateHash) {
+        history.replaceState(null, "", `#slide-${current + 1}`);
+      }
+    }
+
+    prev.addEventListener("click", () => showSlide(current - 1));
+    next.addEventListener("click", () => showSlide(current + 1));
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft" || event.key === "PageUp") {
+        showSlide(current - 1);
+      }
+      if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+        event.preventDefault();
+        showSlide(current + 1);
+      }
+      if (event.key === "Home") {
+        showSlide(0);
+      }
+      if (event.key === "End") {
+        showSlide(slides.length - 1);
+      }
+    });
+
+    let touchStartX = 0;
+    window.addEventListener("touchstart", (event) => {
+      touchStartX = event.changedTouches[0].screenX;
+    }, { passive: true });
+    window.addEventListener("touchend", (event) => {
+      const delta = event.changedTouches[0].screenX - touchStartX;
+      if (Math.abs(delta) > 48) {
+        showSlide(current + (delta < 0 ? 1 : -1));
+      }
+    }, { passive: true });
+
+    showSlide(current, false);
+  </script>
+</body>
+</html>
