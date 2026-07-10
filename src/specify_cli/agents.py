@@ -408,7 +408,10 @@ class CommandRegistrar:
             init_opts = {}
 
         script_variant = init_opts.get("script")
-        if script_variant not in {"sh", "ps", "py"}:
+        # Fall back when the configured variant is unknown OR the command
+        # frontmatter does not provide it (e.g. script=py with a template
+        # that only ships sh/ps), so {SCRIPT} is never left unresolved.
+        if script_variant not in {"sh", "ps", "py"} or script_variant not in scripts:
             fallback_order = []
             default_variant = (
                 "ps" if platform.system().lower().startswith("win") else "sh"

@@ -51,3 +51,23 @@ def test_py_interpreter_with_spaces_is_quoted(tmp_path, monkeypatch):
         "codex", FRONTMATTER, "Run {SCRIPT} now.", tmp_path
     )
     assert '"C:\\Program Files\\Python\\python.exe" ' in body
+
+
+def test_missing_py_variant_falls_back_to_available_script(tmp_path, monkeypatch):
+    """script=py with a template that only ships sh/ps must not leave {SCRIPT} unresolved."""
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.shutil.which",
+        lambda name: "/usr/bin/python3" if name == "python3" else None,
+    )
+    save_init_options(tmp_path, {"script": "py"})
+    frontmatter = {
+        "scripts": {
+            "sh": "scripts/bash/setup-plan.sh --json",
+            "ps": "scripts/powershell/setup-plan.ps1 -Json",
+        }
+    }
+    body = CommandRegistrar.resolve_skill_placeholders(
+        "codex", frontmatter, "Run {SCRIPT} now.", tmp_path
+    )
+    assert "{SCRIPT}" not in body
+    assert "setup-plan" in body
