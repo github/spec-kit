@@ -2511,14 +2511,28 @@ Run {SCRIPT}
         assert ".hidden/secret.md" in rewritten
         assert ".specify/extensions/ext-existing/.hidden/" not in rewritten
 
-    def test_rewrite_extension_paths_handles_backslash_in_subdir_name(self, temp_dir):
-        """A subdir/extension_id containing backslashes must not raise or be
-        interpreted as a regex group reference in the replacement (#2101)."""
+    def test_rewrite_extension_paths_handles_regex_special_replacement_text(
+        self, temp_dir
+    ):
+        """subdir/extension_id containing regex-replacement-special characters
+        (e.g. backslash / group references) must not raise or be misinterpreted
+        by re.sub's replacement template (#2101).
+
+        The subdir name uses brackets rather than a backslash: on Windows,
+        "\\" is a path separator, so a subdir literally named "assets\\q"
+        would create nested directories "assets/q" instead of a single
+        directory, and iterdir() would then only discover "assets" - never
+        exercising the intended replacement text. extension_id isn't used to
+        create a directory, so it's free to contain a real backslash/"\\1"
+        to verify the callable replacement treats it literally.
+        """
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
 
         ext_dir = temp_dir / "ext-backslash"
-        weird_subdir = "assets\\q"
+        weird_subdir = "assets[q]"
         (ext_dir / weird_subdir).mkdir(parents=True)
+        # sanity-check the cross-platform assumption above
+        assert [p.name for p in ext_dir.iterdir()] == [weird_subdir]
 
         text = f"Read {weird_subdir}/file.md but not /{weird_subdir}/abs.md.\n"
         rewritten = AgentCommandRegistrar.rewrite_extension_paths(
