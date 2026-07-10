@@ -6151,7 +6151,7 @@ class TestWorkflowStepAddCLI:
             def geturl(self):
                 return self.url
 
-        def _fake_open_url(url, timeout=30):
+        def _fake_open_url(url, timeout=30, redirect_validator=None):
             return _FakeResponse(url)
 
         monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
@@ -6210,7 +6210,7 @@ class TestWorkflowStepAddCLI:
             def geturl(self):
                 return self.url
 
-        def _fake_open_url(url, timeout=30):
+        def _fake_open_url(url, timeout=30, redirect_validator=None):
             return _FakeResponse(url)
 
         monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
@@ -6258,7 +6258,7 @@ class TestWorkflowStepAddCLI:
             def geturl(self):
                 return self.url
 
-        def _fake_open_url(url, timeout=30):
+        def _fake_open_url(url, timeout=30, redirect_validator=None):
             return _FakeResponse(url)
 
         monkeypatch.setattr(StepCatalog, "get_step_info", _fake_get_step_info)
