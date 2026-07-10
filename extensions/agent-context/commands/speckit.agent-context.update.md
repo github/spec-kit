@@ -15,7 +15,7 @@ The script reads the agent-context extension config at
 - `context_files` — optional project-relative paths for multiple coding agent context files. When non-empty, the script updates each listed file and the list takes precedence over `context_file`.
 - `context_markers.start` / `.end` — the delimiters surrounding the managed section. Defaults to `<!-- SPECKIT START -->` and `<!-- SPECKIT END -->` when the field is missing.
 
-It then creates, replaces, or appends the managed block so that the section points at the most recent plan path when one can be discovered (`specs/<feature>/plan.md`).
+It then creates, replaces, or appends the managed block so that the section points at the most recent plan path when one can be discovered (`specs/**/plan.md`, any depth).
 
 If `context_files` and `context_file` are empty, the command reports nothing to do and exits successfully. Context file paths must stay project-relative; absolute paths, Windows drive paths, backslash separators, and `..` path segments are rejected.
 
@@ -24,4 +24,4 @@ If `context_files` and `context_file` are empty, the command reports nothing to 
 - **Bash**: `.specify/extensions/agent-context/scripts/bash/update-agent-context.sh [plan_path]`
 - **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`
 
-When `plan_path` is omitted, the script auto-detects the most recently modified `specs/*/plan.md`.
+When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (any depth, so scoped layouts like `specs/<scope>/<feature>/plan.md` are found).

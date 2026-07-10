@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.10] - 2026-07-10
+
+### Changed
+
+- chore(deps): bump astral-sh/setup-uv from 8.2.0 to 8.3.2 (#3439)
+- chore(deps): bump DavidAnson/markdownlint-cli2-action (#3438)
+- fix(templates): correct phase numbering in plan.md (#3416)
+- fix(git-ext): honor explicit -Number 0 in PowerShell branch creation (#3412)
+- docs: add 'spectatui' entry to friends.md (#3362)
+- test: pin interpreter probe so py-template render test passes on Windows (#3428)
+- feat(workflows): make shell step timeout configurable (#3404)
+- fix: find plans in nested spec directories (#3405)
+- feat(templates): add py: lines to command templates' scripts frontmatter (#3403)
+- chore: release 0.12.9, begin 0.12.10.dev0 development (#3426)
+
 ## [0.12.9] - 2026-07-09
 
 ### Changed

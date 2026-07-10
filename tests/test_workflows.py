@@ -1353,6 +1353,106 @@ class TestShellStep:
         assert step.validate({"id": "s", "run": "echo hi"}) == []
         assert step.validate({"id": "s", "run": "{{ steps.x.output }}"}) == []
 
+    def test_timeout_is_configurable(self, monkeypatch):
+        """A 'timeout' field overrides the 300s default (#3327)."""
+        import subprocess as sp
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        seen = {}
+        real_run = sp.run
+
+        def spy_run(*args, **kwargs):
+            seen["timeout"] = kwargs.get("timeout")
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.steps.shell.subprocess.run", spy_run
+        )
+        step = ShellStep()
+        result = step.execute(
+            {"id": "t", "run": "echo hi", "timeout": 1800}, StepContext()
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert seen["timeout"] == 1800
+
+    def test_timeout_defaults_to_300(self, monkeypatch):
+        import subprocess as sp
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        seen = {}
+        real_run = sp.run
+
+        def spy_run(*args, **kwargs):
+            seen["timeout"] = kwargs.get("timeout")
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.steps.shell.subprocess.run", spy_run
+        )
+        result = ShellStep().execute({"id": "t", "run": "echo hi"}, StepContext())
+        assert result.status == StepStatus.COMPLETED
+        assert seen["timeout"] == 300
+
+    def test_timeout_error_reports_configured_value(self, monkeypatch):
+        import subprocess as sp
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        def raise_timeout(*args, **kwargs):
+            raise sp.TimeoutExpired(cmd="x", timeout=kwargs.get("timeout"))
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.steps.shell.subprocess.run", raise_timeout
+        )
+        result = ShellStep().execute(
+            {"id": "t", "run": "sleep 999", "timeout": 7}, StepContext()
+        )
+        assert result.status == StepStatus.FAILED
+        assert "7 seconds" in result.error
+
+    @pytest.mark.parametrize("bad", [0, -5, "600", 1.5, None, True])
+    def test_execute_ignores_unvalidated_bad_timeout(self, bad, monkeypatch):
+        """execute() falls back to 300 when config skipped validation (#3327)."""
+        import subprocess as sp
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        seen = {}
+        real_run = sp.run
+
+        def spy_run(*args, **kwargs):
+            seen["timeout"] = kwargs.get("timeout")
+            return real_run(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "specify_cli.workflows.steps.shell.subprocess.run", spy_run
+        )
+        result = ShellStep().execute(
+            {"id": "t", "run": "echo hi", "timeout": bad}, StepContext()
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert seen["timeout"] == 300
+
+    @pytest.mark.parametrize("bad", [0, -5, "600", 1.5, None, True])
+    def test_validate_rejects_bad_timeout(self, bad):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        errors = ShellStep().validate({"id": "s", "run": "echo hi", "timeout": bad})
+        assert any("'timeout'" in e for e in errors)
+
+    def test_validate_accepts_positive_int_timeout(self):
+        from specify_cli.workflows.steps.shell import ShellStep
+
+        assert (
+            ShellStep().validate({"id": "s", "run": "echo hi", "timeout": 1800}) == []
+        )
+
 
     def test_output_format_json_exposes_data(self, tmp_path):
         from specify_cli.workflows.steps.shell import ShellStep
@@ -2693,6 +2793,101 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("lowercase alphanumeric" in e for e in errors)
+
+    def test_non_string_workflow_id_reports_error(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: 123
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("workflow.id" in e and "string" in e for e in errors)
+
+    def test_non_string_name_reports_error(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: 123
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("workflow.name" in e and "string" in e for e in errors)
+
+    def test_unquoted_float_version_reports_error(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: 1.0
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("workflow.version" in e and "quote" in e for e in errors)
+
+    def test_non_string_step_id_reports_error(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: 123
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("Step ID" in e and "string" in e for e in errors)
+
+    def test_falsey_non_string_scalars_report_typed_errors(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: 0
+  name: false
+  version: 0.0
+steps:
+  - id: 0
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'workflow.id' must be a string" in e for e in errors)
+        assert any("'workflow.name' must be a string" in e for e in errors)
+        assert any("'workflow.version' must be a string" in e for e in errors)
+        assert any("Step ID must be a string" in e for e in errors)
+        assert not any("missing" in e for e in errors)
+
+    def test_unquoted_schema_version_accepted(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: 1.0
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert errors == []
 
     def test_no_steps(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
@@ -6949,3 +7144,53 @@ steps:
             },
         )
         assert _gate_outcome(state) is None
+
+
+class TestWorkflowAddNonStringScalars:
+    """`workflow add` reports clean errors for non-string YAML scalars (#3420)."""
+
+    @pytest.mark.parametrize(
+        ("field_yaml", "expected"),
+        [
+            ('id: 123\n  name: "Probe"\n  version: "1.0.0"', "workflow.id"),
+            ('id: "probe"\n  name: "Probe"\n  version: 1.0', "workflow.version"),
+        ],
+    )
+    def test_add_reports_validation_error_not_traceback(
+        self, project_dir, monkeypatch, field_yaml, expected
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        wf = project_dir / "workflow.yml"
+        wf.write_text(
+            "schema_version: \"1.0\"\n"
+            f"workflow:\n  {field_yaml}\n"
+            "steps:\n  - id: s1\n    type: shell\n    run: \"echo hi\"\n",
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(wf)])
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert expected in result.output
+
+    def test_add_non_string_step_id_reports_validation_error(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        wf = project_dir / "workflow.yml"
+        wf.write_text(
+            "workflow:\n  id: \"probe\"\n  name: \"Probe\"\n  version: \"1.0.0\"\n"
+            "steps:\n  - id: 123\n    type: shell\n    run: \"echo hi\"\n",
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(wf)])
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Step ID" in result.output
