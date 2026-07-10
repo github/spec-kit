@@ -2697,9 +2697,13 @@ class PresetResolver:
                             break
                 if manifest_file_path:
                     manifest_candidate = pack_dir / manifest_file_path
-                    if manifest_candidate.exists():
+                    # is_file() (not exists()) so a manifest ``file:`` that points
+                    # at a directory is treated as missing rather than returned to
+                    # callers that will read_text() it and crash.
+                    if manifest_candidate.is_file():
                         return manifest_candidate
-                    # Declared file missing: skip this pack's convention fallback.
+                    # Declared file missing/non-file: skip this pack's convention
+                    # fallback.
                     continue
                 if manifest_found_entry:
                     # Manifest lists this template but with an empty/falsey
@@ -2994,9 +2998,12 @@ class PresetResolver:
                 candidate = None
                 if manifest_file_path:
                     manifest_candidate = pack_dir / manifest_file_path
-                    if manifest_candidate.exists():
+                    # is_file() (not exists()): a directory at the declared path is
+                    # not a usable layer, so treat it as missing (parity with
+                    # resolve()).
+                    if manifest_candidate.is_file():
                         candidate = manifest_candidate
-                    # Explicit file path that doesn't exist: skip convention
+                    # Explicit file path that isn't a regular file: skip convention
                     # fallback to avoid masking typos or picking up unintended files.
                 elif not manifest_found_entry:
                     # Manifest doesn't list this template — check convention paths

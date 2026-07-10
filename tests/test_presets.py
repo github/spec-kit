@@ -1007,6 +1007,63 @@ class TestPresetResolver:
         assert "Stray Convention Spec" not in content  # pack convention skipped
         assert "Core Spec Template" in content  # fell through to core
 
+    def test_resolve_skips_convention_when_manifest_file_is_directory(
+        self, project_dir
+    ):
+        """When the manifest's file: path resolves to a DIRECTORY (not a regular
+        file), resolve()/collect_all_layers() must treat it as missing — exists()
+        would accept it and downstream read_text() on a directory would crash.
+        The pack is skipped (no convention fallback), so core wins."""
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        # Declared file: custom/spec.md is created as a DIRECTORY.
+        (pack_dir / "custom" / "spec.md").mkdir(parents=True)
+        # A convention file also exists and must NOT be used.
+        (pack_dir / "templates").mkdir(parents=True)
+        (pack_dir / "templates" / "spec-template.md").write_text(
+            "# Stray Convention Spec\n", encoding="utf-8"
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a file: that is actually a directory",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result is not None
+        assert result.is_file()  # never a directory
+        content = result.read_text()
+        assert "Stray Convention Spec" not in content  # pack convention skipped
+        assert "Core Spec Template" in content  # fell through to core
+        # collect_all_layers() must agree: the directory is not a layer.
+        layers = resolver.collect_all_layers("spec-template")
+        assert all(Path(layer["path"]).is_file() for layer in layers)
+        assert all(
+            Path(layer["path"]) != pack_dir / "custom" / "spec.md"
+            for layer in layers
+        )
+
     def test_resolve_override_takes_priority_over_pack(self, project_dir, pack_dir):
         """Test that overrides take priority over installed packs."""
         # Install the pack
