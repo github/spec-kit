@@ -1123,11 +1123,14 @@ class TomlIntegration(IntegrationBase):
 # ---------------------------------------------------------------------------
 
 # Characters a YAML literal block scalar cannot carry: C0 controls other
-# than tab/LF (a bare CR acts as a line break inside the scalar), DEL, and
-# the C1 range. NEL (U+0085) is YAML-printable but, like LS/PS
-# (U+2028/U+2029), YAML 1.1 treats it as a line break, which corrupts the
-# block scalar's structure just the same, so all three are included.
-_YAML_BLOCK_SCALAR_UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
+# than tab/LF (a bare CR acts as a line break inside the scalar), DEL, the
+# C1 range, lone UTF-16 surrogates, and the non-characters U+FFFE/U+FFFF.
+# NEL (U+0085) is YAML-printable but, like LS/PS (U+2028/U+2029), YAML 1.1
+# treats it as a line break, which corrupts the block scalar's structure
+# just the same, so all three are included.
+_YAML_BLOCK_SCALAR_UNSAFE = re.compile(
+    r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\ud800-\udfff\ufffe\uffff]"
+)
 
 
 class YamlIntegration(IntegrationBase):
