@@ -28,7 +28,12 @@ from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
-from .._init_options import is_ai_skills_enabled, load_init_options
+from .._init_options import (
+    MISSING_INIT_OPTIONS_FILE,
+    is_ai_skills_enabled,
+    load_init_options,
+    resolve_active_agent_for_registration,
+)
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import verify_archive_sha256
@@ -683,10 +688,39 @@ class PresetManager:
 
         # Single-active rule (#2948): preset command overrides register for
         # the active integration only. A project without a recorded active
-        # integration falls back to detection-based registration for all
-        # agents; a recorded key with no registrar config (e.g. "generic")
-        # naturally yields no matches via only_agent instead of falling back.
-        active_agent = load_init_options(self.project_root).get("ai")
+        # integration (init-options.json does not exist at all — a legacy
+        # pre-init-options layout or direct library use) falls back to
+        # detection-based registration for all agents. A recorded key with
+        # no registrar config (e.g. "generic") naturally yields no matches
+        # via only_agent instead of falling back.
+        #
+        # An init-options.json that exists but is corrupted, unreadable, or
+        # has a malformed/empty "ai" value must not be treated the same as
+        # "no file" — that would silently reintroduce all-agent
+        # registration. Fail closed (register nothing) instead.
+        resolved_agent = resolve_active_agent_for_registration(self.project_root)
+        if resolved_agent is MISSING_INIT_OPTIONS_FILE:
+            active_agent = None
+        elif resolved_agent is None:
+            return {}
+        else:
+            active_agent = resolved_agent
+            # Mirror the extension path's ai_skills guard: when the active
+            # agent is a command-backed integration (extension != "/SKILL.md")
+            # running in skills mode, its preset command overrides render as
+            # skills via _register_skills, not as command files. Command-mode
+            # and skills-mode artifacts are mutually exclusive — writing both
+            # (e.g. `integration use copilot` with `--skills`) leaves a stale
+            # command file alongside the SKILL.md that is actually active.
+            init_options = load_init_options(self.project_root)
+            agent_config = registrar.AGENT_CONFIGS.get(active_agent)
+            if (
+                agent_config
+                and is_ai_skills_enabled(init_options)
+                and agent_config.get("extension") != "/SKILL.md"
+            ):
+                return {}
+
         return registrar.register_commands_for_all_agents(
             commands_to_register,
             manifest.id,
@@ -787,6 +821,15 @@ class PresetManager:
         reflect the current priority stack rather than depending on
         install/remove order.
 
+        Single-active rule (#2948): non-skill command-file registration
+        performed by this pass is restricted to the active integration, the
+        same as ``_register_commands``. Without this, reconciliation after
+        install/remove would write command files for every detected
+        non-skill agent even though registration itself is active-only,
+        leaving inactive integrations with artifacts that are never
+        recorded in ``registered_commands`` (and therefore never cleaned up
+        on removal).
+
         Args:
             command_names: List of command names to reconcile
         """
@@ -800,6 +843,30 @@ class PresetManager:
 
         resolver = PresetResolver(self.project_root)
         registrar = CommandRegistrar()
+
+        # Resolve the active-only restriction once. MISSING_INIT_OPTIONS_FILE
+        # (legacy pre-init-options project) keeps the pre-#2948 fallback of
+        # registering every detected non-skill agent; a corrupted/malformed
+        # init-options.json fails closed via a sentinel that matches no real
+        # agent name instead of silently falling back to "no restriction".
+        resolved_agent = resolve_active_agent_for_registration(self.project_root)
+        if resolved_agent is MISSING_INIT_OPTIONS_FILE:
+            only_agent: Optional[str] = None
+        elif resolved_agent is None:
+            only_agent = ""
+        else:
+            only_agent = resolved_agent
+            # Mirror _register_commands's ai_skills guard: a command-backed
+            # active agent running in skills mode renders preset/extension
+            # overrides as skills, not command files, so this non-skill
+            # command reconciliation pass must not target it either.
+            agent_config = registrar.AGENT_CONFIGS.get(only_agent)
+            if (
+                agent_config
+                and is_ai_skills_enabled(load_init_options(self.project_root))
+                and agent_config.get("extension") != "/SKILL.md"
+            ):
+                only_agent = ""
 
         # Cache registry and manifests outside the loop to avoid
         # repeated filesystem reads for each command name.
@@ -830,7 +897,8 @@ class PresetManager:
                             for tmpl in manifest.templates:
                                 if tmpl.get("name") == cmd_name and tmpl.get("type") == "command":
                                     self._register_for_non_skill_agents(
-                                        registrar, [tmpl], manifest.id, pack_dir
+                                        registrar, [tmpl], manifest.id, pack_dir,
+                                        only_agent=only_agent,
                                     )
                                     registered = True
                                     break
@@ -858,6 +926,7 @@ class PresetManager:
                                         matching_cmds, ext_id, ext_dir,
                                         self.project_root,
                                         context_note=f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n",
+                                        only_agent=only_agent,
                                     )
                                     registered = True
                             except Exception:
@@ -869,6 +938,7 @@ class PresetManager:
                         self._register_command_from_path(
                             registrar, cmd_name, top_path,
                             source_id=source_id,
+                            only_agent=only_agent,
                         )
             else:
                 # Composed command — resolve from full stack
@@ -919,6 +989,7 @@ class PresetManager:
                                 registrar,
                                 [{**tmpl, "file": f".composed/{cmd_name}.md"}],
                                 manifest.id, pack_dir,
+                                only_agent=only_agent,
                             )
                             registered = True
                             break
@@ -940,6 +1011,7 @@ class PresetManager:
                     self._register_command_from_path(
                         registrar, cmd_name, composed_file,
                         source_id=source_id,
+                        only_agent=only_agent,
                     )
 
     def _register_command_from_path(
@@ -948,6 +1020,7 @@ class PresetManager:
         cmd_name: str,
         cmd_path: Path,
         source_id: str = "reconciled",
+        only_agent: Optional[str] = None,
     ) -> None:
         """Register a single command from a file path (non-preset source).
 
@@ -959,6 +1032,7 @@ class PresetManager:
             cmd_name: Command name
             cmd_path: Path to the command file
             source_id: Source attribution for rendered output
+            only_agent: If set, restrict registration to this single agent (#2948).
         """
         if not cmd_path.exists():
             return
@@ -988,7 +1062,8 @@ class PresetManager:
             except Exception:
                 pass  # best-effort alias loading
         self._register_for_non_skill_agents(
-            registrar, [cmd_tmpl], source_id, cmd_path.parent
+            registrar, [cmd_tmpl], source_id, cmd_path.parent,
+            only_agent=only_agent,
         )
 
     def _register_for_non_skill_agents(
@@ -997,6 +1072,7 @@ class PresetManager:
         commands: List[Dict[str, Any]],
         source_id: str,
         source_dir: Path,
+        only_agent: Optional[str] = None,
     ) -> None:
         """Register commands for non-skill agents during reconciliation.
 
@@ -1010,9 +1086,15 @@ class PresetManager:
 
         Writing raw command content to skill agents would produce invalid
         SKILL.md files (missing skill frontmatter, descriptions, etc.).
+
+        Args:
+            only_agent: If set, restrict registration to this single agent,
+                matching the active-only rule applied by ``_register_commands``
+                (#2948).
         """
         registrar.register_commands_for_non_skill_agents(
-            commands, source_id, source_dir, self.project_root
+            commands, source_id, source_dir, self.project_root,
+            only_agent=only_agent,
         )
 
     class _FilteredManifest:
@@ -1445,12 +1527,56 @@ class PresetManager:
 
         return written
 
+    def _tracked_skill_agent_dirs(self) -> List[tuple]:
+        """Return (skills_dir, agent_name) pairs for every skill-mode
+        integration directory that currently exists under the project root.
+
+        ``registered_skills`` only tracks skill *names*, not which agent
+        directories they were written under, so a preset used first under
+        one skill-mode agent and later switched to another can have live
+        overrides in both directories at removal time. Restoring every
+        existing skill-mode directory (instead of only the currently active
+        one) ensures none of them are left permanently orphaned.
+
+        Multiple integration keys can share the same physical directory
+        (e.g. ``agy``/``codex``/``zed`` all use ``.agents/skills``); only one
+        representative agent name is kept per unique resolved directory so
+        each physical directory is processed exactly once.
+        """
+        from .. import _get_skills_dir as _resolve_skills_dir
+        from ..integrations import INTEGRATION_REGISTRY
+        from ..integrations.base import SkillsIntegration
+
+        seen: Dict[Path, str] = {}
+        for key in sorted(INTEGRATION_REGISTRY):
+            integration = INTEGRATION_REGISTRY[key]
+            if not (
+                isinstance(integration, SkillsIntegration)
+                or getattr(integration, "_skills_mode", False)
+            ):
+                continue
+            skills_dir = _resolve_skills_dir(self.project_root, key)
+            if not skills_dir.is_dir():
+                continue
+            try:
+                resolved = skills_dir.resolve()
+            except OSError:
+                continue
+            seen.setdefault(resolved, key)
+
+        return [(path, agent) for path, agent in seen.items()]
+
     def _unregister_skills(self, skill_names: List[str], preset_dir: Path) -> None:
         """Restore original SKILL.md files after a preset is removed.
 
         For each skill that was overridden by the preset, attempts to
         regenerate the skill from the core command template.  If no core
         template exists, the skill directory is removed.
+
+        Restores across every existing skill-mode agent directory (see
+        :meth:`_tracked_skill_agent_dirs`), not just the currently active
+        integration, so switching integrations before removal can't leave a
+        preset override behind permanently.
 
         Args:
             skill_names: List of skill names written by the preset.
@@ -1459,20 +1585,26 @@ class PresetManager:
         if not skill_names:
             return
 
-        skills_dir = self._get_skills_dir()
-        if not skills_dir:
-            return
+        for skills_dir, agent_name in self._tracked_skill_agent_dirs():
+            self._unregister_skills_in_dir(skill_names, skills_dir, agent_name)
 
-        from .. import SKILL_DESCRIPTIONS, load_init_options
+    def _unregister_skills_in_dir(
+        self, skill_names: List[str], skills_dir: Path, selected_ai: Optional[str]
+    ) -> None:
+        """Restore original SKILL.md files within a single skills directory.
+
+        Args:
+            skill_names: List of skill names written by the preset.
+            skills_dir: The skills directory to restore within.
+            selected_ai: The agent name that owns ``skills_dir``, used for
+                placeholder resolution and argument-hint formatting.
+        """
+        from .. import SKILL_DESCRIPTIONS
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
 
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
-        init_opts = load_init_options(self.project_root)
-        if not isinstance(init_opts, dict):
-            init_opts = {}
-        selected_ai = init_opts.get("ai")
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
         extension_restore_index = self._build_extension_skill_restore_index()

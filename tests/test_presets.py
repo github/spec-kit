@@ -3063,6 +3063,57 @@ class TestInitOptions:
         assert is_ai_skills_enabled({"ai_skills": value}) is expected
 
 
+class TestResolveActiveAgentForRegistration:
+    """Tests for the shared #2948 active-agent resolution helper.
+
+    ``load_init_options`` collapses "no file", "corrupted file", and
+    "valid file with no active agent" into the same ``{}``. Extensions and
+    presets both need to tell those apart: no file means "legacy project,
+    fall back to all detected agents"; a corrupted or malformed file means
+    "fail closed, register nothing" so a corrupted init-options.json can't
+    silently reintroduce all-agent registration.
+    """
+
+    def test_missing_file_returns_sentinel(self, project_dir):
+        from specify_cli._init_options import (
+            MISSING_INIT_OPTIONS_FILE,
+            resolve_active_agent_for_registration,
+        )
+
+        assert (
+            resolve_active_agent_for_registration(project_dir)
+            is MISSING_INIT_OPTIONS_FILE
+        )
+
+    def test_valid_active_agent_returns_string(self, project_dir):
+        from specify_cli import save_init_options
+        from specify_cli._init_options import resolve_active_agent_for_registration
+
+        save_init_options(project_dir, {"ai": "claude"})
+
+        assert resolve_active_agent_for_registration(project_dir) == "claude"
+
+    def test_corrupted_json_fails_closed(self, project_dir):
+        """A present-but-unparseable file must not behave like "no file"."""
+        from specify_cli._init_options import resolve_active_agent_for_registration
+
+        opts_file = project_dir / ".specify" / "init-options.json"
+        opts_file.parent.mkdir(parents=True, exist_ok=True)
+        opts_file.write_text("{bad json", encoding="utf-8")
+
+        assert resolve_active_agent_for_registration(project_dir) is None
+
+    @pytest.mark.parametrize("value", [[], {}, "", 0, None, ["claude"]])
+    def test_malformed_ai_value_fails_closed(self, project_dir, value):
+        """A recorded but non-string/empty ``ai`` value fails closed too."""
+        from specify_cli import save_init_options
+        from specify_cli._init_options import resolve_active_agent_for_registration
+
+        save_init_options(project_dir, {"ai": value})
+
+        assert resolve_active_agent_for_registration(project_dir) is None
+
+
 class TestPresetSkills:
     """Tests for preset skill registration and unregistration.
 
@@ -4010,6 +4061,198 @@ class TestPresetSkills:
 
         skill_content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
         assert "untouched" in skill_content
+
+    def test_preset_add_corrupted_init_options_fails_closed(self, project_dir, temp_dir):
+        """Corrupted (but present) init-options.json must not back-fill every
+        detected agent for preset command registration.
+
+        Before the shared ``resolve_active_agent_for_registration`` fix,
+        ``load_init_options`` returning ``{}`` for a corrupted file was
+        indistinguishable from "no file at all", so ``_register_commands``
+        treated it like a legacy pre-init-options project and registered
+        the preset's command override for every detected agent (#2948).
+        """
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text("{not valid json", encoding="utf-8")
+
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "corrupt-init-preset", "speckit.specify",
+            "Corrupt init test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        metadata = manager.registry.get("corrupt-init-preset")
+        assert metadata.get("registered_commands") == {}, (
+            "a corrupted init-options.json must fail closed, not "
+            "back-fill every detected agent (#2948)"
+        )
+        assert not list(gemini_dir.glob("*specify*")), (
+            "no command file should be written for any agent when "
+            "init-options.json is corrupted"
+        )
+
+    def test_reconciliation_restricted_to_active_agent(self, project_dir, temp_dir):
+        """Reconciliation after install/remove must also respect the
+        single-active rule, not just the initial registration.
+
+        ``_reconcile_composed_commands`` (invoked after
+        ``install_from_directory``/``remove``) resolves composition winners
+        via ``register_commands_for_non_skill_agents``, a separate code
+        path from ``_register_commands``'s initial registration. Before the
+        fix it ignored the active-agent restriction entirely and wrote the
+        winning content for every detected non-skill agent, leaving
+        untracked orphaned artifacts in inactive integrations (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        # A non-replace (append) strategy command forces reconciliation to
+        # run register_commands_for_non_skill_agents for every non-skill
+        # agent directory it detects.
+        preset_dir = temp_dir / "reconcile-active-only"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Appended\nstrategy: append\n---\n\nAppended body\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "reconcile-active-only",
+                "name": "Reconcile Active Only",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [{
+                    "type": "command",
+                    "name": "speckit.specify",
+                    "file": "commands/speckit.specify.md",
+                    "strategy": "append",
+                }]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not list(gemini_dir.glob("*specify*")), (
+            "reconciliation must not write command files for a detected "
+            "but inactive non-skill agent (#2948)"
+        )
+
+    def test_copilot_skills_mode_skips_command_registration(self, project_dir, temp_dir):
+        """``integration use copilot`` with skills mode enabled must only
+        write the SKILL.md mirror, not also copilot's static command file.
+
+        Copilot is command-backed (``extension: ".agent.md"``), but when
+        ``ai_skills`` is enabled its preset overrides are meant to render
+        exclusively as skills via ``_register_skills``. Before the fix,
+        ``_register_commands`` had no ``ai_skills`` guard (unlike the
+        extensions path), so both a stale ``.agent.md`` command file and
+        the ``SKILL.md`` mirror were written for the same override (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "copilot-skills-preset", "speckit.specify",
+            "Copilot skills test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not list(copilot_commands_dir.glob("*specify*")), (
+            "command-mode and skills-mode artifacts are mutually exclusive: "
+            "no .agent.md command file should be written when copilot is "
+            "running in skills mode (#2948)"
+        )
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:copilot-skills-preset" in skill_file.read_text()
+
+    def test_skill_switch_then_remove_restores_every_skill_agent_dir(
+        self, project_dir, temp_dir
+    ):
+        """Switching between two skill-mode agents before removing a preset
+        must restore both agents' directories, not just the currently
+        active one.
+
+        ``registered_skills`` is a flat list of skill names shared across
+        agents, so it can't tell which agent directories a preset actually
+        touched. Before the fix, ``_unregister_skills`` only restored the
+        currently active agent's skills directory; a preset used first
+        under Claude and later switched to Codex would have its Claude
+        override left behind permanently on removal (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        # Native skill agents only materialize a *brand-new* preset skill
+        # when their skills directory already exists (mirrors every other
+        # skill test in this class); pre-create both agents' directories so
+        # install and the later switch both find an existing skill to
+        # overwrite via _register_commands/_register_skills.
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "multi-skill-agent-preset", "speckit.specify",
+            "Multi skill agent test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:multi-skill-agent-preset" in claude_skill.read_text()
+
+        # Switch the active agent to codex (a different skill-mode agent)
+        # and re-register enabled presets for it, mirroring what
+        # `integration use codex` does.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        codex_skill = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:multi-skill-agent-preset" in codex_skill.read_text(), (
+            "sanity: switching to codex should rescaffold the preset there"
+        )
+        assert "preset:multi-skill-agent-preset" in claude_skill.read_text(), (
+            "sanity: the previous agent's registration is preserved on switch"
+        )
+
+        assert manager.remove("multi-skill-agent-preset") is True
+
+        for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:multi-skill-agent-preset" not in content, (
+                f"{label}'s preset override must be restored on removal, "
+                "not orphaned permanently (#2948)"
+            )
+            assert "Core specify body" in content
 
 
 class TestPresetSetPriority:

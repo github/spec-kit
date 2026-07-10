@@ -1490,6 +1490,41 @@ class TestIntegrationInstall:
             "back-fill every detected agent (#2948)"
         )
 
+    def test_extension_add_corrupted_init_options_file_fails_closed(self, tmp_path):
+        """A present-but-unparseable init-options.json must fail closed too,
+        not be treated the same as "no file at all".
+
+        ``load_init_options`` returns ``{}`` for a corrupted/unreadable
+        file just like it does for a missing file, so a naive "no active
+        agent recorded" check based on ``load_init_options`` alone can't
+        tell a legacy pre-init-options project (legitimate all-agent
+        fallback) apart from a corrupted-but-present file for a #2948
+        project (must fail closed). Corrupting the file after a normal
+        init must not reintroduce the all-agent fallback.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        init_options_path = project / ".specify" / "init-options.json"
+        init_options_path.write_text("{not valid json", encoding="utf-8")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert registered == {}, (
+            "a corrupted init-options.json must fail closed, not be "
+            "treated like a legacy project missing the file entirely (#2948)"
+        )
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 

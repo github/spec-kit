@@ -1082,6 +1082,7 @@ class CommandRegistrar:
         context_note: Optional[str] = None,
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
+        only_agent: Optional[str] = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all non-skill agents in the project.
 
@@ -1098,6 +1099,9 @@ class CommandRegistrar:
             link_outputs: If True, create dev-mode symlinks for rendered
                 command files when supported by the OS.
             extension_id: Extension id when rendering extension-owned commands.
+            only_agent: If set, restrict registration to this single agent
+                (#2948). An agent name that matches no configured agent
+                (e.g. an empty string) yields no registrations at all.
 
         Returns:
             Dictionary mapping agent names to list of registered commands
@@ -1105,6 +1109,8 @@ class CommandRegistrar:
         results = {}
         self._ensure_configs()
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
+            if only_agent is not None and agent_name != only_agent:
+                continue
             if agent_config.get("extension") == "/SKILL.md":
                 continue
             detect_dir_str = agent_config.get("detect_dir")

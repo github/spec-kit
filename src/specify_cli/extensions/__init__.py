@@ -989,29 +989,34 @@ class ExtensionManager:
         when selected via ``integration use`` / ``switch`` (rescaffold).
 
         Projects without a recorded active integration at all (pre-init-options
-        layouts or direct library use) fall back to detection-based
-        registration for all agents. A *recorded* active key that has no
-        registrar config (e.g. ``generic``, which is deliberately excluded
-        from ``AGENT_CONFIGS``) is not treated as "no active integration" —
-        it must not cause registration to target other detected agents.
+        layouts or direct library use, i.e. init-options.json does not
+        exist) fall back to detection-based registration for all agents. A
+        *recorded* active key that has no registrar config (e.g. ``generic``,
+        which is deliberately excluded from ``AGENT_CONFIGS``) is not treated
+        as "no active integration" — it must not cause registration to
+        target other detected agents.
 
-        A recorded but malformed ``ai`` value (non-string, e.g. ``[]`` or
-        ``null``) is also not "no active integration" — corrupted
-        init-options must fail closed (register nothing) rather than
-        fall back to registering every detected agent.
+        An init-options.json that exists but is corrupted, unreadable, or
+        has a malformed/empty ``ai`` value (e.g. ``[]`` or ``null``) is also
+        not "no active integration" — fail closed (register nothing) rather
+        than fall back to registering every detected agent, which would
+        otherwise happen because a corrupted file loads the same as an
+        absent one.
 
         Returns:
             Mapping of agent name to registered command names, matching the
             ``registered_commands`` registry shape.
         """
         from .. import load_init_options
+        from .._init_options import (
+            MISSING_INIT_OPTIONS_FILE,
+            resolve_active_agent_for_registration,
+        )
 
         registrar = CommandRegistrar()
-        init_options = load_init_options(self.project_root)
-        if not isinstance(init_options, dict):
-            init_options = {}
+        active_agent = resolve_active_agent_for_registration(self.project_root)
 
-        if "ai" not in init_options:
+        if active_agent is MISSING_INIT_OPTIONS_FILE:
             return registrar.register_commands_for_all_agents(
                 manifest,
                 extension_dir,
@@ -1020,13 +1025,15 @@ class ExtensionManager:
                 create_missing_active_skills_dir=True,
             )
 
-        active_agent = init_options.get("ai")
-        if not isinstance(active_agent, str) or not active_agent:
-            # A recorded key was found but it is malformed (not a non-empty
-            # string). Fail closed instead of falling back to all agents or
-            # passing a non-string key into AGENT_CONFIGS.get() below, which
-            # would raise TypeError for unhashable values like a list.
+        if active_agent is None:
+            # init-options.json exists but could not provide a valid active
+            # agent (corrupted/unreadable/non-object JSON, or a malformed
+            # "ai" value). Fail closed instead of falling back to all agents
+            # or passing a non-string key into AGENT_CONFIGS.get() below,
+            # which would raise TypeError for unhashable values like a list.
             return {}
+
+        init_options = load_init_options(self.project_root)
 
         # A recorded active key with no registrar config (e.g. "generic",
         # deliberately excluded from AGENT_CONFIGS) has nothing to register
