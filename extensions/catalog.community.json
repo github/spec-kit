@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-07T00:00:00Z",
+  "updated_at": "2026-07-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2142,6 +2142,39 @@
       "stars": 0,
       "created_at": "2026-05-08T00:00:00Z",
       "updated_at": "2026-05-08T00:00:00Z"
+    },
+    "memory": {
+      "name": "Spec Kit Memory",
+      "id": "memory",
+      "description": "Recalls prior specs and decisions from configurable memory tools (e.g. memsearch) before SDLC stages, so planning and specification start from what the project already knows.",
+      "author": "Andrey Zaytsev",
+      "version": "0.3.0",
+      "download_url": "https://github.com/zaytsevand/spec-kit-memory/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/zaytsevand/spec-kit-memory",
+      "homepage": "https://github.com/zaytsevand/spec-kit-memory",
+      "documentation": "https://github.com/zaytsevand/spec-kit-memory/blob/main/README.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 3
+      },
+      "tags": [
+        "memory",
+        "recall",
+        "research",
+        "memsearch"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-10T00:00:00Z",
+      "updated_at": "2026-07-10T00:00:00Z"
     },
     "memory-loader": {
       "name": "Memory Loader",
