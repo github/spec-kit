@@ -7555,8 +7555,16 @@ steps:
             registry.add("other-wf", {"version": "1.0.0", "source": "catalog"})
         assert registry.get("other-wf") is None
 
+    def test_registry_add_survives_non_dict_existing_entry(self, project_dir):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.data["workflows"]["align-wf"] = "corrupted"
+        registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
+        assert registry.get("align-wf")["version"] == "1.0.0"
+
     def test_run_refuses_falsy_non_bool_enabled(self, project_dir, monkeypatch):
-        """"enabled": 0 shows as disabled in list — run must agree."""
+        """A falsy non-bool "enabled" (0) shows as disabled in list — run must agree."""
         import json as json_mod
 
         from typer.testing import CliRunner
@@ -8127,7 +8135,7 @@ steps:
         assert result.exit_code == 0, result.output
 
     def test_disable_blocks_run_via_path_equivalent_id(self, project_dir, monkeypatch):
-        """"align-wf/" must not run a disabled workflow by dodging the registry lookup."""
+        """Path spelling "align-wf/" must not run a disabled workflow by dodging the registry lookup."""
         from typer.testing import CliRunner
         from specify_cli import app
 

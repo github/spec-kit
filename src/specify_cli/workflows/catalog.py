@@ -92,8 +92,10 @@ class WorkflowRegistry:
         """Add or update an installed workflow entry."""
         from datetime import datetime, timezone
 
-        existing = self.data["workflows"].get(workflow_id, {})
+        raw_existing = self.data["workflows"].get(workflow_id)
         had_entry = workflow_id in self.data["workflows"]
+        # Corrupted-but-parseable registries may hold non-dict entries.
+        existing = raw_existing if isinstance(raw_existing, dict) else {}
         metadata["installed_at"] = existing.get(
             "installed_at", datetime.now(timezone.utc).isoformat()
         )
@@ -105,7 +107,7 @@ class WorkflowRegistry:
             # Roll back the in-memory mutation so a later successful save
             # cannot persist metadata for a write that failed.
             if had_entry:
-                self.data["workflows"][workflow_id] = existing
+                self.data["workflows"][workflow_id] = raw_existing
             else:
                 del self.data["workflows"][workflow_id]
             raise
