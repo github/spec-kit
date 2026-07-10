@@ -68,8 +68,18 @@ def _validate_remote_url(source_id: str, url: str) -> None:
     Mirrors ``specify_cli.catalogs`` URL validation to avoid MITM/downgrade
     issues before any network call.
     """
-    parsed = urlparse(url)
-    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    # A malformed authority (e.g. an unclosed IPv6 bracket ``https://[::1``)
+    # makes urlparse / hostname access raise ValueError. This function's
+    # contract is to raise BundlerError for a bad URL, so surface that as a
+    # clean error rather than leaking a raw ValueError to the caller.
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+    except ValueError:
+        raise BundlerError(
+            f"Catalog '{source_id}' URL is malformed: {url}"
+        ) from None
+    is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
     if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
         raise BundlerError(
             f"Catalog '{source_id}' URL must use HTTPS (got {parsed.scheme}://). "
@@ -79,7 +89,7 @@ def _validate_remote_url(source_id: str, url: str) -> None:
     # "https://:8080" or "https://user@...", so requiring netloc would let
     # those through even though they carry no host. hostname is None in those
     # cases. Mirrors the fix in ``specify_cli.catalogs`` (#3210).
-    if not parsed.hostname:
+    if not hostname:
         raise BundlerError(
             f"Catalog '{source_id}' URL must be a valid URL with a host: {url}"
         )

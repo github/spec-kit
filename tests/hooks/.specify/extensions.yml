@@ -6,7 +6,7 @@ hooks:
       extension: "test-extension"
       command: "pre_implement_test"
       description: "Test before implement hook execution"
-      
+
   after_implement:
     - id: post_test
       enabled: true

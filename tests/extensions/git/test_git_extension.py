@@ -638,6 +638,21 @@ class TestCreateFeatureBash:
         assert result.returncode != 0
         assert "requires updated Spec Kit core scripts" in result.stderr
 
+    def test_explicit_number_zero_is_honored(self, tmp_path: Path):
+        """An explicit --number 0 is honored (yields 000), not treated as
+        'auto-detect'. Pins the canonical behavior the PowerShell twin must
+        mirror; the empty-string check (`[ -z "$BRANCH_NUMBER" ]`) already
+        distinguishes an unset flag from a supplied 0."""
+        project = _setup_project(tmp_path)
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--number", "0", "--short-name", "zero", "Zero feature",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["BRANCH_NAME"] == "000-zero"
+        assert data["FEATURE_NUM"] == "000"
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestCreateFeaturePowerShell:
@@ -941,6 +956,23 @@ class TestCreateFeaturePowerShell:
         )
         assert result.returncode != 0
         assert "requires updated Spec Kit core scripts" in result.stderr
+
+    def test_explicit_number_zero_is_honored(self, tmp_path: Path):
+        """An explicit -Number 0 is honored (yields 000), matching the bash twin's
+        --number 0. Regression guard: -Number defaults to 0, so a bare `-eq 0`
+        check cannot tell an unset flag from a supplied 0 and would silently
+        auto-detect instead. Uses PSBoundParameters.ContainsKey('Number')."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-Number", "0", "-ShortName", "zero", "Zero feature",
+        )
+        assert result.returncode == 0, result.stderr
+        json_line = [ln for ln in result.stdout.splitlines() if ln.strip().startswith("{")]
+        assert json_line, f"No JSON in output: {result.stdout}"
+        data = json.loads(json_line[-1])
+        assert data["BRANCH_NAME"] == "000-zero"
+        assert data["FEATURE_NUM"] == "000"
 
 
 # ── auto-commit.sh Tests ─────────────────────────────────────────────────────

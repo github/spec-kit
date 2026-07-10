@@ -129,26 +129,49 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
     errors: list[str] = []
 
     # -- Schema version ---------------------------------------------------
-    if definition.schema_version not in ("1.0", "1"):
+    # str() so an unquoted ``schema_version: 1.0`` (YAML float) is accepted —
+    # rejecting it would print "Unsupported schema_version 1.0. Expected '1.0'."
+    if str(definition.schema_version) != "1.0":
         errors.append(
             f"Unsupported schema_version {definition.schema_version!r}. "
             f"Expected '1.0'."
         )
 
     # -- Top-level fields -------------------------------------------------
-    if not definition.id:
+    # YAML parses unquoted scalars like ``id: 123`` or ``version: 1.0`` as
+    # int/float; check types before regex/string operations so authoring
+    # mistakes surface as validation errors instead of tracebacks. Only
+    # ``None``/empty-string count as missing so falsey non-strings
+    # (``id: 0``, ``name: false``) still get the typed error.
+    if definition.id is None or definition.id == "":
         errors.append("Workflow is missing 'workflow.id'.")
+    elif not isinstance(definition.id, str):
+        errors.append(
+            f"'workflow.id' must be a string, got "
+            f"{type(definition.id).__name__} ({definition.id!r})."
+        )
     elif not _ID_PATTERN.match(definition.id):
         errors.append(
             f"Workflow ID {definition.id!r} must be lowercase alphanumeric "
             f"with hyphens."
         )
 
-    if not definition.name:
+    if definition.name is None or definition.name == "":
         errors.append("Workflow is missing 'workflow.name'.")
+    elif not isinstance(definition.name, str):
+        errors.append(
+            f"'workflow.name' must be a string, got "
+            f"{type(definition.name).__name__} ({definition.name!r})."
+        )
 
-    if not definition.version:
+    if definition.version is None or definition.version == "":
         errors.append("Workflow is missing 'workflow.version'.")
+    elif not isinstance(definition.version, str):
+        errors.append(
+            f"'workflow.version' must be a string, got "
+            f"{type(definition.version).__name__} ({definition.version!r}) — "
+            f'quote it in YAML (version: "1.0.0").'
+        )
     elif not re.match(r"^\d+\.\d+\.\d+$", definition.version):
         errors.append(
             f"Workflow version {definition.version!r} is not valid "
@@ -256,8 +279,14 @@ def _validate_steps(
             continue
 
         step_id = step_config.get("id")
-        if not step_id:
+        if step_id is None or step_id == "":
             errors.append("Step is missing 'id' field.")
+            continue
+        if not isinstance(step_id, str):
+            errors.append(
+                f"Step ID must be a string, got "
+                f"{type(step_id).__name__} ({step_id!r})."
+            )
             continue
 
         if ":" in step_id:

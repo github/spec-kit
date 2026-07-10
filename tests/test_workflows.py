@@ -2794,6 +2794,101 @@ steps:
         errors = validate_workflow(definition)
         assert any("lowercase alphanumeric" in e for e in errors)
 
+    def test_non_string_workflow_id_reports_error(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: 123
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("workflow.id" in e and "string" in e for e in errors)
+
+    def test_non_string_name_reports_error(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: 123
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("workflow.name" in e and "string" in e for e in errors)
+
+    def test_unquoted_float_version_reports_error(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: 1.0
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("workflow.version" in e and "quote" in e for e in errors)
+
+    def test_non_string_step_id_reports_error(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: 123
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("Step ID" in e and "string" in e for e in errors)
+
+    def test_falsey_non_string_scalars_report_typed_errors(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: 0
+  name: false
+  version: 0.0
+steps:
+  - id: 0
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("'workflow.id' must be a string" in e for e in errors)
+        assert any("'workflow.name' must be a string" in e for e in errors)
+        assert any("'workflow.version' must be a string" in e for e in errors)
+        assert any("Step ID must be a string" in e for e in errors)
+        assert not any("missing" in e for e in errors)
+
+    def test_unquoted_schema_version_accepted(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: 1.0
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert errors == []
+
     def test_no_steps(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
@@ -7049,3 +7144,53 @@ steps:
             },
         )
         assert _gate_outcome(state) is None
+
+
+class TestWorkflowAddNonStringScalars:
+    """`workflow add` reports clean errors for non-string YAML scalars (#3420)."""
+
+    @pytest.mark.parametrize(
+        ("field_yaml", "expected"),
+        [
+            ('id: 123\n  name: "Probe"\n  version: "1.0.0"', "workflow.id"),
+            ('id: "probe"\n  name: "Probe"\n  version: 1.0', "workflow.version"),
+        ],
+    )
+    def test_add_reports_validation_error_not_traceback(
+        self, project_dir, monkeypatch, field_yaml, expected
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        wf = project_dir / "workflow.yml"
+        wf.write_text(
+            "schema_version: \"1.0\"\n"
+            f"workflow:\n  {field_yaml}\n"
+            "steps:\n  - id: s1\n    type: shell\n    run: \"echo hi\"\n",
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(wf)])
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert expected in result.output
+
+    def test_add_non_string_step_id_reports_validation_error(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        wf = project_dir / "workflow.yml"
+        wf.write_text(
+            "workflow:\n  id: \"probe\"\n  name: \"Probe\"\n  version: \"1.0.0\"\n"
+            "steps:\n  - id: 123\n    type: shell\n    run: \"echo hi\"\n",
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", str(wf)])
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Step ID" in result.output
