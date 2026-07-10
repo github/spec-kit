@@ -246,8 +246,10 @@ class CommandRegistrar:
             return text
 
         for subdir in subdirs:
+            # Only rewrite relative references (subdir/... or ./subdir/...);
+            # absolute paths like /subdir/... keep their meaning.
             text = re.sub(
-                r'(^|[\s`"\'(])(?:\.?/)?' + re.escape(subdir) + "/",
+                r'(^|[\s`"\'(])(?:\./)?' + re.escape(subdir) + "/",
                 rf"\1.specify/extensions/{extension_id}/{subdir}/",
                 text,
             )

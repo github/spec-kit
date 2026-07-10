@@ -2495,6 +2495,7 @@ Run {SCRIPT}
 
         text = (
             "Read agents/one.md then knowledge-base/two.md.\n"
+            "Also ./agents/three.md but not /agents/abs.md.\n"
             "Keep .hidden/secret.md alone.\n"
         )
         rewritten = AgentCommandRegistrar.rewrite_extension_paths(
@@ -2502,6 +2503,9 @@ Run {SCRIPT}
         )
 
         assert ".specify/extensions/ext-existing/agents/one.md" in rewritten
+        assert "Also .specify/extensions/ext-existing/agents/three.md" in rewritten
+        # absolute paths keep their meaning
+        assert "not /agents/abs.md" in rewritten
         # knowledge-base/ does not exist in this extension: left untouched
         assert "then knowledge-base/two.md" in rewritten
         assert ".hidden/secret.md" in rewritten
