@@ -995,6 +995,11 @@ class ExtensionManager:
         from ``AGENT_CONFIGS``) is not treated as "no active integration" —
         it must not cause registration to target other detected agents.
 
+        A recorded but malformed ``ai`` value (non-string, e.g. ``[]`` or
+        ``null``) is also not "no active integration" — corrupted
+        init-options must fail closed (register nothing) rather than
+        fall back to registering every detected agent.
+
         Returns:
             Mapping of agent name to registered command names, matching the
             ``registered_commands`` registry shape.
@@ -1005,9 +1010,8 @@ class ExtensionManager:
         init_options = load_init_options(self.project_root)
         if not isinstance(init_options, dict):
             init_options = {}
-        active_agent = init_options.get("ai")
 
-        if not active_agent:
+        if "ai" not in init_options:
             return registrar.register_commands_for_all_agents(
                 manifest,
                 extension_dir,
@@ -1015,6 +1019,14 @@ class ExtensionManager:
                 link_outputs=link_outputs,
                 create_missing_active_skills_dir=True,
             )
+
+        active_agent = init_options.get("ai")
+        if not isinstance(active_agent, str) or not active_agent:
+            # A recorded key was found but it is malformed (not a non-empty
+            # string). Fail closed instead of falling back to all agents or
+            # passing a non-string key into AGENT_CONFIGS.get() below, which
+            # would raise TypeError for unhashable values like a list.
+            return {}
 
         # A recorded active key with no registrar config (e.g. "generic",
         # deliberately excluded from AGENT_CONFIGS) has nothing to register

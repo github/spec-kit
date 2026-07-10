@@ -1453,6 +1453,43 @@ class TestIntegrationInstall:
             "detected agents (#2948)"
         )
 
+    def test_extension_add_malformed_ai_value_fails_closed(self, tmp_path):
+        """A recorded but malformed ``ai`` value (e.g. a list) must not be
+        treated as "no active integration recorded" and must not crash.
+
+        Before the fix, ``init_options.get("ai")`` being falsy (``[]``,
+        ``""``, ``0``) triggered the same all-agents fallback as a missing
+        key, and a *truthy* non-string value (e.g. a non-empty list) would
+        reach ``AGENT_CONFIGS.get(active_agent)`` and raise ``TypeError``
+        because a list is unhashable. Corrupted init-options must instead
+        fail closed: register nothing rather than crash or back-fill every
+        detected agent.
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        init_options_path = project / ".specify" / "init-options.json"
+        init_options = json.loads(init_options_path.read_text(encoding="utf-8"))
+        init_options["ai"] = []
+        init_options_path.write_text(json.dumps(init_options), encoding="utf-8")
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert registered == {}, (
+            "a malformed recorded 'ai' value must fail closed, not "
+            "back-fill every detected agent (#2948)"
+        )
+
 
 # ── uninstall ────────────────────────────────────────────────────────
 
@@ -1724,6 +1761,90 @@ class TestIntegrationUse:
         ]["cmd-preset"]["registered_commands"]
         assert "codex" in registered, "use registers presets for the new active agent"
         assert "claude" in registered, "the previous agent's registration is preserved"
+
+    def test_use_reregisters_presets_highest_precedence_last(self, tmp_path):
+        """When two enabled presets override the same command, the
+        higher-precedence preset (lower priority number) must win the
+        materialized file after ``integration use`` rescaffolds them.
+
+        ``register_enabled_presets_for_agent`` iterates presets and each
+        pass overwrites the same target file, so the write order matters.
+        Before the fix, presets were processed lowest-number-first (highest
+        precedence first), so the lower-precedence preset was written last
+        and won -- reversing the documented priority stack (#2948).
+        """
+        project = _init_project(tmp_path, "claude")
+
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        import yaml
+
+        def _make_preset(pack_id: str, content: str) -> Path:
+            src = tmp_path / pack_id
+            (src / "commands").mkdir(parents=True)
+            (src / "commands" / "speckit.specify.md").write_text(
+                f"---\ndescription: {pack_id}\n---\n{content}\n",
+                encoding="utf-8",
+            )
+            manifest_data = {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": pack_id,
+                    "name": pack_id,
+                    "version": "1.0.0",
+                    "description": f"Test preset {pack_id}",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "command",
+                            "name": "speckit.specify",
+                            "file": "commands/speckit.specify.md",
+                        }
+                    ]
+                },
+            }
+            (src / "preset.yml").write_text(yaml.dump(manifest_data), encoding="utf-8")
+            return src
+
+        # Lower-precedence preset (higher priority number), installed first.
+        low_precedence_src = _make_preset("low-precedence-preset", "LOW PRECEDENCE CONTENT")
+        result = _run_in_project(project, [
+            "preset", "add", "--dev", str(low_precedence_src), "--priority", "20",
+        ])
+        assert result.exit_code == 0, f"preset add (low) failed: {result.output}"
+
+        # Higher-precedence preset (lower priority number), installed second.
+        high_precedence_src = _make_preset("high-precedence-preset", "HIGH PRECEDENCE CONTENT")
+        result = _run_in_project(project, [
+            "preset", "add", "--dev", str(high_precedence_src), "--priority", "1",
+        ])
+        assert result.exit_code == 0, f"preset add (high) failed: {result.output}"
+
+        # Sanity: the priority stack already picks the high-precedence
+        # preset's content for the active (claude) integration.
+        claude_skill = project / ".claude" / "skills" / "speckit-specify" / "SKILL.md"
+        assert "HIGH PRECEDENCE CONTENT" in claude_skill.read_text(encoding="utf-8")
+        assert "LOW PRECEDENCE CONTENT" not in claude_skill.read_text(encoding="utf-8")
+
+        result = _run_in_project(project, ["integration", "use", "codex"])
+        assert result.exit_code == 0, result.output
+
+        # After rescaffolding for the newly active codex integration, the
+        # high-precedence preset must still win -- not whichever preset
+        # register_enabled_presets_for_agent happened to write last.
+        codex_skill = project / ".agents" / "skills" / "speckit-specify" / "SKILL.md"
+        content = codex_skill.read_text(encoding="utf-8")
+        assert "HIGH PRECEDENCE CONTENT" in content, (
+            "highest-precedence preset must win after `use` rescaffolds "
+            "presets for the newly active integration (#2948)"
+        )
+        assert "LOW PRECEDENCE CONTENT" not in content
 
     def test_use_refreshes_shared_templates_between_command_styles(self, tmp_path):
         project = _init_project(tmp_path, "claude")

@@ -707,12 +707,18 @@ class PresetManager:
         active integration from init-options themselves, so this re-runs them
         for every enabled preset and merges the fresh result for
         ``agent_name`` into its stored registry metadata.
+
+        Presets are processed in *reverse* priority order (lowest-precedence
+        first). Each pass overwrites the same target command/skill files, so
+        writing the highest-precedence preset last is what makes it win when
+        two enabled presets override the same command — matching the
+        priority stack documented for ``list_by_priority()``.
         """
         if not agent_name:
             return
 
         resolver = PresetResolver(self.project_root)
-        for pack_id, metadata in self.registry.list_by_priority():
+        for pack_id, metadata in reversed(self.registry.list_by_priority()):
             pack_dir = self.presets_dir / pack_id
             manifest = resolver._get_manifest(pack_dir)
             if manifest is None:
