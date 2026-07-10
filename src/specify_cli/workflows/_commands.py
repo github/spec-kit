@@ -665,7 +665,10 @@ def workflow_add(
             "description": definition.description,
             "source": source_label,
         })
-        console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
+        console.print(
+            f"[green]✓[/green] Workflow '{_escape_markup(definition.name)}' "
+            f"({_escape_markup(definition.id)}) installed"
+        )
 
     # Explicit local install (mirrors `extension add --dev`). --dev takes
     # precedence over --from so a URL that would be ignored is never fetched.
@@ -801,7 +804,7 @@ def _install_workflow_from_catalog(
     try:
         info = catalog.get_workflow_info(workflow_id)
     except WorkflowCatalogError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if not info:
@@ -932,7 +935,10 @@ def _install_workflow_from_catalog(
     if isinstance(existing, dict) and existing.get("enabled", True) is False:
         entry["enabled"] = False
     registry.add(workflow_id, entry)
-    console.print(f"[green]✓[/green] Workflow '{info.get('name', workflow_id)}' installed from catalog")
+    console.print(
+        f"[green]✓[/green] Workflow '{_escape_markup(str(info.get('name', workflow_id)))}' "
+        "installed from catalog"
+    )
 
 
 @workflow_app.command("remove")
@@ -1047,7 +1053,7 @@ def workflow_update(
         try:
             info = catalog.get_workflow_info(wf_id)
         except WorkflowCatalogError as exc:
-            console.print(f"[red]Error:[/red] {exc}")
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         if not info:
             console.print(f"⚠  {safe_id}: Not found in catalog (skipping)")
@@ -1190,7 +1196,7 @@ def workflow_search(
     try:
         results = catalog.search(query=query, tag=tag, author=author)
     except WorkflowCatalogError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if not results:
