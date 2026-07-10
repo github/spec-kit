@@ -349,9 +349,10 @@ def workflow_run(
 
     err = _error_console(json_output)
 
-    if not is_file_source:
-        from .catalog import WorkflowRegistry
+    from .catalog import WorkflowRegistry
 
+    registered_id: str | None = None
+    if not is_file_source:
         # Reject path-equivalent spellings ("align-wf/", "align-wf/.") that
         # would miss the registry lookup yet still load the installed file,
         # bypassing the disabled check below.
@@ -360,12 +361,23 @@ def workflow_run(
                 f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(source))}"
             )
             raise typer.Exit(1)
+        registered_id = source
+    else:
+        # A direct YAML path may still point at an installed workflow's own
+        # file; map it back to its ID so disabled state is enforced there too.
+        workflows_root = (project_root / ".specify" / "workflows").resolve()
+        resolved = source_path.resolve()
+        if resolved.is_relative_to(workflows_root):
+            rel_parts = resolved.relative_to(workflows_root).parts
+            if rel_parts:
+                registered_id = rel_parts[0]
 
-        installed_meta = WorkflowRegistry(project_root).get(source)
+    if registered_id is not None:
+        installed_meta = WorkflowRegistry(project_root).get(registered_id)
         if isinstance(installed_meta, dict) and installed_meta.get("enabled", True) is False:
             err.print(
-                f"[red]Error:[/red] Workflow '{_escape_markup(source)}' is disabled. "
-                f"Enable with: specify workflow enable {_escape_markup(source)}"
+                f"[red]Error:[/red] Workflow '{_escape_markup(registered_id)}' is disabled. "
+                f"Enable with: specify workflow enable {_escape_markup(registered_id)}"
             )
             raise typer.Exit(1)
 

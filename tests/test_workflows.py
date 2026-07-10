@@ -8040,6 +8040,13 @@ steps:
             assert result.exit_code != 0, spelling
             assert "Invalid workflow ID" in result.output, spelling
 
+        # Direct path to the installed workflow's own YAML must also refuse.
+        installed_yaml = ".specify/workflows/align-wf/workflow.yml"
+        assert (project_dir / installed_yaml).is_file()
+        result = runner.invoke(app, ["workflow", "run", installed_yaml])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
