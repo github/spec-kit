@@ -992,9 +992,18 @@ class PresetManager:
                                         if isinstance(alias, str):
                                             cmd_names_to_unregister.append(alias)
                                     break
+                    # Mirror the active-only restriction used elsewhere in
+                    # this pass: without it, unregistering a stale composed
+                    # command would touch every non-skill agent's directory,
+                    # deleting historical artifacts from integrations that
+                    # were never active when this preset registered (#2948).
                     registrar.unregister_commands(
-                        {agent: cmd_names_to_unregister for agent in registrar.AGENT_CONFIGS
-                         if registrar.AGENT_CONFIGS[agent].get("extension") != "/SKILL.md"},
+                        {
+                            agent: cmd_names_to_unregister
+                            for agent in registrar.AGENT_CONFIGS
+                            if registrar.AGENT_CONFIGS[agent].get("extension") != "/SKILL.md"
+                            and (only_agent is None or agent == only_agent)
+                        },
                         self.project_root,
                     )
                     continue
@@ -1236,7 +1245,12 @@ class PresetManager:
 
             for skill_name, cmd_name, top_layer in override_skills:
                 skill_subdir = skills_dir / skill_name
-                skill_subdir.mkdir(parents=True, exist_ok=True)
+                # Same symlink guard as _register_skills's registration path
+                # (#2948): mkdir(exist_ok=True) alone would silently follow an
+                # existing symlinked subdirectory before writing SKILL.md
+                # through it.
+                if not self._validate_skill_subdir(skill_subdir, create=True):
+                    continue
                 skill_file = skill_subdir / "SKILL.md"
                 try:
                     from ..agents import CommandRegistrar
@@ -1539,7 +1553,13 @@ class PresetManager:
                 skill_subdir = skills_dir / target_skill_name
                 if skill_subdir.exists() and not skill_subdir.is_dir():
                     continue
-                skill_subdir.mkdir(parents=True, exist_ok=True)
+                # Validate (and create, if missing) the skill's own
+                # subdirectory under the same symlink guard as its parent —
+                # is_dir() above follows symlinks, so a symlinked subdir
+                # with a real parent would otherwise slip through and have
+                # SKILL.md written through it to an arbitrary location (#2948).
+                if not self._validate_skill_subdir(skill_subdir, create=True):
+                    continue
                 frontmatter_data = registrar.build_skill_frontmatter(
                     selected_ai,
                     target_skill_name,
@@ -1616,6 +1636,35 @@ class PresetManager:
         except (ValueError, OSError):
             return None
         return skills_dir
+
+    def _validate_skill_subdir(self, skill_subdir: Path, *, create: bool) -> bool:
+        """Validate a single skill's subdirectory is symlink-free.
+
+        Unlike :meth:`_safe_skills_dir_for_agent` (which only validates the
+        *parent* skills directory), this validates the skill's own
+        subdirectory — e.g. ``.claude/skills/speckit-specify`` — so a
+        symlink planted at that level (with a safe parent) can't be used to
+        write or delete through to a location outside the project. Shared by
+        both the registration path (``create=True``, so a missing directory
+        is created component-by-component under the same guard) and the
+        restore/removal path (``create=False``, so a missing directory is
+        left for the caller's own existence check to skip). Returns
+        ``False`` rather than raising when the path escapes the project
+        root or crosses a symlink.
+        """
+        from ..shared_infra import _ensure_safe_shared_directory, _validate_safe_shared_directory
+
+        try:
+            if create:
+                _ensure_safe_shared_directory(
+                    self.project_root, skill_subdir,
+                    create=True, context="preset skill directory",
+                )
+            else:
+                _validate_safe_shared_directory(self.project_root, skill_subdir)
+        except (ValueError, OSError):
+            return False
+        return True
 
     def _unregister_skills(
         self,
@@ -1736,6 +1785,12 @@ class PresetManager:
             skill_subdir = skills_dir / skill_name
             skill_file = skill_subdir / "SKILL.md"
             if not skill_subdir.is_dir():
+                continue
+            # is_dir() follows symlinks, so a symlinked skill subdirectory
+            # (with a safe, non-symlinked parent) would otherwise slip past
+            # _safe_skills_dir_for_agent's parent-only check and have
+            # write_text/rmtree operate through it (#2948).
+            if not self._validate_skill_subdir(skill_subdir, create=False):
                 continue
             if not skill_file.is_file():
                 # Only manage directories that contain the expected skill entrypoint.
@@ -2020,9 +2075,15 @@ class PresetManager:
         pack_dir = self.presets_dir / pack_id
 
         # Collect ALL command names before filtering for reconciliation,
-        # so commands registered only for skill-based agents are also reconciled.
-        # Also include aliases from the manifest as a safety net for registries
-        # populated by older versions that may not track aliases.
+        # so commands registered only for skill-based agents are also
+        # reconciled. Every command-type template's primary name is added
+        # unconditionally (not just aliases) since ai_skills-mode presets
+        # never populate registered_commands for command-backed
+        # integrations (see _register_commands's ai_skills guard) — without
+        # this, removing a skills-mode preset that overrides a command no
+        # other preset registered "the normal way" would skip reconciliation
+        # entirely and _unregister_skills would restore core/extension
+        # content instead of a surviving lower-priority preset's override.
         removed_cmd_names = set()
         for cmd_names in registered_commands.values():
             removed_cmd_names.update(cmd_names)
@@ -2032,6 +2093,9 @@ class PresetManager:
                 manifest = PresetManifest(manifest_path)
                 for tmpl in manifest.templates:
                     if tmpl.get("type") == "command":
+                        name = tmpl.get("name")
+                        if isinstance(name, str):
+                            removed_cmd_names.add(name)
                         for alias in tmpl.get("aliases", []):
                             if isinstance(alias, str):
                                 removed_cmd_names.add(alias)

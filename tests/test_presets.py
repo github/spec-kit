@@ -4510,6 +4510,210 @@ class TestPresetSkills:
         assert "preset:shared-dir-preset" not in content
         assert "Core specify body" in content
 
+    def test_remove_higher_priority_skills_only_preset_restores_lower_preset(
+        self, project_dir, temp_dir
+    ):
+        """Removing a skills-mode preset must reconcile against the surviving
+        stack, not fall back to core/extension content.
+
+        Copilot in skills mode never populates ``registered_commands`` for
+        its overrides (``_register_commands``'s ``ai_skills`` guard skips
+        command-file registration entirely), so with two presets overriding
+        the same command, the removed preset's command name was never added
+        to ``removed_cmd_names`` and reconciliation was skipped outright.
+        ``_unregister_skills`` then restored straight to core/extension
+        content instead of resolving the lower-priority preset that should
+        now win (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "skills-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "skills-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+
+        manager = PresetManager(project_dir)
+        # Lower priority number = higher precedence.
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=5)
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+
+        skills_dir = project_dir / ".github" / "skills"
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:skills-preset-a" in skill_file.read_text(), (
+            "sanity: the higher-precedence preset should win initially"
+        )
+
+        assert manager.remove("skills-preset-a") is True
+
+        content = skill_file.read_text()
+        assert "preset:skills-preset-b" in content, (
+            "removing the higher-precedence skills-mode preset must "
+            "restore the surviving lower-precedence preset's override, "
+            "not fall back to core/extension content (#2948)"
+        )
+        assert "preset:skills-preset-a" not in content
+
+    def test_composed_none_unregister_respects_active_agent(
+        self, project_dir, temp_dir
+    ):
+        """Unregistering a stale composed command must only touch the
+        active agent's directory, not every configured non-skill agent.
+
+        When a wrap preset's base layer is removed, ``resolve_content`` can
+        no longer find a replace layer to compose onto and returns
+        ``None``, triggering the "composed is None" branch of
+        ``_reconcile_composed_commands``. Before the fix, that
+        unregistration mapping covered every configured non-skill agent
+        regardless of ``only_agent``, deleting historical artifacts from
+        integrations that were never active for this preset (#2948).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_commands_dir = project_dir / ".gemini" / "commands"
+        gemini_commands_dir.mkdir(parents=True)
+
+        # A made-up command name with no bundled/core equivalent, so the
+        # *only* base layer is the "compose-base" preset installed below —
+        # once it's removed, no base remains for the wrap preset to compose
+        # onto.
+        cmd_name = "speckit.fake-compose-test"
+        base_dir = self._create_command_preset(
+            temp_dir, "compose-base", cmd_name, "Base", "base body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(base_dir, "0.1.5", priority=10)
+
+        wrap_dir = temp_dir / "compose-wrap"
+        wrap_dir.mkdir()
+        (wrap_dir / "commands").mkdir()
+        (wrap_dir / "commands" / f"{cmd_name}.md").write_text(
+            "---\ndescription: Wrap\nstrategy: wrap\n---\n\n"
+            "wrap start\n{CORE_TEMPLATE}\nwrap end\n"
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "compose-wrap",
+                "name": "compose-wrap",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": cmd_name,
+                        "file": f"commands/{cmd_name}.md",
+                        "strategy": "wrap",
+                    }
+                ]
+            },
+        }
+        with open(wrap_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        manager.install_from_directory(wrap_dir, "0.1.5", priority=5)
+
+        claude_dir = project_dir / ".gemini" / "commands"
+        cmd_file = claude_dir / f"{cmd_name}.toml"
+        assert cmd_file.exists(), (
+            "sanity: the composed command should register for the active agent"
+        )
+
+        # Simulate a pre-existing artifact for an inactive agent, predating
+        # this preset entirely — active-only unregistration must never
+        # touch it.
+        opencode_dir = project_dir / ".opencode" / "commands"
+        opencode_dir.mkdir(parents=True, exist_ok=True)
+        opencode_stale_file = opencode_dir / f"{cmd_name}.md"
+        opencode_stale_file.write_text("stale opencode content\n")
+
+        assert manager.remove("compose-base") is True
+
+        assert not cmd_file.exists(), (
+            "sanity: the active agent's now-uncomposable command file must "
+            "be unregistered"
+        )
+        assert opencode_stale_file.read_text() == "stale opencode content\n", (
+            "unregistering a stale composed command must not touch an "
+            "inactive agent's directory (#2948)"
+        )
+
+    def test_symlinked_skill_subdir_rejected_on_restore(self, project_dir, temp_dir):
+        """Restore must validate each per-skill subdirectory, not just its parent.
+
+        ``_safe_skills_dir_for_agent`` only validates the parent skills
+        directory (e.g. ``.claude/skills``); a symlink planted one level
+        deeper at the individual skill's own subdirectory (e.g.
+        ``.claude/skills/speckit-specify``) has a perfectly safe parent and
+        would otherwise slip past that check, since ``is_dir()`` follows
+        symlinks. Restoration must refuse to write/rmtree through it (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        claude_skills_dir.mkdir(parents=True)
+
+        outside_target = temp_dir / "outside-skill-subdir"
+        outside_target.mkdir()
+        sentinel = outside_target / "SKILL.md"
+        sentinel.write_text("do-not-touch")
+        (claude_skills_dir / "speckit-specify").symlink_to(
+            outside_target, target_is_directory=True
+        )
+
+        manager = PresetManager(project_dir)
+        manager._unregister_skills_in_dir(
+            ["speckit-specify"], claude_skills_dir, "claude"
+        )
+
+        assert sentinel.read_text() == "do-not-touch", (
+            "restoration must not follow a symlinked skill subdirectory "
+            "to write/delete outside the project (#2948)"
+        )
+        assert (claude_skills_dir / "speckit-specify").is_symlink(), (
+            "the symlink itself should be left alone, not rmtree'd through"
+        )
+
+    def test_symlinked_skill_subdir_rejected_on_write(self, project_dir, temp_dir):
+        """Registration must validate each per-skill subdirectory before writing.
+
+        A symlink planted at an individual skill's own subdirectory (safe
+        parent, unsafe leaf) would otherwise pass the existing
+        ``skill_subdir.exists() and not skill_subdir.is_dir()`` guard
+        (``is_dir()`` follows symlinks) and have ``SKILL.md`` written
+        through it to an arbitrary location (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        outside_target = temp_dir / "outside-skill-write-target"
+        outside_target.mkdir()
+        (skills_dir / "speckit-specify").symlink_to(
+            outside_target, target_is_directory=True
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "symlink-write-preset", "speckit.specify",
+            "Symlink write test", "preset body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not (outside_target / "SKILL.md").exists(), (
+            "registration must not follow a symlinked skill subdirectory "
+            "to write outside the project (#2948)"
+        )
+        assert (skills_dir / "speckit-specify").is_symlink(), (
+            "the symlink itself should be left alone"
+        )
+
     def test_copilot_skills_registration_restored_after_process_restart(
         self, project_dir, temp_dir
     ):
