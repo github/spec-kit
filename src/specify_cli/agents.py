@@ -247,10 +247,14 @@ class CommandRegistrar:
 
         for subdir in subdirs:
             # Only rewrite relative references (subdir/... or ./subdir/...);
-            # absolute paths like /subdir/... keep their meaning.
+            # absolute paths like /subdir/... keep their meaning. Use a
+            # callable replacement: subdir/extension_id come from the
+            # filesystem and could contain backslashes or "\1"-like
+            # sequences, which would corrupt a string replacement template.
+            replacement = f".specify/extensions/{extension_id}/{subdir}/"
             text = re.sub(
                 r'(^|[\s`"\'(])(?:\./)?' + re.escape(subdir) + "/",
-                rf"\1.specify/extensions/{extension_id}/{subdir}/",
+                lambda m: m.group(1) + replacement,
                 text,
             )
         return text

@@ -2511,6 +2511,24 @@ Run {SCRIPT}
         assert ".hidden/secret.md" in rewritten
         assert ".specify/extensions/ext-existing/.hidden/" not in rewritten
 
+    def test_rewrite_extension_paths_handles_backslash_in_subdir_name(self, temp_dir):
+        """A subdir/extension_id containing backslashes must not raise or be
+        interpreted as a regex group reference in the replacement (#2101)."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        ext_dir = temp_dir / "ext-backslash"
+        weird_subdir = "assets\\q"
+        (ext_dir / weird_subdir).mkdir(parents=True)
+
+        text = f"Read {weird_subdir}/file.md but not /{weird_subdir}/abs.md.\n"
+        rewritten = AgentCommandRegistrar.rewrite_extension_paths(
+            text, "ext\\1", ext_dir
+        )
+
+        assert f".specify/extensions/ext\\1/{weird_subdir}/file.md" in rewritten
+        # absolute paths are still left untouched
+        assert f"/{weird_subdir}/abs.md" in rewritten
+
     def test_rewrite_extension_paths_missing_dir_returns_text(self, temp_dir):
         """A missing extension directory leaves the text unchanged."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
