@@ -435,7 +435,13 @@ def main(argv: list[str]) -> int:
         return 1
 
     if core is not None and hasattr(core, "get_repo_root"):
-        repo_root = core.get_repo_root()
+        # Pass script path so cwd-outside-repo callers land on the same
+        # fallback the bash twin does. Older cores don't accept the kwarg —
+        # fall back to the no-arg call for compatibility.
+        try:
+            repo_root = core.get_repo_root(script_file=Path(__file__))
+        except TypeError:
+            repo_root = core.get_repo_root()
     else:
         toplevel = _git_lines(Path.cwd(), "rev-parse", "--show-toplevel")
         if toplevel:
