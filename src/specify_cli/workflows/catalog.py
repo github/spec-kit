@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,15 +86,21 @@ class WorkflowRegistry:
     def save(self) -> None:
         """Persist registry to disk atomically."""
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
-        # Write-then-replace so a failed dump cannot truncate the registry.
-        tmp_path = self.registry_path.with_name(self.registry_path.name + ".tmp")
+        # Unique, exclusive temp then replace: a failed dump cannot truncate
+        # the registry, a pre-created symlink cannot redirect the write, and
+        # concurrent CLI processes cannot collide on the same temp path.
+        fd, tmp = tempfile.mkstemp(
+            dir=str(self.registry_path.parent),
+            prefix=f".{self.registry_path.name}.",
+            suffix=".tmp",
+        )
         try:
-            with open(tmp_path, "w", encoding="utf-8") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2)
-            os.replace(tmp_path, self.registry_path)
-        except OSError:
+            os.replace(tmp, self.registry_path)
+        except BaseException:
             try:
-                tmp_path.unlink()
+                os.unlink(tmp)
             except OSError:
                 pass
             raise

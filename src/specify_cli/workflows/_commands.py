@@ -352,6 +352,7 @@ def workflow_run(
     from .catalog import WorkflowRegistry
 
     registered_id: str | None = None
+    registry_root = project_root
     if not is_file_source:
         # Reject path-equivalent spellings ("align-wf/", "align-wf/.") that
         # would miss the registry lookup yet still load the installed file,
@@ -364,16 +365,18 @@ def workflow_run(
         registered_id = source
     else:
         # A direct YAML path may still point at an installed workflow's own
-        # file; map it back to its ID so disabled state is enforced there too.
-        workflows_root = (project_root / ".specify" / "workflows").resolve()
+        # file; map it back to its owning project and ID from the canonical
+        # path itself so the guard is independent of the caller's cwd.
         resolved = source_path.resolve()
-        if resolved.is_relative_to(workflows_root):
-            rel_parts = resolved.relative_to(workflows_root).parts
-            if rel_parts:
-                registered_id = rel_parts[0]
+        parts = resolved.parts
+        for i in range(len(parts) - 2):
+            if parts[i] == ".specify" and parts[i + 1] == "workflows":
+                registry_root = Path(*parts[:i]) if i else Path(resolved.anchor or ".")
+                registered_id = parts[i + 2]
+                break
 
     if registered_id is not None:
-        installed_meta = WorkflowRegistry(project_root).get(registered_id)
+        installed_meta = WorkflowRegistry(registry_root).get(registered_id)
         if isinstance(installed_meta, dict) and not installed_meta.get("enabled", True):
             err.print(
                 f"[red]Error:[/red] Workflow '{_escape_markup(registered_id)}' is disabled. "

@@ -8211,6 +8211,16 @@ steps:
         assert result.exit_code != 0
         assert "disabled" in result.output
 
+        # Same guard must hold when invoked from outside the project.
+        outside = project_dir.parent / "outside-cwd"
+        outside.mkdir(exist_ok=True)
+        monkeypatch.chdir(outside)
+        result = runner.invoke(
+            app, ["workflow", "run", str(project_dir / installed_yaml)]
+        )
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
