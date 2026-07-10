@@ -1226,7 +1226,63 @@ class TestExtensionManager:
         assert new_config.exists()
         assert new_config.read_text() == "test: config"
 
-    def test_install_force_without_existing(self, extension_dir, project_dir):
+    def test_reinstall_after_keep_config_preserves_config(
+        self, extension_dir, project_dir
+    ):
+        """Reinstalling after `remove --keep-config` must not overwrite preserved config."""
+        manager = ExtensionManager(project_dir)
+
+        # Install once
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Customize the config file
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+
+        # Remove while preserving config
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+        assert "custom-model" in config_file.read_text()
+
+        # Plain reinstall (no --force)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Preserved config must survive the reinstall
+        assert config_file.exists()
+        assert "custom-model" in config_file.read_text()
+        assert "99" in config_file.read_text()
+
+    def test_reinstall_after_keep_config_preserves_local_config(
+        self, extension_dir, project_dir
+    ):
+        """Local config override files (*-config.local.yml) are also rescued on reinstall."""
+        manager = ExtensionManager(project_dir)
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        local_cfg = ext_dir / "test-ext-config.local.yml"
+        local_cfg.write_text("local_override: true\n")
+
+        manager.remove("test-ext", keep_config=True)
+        assert local_cfg.exists()
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert local_cfg.exists()
+        assert "local_override: true" in local_cfg.read_text()
+
+
         """Test force-install when extension is NOT already installed (works normally)."""
         manager = ExtensionManager(project_dir)
 
