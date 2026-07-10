@@ -845,6 +845,22 @@ class TestRedirectStripping:
         auth3 = req3.get_header("Authorization") or req3.unredirected_hdrs.get("Authorization")
         assert auth3 == "Bearer tok"
 
+    def test_malformed_redirect_url_raises_urlerror_not_valueerror(self):
+        """A redirect to a malformed URL (unterminated IPv6 bracket) surfaces
+        as URLError, which download paths already handle, rather than an
+        unhandled ValueError traceback."""
+        import urllib.error
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+        from urllib.request import Request
+        import io
+
+        handler = _StripAuthOnRedirect(("github.com",))
+        req = Request("https://github.com/org/repo")
+
+        with pytest.raises(urllib.error.URLError):
+            handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
+                                     "https://[::1/asset")
+
 
 # ---------------------------------------------------------------------------
 # _fetch_latest_release_tag delegation

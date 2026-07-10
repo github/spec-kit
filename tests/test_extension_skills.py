@@ -850,6 +850,67 @@ class TestExtensionSkillRegistration:
         assert ".specify/templates/checklist.md" in content
         assert ".specify/memory/constitution.md" in content
 
+    def test_skill_registration_uses_extension_local_script_paths(self, project_dir, temp_dir):
+        """Auto-registered skills should not rewrite extension scripts into core scripts."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "scripted-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "scripted-ext",
+                "name": "Scripted Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.scripted-ext.check",
+                        "file": "commands/check.md",
+                        "description": "Scripted check command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "scripts" / "bash").mkdir(parents=True)
+        (ext_dir / "scripts" / "bash" / "resolve-skill.sh").write_text(
+            "#!/usr/bin/env bash\n"
+        )
+        (ext_dir / "scripts" / "bash" / "ensure-skills.sh").write_text(
+            "#!/usr/bin/env bash\n"
+        )
+        (ext_dir / "commands" / "check.md").write_text(
+            "---\n"
+            "description: Scripted check command\n"
+            "scripts:\n"
+            '  sh: scripts/bash/resolve-skill.sh "{ARGS}"\n'
+            "---\n\n"
+            "Run {SCRIPT}\n"
+            "Then run scripts/bash/ensure-skills.sh.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-scripted-ext-check" / "SKILL.md").read_text()
+        assert "{SCRIPT}" not in content
+        assert "{ARGS}" not in content
+        assert (
+            '.specify/extensions/scripted-ext/scripts/bash/resolve-skill.sh "$ARGUMENTS"'
+            in content
+        )
+        assert ".specify/extensions/scripted-ext/scripts/bash/ensure-skills.sh" in content
+        assert ".specify/scripts/bash/resolve-skill.sh" not in content
+        assert ".specify/scripts/bash/ensure-skills.sh" not in content
+
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""
         project_dir, skills_dir = skills_project

@@ -12,7 +12,7 @@
 #
 # When `plan_path` is omitted, the script derives it from `.specify/feature.json`
 # (written by /speckit-specify). Falls back to the most recently modified
-# `specs/*/plan.md` only when feature.json is absent or its plan does not exist yet.
+# `specs/**/plan.md` only when feature.json is absent or its plan does not exist yet.
 
 [CmdletBinding()]
 param(

@@ -75,7 +75,11 @@ def _validate_remote_url(source_id: str, url: str) -> None:
             f"Catalog '{source_id}' URL must use HTTPS (got {parsed.scheme}://). "
             "HTTP is only allowed for localhost."
         )
-    if not parsed.netloc:
+    # Check hostname, not netloc: netloc is truthy for host-less URLs like
+    # "https://:8080" or "https://user@...", so requiring netloc would let
+    # those through even though they carry no host. hostname is None in those
+    # cases. Mirrors the fix in ``specify_cli.catalogs`` (#3210).
+    if not parsed.hostname:
         raise BundlerError(
             f"Catalog '{source_id}' URL must be a valid URL with a host: {url}"
         )

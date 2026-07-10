@@ -50,7 +50,17 @@ workflow_step_catalog_app = typer.Typer(
 workflow_step_app.add_typer(workflow_step_catalog_app, name="catalog")
 
 
-def _parse_input_values(input_values: list[str] | None) -> dict[str, Any]:
+def _error_console(json_output: bool):
+    """Console for error text: stderr under ``--json`` so the JSON stdout
+    stream stays parseable, the normal console otherwise. Mirrors the
+    stderr-only error routing already used by ``specify bundle``.
+    """
+    return err_console if json_output else console
+
+
+def _parse_input_values(
+    input_values: list[str] | None, *, json_output: bool = False
+) -> dict[str, Any]:
     """Parse repeated ``key=value`` CLI inputs into a dict.
 
     Shared by ``workflow run`` and ``workflow resume``. Exits with an error
@@ -59,7 +69,9 @@ def _parse_input_values(input_values: list[str] | None) -> dict[str, Any]:
     inputs: dict[str, Any] = {}
     for kv in input_values or []:
         if "=" not in kv:
-            console.print(f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)")
+            _error_console(json_output).print(
+                f"[red]Error:[/red] Invalid input format: {kv!r} (expected key=value)"
+            )
             raise typer.Exit(1)
         key, _, value = kv.partition("=")
         inputs[key.strip()] = value.strip()
@@ -335,25 +347,26 @@ def workflow_run(
     if not json_output:
         engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
+    err = _error_console(json_output)
     try:
         definition = engine.load_workflow(source_path if is_file_source else source)
     except FileNotFoundError:
-        console.print(f"[red]Error:[/red] Workflow not found: {source}")
+        err.print(f"[red]Error:[/red] Workflow not found: {source}")
         raise typer.Exit(1)
     except ValueError as exc:
-        console.print(f"[red]Error:[/red] Invalid workflow: {exc}")
+        err.print(f"[red]Error:[/red] Invalid workflow: {exc}")
         raise typer.Exit(1)
 
     # Validate
     errors = engine.validate(definition)
     if errors:
-        console.print("[red]Workflow validation failed:[/red]")
-        for err in errors:
-            console.print(f"  • {err}")
+        err.print("[red]Workflow validation failed:[/red]")
+        for verr in errors:
+            err.print(f"  • {verr}")
         raise typer.Exit(1)
 
     # Parse inputs
-    inputs = _parse_input_values(input_values)
+    inputs = _parse_input_values(input_values, json_output=json_output)
 
     if not json_output:
         console.print(f"\n[bold cyan]Running workflow:[/bold cyan] {definition.name} ({definition.id})")
@@ -363,10 +376,10 @@ def workflow_run(
         with _stdout_to_stderr_when(json_output):
             state = engine.execute(definition, inputs)
     except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
-        console.print(f"[red]Workflow failed:[/red] {exc}")
+        err.print(f"[red]Workflow failed:[/red] {exc}")
         raise typer.Exit(1)
 
     if json_output:
@@ -411,19 +424,20 @@ def workflow_resume(
     if not json_output:
         engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
-    inputs = _parse_input_values(input_values)
+    inputs = _parse_input_values(input_values, json_output=json_output)
+    err = _error_console(json_output)
 
     try:
         with _stdout_to_stderr_when(json_output):
             state = engine.resume(run_id, inputs or None)
     except FileNotFoundError:
-        console.print(f"[red]Error:[/red] Run not found: {run_id}")
+        err.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
     except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
     except Exception as exc:
-        console.print(f"[red]Resume failed:[/red] {exc}")
+        err.print(f"[red]Resume failed:[/red] {exc}")
         raise typer.Exit(1)
 
     if json_output:
@@ -617,7 +631,11 @@ def workflow_add(
         from urllib.parse import urlparse
         from specify_cli.authentication.http import open_url as _open_url
 
-        parsed_src = urlparse(source)
+        try:
+            parsed_src = urlparse(source)
+        except ValueError:
+            console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(source)}")
+            raise typer.Exit(1)
         src_host = parsed_src.hostname or ""
         src_loopback = src_host == "localhost"
         if not src_loopback:

@@ -141,8 +141,9 @@ def _install_shared_infra(
 
     Copies ``.specify/scripts/<variant>/`` and ``.specify/templates/`` from
     the bundled core_pack or source checkout, where ``<variant>`` is
-    ``bash`` when *script_type* is ``"sh"`` and ``powershell`` when it is
-    ``"ps"``.  Tracks all installed files in ``speckit.manifest.json``.
+    ``bash`` when *script_type* is ``"sh"``, ``python`` when it is ``"py"``,
+    and ``powershell`` when it is ``"ps"``.  Tracks all installed files in
+    ``speckit.manifest.json``.
 
     Shared scripts and page templates are processed to resolve
     ``__SPECKIT_COMMAND_<NAME>__`` placeholders using *invoke_separator*

@@ -353,3 +353,38 @@ class TestHermesInitFlow:
             if "agent-context" not in d.name
         ]
         assert local_skills == [], f"Local skills dir should be empty, got: {local_skills}"
+
+
+class TestHermesBuildExecArgs:
+    """CLI dispatch argv, including the operator extra-args env hook."""
+
+    def test_build_exec_args_default_shape(self):
+        i = get_integration("hermes")
+        assert i.build_exec_args("/speckit-plan hi", output_json=True) == [
+            "hermes", "chat", "-Q", "--json", "-s", "speckit-plan", "-q", "hi",
+        ]
+
+    def test_build_exec_args_honors_extra_args(self, monkeypatch):
+        """SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS is injected before the
+        canonical -m/--json/-s/-q flags (same env hook as codex/opencode/
+        devin; hermes previously skipped _apply_extra_args_env_var entirely).
+        """
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_HERMES_EXTRA_ARGS", "--temperature 0.2"
+        )
+        i = get_integration("hermes")
+        args = i.build_exec_args("/speckit-plan hi", output_json=True)
+        assert args == [
+            "hermes", "chat", "-Q", "--temperature", "0.2",
+            "--json", "-s", "speckit-plan", "-q", "hi",
+        ]
+        # Injected before the canonical flags so it can't displace them.
+        assert args.index("--temperature") < args.index("--json")
+        assert args.index("--temperature") < args.index("-s")
+
+    def test_build_exec_args_honors_executable_override(self, monkeypatch):
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_HERMES_EXECUTABLE", "/custom/hermes"
+        )
+        i = get_integration("hermes")
+        assert i.build_exec_args("/speckit-plan hi")[0] == "/custom/hermes"

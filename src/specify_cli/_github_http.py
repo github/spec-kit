@@ -127,7 +127,14 @@ def resolve_github_release_asset_api_url(
     if hostname == "github.com":
         api_base = "https://api.github.com"
     elif is_ghes:
-        authority = hostname if parsed.port is None else f"{hostname}:{parsed.port}"
+        # ``parsed.port`` raises ValueError on a malformed port (e.g.
+        # ``host:notaport``); the function's contract is to return None for
+        # anything it can't resolve, not to raise.
+        try:
+            port = parsed.port
+        except ValueError:
+            return None
+        authority = hostname if port is None else f"{hostname}:{port}"
         api_base = f"{parsed.scheme}://{authority}/api/v3"
     else:
         return None

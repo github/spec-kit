@@ -291,6 +291,18 @@ class TomlIntegrationTests:
             "closing delimiter should be inline when body does not end with a quote"
         )
 
+    def test_toml_string_escapes_control_characters(self):
+        """A value with control chars / a bare CR must render as parseable TOML.
+
+        TOML forbids literal control characters (U+0000–U+001F except tab and
+        newline, plus U+007F) in every string form, and a bare CR that is not
+        part of a CRLF pair. The renderer used to emit these raw into a basic or
+        ``\"\"\"`` multiline string, producing a config file that fails to parse."""
+        value = "start\x00null\x01ctrl\x1besc\x7fdel\rlone-cr end"
+        rendered = TomlIntegration._render_toml_string(value)
+        parsed = tomllib.loads(f"prompt = {rendered}")
+        assert parsed["prompt"] == value
+
     def test_toml_is_valid(self, tmp_path):
         """Every generated TOML file must parse without errors."""
         i = get_integration(self.KEY)

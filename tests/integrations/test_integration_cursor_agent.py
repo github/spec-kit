@@ -125,6 +125,55 @@ class TestCursorAgentCliDispatch:
         assert argv is not None
         assert argv[0] == "cursor-agent"
 
+    def test_build_exec_args_honors_executable_override(self, monkeypatch):
+        """``SPECKIT_INTEGRATION_CURSOR_AGENT_EXECUTABLE`` overrides argv[0].
+
+        Every other CLI-dispatch integration (codex, devin, ...) routes
+        argv[0] through ``_resolve_executable()`` so operators can pin a
+        binary path (issue #2596). cursor-agent hardcoded ``self.key`` and
+        silently ignored the documented override.
+        """
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CURSOR_AGENT_EXECUTABLE", "/custom/cursor"
+        )
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args("/speckit-plan", output_json=False)
+        assert args[0] == "/custom/cursor"
+        # The mandatory headless flags must still be present.
+        for flag in ("-p", "--trust", "--approve-mcps", "--force"):
+            assert flag in args
+
+    def test_build_exec_args_honors_extra_args_override(self, monkeypatch):
+        """``SPECKIT_INTEGRATION_CURSOR_AGENT_EXTRA_ARGS`` flags are injected
+        *before* Spec Kit's canonical ``--model`` / ``--output-format`` flags.
+
+        The ``_apply_extra_args_env_var()`` hook (issue #2595) was never
+        invoked by cursor-agent, so operator-supplied flags were dropped.
+        Insertion order is the real contract: extra args must land after the
+        mandatory headless flags but before ``--model`` / ``--output-format``,
+        so they cannot clobber, displace, or reorder Spec Kit's canonical
+        trailing flags. Exercise with both a model and JSON output so both
+        canonical flags are present to pin against.
+        """
+        monkeypatch.setenv(
+            "SPECKIT_INTEGRATION_CURSOR_AGENT_EXTRA_ARGS", "--foo bar"
+        )
+        i = get_integration("cursor-agent")
+        args = i.build_exec_args(
+            "/speckit-plan", model="sonnet-4-thinking", output_json=True
+        )
+        assert "--foo" in args
+        assert "bar" in args
+        # "bar" is the value of "--foo": the tokens stay adjacent and in order.
+        assert args.index("bar") == args.index("--foo") + 1
+        # Extra args are inserted before the canonical flags, so they cannot
+        # clobber or reorder them (the behavioral contract this test guards).
+        assert args.index("--foo") < args.index("--model")
+        assert args.index("--foo") < args.index("--output-format")
+        # The canonical flags themselves remain intact and correctly paired.
+        assert args[args.index("--model") + 1] == "sonnet-4-thinking"
+        assert args[args.index("--output-format") + 1] == "json"
+
     def test_build_command_invocation_uses_hyphenated_skill_name(self):
         """SkillsIntegration: /speckit-plan (not /speckit.plan)."""
         i = get_integration("cursor-agent")
