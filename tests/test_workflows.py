@@ -7660,6 +7660,54 @@ steps:
         # The previously installed workflow must survive.
         assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
 
+    def test_update_rejects_version_mismatch_from_stale_url(self, project_dir, monkeypatch):
+        """A URL serving a different version than the catalog advertised must fail the update."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        WorkflowRegistry(project_dir).add("align-wf", {
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "description": "CLI alignment test workflow",
+            "source": "catalog",
+            "catalog_name": "test-catalog",
+            "url": "https://example.com/workflow.yml",
+        })
+        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        # The URL still serves the old 1.0.0 payload.
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+        ):
+            result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert "does not match the catalog version" in result.output
+        assert "Failed to update" in result.output
+        meta = WorkflowRegistry(project_dir).get("align-wf")
+        assert meta["version"] == "1.0.0"
+        assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
+
     def test_update_preserves_disabled_state(self, project_dir, monkeypatch):
         from unittest.mock import patch
         from typer.testing import CliRunner

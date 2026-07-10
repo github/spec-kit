@@ -789,11 +789,14 @@ def _install_workflow_from_catalog(
     registry: Any,
     workflows_dir: Path,
     workflow_id: str,
+    expected_version: str | None = None,
 ) -> None:
     """Download, validate, and register a catalog workflow.
 
     Shared by ``workflow add`` and ``workflow update``. Raises ``typer.Exit``
     on any failure; the registry entry is only written on full success.
+    ``expected_version``, when given, rejects a downloaded workflow whose
+    version does not match the catalog version that triggered the install.
     """
     from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowDefinition
@@ -927,6 +930,25 @@ def _install_workflow_from_catalog(
             f"The catalog entry may be misconfigured."
         )
         raise typer.Exit(1)
+
+    # A stale or misconfigured URL can serve a different version than the
+    # catalog advertised; without this check `update` would report success
+    # while leaving the old version installed (or even downgrading).
+    if expected_version is not None:
+        from packaging import version as pkg_version
+        try:
+            version_matches = pkg_version.Version(str(definition.version)) == pkg_version.Version(expected_version)
+        except pkg_version.InvalidVersion:
+            version_matches = str(definition.version) == expected_version
+        if not version_matches:
+            import shutil
+            shutil.rmtree(workflow_dir, ignore_errors=True)
+            console.print(
+                f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
+                f"does not match the catalog version ({_escape_markup(expected_version)}). "
+                f"The catalog entry may be stale or misconfigured."
+            )
+            raise typer.Exit(1)
 
     entry = {
         "name": definition.name or info.get("name", workflow_id),
@@ -1109,7 +1131,10 @@ def workflow_update(
             wf_dir = _safe_workflow_id_dir(workflows_dir, update["id"])
             wf_file = wf_dir / "workflow.yml"
             backup = wf_file.read_bytes() if wf_file.is_file() else None
-            _install_workflow_from_catalog(project_root, registry, workflows_dir, update["id"])
+            _install_workflow_from_catalog(
+                project_root, registry, workflows_dir, update["id"],
+                expected_version=update["available"],
+            )
         except (typer.Exit, OSError) as exc:
             if backup is not None and wf_dir is not None and wf_file is not None:
                 try:
