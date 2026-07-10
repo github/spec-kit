@@ -514,13 +514,15 @@ def _coerce_number(value: Any) -> Any:
 def _safe_membership(left: Any, right: Any, *, negate: bool) -> bool:
     """Safely evaluate ``left in right`` (or ``not in``) without crashing.
 
-    A non-iterable right operand (``None``, an int, a bool, ...) makes ``in``
-    raise ``TypeError`` in Python. Nothing is contained in such a value, so
-    treat membership as ``False`` (``not in`` as ``True``) rather than leaking
-    the error out of the evaluator and crashing the whole workflow. Mirrors the
-    graceful ``TypeError`` handling in ``_safe_compare`` for the ordering
-    operators, and generalizes the previous ``right is not None`` guard to
-    every non-iterable right operand.
+    ``left in right`` raises ``TypeError`` whenever the operands don't support
+    membership testing — most commonly a non-iterable right operand (``None``,
+    an int, a bool), but also cases like an unhashable ``left`` against a set.
+    In every such case the membership relation is undefined, so treat it as
+    ``False`` (``not in`` as ``True``) rather than leaking the error out of the
+    evaluator and crashing the whole workflow. Mirrors the graceful
+    ``TypeError`` handling in ``_safe_compare`` for the ordering operators, and
+    generalizes the previous ``right is not None`` guard to any operand pair
+    that can't be membership-tested.
     """
     try:
         contained = left in right

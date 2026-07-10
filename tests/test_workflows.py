@@ -473,9 +473,10 @@ class TestExpressions:
         # TypeError and crashing the whole workflow run. This generalizes the
         # previous `right is not None` guard and mirrors _safe_compare, which
         # already swallows TypeError for the ordering operators.
-        ctx = StepContext(inputs={"tag": "x", "count": 5, "flag": True})
+        ctx = StepContext(inputs={"tag": "x", "count": 5, "ratio": 1.5, "flag": True})
         assert evaluate_expression("{{ inputs.tag in inputs.count }}", ctx) is False
         assert evaluate_expression("{{ inputs.tag not in inputs.count }}", ctx) is True
+        assert evaluate_expression("{{ 'a' in inputs.ratio }}", ctx) is False
         assert evaluate_expression("{{ 'a' in inputs.flag }}", ctx) is False
         assert evaluate_expression("{{ inputs.tag in inputs.missing }}", ctx) is False
         # A condition that would otherwise crash the run now evaluates cleanly.
