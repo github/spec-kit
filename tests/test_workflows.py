@@ -7563,6 +7563,59 @@ steps:
         registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
         assert registry.get("align-wf")["version"] == "1.0.0"
 
+    def test_registry_save_failure_preserves_file_on_disk(self, project_dir, monkeypatch):
+        """A failed dump must not truncate the persisted registry."""
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
+
+        import specify_cli.workflows.catalog as catalog_mod
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(catalog_mod.json, "dump", boom)
+        with pytest.raises(OSError):
+            registry.add("align-wf", {"version": "2.0.0", "source": "catalog"})
+        monkeypatch.undo()
+
+        fresh = WorkflowRegistry(project_dir)
+        assert fresh.get("align-wf")["version"] == "1.0.0"
+        assert not list(registry.workflows_dir.glob("*.tmp"))
+
+    def test_update_mixed_targets_does_not_claim_all_up_to_date(self, project_dir, monkeypatch):
+        """Skipped targets must not be presented as verified up to date."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)  # local source → skipped
+        WorkflowRegistry(project_dir).add("catalog-wf", {
+            "name": "Catalog Workflow",
+            "version": "1.0.0",
+            "description": "",
+            "source": "catalog",
+            "url": "https://example.com/workflow.yml",
+        })
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+            },
+        )
+        result = runner.invoke(app, ["workflow", "update"])
+        assert result.exit_code == 0, result.output
+        assert "All workflows are up to date!" not in result.output
+        assert "All checked workflows are up to date" in result.output
+        assert "skipped" in result.output
+
     def test_run_refuses_falsy_non_bool_enabled(self, project_dir, monkeypatch):
         """A falsy non-bool "enabled" (0) shows as disabled in list — run must agree."""
         import json as json_mod

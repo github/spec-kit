@@ -83,10 +83,20 @@ class WorkflowRegistry:
         return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
 
     def save(self) -> None:
-        """Persist registry to disk."""
+        """Persist registry to disk atomically."""
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        # Write-then-replace so a failed dump cannot truncate the registry.
+        tmp_path = self.registry_path.with_name(self.registry_path.name + ".tmp")
+        try:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+            os.replace(tmp_path, self.registry_path)
+        except OSError:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+            raise
 
     def add(self, workflow_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed workflow entry."""

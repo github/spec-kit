@@ -1138,10 +1138,15 @@ def workflow_update(
             console.print(f"✓ {safe_id}: Up to date (v{installed_version})")
 
     if not updates_available:
-        if checked:
+        if not checked:
+            console.print("\n[yellow]No workflows were eligible for update[/yellow]")
+        elif checked == len(targets):
             console.print("\n[green]All workflows are up to date![/green]")
         else:
-            console.print("\n[yellow]No workflows were eligible for update[/yellow]")
+            console.print(
+                f"\n[green]All checked workflows are up to date[/green] "
+                f"[yellow]({len(targets) - checked} skipped)[/yellow]"
+            )
         raise typer.Exit(0)
 
     console.print("\n[bold]Updates available:[/bold]\n")
