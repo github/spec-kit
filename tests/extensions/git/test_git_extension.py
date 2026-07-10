@@ -1298,7 +1298,11 @@ class TestAutoCommitPowerShellCommitStyle:
         (project / "new-file.txt").write_text("content")
         result = _run_pwsh("auto-commit.ps1", project, "after_specify")
         assert result.returncode != 0
-        assert "conventional" in result.stderr.lower()
+        # Write-Warning output placement (stdout vs. stderr) is not deterministic
+        # across pwsh versions/platforms, so check the combined stream like the
+        # other pwsh tests above (e.g. test_not_a_repo_still_detected_with_autocrlf).
+        combined = result.stdout + result.stderr
+        assert "conventional" in combined.lower()
 
         log = subprocess.run(
             ["git", "log", "--oneline"],
