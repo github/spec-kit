@@ -34,7 +34,7 @@ def _read_commit_message(repo_root: Path) -> str:
         return default
     try:
         lines = config_file.read_text(encoding="utf-8").splitlines()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return default
     for line in lines:
         if line.startswith("init_commit_message:"):

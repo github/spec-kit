@@ -314,7 +314,7 @@ def get_author_token(repo_root: Path) -> str:
             email = lines[0] if lines else ""
             author = email.split("@")[0]
     if not author:
-        author = os.environ.get("USER", "unknown") or "unknown"
+        author = os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
     return branch_token(author, "unknown")
 
 
@@ -327,7 +327,7 @@ def read_git_config_value(config_file: Path, key: str) -> str:
         return ""
     try:
         lines = config_file.read_text(encoding="utf-8").splitlines()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return ""
     for line in lines:
         if re.match(rf"^\s*{re.escape(key)}:", line):
