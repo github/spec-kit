@@ -713,8 +713,10 @@ def workflow_add(
 
     # Try as URL (http/https) — either the positional source is a URL, or an
     # explicit --from URL names where to fetch it (mirrors `extension add --from`).
-    download_url = from_url or (
-        source if source.startswith(("http://", "https://")) else None
+    download_url = (
+        from_url
+        if from_url is not None
+        else (source if source.startswith(("http://", "https://")) else None)
     )
     if download_url is not None:
         from ipaddress import ip_address

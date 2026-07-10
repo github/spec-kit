@@ -7394,6 +7394,19 @@ steps:
         assert "does not match" in result.output
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
+    def test_add_from_empty_url_rejected_not_catalog_fallback(self, project_dir, monkeypatch):
+        """--from "" must fail URL validation, not silently install from the catalog."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "add", "align-wf", "--from", ""])
+        assert result.exit_code != 0
+        assert "HTTPS" in result.output
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
     def test_add_from_url_non_https_redirect_escapes_rich_markup(self, project_dir, monkeypatch):
         """A redirect to a non-HTTPS IPv6 literal (legally bracketed) must not be parsed as Rich markup."""
         from unittest.mock import patch
