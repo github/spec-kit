@@ -68,6 +68,13 @@ def _err(message: str) -> None:
     print(message, file=sys.stderr)
 
 
+def _persist_hint(var_name: str, value: str) -> str:
+    """Shell-appropriate guidance for persisting an env var in the caller's shell."""
+    if os.name == "nt":
+        return f'$env:{var_name} = "{value}"'
+    return f"export {var_name}={shlex.quote(value)}"
+
+
 @dataclass
 class Args:
     json_mode: bool = False
@@ -598,7 +605,7 @@ def main(argv: list[str]) -> int:
                 f"creation for {branch_name}"
             )
 
-        _err(f"# To persist: export SPECIFY_FEATURE={shlex.quote(branch_name)}")
+        _err(f"# To persist: {_persist_hint('SPECIFY_FEATURE', branch_name)}")
 
     if args.json_mode:
         payload: dict[str, object] = {
@@ -613,8 +620,8 @@ def main(argv: list[str]) -> int:
         print(f"FEATURE_NUM: {feature_num}")
         if not args.dry_run:
             print(
-                "# To persist in your shell: export "
-                f"SPECIFY_FEATURE={shlex.quote(branch_name)}"
+                "# To persist in your shell: "
+                f"{_persist_hint('SPECIFY_FEATURE', branch_name)}"
             )
 
     return 0

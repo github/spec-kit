@@ -295,18 +295,26 @@ class TestCreateFeatureBranchParity:
         assert "cannot be empty or contain only whitespace" in p.stderr
 
     def test_specify_init_dir_resolves_target_project(self, tmp_path: Path):
-        _, py_proj = _twin_projects(tmp_path)
+        # The script is installed under host_proj, so script_file-based
+        # discovery (and cwd-based discovery, since we run from elsewhere)
+        # would resolve host_proj, not target_proj. host_proj has no specs
+        # (next number 001); target_proj already has 007-existing (next
+        # number 008). Only honoring SPECIFY_INIT_DIR produces 008, so this
+        # proves the env var -- not script location or cwd -- controls
+        # resolution.
+        host_proj = _setup_py_project(tmp_path / "host")
+        target_proj = _setup_py_project(tmp_path / "target")
+        (target_proj / "specs" / "007-existing").mkdir(parents=True)
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()
-        # Run from outside the project so SPECIFY_INIT_DIR is what resolves it.
         p = _run_py(
-            "create-new-feature-branch", py_proj,
+            "create-new-feature-branch", host_proj,
             "--json", "--dry-run", "init dir feature",
-            env_extra={"SPECIFY_INIT_DIR": str(py_proj)},
+            env_extra={"SPECIFY_INIT_DIR": str(target_proj)},
             run_cwd=elsewhere,
         )
         assert p.returncode == 0
-        assert json.loads(p.stdout)["FEATURE_NUM"] == "001"
+        assert json.loads(p.stdout)["FEATURE_NUM"] == "008"
 
     def test_specify_init_dir_without_core_errors(self, tmp_path: Path):
         _, py_proj = _twin_projects(tmp_path)
