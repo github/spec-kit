@@ -7608,6 +7608,56 @@ steps:
         assert result.exit_code != 0
         assert "Failed to update" in result.output
 
+    def test_update_survives_oserror_from_backup_read(self, project_dir, monkeypatch):
+        """OSError while reading the backup for one workflow must not abort the whole update."""
+        import json
+        from pathlib import Path
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry, WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        registry_path = WorkflowRegistry(project_dir).registry_path
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "workflows": {
+                        "wobbly": {
+                            "name": "Wobbly",
+                            "version": "0.0.1",
+                            "source": "catalog",
+                            "url": "https://example.com/wobbly.yml",
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        # An existing installed file whose read_bytes will raise OSError.
+        wf_file = project_dir / ".specify" / "workflows" / "wobbly" / "workflow.yml"
+        wf_file.parent.mkdir(parents=True, exist_ok=True)
+        wf_file.write_bytes(b"schema_version: '1.0'\nworkflow:\n  id: wobbly\n  name: Wobbly\n  version: 0.0.1\nsteps: []\n")
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {"version": "9.9.9", "url": "https://example.com/wobbly.yml", "_install_allowed": True},
+        )
+        real_read = Path.read_bytes
+
+        def _boom(self, *args, **kwargs):
+            if self.name == "workflow.yml" and "wobbly" in str(self):
+                raise OSError("simulated permission denied")
+            return real_read(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_bytes", _boom)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert result.exit_code != 0, result.output
+        assert "Filesystem error" in result.output
+        assert "Failed to update" in result.output
+
     def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
         import json
         from typer.testing import CliRunner

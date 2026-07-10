@@ -1096,10 +1096,21 @@ def workflow_update(
             wf_file = wf_dir / "workflow.yml"
             backup = wf_file.read_bytes() if wf_file.is_file() else None
             _install_workflow_from_catalog(project_root, registry, workflows_dir, update["id"])
-        except typer.Exit:
+        except (typer.Exit, OSError) as exc:
             if backup is not None and wf_dir is not None and wf_file is not None:
-                wf_dir.mkdir(parents=True, exist_ok=True)
-                wf_file.write_bytes(backup)
+                try:
+                    wf_dir.mkdir(parents=True, exist_ok=True)
+                    wf_file.write_bytes(backup)
+                except OSError as restore_exc:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] Could not restore backup for "
+                        f"'{_escape_markup(update['id'])}': {_escape_markup(str(restore_exc))}"
+                    )
+            if isinstance(exc, OSError):
+                console.print(
+                    f"[red]Error:[/red] Filesystem error updating "
+                    f"'{_escape_markup(update['id'])}': {_escape_markup(str(exc))}"
+                )
             failed.append(update["id"])
 
     if failed:
