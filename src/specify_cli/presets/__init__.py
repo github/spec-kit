@@ -778,6 +778,7 @@ class PresetManager:
                                         matching_cmds, ext_id, ext_dir,
                                         self.project_root,
                                         context_note=f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n",
+                                        extension_id=ext_id,
                                     )
                                     registered = True
                             except Exception:
@@ -1199,6 +1200,8 @@ class PresetManager:
                     "command_name": cmd_name,
                     "source_file": source_file,
                     "source": f"extension:{manifest.id}",
+                    "extension_id": manifest.id,
+                    "extension_dir": ext_root,
                 }
                 modern_skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
                 restore_index.setdefault(modern_skill_name, restore_info)
@@ -1463,6 +1466,17 @@ class PresetManager:
             if extension_restore:
                 content = extension_restore["source_file"].read_text(encoding="utf-8")
                 frontmatter, body = registrar.parse_frontmatter(content)
+                # Mirror the register-time rewrite (#2101): resolve
+                # extension-relative subdir references (agents/,
+                # knowledge-base/, etc.) to their installed location before
+                # the generic placeholder resolution below, otherwise
+                # restoring after a preset override removal would leave
+                # bare, unresolvable paths in the skill body.
+                body = registrar.rewrite_extension_paths(
+                    body,
+                    extension_restore["extension_id"],
+                    extension_restore["extension_dir"],
+                )
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root

@@ -3663,6 +3663,8 @@ class TestPresetSkills:
 
         extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
         (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
         (extension_dir / "commands" / "cmd.md").write_text(
             "---\n"
             "description: Extension fakeext cmd\n"
@@ -3671,6 +3673,7 @@ class TestPresetSkills:
             "---\n\n"
             "extension:fakeext\n"
             "Run {SCRIPT}\n"
+            "Read agents/control/commander.md for context.\n"
         )
         extension_manifest = {
             "schema_version": "1.0",
@@ -3736,6 +3739,11 @@ class TestPresetSkills:
         assert "source: extension:fakeext" in content
         assert "extension:fakeext" in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        # Extension-relative subdir references must resolve to their
+        # installed location on restore too (#2101), not just on first
+        # registration.
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
         assert "# Fakeext Cmd Skill" in content
 
     def test_preset_remove_skips_skill_dir_without_skill_file(self, project_dir, temp_dir):
@@ -6017,6 +6025,91 @@ class TestCollectAllLayers:
 
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
+
+    def test_remove_restores_extension_command_subdir_paths_for_non_skill_agent(
+        self, project_dir, temp_dir
+    ):
+        """When a preset override of an extension command is removed, the
+        reconciled non-skill-agent command file should have the extension's
+        own subdir references rewritten to their installed location (#2101),
+        not left as bare, unresolvable paths."""
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        manager = PresetManager(project_dir)
+
+        preset_dir = temp_dir / "ext-cmd-override"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Override fakeext cmd\n---\n\npreset override content\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-cmd-override",
+                "name": "Ext Cmd Override",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should exist in gemini dir"
+        assert "preset override content" in cmd_files[0].read_text()
+
+        manager.remove("ext-cmd-override")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should still exist after removal"
+        content = cmd_files[0].read_text()
+        assert "preset override content" not in content
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
 
     def test_remove_restores_lower_priority_command(
         self, project_dir, temp_dir, valid_pack_data
