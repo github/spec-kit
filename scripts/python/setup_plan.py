@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         elif arg in {"--help", "-h"}:
             sys.stdout.write(_help_text(sys.argv[0]))
             return 0
-        # Other arguments are collected but unused, matching setup-plan.sh.
+        # Other arguments are accepted and silently ignored, matching setup-plan.sh.
 
     try:
         paths = get_feature_paths(script_file=Path(__file__))
