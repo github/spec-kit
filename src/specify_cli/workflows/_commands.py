@@ -825,8 +825,14 @@ def _install_workflow_from_catalog(
     from ipaddress import ip_address
     from urllib.parse import urlparse
 
-    parsed_url = urlparse(workflow_url)
-    url_host = parsed_url.hostname or ""
+    try:
+        parsed_url = urlparse(workflow_url)
+        url_host = parsed_url.hostname or ""
+    except ValueError:
+        console.print(
+            f"[red]Error:[/red] Workflow '{safe_wf_id}' has a malformed install URL."
+        )
+        raise typer.Exit(1)
     is_loopback = False
     if url_host == "localhost":
         is_loopback = True

@@ -7619,6 +7619,47 @@ steps:
         # The previously installed workflow must survive a failed update.
         assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
 
+    def test_update_malformed_catalog_url_fails_cleanly(self, project_dir, monkeypatch):
+        """An unparseable catalog URL (unbalanced IPv6 literal) must not abort the whole update."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry = WorkflowRegistry(project_dir)
+        registry.add("align-wf", {
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "description": "CLI alignment test workflow",
+            "source": "catalog",
+            "catalog_name": "test-catalog",
+            "url": "https://[::1/workflow.yml",
+        })
+        wf_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "2.0.0",
+                "url": "https://[::1/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "update"], input="y\n")
+        assert "malformed install URL" in result.output
+        assert "Failed to update" in result.output
+        # The previously installed workflow must survive.
+        assert "1.0.0" in (wf_dir / "workflow.yml").read_text(encoding="utf-8")
+
     def test_update_preserves_disabled_state(self, project_dir, monkeypatch):
         from unittest.mock import patch
         from typer.testing import CliRunner
