@@ -76,5 +76,3 @@ Areas under discussion or in progress for future development:
 - **Continued agent expansion** -- seven new agents were added in March alone. The agent-agnostic design means support for emerging tools can be added by anyone. [\[byteiota.com\]](https://byteiota.com/spec-driven-development-kills-vibe-coding-march-2026/)
 - **Experience simplification** -- the preset system, custom workflows, and growing walkthrough library lower the learning curve, but extension discoverability will need a more robust solution as the catalog grows. [\[github.com\]](https://github.com/github/spec-kit/releases)
 - **Toward a stable release** -- nine releases in one month reflects pre-1.0 momentum. Reaching 1.0 will require stabilizing the extension and preset APIs and ensuring backward compatibility across the agent and extension surface area. [\[github.com\]](https://github.com/github/spec-kit/blob/main/newsletters/2026-February.md)
-
-

@@ -84,6 +84,20 @@ class TestCatalogURLValidation:
         with pytest.raises(IntegrationCatalogError, match="valid URL"):
             IntegrationCatalog._validate_catalog_url(url)
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://[::1",                 # unclosed ipv6 bracket
+            "https://[not-an-ip]/c.json",   # bracketed non-ip host
+        ],
+    )
+    def test_malformed_url_rejected_cleanly(self, url):
+        # A malformed authority makes urlparse/hostname raise ValueError. The
+        # validator must turn that into its normal catalog error, not leak a
+        # raw ValueError to the caller.
+        with pytest.raises(IntegrationCatalogError, match="malformed"):
+            IntegrationCatalog._validate_catalog_url(url)
+
 
 # ---------------------------------------------------------------------------
 # IntegrationCatalog — active catalogs

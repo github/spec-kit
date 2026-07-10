@@ -96,3 +96,21 @@ def test_validate_remote_url_rejects_host_less_urls(url):
 def test_validate_remote_url_accepts_normal_https_url():
     # Sanity: a real host with a port still passes.
     adapters._validate_remote_url("team", "https://example.com:8080/c.json")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://[::1",  # unclosed IPv6 bracket
+        "https://[not-an-ip]/c.json",
+    ],
+)
+def test_validate_remote_url_rejects_malformed_url_cleanly(url):
+    """A malformed URL must raise BundlerError, not a raw ValueError.
+
+    ``urlparse``/``hostname`` raise ``ValueError`` on a malformed authority
+    (e.g. an unclosed IPv6 bracket). The validator's contract is to raise
+    BundlerError for any bad URL, so the raw ValueError must not escape to the
+    caller. Bundler sibling of #3369."""
+    with pytest.raises(BundlerError):
+        adapters._validate_remote_url("team", url)
