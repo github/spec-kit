@@ -108,6 +108,26 @@ _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"runs", "steps"})
 
 
+def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
+    """Reject a redirect before it is followed unless HTTPS (or loopback HTTP)."""
+    import urllib.error
+    from ipaddress import ip_address
+    from urllib.parse import urlparse
+
+    parsed = urlparse(new_url)
+    host = parsed.hostname or ""
+    loopback = host == "localhost"
+    if not loopback:
+        try:
+            loopback = ip_address(host).is_loopback
+        except ValueError:
+            pass
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
+        raise urllib.error.URLError(
+            "redirect target must use HTTPS, or HTTP for localhost/loopback"
+        )
+
+
 def _validate_workflow_id_or_exit(workflow_id: str) -> None:
     """Validate that ``workflow_id`` is a safe installed-workflow directory name."""
     if (
@@ -756,7 +776,12 @@ def workflow_add(
 
         import tempfile
         try:
-            with _open_url(download_url, timeout=30, extra_headers=_wf_url_extra_headers) as resp:
+            with _open_url(
+                download_url,
+                timeout=30,
+                extra_headers=_wf_url_extra_headers,
+                redirect_validator=_reject_insecure_download_redirect,
+            ) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -903,7 +928,12 @@ def _install_workflow_from_catalog(
             _wf_cat_extra_headers = {"Accept": "application/octet-stream"}
 
         workflow_dir.mkdir(parents=True, exist_ok=True)
-        with _open_url(workflow_url, timeout=30, extra_headers=_wf_cat_extra_headers) as response:
+        with _open_url(
+            workflow_url,
+            timeout=30,
+            extra_headers=_wf_cat_extra_headers,
+            redirect_validator=_reject_insecure_download_redirect,
+        ) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
             final_parsed = urlparse(final_url)
@@ -1621,7 +1651,9 @@ def workflow_step_add(
             raise ValueError(f"Refusing to fetch from non-HTTPS URL: {url}")
         if not parsed.hostname:
             raise ValueError(f"Refusing to fetch from URL with no hostname: {url}")
-        with _open_url(url, timeout=30) as resp:
+        with _open_url(
+            url, timeout=30, redirect_validator=_reject_insecure_download_redirect
+        ) as resp:
             final_url = resp.geturl()
             final_parsed = urlparse(final_url)
             final_is_localhost = final_parsed.hostname in ("localhost", "127.0.0.1", "::1")

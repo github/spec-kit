@@ -6579,7 +6579,7 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers, timeout))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
@@ -6631,7 +6631,7 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             return FakeResponse(self.VALID_WORKFLOW_YAML.encode())
 
@@ -6674,7 +6674,7 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
@@ -6750,7 +6750,7 @@ steps:
             def __exit__(self, *a):
                 return False
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
@@ -6818,7 +6818,7 @@ steps:
     run: "echo hello"
 """
 
-        def fake_open_url(url, timeout=None, extra_headers=None):
+        def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
@@ -7364,7 +7364,7 @@ steps:
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
         ):
             result = runner.invoke(
                 app,
@@ -7384,7 +7384,7 @@ steps:
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
         ):
             result = runner.invoke(
                 app,
@@ -7418,7 +7418,7 @@ steps:
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(b"", redirected_url),
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(b"", redirected_url),
         ):
             result = runner.invoke(
                 app,
@@ -7436,7 +7436,7 @@ steps:
         monkeypatch.chdir(project_dir)
         calls: list[str] = []
 
-        def _fake_open(url, timeout=None, extra_headers=None):
+        def _fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
             calls.append(url)
             raise AssertionError(f"network fetch attempted: {url}")
 
@@ -7601,6 +7601,51 @@ steps:
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "No workflow.yml found" in result.output
 
+    def test_download_redirect_validator_rejects_http_before_follow(self):
+        import urllib.error
+
+        from specify_cli.workflows._commands import _reject_insecure_download_redirect
+
+        with pytest.raises(urllib.error.URLError):
+            _reject_insecure_download_redirect(
+                "https://example.com/wf.yml", "http://evil.example.com/wf.yml"
+            )
+        # Allowed: HTTPS anywhere, HTTP on loopback.
+        _reject_insecure_download_redirect(
+            "https://example.com/wf.yml", "https://cdn.example.com/wf.yml"
+        )
+        _reject_insecure_download_redirect(
+            "https://example.com/wf.yml", "http://localhost:8000/wf.yml"
+        )
+        _reject_insecure_download_redirect(
+            "https://example.com/wf.yml", "http://127.0.0.1/wf.yml"
+        )
+
+    def test_add_from_url_passes_redirect_validator(self, project_dir, monkeypatch):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        seen: dict[str, object] = {}
+
+        def fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
+            seen["validator"] = redirect_validator
+            return self._FakeResponse(data, url)
+
+        runner = CliRunner()
+        with patch("specify_cli.authentication.http.open_url", side_effect=fake_open):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+        assert result.exit_code == 0, result.output
+        from specify_cli.workflows._commands import _reject_insecure_download_redirect
+
+        assert seen["validator"] is _reject_insecure_download_redirect
+
     def test_registry_save_failure_preserves_file_on_disk(self, project_dir, monkeypatch):
         """A failed dump must not truncate the persisted registry."""
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -7712,7 +7757,7 @@ steps:
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
         ):
             result = runner.invoke(app, ["workflow", "update"], input="y\n")
         assert result.exit_code == 0, result.output
@@ -7760,7 +7805,7 @@ steps:
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(b"", url),
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(b"", url),
         ), patch.object(
             WorkflowDefinition,
             "from_yaml",
@@ -7901,7 +7946,7 @@ steps:
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
         ):
             result = runner.invoke(app, ["workflow", "update"], input="y\n")
         assert "does not match the catalog version" in result.output
@@ -7939,7 +7984,7 @@ steps:
         runner = CliRunner()
         with patch(
             "specify_cli.authentication.http.open_url",
-            side_effect=lambda url, timeout=None, extra_headers=None: self._FakeResponse(data, url),
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
         ):
             result = runner.invoke(app, ["workflow", "update"], input="y\n")
         assert result.exit_code == 0, result.output
@@ -8187,7 +8232,7 @@ steps:
             },
         )
 
-        def boom(url, timeout=None, extra_headers=None):
+        def boom(url, timeout=None, extra_headers=None, redirect_validator=None):
             raise OSError("network down")
 
         runner = CliRunner()
