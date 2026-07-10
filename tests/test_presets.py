@@ -4219,6 +4219,61 @@ class TestPresetSkills:
         )
         assert "Preset body" not in content
 
+    def test_rescaffold_persists_commands_before_fallible_skills_phase(
+        self, project_dir, temp_dir
+    ):
+        """A failure in the skills phase must not lose track of command
+        files the commands phase already wrote to disk.
+
+        ``register_enabled_presets_for_agent`` computes both
+        ``registered_commands`` and ``registered_skills`` and persists them
+        together in a single ``registry.update()`` call after both phases
+        run. If ``_register_skills`` raises, the whole per-preset ``try``
+        block is caught and ``registry.update()`` is never reached — even
+        though ``_register_commands`` already wrote a real command file to
+        disk. That file becomes untracked and preset removal can no longer
+        clean it up. ``install_from_directory`` avoids this by persisting
+        ``registered_commands`` immediately after the commands phase,
+        before starting the independently fallible skills phase; rescaffold
+        must do the same (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "rescaffold-persist-preset", "speckit.specify",
+            "Rescaffold persist test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Switch to gemini (a plain command-file agent, so _register_commands
+        # writes a real file) and make the *skills* phase blow up.
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_commands_dir = project_dir / ".gemini" / "commands"
+        gemini_commands_dir.mkdir(parents=True)
+
+        from unittest.mock import patch
+
+        with patch.object(
+            PresetManager, "_register_skills",
+            side_effect=RuntimeError("simulated skills failure"),
+        ):
+            manager.register_enabled_presets_for_agent("gemini")
+
+        cmd_file = gemini_commands_dir / "speckit.specify.toml"
+        assert cmd_file.exists(), (
+            "sanity: the commands phase must have written the file before "
+            "the skills phase raised"
+        )
+
+        metadata = manager.registry.get("rescaffold-persist-preset")
+        assert metadata["registered_commands"].get("gemini"), (
+            "registered_commands must be persisted immediately after the "
+            "commands phase, not only after the (fallible) skills phase "
+            "also succeeds — otherwise the file written above is untracked "
+            "and preset removal can't clean it up (#2948)"
+        )
+
     def test_copilot_skills_mode_skips_command_registration(self, project_dir, temp_dir):
         """``integration use copilot`` with skills mode enabled must only
         write the SKILL.md mirror, not also copilot's static command file.
@@ -4617,8 +4672,7 @@ class TestPresetSkills:
             yaml.dump(manifest_data, f)
         manager.install_from_directory(wrap_dir, "0.1.5", priority=5)
 
-        claude_dir = project_dir / ".gemini" / "commands"
-        cmd_file = claude_dir / f"{cmd_name}.toml"
+        cmd_file = gemini_commands_dir / f"{cmd_name}.toml"
         assert cmd_file.exists(), (
             "sanity: the composed command should register for the active agent"
         )

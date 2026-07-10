@@ -762,8 +762,6 @@ class PresetManager:
             # Isolate per-preset failures: one preset that fails to register
             # must not abort registration of the remaining enabled presets.
             try:
-                updates: Dict[str, Any] = {}
-
                 registered_commands = self._register_commands(manifest, pack_dir)
                 existing_commands = metadata.get("registered_commands", {})
                 if not isinstance(existing_commands, dict):
@@ -771,8 +769,13 @@ class PresetManager:
                 merged_commands = copy.deepcopy(existing_commands)
                 if registered_commands.get(agent_name):
                     merged_commands[agent_name] = registered_commands[agent_name]
+                # Persist the commands phase immediately, mirroring
+                # install_from_directory(): _register_skills is an
+                # independently fallible phase, and if it raises, the files
+                # the commands phase already wrote to disk must still be
+                # tracked so preset removal can clean them up (#2948).
                 if merged_commands != existing_commands:
-                    updates["registered_commands"] = merged_commands
+                    self.registry.update(pack_id, {"registered_commands": merged_commands})
 
                 registered_skills = self._register_skills(manifest, pack_dir)
                 existing_skills = self._normalize_registered_skills(
@@ -782,10 +785,7 @@ class PresetManager:
                 if registered_skills.get(agent_name):
                     merged_skills[agent_name] = registered_skills[agent_name]
                 if merged_skills != existing_skills:
-                    updates["registered_skills"] = merged_skills
-
-                if updates:
-                    self.registry.update(pack_id, updates)
+                    self.registry.update(pack_id, {"registered_skills": merged_skills})
 
                 for tmpl in manifest.templates:
                     if tmpl.get("type") == "command":
