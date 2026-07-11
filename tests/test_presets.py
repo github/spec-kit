@@ -3224,6 +3224,46 @@ class TestPresetSkills:
             yaml.dump(manifest_data, f)
         return preset_dir
 
+    def _create_multi_command_preset_with_aliases(self, temp_dir, preset_id, command_specs):
+        """Install-directory helper for a preset whose commands carry aliases.
+
+        ``command_specs`` is a list of ``(primary_name, [alias, ...])``
+        tuples. Each command gets its own source file (aliases share the
+        same source/content as their primary — CommandRegistrar renders
+        them from the same command file, just under a different output
+        name (#2948)).
+        """
+        preset_dir = temp_dir / preset_id
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        templates = []
+        for primary_name, aliases in command_specs:
+            command_file = f"{primary_name}.md"
+            (preset_dir / "commands" / command_file).write_text(
+                f"---\ndescription: {primary_name} test command\n---\n\n"
+                f"{primary_name} body\n"
+            )
+            templates.append({
+                "type": "command",
+                "name": primary_name,
+                "file": f"commands/{command_file}",
+                "aliases": list(aliases),
+            })
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": templates},
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return preset_dir
+
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
         """When skills mode was used, a preset command override should update the skill."""
         # Simulate skills mode having been used: write init-options + create skill
@@ -4778,6 +4818,179 @@ class TestPresetSkills:
             "sanity: specify's new command artifact should exist"
         )
 
+    def test_toggle_command_to_skills_retires_alias_group_when_primary_skill_lands(
+        self, project_dir, temp_dir
+    ):
+        """A command's aliases must be retired together with its primary
+        once the primary's skill replacement lands.
+
+        ``CommandRegistrar.register_commands()`` tracks and returns
+        primary + alias names flattened together, but ``_register_skills()``
+        only ever renders/returns the *primary* command name's skill. The
+        alias's own name run through ``_skill_names_for_command()`` never
+        matches anything real, so without grouping by primary, the alias
+        command artifact and its tracking entry would survive forever even
+        after mutual exclusion is otherwise enforced for the primary (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset_with_aliases(
+            temp_dir, "alias-group-success-preset",
+            [("speckit.specify", ["speckit.spec"])],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        primary_cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        alias_cmd_file = copilot_commands_dir / "speckit.spec.agent.md"
+        assert primary_cmd_file.exists() and alias_cmd_file.exists(), (
+            "sanity: command mode should have written both the primary "
+            "and alias command files"
+        )
+        metadata = manager.registry.get("alias-group-success-preset")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.specify", "speckit.spec",
+        }, "sanity: both primary and alias should be tracked for copilot"
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not primary_cmd_file.exists(), (
+            "the primary's old command artifact must be retired once its "
+            "skill replacement lands (#2948)"
+        )
+        assert not alias_cmd_file.exists(), (
+            "the alias's old command artifact must be retired together "
+            "with its primary once the primary's skill replacement lands "
+            "(#2948)"
+        )
+        metadata = manager.registry.get("alias-group-success-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert not registered_commands.get("copilot"), (
+            "neither the primary nor the alias should remain tracked as "
+            "commands once both artifacts are retired (#2948)"
+        )
+        skill_file = project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        assert skill_file.exists(), "sanity: the primary's skill should have been written"
+
+    def test_toggle_command_to_skills_keeps_alias_group_when_primary_skill_missing(
+        self, project_dir, temp_dir
+    ):
+        """A command's aliases must survive together with its primary when
+        the primary's skill replacement never lands.
+
+        Mirror image of the group-retirement case: deleting the preset's
+        own installed command source makes ``_register_skills`` genuinely
+        return nothing for ``speckit.specify``, so neither the primary nor
+        its alias have a real replacement — both old command artifacts and
+        their tracking must survive (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset_with_aliases(
+            temp_dir, "alias-group-failure-preset",
+            [("speckit.specify", ["speckit.spec"])],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        primary_cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        alias_cmd_file = copilot_commands_dir / "speckit.spec.agent.md"
+        assert primary_cmd_file.exists() and alias_cmd_file.exists(), (
+            "sanity: command mode should have written both the primary "
+            "and alias command files"
+        )
+
+        # Remove the installed source so _register_skills can find nothing
+        # to render for the primary — a real "missing source" case.
+        (manager.presets_dir / "alias-group-failure-preset" / "commands" / "speckit.specify.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert primary_cmd_file.exists(), (
+            "the primary's old command artifact must survive since its "
+            "skill replacement never landed (#2948)"
+        )
+        assert alias_cmd_file.exists(), (
+            "the alias's old command artifact must survive together with "
+            "its primary since neither has a real replacement (#2948)"
+        )
+        metadata = manager.registry.get("alias-group-failure-preset")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.specify", "speckit.spec",
+        }, (
+            "both the primary and alias must keep being tracked since "
+            "nothing was actually replaced (#2948)"
+        )
+        skill_file = project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        assert not skill_file.exists(), (
+            "sanity: no skill should have been written when the source "
+            "was missing"
+        )
+
+    def test_toggle_command_to_skills_partial_multi_group_only_retires_successful_group(
+        self, project_dir, temp_dir
+    ):
+        """With two independent alias groups, only the group whose primary
+        skill actually lands is retired; the other survives intact.
+
+        A preset with two commands (``speckit.specify`` with alias
+        ``speckit.spec``, and ``speckit.plan`` with alias
+        ``speckit.plan-alt``) where only ``speckit.plan``'s installed
+        source goes missing: ``speckit.specify``'s group (primary + alias)
+        must be fully retired, while ``speckit.plan``'s entire group
+        (primary + alias) must survive together, since grouping is
+        per-primary, not per-individual-name (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset_with_aliases(
+            temp_dir, "alias-group-partial-preset",
+            [
+                ("speckit.specify", ["speckit.spec"]),
+                ("speckit.plan", ["speckit.plan-alt"]),
+            ],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        specify_cmd = copilot_commands_dir / "speckit.specify.agent.md"
+        spec_alias_cmd = copilot_commands_dir / "speckit.spec.agent.md"
+        plan_cmd = copilot_commands_dir / "speckit.plan.agent.md"
+        plan_alias_cmd = copilot_commands_dir / "speckit.plan-alt.agent.md"
+        assert all(
+            f.exists() for f in (specify_cmd, spec_alias_cmd, plan_cmd, plan_alias_cmd)
+        ), "sanity: command mode should have written all four command files"
+
+        # Remove only plan's installed source so its group's skill
+        # replacement is silently skipped, while specify's group succeeds.
+        (manager.presets_dir / "alias-group-partial-preset" / "commands" / "speckit.plan.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not specify_cmd.exists() and not spec_alias_cmd.exists(), (
+            "specify's whole group (primary + alias) must be retired "
+            "since its skill replacement landed (#2948)"
+        )
+        assert plan_cmd.exists() and plan_alias_cmd.exists(), (
+            "plan's whole group (primary + alias) must survive together "
+            "since its skill replacement never landed (#2948)"
+        )
+        metadata = manager.registry.get("alias-group-partial-preset")
+        tracked_commands = set(metadata["registered_commands"].get("copilot", []))
+        assert tracked_commands == {"speckit.plan", "speckit.plan-alt"}, (
+            "only plan's group should remain tracked as commands; "
+            "specify's group must be fully untracked (#2948)"
+        )
+
     def test_rescaffold_toggle_skills_to_command_removes_stale_skill_file(
         self, project_dir, temp_dir
     ):
@@ -6216,6 +6429,153 @@ class TestPresetSkills:
             "process (#2948)"
         )
         assert "Core specify body" in skill_file.read_text()
+
+    def test_unregister_agent_artifacts_scoped_to_target_agent_only(
+        self, project_dir, temp_dir
+    ):
+        """``unregister_agent_artifacts`` must remove only the target
+        agent's own tracked command/skill artifacts.
+
+        Used by ``integration switch`` when deactivating the previous
+        integration for a not-yet-installed target (#2948): without this,
+        a preset's command override -- including a custom preset command --
+        and skill mirror rendered for the old agent remain orphaned once a
+        different integration becomes active. Another agent's own
+        registrations (files and registry tracking) must survive
+        untouched, and no priority-stack reconciliation should run as a
+        side effect.
+        """
+        self._write_init_options(project_dir, ai="auggie", ai_skills=False)
+        # Registration only writes to an agent's directory once it's
+        # "detected" on disk (mirroring a real `integration install`
+        # having already created it), so pre-create both agents'
+        # directories before installing the preset.
+        (project_dir / ".augment" / "commands").mkdir(parents=True)
+        (project_dir / ".opencode" / "commands").mkdir(parents=True)
+        preset_dir = self._create_command_preset(
+            temp_dir, "switch-cleanup-preset", "speckit.specify",
+            "Custom preset command", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        auggie_cmd = project_dir / ".augment" / "commands" / "speckit.specify.md"
+        assert auggie_cmd.exists(), "sanity: preset command registered for auggie"
+
+        # Simulate a later `integration use opencode` rescaffold that also
+        # registered the preset for opencode, while auggie's own
+        # registration (from before the switch) is still present in the
+        # registry.
+        self._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        manager.register_enabled_presets_for_agent("opencode")
+
+        opencode_cmd = project_dir / ".opencode" / "commands" / "speckit.specify.md"
+        assert opencode_cmd.exists(), "sanity: preset command registered for opencode"
+
+        metadata = manager.registry.get("switch-cleanup-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert "auggie" in registered_commands and "opencode" in registered_commands
+
+        manager.unregister_agent_artifacts("auggie")
+
+        assert not auggie_cmd.exists(), (
+            "auggie's own preset command must be removed when switching "
+            "away from auggie to a not-yet-installed integration (#2948)"
+        )
+        assert opencode_cmd.exists(), (
+            "opencode's preset command must survive unregistering auggie's "
+            "artifacts -- cleanup must stay scoped to the target agent"
+        )
+
+        metadata = manager.registry.get("switch-cleanup-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert "auggie" not in registered_commands, (
+            "auggie's tracking must be dropped after unregistering its artifacts"
+        )
+        assert "opencode" in registered_commands, (
+            "opencode's tracking must be preserved untouched"
+        )
+
+    def test_unregister_agent_artifacts_migrates_legacy_skill_list_scoped(
+        self, project_dir, temp_dir
+    ):
+        """Unregistering an agent's artifacts from a legacy flat-list
+        ``registered_skills`` entry must infer real per-agent ownership
+        before removing anything, so only the target agent's own share is
+        cleaned up and any other agent's still-live mirror survives,
+        rather than either guessing every name belongs to the target agent
+        or dropping all tracking wholesale (#2948).
+
+        Uses Copilot (command-backed, rendering skills via ``ai_skills``)
+        as the agent being switched away from, and Claude (a native
+        SKILL.md agent) as the separate, still-live owner — mirroring the
+        established legacy-provenance test pattern used elsewhere for
+        this exact registry shape.
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(copilot_skills_dir, "speckit-specify")
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "switch-legacy-skill-preset", "speckit.specify",
+            "Legacy skill switch test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        copilot_skill = copilot_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:switch-legacy-skill-preset" in copilot_skill.read_text(), (
+            "sanity: install wrote the override under copilot"
+        )
+
+        # A separate activation under claude (before provenance tracking
+        # existed) also left a live, marker-verified mirror there.
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        claude_skill.write_text(
+            "---\nname: speckit-specify\nmetadata:\n  source: preset:switch-legacy-skill-preset\n"
+            "---\n\npreset body\n",
+            encoding="utf-8",
+        )
+
+        # Simulate a pre-#2948 registry: a flat list with no per-agent
+        # provenance for either writer.
+        manager.registry.update(
+            "switch-legacy-skill-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        manager.unregister_agent_artifacts("copilot")
+
+        assert "preset:switch-legacy-skill-preset" not in copilot_skill.read_text(), (
+            "copilot's own skill override must be restored when switching "
+            "away from copilot"
+        )
+        assert "Core specify body" in copilot_skill.read_text()
+
+        assert "preset:switch-legacy-skill-preset" in claude_skill.read_text(), (
+            "claude's own, separately-written mirror must survive "
+            "unregistering copilot's artifacts -- legacy-list inference "
+            "must not misattribute or drop claude's real ownership (#2948)"
+        )
+
+        metadata = manager.registry.get("switch-legacy-skill-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict), (
+            "legacy flat-list value must migrate to per-agent form"
+        )
+        assert "copilot" not in registered_skills
+        assert "claude" in registered_skills and "speckit-specify" in registered_skills["claude"], (
+            "claude's real ownership must be preserved in the migrated tracking"
+        )
 
 
 class TestPresetSetPriority:

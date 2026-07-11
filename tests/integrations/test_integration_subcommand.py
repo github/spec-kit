@@ -2281,6 +2281,83 @@ class TestIntegrationSwitch:
         assert "opencode" in git_meta["registered_commands"]
         assert "copilot" not in git_meta["registered_commands"]
 
+    def test_switch_to_not_yet_installed_unregisters_old_preset_artifacts(self, tmp_path):
+        """Switching to a not-yet-installed integration must also clean up
+        the old agent's preset command overrides, mirroring the existing
+        extension cleanup on the same code path (#2948).
+
+        Without this, a preset's command override -- including a custom
+        preset command -- rendered for the previous agent lingers as an
+        orphan once a different, not-yet-installed integration becomes the
+        new active agent.
+        """
+        project = _init_project(tmp_path, "auggie")
+
+        preset_src = tmp_path / "switch-cleanup-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.specify.md").write_text(
+            "---\ndescription: Custom preset command\n---\nOverridden content\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "switch-cleanup-preset",
+                "name": "Switch Cleanup Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a custom command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.specify",
+                        "file": "commands/speckit.specify.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+
+        (preset_src / "preset.yml").write_text(yaml.dump(manifest_data), encoding="utf-8")
+
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, f"preset add failed: {result.output}"
+
+        auggie_cmd = project / ".augment" / "commands" / "speckit.specify.md"
+        assert auggie_cmd.exists(), "sanity: preset command registered for auggie"
+
+        registry_path = project / ".specify" / "presets" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "presets"
+        ]["switch-cleanup-preset"]["registered_commands"]
+        assert "auggie" in registered, "sanity: auggie tracked before switch"
+
+        # opencode is not yet installed in this project.
+        result = _run_in_project(project, [
+            "integration", "switch", "opencode",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        assert not auggie_cmd.exists(), (
+            "old agent's preset command override must be removed on switch "
+            "to a not-yet-installed integration, mirroring the existing "
+            "extension cleanup on this same code path (#2948)"
+        )
+
+        opencode_cmd = project / ".opencode" / "commands" / "speckit.specify.md"
+        assert opencode_cmd.exists(), "preset command should be registered for the new agent"
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "presets"
+        ]["switch-cleanup-preset"]["registered_commands"]
+        assert "auggie" not in registered, (
+            "old agent's tracking must be dropped after switch cleanup"
+        )
+        assert "opencode" in registered
+
     def test_switch_does_not_register_disabled_extensions(self, tmp_path):
         """Disabled extensions should stay disabled and should not migrate commands."""
         project = _init_project(tmp_path, "opencode")

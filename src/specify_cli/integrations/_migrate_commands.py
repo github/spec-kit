@@ -36,6 +36,7 @@ from ._helpers import (
     _set_default_integration,
     _set_default_integration_or_exit,
     _unregister_extensions_for_agent,
+    _unregister_presets_for_agent,
     _update_init_options_for_integration,
     _write_integration_json,
 )
@@ -194,6 +195,19 @@ def integration_switch(
             project_root,
             installed_key,
             continuing="Continuing with integration switch; old extension artifacts may need manual cleanup.",
+        )
+
+        # Unregister preset commands/skills for the old agent for the same
+        # reason: without this, a preset's command overrides (including
+        # custom preset commands) and skill mirrors rendered for
+        # installed_key would remain orphaned in its directory once a
+        # different, possibly not-yet-installed integration becomes active
+        # (#2948). Scoped strictly to installed_key; other agents' files,
+        # tracking, and the preset packs themselves are untouched.
+        _unregister_presets_for_agent(
+            project_root,
+            installed_key,
+            continuing="Continuing with integration switch; old preset artifacts may need manual cleanup.",
         )
 
         # Clear metadata so a failed Phase 2 doesn't leave stale references

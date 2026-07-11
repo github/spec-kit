@@ -902,11 +902,46 @@ class PresetManager:
                 # unreplaced stays tracked and on disk (#2948).
                 if stale_command_names:
                     replaced_skill_names = set(registered_skills.get(agent_name) or [])
+                    # Commands may carry aliases (CommandRegistrar.register_
+                    # commands() tracks and returns primary + alias names
+                    # flattened together into one list), but _register_
+                    # skills() only ever renders/returns the *primary*
+                    # command name's skill — running an alias's own name
+                    # through _skill_names_for_command() never matches
+                    # anything real, so an alias would stay tracked/on-disk
+                    # forever even after its primary's skill replacement
+                    # landed. Map each stale name back to its template's
+                    # primary via the manifest so the whole primary+alias
+                    # group is retired or kept together, based solely on
+                    # whether the *primary*'s skill replacement actually
+                    # landed (#2948).
+                    alias_to_primary: Dict[str, str] = {}
+                    for tmpl in manifest.templates:
+                        if tmpl.get("type") != "command":
+                            continue
+                        primary_name = tmpl.get("name")
+                        if not isinstance(primary_name, str):
+                            continue
+                        for alias in tmpl.get("aliases", []):
+                            if isinstance(alias, str):
+                                alias_to_primary[alias] = primary_name
+
+                    group_fully_replaced: Dict[str, bool] = {}
+                    for cmd_name in stale_command_names:
+                        primary_name = alias_to_primary.get(cmd_name, cmd_name)
+                        if primary_name in group_fully_replaced:
+                            continue
+                        modern_name, legacy_name = self._skill_names_for_command(primary_name)
+                        group_fully_replaced[primary_name] = (
+                            modern_name in replaced_skill_names
+                            or legacy_name in replaced_skill_names
+                        )
+
                     fully_replaced = []
                     remaining_stale = []
                     for cmd_name in stale_command_names:
-                        modern_name, legacy_name = self._skill_names_for_command(cmd_name)
-                        if modern_name in replaced_skill_names or legacy_name in replaced_skill_names:
+                        primary_name = alias_to_primary.get(cmd_name, cmd_name)
+                        if group_fully_replaced.get(primary_name, False):
                             fully_replaced.append(cmd_name)
                         else:
                             remaining_stale.append(cmd_name)
@@ -951,6 +986,105 @@ class PresetManager:
                     f"affected presets to refresh.",
                     stacklevel=2,
                 )
+
+    def unregister_agent_artifacts(self, agent_name: str) -> None:
+        """Remove ``agent_name``'s tracked preset command/skill artifacts.
+
+        Mirrors ``ExtensionManager.unregister_agent_artifacts()`` (#2948):
+        used by ``integration switch`` when deactivating the previous
+        integration, so a preset's command overrides and skill mirrors
+        written for that agent don't linger as orphans in its directory
+        once a different (possibly not-yet-installed) integration becomes
+        active — including custom preset commands and files the registrar
+        would otherwise skip as user-modified.
+
+        Scoped strictly to ``agent_name``: only that agent's own tracked
+        artifacts and registry entries are touched. Other agents' files,
+        tracking, and preset packs themselves are left untouched, and no
+        priority-stack reconciliation runs — this is agent-scoped cleanup
+        only, not preset removal.
+        """
+        if not agent_name:
+            return
+
+        try:
+            from ..agents import CommandRegistrar
+
+            agent_config = CommandRegistrar().AGENT_CONFIGS.get(agent_name)
+        except ImportError:
+            agent_config = None
+        if agent_config is None:
+            return
+
+        for pack_id, metadata in list(self.registry.list().items()):
+            pack_dir = self.presets_dir / pack_id
+            updates: Dict[str, Any] = {}
+
+            raw_skills = metadata.get("registered_skills", [])
+            if isinstance(raw_skills, list) and raw_skills:
+                # Legacy flat-list value predating per-agent provenance:
+                # infer real ownership from on-disk markers before removing
+                # anything, so only agent_name's actual share is unregistered
+                # and the rest migrates to per-agent form instead of either
+                # guessing every name belongs to agent_name or blindly
+                # leaving other agents' shares unrecoverable (#2948).
+                registered_skills_all = self._infer_legacy_skill_provenance(
+                    [n for n in raw_skills if isinstance(n, str)],
+                    pack_id,
+                    fallback_agent=agent_name,
+                )
+                skills_migrated = True
+            elif isinstance(raw_skills, dict):
+                registered_skills_all = copy.deepcopy(raw_skills)
+                skills_migrated = False
+            else:
+                registered_skills_all = {}
+                skills_migrated = False
+
+            registered_commands = metadata.get("registered_commands", {})
+            if not isinstance(registered_commands, dict):
+                registered_commands = {}
+
+            agent_command_names = [
+                n for n in registered_commands.get(agent_name, []) if isinstance(n, str)
+            ]
+
+            # Native SKILL.md agents (claude/codex/agy/…) materialize their
+            # preset override in _register_commands(), tracked under
+            # registered_commands, not registered_skills — see
+            # _register_skills()'s own docstring ("Native skill agents …
+            # materialize brand-new preset skills in _register_commands()").
+            # A legacy flat-list registered_skills value predating that
+            # split can still attribute the very same on-disk file to this
+            # agent via provenance inference; unregistering through both
+            # paths would double-process the identical directory (delete
+            # via the commands path, then no-op "restore" via the skills
+            # path since the directory is already gone). Mirror remove()'s
+            # own coordination: whenever this agent's artifact is already
+            # handled via registered_commands, never additionally treat it
+            # as a registered_skills entry for the same agent.
+            if agent_command_names and agent_config.get("extension") == "/SKILL.md":
+                registered_skills_all.pop(agent_name, None)
+
+            if agent_command_names:
+                self._unregister_commands({agent_name: agent_command_names})
+                new_registered_commands = copy.deepcopy(registered_commands)
+                new_registered_commands.pop(agent_name, None)
+                updates["registered_commands"] = new_registered_commands
+
+            agent_skill_names = registered_skills_all.get(agent_name) or []
+            if agent_skill_names or skills_migrated:
+                if agent_skill_names:
+                    self._unregister_skills({agent_name: agent_skill_names}, pack_dir)
+                remaining = {
+                    other_agent: names
+                    for other_agent, names in registered_skills_all.items()
+                    if other_agent != agent_name
+                }
+                updates["registered_skills"] = remaining
+
+            if updates:
+                self.registry.update(pack_id, updates)
 
     def _unregister_commands(self, registered_commands: Dict[str, List[str]]) -> None:
         """Remove previously registered command files from agent directories.

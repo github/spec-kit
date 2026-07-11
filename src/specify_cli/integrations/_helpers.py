@@ -451,6 +451,39 @@ def _register_presets_for_agent(
         )
 
 
+def _unregister_presets_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Best-effort removal of ``agent_key``'s preset command/skill artifacts.
+
+    Mirrors ``_unregister_extensions_for_agent``: used by ``switch`` when
+    uninstalling the previous integration so its preset command overrides
+    and skill mirrors don't linger as orphans in the old agent's directory
+    once a different (possibly not-yet-installed) integration becomes
+    active (#2948).
+
+    Best-effort: never aborts the surrounding integration operation.
+    """
+    try:
+        from ..presets import PresetManager
+
+        preset_mgr = PresetManager(project_root)
+        preset_mgr.unregister_agent_artifacts(agent_key)
+    except Exception as preset_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "clean up preset artifacts for",
+            "integration",
+            agent_key,
+            preset_err,
+            continuing=continuing,
+        )
+
+
 # ---------------------------------------------------------------------------
 # CLI formatting helpers (re-exported from _commands.py)
 # ---------------------------------------------------------------------------

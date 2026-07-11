@@ -2158,10 +2158,46 @@ class ExtensionManager:
                         # would leave neither artifact (#2948).
                         if deferred_stale_commands:
                             replaced_skill_names = set(registered_skills or [])
+                            # Commands may carry aliases (CommandRegistrar.
+                            # register_commands_for_agent() tracks and
+                            # returns primary + alias names flattened
+                            # together into one list), but
+                            # _register_extension_skills() only ever
+                            # renders/returns the *primary* command name's
+                            # skill — running an alias's own name through
+                            # _skill_name_from_command() never matches
+                            # anything real, so an alias would stay
+                            # tracked/on-disk forever even after its
+                            # primary's skill replacement landed. Map each
+                            # stale name back to its manifest command's
+                            # primary so the whole primary+alias group is
+                            # retired or kept together, based solely on
+                            # whether the *primary*'s skill replacement
+                            # actually landed (#2948).
+                            alias_to_primary: Dict[str, str] = {}
+                            for cmd_info in manifest.commands:
+                                primary_name = cmd_info.get("name")
+                                if not isinstance(primary_name, str):
+                                    continue
+                                for alias in cmd_info.get("aliases", []) or []:
+                                    if isinstance(alias, str):
+                                        alias_to_primary[alias] = primary_name
+
+                            group_fully_replaced: Dict[str, bool] = {}
+                            for cmd_name in deferred_stale_commands:
+                                primary_name = alias_to_primary.get(cmd_name, cmd_name)
+                                if primary_name in group_fully_replaced:
+                                    continue
+                                group_fully_replaced[primary_name] = (
+                                    HookExecutor._skill_name_from_command(primary_name)
+                                    in replaced_skill_names
+                                )
+
                             fully_replaced = [
                                 cmd_name for cmd_name in deferred_stale_commands
-                                if HookExecutor._skill_name_from_command(cmd_name)
-                                in replaced_skill_names
+                                if group_fully_replaced.get(
+                                    alias_to_primary.get(cmd_name, cmd_name), False
+                                )
                             ]
                             if fully_replaced:
                                 registrar.unregister_commands(

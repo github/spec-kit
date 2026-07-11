@@ -119,6 +119,62 @@ def _create_extension_dir(temp_dir: Path, ext_id: str = "test-ext") -> Path:
     return ext_dir
 
 
+def _create_extension_dir_with_aliases(
+    temp_dir: Path, ext_id: str, command_specs: list
+) -> Path:
+    """Create an extension directory whose commands carry aliases.
+
+    ``command_specs`` is a list of ``(short_name, [alias, ...])`` tuples;
+    the primary command name is ``speckit.<ext_id>.<short_name>`` and each
+    alias is used verbatim as its own tracked/rendered command name,
+    mirroring how ``CommandRegistrar.register_commands()`` tracks and
+    returns primary + alias names flattened together (#2948).
+    """
+    ext_dir = temp_dir / ext_id
+    ext_dir.mkdir()
+
+    commands = []
+    for short_name, aliases in command_specs:
+        commands.append({
+            "name": f"speckit.{ext_id}.{short_name}",
+            "file": f"commands/{short_name}.md",
+            "description": f"Test {short_name} command",
+            "aliases": list(aliases),
+        })
+
+    manifest_data = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": ext_id,
+            "name": "Test Extension",
+            "version": "1.0.0",
+            "description": "A test extension for alias skill registration",
+        },
+        "requires": {
+            "speckit_version": ">=0.1.0",
+        },
+        "provides": {"commands": commands},
+    }
+
+    with open(ext_dir / "extension.yml", "w") as f:
+        yaml.safe_dump(manifest_data, f)
+
+    commands_dir = ext_dir / "commands"
+    commands_dir.mkdir()
+    for short_name, _aliases in command_specs:
+        (commands_dir / f"{short_name}.md").write_text(
+            "---\n"
+            f"description: \"Test {short_name} command\"\n"
+            "---\n"
+            "\n"
+            f"# {short_name.title()} Command\n"
+            "\n"
+            f"Run this to {short_name}.\n"
+        )
+
+    return ext_dir
+
+
 def _create_unicode_extension_dir(temp_dir: Path, ext_id: str = "uni-ext") -> Path:
     """Create an extension whose command description contains non-ASCII characters."""
     ext_dir = temp_dir / ext_id
@@ -1579,6 +1635,133 @@ class TestExtensionSkillRegistration:
         assert "speckit-toggle-skill-partial-ext-world" in registered_skills, (
             "world must keep being tracked as a skill since its old "
             "artifact is still on disk (#2948)"
+        )
+
+    def test_toggle_command_to_skills_retires_alias_group_when_primary_skill_lands(
+        self, project_dir, temp_dir
+    ):
+        """An extension command's aliases must be retired together with
+        its primary once the primary's skill replacement lands.
+
+        ``CommandRegistrar.register_commands_for_agent()`` tracks and
+        returns primary + alias names flattened together, but
+        ``_register_extension_skills()`` only ever renders/returns the
+        *primary* command name's skill. Without grouping by primary, the
+        alias command artifact and its tracking entry would survive
+        forever even after mutual exclusion is otherwise enforced for the
+        primary (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir_with_aliases(
+                temp_dir, "alias-group-success-ext",
+                [("hello", ["speckit.hello-alias"])],
+            ),
+            "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        primary_cmd_file = agents_dir / "speckit.alias-group-success-ext.hello.agent.md"
+        alias_cmd_file = agents_dir / "speckit.hello-alias.agent.md"
+        assert primary_cmd_file.exists() and alias_cmd_file.exists(), (
+            "sanity: command mode should have written both the primary "
+            "and alias command files"
+        )
+        metadata = manager.registry.get("alias-group-success-ext")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.alias-group-success-ext.hello", "speckit.hello-alias",
+        }, "sanity: both primary and alias should be tracked for copilot"
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not primary_cmd_file.exists(), (
+            "the primary's old command artifact must be retired once its "
+            "skill replacement lands (#2948)"
+        )
+        assert not alias_cmd_file.exists(), (
+            "the alias's old command artifact must be retired together "
+            "with its primary once the primary's skill replacement lands "
+            "(#2948)"
+        )
+        metadata = manager.registry.get("alias-group-success-ext")
+        registered_commands = metadata.get("registered_commands", {})
+        assert not registered_commands.get("copilot"), (
+            "neither the primary nor the alias should remain tracked as "
+            "commands once both artifacts are retired (#2948)"
+        )
+        skill_file = (
+            project_dir / ".github" / "skills"
+            / "speckit-alias-group-success-ext-hello" / "SKILL.md"
+        )
+        assert skill_file.exists(), "sanity: the primary's skill should have been written"
+
+    def test_toggle_command_to_skills_keeps_alias_group_when_primary_skill_missing(
+        self, project_dir, temp_dir
+    ):
+        """An extension command's aliases must survive together with its
+        primary when the primary's skill replacement never lands.
+
+        Mirror image of the group-retirement case: deleting the
+        extension's own installed command source makes
+        ``_register_extension_skills`` genuinely return nothing for the
+        primary, so neither the primary nor its alias have a real
+        replacement — both old command artifacts and their tracking must
+        survive (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir_with_aliases(
+                temp_dir, "alias-group-failure-ext",
+                [("hello", ["speckit.hello-alias-2"])],
+            ),
+            "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        primary_cmd_file = agents_dir / "speckit.alias-group-failure-ext.hello.agent.md"
+        alias_cmd_file = agents_dir / "speckit.hello-alias-2.agent.md"
+        assert primary_cmd_file.exists() and alias_cmd_file.exists(), (
+            "sanity: command mode should have written both the primary "
+            "and alias command files"
+        )
+
+        # Remove the installed source so _register_extension_skills can
+        # find nothing to render for the primary command.
+        ext_commands_dir = manager.extensions_dir / "alias-group-failure-ext" / "commands"
+        (ext_commands_dir / "hello.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert primary_cmd_file.exists(), (
+            "the primary's old command artifact must survive since its "
+            "skill replacement never landed (#2948)"
+        )
+        assert alias_cmd_file.exists(), (
+            "the alias's old command artifact must survive together with "
+            "its primary since neither has a real replacement (#2948)"
+        )
+        metadata = manager.registry.get("alias-group-failure-ext")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.alias-group-failure-ext.hello", "speckit.hello-alias-2",
+        }, (
+            "both the primary and alias must keep being tracked since "
+            "nothing was actually replaced (#2948)"
+        )
+        skill_file = (
+            project_dir / ".github" / "skills"
+            / "speckit-alias-group-failure-ext-hello" / "SKILL.md"
+        )
+        assert not skill_file.exists(), (
+            "sanity: no skill should have been written when the source "
+            "was missing"
         )
 
     def test_rescaffold_toggle_skills_to_command_removes_stale_extension_skill_file(
