@@ -610,17 +610,25 @@ def _rollback_committed_workflow_file(
     """Undo a successful _commit_workflow_file swap after a later failure
     (registry.add()): restore the prior file via rename, remove the newly
     committed file for a reinstall over a pre-existing empty directory
-    (no backup), or remove the whole directory for a fresh install. A
-    genuine removal failure must propagate (not be swallowed) so the safe
-    wrapper below can warn instead of silently leaving an orphan; a
-    dest_dir already absent is not itself an error."""
+    (no backup), or remove the new file and then its directory when empty
+    for a fresh install. A genuine removal failure must propagate (not be
+    swallowed) so the safe wrapper below can warn instead of silently
+    leaving an orphan; a     dest_dir already absent is not itself an error."""
     if backup_file is not None:
         os.replace(backup_file, dest_file)
-    elif existed_before:
+    else:
         dest_file.unlink(missing_ok=True)
-    elif dest_dir.exists():
-        import shutil
-        shutil.rmtree(dest_dir)
+        if not existed_before and dest_dir.exists():
+            import errno
+
+            try:
+                dest_dir.rmdir()
+            except OSError as exc:
+                # Another installer may have staged a sibling before taking
+                # the transaction lock. Preserve it rather than recursively
+                # deleting the shared directory during this rollback.
+                if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                    raise
 
 
 def _safe_discard_staged_workflow_file(staged_file: Path, dest_dir: Path, existed_before: bool) -> None:
@@ -984,7 +992,7 @@ def workflow_resume(
         err.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except OSError as exc:
         err.print(f"[red]Resume failed:[/red] {exc}")
@@ -1054,7 +1062,7 @@ def workflow_status(
             console.print(f"[red]Error:[/red] Run not found: {run_id}")
             raise typer.Exit(1)
         except ValueError as exc:
-            console.print(f"[red]Error:[/red] {exc}")
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1)
 
         if json_output:

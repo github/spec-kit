@@ -8592,13 +8592,8 @@ steps:
     def test_add_fresh_install_registry_rollback_cleanup_failure_reports_warning(
         self, project_dir, monkeypatch
     ):
-        """_rollback_committed_workflow_file's fresh-install rmtree(dest_dir)
-        after a registry.add() failure had the same ignore_errors=True gap:
-        a genuine directory-removal failure there was silently swallowed,
-        leaving an orphan with no warning. The cleanup failure must
-        propagate so the safe wrapper can warn, while the original
-        registry-update error remains the primary, already-printed
-        failure."""
+        """A fresh-install rollback directory-removal failure must be
+        reported while the registry-update error remains primary."""
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -8610,14 +8605,16 @@ steps:
         def save_boom(self):
             raise OSError("registry disk full")
 
-        def rmtree_boom(path, ignore_errors=False, onerror=None, **kwargs):
-            if ignore_errors:
-                return
-            raise OSError("cleanup denied")
+        real_rmdir = Path.rmdir
+
+        def rmdir_boom(path):
+            if path.name == "align-wf":
+                raise OSError("cleanup denied")
+            return real_rmdir(path)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(WorkflowRegistry, "save", save_boom)
-            mp.setattr("shutil.rmtree", rmtree_boom)
+            mp.setattr(Path, "rmdir", rmdir_boom)
             result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
 
         assert result.exit_code != 0
@@ -9293,6 +9290,32 @@ steps:
 
         assert committed_file.read_text(encoding="utf-8") == "committed"
         assert not staged_file.exists()
+
+    def test_fresh_install_rollback_preserves_concurrent_staged_file(
+        self, project_dir
+    ):
+        """A second installer stages before taking the transaction lock, so
+        the first installer's rollback must not recursively remove siblings."""
+        from specify_cli.workflows import _commands
+
+        workflow_dir = (
+            project_dir / ".specify" / "workflows" / "concurrent-wf"
+        )
+        workflow_dir.mkdir(parents=True)
+        committed_file = workflow_dir / "workflow.yml"
+        committed_file.write_text("failed install", encoding="utf-8")
+        concurrent_stage = workflow_dir / ".workflow.yml.concurrent.tmp"
+        concurrent_stage.write_text("next install", encoding="utf-8")
+
+        _commands._rollback_committed_workflow_file(
+            committed_file,
+            workflow_dir,
+            existed_before=False,
+            backup_file=None,
+        )
+
+        assert not committed_file.exists()
+        assert concurrent_stage.read_text(encoding="utf-8") == "next install"
 
     def test_add_dev_registry_reopen_exit_discards_staged_file(
         self, project_dir, monkeypatch
@@ -11455,6 +11478,30 @@ steps:
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "Error" in result.output
+
+    @pytest.mark.parametrize("command", ["resume", "status"])
+    def test_state_load_errors_escape_rich_markup(
+        self, project_dir, monkeypatch, command
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+
+        state_path = (
+            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        )
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        malicious_status = "[bold red]forged[/bold red]"
+        data["status"] = malicious_status
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", command, run_id])
+
+        assert result.exit_code != 0
+        assert malicious_status in result.output
 
     @pytest.mark.parametrize(
         "installed_workflow_id, installed_registry_root",
