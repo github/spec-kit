@@ -448,9 +448,70 @@ def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
     return dest_dir
 
 
+class _StagedWorkflowFile:
+    """Exclusive staging inode kept open until its atomic commit."""
+
+    def __init__(self, path: Path, fd: int) -> None:
+        self.path = path
+        self.fd = fd
+
+    def _write(self, chunks) -> None:
+        os.lseek(self.fd, 0, os.SEEK_SET)
+        os.ftruncate(self.fd, 0)
+        for chunk in chunks:
+            view = memoryview(chunk)
+            while view:
+                written = os.write(self.fd, view)
+                if written <= 0:
+                    raise OSError("Failed to write staged workflow file")
+                view = view[written:]
+
+    def write_bytes(self, data: bytes) -> None:
+        self._write((data,))
+
+    def copy_from(self, source: Path) -> None:
+        with source.open("rb") as src:
+            self._write(iter(lambda: src.read(1024 * 1024), b""))
+        if hasattr(os, "fchmod"):
+            os.fchmod(
+                self.fd,
+                source.stat(follow_symlinks=True).st_mode & 0o7777,
+            )
+
+    def verify_path(self) -> None:
+        import stat
+
+        try:
+            path_stat = self.path.stat(follow_symlinks=False)
+            open_stat = os.fstat(self.fd)
+        except OSError as exc:
+            raise OSError(
+                "Staged workflow file changed before commit"
+            ) from exc
+        if (
+            not stat.S_ISREG(path_stat.st_mode)
+            or path_stat.st_dev != open_stat.st_dev
+            or path_stat.st_ino != open_stat.st_ino
+        ):
+            raise OSError("Staged workflow file changed before commit")
+
+    def set_mode(self, mode: int) -> None:
+        if hasattr(os, "fchmod"):
+            os.fchmod(self.fd, mode)
+
+    def close(self) -> None:
+        if self.fd < 0:
+            return
+        fd, self.fd = self.fd, -1
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
 def _stage_workflow_file(
     dest_dir: Path, *, use_project_file_mode: bool = False
-) -> Path:
+) -> _StagedWorkflowFile:
     """Reserve a same-directory staging file so new/updated workflow.yml
     content can be written and validated without ever touching (and risking
     truncating) an existing destination file before the final atomic swap.
@@ -463,7 +524,9 @@ def _stage_workflow_file(
     re-raised unchanged. A pre-existing dest_dir (reinstall) is never
     touched by this cleanup. For catalog-created files,
     ``use_project_file_mode`` recreates the reserved path exclusively with
-    mode 0666 so the process umask supplies the normal project-file mode."""
+    mode 0666 so the process umask supplies the normal project-file mode.
+    The final descriptor remains open so callers write to and verify the
+    reserved inode rather than reopening a replaceable pathname."""
     import tempfile
 
     created_dir = not dest_dir.exists()
@@ -500,9 +563,8 @@ def _stage_workflow_file(
                     f"workflow directory: {_escape_markup(str(cleanup_exc))}"
                 )
         raise
-    os.close(fd)
     assert staged_file is not None
-    return staged_file
+    return _StagedWorkflowFile(staged_file, fd)
 
 
 @contextlib.contextmanager
@@ -555,7 +617,11 @@ def _workflow_install_transaction(project_root: Path):
         os.close(fd)
 
 
-def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bool) -> Path | None:
+def _commit_workflow_file(
+    staged_file: Path | _StagedWorkflowFile,
+    dest_file: Path,
+    existed_before: bool,
+) -> Path | None:
     """Atomically swap ``staged_file`` onto ``dest_file``. If a prior file
     existed, it is first renamed to a unique sibling (path returned) so a
     later failure (e.g. registry.add()) can restore it via rename instead
@@ -563,10 +629,21 @@ def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bo
     in place. If the second rename fails after the first succeeded, the
     prior file is put back immediately so dest_file is never left simply
     missing."""
+    staged_path = (
+        staged_file.path
+        if isinstance(staged_file, _StagedWorkflowFile)
+        else staged_file
+    )
+    if isinstance(staged_file, _StagedWorkflowFile):
+        staged_file.verify_path()
     if existed_before and dest_file.exists():
         import tempfile
 
-        staged_file.chmod(dest_file.stat(follow_symlinks=False).st_mode & 0o7777)
+        mode = dest_file.stat(follow_symlinks=False).st_mode & 0o7777
+        if isinstance(staged_file, _StagedWorkflowFile):
+            staged_file.set_mode(mode)
+        else:
+            staged_path.chmod(mode)
         fd, backup_name = tempfile.mkstemp(
             dir=dest_file.parent,
             prefix=f".{dest_file.name}.",
@@ -583,7 +660,9 @@ def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bo
                 pass
             raise
         try:
-            os.replace(staged_file, dest_file)
+            if isinstance(staged_file, _StagedWorkflowFile):
+                staged_file.verify_path()
+            os.replace(staged_path, dest_file)
         except OSError as commit_exc:
             try:
                 os.replace(backup_file, dest_file)
@@ -595,19 +674,34 @@ def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bo
                     f"{backup_file}."
                 ) from restore_exc
             raise
+        if isinstance(staged_file, _StagedWorkflowFile):
+            staged_file.close()
         return backup_file
-    os.replace(staged_file, dest_file)
+    os.replace(staged_path, dest_file)
+    if isinstance(staged_file, _StagedWorkflowFile):
+        staged_file.close()
     return None
 
 
-def _discard_staged_workflow_file(staged_file: Path, dest_dir: Path, existed_before: bool) -> None:
+def _discard_staged_workflow_file(
+    staged_file: Path | _StagedWorkflowFile,
+    dest_dir: Path,
+    existed_before: bool,
+) -> None:
     """Clean up after a pre-commit failure (staged_file was never swapped
     onto dest_file): remove the staged file, and for a fresh install (no
     prior directory) remove the now-orphaned dest_dir too. A genuine
     removal failure must propagate (not be swallowed) so the safe wrapper
     below can warn instead of silently leaving an orphan; a dest_dir
     already absent is not itself an error."""
-    staged_file.unlink(missing_ok=True)
+    staged_path = (
+        staged_file.path
+        if isinstance(staged_file, _StagedWorkflowFile)
+        else staged_file
+    )
+    if isinstance(staged_file, _StagedWorkflowFile):
+        staged_file.close()
+    staged_path.unlink(missing_ok=True)
     if not existed_before and dest_dir.exists():
         import errno
 
@@ -647,7 +741,11 @@ def _rollback_committed_workflow_file(
                     raise
 
 
-def _safe_discard_staged_workflow_file(staged_file: Path, dest_dir: Path, existed_before: bool) -> None:
+def _safe_discard_staged_workflow_file(
+    staged_file: Path | _StagedWorkflowFile,
+    dest_dir: Path,
+    existed_before: bool,
+) -> None:
     """Guarded wrapper: a cleanup failure must be reported, never crash or
     silently mask the original install error that triggered it."""
     try:
@@ -1246,8 +1344,6 @@ def workflow_add(
         dest_file = dest_dir / "workflow.yml"
         existed_before = dest_dir.is_dir()
 
-        import shutil
-
         try:
             staged_file = _stage_workflow_file(dest_dir)
         except OSError as exc:
@@ -1261,7 +1357,7 @@ def workflow_add(
             # Copied into the staging file, never dest_file directly, so a
             # reinstall's prior working copy is never touched until the
             # atomic commit below runs.
-            shutil.copy2(yaml_path, staged_file)
+            staged_file.copy_from(yaml_path)
         except OSError as exc:
             _safe_discard_staged_workflow_file(staged_file, dest_dir, existed_before)
             console.print(
@@ -1657,7 +1753,8 @@ def _install_workflow_from_catalog(
             # Written to the staging file, never workflow_file directly, so a
             # reinstall's prior working copy is never touched until the
             # atomic commit below runs.
-            staged_file.write_bytes(_read_response_within_limit(response))
+            downloaded_content = _read_response_within_limit(response)
+            staged_file.write_bytes(downloaded_content)
     except typer.Exit:
         raise
     except Exception as exc:
@@ -1668,8 +1765,10 @@ def _install_workflow_from_catalog(
     # Validate the downloaded workflow (still staged, not yet committed)
     # before registering.
     try:
-        definition = WorkflowDefinition.from_yaml(staged_file)
-    except (ValueError, yaml.YAMLError) as exc:
+        definition = WorkflowDefinition.from_string(
+            downloaded_content.decode("utf-8")
+        )
+    except (UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
         _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(f"[red]Error:[/red] Downloaded workflow is invalid: {_escape_markup(str(exc))}")
         raise typer.Exit(1)

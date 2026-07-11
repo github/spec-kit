@@ -8324,7 +8324,7 @@ steps:
         mode = stat.S_IMODE(registry.registry_path.stat().st_mode)
         assert mode == 0o644, f"expected 0644, got {oct(mode)}"
 
-    @pytest.mark.skipif(not hasattr(os, "chown"), reason="os.chown is unavailable")
+    @pytest.mark.skipif(not hasattr(os, "fchown"), reason="os.fchown is unavailable")
     def test_registry_save_preserves_existing_owner_group(
         self, project_dir, monkeypatch
     ):
@@ -8334,18 +8334,18 @@ steps:
         registry = WorkflowRegistry(project_dir)
         registry.add("first-wf", {"name": "First"})
         existing = registry.registry_path.stat()
-        calls: list[tuple[Path, int, int]] = []
+        calls: list[tuple[os.stat_result, int, int]] = []
 
         monkeypatch.setattr(
             catalog_mod.os,
-            "chown",
-            lambda path, uid, gid: calls.append((Path(path), uid, gid)),
+            "fchown",
+            lambda fd, uid, gid: calls.append((os.fstat(fd), uid, gid)),
         )
         registry.add("second-wf", {"name": "Second"})
 
         assert len(calls) == 1
-        temp_path, uid, gid = calls[0]
-        assert temp_path.parent == registry.registry_path.parent
+        temp_stat, uid, gid = calls[0]
+        assert stat.S_ISREG(temp_stat.st_mode)
         assert uid == existing.st_uid
         assert gid == existing.st_gid
 
@@ -8360,6 +8360,49 @@ steps:
 
         mode = stat.S_IMODE(registry.registry_path.stat().st_mode)
         assert mode == 0o600, f"expected 0600, got {oct(mode)}"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_registry_save_rejects_swapped_temp_without_touching_target(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        import specify_cli.workflows.catalog as catalog_mod
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("first-wf", {"name": "First"})
+        registry.registry_path.chmod(0o640)
+
+        victim = project_dir / "victim.txt"
+        victim.write_text("untouched", encoding="utf-8")
+        victim.chmod(0o600)
+
+        tmp_path = None
+        real_mkstemp = catalog_mod.tempfile.mkstemp
+        real_dump = catalog_mod.json.dump
+
+        def tracking_mkstemp(*args, **kwargs):
+            nonlocal tmp_path
+            fd, name = real_mkstemp(*args, **kwargs)
+            tmp_path = Path(name)
+            return fd, name
+
+        def swap_after_dump(*args, **kwargs):
+            result = real_dump(*args, **kwargs)
+            assert tmp_path is not None
+            tmp_path.unlink()
+            tmp_path.symlink_to(victim)
+            return result
+
+        monkeypatch.setattr(catalog_mod.tempfile, "mkstemp", tracking_mkstemp)
+        monkeypatch.setattr(catalog_mod.json, "dump", swap_after_dump)
+
+        with pytest.raises(OSError):
+            registry.add("second-wf", {"name": "Second"})
+
+        assert victim.read_text(encoding="utf-8") == "untouched"
+        assert stat.S_IMODE(victim.stat().st_mode) == 0o600
+        assert not registry.registry_path.is_symlink()
+        assert WorkflowRegistry(project_dir).is_installed("first-wf")
 
     def test_add_dev_dir_with_workflow_yml_directory_errors_cleanly(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
@@ -8552,6 +8595,60 @@ steps:
         assert installed_yaml.read_bytes() == original_bytes
         assert WorkflowRegistry(project_dir).get("align-wf") == original_registry_entry
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    @pytest.mark.parametrize("mode", ["dev", "catalog"])
+    def test_stage_write_rejects_swapped_symlink(
+        self, project_dir, monkeypatch, mode
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        victim = project_dir / "victim.txt"
+        victim.write_text("untouched", encoding="utf-8")
+
+        real_stage = _commands._stage_workflow_file
+
+        def raced_stage(*args, **kwargs):
+            staged = real_stage(*args, **kwargs)
+            staged_path = getattr(staged, "path", staged)
+            staged_path.unlink()
+            staged_path.symlink_to(victim)
+            return staged
+
+        monkeypatch.setattr(_commands, "_stage_workflow_file", raced_stage)
+
+        if mode == "dev":
+            source = self._write_workflow_dir(project_dir)
+            args = ["workflow", "add", str(source), "--dev"]
+        else:
+            monkeypatch.setattr(
+                WorkflowCatalog,
+                "get_workflow_info",
+                lambda self, wid: {
+                    "id": wid,
+                    "name": "Align Workflow",
+                    "version": "1.0.0",
+                    "url": "https://example.com/workflow.yml",
+                    "_install_allowed": True,
+                    "_catalog_name": "test-catalog",
+                },
+            )
+            data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+            monkeypatch.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None,
+                redirect_validator=None: self._FakeResponse(data, url),
+            )
+            args = ["workflow", "add", "align-wf"]
+
+        result = CliRunner().invoke(app, args)
+
+        assert result.exit_code != 0
+        assert victim.read_text(encoding="utf-8") == "untouched"
+
     def test_add_fresh_install_staged_discard_cleanup_failure_reports_warning(
         self, project_dir, monkeypatch
     ):
@@ -8559,13 +8656,14 @@ steps:
         the original copy failure remains the primary error."""
         from typer.testing import CliRunner
         from specify_cli import app
+        from specify_cli.workflows import _commands
         from specify_cli.workflows.catalog import WorkflowRegistry
 
         monkeypatch.chdir(project_dir)
         runner = CliRunner()
         src = self._write_workflow_dir(project_dir)
 
-        def copy_boom(*args, **kwargs):
+        def copy_boom(self, source):
             raise OSError("disk full")
 
         real_rmdir = Path.rmdir
@@ -8576,7 +8674,7 @@ steps:
             return real_rmdir(path)
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("shutil.copy2", copy_boom)
+            mp.setattr(_commands._StagedWorkflowFile, "copy_from", copy_boom)
             mp.setattr(Path, "rmdir", rmdir_boom)
             result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
 
@@ -8628,15 +8726,11 @@ steps:
     def test_add_dev_reinstall_copy_failure_leaves_prior_file_untouched(
         self, project_dir, monkeypatch
     ):
-        """copy2 now writes into a same-directory staging file, never
-        dest_file directly, so a copy2 failure (even one that partially
-        writes before raising, mirroring a real disk-full/interrupted-copy
-        failure) can no longer touch -- let alone truncate -- the prior
-        working workflow.yml: dest_file is only ever touched by the final
-        atomic commit swap, which never runs if copy2 raises. No leftover
-        staging file may remain either."""
+        """A staged descriptor-copy failure cannot touch the prior installed
+        workflow or leave a staging file behind."""
         from typer.testing import CliRunner
         from specify_cli import app
+        from specify_cli.workflows import _commands
         from specify_cli.workflows.catalog import WorkflowRegistry
 
         monkeypatch.chdir(project_dir)
@@ -8652,15 +8746,14 @@ steps:
             self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
         )
 
-        def boom(src_path, dst_path, *args, **kwargs):
+        def boom(staged, source):
             # Simulate a truncating partial write followed by an OSError on
-            # the *staging* file -- the only file copy2 is now allowed to
-            # touch -- mirroring a real disk-full/interrupted-copy failure.
-            Path(dst_path).write_bytes(b"")
+            # the reserved staging inode, mirroring disk exhaustion.
+            staged.write_bytes(b"")
             raise OSError("disk full")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("shutil.copy2", boom)
+            mp.setattr(_commands._StagedWorkflowFile, "copy_from", boom)
             result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
 
         assert result.exit_code != 0
@@ -9990,7 +10083,7 @@ steps:
             side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(b"", url),
         ), patch.object(
             WorkflowDefinition,
-            "from_yaml",
+            "from_string",
             side_effect=ValueError('bad snippet: "New [Feature]"'),
         ):
             result = runner.invoke(app, ["workflow", "update"], input="y\n")

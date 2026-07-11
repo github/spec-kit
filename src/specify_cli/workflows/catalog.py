@@ -145,7 +145,9 @@ class WorkflowRegistry:
             suffix=".tmp",
         )
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
+            # Write through a duplicate so the exclusive mkstemp descriptor
+            # stays open for fd-based metadata updates and inode verification.
+            with os.fdopen(os.dup(fd), "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2)
             # mkstemp creates the temp file at 0600. A pre-existing registry
             # may be shared more permissively (e.g. 0640/0644); preserve its
@@ -156,19 +158,44 @@ class WorkflowRegistry:
             # metadata preservation).
             try:
                 if self.registry_path.exists():
-                    existing_stat = self.registry_path.stat()
-                    os.chmod(tmp, stat.S_IMODE(existing_stat.st_mode))
-                    if hasattr(os, "chown"):
+                    existing_stat = self.registry_path.stat(
+                        follow_symlinks=False
+                    )
+                    if stat.S_ISREG(existing_stat.st_mode) and hasattr(
+                        os, "fchmod"
+                    ):
+                        os.fchmod(fd, stat.S_IMODE(existing_stat.st_mode))
+                    if stat.S_ISREG(existing_stat.st_mode) and hasattr(
+                        os, "fchown"
+                    ):
                         try:
-                            os.chown(
-                                tmp, existing_stat.st_uid, existing_stat.st_gid
+                            os.fchown(
+                                fd, existing_stat.st_uid, existing_stat.st_gid
                             )
                         except PermissionError:
                             pass
             except OSError:
                 pass
+            staged_stat = os.stat(tmp, follow_symlinks=False)
+            open_stat = os.fstat(fd)
+            if (
+                not stat.S_ISREG(staged_stat.st_mode)
+                or staged_stat.st_dev != open_stat.st_dev
+                or staged_stat.st_ino != open_stat.st_ino
+            ):
+                raise OSError(
+                    "Refusing to replace workflow registry: "
+                    "staged file changed before commit"
+                )
+            os.close(fd)
+            fd = -1
             os.replace(tmp, self.registry_path)
         except BaseException:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
             try:
                 os.unlink(tmp)
             except OSError:
