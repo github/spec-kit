@@ -4257,11 +4257,13 @@ steps:
     def test_shell_step_receives_speckit_workflow_dir_env_var(self, project_dir):
         """Shell steps receive SPECKIT_WORKFLOW_DIR in their environment."""
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        import sys
 
         wf_dir = project_dir / "wf"
         wf_dir.mkdir()
         wf_file = wf_dir / "workflow.yml"
-        wf_file.write_text("""
+        python = sys.executable
+        wf_file.write_text(f"""
 schema_version: "1.0"
 workflow:
   id: "env-var-test"
@@ -4270,7 +4272,7 @@ workflow:
 steps:
   - id: print-env
     type: shell
-    run: "printenv SPECKIT_WORKFLOW_DIR"
+    run: "{python} -c \\"import os; print(os.environ.get('SPECKIT_WORKFLOW_DIR', 'UNSET'))\\""
 """)
         definition = WorkflowDefinition.from_yaml(wf_file)
         engine = WorkflowEngine(project_dir)
@@ -4279,11 +4281,15 @@ steps:
         stdout = state.step_results["print-env"]["output"]["stdout"]
         assert stdout.strip() == str(wf_dir)
 
-    def test_shell_step_no_env_var_when_workflow_dir_unset(self, project_dir):
+    def test_shell_step_no_env_var_when_workflow_dir_unset(self, project_dir, monkeypatch):
         """Shell steps do not set SPECKIT_WORKFLOW_DIR for string-loaded workflows."""
         from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        import sys
 
-        definition = WorkflowDefinition.from_string("""
+        monkeypatch.delenv("SPECKIT_WORKFLOW_DIR", raising=False)
+
+        python = sys.executable
+        definition = WorkflowDefinition.from_string(f"""
 schema_version: "1.0"
 workflow:
   id: "no-env-var"
@@ -4292,7 +4298,7 @@ workflow:
 steps:
   - id: check-env
     type: shell
-    run: "printenv SPECKIT_WORKFLOW_DIR || echo UNSET"
+    run: "{python} -c \\"import os; print(os.environ.get('SPECKIT_WORKFLOW_DIR', 'UNSET'))\\""
 """)
         engine = WorkflowEngine(project_dir)
         state = engine.execute(definition)

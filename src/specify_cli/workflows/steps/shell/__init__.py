@@ -35,9 +35,11 @@ class ShellStep(StepBase):
         if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
             timeout = 300
 
-        env = None
+        env = {**os.environ}
         if context.workflow_dir:
-            env = {**os.environ, "SPECKIT_WORKFLOW_DIR": context.workflow_dir}
+            env["SPECKIT_WORKFLOW_DIR"] = context.workflow_dir
+        else:
+            env.pop("SPECKIT_WORKFLOW_DIR", None)
 
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors
