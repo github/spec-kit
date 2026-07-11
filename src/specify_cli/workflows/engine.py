@@ -568,12 +568,25 @@ class RunState:
         with open(state_path, encoding="utf-8") as f:
             state_data = json.load(f)
 
+        installed_workflow_id = state_data.get("installed_workflow_id")
+        if installed_workflow_id is not None and not isinstance(installed_workflow_id, str):
+            raise ValueError(
+                "Invalid run state: 'installed_workflow_id' must be a "
+                f"string or null, got {type(installed_workflow_id).__name__}"
+            )
+        installed_registry_root = state_data.get("installed_registry_root")
+        if installed_registry_root is not None and not isinstance(installed_registry_root, str):
+            raise ValueError(
+                "Invalid run state: 'installed_registry_root' must be a "
+                f"string or null, got {type(installed_registry_root).__name__}"
+            )
+
         state = cls(
             run_id=state_data["run_id"],
             workflow_id=state_data["workflow_id"],
             project_root=project_root,
-            installed_workflow_id=state_data.get("installed_workflow_id"),
-            installed_registry_root=state_data.get("installed_registry_root"),
+            installed_workflow_id=installed_workflow_id,
+            installed_registry_root=installed_registry_root,
         )
         state.status = RunStatus(state_data["status"])
         state.current_step_index = state_data.get("current_step_index", 0)

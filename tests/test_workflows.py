@@ -7784,6 +7784,58 @@ steps:
         leaked = list(scratch_tmp.glob("*.yml"))
         assert leaked == [], f"leaked temp files: {leaked}"
 
+    def test_add_from_url_download_failure_cleanup_error_preserves_original_error(
+        self, project_dir, monkeypatch, tmp_path
+    ):
+        """The --from download-failure branch's `tmp_path.unlink(missing_ok=
+        True)` can itself raise (e.g. read-only tempdir) before the clean
+        "Failed to download workflow" message is ever printed, replacing it
+        with a raw unhandled OSError. A cleanup failure there must be
+        guarded exactly like the later post-install finally cleanup: warn
+        about the cleanup failure, then still preserve/report the original
+        download error via a clean typer.Exit, never a raw traceback."""
+        import tempfile as tempfile_mod
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        scratch_tmp = tmp_path / "scratch-tmp"
+        scratch_tmp.mkdir()
+        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
+        oversized_body = b"x" * 500  # no Content-Length header at all
+        runner = CliRunner()
+
+        real_unlink = Path.unlink
+
+        def unlink_boom(self_path, *args, **kwargs):
+            if self_path.suffix == ".yml" and self_path.parent == scratch_tmp:
+                raise OSError("cleanup denied")
+            return real_unlink(self_path, *args, **kwargs)
+
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                oversized_body, url
+            ),
+        ), pytest.MonkeyPatch.context() as mp:
+            mp.setattr(Path, "unlink", unlink_boom)
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        # Original download error remains present.
+        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
+        # Cleanup failure is reported too, not silently swallowed / crashing.
+        assert "cleanup denied" in result.output
+        assert "Warning" in result.output
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
     def test_add_from_url_installs(self, project_dir, monkeypatch):
         from unittest.mock import patch
@@ -8244,6 +8296,90 @@ steps:
         assert installed_yaml.parent.is_dir()
         assert installed_yaml.read_bytes() == original_bytes
         assert WorkflowRegistry(project_dir).get("align-wf") == original_registry_entry
+
+    def test_add_fresh_install_staged_discard_cleanup_failure_reports_warning(
+        self, project_dir, monkeypatch
+    ):
+        """_discard_staged_workflow_file's fresh-install rmtree(dest_dir) was
+        previously called with ignore_errors=True, so a genuine cleanup
+        failure there could never reach _safe_discard_staged_workflow_file's
+        warning -- an orphaned directory was left behind with no report at
+        all. The cleanup failure must propagate so the safe wrapper can
+        warn, while the original copy2 install error remains the primary,
+        already-printed failure."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._write_workflow_dir(project_dir)
+
+        def copy_boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        def rmtree_boom(path, ignore_errors=False, onerror=None, **kwargs):
+            # Mirrors real shutil.rmtree's ignore_errors contract: a caller
+            # that still passes ignore_errors=True must have any failure
+            # here swallowed exactly like the buggy prior behavior, so this
+            # fake only serves as a true red/green discriminator once the
+            # production code drops that flag.
+            if ignore_errors:
+                return
+            raise OSError("cleanup denied")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("shutil.copy2", copy_boom)
+            mp.setattr("shutil.rmtree", rmtree_boom)
+            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        # Original install error remains present and primary.
+        assert "disk full" in result.output
+        # Cleanup failure is now reported, not silently swallowed.
+        assert "cleanup denied" in result.output
+        assert "Warning" in result.output
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_fresh_install_registry_rollback_cleanup_failure_reports_warning(
+        self, project_dir, monkeypatch
+    ):
+        """_rollback_committed_workflow_file's fresh-install rmtree(dest_dir)
+        after a registry.add() failure had the same ignore_errors=True gap:
+        a genuine directory-removal failure there was silently swallowed,
+        leaving an orphan with no warning. The cleanup failure must
+        propagate so the safe wrapper can warn, while the original
+        registry-update error remains the primary, already-printed
+        failure."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._write_workflow_dir(project_dir)
+
+        def save_boom(self):
+            raise OSError("registry disk full")
+
+        def rmtree_boom(path, ignore_errors=False, onerror=None, **kwargs):
+            if ignore_errors:
+                return
+            raise OSError("cleanup denied")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(WorkflowRegistry, "save", save_boom)
+            mp.setattr("shutil.rmtree", rmtree_boom)
+            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        # Original registry-update error remains present and primary.
+        assert "registry disk full" in result.output
+        # Cleanup failure is now reported, not silently swallowed.
+        assert "cleanup denied" in result.output
+        assert "Warning" in result.output
 
     def test_add_dev_reinstall_copy_failure_leaves_prior_file_untouched(
         self, project_dir, monkeypatch
@@ -10187,6 +10323,83 @@ steps:
         result = runner.invoke(app, ["workflow", "resume", run_id])
         assert result.exit_code != 0
         assert "disabled" in result.output
+
+    @pytest.mark.parametrize(
+        "field, bad_value",
+        [
+            ("installed_workflow_id", 123),
+            ("installed_workflow_id", ["gated-wf"]),
+            ("installed_workflow_id", {"id": "gated-wf"}),
+            ("installed_workflow_id", True),
+            ("installed_registry_root", 123),
+            ("installed_registry_root", ["."]),
+            ("installed_registry_root", {"root": "."}),
+            ("installed_registry_root", False),
+        ],
+    )
+    def test_resume_rejects_malformed_run_state_origin_fields(
+        self, project_dir, monkeypatch, field, bad_value
+    ):
+        """RunState.load() trusts installed_workflow_id/installed_registry_root
+        straight out of the JSON state file with no type validation. A
+        malformed value (int/list/dict/bool instead of str-or-null) -- from
+        disk corruption or an externally-crafted state.json -- would
+        otherwise crash deep inside `_resolve_run_owner_root`/registry
+        lookups (TypeError constructing a Path, unhashable dict/list key)
+        rather than failing cleanly. `load()` must validate each field as
+        `str | None` and raise a clear ValueError, which `workflow resume`'s
+        existing ValueError boundary already converts into a clean CLI
+        error with no traceback."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+
+        state_path = (
+            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        )
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        data[field] = bad_value
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Error" in result.output
+
+    @pytest.mark.parametrize(
+        "installed_workflow_id, installed_registry_root",
+        [
+            (None, None),
+            ("gated-wf", None),
+            ("", ""),
+        ],
+    )
+    def test_resume_accepts_valid_run_state_origin_fields(
+        self, project_dir, monkeypatch, installed_workflow_id, installed_registry_root
+    ):
+        """Valid str-or-null values (including the empty-string fallback
+        policy `_resolve_run_owner_root` already treats as "no root
+        stored") must continue to load and resume without error."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+
+        state_path = (
+            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        )
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        data["installed_workflow_id"] = installed_workflow_id
+        data["installed_registry_root"] = installed_registry_root
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+        assert result.exit_code == 0, result.output
 
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner

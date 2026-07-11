@@ -447,11 +447,14 @@ def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bo
 def _discard_staged_workflow_file(staged_file: Path, dest_dir: Path, existed_before: bool) -> None:
     """Clean up after a pre-commit failure (staged_file was never swapped
     onto dest_file): remove the staged file, and for a fresh install (no
-    prior directory) remove the now-orphaned dest_dir too."""
+    prior directory) remove the now-orphaned dest_dir too. A genuine
+    removal failure must propagate (not be swallowed) so the safe wrapper
+    below can warn instead of silently leaving an orphan; a dest_dir
+    already absent is not itself an error."""
     staged_file.unlink(missing_ok=True)
-    if not existed_before:
+    if not existed_before and dest_dir.exists():
         import shutil
-        shutil.rmtree(dest_dir, ignore_errors=True)
+        shutil.rmtree(dest_dir)
 
 
 def _rollback_committed_workflow_file(
@@ -460,14 +463,17 @@ def _rollback_committed_workflow_file(
     """Undo a successful _commit_workflow_file swap after a later failure
     (registry.add()): restore the prior file via rename, remove the newly
     committed file for a reinstall over a pre-existing empty directory
-    (no backup), or remove the whole directory for a fresh install."""
+    (no backup), or remove the whole directory for a fresh install. A
+    genuine removal failure must propagate (not be swallowed) so the safe
+    wrapper below can warn instead of silently leaving an orphan; a
+    dest_dir already absent is not itself an error."""
     if backup_file is not None:
         os.replace(backup_file, dest_file)
     elif existed_before:
         dest_file.unlink(missing_ok=True)
-    else:
+    elif dest_dir.exists():
         import shutil
-        shutil.rmtree(dest_dir, ignore_errors=True)
+        shutil.rmtree(dest_dir)
 
 
 def _safe_discard_staged_workflow_file(staged_file: Path, dest_dir: Path, existed_before: bool) -> None:
@@ -1225,7 +1231,18 @@ def workflow_add(
             raise
         except Exception as exc:
             if tmp_path is not None:
-                tmp_path.unlink(missing_ok=True)
+                # A cleanup failure here must never replace/mask the
+                # original download error below with a raw, unhandled
+                # OSError -- warn about it and keep going, exactly like the
+                # later post-install finally cleanup does.
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError as cleanup_exc:
+                    console.print(
+                        "[yellow]Warning:[/yellow] Could not remove temporary "
+                        f"download file {_escape_markup(str(tmp_path))}: "
+                        f"{_escape_markup(str(cleanup_exc))}"
+                    )
             console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         try:
