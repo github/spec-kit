@@ -8212,6 +8212,27 @@ steps:
             registry.add("other-wf", {"version": "1.0.0", "source": "catalog"})
         assert registry.get("other-wf") is None
 
+    @pytest.mark.parametrize("error_type", [TypeError, ValueError])
+    def test_registry_add_rolls_back_memory_on_serialization_failure(
+        self, project_dir, monkeypatch, error_type
+    ):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
+
+        def boom():
+            raise error_type("not JSON serializable")
+
+        monkeypatch.setattr(registry, "save", boom)
+        with pytest.raises(error_type):
+            registry.add("align-wf", {"version": "2.0.0", "source": "catalog"})
+        assert registry.get("align-wf")["version"] == "1.0.0"
+
+        with pytest.raises(error_type):
+            registry.add("other-wf", {"version": "1.0.0", "source": "catalog"})
+        assert registry.get("other-wf") is None
+
     def test_registry_add_survives_non_dict_existing_entry(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowRegistry
 
@@ -8327,6 +8348,59 @@ steps:
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert result.output.strip() != ""
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        assert not dest_dir.exists()
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    @pytest.mark.parametrize("mode", ["dev", "catalog"])
+    def test_add_non_json_description_rolls_back_transaction(
+        self, project_dir, monkeypatch, mode
+    ):
+        import contextlib
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        data = self.WORKFLOW_YAML.format(version="1.0.0").replace(
+            'description: "CLI alignment test workflow"',
+            "description: 2026-01-02",
+        ).encode()
+
+        if mode == "dev":
+            source = project_dir / "dated-description"
+            source.mkdir()
+            (source / "workflow.yml").write_bytes(data)
+            args = ["workflow", "add", str(source), "--dev"]
+            download = contextlib.nullcontext()
+        else:
+            monkeypatch.setattr(
+                WorkflowCatalog,
+                "get_workflow_info",
+                lambda self, wid: {
+                    "id": wid,
+                    "name": "Align Workflow",
+                    "version": "1.0.0",
+                    "url": "https://example.com/workflow.yml",
+                    "_install_allowed": True,
+                    "_catalog_name": "test-catalog",
+                },
+            )
+            args = ["workflow", "add", "align-wf"]
+            download = patch(
+                "specify_cli.authentication.http.open_url",
+                side_effect=lambda url, timeout=None, extra_headers=None,
+                redirect_validator=None: self._FakeResponse(data, url),
+            )
+
+        with download:
+            result = CliRunner().invoke(app, args)
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Failed to update workflow registry" in result.output
         dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
         assert not dest_dir.exists()
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
@@ -10332,6 +10406,157 @@ steps:
         registry = WorkflowRegistry(project_dir)
         assert registry.is_installed("align-wf")
         assert registry.get("align-wf")["version"] == "1.0.0"
+
+    def test_update_non_json_description_restores_prior_file_and_registry(
+        self, project_dir, monkeypatch
+    ):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry = WorkflowRegistry(project_dir)
+        registry.add(
+            "align-wf",
+            {
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "description": "",
+                "source": "catalog",
+                "url": "https://example.com/workflow.yml",
+            },
+        )
+        workflow_file = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "align-wf"
+            / "workflow.yml"
+        )
+        workflow_file.parent.mkdir(parents=True)
+        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        workflow_file.write_bytes(original_data)
+
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        invalid_data = self.WORKFLOW_YAML.format(version="2.0.0").replace(
+            'description: "CLI alignment test workflow"',
+            "description: 2026-01-02",
+        ).encode()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None,
+            redirect_validator=None: self._FakeResponse(invalid_data, url),
+        ):
+            result = CliRunner().invoke(
+                app, ["workflow", "update", "align-wf"], input="y\n"
+            )
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Failed to update workflow registry" in result.output
+        assert workflow_file.read_bytes() == original_data
+        current = WorkflowRegistry(project_dir).get("align-wf")
+        assert current["version"] == "1.0.0"
+        assert not workflow_file.with_name("workflow.yml.bak").exists()
+
+    @pytest.mark.parametrize(
+        ("replacement_source", "replacement_version"),
+        [("local", "1.0.0"), ("catalog", "1.5.0")],
+    )
+    def test_update_rechecks_registry_after_confirmation(
+        self, project_dir, monkeypatch, replacement_source, replacement_version
+    ):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry = WorkflowRegistry(project_dir)
+        registry.add(
+            "align-wf",
+            {
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "description": "",
+                "source": "catalog",
+                "url": "https://example.com/workflow.yml",
+            },
+        )
+        workflow_file = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "align-wf"
+            / "workflow.yml"
+        )
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        replacement_data = self.WORKFLOW_YAML.format(
+            version=replacement_version
+        ).replace(
+            'description: "CLI alignment test workflow"',
+            'description: "concurrent replacement"',
+        ).encode()
+
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+
+        def replace_while_confirming(*args, **kwargs):
+            WorkflowRegistry(project_dir).add(
+                "align-wf",
+                {
+                    "name": "Concurrent replacement",
+                    "version": replacement_version,
+                    "description": "",
+                    "source": replacement_source,
+                },
+            )
+            workflow_file.write_bytes(replacement_data)
+            return True
+
+        monkeypatch.setattr(_commands.typer, "confirm", replace_while_confirming)
+        catalog_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None,
+            redirect_validator=None: self._FakeResponse(catalog_data, url),
+        ):
+            result = CliRunner().invoke(app, ["workflow", "update", "align-wf"])
+
+        assert result.exit_code != 0
+        assert "changed during update" in result.output
+        assert workflow_file.read_bytes() == replacement_data
+        current = WorkflowRegistry(project_dir).get("align-wf")
+        assert current["source"] == replacement_source
+        assert current["version"] == replacement_version
 
     def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
         import json

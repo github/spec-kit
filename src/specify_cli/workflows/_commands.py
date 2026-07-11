@@ -1268,7 +1268,7 @@ def workflow_add(
                     ):
                         entry["enabled"] = False
                     transaction_registry.add(definition.id, entry)
-                except OSError as exc:
+                except (OSError, TypeError, ValueError) as exc:
                     _safe_rollback_committed_workflow_file(
                         dest_file,
                         dest_dir,
@@ -1457,6 +1457,7 @@ def _install_workflow_from_catalog(
     workflows_dir: Path,
     workflow_id: str,
     expected_version: str | None = None,
+    expected_installed_version: str | None = None,
 ) -> None:
     """Download, validate, and register a catalog workflow.
 
@@ -1464,9 +1465,21 @@ def _install_workflow_from_catalog(
     on any failure; the registry entry is only written on full success.
     ``expected_version``, when given, rejects a downloaded workflow whose
     version does not match the catalog version that triggered the install.
+    ``expected_installed_version``, when given by ``workflow update``, aborts
+    if another process changes the installed source or version before commit.
     """
     from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowDefinition
+
+    def versions_match(actual: object, expected: str) -> bool:
+        from packaging import version as pkg_version
+
+        try:
+            return pkg_version.Version(str(actual)) == pkg_version.Version(
+                expected
+            )
+        except pkg_version.InvalidVersion:
+            return str(actual) == expected
 
     safe_wf_id = _escape_markup(workflow_id)
 
@@ -1626,12 +1639,7 @@ def _install_workflow_from_catalog(
     # catalog advertised; without this check `update` would report success
     # while leaving the old version installed (or even downgrading).
     if expected_version is not None:
-        from packaging import version as pkg_version
-        try:
-            version_matches = pkg_version.Version(str(definition.version)) == pkg_version.Version(expected_version)
-        except pkg_version.InvalidVersion:
-            version_matches = str(definition.version) == expected_version
-        if not version_matches:
+        if not versions_match(definition.version, expected_version):
             _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
             console.print(
                 f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
@@ -1647,6 +1655,21 @@ def _install_workflow_from_catalog(
                 existed_before or workflow_file.exists()
             )
             transaction_registry = _open_workflow_registry(project_root)
+            if expected_installed_version is not None:
+                current = transaction_registry.get(workflow_id)
+                if (
+                    not isinstance(current, dict)
+                    or current.get("source") != "catalog"
+                    or not versions_match(
+                        current.get("version"), expected_installed_version
+                    )
+                ):
+                    console.print(
+                        f"[yellow]Warning:[/yellow] Workflow '{safe_wf_id}' "
+                        "changed during update; rerun the command to use its "
+                        "current source and version."
+                    )
+                    raise typer.Exit(1)
             # Commit the staged download onto workflow_file via an atomic
             # swap. A prior file is renamed aside for registry rollback.
             try:
@@ -1680,7 +1703,7 @@ def _install_workflow_from_catalog(
                 entry["enabled"] = False
             try:
                 transaction_registry.add(workflow_id, entry)
-            except OSError as exc:
+            except (OSError, TypeError, ValueError) as exc:
                 _safe_rollback_committed_workflow_file(
                     workflow_file,
                     workflow_dir,
@@ -1951,6 +1974,7 @@ def workflow_update(
             _install_workflow_from_catalog(
                 project_root, workflows_dir, update["id"],
                 expected_version=update["available"],
+                expected_installed_version=update["installed"],
             )
         except (typer.Exit, OSError) as exc:
             if isinstance(exc, OSError):

@@ -183,7 +183,7 @@ class WorkflowRegistry:
         self.data["workflows"][workflow_id] = metadata
         try:
             self.save()
-        except OSError:
+        except (OSError, TypeError, ValueError):
             # Roll back the in-memory mutation so a later successful save
             # cannot persist metadata for a write that failed.
             if had_entry:
