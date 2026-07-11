@@ -1901,15 +1901,21 @@ class ExtensionManager:
                 # When the directory does exist, _unregister_extension_skills
                 # may intentionally skip deletion when ownership cannot be
                 # verified (e.g., corrupted/missing SKILL.md or mismatching
-                # metadata.source). Only drop registry entries for skill
-                # directories that were actually removed so future cleanup
-                # attempts can still find skipped ones.
+                # metadata.source). A name no longer present under *this*
+                # agent's directory isn't necessarily gone everywhere either
+                # — registered_skills is a single flat list shared across
+                # every agent this extension was ever activated under, so
+                # an earlier activation under a different, still-active
+                # agent may have left its own marker-verified mirror behind.
+                # Recompute across every safe, supported skills directory
+                # (the same helper used for the analogous toggle-cleanup
+                # case) rather than just this one, or a still-existing
+                # mirror elsewhere would be silently dropped from tracking
+                # and orphaned on later removal (#2948).
                 if agent_skills_dir.is_dir():
-                    remaining_skills = [
-                        skill_name
-                        for skill_name in registered_skills
-                        if (agent_skills_dir / skill_name).is_dir()
-                    ]
+                    remaining_skills = self._extension_owned_skill_names(
+                        registered_skills, ext_id
+                    )
                     if remaining_skills != registered_skills:
                         updates["registered_skills"] = remaining_skills
 

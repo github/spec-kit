@@ -1579,6 +1579,93 @@ class TestExtensionSkillRegistration:
             "must not widen cleanup to every configured agent directory"
         )
 
+    def test_unregister_agent_artifacts_preserves_tracking_for_other_agent_mirror(
+        self, project_dir, temp_dir
+    ):
+        """Present-directory reconciliation in ``unregister_agent_artifacts``
+        must not drop global ``registered_skills`` tracking for a name that
+        still has a marker-verified mirror under a *different* agent's
+        directory.
+
+        Auggie and Copilot are both activated in skills mode, each writing
+        its own mirror for the same extension skill names into the single,
+        agent-agnostic flat ``registered_skills`` list.
+        ``unregister_agent_artifacts("auggie")`` removes auggie's own
+        mirror (its directory exists, so the fast path finds and deletes
+        it) — but before this fix, the registry reconciliation afterward
+        only checked whether each name still existed under *auggie's* own
+        (now-empty) directory, concluding every name was gone and wiping
+        ``registered_skills`` to ``[]`` even though Copilot's mirror was
+        still live and now untracked. A later full ``remove()`` would then
+        read an empty registry and leave Copilot's mirror permanently
+        orphaned (#2948).
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="dual-agent-unregister-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        auggie_skills_dir = project_dir / ".augment" / "skills"
+        auggie_hello = auggie_skills_dir / "speckit-dual-agent-unregister-ext-hello" / "SKILL.md"
+        auggie_world = auggie_skills_dir / "speckit-dual-agent-unregister-ext-world" / "SKILL.md"
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "sanity: auggie's skills-mode activation should mirror both "
+            "extension commands as SKILL.md files"
+        )
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        copilot_hello = copilot_skills_dir / "speckit-dual-agent-unregister-ext-hello" / "SKILL.md"
+        copilot_world = copilot_skills_dir / "speckit-dual-agent-unregister-ext-world" / "SKILL.md"
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's skills-mode activation should also mirror "
+            "both extension commands"
+        )
+
+        # Unregister artifacts for auggie only (its directory exists and
+        # is cleaned up), while copilot's mirror is untouched and remains
+        # live on disk.
+        manager.unregister_agent_artifacts("auggie")
+
+        assert not auggie_hello.exists() and not auggie_world.exists(), (
+            "sanity: auggie's own mirror must be removed"
+        )
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's mirror must be untouched by an auggie-scoped "
+            "unregister call"
+        )
+
+        registry_metadata = manager.registry.get("dual-agent-unregister-ext")
+        tracked = registry_metadata.get("registered_skills", [])
+        assert "speckit-dual-agent-unregister-ext-hello" in tracked, (
+            "registered_skills tracking must be preserved for names still "
+            "owned by copilot's live mirror, even though they were removed "
+            "from auggie's own (now nonexistent) directory — reconciling "
+            "against only the just-cleaned agent's directory incorrectly "
+            "concludes the name is gone everywhere (#2948)"
+        )
+        assert "speckit-dual-agent-unregister-ext-world" in tracked, (
+            "registered_skills tracking must be preserved for names still "
+            "owned by copilot's live mirror, even though they were removed "
+            "from auggie's own (now nonexistent) directory — reconciling "
+            "against only the just-cleaned agent's directory incorrectly "
+            "concludes the name is gone everywhere (#2948)"
+        )
+
+        # A subsequent full extension removal must still find and clean up
+        # copilot's remaining mirror via the preserved tracking.
+        assert manager.remove("dual-agent-unregister-ext") is True
+        assert not copilot_hello.exists() and not copilot_world.exists(), (
+            "full removal must clean up copilot's remaining mirror — this "
+            "only works if registered_skills tracking wasn't prematurely "
+            "dropped by the earlier auggie-scoped unregister call (#2948)"
+        )
+
     def test_extension_owned_skill_names_rejects_symlinked_candidate_directory(
         self, project_dir, temp_dir
     ):
