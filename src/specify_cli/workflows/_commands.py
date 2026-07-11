@@ -557,15 +557,31 @@ def _workflow_install_transaction(project_root: Path):
 
 def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bool) -> Path | None:
     """Atomically swap ``staged_file`` onto ``dest_file``. If a prior file
-    existed, it is first renamed aside (path returned) so a later failure
-    (e.g. registry.add()) can restore it via rename instead of a content
-    rewrite -- the destination is never truncated/overwritten in place. If
-    the second rename fails after the first succeeded, the prior file is
-    put back immediately so dest_file is never left simply missing."""
+    existed, it is first renamed to a unique sibling (path returned) so a
+    later failure (e.g. registry.add()) can restore it via rename instead
+    of a content rewrite -- the destination is never truncated/overwritten
+    in place. If the second rename fails after the first succeeded, the
+    prior file is put back immediately so dest_file is never left simply
+    missing."""
     if existed_before and dest_file.exists():
+        import tempfile
+
         staged_file.chmod(dest_file.stat(follow_symlinks=False).st_mode & 0o7777)
-        backup_file = dest_file.with_name(dest_file.name + ".bak")
-        os.replace(dest_file, backup_file)
+        fd, backup_name = tempfile.mkstemp(
+            dir=dest_file.parent,
+            prefix=f".{dest_file.name}.",
+            suffix=".bak",
+        )
+        os.close(fd)
+        backup_file = Path(backup_name)
+        try:
+            os.replace(dest_file, backup_file)
+        except BaseException:
+            try:
+                backup_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
         try:
             os.replace(staged_file, dest_file)
         except OSError as commit_exc:

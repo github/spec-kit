@@ -8675,11 +8675,8 @@ steps:
     def test_add_dev_successful_reinstall_leaves_no_backup_file(
         self, project_dir, monkeypatch
     ):
-        """_commit_workflow_file() renames the prior workflow.yml aside to
-        workflow.yml.bak so it can be restored if registry.add() fails. Once
-        registry.add() durably succeeds, that backup is no longer needed --
-        it must be discarded, not left behind as a permanent orphan sibling
-        that every future reinstall would silently accumulate/overwrite."""
+        """Once registry.add() succeeds, the unique rollback backup must be
+        discarded rather than left as a permanent orphan sibling."""
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -9065,7 +9062,7 @@ steps:
         self, project_dir, monkeypatch
     ):
         """Same orphan-backup gap as the local-install path: a successful
-        catalog reinstall must not leave workflow.yml.bak behind once
+        catalog reinstall must not leave its unique backup behind once
         registry.add() durably succeeds."""
         from typer.testing import CliRunner
         from specify_cli import app
@@ -10562,7 +10559,12 @@ steps:
         assert workflow_file.read_bytes() == original_data
         current = WorkflowRegistry(project_dir).get("align-wf")
         assert current["version"] == "1.0.0"
-        assert not workflow_file.with_name("workflow.yml.bak").exists()
+        leftovers = [
+            path.name
+            for path in workflow_file.parent.iterdir()
+            if path.name != "workflow.yml"
+        ]
+        assert leftovers == []
 
     def test_commit_failure_reports_unrestored_backup_location(
         self, tmp_path, monkeypatch
@@ -10573,17 +10575,18 @@ steps:
         dest_dir.mkdir()
         dest_file = dest_dir / "workflow.yml"
         staged_file = dest_dir / ".workflow.yml.staged"
-        backup_file = dest_dir / "workflow.yml.bak"
         dest_file.write_text("original", encoding="utf-8")
         staged_file.write_text("replacement", encoding="utf-8")
 
         real_replace = os.replace
         calls = 0
+        backup_file = None
 
         def fail_commit_and_restore(src, dst):
-            nonlocal calls
+            nonlocal backup_file, calls
             calls += 1
             if calls == 1:
+                backup_file = Path(dst)
                 return real_replace(src, dst)
             if calls == 2:
                 raise OSError("commit denied")
@@ -10598,9 +10601,34 @@ steps:
         message = str(exc_info.value)
         assert "commit denied" in message
         assert "restore denied" in message
+        assert backup_file is not None
         assert str(backup_file) in message
         assert not dest_file.exists()
         assert backup_file.read_text(encoding="utf-8") == "original"
+
+    def test_commit_uses_unique_backup_without_overwriting_existing_sibling(
+        self, tmp_path
+    ):
+        from specify_cli.workflows import _commands
+
+        dest_dir = tmp_path / "align-wf"
+        dest_dir.mkdir()
+        dest_file = dest_dir / "workflow.yml"
+        staged_file = dest_dir / ".workflow.yml.staged"
+        fixed_backup = dest_dir / "workflow.yml.bak"
+        dest_file.write_text("original", encoding="utf-8")
+        staged_file.write_text("replacement", encoding="utf-8")
+        fixed_backup.write_text("diagnostic copy", encoding="utf-8")
+
+        backup_file = _commands._commit_workflow_file(
+            staged_file, dest_file, existed_before=True
+        )
+
+        assert backup_file is not None
+        assert backup_file != fixed_backup
+        assert backup_file.read_text(encoding="utf-8") == "original"
+        assert fixed_backup.read_text(encoding="utf-8") == "diagnostic copy"
+        assert dest_file.read_text(encoding="utf-8") == "replacement"
 
     @pytest.mark.parametrize(
         ("replacement_source", "replacement_version"),
