@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from typing import Any
 
@@ -34,6 +35,10 @@ class ShellStep(StepBase):
         if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout <= 0:
             timeout = 300
 
+        env = None
+        if context.workflow_dir:
+            env = {**os.environ, "SPECKIT_WORKFLOW_DIR": context.workflow_dir}
+
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors
         # control commands; catalog-installed workflows should be reviewed
@@ -45,6 +50,7 @@ class ShellStep(StepBase):
                 capture_output=True,
                 text=True,
                 cwd=cwd,
+                env=env,
                 timeout=timeout,
             )
             output = {

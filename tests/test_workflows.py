@@ -4163,6 +4163,216 @@ steps:
         assert state.step_results["stamp"]["output"]["stdout"].strip() == "explicit-456"
 
 
+# ===== context.workflow_dir Tests =====
+
+
+class TestContextWorkflowDir:
+    """Tests for `{{ context.workflow_dir }}` and `SPECKIT_WORKFLOW_DIR`."""
+
+    def test_context_workflow_dir_resolves(self):
+        """``{{ context.workflow_dir }}`` resolves to ``StepContext.workflow_dir``."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(workflow_dir="/home/user/my-workflow")
+        assert evaluate_expression("{{ context.workflow_dir }}", ctx) == "/home/user/my-workflow"
+
+    def test_context_workflow_dir_defaults_to_empty_when_unset(self):
+        """``{{ context.workflow_dir }}`` resolves to ``""`` when no source
+        path is available (string-loaded workflows, dry-run).
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        assert evaluate_expression("{{ context.workflow_dir }}", ctx) == ""
+
+    def test_context_workflow_dir_string_interpolation(self):
+        """Workflow dir interpolates inside a larger template string."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(workflow_dir="/opt/workflows/setup")
+        result = evaluate_expression("cp {{ context.workflow_dir }}/config.yml .", ctx)
+        assert result == "cp /opt/workflows/setup/config.yml ."
+
+    def test_step_context_workflow_dir(self):
+        """StepContext accepts and stores workflow_dir."""
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(workflow_dir="/some/path")
+        assert ctx.workflow_dir == "/some/path"
+
+        ctx_none = StepContext()
+        assert ctx_none.workflow_dir is None
+
+    def test_from_yaml_sets_workflow_dir(self, project_dir):
+        """Workflow loaded from a YAML file has workflow_dir set to the
+        file's parent directory.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        wf_dir = project_dir / "my-workflows"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "setup.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "from-yaml"
+  name: "From YAML"
+  version: "1.0.0"
+steps:
+  - id: check-dir
+    type: shell
+    run: "echo DIR={{ context.workflow_dir }}"
+""")
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        stdout = state.step_results["check-dir"]["output"]["stdout"]
+        assert stdout.strip() == f"DIR={wf_dir}"
+
+    def test_from_string_has_empty_workflow_dir(self, project_dir):
+        """String-loaded workflows have empty workflow_dir."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "from-string"
+  name: "From String"
+  version: "1.0.0"
+steps:
+  - id: check-dir
+    type: shell
+    run: "echo DIR={{ context.workflow_dir }}"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        stdout = state.step_results["check-dir"]["output"]["stdout"]
+        assert stdout.strip() == "DIR="
+
+    def test_shell_step_receives_speckit_workflow_dir_env_var(self, project_dir):
+        """Shell steps receive SPECKIT_WORKFLOW_DIR in their environment."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        wf_dir = project_dir / "wf"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "workflow.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "env-var-test"
+  name: "Env Var Test"
+  version: "1.0.0"
+steps:
+  - id: print-env
+    type: shell
+    run: "printenv SPECKIT_WORKFLOW_DIR"
+""")
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        stdout = state.step_results["print-env"]["output"]["stdout"]
+        assert stdout.strip() == str(wf_dir)
+
+    def test_shell_step_no_env_var_when_workflow_dir_unset(self, project_dir):
+        """Shell steps do not set SPECKIT_WORKFLOW_DIR for string-loaded workflows."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "no-env-var"
+  name: "No Env Var"
+  version: "1.0.0"
+steps:
+  - id: check-env
+    type: shell
+    run: "printenv SPECKIT_WORKFLOW_DIR || echo UNSET"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        stdout = state.step_results["check-env"]["output"]["stdout"]
+        assert stdout.strip() == "UNSET"
+
+    def test_resume_preserves_original_workflow_dir(self, project_dir):
+        """Resumed workflow uses the original source directory, not the
+        run-directory copy path.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        wf_dir = project_dir / "original-source"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "resumable.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "resumable"
+  name: "Resumable"
+  version: "1.0.0"
+steps:
+  - id: gate-step
+    type: gate
+    message: "Approve?"
+  - id: after-gate
+    type: shell
+    run: "echo DIR={{ context.workflow_dir }}"
+""")
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        engine = WorkflowEngine(project_dir)
+
+        # Execute -- gate pauses the workflow
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+        assert state.workflow_dir == str(wf_dir)
+
+        # Simulate gate approval by patching the gate step
+        from unittest.mock import patch
+        from specify_cli.workflows.base import StepResult
+
+        with patch(
+            "specify_cli.workflows.steps.gate.GateStep.execute",
+            return_value=StepResult(output={"approved": True}),
+        ):
+            state = engine.resume(state.run_id)
+
+        assert state.status == RunStatus.COMPLETED
+        stdout = state.step_results["after-gate"]["output"]["stdout"]
+        assert stdout.strip() == f"DIR={wf_dir}"
+
+    def test_workflow_dir_persisted_in_state(self, project_dir):
+        """workflow_dir is persisted in state.json and survives load/save."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine, RunState
+
+        wf_dir = project_dir / "persist-test"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "workflow.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "persist-wfdir"
+  name: "Persist WfDir"
+  version: "1.0.0"
+steps:
+  - id: noop
+    type: shell
+    run: "echo ok"
+""")
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        # Reload state from disk and verify workflow_dir survived
+        loaded = RunState.load(state.run_id, project_dir)
+        assert loaded.workflow_dir == str(wf_dir)
+
+
 # ===== continue_on_error Tests =====
 #
 # Locks the contract documented in workflows/README.md "Error Handling"
