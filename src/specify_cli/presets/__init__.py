@@ -751,6 +751,24 @@ class PresetManager:
         if not agent_name:
             return
 
+        # Resolve once: whether agent_name is a command-backed integration
+        # (extension != "/SKILL.md") currently running in skills mode, or
+        # vice versa. Native skill-only agents (extension == "/SKILL.md",
+        # e.g. claude/codex) have no command/skill toggle at all — both
+        # registered_commands and registered_skills legitimately co-exist
+        # for them by design, so this restriction only applies to
+        # command-backed integrations.
+        try:
+            from ..agents import CommandRegistrar
+
+            agent_config = CommandRegistrar().AGENT_CONFIGS.get(agent_name)
+        except ImportError:
+            agent_config = None
+        is_command_backed = bool(agent_config) and agent_config.get("extension") != "/SKILL.md"
+        ai_skills_now = is_command_backed and is_ai_skills_enabled(
+            load_init_options(self.project_root)
+        )
+
         resolver = PresetResolver(self.project_root)
         affected_cmd_names: set = set()
         for pack_id, metadata in reversed(self.registry.list_by_priority()):
@@ -769,6 +787,15 @@ class PresetManager:
                 merged_commands = copy.deepcopy(existing_commands)
                 if registered_commands.get(agent_name):
                     merged_commands[agent_name] = registered_commands[agent_name]
+                elif ai_skills_now and merged_commands.get(agent_name):
+                    # Toggled command -> skills for this same agent:
+                    # _register_commands's ai_skills guard just made this a
+                    # no-op, but the command file this preset wrote while
+                    # command mode was active is still on disk and still
+                    # tracked. Unregister it narrowly for this agent so
+                    # command-mode and skills-mode artifacts stay mutually
+                    # exclusive (#2948).
+                    self._unregister_commands({agent_name: merged_commands.pop(agent_name)})
                 # Persist the commands phase immediately, mirroring
                 # install_from_directory(): _register_skills is an
                 # independently fallible phase, and if it raises, the files
@@ -784,6 +811,16 @@ class PresetManager:
                 merged_skills = copy.deepcopy(existing_skills)
                 if registered_skills.get(agent_name):
                     merged_skills[agent_name] = registered_skills[agent_name]
+                elif is_command_backed and not ai_skills_now and merged_skills.get(agent_name):
+                    # Mirror image: toggled skills -> command for this same
+                    # agent. _get_skills_dir() no longer resolves a skills
+                    # directory once ai_skills is off, so _register_skills
+                    # is a no-op — but the SKILL.md this preset wrote while
+                    # skills mode was active is still tracked and still on
+                    # disk. Restore/remove it narrowly for this agent (#2948).
+                    self._unregister_skills(
+                        {agent_name: merged_skills.pop(agent_name)}, pack_dir
+                    )
                 if merged_skills != existing_skills:
                     self.registry.update(pack_id, {"registered_skills": merged_skills})
 

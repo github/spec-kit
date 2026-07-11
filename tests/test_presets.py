@@ -4307,6 +4307,133 @@ class TestPresetSkills:
         skill_file = skills_dir / "speckit-specify" / "SKILL.md"
         assert "preset:copilot-skills-preset" in skill_file.read_text()
 
+    def test_rescaffold_toggle_command_to_skills_removes_stale_command_file(
+        self, project_dir, temp_dir
+    ):
+        """Toggling the *same* agent from command mode to skills mode must
+        remove the stale command-mode artifact, not just add the new one.
+
+        Copilot stays the active agent throughout (``integration upgrade
+        copilot`` after flipping ``ai_skills``, not a switch to a different
+        agent). Before the fix, ``_register_commands``'s ``ai_skills`` guard
+        made rescaffold a no-op for the commands phase once skills mode was
+        on, leaving the previously written ``.agent.md`` file and its
+        ``registered_commands`` entry behind even though ``_register_skills``
+        went on to also write the ``SKILL.md`` mirror — violating the
+        command/skill mutual-exclusion invariant this PR otherwise enforces
+        (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-cmd-to-skill-preset", "speckit.specify",
+            "Toggle test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        assert cmd_file.exists(), (
+            "sanity: command mode should have written copilot's command file"
+        )
+        metadata = manager.registry.get("toggle-cmd-to-skill-preset")
+        assert metadata["registered_commands"].get("copilot"), (
+            "sanity: the command-mode write should be tracked for copilot"
+        )
+
+        # Flip ai_skills on for the *same* active agent and rescaffold, as
+        # `integration upgrade copilot` would after the mode toggle.
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not cmd_file.exists(), (
+            "the stale command-mode file must be removed once copilot has "
+            "toggled to skills mode for the same agent (#2948)"
+        )
+        metadata = manager.registry.get("toggle-cmd-to-skill-preset")
+        assert not metadata["registered_commands"].get("copilot"), (
+            "registered_commands must stop tracking copilot once its "
+            "artifact has been unregistered, or removal will try to clean "
+            "up a file that no longer exists (#2948)"
+        )
+        skill_file = project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        assert "preset:toggle-cmd-to-skill-preset" in skill_file.read_text(), (
+            "sanity: the new skills-mode artifact should still be written"
+        )
+
+    def test_rescaffold_toggle_skills_to_command_removes_stale_skill_file(
+        self, project_dir, temp_dir
+    ):
+        """Toggling the *same* agent from skills mode to command mode must
+        remove the stale skills-mode artifact, not just add the new one.
+
+        Mirror image of the command-to-skills toggle: once ``ai_skills`` is
+        turned off for copilot (still the active agent), ``_get_skills_dir``
+        stops resolving a skills directory for it, so ``_register_skills``
+        becomes a no-op — but the ``SKILL.md`` written while skills mode was
+        on, and its ``registered_skills`` entry, were left behind even
+        though ``_register_commands`` went on to (re)write the ``.agent.md``
+        command file, again breaking mutual exclusion (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        # A core template lets the stale skill restore to core content
+        # (instead of being removed entirely, since it has nothing to fall
+        # back to), matching how `_unregister_skills` behaves elsewhere.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-skill-to-cmd-preset", "speckit.specify",
+            "Toggle test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:toggle-skill-to-cmd-preset" in skill_file.read_text(), (
+            "sanity: skills mode should have written the SKILL.md mirror"
+        )
+        metadata = manager.registry.get("toggle-skill-to-cmd-preset")
+        assert metadata["registered_skills"].get("copilot"), (
+            "sanity: the skills-mode write should be tracked for copilot"
+        )
+
+        # Flip ai_skills off for the *same* active agent and rescaffold, as
+        # `integration upgrade copilot` would after the mode toggle.
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        restored_content = skill_file.read_text()
+        assert "preset:toggle-skill-to-cmd-preset" not in restored_content, (
+            "the stale skills-mode artifact must be reverted once copilot "
+            "has toggled to command mode for the same agent (#2948)"
+        )
+        assert "Core specify body" in restored_content, (
+            "sanity: the skill should fall back to core content, not just "
+            "lose the preset's override"
+        )
+        metadata = manager.registry.get("toggle-skill-to-cmd-preset")
+        assert not metadata["registered_skills"].get("copilot"), (
+            "registered_skills must stop tracking copilot once its "
+            "artifact has been unregistered/restored (#2948)"
+        )
+        cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        assert cmd_file.exists(), (
+            "sanity: the new command-mode artifact should still be written"
+        )
+        assert "preset body" in cmd_file.read_text()
+
     def test_skill_switch_then_remove_restores_every_skill_agent_dir(
         self, project_dir, temp_dir
     ):
