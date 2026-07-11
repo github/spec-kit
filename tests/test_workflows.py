@@ -4716,6 +4716,29 @@ class TestWorkflowRegistry:
         registry.remove("test-wf")
         assert not registry.is_installed("test-wf")
 
+    def test_remove_rolls_back_in_memory_on_save_failure(self, project_dir, monkeypatch):
+        """A save() failure during remove() must not leave the in-memory registry
+        out of sync with the (unchanged) file on disk, mirroring add()'s rollback."""
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        import specify_cli.workflows.catalog as catalog_mod
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(catalog_mod.json, "dump", boom)
+        with pytest.raises(OSError):
+            registry.remove("test-wf")
+        monkeypatch.undo()
+
+        # In-memory state must still show the entry (rolled back), matching
+        # the untouched file on disk.
+        assert registry.is_installed("test-wf")
+        fresh = WorkflowRegistry(project_dir)
+        assert fresh.is_installed("test-wf")
+
     def test_list(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowRegistry
 
@@ -5878,6 +5901,38 @@ class TestWorkflowRemoveGuard:
         assert result.exit_code != 0
         assert "exists but is not a directory" in result.output
         assert workflow_path.read_text(encoding="utf-8") == "not a directory"
+        assert WorkflowRegistry(project_dir).is_installed("test-wf")
+
+    def test_remove_registry_save_failure_preserves_files_and_registry(
+        self, project_dir, monkeypatch
+    ):
+        """If persisting the registry removal fails, the workflow's files must
+        not have already been deleted: the CLI must not delete files before the
+        registry successfully records the removal, and it must fail cleanly."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
+        workflow_dir = project_dir / ".specify" / "workflows" / "test-wf"
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
+
+        def boom(self):
+            raise OSError("disk full")
+
+        monkeypatch.chdir(project_dir)
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(WorkflowRegistry, "save", boom)
+            result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        # Files must survive a registry-save failure.
+        assert (workflow_dir / "workflow.yml").read_text(encoding="utf-8") == "keep-me"
+        # The on-disk registry must still claim the workflow installed.
         assert WorkflowRegistry(project_dir).is_installed("test-wf")
 
 
@@ -7643,6 +7698,90 @@ steps:
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "No workflow.yml found" in result.output
 
+    @pytest.mark.parametrize("mode", ["dev", "local", "from_url"])
+    def test_add_save_failure_leaves_no_orphan_directory(self, project_dir, monkeypatch, mode):
+        """A registry.add() save failure during a fresh install must not leave
+        an orphaned workflow directory on disk, and must fail with a clean
+        escaped message instead of a raw OSError traceback. Shared by --dev,
+        the plain local-path fallback, and --from since all three funnel
+        through _validate_and_install_local's single install choke point."""
+        import contextlib
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+
+        def boom(self):
+            raise OSError("disk full")
+
+        if mode == "from_url":
+            data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+            args = ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"]
+            url_patch = patch(
+                "specify_cli.authentication.http.open_url",
+                side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
+            )
+        else:
+            src = self._write_workflow_dir(project_dir)
+            args = ["workflow", "add", str(src)] + (["--dev"] if mode == "dev" else [])
+            url_patch = contextlib.nullcontext()
+
+        with url_patch, pytest.MonkeyPatch.context() as mp:
+            mp.setattr(WorkflowRegistry, "save", boom)
+            result = runner.invoke(app, args)
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        assert not dest_dir.exists()
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_catalog_save_failure_leaves_no_orphan_directory(self, project_dir, monkeypatch):
+        """Same guarantee as the local-install paths, but for a fresh catalog
+        install: a registry.add() failure must clean up the freshly-downloaded
+        directory and fail with a clean escaped message."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+
+        def boom(self):
+            raise OSError("disk full")
+
+        runner = CliRunner()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
+            )
+            mp.setattr(WorkflowRegistry, "save", boom)
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        assert not dest_dir.exists()
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
     def test_download_redirect_validator_rejects_http_before_follow(self):
         import urllib.error
 
@@ -7948,6 +8087,42 @@ steps:
         result = runner.invoke(app, ["workflow", "enable", "align-wf"])
         assert result.exit_code == 0, result.output
         assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is True
+
+    @pytest.mark.parametrize("command", ["enable", "disable"])
+    def test_enable_disable_save_failure_gives_clean_output(
+        self, project_dir, monkeypatch, command
+    ):
+        """A save() failure in enable/disable must produce a clean escaped CLI
+        error, not surface the raw OSError as an unhandled exception. Shared
+        root behavior: both call registry.add() with a fresh mapping and must
+        catch its deliberate OSError the same way."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+        # disable starts from the enabled default; enable needs a prior disable.
+        starting_enabled = command == "disable"
+        if command == "enable":
+            pre = runner.invoke(app, ["workflow", "disable", "align-wf"])
+            assert pre.exit_code == 0, pre.output
+
+        def boom(self):
+            raise OSError("disk full")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(WorkflowRegistry, "save", boom)
+            result = runner.invoke(app, ["workflow", command, "align-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        assert (
+            WorkflowRegistry(project_dir).get("align-wf").get("enabled", True)
+            is starting_enabled
+        )
 
     def test_update_rejects_version_mismatch_from_stale_url(self, project_dir, monkeypatch):
         """A URL serving a different version than the catalog advertised must fail the update."""

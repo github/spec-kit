@@ -700,15 +700,35 @@ def workflow_add(
             raise typer.Exit(1)
 
         dest_dir = _safe_workflow_id_dir(workflows_dir, definition.id)
+        dest_file = dest_dir / "workflow.yml"
+        existed_before = dest_dir.is_dir()
+        backup_bytes = (
+            dest_file.read_bytes() if existed_before and dest_file.is_file() else None
+        )
         dest_dir.mkdir(parents=True, exist_ok=True)
         import shutil
-        shutil.copy2(yaml_path, dest_dir / "workflow.yml")
-        registry.add(definition.id, {
-            "name": definition.name,
-            "version": definition.version,
-            "description": definition.description,
-            "source": source_label,
-        })
+        shutil.copy2(yaml_path, dest_file)
+        try:
+            registry.add(definition.id, {
+                "name": definition.name,
+                "version": definition.version,
+                "description": definition.description,
+                "source": source_label,
+            })
+        except OSError as exc:
+            # Don't leave an orphan directory behind for a fresh install; for
+            # a reinstall over an existing local workflow, restore the prior
+            # workflow.yml instead of clobbering it with the failed update.
+            if existed_before:
+                if backup_bytes is not None:
+                    dest_file.write_bytes(backup_bytes)
+            else:
+                shutil.rmtree(dest_dir, ignore_errors=True)
+            console.print(
+                f"[red]Error:[/red] Failed to update workflow registry for "
+                f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
         console.print(
             f"[green]✓[/green] Workflow '{_escape_markup(definition.name)}' "
             f"({_escape_markup(definition.id)}) installed"
@@ -1024,7 +1044,16 @@ def _install_workflow_from_catalog(
     existing = registry.get(workflow_id)
     if isinstance(existing, dict) and not existing.get("enabled", True):
         entry["enabled"] = False
-    registry.add(workflow_id, entry)
+    try:
+        registry.add(workflow_id, entry)
+    except OSError as exc:
+        import shutil
+        shutil.rmtree(workflow_dir, ignore_errors=True)
+        console.print(
+            f"[red]Error:[/red] Failed to update workflow registry for "
+            f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
     console.print(
         f"[green]✓[/green] Workflow '{_escape_markup(str(info.get('name', workflow_id)))}' "
         "installed from catalog"
@@ -1078,6 +1107,19 @@ def workflow_remove(
         )
         raise typer.Exit(1)
 
+    # Persist the registry removal before touching any files: if save()
+    # fails, WorkflowRegistry.remove() rolls back its in-memory state and
+    # raises, so the workflow stays fully installed (files + registry) rather
+    # than being deleted while the registry still (or no longer) claims it.
+    try:
+        registry.remove(workflow_id)
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to update workflow registry for '{safe_id}': "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+
     if workflow_dir.exists():
         import shutil
         try:
@@ -1088,7 +1130,6 @@ def workflow_remove(
             )
             raise typer.Exit(1)
 
-    registry.remove(workflow_id)
     console.print(f"[green]✓[/green] Workflow '{workflow_id}' removed")
 
 
@@ -1255,7 +1296,14 @@ def workflow_enable(
         raise typer.Exit(0)
     # Fresh mapping: registry.get() returns the live entry, and mutating it
     # in place would defeat WorkflowRegistry.add's rollback-on-save-failure.
-    registry.add(workflow_id, {**metadata, "enabled": True})
+    try:
+        registry.add(workflow_id, {**metadata, "enabled": True})
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to update workflow registry for "
+            f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
     console.print(f"[green]✓[/green] Workflow '{_escape_markup(workflow_id)}' enabled")
 
 
@@ -1281,7 +1329,14 @@ def workflow_disable(
         console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already disabled[/yellow]")
         raise typer.Exit(0)
     # Fresh mapping for the same rollback reason as workflow_enable.
-    registry.add(workflow_id, {**metadata, "enabled": False})
+    try:
+        registry.add(workflow_id, {**metadata, "enabled": False})
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to update workflow registry for "
+            f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
     console.print(f"[green]✓[/green] Workflow '{_escape_markup(workflow_id)}' disabled")
     console.print(f"To re-enable: specify workflow enable {_escape_markup(workflow_id)}")
 

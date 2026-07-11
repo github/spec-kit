@@ -179,8 +179,16 @@ class WorkflowRegistry:
     def remove(self, workflow_id: str) -> bool:
         """Remove an installed workflow entry. Returns True if found."""
         if workflow_id in self.data["workflows"]:
+            removed_entry = self.data["workflows"][workflow_id]
             del self.data["workflows"][workflow_id]
-            self.save()
+            try:
+                self.save()
+            except OSError:
+                # Roll back the in-memory deletion so a save failure can't
+                # desync this instance from the untouched file on disk,
+                # mirroring add()'s rollback-on-save-failure.
+                self.data["workflows"][workflow_id] = removed_entry
+                raise
             return True
         return False
 
