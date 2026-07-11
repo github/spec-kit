@@ -7847,6 +7847,80 @@ steps:
         assert registry.is_installed("align-wf")
         assert registry.get("align-wf")["version"] == "1.0.0"
 
+    @pytest.mark.parametrize(
+        "mode", ["redirect_rejected", "download_exception", "invalid_yaml", "id_mismatch"]
+    )
+    def test_add_catalog_reinstall_early_failure_restores_prior_file(
+        self, project_dir, monkeypatch, mode
+    ):
+        """Every _install_workflow_from_catalog failure branch that runs after
+        the mkdir/download step -- not just the registry.add() OSError case
+        -- must route through the same existed-before/backup-aware cleanup:
+        on a reinstall, a redirect rejection, a download exception, invalid
+        YAML, or a workflow-id mismatch must restore the prior working
+        workflow.yml rather than deleting the whole directory. One shared
+        root cause (the cleanup helper), so parametrized over trigger point."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        runner = CliRunner()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    original_data, url
+                ),
+            )
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
+        assert dest_file.read_bytes() == original_data
+
+        if mode == "redirect_rejected":
+            def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+                return self._FakeResponse(b"irrelevant", "http://evil.example.com/workflow.yml")
+        elif mode == "download_exception":
+            def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+                raise OSError("network down")
+        elif mode == "invalid_yaml":
+            def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+                return self._FakeResponse(b": : not valid yaml: [", url)
+        else:  # id_mismatch
+            mismatched_yaml = self.WORKFLOW_YAML.format(version="2.0.0").replace(
+                'id: "align-wf"', 'id: "different-workflow"'
+            )
+
+            def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
+                return self._FakeResponse(mismatched_yaml.encode(), url)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("specify_cli.authentication.http.open_url", fake_open_url)
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        assert dest_file.read_bytes() == original_data
+        registry = WorkflowRegistry(project_dir)
+        assert registry.is_installed("align-wf")
+        assert registry.get("align-wf")["version"] == "1.0.0"
+
     def test_download_redirect_validator_rejects_http_before_follow(self):
         import urllib.error
 

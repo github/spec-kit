@@ -934,14 +934,29 @@ def _install_workflow_from_catalog(
     workflow_dir = _safe_workflow_id_dir(workflows_dir, workflow_id)
     workflow_file = workflow_dir / "workflow.yml"
 
-    # Captured before any mkdir/download writes so a registry.add() failure
-    # at the end of this function can tell a fresh install from a
-    # reinstall-over-an-existing-one, mirroring _validate_and_install_local's
-    # existed-before/backup-aware rollback.
+    # Captured before any mkdir/download writes so every failure branch below
+    # can tell a fresh install from a reinstall-over-an-existing-one,
+    # mirroring _validate_and_install_local's existed-before/backup-aware
+    # rollback.
     existed_before = workflow_dir.is_dir()
     prior_workflow_bytes = (
         workflow_file.read_bytes() if existed_before and workflow_file.is_file() else None
     )
+
+    def _cleanup_failed_install() -> None:
+        """Restore the prior workflow.yml on a reinstall, or remove the
+        directory entirely for a fresh install. Every failure branch that
+        runs after the mkdir/download step -- redirect rejection, download
+        exception, invalid YAML, ID mismatch, version mismatch, and
+        registry.add() failure -- must call this instead of rmtree'ing
+        directly, so none of them can destroy a working install that
+        predates this attempt."""
+        if existed_before:
+            if prior_workflow_bytes is not None:
+                workflow_file.write_bytes(prior_workflow_bytes)
+        else:
+            import shutil
+            shutil.rmtree(workflow_dir, ignore_errors=True)
 
     try:
         from specify_cli.authentication.http import open_url as _open_url
@@ -975,9 +990,7 @@ def _install_workflow_from_catalog(
                     # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
                     pass
             if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
-                if workflow_dir.exists():
-                    import shutil
-                    shutil.rmtree(workflow_dir, ignore_errors=True)
+                _cleanup_failed_install()
                 console.print(
                     f"[red]Error:[/red] Workflow '{safe_wf_id}' redirected to non-HTTPS URL: {_escape_markup(final_url)}"
                 )
@@ -986,9 +999,7 @@ def _install_workflow_from_catalog(
     except typer.Exit:
         raise
     except Exception as exc:
-        if workflow_dir.exists():
-            import shutil
-            shutil.rmtree(workflow_dir, ignore_errors=True)
+        _cleanup_failed_install()
         console.print(f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
@@ -996,16 +1007,14 @@ def _install_workflow_from_catalog(
     try:
         definition = WorkflowDefinition.from_yaml(workflow_file)
     except (ValueError, yaml.YAMLError) as exc:
-        import shutil
-        shutil.rmtree(workflow_dir, ignore_errors=True)
+        _cleanup_failed_install()
         console.print(f"[red]Error:[/red] Downloaded workflow is invalid: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     from .engine import validate_workflow
     errors = validate_workflow(definition)
     if errors:
-        import shutil
-        shutil.rmtree(workflow_dir, ignore_errors=True)
+        _cleanup_failed_install()
         console.print("[red]Error:[/red] Downloaded workflow validation failed:")
         for err in errors:
             console.print(f"  \u2022 {_escape_markup(str(err))}")
@@ -1013,8 +1022,7 @@ def _install_workflow_from_catalog(
 
     # Enforce that the workflow's internal ID matches the catalog key
     if definition.id and definition.id != workflow_id:
-        import shutil
-        shutil.rmtree(workflow_dir, ignore_errors=True)
+        _cleanup_failed_install()
         console.print(
             f"[red]Error:[/red] Workflow ID in YAML ({_escape_markup(repr(definition.id))}) "
             f"does not match catalog key ({_escape_markup(repr(workflow_id))}). "
@@ -1032,8 +1040,7 @@ def _install_workflow_from_catalog(
         except pkg_version.InvalidVersion:
             version_matches = str(definition.version) == expected_version
         if not version_matches:
-            import shutil
-            shutil.rmtree(workflow_dir, ignore_errors=True)
+            _cleanup_failed_install()
             console.print(
                 f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
                 f"does not match the catalog version ({_escape_markup(expected_version)}). "
@@ -1056,15 +1063,7 @@ def _install_workflow_from_catalog(
     try:
         registry.add(workflow_id, entry)
     except OSError as exc:
-        # Don't destroy a prior working install on a reinstall: only a
-        # brand-new directory is safe to remove wholesale; an existing one
-        # gets its previous workflow.yml restored instead.
-        if existed_before:
-            if prior_workflow_bytes is not None:
-                workflow_file.write_bytes(prior_workflow_bytes)
-        else:
-            import shutil
-            shutil.rmtree(workflow_dir, ignore_errors=True)
+        _cleanup_failed_install()
         console.print(
             f"[red]Error:[/red] Failed to update workflow registry for "
             f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
