@@ -7805,6 +7805,46 @@ steps:
         assert result.exit_code == 0, result.output
         assert WorkflowRegistry(project_dir).is_installed("align-wf")
 
+    def test_add_from_url_temp_cleanup_failure_after_success_still_exits_zero(
+        self, project_dir, monkeypatch
+    ):
+        """An OSError while deleting the --from download's temp file after
+        _validate_and_install_local() has already committed the file and
+        registry entry must not surface as an unhandled failure for an
+        install that already succeeded -- it must be a warning, exit 0."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        runner = CliRunner()
+
+        import tempfile
+
+        real_unlink = Path.unlink
+
+        def unlink_boom(self_path, *args, **kwargs):
+            if self_path.suffix == ".yml" and self_path.parent == Path(tempfile.gettempdir()):
+                raise OSError("permission denied")
+            return real_unlink(self_path, *args, **kwargs)
+
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
+        ), pytest.MonkeyPatch.context() as mp:
+            mp.setattr(Path, "unlink", unlink_boom)
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Warning" in result.output
+        assert "permissiondenied" in "".join(result.output.split())
+        assert WorkflowRegistry(project_dir).is_installed("align-wf")
+
     def test_add_from_url_id_mismatch_errors(self, project_dir, monkeypatch):
         from unittest.mock import patch
         from typer.testing import CliRunner
@@ -8042,6 +8082,7 @@ steps:
             WorkflowRegistry(project_dir)
         assert not (outside / "workflows").exists()
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
     def test_registry_save_preserves_existing_file_mode(self, project_dir):
         """A registry shared as 0640/0644 must keep that mode after a save,
         not be silently replaced by mkstemp's 0600 default -- otherwise
@@ -8058,6 +8099,7 @@ steps:
         mode = stat.S_IMODE(registry.registry_path.stat().st_mode)
         assert mode == 0o644, f"expected 0644, got {oct(mode)}"
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
     def test_registry_save_on_new_registry_uses_secure_default_mode(self, project_dir):
         """A brand-new registry file (no prior mode to preserve) should keep
         mkstemp's secure 0600 default rather than something more permissive."""
@@ -8933,6 +8975,7 @@ steps:
 
         assert seen["validator"] is _reject_insecure_download_redirect
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
     def test_registry_save_failure_preserves_file_on_disk(self, project_dir, monkeypatch):
         """A failed dump must not truncate the persisted registry, and must
         not alter its on-disk mode either -- the chmod-to-match-existing-mode
@@ -9463,55 +9506,96 @@ steps:
         assert result.exit_code != 0
         assert "Failed to update" in result.output
 
-    def test_update_survives_oserror_from_backup_read(self, project_dir, monkeypatch):
-        """OSError while reading the backup for one workflow must not abort the whole update."""
-        import json
-        from pathlib import Path
+    def test_update_registry_save_failure_restores_prior_file_without_redundant_write(
+        self, project_dir, monkeypatch
+    ):
+        """A registry.add() save failure during `workflow update` must be
+        fully restored by _install_workflow_from_catalog's own atomic
+        rollback (rename-based, not a byte-level rewrite). The outer
+        workflow_update loop must not perform any redundant write of its
+        own onto the destination file -- that write happened only after
+        typer.Exit already unwound, could itself fail/truncate the safely
+        preserved file, and is provably unnecessary here since the inner
+        transaction already restored it via rename."""
         from typer.testing import CliRunner
         from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowRegistry, WorkflowCatalog
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
 
         monkeypatch.chdir(project_dir)
-        registry_path = WorkflowRegistry(project_dir).registry_path
-        registry_path.parent.mkdir(parents=True, exist_ok=True)
-        registry_path.write_text(
-            json.dumps(
-                {
-                    "schema_version": "1.0",
-                    "workflows": {
-                        "wobbly": {
-                            "name": "Wobbly",
-                            "version": "0.0.1",
-                            "source": "catalog",
-                            "url": "https://example.com/wobbly.yml",
-                        },
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
-        # An existing installed file whose read_bytes will raise OSError.
-        wf_file = project_dir / ".specify" / "workflows" / "wobbly" / "workflow.yml"
-        wf_file.parent.mkdir(parents=True, exist_ok=True)
-        wf_file.write_bytes(b"schema_version: '1.0'\nworkflow:\n  id: wobbly\n  name: Wobbly\n  version: 0.0.1\nsteps: []\n")
         monkeypatch.setattr(
             WorkflowCatalog,
             "get_workflow_info",
-            lambda self, wid: {"version": "9.9.9", "url": "https://example.com/wobbly.yml", "_install_allowed": True},
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
         )
-        real_read = Path.read_bytes
-
-        def _boom(self, *args, **kwargs):
-            if self.name == "workflow.yml" and "wobbly" in str(self):
-                raise OSError("simulated permission denied")
-            return real_read(self, *args, **kwargs)
-
-        monkeypatch.setattr(Path, "read_bytes", _boom)
+        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
         runner = CliRunner()
-        result = runner.invoke(app, ["workflow", "update"], input="y\n")
-        assert result.exit_code != 0, result.output
-        assert "Filesystem error" in result.output
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    original_data, url
+                ),
+            )
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
+        assert dest_file.read_bytes() == original_data
+
+        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+
+        def boom_save(self):
+            raise OSError("disk full")
+
+        dest_writes: list[bytes] = []
+        real_write_bytes = Path.write_bytes
+        resolved_dest_file = dest_file.resolve()
+
+        def tracking_write_bytes(self_path, data, *args, **kwargs):
+            if self_path.resolve() == resolved_dest_file:
+                dest_writes.append(data)
+            return real_write_bytes(self_path, data, *args, **kwargs)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                WorkflowCatalog,
+                "get_workflow_info",
+                lambda self, wid: {
+                    "id": wid,
+                    "name": "Align Workflow",
+                    "version": "2.0.0",
+                    "url": "https://example.com/workflow.yml",
+                    "_install_allowed": True,
+                    "_catalog_name": "test-catalog",
+                },
+            )
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    new_data, url
+                ),
+            )
+            mp.setattr(WorkflowRegistry, "save", boom_save)
+            mp.setattr(Path, "write_bytes", tracking_write_bytes)
+            result = runner.invoke(app, ["workflow", "update"], input="y\n")
+
+        assert result.exit_code != 0
         assert "Failed to update" in result.output
+        # No redundant/second write of the destination file was attempted --
+        # the inner atomic commit/rollback (rename-based) is the only thing
+        # that ever touches it.
+        assert dest_writes == []
+        assert dest_file.read_bytes() == original_data
+        registry = WorkflowRegistry(project_dir)
+        assert registry.is_installed("align-wf")
+        assert registry.get("align-wf")["version"] == "1.0.0"
 
     def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
         import json

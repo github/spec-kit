@@ -428,6 +428,8 @@ class RunState:
         run_id: str | None = None,
         workflow_id: str = "",
         project_root: Path | None = None,
+        installed_workflow_id: str | None = None,
+        installed_registry_root: str | None = None,
     ) -> None:
         # ``run_id is None`` (omitted) → auto-generate. An explicit empty
         # string is *not* the same as "omitted" and must be validated like
@@ -441,6 +443,15 @@ class RunState:
         self._validate_run_id(self.run_id)
         self.workflow_id = workflow_id
         self.project_root = project_root or Path(".")
+        # Identifies the installed workflow (if any) this run was started
+        # from, and the project root that owns its registry — set by
+        # execute() when the source was resolved to an installed ID (see
+        # workflow_run's ownership mapping). None for a direct/non-installed
+        # YAML source, and for any run persisted before this field existed
+        # (load() defaults it to None), preserving old runs' existing
+        # resume behavior unchanged.
+        self.installed_workflow_id = installed_workflow_id
+        self.installed_registry_root = installed_registry_root
         self.status = RunStatus.CREATED
         self.current_step_index = 0
         self.current_step_id: str | None = None
@@ -503,6 +514,8 @@ class RunState:
             state_data = {
                 "run_id": self.run_id,
                 "workflow_id": self.workflow_id,
+                "installed_workflow_id": self.installed_workflow_id,
+                "installed_registry_root": self.installed_registry_root,
                 "status": self.status.value,
                 "current_step_index": self.current_step_index,
                 "current_step_id": self.current_step_id,
@@ -559,6 +572,8 @@ class RunState:
             run_id=state_data["run_id"],
             workflow_id=state_data["workflow_id"],
             project_root=project_root,
+            installed_workflow_id=state_data.get("installed_workflow_id"),
+            installed_registry_root=state_data.get("installed_registry_root"),
         )
         state.status = RunStatus(state_data["status"])
         state.current_step_index = state_data.get("current_step_index", 0)
@@ -654,6 +669,8 @@ class WorkflowEngine:
         definition: WorkflowDefinition,
         inputs: dict[str, Any] | None = None,
         run_id: str | None = None,
+        installed_workflow_id: str | None = None,
+        installed_registry_root: Path | None = None,
     ) -> RunState:
         """Execute a workflow definition.
 
@@ -665,6 +682,12 @@ class WorkflowEngine:
             User-provided input values.
         run_id:
             Optional run ID (uses SPECKIT_WORKFLOW_RUN_ID when set, otherwise auto-generated).
+        installed_workflow_id, installed_registry_root:
+            When the run was started from an installed workflow (as opposed
+            to a direct/non-installed YAML source), identifies it and its
+            owning registry root so a later ``resume`` can re-check the
+            registry's current disabled state before continuing — see
+            ``workflow_resume``.
 
         Returns
         -------
@@ -682,6 +705,12 @@ class WorkflowEngine:
             run_id=effective_run_id,
             workflow_id=definition.id,
             project_root=self.project_root,
+            installed_workflow_id=installed_workflow_id,
+            installed_registry_root=(
+                str(installed_registry_root)
+                if installed_registry_root is not None
+                else None
+            ),
         )
 
         # Persist a copy of the workflow definition so resume can

@@ -123,6 +123,109 @@ def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     )
 
 
+def _scan_for_workflow_owner(parts: tuple[str, ...]) -> tuple[int, str] | None:
+    """Find the *nearest* (innermost) ``.specify/workflows/<id>`` owner in
+    *parts*, scanning from the end of the path.
+
+    Scanning from the end (rather than stopping at the first match from the
+    start) matters for a project nested beneath an unrelated outer path that
+    happens to reuse the same ``.specify``/``workflows`` segment names: the
+    first-from-start match would pick the outer directory and the wrong
+    workflow ID, silently missing the real (inner) owner's disabled check.
+
+    Returns ``(i, workflow_id)`` where ``i`` is the index of the owning
+    ``.specify`` segment, or ``None`` if no owner segment is present.
+    """
+    for i in range(len(parts) - 3, -1, -1):
+        if parts[i] == ".specify" and parts[i + 1] == "workflows":
+            return i, parts[i + 2]
+    return None
+
+
+def _resolve_installed_workflow_ownership(
+    source_path: Path, err
+) -> tuple[Path | None, str | None]:
+    """Map a direct ``workflow.yml`` *source_path* back to the installed
+    workflow (``registry_root``, ``registered_id``) it belongs to, if any.
+
+    A path can point at installed storage two ways, both of which must
+    receive the same registry disabled-check:
+
+    1. Lexically: the path's own (symlink-preserving) segments literally
+       contain ``.specify/workflows/<id>`` -- collapsing ``..``/``.`` but
+       never resolving symlinks, so a symlinked ``workflow.yml`` leaf (or
+       symlinked ``<id>`` directory) inside the owned tree is caught by the
+       inward-symlink refusal below rather than silently followed.
+    2. Via an outward-pointing alias: *source_path* (or one of its parent
+       directories) is itself a symlink whose *resolved* target lands
+       inside some project's ``.specify/workflows/<id>/workflow.yml``, even
+       though the raw path used to invoke the command has no such segments
+       at all (e.g. ``/tmp/alias.yml`` -> a disabled installed workflow's
+       real file). Only the lexical case also runs the inward-symlink
+       refusal: the resolved case's segments are real by construction (an
+       already-fully-resolved path cannot itself contain a symlink
+       component), so that check would be a vacuous no-op there.
+
+    Returns ``(None, None)`` when neither applies -- a genuinely standalone
+    external workflow file, which is allowed to run unchecked.
+    """
+    lexical = Path(os.path.normpath(str(source_path.absolute())))
+    parts = lexical.parts
+    match = _scan_for_workflow_owner(parts)
+    if match is not None:
+        i, registered_id = match
+        registry_root = Path(*parts[:i]) if i else Path(lexical.anchor or ".")
+        # The path-derived registry_root here may differ from the cwd's
+        # project_root already checked by _reject_unsafe_workflow_storage
+        # (e.g. this path points into another project entirely, or this
+        # project's own .specify is itself a symlink to an
+        # attacker-controlled tree) -- check it explicitly rather than
+        # trusting that cwd-scoped guard, and don't rely on
+        # WorkflowRegistry's own symlinked-parent handling as the safety
+        # signal here: it fails closed by raising OSError at construction
+        # time (see catalog.py's _load), but that surfaces as an opaque
+        # exception rather than this guard's clean, specific CLI error for
+        # the actual owning project root.
+        _reject_unsafe_dir(registry_root / ".specify", ".specify")
+        _reject_unsafe_dir(
+            registry_root / ".specify" / "workflows", ".specify/workflows"
+        )
+        # A legitimately installed workflow's own directory tree never
+        # contains a symlink (workflow add/remove both refuse one at
+        # install time); one appearing here means the file actually loaded
+        # below would not be the file this ownership match is based on, so
+        # refuse rather than silently mismatch.
+        for k in range(i + 2, len(parts) + 1):
+            if Path(*parts[:k]).is_symlink():
+                err.print(
+                    "[red]Error:[/red] Refusing to run: "
+                    f".specify/workflows/{_escape_markup(registered_id)} "
+                    "contains a symlinked path component"
+                )
+                raise typer.Exit(1)
+        return registry_root, registered_id
+
+    # No lexical owner segments. source_path (or a parent directory) might
+    # still be a symlink whose resolved target lands inside some project's
+    # installed workflow storage under a completely unrelated-looking path
+    # -- check that too so an alias into a disabled workflow can't dodge
+    # the registry guard.
+    try:
+        resolved = source_path.resolve(strict=False)
+    except OSError:
+        return None, None
+    if resolved == lexical:
+        # Nothing on this path is a symlink; already covered above.
+        return None, None
+    resolved_parts = resolved.parts
+    resolved_match = _scan_for_workflow_owner(resolved_parts)
+    if resolved_match is None:
+        return None, None
+    i, registered_id = resolved_match
+    registry_root = Path(*resolved_parts[:i]) if i else Path(resolved.anchor or ".")
+    return registry_root, registered_id
+
+
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"runs", "steps"})
 
@@ -580,48 +683,13 @@ def workflow_run(
         registered_id = source
     else:
         # A direct YAML path may still point at an installed workflow's own
-        # file; map it back to its owning project and ID from the *lexical*
-        # path (collapsing .. / . without resolving symlinks) rather than
-        # resolve(): resolving first would follow a symlinked workflow.yml
-        # out of .specify/workflows, fail to find an owner, and let
-        # engine.load_workflow below run the symlink target unchecked --
-        # silently bypassing a disabled workflow's guard.
-        lexical = Path(os.path.normpath(str(source_path.absolute())))
-        parts = lexical.parts
-        for i in range(len(parts) - 2):
-            if parts[i] == ".specify" and parts[i + 1] == "workflows":
-                registry_root = Path(*parts[:i]) if i else Path(lexical.anchor or ".")
-                registered_id = parts[i + 2]
-                # The path-derived registry_root here may differ from the
-                # cwd's project_root already checked by
-                # _reject_unsafe_workflow_storage above (e.g. this path
-                # points into another project entirely, or this project's
-                # own .specify is itself a symlink to an attacker-controlled
-                # tree) -- check it explicitly rather than trusting that
-                # cwd-scoped guard, and don't rely on WorkflowRegistry's own
-                # symlinked-parent handling below as the safety signal here:
-                # it now fails closed by raising OSError at construction
-                # time (see catalog.py's _load), but that surfaces as an
-                # opaque exception rather than this guard's clean, specific
-                # CLI error for the actual owning project root.
-                _reject_unsafe_dir(registry_root / ".specify", ".specify")
-                _reject_unsafe_dir(
-                    registry_root / ".specify" / "workflows", ".specify/workflows"
-                )
-                # A legitimately installed workflow's own directory tree
-                # never contains a symlink (workflow add/remove both refuse
-                # one at install time); one appearing here means the file
-                # actually loaded below would not be the file this ownership
-                # match is based on, so refuse rather than silently mismatch.
-                for k in range(i + 2, len(parts) + 1):
-                    if Path(*parts[:k]).is_symlink():
-                        err.print(
-                            "[red]Error:[/red] Refusing to run: "
-                            f".specify/workflows/{_escape_markup(registered_id)} "
-                            "contains a symlinked path component"
-                        )
-                        raise typer.Exit(1)
-                break
+        # file (lexically, or via a symlinked alias pointing into installed
+        # storage); map it back to its owning project and ID so the
+        # disabled check below can't be silently bypassed.
+        owner_root, owner_id = _resolve_installed_workflow_ownership(source_path, err)
+        if owner_id is not None:
+            registry_root = owner_root
+            registered_id = owner_id
 
     if registered_id is not None:
         installed_meta = _open_workflow_registry(registry_root, err).get(registered_id)
@@ -658,7 +726,12 @@ def workflow_run(
 
     try:
         with _stdout_to_stderr_when(json_output):
-            state = engine.execute(definition, inputs)
+            state = engine.execute(
+                definition,
+                inputs,
+                installed_workflow_id=registered_id,
+                installed_registry_root=registry_root if registered_id else None,
+            )
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
@@ -700,7 +773,7 @@ def workflow_resume(
 ):
     """Resume a paused or failed workflow run."""
     from . import load_custom_steps
-    from .engine import WorkflowEngine
+    from .engine import RunState, WorkflowEngine
 
     project_root = _require_specify_project()
     load_custom_steps(project_root)
@@ -710,6 +783,38 @@ def workflow_resume(
 
     inputs = _parse_input_values(input_values, json_output=json_output)
     err = _error_console(json_output)
+
+    # Pre-load the persisted run state so a run started from an installed
+    # workflow that has since been disabled cannot resume unchecked --
+    # engine.resume() replays the run directly from disk with no registry
+    # awareness at all, which would otherwise bypass the same disabled
+    # guard `workflow run` enforces. Runs without installed_workflow_id
+    # (a direct/non-installed source, or a run persisted before this field
+    # existed) are unaffected and resume exactly as before.
+    try:
+        pre_state = RunState.load(run_id, project_root)
+    except FileNotFoundError:
+        err.print(f"[red]Error:[/red] Run not found: {run_id}")
+        raise typer.Exit(1)
+    except ValueError as exc:
+        err.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if pre_state.installed_workflow_id is not None:
+        owner_root = (
+            Path(pre_state.installed_registry_root)
+            if pre_state.installed_registry_root
+            else project_root
+        )
+        installed_meta = _open_workflow_registry(owner_root, err).get(
+            pre_state.installed_workflow_id
+        )
+        if isinstance(installed_meta, dict) and not installed_meta.get("enabled", True):
+            err.print(
+                f"[red]Error:[/red] Workflow '{_escape_markup(pre_state.installed_workflow_id)}' is disabled. "
+                f"Enable with: specify workflow enable {_escape_markup(pre_state.installed_workflow_id)}"
+            )
+            raise typer.Exit(1)
 
     try:
         with _stdout_to_stderr_when(json_output):
