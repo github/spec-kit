@@ -213,6 +213,39 @@ def test_remove_bundlerror_from_installer_with_zero_removed_reports_no_changes(
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
+def test_remove_zero_completed_removals_still_cautions_about_partial_changes(
+    tmp_path: Path,
+):
+    """`result.uninstalled` only records a component after its `remove()`
+    call returns successfully. If the very first `remove()` call itself
+    raises after already deleting some files, zero completed removals are
+    recorded even though the project may already be partially uninstalled --
+    the zero-count message must not claim "No components were removed" as
+    an unqualified fact; it must caution that the failing component may
+    have made partial changes before raising."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    def boom(project_root, component):
+        # Simulates a remove() that deletes some files before raising --
+        # from the caller's perspective this component was never recorded
+        # as completed, but disk state may already be partially changed.
+        raise OSError("disk full partway through removal")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "remove", boom)
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no components were removed" in message.lower()
+    assert "partial" in message.lower()
+    assert "partially uninstalled" in message.lower()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
 def test_remove_reports_uninstalled_not_installed(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())

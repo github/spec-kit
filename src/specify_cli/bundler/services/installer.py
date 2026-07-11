@@ -207,7 +207,11 @@ def remove_bundle(
                 "so the project may be partially uninstalled."
             )
         else:
-            detail = "No components were removed."
+            detail = (
+                "No components were removed, but the failing component may "
+                "have made partial changes before raising, so the project "
+                "may be partially uninstalled."
+            )
         raise BundlerError(
             f"Failed to remove bundle '{bundle_id}': {exc}. {detail}"
         ) from exc
