@@ -388,6 +388,7 @@ In an interactive terminal, you will be prompted to select the coding agent inte
 
 ```bash
 specify init <project_name> --integration copilot
+specify init <project_name> --integration cmdc
 specify init <project_name> --integration gemini
 specify init <project_name> --integration codex
 
