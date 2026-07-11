@@ -215,8 +215,8 @@ def _resolve_installed_workflow_ownership(
     """Map a direct ``workflow.yml`` *source_path* back to the installed
     workflow (``registry_root``, ``registered_id``) it belongs to, if any.
 
-    A path can point at installed storage three ways, all of which must
-    receive the same registry disabled-check:
+    A registered path can point at installed storage three ways, all of
+    which must receive the same registry disabled-check:
 
     1. Lexically: the path's own (symlink-preserving) segments literally
        contain ``.specify/workflows/<id>`` -- collapsing ``..``/``.`` but
@@ -257,6 +257,10 @@ def _resolve_installed_workflow_ownership(
         _reject_unsafe_dir(
             registry_root / ".specify" / "workflows", ".specify/workflows"
         )
+        if not _open_workflow_registry(registry_root, err).is_installed(
+            registered_id
+        ):
+            return None
         # A legitimately installed workflow's own directory tree never
         # contains a symlink (workflow add/remove both refuse one at
         # install time); one appearing here means the file actually loaded

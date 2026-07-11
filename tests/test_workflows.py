@@ -11103,6 +11103,72 @@ steps:
         assert payload["status"] == "paused"
         return payload["run_id"]
 
+    def test_unregistered_workflow_shaped_path_is_not_persisted_as_owner(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A direct file is not installed merely because its path resembles
+        installed storage; only registry membership establishes ownership."""
+        import shutil
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        standalone_root = temp_dir / "standalone-project"
+        workflows_dir = standalone_root / ".specify" / "workflows"
+        workflow_file = workflows_dir / "gated-wf" / "workflow.yml"
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(self._GATED_WORKFLOW_YAML, encoding="utf-8")
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_ids = []
+        for _ in range(2):
+            result = runner.invoke(
+                app, ["workflow", "run", str(workflow_file), "--json"]
+            )
+            assert result.exit_code == 0, result.output
+            run_ids.append(json.loads(result.stdout)["run_id"])
+
+        for run_id in run_ids:
+            state_path = (
+                project_dir
+                / ".specify"
+                / "workflows"
+                / "runs"
+                / run_id
+                / "state.json"
+            )
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            assert state["installed_workflow_id"] is None
+            assert state["installed_registry_root"] is None
+
+        shutil.rmtree(standalone_root)
+        result = runner.invoke(
+            app, ["workflow", "resume", run_ids[0], "--json"]
+        )
+        assert result.exit_code == 0, result.output
+
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "workflow-registry.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "workflows": {
+                        "gated-wf": {
+                            "name": "Unrelated workflow",
+                            "version": "9.9.9",
+                            "source": "dev",
+                            "enabled": False,
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app, ["workflow", "resume", run_ids[1], "--json"]
+        )
+        assert result.exit_code == 0, result.output
+
     def test_resume_blocks_when_installed_workflow_disabled(
         self, project_dir, monkeypatch
     ):
