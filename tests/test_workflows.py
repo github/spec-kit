@@ -7731,6 +7731,45 @@ steps:
         def __exit__(self, *a):
             return False
 
+    @pytest.mark.parametrize("mode", ["dev", "local", "from"])
+    def test_reinstall_preserves_disabled_state(
+        self, project_dir, monkeypatch, mode
+    ):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._install_dev(runner, app, project_dir)
+        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        if mode == "dev":
+            result = runner.invoke(
+                app, ["workflow", "add", str(src), "--dev"]
+            )
+        elif mode == "local":
+            result = runner.invoke(app, ["workflow", "add", str(src)])
+        else:
+            data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+            with patch(
+                "specify_cli.authentication.http.open_url",
+                side_effect=lambda url, timeout=None, extra_headers=None,
+                redirect_validator=None: self._FakeResponse(data, url),
+            ):
+                result = runner.invoke(
+                    app,
+                    [
+                        "workflow", "add", "align-wf",
+                        "--from", "https://example.com/workflow.yml",
+                    ],
+                )
+
+        assert result.exit_code == 0, result.output
+        assert WorkflowRegistry(project_dir).get("align-wf")["enabled"] is False
+
     def test_add_from_url_rejects_oversized_content_length(self, project_dir, monkeypatch):
         """A --from download must not trust an advertised Content-Length
         alone by reading the whole body first -- it must reject a response
@@ -9573,6 +9612,58 @@ steps:
         assert meta["version"] == "2.0.0"
         assert meta["enabled"] is False
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_update_preserves_workflow_file_mode(self, project_dir, monkeypatch):
+        import stat
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        WorkflowRegistry(project_dir).add("align-wf", {
+            "name": "Align Workflow",
+            "version": "1.0.0",
+            "description": "",
+            "source": "catalog",
+            "url": "https://example.com/workflow.yml",
+        })
+        workflow_file = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "align-wf"
+            / "workflow.yml"
+        )
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        workflow_file.chmod(0o640)
+
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+            },
+        )
+        data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None,
+            redirect_validator=None: self._FakeResponse(data, url),
+        ):
+            result = CliRunner().invoke(
+                app, ["workflow", "update"], input="y\n"
+            )
+
+        assert result.exit_code == 0, result.output
+        assert stat.S_IMODE(workflow_file.stat().st_mode) == 0o640
+
     def test_update_skips_corrupted_registry_entry(self, project_dir, monkeypatch):
         import json
         from typer.testing import CliRunner
@@ -10214,6 +10305,27 @@ steps:
         assert result.exit_code == 0, result.output
         resumed = json.loads(result.stdout)
         assert resumed["run_id"] == run_id
+
+    def test_resume_preload_io_error_is_reported_cleanly(
+        self, project_dir, monkeypatch
+    ):
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.engine import RunState
+
+        monkeypatch.chdir(project_dir)
+        with patch.object(
+            RunState, "load", side_effect=OSError("permission denied")
+        ):
+            result = CliRunner().invoke(
+                app, ["workflow", "resume", "unreadable-run"]
+            )
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Resume failed" in result.output
+        assert "permission denied" in result.output
 
     def test_resume_backward_compatible_with_run_state_missing_new_fields(
         self, project_dir, monkeypatch

@@ -432,6 +432,7 @@ def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bo
     the second rename fails after the first succeeded, the prior file is
     put back immediately so dest_file is never left simply missing."""
     if existed_before and dest_file.exists():
+        staged_file.chmod(dest_file.stat(follow_symlinks=False).st_mode & 0o7777)
         backup_file = dest_file.with_name(dest_file.name + ".bak")
         os.replace(dest_file, backup_file)
         try:
@@ -845,6 +846,9 @@ def workflow_resume(
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
+    except OSError as exc:
+        err.print(f"[red]Resume failed:[/red] {exc}")
+        raise typer.Exit(1)
 
     if pre_state.installed_workflow_id is not None:
         owner_root = _resolve_run_owner_root(
@@ -1118,12 +1122,16 @@ def workflow_add(
             )
             raise typer.Exit(1)
         try:
-            registry.add(definition.id, {
+            entry = {
                 "name": definition.name,
                 "version": definition.version,
                 "description": definition.description,
                 "source": source_label,
-            })
+            }
+            existing = registry.get(definition.id)
+            if isinstance(existing, dict) and not existing.get("enabled", True):
+                entry["enabled"] = False
+            registry.add(definition.id, entry)
         except OSError as exc:
             _safe_rollback_committed_workflow_file(dest_file, dest_dir, existed_before, backup_file)
             console.print(
