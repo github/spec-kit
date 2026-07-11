@@ -982,7 +982,16 @@ class WorkflowEngine:
                     from .expressions import evaluate_condition
 
                     max_iters = step_config.get("max_iterations")
-                    if not isinstance(max_iters, int) or max_iters < 1:
+                    # bool is an int subclass, so `max_iterations: true` would
+                    # otherwise pass isinstance(..., int) and silently cap the
+                    # loop at a single iteration (True - 1 == 0 re-iterations).
+                    # Reject it explicitly and fall back to the safe default,
+                    # matching While/DoWhileStep.validate() for unvalidated runs.
+                    if (
+                        isinstance(max_iters, bool)
+                        or not isinstance(max_iters, int)
+                        or max_iters < 1
+                    ):
                         max_iters = 10
                     condition = step_config.get("condition", False)
                     for _loop_iter in range(max_iters - 1):
