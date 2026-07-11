@@ -1199,7 +1199,20 @@ def workflow_add(
                 expected_id=source if from_url else None,
             )
         finally:
-            tmp_path.unlink(missing_ok=True)
+            # Best-effort: _validate_and_install_local may already have
+            # committed the file + registry entry (success) or already
+            # raised its own clean typer.Exit (failure) by this point --
+            # either way, a cleanup OSError here must never mask that
+            # outcome or surface as its own unhandled failure. Warn instead,
+            # same as the committed-backup cleanup above.
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError as exc:
+                console.print(
+                    "[yellow]Warning:[/yellow] Could not remove temporary "
+                    f"download file {_escape_markup(str(tmp_path))}: "
+                    f"{_escape_markup(str(exc))}"
+                )
         return
 
     # Try as a local file/directory
@@ -1663,29 +1676,17 @@ def workflow_update(
     console.print()
     failed: list[str] = []
     for update in updates_available:
-        # Installed workflows are a single workflow.yml — back it up so a
-        # failed download/validation doesn't destroy the working copy.
-        wf_dir: Path | None = None
-        wf_file: Path | None = None
-        backup: bytes | None = None
+        # _install_workflow_from_catalog is fully transactional (staged
+        # download, atomic commit, rename-based rollback on registry
+        # failure): it never leaves a partially-written workflow.yml, so
+        # this loop only needs to record success/failure, not perform its
+        # own backup/restore.
         try:
-            wf_dir = _safe_workflow_id_dir(workflows_dir, update["id"])
-            wf_file = wf_dir / "workflow.yml"
-            backup = wf_file.read_bytes() if wf_file.is_file() else None
             _install_workflow_from_catalog(
                 project_root, registry, workflows_dir, update["id"],
                 expected_version=update["available"],
             )
         except (typer.Exit, OSError) as exc:
-            if backup is not None and wf_dir is not None and wf_file is not None:
-                try:
-                    wf_dir.mkdir(parents=True, exist_ok=True)
-                    wf_file.write_bytes(backup)
-                except OSError as restore_exc:
-                    console.print(
-                        f"[yellow]Warning:[/yellow] Could not restore backup for "
-                        f"'{_escape_markup(update['id'])}': {_escape_markup(str(restore_exc))}"
-                    )
             if isinstance(exc, OSError):
                 console.print(
                     f"[red]Error:[/red] Filesystem error updating "

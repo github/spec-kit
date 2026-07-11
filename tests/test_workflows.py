@@ -9835,6 +9835,209 @@ steps:
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "symlink" in result.output.lower()
 
+    def test_run_nested_installed_paths_uses_nearest_owner(
+        self, temp_dir, monkeypatch
+    ):
+        """A direct workflow.yml path whose lexical segments contain
+        .specify/workflows more than once (an unrelated nested project
+        happens to live beneath an outer installed workflow's own
+        directory tree, reusing the same segment names) must be attributed
+        to its *nearest* (innermost) owning project/ID -- scanning from the
+        start of the path and stopping at the first match would pick the
+        outer project and the wrong workflow ID, gating the run on an
+        unrelated workflow's disabled state instead of the real owner's."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        def _write_registry(workflows_dir, workflow_id, enabled):
+            workflows_dir.mkdir(parents=True, exist_ok=True)
+            (workflows_dir / "workflow-registry.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "workflows": {
+                            workflow_id: {
+                                "name": workflow_id,
+                                "version": "1.0.0",
+                                "source": "dev",
+                                "enabled": enabled,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        outer_workflows = temp_dir / "outer-proj" / ".specify" / "workflows"
+        outer_wf_dir = outer_workflows / "outer-wf"
+        outer_wf_dir.mkdir(parents=True)
+        (outer_wf_dir / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        _write_registry(outer_workflows, "outer-wf", enabled=False)
+
+        # An unrelated nested project lives inside the outer workflow's own
+        # directory tree, with its own separate installed workflow.
+        inner_workflows = outer_wf_dir / "nested-proj" / ".specify" / "workflows"
+        inner_wf_dir = inner_workflows / "inner-wf"
+        inner_wf_dir.mkdir(parents=True)
+        (inner_wf_dir / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        _write_registry(inner_workflows, "inner-wf", enabled=True)
+
+        unrelated_cwd = temp_dir / "unrelated-cwd"
+        unrelated_cwd.mkdir()
+        monkeypatch.chdir(unrelated_cwd)
+
+        runner = CliRunner()
+        target = inner_wf_dir / "workflow.yml"
+        result = runner.invoke(app, ["workflow", "run", str(target)])
+        # inner-wf (the actual nearest owner) is enabled -- must run, not
+        # be blocked by the unrelated outer-wf's disabled state.
+        assert result.exit_code == 0, result.output
+
+        # The inverse proves this isn't just ignoring nesting: disabling
+        # the true (nearest) owner must actually block this exact path.
+        _write_registry(inner_workflows, "inner-wf", enabled=False)
+        result = runner.invoke(app, ["workflow", "run", str(target)])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_run_blocks_disabled_workflow_via_outward_alias_symlink(
+        self, project_dir, monkeypatch
+    ):
+        """The inverse of the existing inward-symlink case: a path with no
+        .specify/workflows segments at all (e.g. /tmp/alias.yml) that is
+        itself a symlink resolving *into* installed storage must still
+        receive the disabled check. Only checking the lexical path's own
+        segments misses this alias entirely, since it has no such segments
+        to begin with, and would let engine.load_workflow follow the
+        symlink to the disabled workflow's real content unchecked."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        installed_yaml = (
+            project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
+        )
+        external_dir = project_dir / "outside-alias"
+        external_dir.mkdir()
+        alias = external_dir / "alias.yml"
+        alias.symlink_to(installed_yaml)
+
+        result = runner.invoke(app, ["workflow", "run", str(alias)])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
+        result = runner.invoke(app, ["workflow", "enable", "align-wf"])
+        assert result.exit_code == 0, result.output
+        result = runner.invoke(app, ["workflow", "run", str(alias)])
+        assert result.exit_code == 0, result.output
+
+    _GATED_WORKFLOW_YAML = """
+schema_version: "1.0"
+workflow:
+  id: "gated-wf"
+  name: "Gated Workflow"
+  version: "1.0.0"
+steps:
+  - id: ask
+    type: gate
+    message: "Review"
+    options: [approve, reject]
+"""
+
+    def _install_and_run_gated(self, runner, app, project_dir):
+        """Install a gate-step workflow and run it to a paused state.
+
+        Returns the run_id. The gate step pauses without any interactive
+        input, giving a resumable run tied to an installed workflow ID.
+        """
+        src = project_dir / "gated-src"
+        src.mkdir(exist_ok=True)
+        (src / "workflow.yml").write_text(self._GATED_WORKFLOW_YAML, encoding="utf-8")
+        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+        assert result.exit_code == 0, result.output
+
+        result = runner.invoke(app, ["workflow", "run", "gated-wf", "--json"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "paused"
+        return payload["run_id"]
+
+    def test_resume_blocks_when_installed_workflow_disabled(
+        self, project_dir, monkeypatch
+    ):
+        """A run started from an installed workflow must not resume once
+        that workflow is disabled. engine.resume() replays the persisted
+        run directly from disk with no registry awareness at all, so the
+        installed workflow's origin (id + owning registry root) is
+        persisted at run start and re-checked against the registry's
+        *current* state before resuming, mirroring `workflow run`'s
+        disabled guard."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+
+        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
+        assert result.exit_code == 0, result.output
+
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
+        # Re-enabling must unblock the exact same run.
+        result = runner.invoke(app, ["workflow", "enable", "gated-wf"])
+        assert result.exit_code == 0, result.output
+        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+        assert result.exit_code == 0, result.output
+        resumed = json.loads(result.stdout)
+        assert resumed["run_id"] == run_id
+
+    def test_resume_backward_compatible_with_run_state_missing_new_fields(
+        self, project_dir, monkeypatch
+    ):
+        """A run's state.json persisted before installed-origin tracking
+        existed (missing the installed_workflow_id/installed_registry_root
+        keys entirely) must still resume normally: RunState.load's
+        defaults must not raise, and the absent origin must skip the
+        disabled check rather than block or error -- old runs are
+        unaffected by this guard."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+
+        state_path = (
+            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        )
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        data.pop("installed_workflow_id", None)
+        data.pop("installed_registry_root", None)
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
+        assert result.exit_code == 0, result.output
+
+        # Origin metadata is absent from disk -- disabling the (now
+        # unrelated, from this run's perspective) installed workflow must
+        # not block resuming this legacy run.
+        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+        assert result.exit_code == 0, result.output
+
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
