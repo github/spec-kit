@@ -498,7 +498,7 @@ class WorkflowCatalog:
         self,
         url: str,
         name: str | None = None,
-        priority: int | None = None,
+        priority: int | str | None = None,
         install_allowed: bool = True,
         description: str = "",
     ) -> None:
@@ -1117,7 +1117,7 @@ class StepCatalog:
         self,
         url: str,
         name: str | None = None,
-        priority: int | None = None,
+        priority: int | str | None = None,
         install_allowed: bool = True,
         description: str = "",
     ) -> None:
