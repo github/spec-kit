@@ -7694,7 +7694,7 @@ steps:
         runner = CliRunner()
         with patch.object(
             WorkflowDefinition,
-            "from_yaml",
+            "from_string",
             side_effect=ValueError('bad snippet: "New [Feature]"'),
         ):
             result = runner.invoke(app, ["workflow", "add", str(bad)])
@@ -8661,6 +8661,48 @@ steps:
         assert result.exit_code != 0
         assert victim.read_text(encoding="utf-8") == "untouched"
 
+    def test_local_install_writes_the_same_bytes_it_validates(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        source = self._write_workflow_dir(project_dir)
+        source_file = source / "workflow.yml"
+        validated_content = source_file.read_text(encoding="utf-8")
+        replacement_content = self.WORKFLOW_YAML.format(version="9.9.9")
+
+        real_stage = _commands._stage_workflow_file
+
+        def replace_source_after_validation(*args, **kwargs):
+            staged = real_stage(*args, **kwargs)
+            source_file.write_text(replacement_content, encoding="utf-8")
+            return staged
+
+        monkeypatch.setattr(
+            _commands,
+            "_stage_workflow_file",
+            replace_source_after_validation,
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "add", str(source), "--dev"]
+        )
+
+        assert result.exit_code == 0, result.output
+        installed_file = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "align-wf"
+            / "workflow.yml"
+        )
+        assert installed_file.read_text(encoding="utf-8") == validated_content
+        assert WorkflowRegistry(project_dir).get("align-wf")["version"] == "1.0.0"
+
     def test_add_fresh_install_staged_discard_cleanup_failure_reports_warning(
         self, project_dir, monkeypatch
     ):
@@ -8675,7 +8717,7 @@ steps:
         runner = CliRunner()
         src = self._write_workflow_dir(project_dir)
 
-        def copy_boom(self, source):
+        def copy_boom(self, data):
             raise OSError("disk full")
 
         real_rmdir = Path.rmdir
@@ -8686,7 +8728,7 @@ steps:
             return real_rmdir(path)
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(_commands._StagedWorkflowFile, "copy_from", copy_boom)
+            mp.setattr(_commands._StagedWorkflowFile, "write_bytes", copy_boom)
             mp.setattr(Path, "rmdir", rmdir_boom)
             result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
 
@@ -8758,14 +8800,14 @@ steps:
             self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
         )
 
-        def boom(staged, source):
+        def boom(staged, data):
             # Simulate a truncating partial write followed by an OSError on
             # the reserved staging inode, mirroring disk exhaustion.
-            staged.write_bytes(b"")
+            os.ftruncate(staged.fd, 0)
             raise OSError("disk full")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(_commands._StagedWorkflowFile, "copy_from", boom)
+            mp.setattr(_commands._StagedWorkflowFile, "write_bytes", boom)
             result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
 
         assert result.exit_code != 0
@@ -10986,6 +11028,36 @@ steps:
         assert "registry" in result.output.lower()
         assert "corrupt" in result.output.lower()
 
+    def test_disable_blocks_case_variant_installed_path(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        case_variant = (
+            project_dir
+            / ".SPECIFY"
+            / "WORKFLOWS"
+            / "ALIGN-WF"
+            / "workflow.yml"
+        )
+        if not case_variant.is_file():
+            pytest.skip("filesystem is case-sensitive")
+
+        result = runner.invoke(
+            app, ["workflow", "run", str(case_variant)]
+        )
+
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
     def test_disable_blocks_run_via_path_equivalent_id(self, project_dir, monkeypatch):
         """Path spelling "align-wf/" must not run a disabled workflow by dodging the registry lookup."""
         from typer.testing import CliRunner
@@ -11404,7 +11476,7 @@ steps:
 
         monkeypatch.chdir(project_dir)
         with patch.object(
-            RunState, "load", side_effect=OSError("permission denied")
+            RunState, "load", side_effect=OSError("permission [denied]")
         ):
             result = CliRunner().invoke(
                 app, ["workflow", "resume", "unreadable-run"]
@@ -11413,7 +11485,7 @@ steps:
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "Resume failed" in result.output
-        assert "permission denied" in result.output
+        assert "permission [denied]" in result.output
 
     def test_resume_backward_compatible_with_run_state_missing_new_fields(
         self, project_dir, monkeypatch

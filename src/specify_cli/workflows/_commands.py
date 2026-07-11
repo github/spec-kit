@@ -170,7 +170,7 @@ def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     )
 
 
-def _scan_for_workflow_owner(parts: tuple[str, ...]) -> tuple[int, str] | None:
+def _scan_for_workflow_owner(parts: tuple[str, ...]) -> int | None:
     """Find the *nearest* (innermost) ``.specify/workflows/<id>`` owner in
     *parts*, scanning from the end of the path.
 
@@ -180,12 +180,15 @@ def _scan_for_workflow_owner(parts: tuple[str, ...]) -> tuple[int, str] | None:
     first-from-start match would pick the outer directory and the wrong
     workflow ID, silently missing the real (inner) owner's disabled check.
 
-    Returns ``(i, workflow_id)`` where ``i`` is the index of the owning
-    ``.specify`` segment, or ``None`` if no owner segment is present.
+    Returns the index of the owning ``.specify`` segment, or ``None`` if no
+    owner segment is present.
     """
     for i in range(len(parts) - 3, -1, -1):
-        if parts[i] == ".specify" and parts[i + 1] == "workflows":
-            return i, parts[i + 2]
+        if (
+            parts[i].casefold() == ".specify"
+            and parts[i + 1].casefold() == "workflows"
+        ):
+            return i
     return None
 
 
@@ -218,8 +221,8 @@ def _resolve_installed_workflow_ownership(
     A registered path can point at installed storage three ways, all of
     which must receive the same registry disabled-check:
 
-    1. Lexically: the path's own (symlink-preserving) segments literally
-       contain ``.specify/workflows/<id>`` -- collapsing ``..``/``.`` but
+    1. Lexically: the path's own (symlink-preserving) segments identify
+       ``.specify/workflows/<id>`` -- collapsing ``..``/``.`` but
        never resolving symlinks, so a symlinked ``workflow.yml`` leaf (or
        symlinked ``<id>`` directory) inside the owned tree is caught by the
        inward-symlink refusal below rather than silently followed.
@@ -235,13 +238,17 @@ def _resolve_installed_workflow_ownership(
     """
     def ownership_for(candidate: Path) -> tuple[Path, str] | None:
         parts = candidate.parts
-        match = _scan_for_workflow_owner(parts)
-        if match is None:
+        i = _scan_for_workflow_owner(parts)
+        if i is None:
             return None
-        i, registered_id = match
         registry_root = (
             Path(*parts[:i]) if i else Path(candidate.anchor or ".")
         )
+        candidate_specify = Path(*parts[: i + 1])
+        candidate_workflows = Path(*parts[: i + 2])
+        candidate_id_dir = Path(*parts[: i + 3])
+        canonical_specify = registry_root / ".specify"
+        canonical_workflows = canonical_specify / "workflows"
         # The path-derived registry_root here may differ from the cwd's
         # project_root already checked by _reject_unsafe_workflow_storage
         # (e.g. this path points into another project entirely, or this
@@ -253,13 +260,38 @@ def _resolve_installed_workflow_ownership(
         # time (see catalog.py's _load), but that surfaces as an opaque
         # exception rather than this guard's clean, specific CLI error for
         # the actual owning project root.
-        _reject_unsafe_dir(registry_root / ".specify", ".specify")
-        _reject_unsafe_dir(
-            registry_root / ".specify" / "workflows", ".specify/workflows"
-        )
-        if not _open_workflow_registry(registry_root, err).is_installed(
-            registered_id
-        ):
+        _reject_unsafe_dir(canonical_specify, ".specify")
+        _reject_unsafe_dir(canonical_workflows, ".specify/workflows")
+        _reject_unsafe_dir(candidate_specify, ".specify")
+        _reject_unsafe_dir(candidate_workflows, ".specify/workflows")
+        try:
+            if not os.path.samefile(candidate_specify, canonical_specify):
+                return None
+            if not os.path.samefile(
+                candidate_workflows, canonical_workflows
+            ):
+                return None
+        except OSError:
+            return None
+        registry = _open_workflow_registry(registry_root, err)
+        registered_id = None
+        for workflow_id in registry.list():
+            if (
+                not isinstance(workflow_id, str)
+                or workflow_id in _RESERVED_WORKFLOW_IDS
+                or not _WORKFLOW_ID_PATTERN.fullmatch(workflow_id)
+            ):
+                continue
+            try:
+                if os.path.samefile(
+                    candidate_id_dir,
+                    canonical_workflows / workflow_id,
+                ):
+                    registered_id = workflow_id
+                    break
+            except OSError:
+                continue
+        if registered_id is None:
             return None
         # A legitimately installed workflow's own directory tree never
         # contains a symlink (workflow add/remove both refuse one at
@@ -468,15 +500,6 @@ class _StagedWorkflowFile:
 
     def write_bytes(self, data: bytes) -> None:
         self._write((data,))
-
-    def copy_from(self, source: Path) -> None:
-        with source.open("rb") as src:
-            self._write(iter(lambda: src.read(1024 * 1024), b""))
-        if hasattr(os, "fchmod"):
-            os.fchmod(
-                self.fd,
-                source.stat(follow_symlinks=True).st_mode & 0o7777,
-            )
 
     def verify_path(self) -> None:
         import stat
@@ -1111,7 +1134,7 @@ def workflow_resume(
         err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except OSError as exc:
-        err.print(f"[red]Resume failed:[/red] {exc}")
+        err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if pre_state.installed_workflow_id is not None:
@@ -1133,10 +1156,10 @@ def workflow_resume(
         err.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except Exception as exc:
-        err.print(f"[red]Resume failed:[/red] {exc}")
+        err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if json_output:
@@ -1311,8 +1334,19 @@ def workflow_add(
     ) -> None:
         """Validate and install a workflow from a local YAML file."""
         try:
-            definition = WorkflowDefinition.from_yaml(yaml_path)
-        except (ValueError, yaml.YAMLError) as exc:
+            with yaml_path.open("rb") as source_file:
+                source_mode = os.fstat(source_file.fileno()).st_mode & 0o7777
+                source_content = source_file.read()
+            definition = WorkflowDefinition.from_string(
+                source_content.decode("utf-8")
+            )
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to read workflow YAML: "
+                f"{_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+        except (UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
             console.print(f"[red]Error:[/red] Invalid workflow YAML: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         # Non-string ids (e.g. unquoted ``id: 123`` or ``id: 0``) fall through
@@ -1356,10 +1390,10 @@ def workflow_add(
             raise typer.Exit(1)
 
         try:
-            # Copied into the staging file, never dest_file directly, so a
-            # reinstall's prior working copy is never touched until the
-            # atomic commit below runs.
-            staged_file.copy_from(yaml_path)
+            # Write the exact bytes parsed above so a concurrent source edit
+            # cannot desynchronize installed content from validated metadata.
+            staged_file.write_bytes(source_content)
+            staged_file.set_mode(source_mode)
         except OSError as exc:
             _safe_discard_staged_workflow_file(staged_file, dest_dir, existed_before)
             console.print(
