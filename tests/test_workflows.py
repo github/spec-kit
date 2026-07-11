@@ -8171,6 +8171,77 @@ steps:
         leftovers = [p.name for p in installed_yaml.parent.iterdir() if p.name != "workflow.yml"]
         assert leftovers == []
 
+    def test_add_dev_successful_reinstall_leaves_no_backup_file(
+        self, project_dir, monkeypatch
+    ):
+        """_commit_workflow_file() renames the prior workflow.yml aside to
+        workflow.yml.bak so it can be restored if registry.add() fails. Once
+        registry.add() durably succeeds, that backup is no longer needed --
+        it must be discarded, not left behind as a permanent orphan sibling
+        that every future reinstall would silently accumulate/overwrite."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._install_dev(runner, app, project_dir)
+        workflow_dir = project_dir / ".specify" / "workflows" / "align-wf"
+
+        # Reinstall (overwrite) with a new version -- a successful reinstall,
+        # not a failure path.
+        (src / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
+        )
+        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
+        assert result.exit_code == 0, result.output
+        registry = WorkflowRegistry(project_dir)
+        assert registry.is_installed("align-wf")
+        assert registry.get("align-wf")["version"] == "2.0.0"
+        assert (workflow_dir / "workflow.yml").read_text(encoding="utf-8") == (
+            self.WORKFLOW_YAML.format(version="2.0.0")
+        )
+        leftovers = [p.name for p in workflow_dir.iterdir() if p.name != "workflow.yml"]
+        assert leftovers == [], f"orphan sibling(s) left behind: {leftovers}"
+
+    def test_add_dev_successful_reinstall_backup_cleanup_failure_still_succeeds(
+        self, project_dir, monkeypatch
+    ):
+        """A failure to clean up the now-unneeded backup file after a
+        successful registry.add() must not turn the already-successful
+        install into a reported failure: it must be a warning (exit 0),
+        consistent with workflow_remove's post-commit cleanup semantics."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._install_dev(runner, app, project_dir)
+
+        (src / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
+        )
+
+        real_unlink = Path.unlink
+
+        def unlink_boom(self_path, *args, **kwargs):
+            if self_path.name.endswith(".bak"):
+                raise OSError("permission denied")
+            return real_unlink(self_path, *args, **kwargs)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(Path, "unlink", unlink_boom)
+            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
+        assert result.exit_code == 0, result.output
+        assert "Warning" in result.output
+        assert "permissiondenied" in "".join(result.output.split())
+        registry = WorkflowRegistry(project_dir)
+        assert registry.is_installed("align-wf")
+        assert registry.get("align-wf")["version"] == "2.0.0"
+
     def test_add_dev_reinstall_restore_failure_reports_warning_and_original_error(
         self, project_dir, monkeypatch
     ):
@@ -8212,6 +8283,7 @@ steps:
             mp.setattr(WorkflowRegistry, "save", save_boom)
             mp.setattr(os, "replace", replace_boom)
             result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
@@ -8442,6 +8514,60 @@ steps:
         registry = WorkflowRegistry(project_dir)
         assert registry.is_installed("align-wf")
         assert registry.get("align-wf")["version"] == "1.0.0"
+
+    def test_add_catalog_successful_reinstall_leaves_no_backup_file(
+        self, project_dir, monkeypatch
+    ):
+        """Same orphan-backup gap as the local-install path: a successful
+        catalog reinstall must not leave workflow.yml.bak behind once
+        registry.add() durably succeeds."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        runner = CliRunner()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    original_data, url
+                ),
+            )
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    new_data, url
+                ),
+            )
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code == 0, result.output
+        workflow_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        registry = WorkflowRegistry(project_dir)
+        assert registry.is_installed("align-wf")
+        assert registry.get("align-wf")["version"] == "2.0.0"
+        assert (workflow_dir / "workflow.yml").read_bytes() == new_data
+        leftovers = [p.name for p in workflow_dir.iterdir() if p.name != "workflow.yml"]
+        assert leftovers == [], f"orphan sibling(s) left behind: {leftovers}"
 
     def test_add_catalog_reinstall_restore_failure_reports_warning_and_original_error(
         self, project_dir, monkeypatch

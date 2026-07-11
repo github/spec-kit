@@ -347,6 +347,27 @@ def _safe_rollback_committed_workflow_file(
         )
 
 
+def _discard_committed_backup_file(backup_file: Path | None) -> None:
+    """Once registry.add()/registry.remove() has durably succeeded after a
+    _commit_workflow_file() swap, the renamed-aside prior file is no longer
+    needed for rollback -- it must be discarded, not left as a permanent
+    orphan sibling that every future reinstall would silently accumulate or
+    clobber. A cleanup failure here must not turn an already-successful
+    install into a reported failure; it's reported as a warning, consistent
+    with workflow_remove's post-commit cleanup semantics. A fresh install
+    (backup_file is None) is a no-op."""
+    if backup_file is None:
+        return
+    try:
+        backup_file.unlink(missing_ok=True)
+    except OSError as exc:
+        console.print(
+            "[yellow]Warning:[/yellow] Workflow installed, but its backup file "
+            f"could not be cleaned up: {_escape_markup(str(exc))}. Remove it "
+            f"manually: {_escape_markup(str(backup_file))}"
+        )
+
+
 # Root helper re-fetched at call time so test monkeypatching of
 # `specify_cli._require_specify_project` keeps working after the move.
 def _require_specify_project(*args, **kwargs):
@@ -939,6 +960,9 @@ def workflow_add(
                 f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
             )
             raise typer.Exit(1)
+        # registry.add() durably succeeded -- the renamed-aside backup is no
+        # longer needed for rollback.
+        _discard_committed_backup_file(backup_file)
         console.print(
             f"[green]✓[/green] Workflow '{_escape_markup(definition.name)}' "
             f"({_escape_markup(definition.id)}) installed"
@@ -1293,6 +1317,9 @@ def _install_workflow_from_catalog(
             f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
         )
         raise typer.Exit(1)
+    # registry.add() durably succeeded -- the renamed-aside backup is no
+    # longer needed for rollback.
+    _discard_committed_backup_file(backup_file)
     console.print(
         f"[green]✓[/green] Workflow '{_escape_markup(str(info.get('name', workflow_id)))}' "
         "installed from catalog"
