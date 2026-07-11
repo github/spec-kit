@@ -785,17 +785,24 @@ class PresetManager:
                 if not isinstance(existing_commands, dict):
                     existing_commands = {}
                 merged_commands = copy.deepcopy(existing_commands)
+                # Toggled command -> skills for this same agent:
+                # _register_commands's ai_skills guard just made this a
+                # no-op, but the command file this preset wrote while
+                # command mode was active is still on disk and still
+                # tracked. Do NOT unregister it yet — _register_skills()
+                # below is an independently fallible replacement step, and
+                # deleting the old artifact before it succeeds would leave
+                # neither the old command file nor a new skill file if
+                # skills registration raises. The old artifact is only
+                # removed after the skills phase below completes without
+                # raising, preserving command/skill mutual exclusion while
+                # never leaving a transient failure with nothing in place
+                # (#2948).
+                stale_command_names: Optional[List[str]] = None
                 if registered_commands.get(agent_name):
                     merged_commands[agent_name] = registered_commands[agent_name]
                 elif ai_skills_now and merged_commands.get(agent_name):
-                    # Toggled command -> skills for this same agent:
-                    # _register_commands's ai_skills guard just made this a
-                    # no-op, but the command file this preset wrote while
-                    # command mode was active is still on disk and still
-                    # tracked. Unregister it narrowly for this agent so
-                    # command-mode and skills-mode artifacts stay mutually
-                    # exclusive (#2948).
-                    self._unregister_commands({agent_name: merged_commands.pop(agent_name)})
+                    stale_command_names = merged_commands[agent_name]
                 # Persist the commands phase immediately, mirroring
                 # install_from_directory(): _register_skills is an
                 # independently fallible phase, and if it raises, the files
@@ -843,7 +850,12 @@ class PresetManager:
                     # directory once ai_skills is off, so _register_skills
                     # is a no-op — but the SKILL.md this preset wrote while
                     # skills mode was active is still tracked and still on
-                    # disk. Restore/remove it narrowly for this agent (#2948).
+                    # disk. Restore/remove it narrowly for this agent. This
+                    # direction is already register-new-then-remove-old:
+                    # _register_commands (the replacement) ran unconditionally
+                    # above and only reaches here once it has already
+                    # succeeded, so this cleanup happens only after the new
+                    # command artifact is confirmed in place (#2948).
                     self._unregister_skills(
                         {agent_name: merged_skills.pop(agent_name)}, pack_dir
                     )
@@ -861,6 +873,15 @@ class PresetManager:
                 )
                 if merged_skills != existing_skills or needs_migration:
                     self.registry.update(pack_id, {"registered_skills": merged_skills})
+
+                # The skills phase above completed without raising, so the
+                # replacement artifact is confirmed — now it's safe to
+                # remove the stale command-mode artifact deferred earlier
+                # (#2948).
+                if stale_command_names:
+                    self._unregister_commands({agent_name: stale_command_names})
+                    merged_commands.pop(agent_name, None)
+                    self.registry.update(pack_id, {"registered_commands": merged_commands})
             except Exception as pack_err:
                 from .. import _print_cli_warning
 
@@ -909,6 +930,50 @@ class PresetManager:
 
         registrar = CommandRegistrar()
         registrar.unregister_commands(registered_commands, self.project_root)
+
+    def _merge_pack_registered_commands(
+        self, pack_id: str, written: Optional[Dict[str, List[str]]]
+    ) -> None:
+        """Merge actually-written agent command registrations into a preset's metadata.
+
+        Reconciliation (``_reconcile_composed_commands``) can write a
+        preset's content into an agent directory the preset never wrote to
+        before — most notably a historical (currently inactive) agent
+        supplied via ``extra_agents`` when a higher-priority preset is
+        removed. If that write isn't reflected back into the winning
+        preset's own ``registered_commands``, the registry silently lies
+        about which directories the preset owns: a later removal of this
+        same preset only cleans up the agents it already knew about,
+        orphaning the directory reconciliation just wrote to on its behalf
+        (#2948).
+
+        Args:
+            pack_id: The preset whose metadata should be updated.
+            written: ``{agent_name: [cmd_name, ...]}`` actually written by
+                the reconciliation call just made, exactly mirroring
+                ``CommandRegistrar.register_commands_for_non_skill_agents``'s
+                return value. A falsy value is a no-op.
+        """
+        if not written:
+            return
+        metadata = self.registry.get(pack_id)
+        if metadata is None:
+            return  # pack_id no longer installed (e.g. removed mid-loop)
+        existing_commands = metadata.get("registered_commands", {})
+        if not isinstance(existing_commands, dict):
+            existing_commands = {}
+        merged_commands = copy.deepcopy(existing_commands)
+        changed = False
+        for agent_name, cmd_names in written.items():
+            if not cmd_names:
+                continue
+            existing_names = merged_commands.get(agent_name, [])
+            new_names = [n for n in cmd_names if n not in existing_names]
+            if new_names:
+                merged_commands[agent_name] = existing_names + new_names
+                changed = True
+        if changed:
+            self.registry.update(pack_id, {"registered_commands": merged_commands})
 
     def _reconcile_composed_commands(
         self, command_names: List[str], extra_agents: Optional[Set[str]] = None
@@ -1003,10 +1068,11 @@ class PresetManager:
                         if manifest:
                             for tmpl in manifest.templates:
                                 if tmpl.get("name") == cmd_name and tmpl.get("type") == "command":
-                                    self._register_for_non_skill_agents(
+                                    written = self._register_for_non_skill_agents(
                                         registrar, [tmpl], manifest.id, pack_dir,
                                         only_agent=only_agent, extra_agents=extra_agents,
                                     )
+                                    self._merge_pack_registered_commands(manifest.id, written)
                                     registered = True
                                     break
                         break
@@ -1105,12 +1171,13 @@ class PresetManager:
                             composed_dir.mkdir(parents=True, exist_ok=True)
                             composed_file = composed_dir / f"{cmd_name}.md"
                             composed_file.write_text(composed, encoding="utf-8")
-                            self._register_for_non_skill_agents(
+                            written = self._register_for_non_skill_agents(
                                 registrar,
                                 [{**tmpl, "file": f".composed/{cmd_name}.md"}],
                                 manifest.id, pack_dir,
                                 only_agent=only_agent, extra_agents=extra_agents,
                             )
+                            self._merge_pack_registered_commands(manifest.id, written)
                             registered = True
                             break
                     else:
@@ -1142,7 +1209,7 @@ class PresetManager:
         source_id: str = "reconciled",
         only_agent: Optional[str] = None,
         extra_agents: Optional[Set[str]] = None,
-    ) -> None:
+    ) -> Dict[str, List[str]]:
         """Register a single command from a file path (non-preset source).
 
         Used by reconciliation when the winning layer is an extension,
@@ -1156,9 +1223,14 @@ class PresetManager:
             only_agent: If set, restrict registration to this single agent (#2948).
             extra_agents: Additional agent names to register for besides
                 ``only_agent`` (post-removal reconciliation only, #2948).
+
+        Returns:
+            ``{agent_name: [cmd_name, ...]}`` for every agent this call
+            actually registered the command for (empty if the source path
+            doesn't exist or nothing was written).
         """
         if not cmd_path.exists():
-            return
+            return {}
         cmd_tmpl: Dict[str, Any] = {
             "name": cmd_name,
             "type": "command",
@@ -1184,7 +1256,7 @@ class PresetManager:
                         break
             except Exception:
                 pass  # best-effort alias loading
-        self._register_for_non_skill_agents(
+        return self._register_for_non_skill_agents(
             registrar, [cmd_tmpl], source_id, cmd_path.parent,
             only_agent=only_agent, extra_agents=extra_agents,
         )
@@ -1197,7 +1269,7 @@ class PresetManager:
         source_dir: Path,
         only_agent: Optional[str] = None,
         extra_agents: Optional[Set[str]] = None,
-    ) -> None:
+    ) -> Dict[str, List[str]]:
         """Register commands for non-skill agents during reconciliation.
 
         Skill-based agents (``/SKILL.md`` layout) are handled separately:
@@ -1219,8 +1291,15 @@ class PresetManager:
                 ``only_agent``. Used by post-removal reconciliation to also
                 restore surviving content into historical agent directories
                 a just-removed preset actually wrote to (#2948).
+
+        Returns:
+            ``{agent_name: [cmd_name, ...]}`` for every agent this call
+            actually registered a command for, mirroring
+            ``CommandRegistrar.register_commands_for_non_skill_agents``'s
+            return value so callers can merge it into a preset's own
+            ``registered_commands`` tracking (#2948).
         """
-        registrar.register_commands_for_non_skill_agents(
+        return registrar.register_commands_for_non_skill_agents(
             commands, source_id, source_dir, self.project_root,
             only_agent=only_agent, extra_agents=extra_agents,
         )
@@ -1245,6 +1324,59 @@ class PresetManager:
                 t for t in self._manifest.templates
                 if t.get("name") in self._cmd_names
             ]
+
+    def _merge_pack_registered_skills(
+        self, pack_id: str, written: Optional[Dict[str, List[str]]]
+    ) -> None:
+        """Merge actually-written agent skill registrations into a preset's metadata.
+
+        Mirrors :meth:`_merge_pack_registered_commands` for the skills
+        side: ``_reconcile_skills`` can render a preset's SKILL.md content
+        into an agent directory the preset never wrote to before — most
+        notably a historical (currently inactive) agent restored via
+        ``extra_skills_dirs`` when a higher-priority preset is removed. If
+        that write isn't reflected back into the winning preset's own
+        ``registered_skills``, a later removal of this same preset only
+        cleans up the agents it already knew about, orphaning the skill
+        directory reconciliation just wrote to on its behalf (#2948).
+
+        Args:
+            pack_id: The preset whose metadata should be updated.
+            written: ``{agent_name: [skill_name, ...]}`` actually written
+                by the ``_register_skills`` call just made. A falsy value
+                is a no-op.
+        """
+        if not written:
+            return
+        metadata = self.registry.get(pack_id)
+        if metadata is None:
+            return  # pack_id no longer installed (e.g. removed mid-loop)
+        raw_existing_skills = metadata.get("registered_skills")
+        if isinstance(raw_existing_skills, list) and raw_existing_skills:
+            # Legacy flat-list value: infer real per-agent ownership from
+            # on-disk provenance rather than guessing (#2948).
+            fallback_agent = next(iter(written)) if written else None
+            existing_skills = self._infer_legacy_skill_provenance(
+                [n for n in raw_existing_skills if isinstance(n, str)],
+                pack_id,
+                fallback_agent=fallback_agent,
+            )
+        else:
+            existing_skills = self._normalize_registered_skills(raw_existing_skills)
+        merged_skills = copy.deepcopy(existing_skills)
+        changed = (
+            isinstance(raw_existing_skills, list) and bool(raw_existing_skills)
+        )
+        for agent_name, skill_names in written.items():
+            if not skill_names:
+                continue
+            existing_names = merged_skills.get(agent_name, [])
+            new_names = [n for n in skill_names if n not in existing_names]
+            if new_names:
+                merged_skills[agent_name] = existing_names + new_names
+                changed = True
+        if changed:
+            self.registry.update(pack_id, {"registered_skills": merged_skills})
 
     def _reconcile_skills(
         self,
@@ -1426,12 +1558,21 @@ class PresetManager:
                     # Preserve exact prior behaviour for the currently
                     # active directory (including the ability to create
                     # brand-new skill subdirectories when ai_skills is on).
-                    self._register_skills(filtered_manifest, pack_dir)
+                    written = self._register_skills(filtered_manifest, pack_dir)
                 else:
-                    self._register_skills(
+                    written = self._register_skills(
                         filtered_manifest, pack_dir,
                         target_dir=skills_dir, target_agent=dir_agent or "",
                     )
+                # The winning preset may not have previously written to
+                # this directory's agent (most notably a historical agent
+                # reconciliation just restored content into via
+                # extra_skills_dirs). If that write isn't merged back into
+                # the preset's own registered_skills, its registry entry
+                # silently lies about which directories it owns and a
+                # later removal of this same preset orphans the directory
+                # reconciliation just wrote to on its behalf (#2948).
+                self._merge_pack_registered_skills(pack_id, written)
 
         if active_skills_dir:
             apply_to_dir(active_skills_dir, active_ai, is_active=True)
@@ -1802,11 +1943,18 @@ class PresetManager:
             dir_to_agents.setdefault(skills_dir, []).append(agent_name)
 
         marker = f"preset:{pack_id}"
+        # Filter unsafe names once, up front, rather than only inside the
+        # matching loop: any name skipped there would otherwise still
+        # land in "unmatched" below and get blindly attributed to
+        # fallback_agent anyway, defeating the guard entirely (#2948).
+        safe_skill_names = [
+            name for name in skill_names if self._is_safe_registry_skill_name(name)
+        ]
         inferred: Dict[str, List[str]] = {}
         matched_names: set = set()
         for resolved_dir, agents in dir_to_agents.items():
             canonical_agent = fallback_agent if fallback_agent in agents else sorted(agents)[0]
-            for name in skill_names:
+            for name in safe_skill_names:
                 skill_subdir = resolved_dir / name
                 if not self._validate_skill_subdir(skill_subdir, create=False):
                     continue
@@ -1828,7 +1976,7 @@ class PresetManager:
                     inferred.setdefault(canonical_agent, []).append(name)
                     matched_names.add(name)
 
-        unmatched = [name for name in skill_names if name not in matched_names]
+        unmatched = [name for name in safe_skill_names if name not in matched_names]
         if unmatched and fallback_agent:
             fallback_names = inferred.setdefault(fallback_agent, [])
             for name in unmatched:
@@ -1892,6 +2040,36 @@ class PresetManager:
         except (ValueError, OSError):
             return None
         return skills_dir
+
+    @staticmethod
+    def _is_safe_registry_skill_name(name: Any) -> bool:
+        """Validate a registry-provided skill name is a single safe path component.
+
+        ``registered_skills`` entries are persisted registry data, not
+        derived from the current preset manifest, so a corrupted or
+        maliciously edited registry could contain an absolute path, a
+        multi-segment path (containing ``/`` or ``\\``), or a traversal
+        component (``"."``/``".."``) instead of a plain skill directory
+        name. Any of these — if joined directly onto a skills directory —
+        can escape the intended skill subtree while still resolving to a
+        location inside the project root, which is enough to pass the
+        parent-directory containment/symlink check alone (#2948). This
+        centralizes the single boundary check every preset cleanup and
+        provenance loop that consumes registry-provided skill names must
+        apply before ever constructing a path from one.
+        """
+        if not isinstance(name, str) or not name:
+            return False
+        if name in (".", ".."):
+            return False
+        candidate = Path(name)
+        if candidate.is_absolute():
+            return False
+        if len(candidate.parts) != 1:
+            return False
+        if candidate.name != name:
+            return False
+        return True
 
     def _validate_skill_subdir(self, skill_subdir: Path, *, create: bool) -> bool:
         """Validate a single skill's subdirectory is symlink-free.
@@ -2046,6 +2224,20 @@ class PresetManager:
         extension_restore_index = self._build_extension_skill_restore_index()
 
         for skill_name in skill_names:
+            # Guard against a corrupted/malicious registry entry: a
+            # registered_skills name is persisted data, not derived from
+            # the current manifest, so it must be validated as a single,
+            # relative, non-"."/".." path component before ever being
+            # joined onto skills_dir. Without this, an absolute name
+            # discards skills_dir entirely (Path's "/" operator drops the
+            # left side for an absolute right side) or a multi-component
+            # name containing ".." can resolve to a different, unrelated
+            # directory that still happens to be inside the project root
+            # — passing the containment-only symlink guard below and
+            # letting removal overwrite/delete it (#2948).
+            if not self._is_safe_registry_skill_name(skill_name):
+                continue
+
             # Derive command name from skill name (speckit-specify -> specify)
             short_name = skill_name
             if short_name.startswith("speckit-"):

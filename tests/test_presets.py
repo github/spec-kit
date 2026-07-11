@@ -4425,6 +4425,67 @@ class TestPresetSkills:
             "sanity: the new skills-mode artifact should still be written"
         )
 
+    def test_toggle_command_to_skills_preserves_old_command_on_skills_failure(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A command->skills toggle must not destroy the old command
+        artifact before the new skill registration has actually succeeded.
+
+        Before the fix, the stale command-mode file/tracking was
+        unregistered unconditionally as soon as ``_register_commands``'s
+        ``ai_skills`` guard made the commands phase a no-op — regardless
+        of whether the subsequent, independently-fallible
+        ``_register_skills()`` call actually succeeded. If skills raises
+        (e.g. a transient I/O error), the per-preset exception handler
+        just logs and continues, leaving neither the old command file
+        nor a new skill file — the preset's command override vanishes
+        entirely from copilot until the next successful rescaffold
+        (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-failure-preset", "speckit.specify",
+            "Toggle failure test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        assert cmd_file.exists(), (
+            "sanity: command mode should have written copilot's command file"
+        )
+        metadata = manager.registry.get("toggle-failure-preset")
+        assert metadata["registered_commands"].get("copilot"), (
+            "sanity: the command-mode write should be tracked for copilot"
+        )
+
+        # Flip ai_skills on for the *same* active agent and rescaffold, as
+        # `integration upgrade copilot` would, but with skills registration
+        # injected to fail.
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        def _raise_register_skills(*args, **kwargs):
+            raise OSError("simulated skills-phase failure")
+
+        monkeypatch.setattr(manager, "_register_skills", _raise_register_skills)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert cmd_file.exists(), (
+            "the old command-mode artifact must survive when the "
+            "replacement skills registration fails — deleting it before "
+            "the new artifact is confirmed leaves neither in place (#2948)"
+        )
+        metadata = manager.registry.get("toggle-failure-preset")
+        assert metadata["registered_commands"].get("copilot"), (
+            "registered_commands must keep tracking copilot's still-live "
+            "command file when the skills replacement failed, or a later "
+            "removal/rescaffold will believe there is nothing to clean up "
+            "even though the file is still on disk (#2948)"
+        )
+
     def test_rescaffold_toggle_skills_to_command_removes_stale_skill_file(
         self, project_dir, temp_dir
     ):
@@ -5368,6 +5429,95 @@ class TestPresetSkills:
             "currently active agent"
         )
 
+    def test_remove_reconciliation_tracks_new_historical_agent_for_survivor(
+        self, project_dir, temp_dir
+    ):
+        """Historical-agent reconciliation writes must be recorded in the
+        surviving preset's own ``registered_commands``, not just written
+        to disk and forgotten.
+
+        Preset A is installed while gemini is active, then survives to be
+        active under opencode too (so A's ``registered_commands`` spans
+        both gemini and opencode). Preset B is installed *only* while
+        opencode is active — B's ``registered_commands`` is
+        ``{"opencode": [...]}`` and never mentions gemini. Removing A
+        triggers reconciliation that writes B's content into gemini's
+        directory (an agent B never wrote to before) via ``extra_agents``,
+        but if that write isn't merged back into B's own
+        ``registered_commands``, B's registry entry still only says
+        ``{"opencode": [...]}`` even though B's content now lives in
+        gemini's directory too. A later ``remove('b')`` then only cleans
+        up opencode, leaving the gemini file — reconciled there entirely
+        by side effect of removing A — as a permanent orphan with no
+        preset tracking it (#2948).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "orphan-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+
+        self._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        opencode_dir = project_dir / ".opencode" / "commands"
+        opencode_dir.mkdir(parents=True, exist_ok=True)
+        manager.register_enabled_presets_for_agent("opencode")
+
+        metadata_a = manager.registry.get("orphan-preset-a")
+        assert set(metadata_a.get("registered_commands", {})) == {"gemini", "opencode"}, (
+            "sanity: preset A must be tracked under both agents"
+        )
+
+        # Preset B is installed only now, while opencode is the sole
+        # active agent — it never writes to or tracks gemini.
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "orphan-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+
+        metadata_b = manager.registry.get("orphan-preset-b")
+        assert set(metadata_b.get("registered_commands", {})) == {"opencode"}, (
+            "sanity: preset B must only be tracked for opencode before "
+            "preset A is removed"
+        )
+
+        assert manager.remove("orphan-preset-a") is True
+
+        # B is now written into gemini's directory as a side effect of
+        # reconciling A's removal, via the historical-agent extra_agents
+        # pass.
+        gemini_cmd_files = list(gemini_dir.glob("*specify*"))
+        assert gemini_cmd_files, "sanity: gemini's directory must have B's restored content"
+        assert "preset B body" in gemini_cmd_files[0].read_text()
+
+        metadata_b = manager.registry.get("orphan-preset-b")
+        assert set(metadata_b.get("registered_commands", {})) == {"gemini", "opencode"}, (
+            "preset B's own registered_commands must be updated to "
+            "include gemini once reconciliation actually writes content "
+            "there on its behalf — otherwise B's registry entry silently "
+            "lies about which directories it owns (#2948)"
+        )
+
+        assert manager.remove("orphan-preset-b") is True
+
+        # No preset is installed any more, so gemini's file must have been
+        # reconciled down to the core bundled template (or removed
+        # entirely) — but it must NOT still contain B's stale content,
+        # which would mean B's write there was never tracked for cleanup.
+        remaining_gemini_files = list(gemini_dir.glob("*specify*"))
+        for f in remaining_gemini_files:
+            assert "preset B body" not in f.read_text(), (
+                "removing preset B must clean up gemini's directory too, "
+                "since B's registered_commands was updated to include it "
+                "— otherwise B's stale content is orphaned there forever "
+                "with no preset left to track or clean it up (#2948)"
+            )
+
     def test_remove_reconciles_skill_for_every_historical_agent(
         self, project_dir, temp_dir
     ):
@@ -5446,6 +5596,107 @@ class TestPresetSkills:
             "the currently active agent"
         )
 
+    def test_remove_reconciliation_tracks_new_historical_skill_agent_for_survivor(
+        self, project_dir, temp_dir
+    ):
+        """Historical-agent skill reconciliation writes must be recorded in
+        the surviving preset's own ``registered_skills``, mirroring
+        ``test_remove_reconciliation_tracks_new_historical_agent_for_survivor``
+        for the command side.
+
+        Preset A is installed while claude is active, then survives to be
+        active under codex too (so A's ``registered_skills`` spans both
+        claude and codex). Preset B is installed *only* while codex is
+        active — B's ``registered_skills`` is ``{"codex": [...]}`` and
+        never mentions claude. Removing A triggers reconciliation that
+        renders B's SKILL.md into claude's directory (an agent B never
+        wrote to before) via ``extra_skills_dirs``, but if that write
+        isn't merged back into B's own ``registered_skills``, a later
+        ``remove('b')`` only cleans up codex, leaving claude's SKILL.md —
+        rendered there entirely by side effect of removing A — untracked
+        by any preset (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        # Pre-create the skill so _register_commands/_register_skills find
+        # an existing skill to overwrite (mirrors every other skill test
+        # in this class — native skill agents only overwrite already
+        # existing skill directories, they don't materialize brand-new
+        # ones outside of active-agent creation).
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "orphan-skill-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata_a = manager.registry.get("orphan-skill-preset-a")
+        assert set(metadata_a.get("registered_skills", {})) == {"claude", "codex"}, (
+            "sanity: preset A must be tracked under both agents"
+        )
+
+        # Preset B is installed only now, while codex is the sole active
+        # agent — it never writes to or tracks claude.
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "orphan-skill-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+
+        metadata_b = manager.registry.get("orphan-skill-preset-b")
+        assert set(metadata_b.get("registered_skills", {})) == {"codex"}, (
+            "sanity: preset B must only be tracked for codex before "
+            "preset A is removed"
+        )
+
+        assert manager.remove("orphan-skill-preset-a") is True
+
+        claude_skill_file = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert claude_skill_file.exists(), (
+            "sanity: claude's skill file must have been restored by "
+            "reconciliation"
+        )
+        assert "preset:orphan-skill-preset-b" in claude_skill_file.read_text(), (
+            "sanity: claude's SKILL.md must reflect preset B's content "
+            "after preset A is removed"
+        )
+
+        metadata_b = manager.registry.get("orphan-skill-preset-b")
+        assert set(metadata_b.get("registered_skills", {})) == {"claude", "codex"}, (
+            "preset B's own registered_skills must be updated to include "
+            "claude once reconciliation actually renders content there "
+            "on its behalf — otherwise B's registry entry silently lies "
+            "about which directories it owns (#2948)"
+        )
+
+        assert manager.remove("orphan-skill-preset-b") is True
+
+        # No preset is installed any more, so claude's SKILL.md must have
+        # been reconciled down to the core bundled template (or removed
+        # entirely) — but it must NOT still contain B's stale content,
+        # which would mean B's write there was never tracked for cleanup.
+        if claude_skill_file.exists():
+            assert "preset:orphan-skill-preset-b" not in claude_skill_file.read_text(), (
+                "removing preset B must clean up claude's directory too, "
+                "since B's registered_skills was updated to include it — "
+                "otherwise B's stale content is orphaned there forever "
+                "with no preset left to track or clean it up (#2948)"
+            )
+
     def test_symlinked_skill_subdir_rejected_on_restore(self, project_dir, temp_dir):
         """Restore must validate each per-skill subdirectory, not just its parent.
 
@@ -5517,6 +5768,107 @@ class TestPresetSkills:
         assert (skills_dir / "speckit-specify").is_symlink(), (
             "the symlink itself should be left alone"
         )
+
+    def test_is_safe_registry_skill_name_rejects_unsafe_values(self, project_dir):
+        """Unit-test the centralized registry skill-name boundary guard.
+
+        ``registered_skills`` entries are persisted registry data, not
+        manifest-derived, so every preset cleanup/provenance loop that
+        joins one onto a directory must first reject: non-strings, empty
+        strings, absolute paths, multi-component paths (containing ``/``),
+        and the literal traversal components ``"."``/``".."`` — the last
+        of which is *not* caught by a naive ``is_absolute() or
+        len(parts) != 1`` check alone, since ``Path("..").parts`` is a
+        single-element tuple (#2948).
+        """
+        manager = PresetManager(project_dir)
+        is_safe = manager._is_safe_registry_skill_name
+
+        assert is_safe("speckit-specify") is True
+        assert is_safe("") is False
+        assert is_safe(None) is False
+        assert is_safe(123) is False
+        assert is_safe(["speckit-specify"]) is False
+        assert is_safe(".") is False
+        assert is_safe("..") is False
+        assert is_safe("/etc/passwd") is False
+        assert is_safe(str(project_dir / "important-data")) is False
+        assert is_safe("foo/bar") is False
+        assert is_safe("foo/..") is False
+        assert is_safe("../foo") is False
+
+    def test_unregister_skills_in_dir_rejects_absolute_registry_name(
+        self, project_dir
+    ):
+        """A corrupted ``registered_skills`` entry with an absolute path must not escape.
+
+        ``Path`` join with an absolute right-hand operand discards the
+        left side entirely (``skills_dir / "/abs/path"`` == ``"/abs/path"``),
+        so an absolute in-project path stored in the registry would bypass
+        ``skills_dir`` altogether if not rejected before the join (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        claude_skills_dir.mkdir(parents=True)
+
+        precious_dir = project_dir / "important-data"
+        precious_dir.mkdir()
+        precious_file = precious_dir / "SKILL.md"
+        precious_file.write_text("precious-absolute-target-marker")
+
+        manager = PresetManager(project_dir)
+        manager._unregister_skills_in_dir(
+            [str(precious_dir)], claude_skills_dir, "claude"
+        )
+
+        assert precious_dir.is_dir(), (
+            "an absolute registry entry must not let cleanup escape "
+            "skills_dir to an unrelated project directory (#2948)"
+        )
+        assert precious_file.read_text() == "precious-absolute-target-marker"
+
+    def test_infer_legacy_skill_provenance_rejects_absolute_registry_name(
+        self, project_dir
+    ):
+        """Legacy provenance inference must reject an absolute registry name.
+
+        ``_infer_legacy_skill_provenance`` receives its ``skill_names``
+        directly from a legacy flat-list ``registered_skills`` value —
+        registry data, not manifest-derived — and joins each name onto a
+        candidate agent's resolved skills directory the same way
+        ``_unregister_skills_in_dir`` does. An absolute in-project name
+        discards the candidate directory entirely (Python's ``/`` operator
+        drops the left side for an absolute right side), so it can read
+        an unrelated project directory's ``SKILL.md`` and, if its
+        frontmatter happens to carry a matching preset source marker,
+        falsely attribute an unrelated directory as this preset's own
+        skill override under whichever agent is being probed (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        claude_skills_dir.mkdir(parents=True)
+
+        precious_dir = project_dir / "important-data"
+        precious_dir.mkdir()
+        (precious_dir / "SKILL.md").write_text(
+            "---\n"
+            "metadata:\n"
+            "  source: preset:some-pack\n"
+            "---\n\n"
+            "# Unrelated directory, not a real preset skill\n"
+        )
+
+        manager = PresetManager(project_dir)
+        inferred = manager._infer_legacy_skill_provenance(
+            [str(precious_dir)], "some-pack", "claude"
+        )
+
+        for names in inferred.values():
+            assert str(precious_dir) not in names, (
+                "an absolute registry entry must not be falsely attributed "
+                "as preset-owned provenance by probing outside the "
+                "intended skills subtree (#2948)"
+            )
 
     def test_copilot_skills_registration_restored_after_process_restart(
         self, project_dir, temp_dir

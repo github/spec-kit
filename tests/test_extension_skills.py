@@ -1310,6 +1310,62 @@ class TestExtensionSkillRegistration:
         skill_file = skills_dir / "speckit-toggle-ext-hello" / "SKILL.md"
         assert skill_file.exists(), "sanity: skills mode should write SKILL.md"
 
+    def test_toggle_command_to_skills_preserves_old_extension_command_on_skills_failure(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """An extension command->skills toggle must not destroy the old
+        command artifact before the new skill registration has actually
+        succeeded.
+
+        Mirrors the analogous preset-side fix
+        (``test_toggle_command_to_skills_preserves_old_command_on_skills_failure``
+        in ``tests/test_presets.py``): before the fix, the stale
+        command-mode file/tracking was unregistered unconditionally as soon
+        as the commands phase was skipped for ``skills_mode_active``,
+        regardless of whether the subsequent, independently-fallible
+        ``_register_extension_skills()`` call actually succeeded. If skills
+        raises, the exception handler just warns and continues, leaving
+        neither the old command file nor a new skill file (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-fail-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        cmd_file = agents_dir / "speckit.toggle-fail-ext.hello.agent.md"
+        assert cmd_file.exists(), "sanity: command mode should write .agent.md"
+        metadata = manager.registry.get("toggle-fail-ext")
+        assert metadata.get("registered_commands", {}).get("copilot"), (
+            "sanity: the command-mode write should be tracked for copilot"
+        )
+
+        # Toggle ai_skills on for the same active agent (copilot), but with
+        # skills registration injected to fail.
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        def _raise_register_extension_skills(*args, **kwargs):
+            raise OSError("simulated extension skills-phase failure")
+
+        monkeypatch.setattr(
+            manager, "_register_extension_skills", _raise_register_extension_skills
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert cmd_file.exists(), (
+            "the old command-mode artifact must survive when the "
+            "replacement skills registration fails — deleting it before "
+            "the new artifact is confirmed leaves neither in place (#2948)"
+        )
+        metadata = manager.registry.get("toggle-fail-ext")
+        assert metadata.get("registered_commands", {}).get("copilot"), (
+            "registered_commands must keep tracking copilot's still-live "
+            "command file when the skills replacement failed (#2948)"
+        )
+
     def test_rescaffold_toggle_skills_to_command_removes_stale_extension_skill_file(
         self, project_dir, temp_dir
     ):

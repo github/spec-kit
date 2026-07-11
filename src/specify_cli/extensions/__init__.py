@@ -2001,6 +2001,10 @@ class ExtensionManager:
             # registration of the remaining enabled extensions for this agent.
             try:
                 updates: Dict[str, Any] = {}
+                # Set when a command -> skills toggle for this same agent
+                # defers stale command-mode cleanup until the skills
+                # replacement below confirms success (#2948).
+                deferred_stale_commands: Optional[List[str]] = None
 
                 if agent_config and not skills_mode_active:
                     registered = registrar.register_commands_for_agent(
@@ -2022,28 +2026,27 @@ class ExtensionManager:
                         updates["registered_commands"] = new_registered
                 elif agent_config and skills_mode_active:
                     # Toggled command -> skills for this same agent: the
-                    # commands phase above is skipped, but a command file
-                    # this extension previously wrote for this agent while
+                    # commands phase above is skipped. A command file this
+                    # extension previously wrote for this agent while
                     # command mode was active is still on disk and still
-                    # tracked. Remove it narrowly for this agent so
-                    # command-mode and skills-mode artifacts stay mutually
-                    # exclusive, matching unregister_agent_artifacts's
-                    # per-agent command cleanup (#2948).
+                    # tracked, but it must NOT be removed yet — the skills
+                    # phase below is an independently fallible replacement
+                    # step, and deleting the old artifact before it
+                    # succeeds would leave neither the old command file nor
+                    # a new skill file if skills registration raises. The
+                    # actual removal is deferred until after the skills
+                    # phase below completes without raising (#2948).
                     registered_commands = metadata.get("registered_commands", {})
                     if isinstance(registered_commands, dict) and registered_commands.get(
                         agent_name
                     ):
-                        stale_commands = self._valid_name_list(
+                        deferred_stale_commands = self._valid_name_list(
                             registered_commands.get(agent_name)
                         )
-                        if stale_commands:
-                            registrar.unregister_commands(
-                                {agent_name: stale_commands}, self.project_root
-                            )
-                        new_registered = copy.deepcopy(registered_commands)
-                        new_registered.pop(agent_name, None)
-                        if new_registered != registered_commands:
-                            updates["registered_commands"] = new_registered
+                    else:
+                        deferred_stale_commands = None
+                else:
+                    deferred_stale_commands = None
 
                 # Extension *skills* are only ever rendered for the active agent:
                 # `_register_extension_skills` resolves the skills dir and
@@ -2121,6 +2124,25 @@ class ExtensionManager:
                                 )
                                 if remaining != existing_skills:
                                     updates["registered_skills"] = remaining
+
+                        # The skills phase above completed without raising
+                        # (this ``else:`` is only reached on success), so a
+                        # deferred command -> skills toggle cleanup queued
+                        # above is now safe to apply: the replacement skill
+                        # registration is confirmed, so the stale
+                        # command-mode artifact can finally be removed
+                        # without risking a transient state where neither
+                        # artifact exists (#2948).
+                        if deferred_stale_commands:
+                            registrar.unregister_commands(
+                                {agent_name: deferred_stale_commands}, self.project_root
+                            )
+                            registered_commands = metadata.get("registered_commands", {})
+                            if isinstance(registered_commands, dict):
+                                new_registered = copy.deepcopy(registered_commands)
+                                new_registered.pop(agent_name, None)
+                                if new_registered != registered_commands:
+                                    updates["registered_commands"] = new_registered
 
                 if updates:
                     self.registry.update(ext_id, updates)
