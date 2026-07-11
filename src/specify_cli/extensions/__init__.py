@@ -1262,10 +1262,26 @@ class ExtensionManager:
         if not skill_names:
             return
 
+        from ..shared_infra import _validate_safe_shared_directory
+
         if skills_dir is None:
             skills_dir = self._get_skills_dir()
 
         if skills_dir:
+            # Reject the candidate directory itself (any path component,
+            # including the final one) if it's a symlink escaping the
+            # project root, before probing or deleting anything inside it.
+            # A caller-supplied skills_dir (e.g. a specific agent's
+            # directory resolved without side effects) could have been
+            # replaced with a symlink between registration and removal;
+            # resolving it and only checking children relative to the
+            # already-resolved candidate (the previous approach) would
+            # silently follow the symlink instead of rejecting it.
+            try:
+                _validate_safe_shared_directory(self.project_root, skills_dir)
+            except (ValueError, OSError):
+                return
+
             # Fast path: we know the exact skills directory
             for skill_name in skill_names:
                 # Guard against path traversal from a corrupted registry entry:
@@ -1322,6 +1338,16 @@ class ExtensionManager:
 
             for skills_candidate in candidate_dirs:
                 if not skills_candidate.is_dir():
+                    continue
+                # Reject the candidate directory itself (any path
+                # component) if it's a symlink escaping the project
+                # root, before probing or deleting anything inside it —
+                # same guard as the fast path above.
+                try:
+                    _validate_safe_shared_directory(
+                        self.project_root, skills_candidate
+                    )
+                except (ValueError, OSError):
                     continue
                 for skill_name in skill_names:
                     # Same path-traversal guard as the fast path above
@@ -1397,6 +1423,7 @@ class ExtensionManager:
             return []
 
         from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+        from ..shared_infra import _validate_safe_shared_directory
 
         candidate_dirs: set[Path] = set()
         for cfg in AGENT_CONFIG.values():
@@ -1411,6 +1438,17 @@ class ExtensionManager:
             if len(owned) == len(skill_names):
                 break  # every name already confirmed owned somewhere
             if not skills_candidate.is_dir():
+                continue
+            # Reject the candidate directory itself (any path component)
+            # if it's a symlink escaping the project root, before probing
+            # anything inside it. Resolving it and only checking children
+            # relative to the already-resolved candidate (the previous
+            # approach) would silently follow the symlink instead of
+            # rejecting it, letting a marker-matching SKILL.md outside the
+            # project be falsely attributed.
+            try:
+                _validate_safe_shared_directory(self.project_root, skills_candidate)
+            except (ValueError, OSError):
                 continue
             try:
                 resolved_candidate = skills_candidate.resolve()

@@ -1448,6 +1448,164 @@ class TestExtensionSkillRegistration:
             "prematurely dropped during the earlier toggle (#2948)"
         )
 
+    def test_extension_owned_skill_names_rejects_symlinked_candidate_directory(
+        self, project_dir, temp_dir
+    ):
+        """Provenance probing must not follow a symlinked candidate skills
+        directory that escapes the project root, even when a marker-
+        matching SKILL.md exists at the symlink target.
+
+        Both ``_extension_owned_skill_names`` and its sibling
+        ``_unregister_extension_skills`` previously called
+        ``skills_candidate.resolve()`` and then checked children relative
+        to that *already-resolved* candidate — so if the candidate
+        directory itself (e.g. ``.gemini/skills``) was a symlink pointing
+        outside the project root, both the resolve and the subsequent
+        containment check silently passed *through* the symlink instead
+        of rejecting it. A marker-matching ``SKILL.md`` at the symlink
+        target would therefore be falsely attributed to the extension.
+        """
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        external_dir = temp_dir / "external-skills-root"
+        external_dir.mkdir()
+        (external_dir / "precious_file.txt").write_text(
+            "do not touch", encoding="utf-8"
+        )
+        external_skill_subdir = external_dir / "speckit-sym-escape-ext-hello"
+        external_skill_subdir.mkdir()
+        (external_skill_subdir / "SKILL.md").write_text(
+            "---\n"
+            "name: speckit-sym-escape-ext-hello\n"
+            "description: external marker-matching skill\n"
+            "metadata:\n"
+            "  source: extension:sym-escape-ext\n"
+            "---\n\n"
+            "external body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini"
+        gemini_dir.mkdir()
+        os.symlink(str(external_dir), str(gemini_dir / "skills"))
+
+        manager = ExtensionManager(project_dir)
+        owned = manager._extension_owned_skill_names(
+            ["speckit-sym-escape-ext-hello"], "sym-escape-ext"
+        )
+
+        assert owned == [], (
+            "a symlinked candidate skills directory escaping the project "
+            "root must never be followed for provenance attribution, "
+            "even when a marker-matching SKILL.md exists at its target"
+        )
+
+    def test_unregister_extension_skills_fallback_does_not_follow_symlinked_dir(
+        self, project_dir, temp_dir
+    ):
+        """Fallback removal scanning must not delete through a symlinked
+        candidate skills directory escaping the project root.
+
+        Mirrors the previous test but exercises the actual deletion path:
+        before the fix, a symlinked ``.gemini/skills`` pointing outside
+        the project root would be resolved and scanned, and the
+        marker-matching external ``SKILL.md`` directory would be deleted
+        via ``shutil.rmtree`` — collateral damage to unrelated external
+        content (here, ``precious_file.txt`` sitting alongside it).
+        """
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        external_dir = temp_dir / "external-skills-root2"
+        external_dir.mkdir()
+        precious_file = external_dir / "precious_file.txt"
+        precious_file.write_text("do not touch", encoding="utf-8")
+        external_skill_subdir = external_dir / "speckit-sym-escape-ext2-hello"
+        external_skill_subdir.mkdir()
+        external_skill_md = external_skill_subdir / "SKILL.md"
+        external_skill_md.write_text(
+            "---\n"
+            "name: speckit-sym-escape-ext2-hello\n"
+            "description: external marker-matching skill\n"
+            "metadata:\n"
+            "  source: extension:sym-escape-ext2\n"
+            "---\n\n"
+            "external body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini"
+        gemini_dir.mkdir()
+        os.symlink(str(external_dir), str(gemini_dir / "skills"))
+
+        manager = ExtensionManager(project_dir)
+        # Exercise the fallback scan (skills_dir=None) exactly as a full
+        # `remove()` would invoke it.
+        manager._unregister_extension_skills(
+            ["speckit-sym-escape-ext2-hello"], "sym-escape-ext2"
+        )
+
+        assert precious_file.exists(), (
+            "unrelated external content must survive: the fallback scan "
+            "must never delete through a symlinked candidate directory "
+            "escaping the project root"
+        )
+        assert external_skill_md.exists(), (
+            "the external marker-matching skill directory itself must "
+            "not be removed via a symlinked candidate path"
+        )
+
+    def test_unregister_extension_skills_fast_path_rejects_symlinked_explicit_dir(
+        self, project_dir, temp_dir
+    ):
+        """Explicit-skills_dir fast path must reject a symlinked directory
+        escaping the project root, mirroring the register-time call site
+        where a caller resolves a specific agent's directory without
+        side effects and passes it straight through.
+        """
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        external_dir = temp_dir / "external-skills-root3"
+        external_dir.mkdir()
+        precious_file = external_dir / "precious_file.txt"
+        precious_file.write_text("do not touch", encoding="utf-8")
+        external_skill_subdir = external_dir / "speckit-sym-escape-ext3-hello"
+        external_skill_subdir.mkdir()
+        (external_skill_subdir / "SKILL.md").write_text(
+            "---\n"
+            "name: speckit-sym-escape-ext3-hello\n"
+            "description: external marker-matching skill\n"
+            "metadata:\n"
+            "  source: extension:sym-escape-ext3\n"
+            "---\n\n"
+            "external body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini"
+        gemini_dir.mkdir()
+        symlinked_skills_dir = gemini_dir / "skills"
+        os.symlink(str(external_dir), str(symlinked_skills_dir))
+
+        manager = ExtensionManager(project_dir)
+        manager._unregister_extension_skills(
+            ["speckit-sym-escape-ext3-hello"],
+            "sym-escape-ext3",
+            skills_dir=symlinked_skills_dir,
+        )
+
+        assert precious_file.exists(), (
+            "unrelated external content must survive: the fast path must "
+            "refuse to delete through an explicit but symlinked skills_dir "
+            "escaping the project root"
+        )
+        assert external_skill_subdir.exists(), (
+            "the external marker-matching skill directory must not be "
+            "removed via an explicit symlinked directory argument"
+        )
+
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir
     ):
