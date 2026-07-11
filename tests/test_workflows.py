@@ -4771,8 +4771,10 @@ class TestWorkflowRegistry:
 
     def test_load_read_oserror_refuses_to_save_over_existing_data(self, project_dir, monkeypatch):
         """A transient read failure (e.g. temporarily unreadable file) must not be
-        treated the same as a corrupted/missing registry: saving afterwards would
-        silently discard every previously persisted workflow entry."""
+        treated the same as a corrupted/missing registry: constructing a registry
+        on top of it -- and thus any query a caller makes before ever calling
+        save() -- must fail closed instead of silently reporting an empty
+        registry that a caller could then act on and overwrite."""
         from specify_cli.workflows.catalog import WorkflowRegistry
         import builtins
 
@@ -4787,14 +4789,36 @@ class TestWorkflowRegistry:
             return real_open(file, mode, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "open", _raising_open)
-        registry2 = WorkflowRegistry(project_dir)
-        # The in-memory view may fall back to empty, but a save must not be
-        # allowed to persist that empty state over the real file on disk.
         with pytest.raises(OSError):
-            registry2.save()
+            WorkflowRegistry(project_dir)
         # The original entry must survive on disk untouched.
         data = json.loads(registry_path.read_text(encoding="utf-8"))
         assert "test-wf" in data["workflows"]
+
+    def test_load_read_oserror_fails_closed_not_silently_empty(self, project_dir, monkeypatch):
+        """Root cause: a registry that failed to read must never let a query
+        method (is_installed/get/list) report as if nothing were installed --
+        a caller (e.g. bundled workflow install) that only checks
+        is_installed() before writing a file would otherwise overwrite real
+        data on a transient read failure, long before any save() call could
+        catch it. The failure must surface at construction, before any query
+        or side effect is possible."""
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        import builtins
+
+        registry1 = WorkflowRegistry(project_dir)
+        registry1.add("test-wf", {"name": "Test", "version": "1.0.0"})
+        registry_path = registry1.registry_path
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file) == registry_path and "r" in mode:
+                raise OSError("simulated read failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        with pytest.raises(OSError):
+            WorkflowRegistry(project_dir)
 
 
 # ===== Workflow Catalog Tests =====
@@ -7676,6 +7700,26 @@ steps:
         assert "No workflows were eligible for update" in result.output
         assert "up to date!" not in result.output
 
+    def test_update_skip_message_accurate_for_bundled_source(self, project_dir, monkeypatch):
+        """A workflow registered with source "bundled" (e.g. the speckit
+        workflow installed by `specify init`) was never installed from a
+        local path or URL; the skip message must not claim otherwise."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        registry = WorkflowRegistry(project_dir)
+        registry.add(
+            "speckit",
+            {"name": "Speckit", "version": "1.0.0", "source": "bundled"},
+        )
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "update"])
+        assert result.exit_code == 0, result.output
+        assert "local path or URL" not in result.output
+        assert "re-add to update" in result.output
+
     def test_registry_add_rolls_back_memory_on_save_failure(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import WorkflowRegistry
 
@@ -7781,6 +7825,46 @@ steps:
         dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
         assert not dest_dir.exists()
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_dev_reinstall_copy_failure_restores_prior_file(self, project_dir, monkeypatch):
+        """_validate_and_install_local's copy2 call currently runs *before* the
+        try/except block that protects registry.add(): a copy2 failure (e.g. a
+        truncating partial write on a reinstall) is not caught at all, so the
+        existing backup-restore cleanup never runs and the prior working
+        workflow.yml is left corrupted. copy2 must be covered by the same
+        rollback-protected section as registry.add()."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._install_dev(runner, app, project_dir)
+        installed_yaml = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
+        original_bytes = installed_yaml.read_bytes()
+        original_registry_entry = WorkflowRegistry(project_dir).get("align-wf")
+
+        # Point --dev at a new version of the same workflow to trigger a
+        # reinstall (overwrite) rather than a fresh install.
+        (src / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
+        )
+
+        def boom(*args, **kwargs):
+            # Simulate a truncating partial write followed by an OSError,
+            # mirroring a real disk-full/interrupted-copy failure.
+            installed_yaml.write_bytes(b"")
+            raise OSError("disk full")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("shutil.copy2", boom)
+            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        assert installed_yaml.read_bytes() == original_bytes
+        assert WorkflowRegistry(project_dir).get("align-wf") == original_registry_entry
 
     def test_add_catalog_save_failure_leaves_no_orphan_directory(self, project_dir, monkeypatch):
         """Same guarantee as the local-install paths, but for a fresh catalog
@@ -8435,6 +8519,37 @@ steps:
         assert "corrupted" in result.output
         assert "OK Workflow" in result.output
 
+    def test_list_unreadable_registry_fails_closed_with_clean_error(
+        self, project_dir, monkeypatch
+    ):
+        """An unreadable registry file must produce a clean CLI error, not a
+        raw traceback and not a silent "nothing installed" list -- the latter
+        is exactly the fail-open state a caller could otherwise mistake for
+        "safe to (re)install", overwriting real files. Covers the read/query
+        boundary fix required at every WorkflowRegistry call site."""
+        import builtins
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        registry_path = WorkflowRegistry(project_dir).registry_path.resolve()
+        real_open = builtins.open
+
+        def _raising_open(file, mode="r", *args, **kwargs):
+            if Path(file).resolve() == registry_path and "r" in mode:
+                raise OSError("simulated read failure")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raising_open)
+        result = runner.invoke(app, ["workflow", "list"])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Error" in result.output
+
     def test_list_escapes_rich_markup_in_registry_fields(self, project_dir, monkeypatch):
         """User-editable name/description/id fields must not be parsed as Rich markup."""
         import json
@@ -8701,6 +8816,40 @@ steps:
         )
         assert result.exit_code != 0
         assert "disabled" in result.output
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_disable_blocks_run_when_installed_yaml_is_symlinked(
+        self, project_dir, monkeypatch
+    ):
+        """A disabled workflow's own workflow.yml being replaced with a symlink
+        must not bypass the disabled check. Resolving the path before mapping
+        it back to its registry owner would follow the symlink out of
+        .specify/workflows, fail to find an owner, and let engine.load_workflow
+        run the original symlink target anyway -- ownership must be
+        determined from the normalized *lexical* path (not resolve()), and a
+        symlinked path component in the installed tree must be refused."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        result = runner.invoke(app, ["workflow", "disable", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        installed_yaml = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
+        external_target = project_dir / "external-workflow.yml"
+        external_target.write_text(
+            self.WORKFLOW_YAML.format(version="9.9.9"), encoding="utf-8"
+        )
+        installed_yaml.unlink()
+        installed_yaml.symlink_to(external_target)
+
+        result = runner.invoke(app, ["workflow", "run", str(installed_yaml)])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "disabled" in result.output or "symlink" in result.output.lower()
 
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner

@@ -58,6 +58,25 @@ def _error_console(json_output: bool):
     return err_console if json_output else console
 
 
+def _open_workflow_registry(project_root: Path, out=None):
+    """Construct a WorkflowRegistry, exiting cleanly on an unreadable file.
+
+    WorkflowRegistry fails closed (raises OSError) at construction when its
+    file can't be read, rather than falling back to an empty registry a
+    caller could mistake for "nothing installed". Every CLI command that
+    opens a registry needs this same clean-error boundary.
+    """
+    from .catalog import WorkflowRegistry
+
+    try:
+        return WorkflowRegistry(project_root)
+    except OSError as exc:
+        (out or console).print(
+            f"[red]Error:[/red] Failed to read workflow registry: {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+
+
 def _parse_input_values(
     input_values: list[str] | None, *, json_output: bool = False
 ) -> dict[str, Any]:
@@ -369,8 +388,6 @@ def workflow_run(
 
     err = _error_console(json_output)
 
-    from .catalog import WorkflowRegistry
-
     registered_id: str | None = None
     registry_root = project_root
     if not is_file_source:
@@ -385,18 +402,35 @@ def workflow_run(
         registered_id = source
     else:
         # A direct YAML path may still point at an installed workflow's own
-        # file; map it back to its owning project and ID from the canonical
-        # path itself so the guard is independent of the caller's cwd.
-        resolved = source_path.resolve()
-        parts = resolved.parts
+        # file; map it back to its owning project and ID from the *lexical*
+        # path (collapsing .. / . without resolving symlinks) rather than
+        # resolve(): resolving first would follow a symlinked workflow.yml
+        # out of .specify/workflows, fail to find an owner, and let
+        # engine.load_workflow below run the symlink target unchecked --
+        # silently bypassing a disabled workflow's guard.
+        lexical = Path(os.path.normpath(str(source_path.absolute())))
+        parts = lexical.parts
         for i in range(len(parts) - 2):
             if parts[i] == ".specify" and parts[i + 1] == "workflows":
-                registry_root = Path(*parts[:i]) if i else Path(resolved.anchor or ".")
+                registry_root = Path(*parts[:i]) if i else Path(lexical.anchor or ".")
                 registered_id = parts[i + 2]
+                # A legitimately installed workflow's own directory tree
+                # never contains a symlink (workflow add/remove both refuse
+                # one at install time); one appearing here means the file
+                # actually loaded below would not be the file this ownership
+                # match is based on, so refuse rather than silently mismatch.
+                for k in range(i + 2, len(parts) + 1):
+                    if Path(*parts[:k]).is_symlink():
+                        err.print(
+                            "[red]Error:[/red] Refusing to run: "
+                            f".specify/workflows/{_escape_markup(registered_id)} "
+                            "contains a symlinked path component"
+                        )
+                        raise typer.Exit(1)
                 break
 
     if registered_id is not None:
-        installed_meta = WorkflowRegistry(registry_root).get(registered_id)
+        installed_meta = _open_workflow_registry(registry_root, err).get(registered_id)
         if isinstance(installed_meta, dict) and not installed_meta.get("enabled", True):
             err.print(
                 f"[red]Error:[/red] Workflow '{_escape_markup(registered_id)}' is disabled. "
@@ -612,10 +646,8 @@ def workflow_status(
 @workflow_app.command("list")
 def workflow_list():
     """List installed workflows."""
-    from .catalog import WorkflowRegistry
-
     project_root = _require_specify_project()
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
     installed = registry.list()
 
     if not installed:
@@ -647,11 +679,10 @@ def workflow_add(
     from_url: str | None = typer.Option(None, "--from", help="Install from a custom URL"),
 ):
     """Install a workflow from catalog, URL, or local path."""
-    from .catalog import WorkflowRegistry
     from .engine import WorkflowDefinition
 
     project_root = _require_specify_project()
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     # With --from, source names the expected workflow ID: validate it up
     # front so a URL/path/typo fails without a network fetch.
@@ -705,17 +736,9 @@ def workflow_add(
         backup_bytes = (
             dest_file.read_bytes() if existed_before and dest_file.is_file() else None
         )
-        dest_dir.mkdir(parents=True, exist_ok=True)
         import shutil
-        shutil.copy2(yaml_path, dest_file)
-        try:
-            registry.add(definition.id, {
-                "name": definition.name,
-                "version": definition.version,
-                "description": definition.description,
-                "source": source_label,
-            })
-        except OSError as exc:
+
+        def _cleanup_failed_install() -> None:
             # Don't leave an orphan directory behind for a fresh install; for
             # a reinstall over an existing local workflow, restore the prior
             # workflow.yml instead of clobbering it with the failed update.
@@ -724,6 +747,26 @@ def workflow_add(
                     dest_file.write_bytes(backup_bytes)
             else:
                 shutil.rmtree(dest_dir, ignore_errors=True)
+
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(yaml_path, dest_file)
+        except OSError as exc:
+            _cleanup_failed_install()
+            console.print(
+                f"[red]Error:[/red] Failed to install workflow "
+                f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+        try:
+            registry.add(definition.id, {
+                "name": definition.name,
+                "version": definition.version,
+                "description": definition.description,
+                "source": source_label,
+            })
+        except OSError as exc:
+            _cleanup_failed_install()
             console.print(
                 f"[red]Error:[/red] Failed to update workflow registry for "
                 f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
@@ -1080,13 +1123,11 @@ def workflow_remove(
     workflow_id: str = typer.Argument(..., help="Workflow ID to uninstall"),
 ):
     """Uninstall a workflow."""
-    from .catalog import WorkflowRegistry
-
     project_root = _require_specify_project()
     workflows_dir = project_root / ".specify" / "workflows"
     _validate_workflow_id_or_exit(workflow_id)
 
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
 
     if not registry.is_installed(workflow_id):
         console.print(f"[red]Error:[/red] Workflow '{workflow_id}' is not installed")
@@ -1172,10 +1213,10 @@ def workflow_update(
     """Update installed workflow(s) to the latest catalog version."""
     from packaging import version as pkg_version
 
-    from .catalog import WorkflowCatalog, WorkflowCatalogError, WorkflowRegistry
+    from .catalog import WorkflowCatalog, WorkflowCatalogError
 
     project_root = _require_specify_project()
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     _reject_unsafe_dir(project_root / ".specify", ".specify")
     _reject_unsafe_dir(workflows_dir, ".specify/workflows")
@@ -1205,7 +1246,7 @@ def workflow_update(
             console.print(f"⚠  {safe_id}: Registry entry is corrupted (skipping)")
             continue
         if metadata.get("source") != "catalog":
-            console.print(f"⚠  {safe_id}: Installed from a local path or URL — re-add to update (skipping)")
+            console.print(f"⚠  {safe_id}: Not installed from a catalog — re-add to update (skipping)")
             continue
         try:
             installed_version = pkg_version.Version(str(metadata.get("version")))
@@ -1310,10 +1351,8 @@ def workflow_enable(
     workflow_id: str = typer.Argument(..., help="Workflow ID to enable"),
 ):
     """Enable a disabled workflow."""
-    from .catalog import WorkflowRegistry
-
     project_root = _require_specify_project()
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
     metadata = registry.get(workflow_id)
     if metadata is None:
         console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
@@ -1344,10 +1383,8 @@ def workflow_disable(
     workflow_id: str = typer.Argument(..., help="Workflow ID to disable"),
 ):
     """Disable a workflow without removing it."""
-    from .catalog import WorkflowRegistry
-
     project_root = _require_specify_project()
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
     metadata = registry.get(workflow_id)
     if metadata is None:
         console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
@@ -1416,13 +1453,13 @@ def workflow_info(
     workflow_id: str = typer.Argument(..., help="Workflow ID"),
 ):
     """Show workflow details and step graph."""
-    from .catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
+    from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowEngine
 
     project_root = _require_specify_project()
 
     # Check installed first
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
     installed = registry.get(workflow_id)
 
     engine = WorkflowEngine(project_root)
