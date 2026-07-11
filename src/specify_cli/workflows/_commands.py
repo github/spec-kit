@@ -266,11 +266,30 @@ def _stage_workflow_file(dest_dir: Path) -> Path:
     """Reserve a same-directory staging file so new/updated workflow.yml
     content can be written and validated without ever touching (and risking
     truncating) an existing destination file before the final atomic swap.
-    Shared by the local-install and catalog-install paths."""
+    Shared by the local-install and catalog-install paths.
+
+    If dest_dir did not already exist, this call creates it; if mkstemp then
+    fails (disk full/EMFILE/quota), the freshly-created directory is removed
+    again via a guarded rmdir (never a broad rmtree, so any concurrently
+    written content is left untouched) before the original OSError is
+    re-raised unchanged. A pre-existing dest_dir (reinstall) is never
+    touched by this cleanup."""
     import tempfile
 
+    created_dir = not dest_dir.exists()
     dest_dir.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=dest_dir, prefix=".workflow.yml.", suffix=".tmp")
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=dest_dir, prefix=".workflow.yml.", suffix=".tmp")
+    except OSError:
+        if created_dir:
+            try:
+                dest_dir.rmdir()
+            except OSError as cleanup_exc:
+                console.print(
+                    "[yellow]Warning:[/yellow] Failed to remove incomplete "
+                    f"workflow directory: {_escape_markup(str(cleanup_exc))}"
+                )
+        raise
     os.close(fd)
     return Path(tmp_name)
 

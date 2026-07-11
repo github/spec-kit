@@ -8124,6 +8124,85 @@ steps:
         assert not dest_dir.exists()
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
+    @pytest.mark.parametrize("mode", ["dev", "local", "from_url"])
+    def test_add_fresh_install_mkstemp_failure_leaves_no_orphan_directory(
+        self, project_dir, monkeypatch, mode
+    ):
+        """_stage_workflow_file() does mkdir(dest_dir) then mkstemp() inside
+        it. For a fresh install (no prior directory), if mkdir succeeds but
+        mkstemp then fails (disk full/EMFILE/quota), the freshly-created
+        empty dest_dir must not be left orphaned -- it must be removed, and
+        the original mkstemp error must still be reported cleanly."""
+        import contextlib
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        if mode == "from_url":
+            data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+            args = ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"]
+            url_patch = patch(
+                "specify_cli.authentication.http.open_url",
+                side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
+            )
+        else:
+            src = self._write_workflow_dir(project_dir)
+            args = ["workflow", "add", str(src)] + (["--dev"] if mode == "dev" else [])
+            url_patch = contextlib.nullcontext()
+
+        with url_patch, pytest.MonkeyPatch.context() as mp:
+            mp.setattr("tempfile.mkstemp", boom)
+            result = runner.invoke(app, args)
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        assert not dest_dir.exists(), "fresh-install dest_dir left orphaned after mkstemp failure"
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_reinstall_mkstemp_failure_preserves_preexisting_directory(
+        self, project_dir, monkeypatch
+    ):
+        """A pre-existing (reinstall) dest_dir must never be removed by the
+        mkstemp-failure cleanup -- only a directory _stage_workflow_file
+        itself just created."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._install_dev(runner, app, project_dir)
+        installed_yaml = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
+        original_bytes = installed_yaml.read_bytes()
+        original_registry_entry = WorkflowRegistry(project_dir).get("align-wf")
+
+        (src / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
+        )
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("tempfile.mkstemp", boom)
+            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        assert installed_yaml.parent.is_dir()
+        assert installed_yaml.read_bytes() == original_bytes
+        assert WorkflowRegistry(project_dir).get("align-wf") == original_registry_entry
+
     def test_add_dev_reinstall_copy_failure_leaves_prior_file_untouched(
         self, project_dir, monkeypatch
     ):
@@ -8363,6 +8442,51 @@ steps:
         assert result.output.strip() != ""
         dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
         assert not dest_dir.exists()
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_catalog_fresh_install_mkstemp_failure_leaves_no_orphan_directory(
+        self, project_dir, monkeypatch
+    ):
+        """Same guarantee as the local-install fresh-install case, but for a
+        fresh catalog install: if _stage_workflow_file's mkdir succeeds but
+        its mkstemp then fails, the freshly-created empty directory must not
+        be left orphaned."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        runner = CliRunner()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
+            )
+            mp.setattr("tempfile.mkstemp", boom)
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        assert not dest_dir.exists(), "fresh-install dest_dir left orphaned after mkstemp failure"
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
     def test_add_catalog_rejects_oversized_content_length(self, project_dir, monkeypatch):
