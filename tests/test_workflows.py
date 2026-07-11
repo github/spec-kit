@@ -8851,6 +8851,60 @@ steps:
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "disabled" in result.output or "symlink" in result.output.lower()
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_run_refuses_symlinked_specify_dir_hiding_disabled_workflow(
+        self, temp_dir, monkeypatch
+    ):
+        """A victim project's own .specify directory being a symlink to an
+        attacker-controlled tree must not bypass the disabled-workflow guard.
+        _reject_unsafe_workflow_storage only checks the *cwd's* project root
+        (unrelated here); the id/leaf symlink-component loop only checks
+        components from the id directory onward, missing .specify/
+        .specify/workflows themselves. The ownership check must reject an
+        unsafe .specify/.specify-workflows for the actual path-derived
+        registry root before ever consulting the registry -- it must not
+        rely on WorkflowRegistry's own symlinked-parent handling, which
+        silently returns an empty registry instead of raising and so is not
+        a safety signal a caller can depend on."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        victim = temp_dir / "victim"
+        victim.mkdir()
+        attacker_real = temp_dir / "attacker-real"
+        (attacker_real / "workflows" / "evil").mkdir(parents=True)
+        (attacker_real / "workflows" / "evil" / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        (attacker_real / "workflows" / "workflow-registry.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0",
+                    "workflows": {
+                        "evil": {
+                            "name": "Evil",
+                            "version": "1.0.0",
+                            "source": "dev",
+                            "enabled": False,
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (victim / ".specify").symlink_to(attacker_real)
+
+        unrelated_cwd = temp_dir / "unrelated-cwd"
+        unrelated_cwd.mkdir()
+        monkeypatch.chdir(unrelated_cwd)
+
+        runner = CliRunner()
+        target = victim / ".specify" / "workflows" / "evil" / "workflow.yml"
+        result = runner.invoke(app, ["workflow", "run", str(target)])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "symlink" in result.output.lower()
+
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app

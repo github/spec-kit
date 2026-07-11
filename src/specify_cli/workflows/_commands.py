@@ -414,6 +414,20 @@ def workflow_run(
             if parts[i] == ".specify" and parts[i + 1] == "workflows":
                 registry_root = Path(*parts[:i]) if i else Path(lexical.anchor or ".")
                 registered_id = parts[i + 2]
+                # The path-derived registry_root here may differ from the
+                # cwd's project_root already checked by
+                # _reject_unsafe_workflow_storage above (e.g. this path
+                # points into another project entirely, or this project's
+                # own .specify is itself a symlink to an attacker-controlled
+                # tree) -- check it explicitly rather than trusting that
+                # cwd-scoped guard, and don't rely on WorkflowRegistry's own
+                # symlinked-parent handling below (it silently substitutes
+                # an empty registry instead of raising, so a query against
+                # it can't be trusted as a safety signal here).
+                _reject_unsafe_dir(registry_root / ".specify", ".specify")
+                _reject_unsafe_dir(
+                    registry_root / ".specify" / "workflows", ".specify/workflows"
+                )
                 # A legitimately installed workflow's own directory tree
                 # never contains a symlink (workflow add/remove both refuse
                 # one at install time); one appearing here means the file
