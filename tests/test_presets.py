@@ -3745,10 +3745,9 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert "speckit-specify" not in metadata.get("registered_skills", {}).get("qwen", [])
 
-    def test_no_skills_registered_when_no_skill_dir_exists(self, project_dir, temp_dir):
-        """Skills should not be created when no existing skill dir is found."""
-        self._write_init_options(project_dir, ai="claude")
-        # Don't create skills dir — simulate skills mode never created them
+    def test_no_skills_registered_when_skills_mode_disabled(self, project_dir, temp_dir):
+        """Skills should not be created when skills mode is disabled."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=False)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -5235,6 +5234,32 @@ class TestPresetSkills:
             )
             assert "Core specify body" in content
 
+    def test_native_skill_activation_recreates_deleted_skills_root(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "native-root-recovery-preset",
+            "speckit.specify",
+            "Native root recovery",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        assert not codex_skills_dir.exists()
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        skill_file = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:native-root-recovery-preset" in skill_file.read_text()
+        metadata = manager.registry.get("native-root-recovery-preset")
+        assert "speckit.specify" in metadata["registered_commands"]["codex"]
+
     def test_rescaffold_migrates_legacy_flat_list_registered_skills(
         self, project_dir, temp_dir
     ):
@@ -6680,6 +6705,37 @@ class TestPresetSkills:
             "opencode's tracking must be preserved untouched"
         )
 
+    def test_unregister_agent_artifacts_deletes_marker_owned_skill(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "deactivated-skill-preset",
+            "speckit.specify",
+            "Deactivation cleanup",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_dir = skills_dir / "speckit-specify"
+        assert "preset:deactivated-skill-preset" in (
+            skill_dir / "SKILL.md"
+        ).read_text()
+
+        manager.unregister_agent_artifacts("copilot")
+
+        assert not skill_dir.exists()
+
     def test_unregister_native_agent_persists_skills_metadata_pop(
         self, project_dir, temp_dir
     ):
@@ -6807,11 +6863,10 @@ class TestPresetSkills:
 
         manager.unregister_agent_artifacts("copilot")
 
-        assert "preset:switch-legacy-skill-preset" not in copilot_skill.read_text(), (
-            "copilot's own skill override must be restored when switching "
-            "away from copilot"
+        assert not copilot_skill.parent.exists(), (
+            "copilot's marker-owned preset skill must be deleted when "
+            "switching away from copilot"
         )
-        assert "Core specify body" in copilot_skill.read_text()
 
         assert "preset:switch-legacy-skill-preset" in claude_skill.read_text(), (
             "claude's own, separately-written mirror must survive "

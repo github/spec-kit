@@ -726,6 +726,7 @@ class PresetManager:
             manifest.id,
             preset_dir,
             self.project_root,
+            create_missing_active_skills_dir=True,
             only_agent=active_agent,
         )
 
@@ -1029,7 +1030,6 @@ class PresetManager:
             return
 
         for pack_id, metadata in list(self.registry.list().items()):
-            pack_dir = self.presets_dir / pack_id
             updates: Dict[str, Any] = {}
 
             raw_skills = metadata.get("registered_skills", [])
@@ -1128,7 +1128,9 @@ class PresetManager:
                 or native_skills_entry_removed
             ):
                 if agent_skill_names:
-                    self._unregister_skills({agent_name: agent_skill_names}, pack_dir)
+                    self._delete_agent_preset_skills(
+                        agent_name, agent_skill_names, pack_id
+                    )
                 remaining = {
                     other_agent: names
                     for other_agent, names in registered_skills_all.items()
@@ -2579,6 +2581,43 @@ class PresetManager:
         ]
         self._unregister_skills_in_dir(safe_names, skills_dir, selected_ai)
         return {skills_dir: (selected_ai, safe_names)}
+
+    def _delete_agent_preset_skills(
+        self, agent_name: str, skill_names: List[str], pack_id: str
+    ) -> None:
+        """Delete still-preset-owned skills when an agent is deactivated."""
+        skills_dir = self._safe_skills_dir_for_agent(agent_name)
+        if skills_dir is None:
+            return
+
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        marker = f"preset:{pack_id}"
+        for skill_name in skill_names:
+            if not self._is_safe_registry_skill_name(skill_name):
+                continue
+            skill_subdir = skills_dir / skill_name
+            if not self._validate_skill_subdir(
+                skill_subdir, create=False, skills_root=skills_dir
+            ):
+                continue
+            skill_file = skill_subdir / "SKILL.md"
+            if not skill_file.is_file():
+                continue
+            try:
+                content = skill_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            frontmatter, _ = registrar.parse_frontmatter(content)
+            metadata = frontmatter.get("metadata")
+            source = (
+                metadata.get("source")
+                if isinstance(metadata, dict)
+                else None
+            )
+            if source == marker:
+                shutil.rmtree(skill_subdir)
 
     def _unregister_skills_in_dir(
         self, skill_names: List[str], skills_dir: Path, selected_ai: Optional[str]
