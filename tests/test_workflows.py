@@ -1472,6 +1472,30 @@ class TestShellStep:
         assert result.status == StepStatus.FAILED
         assert "5 seconds" in (result.error or "")
 
+    def test_execute_fails_cleanly_on_invalid_timeout(self, monkeypatch):
+        """execute() must fail the step (not raise) on an invalid timeout even
+        when validate() was skipped — the engine does not auto-validate step
+        config, so an unvalidated string/bool/non-finite timeout would
+        otherwise crash subprocess.run() and take down the whole run."""
+        import subprocess
+
+        from specify_cli.workflows.steps.shell import ShellStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("subprocess.run should not run on invalid timeout")
+
+        monkeypatch.setattr(subprocess, "run", fail_if_called)
+        step = ShellStep()
+        # A string would raise TypeError; ``True`` would silently become a 1s
+        # timeout (bool is an int subclass); ``.inf`` would raise at runtime.
+        for bad in ("30", True, float("inf"), 0):
+            result = step.execute(
+                {"id": "qa", "run": "echo hi", "timeout": bad}, StepContext()
+            )
+            assert result.status == StepStatus.FAILED
+            assert "'timeout' must be a positive number" in (result.error or "")
+
     def test_validate_rejects_non_positive_timeout(self):
         from specify_cli.workflows.steps.shell import ShellStep
 
