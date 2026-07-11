@@ -15,6 +15,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "agy",
     "auggie",
     "claude",
+    "cmdc",
     "cline",
     "codebuddy",
     "codex",

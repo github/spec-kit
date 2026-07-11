@@ -52,6 +52,7 @@ def _register_builtins() -> None:
     from .auggie import AuggieIntegration
     from .bob import BobIntegration
     from .claude import ClaudeIntegration
+    from .cmdc import CmcIntegration
     from .cline import ClineIntegration
     from .codebuddy import CodebuddyIntegration
     from .codex import CodexIntegration
@@ -88,6 +89,7 @@ def _register_builtins() -> None:
     _register(AuggieIntegration())
     _register(BobIntegration())
     _register(ClaudeIntegration())
+    _register(CmcIntegration())
     _register(ClineIntegration())
     _register(CodebuddyIntegration())
     _register(CodexIntegration())
