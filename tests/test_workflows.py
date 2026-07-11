@@ -4231,7 +4231,7 @@ steps:
         state = engine.execute(definition)
 
         stdout = state.step_results["check-dir"]["output"]["stdout"]
-        assert stdout.strip() == f"DIR={wf_dir}"
+        assert stdout.strip() == f"DIR={wf_dir.resolve()}"
 
     def test_from_string_has_empty_workflow_dir(self, project_dir):
         """String-loaded workflows have empty workflow_dir."""
@@ -4279,7 +4279,7 @@ steps:
         state = engine.execute(definition)
 
         stdout = state.step_results["print-env"]["output"]["stdout"]
-        assert stdout.strip() == str(wf_dir)
+        assert stdout.strip() == str(wf_dir.resolve())
 
     def test_shell_step_no_env_var_when_workflow_dir_unset(self, project_dir, monkeypatch):
         """Shell steps do not set SPECKIT_WORKFLOW_DIR for string-loaded workflows."""
@@ -4336,7 +4336,7 @@ steps:
         # Execute -- gate pauses the workflow
         state = engine.execute(definition)
         assert state.status == RunStatus.PAUSED
-        assert state.workflow_dir == str(wf_dir)
+        assert state.workflow_dir == str(wf_dir.resolve())
 
         # Simulate gate approval by patching the gate step
         from unittest.mock import patch
@@ -4350,7 +4350,7 @@ steps:
 
         assert state.status == RunStatus.COMPLETED
         stdout = state.step_results["after-gate"]["output"]["stdout"]
-        assert stdout.strip() == f"DIR={wf_dir}"
+        assert stdout.strip() == f"DIR={wf_dir.resolve()}"
 
     def test_workflow_dir_persisted_in_state(self, project_dir):
         """workflow_dir is persisted in state.json and survives load/save."""
@@ -4376,7 +4376,71 @@ steps:
 
         # Reload state from disk and verify workflow_dir survived
         loaded = RunState.load(state.run_id, project_dir)
-        assert loaded.workflow_dir == str(wf_dir)
+        assert loaded.workflow_dir == str(wf_dir.resolve())
+
+    def test_installed_workflow_has_workflow_dir(self, project_dir):
+        """Installed-by-ID workflows get workflow_dir pointing to the
+        installation directory (.specify/workflows/<id>/).
+        """
+        from specify_cli.workflows.engine import WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        wf_id = "installed-wfdir"
+        install_dir = project_dir / ".specify" / "workflows" / wf_id
+        install_dir.mkdir(parents=True)
+        (install_dir / "workflow.yml").write_text("""
+schema_version: "1.0"
+workflow:
+  id: "installed-wfdir"
+  name: "Installed WfDir"
+  version: "1.0.0"
+steps:
+  - id: check-dir
+    type: shell
+    run: "echo DIR={{ context.workflow_dir }}"
+""")
+        engine = WorkflowEngine(project_dir)
+        definition = engine.load_workflow(wf_id)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        stdout = state.step_results["check-dir"]["output"]["stdout"]
+        assert stdout.strip() == f"DIR={install_dir.resolve()}"
+
+    def test_workflow_dir_is_resolved_to_absolute(self, project_dir):
+        """workflow_dir is resolved to an absolute path even when the
+        source path is relative.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        import os
+
+        wf_dir = project_dir / "rel-test"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "workflow.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "rel-path"
+  name: "Relative Path"
+  version: "1.0.0"
+steps:
+  - id: check
+    type: shell
+    run: "echo ok"
+""")
+        # Load via a relative path
+        saved_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            rel_path = Path("rel-test/workflow.yml")
+            definition = WorkflowDefinition.from_yaml(rel_path)
+            engine = WorkflowEngine(project_dir)
+            state = engine.execute(definition)
+        finally:
+            os.chdir(saved_cwd)
+
+        assert Path(state.workflow_dir).is_absolute()
+        assert state.workflow_dir == str(wf_dir.resolve())
 
 
 # ===== continue_on_error Tests =====

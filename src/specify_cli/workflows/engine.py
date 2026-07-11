@@ -701,7 +701,7 @@ class WorkflowEngine:
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
         state.inputs = resolved_inputs
         workflow_dir = (
-            str(definition.source_path.parent)
+            str(definition.source_path.resolve().parent)
             if definition.source_path is not None
             else None
         )
