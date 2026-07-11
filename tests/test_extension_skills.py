@@ -103,6 +103,7 @@ def _create_extension_dir(temp_dir: Path, ext_id: str = "test-ext") -> Path:
         "# Hello Command\n"
         "\n"
         "Run this to say hello.\n"
+        f"First run /speckit.{ext_id}.world to set up.\n"
         "$ARGUMENTS\n"
     )
 
@@ -326,6 +327,28 @@ class TestExtensionSkillRegistration:
         assert "author: github-spec-kit" in content
         assert "compatibility:" in content
         assert "Run this to say hello." in content
+
+    def test_skill_body_command_refs_are_hyphenated(self, skills_project, extension_dir):
+        """In-body `speckit.x.y` references must be rewritten to the hyphenated
+        skill spelling for skills-based integrations (#3451).
+
+        Skills agents dispatch `speckit-x-y` skills, not `/speckit.x.y` slash
+        commands, so a verbatim dotted reference copied into the skill body is
+        not runnable. The skill dir name and frontmatter hook refs are already
+        hyphenated; the body was the missing piece."""
+        project_dir, skills_dir = skills_project
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        content = skill_file.read_text()
+
+        # The dotted cross-command reference must be gone from the body...
+        assert "speckit.test-ext.world" not in content
+        # ...rewritten to the hyphenated skill name.
+        assert "speckit-test-ext-world" in content
 
     def test_skill_md_has_parseable_yaml(self, skills_project, extension_dir):
         """Generated SKILL.md should contain valid, parseable YAML frontmatter."""

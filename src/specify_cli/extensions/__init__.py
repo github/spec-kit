@@ -1081,6 +1081,13 @@ class ExtensionManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
+            # Rewrite in-body command references (`speckit.foo.bar`) to the
+            # hyphenated skill spelling. Skills-based integrations dispatch
+            # commands as `speckit-foo-bar` skills, not `/speckit.foo.bar`
+            # slash commands, so a verbatim dotted reference is not runnable
+            # (see #3451). The skill dir name and frontmatter hook refs are
+            # already hyphenated elsewhere; the body was the missing piece.
+            body = registrar._hyphenate_body_refs(body)
 
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
