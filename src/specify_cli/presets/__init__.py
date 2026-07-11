@@ -854,11 +854,28 @@ class PresetManager:
                     # direction is already register-new-then-remove-old:
                     # _register_commands (the replacement) ran unconditionally
                     # above and only reaches here once it has already
-                    # succeeded, so this cleanup happens only after the new
-                    # command artifact is confirmed in place (#2948).
-                    self._unregister_skills(
-                        {agent_name: merged_skills.pop(agent_name)}, pack_dir
-                    )
+                    # succeeded — but that call can still have returned
+                    # empty or partial results (missing source template,
+                    # safety-validation skip, corrupted manifest), so only
+                    # retire the subset of stale skills whose corresponding
+                    # command name was actually returned for this agent;
+                    # anything unreplaced stays tracked and on disk (#2948).
+                    stale_skill_names = merged_skills[agent_name]
+                    replaced_skill_names: set = set()
+                    for cmd_name in registered_commands.get(agent_name) or []:
+                        modern_name, legacy_name = self._skill_names_for_command(cmd_name)
+                        replaced_skill_names.add(modern_name)
+                        replaced_skill_names.add(legacy_name)
+                    to_remove = [n for n in stale_skill_names if n in replaced_skill_names]
+                    remaining_stale = [
+                        n for n in stale_skill_names if n not in replaced_skill_names
+                    ]
+                    if to_remove:
+                        self._unregister_skills({agent_name: to_remove}, pack_dir)
+                    if remaining_stale:
+                        merged_skills[agent_name] = remaining_stale
+                    else:
+                        merged_skills.pop(agent_name, None)
                 # A legacy flat-list registered_skills value (predating
                 # per-agent provenance) must migrate to the dict format on
                 # disk even when the rescaffolded names are unchanged from
@@ -874,14 +891,32 @@ class PresetManager:
                 if merged_skills != existing_skills or needs_migration:
                     self.registry.update(pack_id, {"registered_skills": merged_skills})
 
-                # The skills phase above completed without raising, so the
-                # replacement artifact is confirmed — now it's safe to
-                # remove the stale command-mode artifact deferred earlier
-                # (#2948).
+                # The skills phase above completed without raising, but a
+                # non-raising result can still be empty or partial (missing
+                # source template, safety-validation skip, corrupted
+                # manifest) — retiring every stale command purely on "did
+                # not raise" would delete a command whose replacement skill
+                # never actually landed, leaving neither artifact. Only
+                # retire the subset of stale commands whose corresponding
+                # skill name was actually returned for this agent; anything
+                # unreplaced stays tracked and on disk (#2948).
                 if stale_command_names:
-                    self._unregister_commands({agent_name: stale_command_names})
-                    merged_commands.pop(agent_name, None)
-                    self.registry.update(pack_id, {"registered_commands": merged_commands})
+                    replaced_skill_names = set(registered_skills.get(agent_name) or [])
+                    fully_replaced = []
+                    remaining_stale = []
+                    for cmd_name in stale_command_names:
+                        modern_name, legacy_name = self._skill_names_for_command(cmd_name)
+                        if modern_name in replaced_skill_names or legacy_name in replaced_skill_names:
+                            fully_replaced.append(cmd_name)
+                        else:
+                            remaining_stale.append(cmd_name)
+                    if fully_replaced:
+                        self._unregister_commands({agent_name: fully_replaced})
+                        if remaining_stale:
+                            merged_commands[agent_name] = remaining_stale
+                        else:
+                            merged_commands.pop(agent_name, None)
+                        self.registry.update(pack_id, {"registered_commands": merged_commands})
             except Exception as pack_err:
                 from .. import _print_cli_warning
 

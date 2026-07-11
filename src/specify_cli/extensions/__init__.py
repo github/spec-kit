@@ -2103,9 +2103,26 @@ class ExtensionManager:
                                 for name in existing_skills
                                 if (agent_skills_dir / name).is_dir()
                             ]
-                            if owned_here:
+                            # Only retire a skill mirror when the
+                            # replacement command for the same logical
+                            # command was actually written this call —
+                            # `registered` (from register_commands_for_agent
+                            # above) may be empty or a partial subset
+                            # (missing source file, safety rejection,
+                            # corrupted manifest), and removing a skill
+                            # mirror whose command replacement never
+                            # landed would leave neither artifact (#2948).
+                            replaced_skill_names = {
+                                HookExecutor._skill_name_from_command(cmd_name)
+                                for cmd_name in (registered or [])
+                            }
+                            to_remove = [
+                                name for name in owned_here
+                                if name in replaced_skill_names
+                            ]
+                            if to_remove:
                                 self._unregister_extension_skills(
-                                    owned_here, ext_id, skills_dir=agent_skills_dir
+                                    to_remove, ext_id, skills_dir=agent_skills_dir
                                 )
                                 # registered_skills is a single flat list
                                 # shared across every agent this extension
@@ -2132,17 +2149,41 @@ class ExtensionManager:
                         # registration is confirmed, so the stale
                         # command-mode artifact can finally be removed
                         # without risking a transient state where neither
-                        # artifact exists (#2948).
+                        # artifact exists. Only retire a stale command
+                        # whose corresponding skill was actually returned
+                        # this call — `registered_skills` may be empty or
+                        # a partial subset (missing source file, safety
+                        # rejection, corrupted manifest), and unregistering
+                        # a command whose skill replacement never landed
+                        # would leave neither artifact (#2948).
                         if deferred_stale_commands:
-                            registrar.unregister_commands(
-                                {agent_name: deferred_stale_commands}, self.project_root
-                            )
-                            registered_commands = metadata.get("registered_commands", {})
-                            if isinstance(registered_commands, dict):
-                                new_registered = copy.deepcopy(registered_commands)
-                                new_registered.pop(agent_name, None)
-                                if new_registered != registered_commands:
-                                    updates["registered_commands"] = new_registered
+                            replaced_skill_names = set(registered_skills or [])
+                            fully_replaced = [
+                                cmd_name for cmd_name in deferred_stale_commands
+                                if HookExecutor._skill_name_from_command(cmd_name)
+                                in replaced_skill_names
+                            ]
+                            if fully_replaced:
+                                registrar.unregister_commands(
+                                    {agent_name: fully_replaced}, self.project_root
+                                )
+                                registered_commands = metadata.get(
+                                    "registered_commands", {}
+                                )
+                                if isinstance(registered_commands, dict) and (
+                                    registered_commands.get(agent_name)
+                                ):
+                                    new_registered = copy.deepcopy(registered_commands)
+                                    remaining_commands = [
+                                        c for c in new_registered[agent_name]
+                                        if c not in fully_replaced
+                                    ]
+                                    if remaining_commands:
+                                        new_registered[agent_name] = remaining_commands
+                                    else:
+                                        new_registered.pop(agent_name, None)
+                                    if new_registered != registered_commands:
+                                        updates["registered_commands"] = new_registered
 
                 if updates:
                     self.registry.update(ext_id, updates)

@@ -3186,6 +3186,44 @@ class TestPresetSkills:
             yaml.dump(manifest_data, f)
         return preset_dir
 
+    def _create_multi_command_preset(self, temp_dir, preset_id, command_names):
+        """Install-directory helper for a preset with more than one command.
+
+        Used to prove partial-result handling: a command's own template
+        entry can genuinely be skipped by registration (missing source
+        file, safety-validation rejection) while sibling commands in the
+        same preset still succeed.
+        """
+        preset_dir = temp_dir / preset_id
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        templates = []
+        for command_name in command_names:
+            command_file = f"{command_name}.md"
+            (preset_dir / "commands" / command_file).write_text(
+                f"---\ndescription: {command_name} test command\n---\n\n"
+                f"{command_name} body\n"
+            )
+            templates.append({
+                "type": "command",
+                "name": command_name,
+                "file": f"commands/{command_file}",
+            })
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": preset_id,
+                "name": preset_id,
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"templates": templates},
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+        return preset_dir
+
     def test_skill_overridden_on_preset_install(self, project_dir, temp_dir):
         """When skills mode was used, a preset command override should update the skill."""
         # Simulate skills mode having been used: write init-options + create skill
@@ -4484,6 +4522,260 @@ class TestPresetSkills:
             "command file when the skills replacement failed, or a later "
             "removal/rescaffold will believe there is nothing to clean up "
             "even though the file is still on disk (#2948)"
+        )
+
+    def test_toggle_command_to_skills_empty_result_preserves_old_command(
+        self, project_dir, temp_dir
+    ):
+        """A non-raising but empty skills result must not delete the old command.
+
+        Before the fix, the stale command-mode artifact was retired as
+        soon as ``_register_skills()`` completed without raising —
+        regardless of whether it actually wrote anything for this agent.
+        Deleting the preset's own command source file (simulating a
+        missing/corrupted override) makes ``_register_skills`` return
+        ``{}`` for copilot without raising at all, which must leave the
+        old command file and its tracking untouched (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-empty-result-preset", "speckit.specify",
+            "Toggle empty-result test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        assert cmd_file.exists(), (
+            "sanity: command mode should have written copilot's command file"
+        )
+
+        # Remove the *installed* copy of the preset's source file (not the
+        # original temp source) so _register_skills can find nothing to
+        # render — a real "missing source" case, not an exception — leaving
+        # registered_skills empty for copilot.
+        (manager.presets_dir / "toggle-empty-result-preset" / "commands" / "speckit.specify.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert cmd_file.exists(), (
+            "an empty (non-raising) skills registration result must not "
+            "cause the old command-mode artifact to be deleted (#2948)"
+        )
+        metadata = manager.registry.get("toggle-empty-result-preset")
+        assert metadata["registered_commands"].get("copilot"), (
+            "registered_commands must keep tracking copilot's still-live "
+            "command file when nothing was actually replaced (#2948)"
+        )
+        skill_file = project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        assert not skill_file.exists(), (
+            "sanity: no skill should have been written when the source "
+            "was missing"
+        )
+
+    def test_toggle_command_to_skills_partial_result_only_removes_replaced_command(
+        self, project_dir, temp_dir
+    ):
+        """Only the command whose skill replacement actually landed is retired.
+
+        A two-command preset where one command's source file goes missing
+        right before the toggle: ``_register_skills`` genuinely returns a
+        partial result (one name present, one silently skipped) without
+        raising. The command whose skill was written must be retired; the
+        other must keep both its old command file and its registry
+        tracking, since no replacement for it actually landed (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset(
+            temp_dir, "toggle-partial-result-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        specify_cmd_file = copilot_commands_dir / "speckit.specify.agent.md"
+        plan_cmd_file = copilot_commands_dir / "speckit.plan.agent.md"
+        assert specify_cmd_file.exists() and plan_cmd_file.exists(), (
+            "sanity: command mode should have written both command files"
+        )
+        metadata = manager.registry.get("toggle-partial-result-preset")
+        assert set(metadata["registered_commands"].get("copilot", [])) == {
+            "speckit.specify", "speckit.plan",
+        }, "sanity: both commands should be tracked for copilot"
+
+        # Remove only the plan command's *installed* source so its skill
+        # replacement is silently skipped (missing source), while
+        # specify's succeeds — a genuine partial result, not an injected
+        # exception.
+        (manager.presets_dir / "toggle-partial-result-preset" / "commands" / "speckit.plan.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not specify_cmd_file.exists(), (
+            "the specify command's old artifact must be retired since its "
+            "skill replacement actually landed (#2948)"
+        )
+        assert plan_cmd_file.exists(), (
+            "the plan command's old artifact must survive since its skill "
+            "replacement never landed (missing source) (#2948)"
+        )
+        metadata = manager.registry.get("toggle-partial-result-preset")
+        tracked_commands = metadata["registered_commands"].get("copilot", [])
+        assert "speckit.specify" not in tracked_commands, (
+            "specify must stop being tracked as a command once its "
+            "artifact has been unregistered (#2948)"
+        )
+        assert "speckit.plan" in tracked_commands, (
+            "plan must keep being tracked as a command since its old "
+            "artifact is still on disk (#2948)"
+        )
+        specify_skill_file = (
+            project_dir / ".github" / "skills" / "speckit-specify" / "SKILL.md"
+        )
+        assert "preset:toggle-partial-result-preset" in specify_skill_file.read_text(), (
+            "sanity: specify's new skill artifact should exist"
+        )
+        plan_skill_file = project_dir / ".github" / "skills" / "speckit-plan"
+        assert not plan_skill_file.exists(), (
+            "sanity: no skill should have been written for plan since its "
+            "source was missing"
+        )
+
+    def test_toggle_skills_to_command_empty_result_preserves_old_skill(
+        self, project_dir, temp_dir
+    ):
+        """A non-raising but empty command result must not delete the old skill.
+
+        Mirror image of the empty-result command->skills case: deleting the
+        preset's own source file makes ``_register_commands`` return ``{}``
+        for copilot without raising, which must leave the old SKILL.md and
+        its tracking untouched (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "toggle-skill-empty-result-preset", "speckit.specify",
+            "Toggle empty-result test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:toggle-skill-empty-result-preset" in skill_file.read_text(), (
+            "sanity: skills mode should have written the SKILL.md mirror"
+        )
+
+        # Remove the preset's own *installed* source file so
+        # _register_commands can find nothing to render — a real "missing
+        # source" case, not an exception — leaving registered_commands
+        # empty for copilot.
+        (manager.presets_dir / "toggle-skill-empty-result-preset" / "commands" / "speckit.specify.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert "preset:toggle-skill-empty-result-preset" in skill_file.read_text(), (
+            "an empty (non-raising) command registration result must not "
+            "cause the old skills-mode artifact to be deleted/reverted "
+            "(#2948)"
+        )
+        metadata = manager.registry.get("toggle-skill-empty-result-preset")
+        assert "speckit-specify" in metadata["registered_skills"].get("copilot", []), (
+            "registered_skills must keep tracking copilot's still-live "
+            "skill file when nothing was actually replaced (#2948)"
+        )
+        # Note: a command file may still exist here — general command
+        # reconciliation independently restores the next-best (e.g. core)
+        # layer for the *command name*, regardless of this preset's own
+        # missing source. That's an orthogonal, existing behaviour; the
+        # invariant under test is specifically that the *skill* mirror and
+        # its tracking survive the empty registration result.
+
+    def test_toggle_skills_to_command_partial_result_only_removes_replaced_skill(
+        self, project_dir, temp_dir
+    ):
+        """Only the skill whose command replacement actually landed is retired.
+
+        Mirror image of the partial-result command->skills case: a
+        two-command preset where one command's source file goes missing
+        right before the toggle, so ``_register_commands`` genuinely
+        returns a partial result. The skill whose command was written
+        must be retired; the other must keep both its old SKILL.md and
+        its registry tracking, since no replacement for it landed (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        self._create_skill(skills_dir, "speckit-plan")
+
+        # A core template lets the retired skill restore to core content
+        # instead of being removed entirely (it has nothing else to fall
+        # back to), matching _unregister_skills's behaviour elsewhere.
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_multi_command_preset(
+            temp_dir, "toggle-skill-partial-result-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        specify_skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        plan_skill_file = skills_dir / "speckit-plan" / "SKILL.md"
+        assert "preset:toggle-skill-partial-result-preset" in specify_skill_file.read_text()
+        assert "preset:toggle-skill-partial-result-preset" in plan_skill_file.read_text()
+        metadata = manager.registry.get("toggle-skill-partial-result-preset")
+        assert set(metadata["registered_skills"].get("copilot", [])) == {
+            "speckit-specify", "speckit-plan",
+        }, "sanity: both skills should be tracked for copilot"
+
+        # Remove only the plan command's *installed* source so its command
+        # replacement is silently skipped (missing source), while
+        # specify's succeeds.
+        (manager.presets_dir / "toggle-skill-partial-result-preset" / "commands" / "speckit.plan.md").unlink()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert "preset:toggle-skill-partial-result-preset" not in specify_skill_file.read_text(), (
+            "the specify skill's old artifact must be retired/reverted "
+            "since its command replacement actually landed (#2948)"
+        )
+        assert "preset:toggle-skill-partial-result-preset" in plan_skill_file.read_text(), (
+            "the plan skill's old artifact must survive since its command "
+            "replacement never landed (missing source) (#2948)"
+        )
+        metadata = manager.registry.get("toggle-skill-partial-result-preset")
+        tracked_skills = metadata["registered_skills"].get("copilot", [])
+        assert "speckit-specify" not in tracked_skills, (
+            "specify must stop being tracked as a skill once its artifact "
+            "has been unregistered/reverted (#2948)"
+        )
+        assert "speckit-plan" in tracked_skills, (
+            "plan must keep being tracked as a skill since its old "
+            "artifact is still on disk (#2948)"
+        )
+        assert (copilot_commands_dir / "speckit.specify.agent.md").exists(), (
+            "sanity: specify's new command artifact should exist"
         )
 
     def test_rescaffold_toggle_skills_to_command_removes_stale_skill_file(

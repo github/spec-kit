@@ -1366,6 +1366,221 @@ class TestExtensionSkillRegistration:
             "command file when the skills replacement failed (#2948)"
         )
 
+    def test_toggle_command_to_skills_empty_result_preserves_old_extension_command(
+        self, project_dir, temp_dir
+    ):
+        """An empty (non-raising) skills result must not delete any old
+        extension command artifact.
+
+        Deleting both of the extension's own installed command source
+        files makes ``_register_extension_skills`` genuinely return ``[]``
+        for copilot without raising — a real "missing source" case, not an
+        injected exception — which must leave both old command-mode
+        artifacts and their tracking untouched (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-empty-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        hello_cmd_file = agents_dir / "speckit.toggle-empty-ext.hello.agent.md"
+        world_cmd_file = agents_dir / "speckit.toggle-empty-ext.world.agent.md"
+        assert hello_cmd_file.exists() and world_cmd_file.exists(), (
+            "sanity: command mode should have written both command files"
+        )
+
+        # Remove both installed command sources so _register_extension_skills
+        # can find nothing to render for either command.
+        ext_commands_dir = manager.extensions_dir / "toggle-empty-ext" / "commands"
+        (ext_commands_dir / "hello.md").unlink()
+        (ext_commands_dir / "world.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert hello_cmd_file.exists() and world_cmd_file.exists(), (
+            "an empty (non-raising) skills registration result must not "
+            "cause the old command-mode artifacts to be deleted (#2948)"
+        )
+        metadata = manager.registry.get("toggle-empty-ext")
+        registered_commands = metadata.get("registered_commands", {}).get("copilot", [])
+        assert set(registered_commands) == {
+            "speckit.toggle-empty-ext.hello", "speckit.toggle-empty-ext.world",
+        }, (
+            "registered_commands must keep tracking copilot's still-live "
+            "command files when nothing was actually replaced (#2948)"
+        )
+        skills_dir = project_dir / ".github" / "skills"
+        assert not (skills_dir / "speckit-toggle-empty-ext-hello").exists(), (
+            "sanity: no skill should have been written when both sources "
+            "were missing"
+        )
+        assert not (skills_dir / "speckit-toggle-empty-ext-world").exists()
+
+    def test_toggle_command_to_skills_partial_result_only_removes_replaced_extension_command(
+        self, project_dir, temp_dir
+    ):
+        """Only the extension command whose skill replacement actually
+        landed is retired.
+
+        A two-command extension (hello, world) where only ``world``'s
+        installed source goes missing right before the toggle, so
+        ``_register_extension_skills`` genuinely returns a partial result
+        (only ``hello``'s skill). ``hello``'s old command artifact must be
+        retired; ``world``'s must survive with its tracking intact, since
+        no replacement for it landed (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-partial-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        hello_cmd_file = agents_dir / "speckit.toggle-partial-ext.hello.agent.md"
+        world_cmd_file = agents_dir / "speckit.toggle-partial-ext.world.agent.md"
+        assert hello_cmd_file.exists() and world_cmd_file.exists(), (
+            "sanity: command mode should have written both command files"
+        )
+
+        # Remove only world's installed source so its skill replacement is
+        # silently skipped (missing source), while hello's succeeds.
+        ext_commands_dir = manager.extensions_dir / "toggle-partial-ext" / "commands"
+        (ext_commands_dir / "world.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not hello_cmd_file.exists(), (
+            "hello's old command artifact must be retired since its skill "
+            "replacement actually landed (#2948)"
+        )
+        assert world_cmd_file.exists(), (
+            "world's old command artifact must survive since its skill "
+            "replacement never landed (missing source) (#2948)"
+        )
+        metadata = manager.registry.get("toggle-partial-ext")
+        registered_commands = metadata.get("registered_commands", {}).get("copilot", [])
+        assert registered_commands == ["speckit.toggle-partial-ext.world"], (
+            "registered_commands must stop tracking hello (retired) but "
+            "keep tracking world (still live) (#2948)"
+        )
+        skills_dir = project_dir / ".github" / "skills"
+        assert (skills_dir / "speckit-toggle-partial-ext-hello" / "SKILL.md").exists()
+        assert not (skills_dir / "speckit-toggle-partial-ext-world").exists()
+
+    def test_toggle_skills_to_command_empty_result_preserves_old_extension_skill(
+        self, project_dir, temp_dir
+    ):
+        """An empty (non-raising) command result must not delete any old
+        extension skill artifact.
+
+        Mirror image of the empty-result command->skills case: deleting
+        both of the extension's own installed command source files makes
+        ``register_commands_for_agent`` genuinely return an empty/falsy
+        result for copilot without raising, which must leave both old
+        skill-mode artifacts and their tracking untouched (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-skill-empty-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        skills_dir = project_dir / ".github" / "skills"
+        hello_skill_file = skills_dir / "speckit-toggle-skill-empty-ext-hello" / "SKILL.md"
+        world_skill_file = skills_dir / "speckit-toggle-skill-empty-ext-world" / "SKILL.md"
+        assert hello_skill_file.exists() and world_skill_file.exists(), (
+            "sanity: skills mode should have written both SKILL.md mirrors"
+        )
+
+        # Remove both installed command sources so register_commands_for_agent
+        # can find nothing to render for either command.
+        ext_commands_dir = manager.extensions_dir / "toggle-skill-empty-ext" / "commands"
+        (ext_commands_dir / "hello.md").unlink()
+        (ext_commands_dir / "world.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert hello_skill_file.exists() and world_skill_file.exists(), (
+            "an empty (non-raising) command registration result must not "
+            "cause the old skills-mode artifacts to be deleted (#2948)"
+        )
+        metadata = manager.registry.get("toggle-skill-empty-ext")
+        registered_skills = metadata.get("registered_skills", [])
+        assert {
+            "speckit-toggle-skill-empty-ext-hello",
+            "speckit-toggle-skill-empty-ext-world",
+        } <= set(registered_skills), (
+            "registered_skills must keep tracking copilot's still-live "
+            "skill files when nothing was actually replaced (#2948)"
+        )
+
+    def test_toggle_skills_to_command_partial_result_only_removes_replaced_extension_skill(
+        self, project_dir, temp_dir
+    ):
+        """Only the extension skill whose command replacement actually
+        landed is retired.
+
+        Mirror image of the partial-result command->skills case: a
+        two-command extension where only ``world``'s installed source goes
+        missing right before the toggle, so ``register_commands_for_agent``
+        genuinely returns a partial result (only ``hello``'s command).
+        ``hello``'s old skill artifact must be retired; ``world``'s must
+        survive with its tracking intact, since no replacement for it
+        landed (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-skill-partial-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        skills_dir = project_dir / ".github" / "skills"
+        hello_skill_file = skills_dir / "speckit-toggle-skill-partial-ext-hello" / "SKILL.md"
+        world_skill_file = skills_dir / "speckit-toggle-skill-partial-ext-world" / "SKILL.md"
+        assert hello_skill_file.exists() and world_skill_file.exists(), (
+            "sanity: skills mode should have written both SKILL.md mirrors"
+        )
+
+        # Remove only world's installed source so its command replacement
+        # is silently skipped (missing source), while hello's succeeds.
+        ext_commands_dir = manager.extensions_dir / "toggle-skill-partial-ext" / "commands"
+        (ext_commands_dir / "world.md").unlink()
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not hello_skill_file.exists(), (
+            "hello's old skill artifact must be retired since its command "
+            "replacement actually landed (#2948)"
+        )
+        assert world_skill_file.exists(), (
+            "world's old skill artifact must survive since its command "
+            "replacement never landed (missing source) (#2948)"
+        )
+        metadata = manager.registry.get("toggle-skill-partial-ext")
+        registered_skills = metadata.get("registered_skills", [])
+        assert "speckit-toggle-skill-partial-ext-hello" not in registered_skills, (
+            "hello must stop being tracked as a skill once its artifact "
+            "has been unregistered (#2948)"
+        )
+        assert "speckit-toggle-skill-partial-ext-world" in registered_skills, (
+            "world must keep being tracked as a skill since its old "
+            "artifact is still on disk (#2948)"
+        )
+
     def test_rescaffold_toggle_skills_to_command_removes_stale_extension_skill_file(
         self, project_dir, temp_dir
     ):
