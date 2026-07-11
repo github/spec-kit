@@ -934,6 +934,15 @@ def _install_workflow_from_catalog(
     workflow_dir = _safe_workflow_id_dir(workflows_dir, workflow_id)
     workflow_file = workflow_dir / "workflow.yml"
 
+    # Captured before any mkdir/download writes so a registry.add() failure
+    # at the end of this function can tell a fresh install from a
+    # reinstall-over-an-existing-one, mirroring _validate_and_install_local's
+    # existed-before/backup-aware rollback.
+    existed_before = workflow_dir.is_dir()
+    prior_workflow_bytes = (
+        workflow_file.read_bytes() if existed_before and workflow_file.is_file() else None
+    )
+
     try:
         from specify_cli.authentication.http import open_url as _open_url
         from specify_cli.authentication.http import github_provider_hosts as _github_provider_hosts
@@ -1047,8 +1056,15 @@ def _install_workflow_from_catalog(
     try:
         registry.add(workflow_id, entry)
     except OSError as exc:
-        import shutil
-        shutil.rmtree(workflow_dir, ignore_errors=True)
+        # Don't destroy a prior working install on a reinstall: only a
+        # brand-new directory is safe to remove wholesale; an existing one
+        # gets its previous workflow.yml restored instead.
+        if existed_before:
+            if prior_workflow_bytes is not None:
+                workflow_file.write_bytes(prior_workflow_bytes)
+        else:
+            import shutil
+            shutil.rmtree(workflow_dir, ignore_errors=True)
         console.print(
             f"[red]Error:[/red] Failed to update workflow registry for "
             f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
