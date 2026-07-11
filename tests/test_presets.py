@@ -4512,6 +4512,104 @@ class TestPresetSkills:
             )
             assert "Core specify body" in content
 
+    def test_rescaffold_migrates_legacy_flat_list_registered_skills(
+        self, project_dir, temp_dir
+    ):
+        """Rescaffolding a preset with a legacy flat-list ``registered_skills``
+        entry must persist the migrated per-agent dict even when the
+        rescaffolded skill names are unchanged from before.
+
+        ``_normalize_registered_skills`` converts a legacy flat ``List[str]``
+        (predating per-agent provenance) into ``{agent_name: [...]}`` in
+        memory, but the persistence check compared only the *normalized*
+        ``merged_skills`` against the *normalized* ``existing_skills`` —
+        both derived from the same raw legacy list. When the freshly
+        registered names are identical to what the legacy list already
+        held (the common case: nothing about the preset or skill actually
+        changed), that comparison is a no-op and ``registry.update()`` is
+        skipped, leaving the *raw* on-disk value as the un-migrated flat
+        list. A later switch to a different skill-mode agent and removal
+        then follows the legacy best-effort restore path (only the
+        currently active agent's directory) instead of the per-agent
+        provenance path, orphaning the first agent's override (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "legacy-skills-preset", "speckit.specify",
+            "Legacy skills test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Simulate a registry entry written by a pre-#2948 spec-kit version:
+        # registered_skills stored as a flat list with no per-agent
+        # provenance, rather than the dict shape install_from_directory
+        # writes today.
+        manager.registry.update(
+            "legacy-skills-preset", {"registered_skills": ["speckit-specify"]},
+        )
+        metadata = manager.registry.get("legacy-skills-preset")
+        assert isinstance(metadata["registered_skills"], list), (
+            "sanity: the injected legacy format is a flat list"
+        )
+
+        # Rescaffold for the *same* active agent (claude) with no actual
+        # change to the registered skill names, mirroring `integration
+        # upgrade claude` re-running registration for the active
+        # integration.
+        manager.register_enabled_presets_for_agent("claude")
+
+        metadata = manager.registry.get("legacy-skills-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict), (
+            "rescaffold must migrate a legacy flat-list registered_skills "
+            "entry to the per-agent dict format even when the "
+            "rescaffolded names are unchanged, or the raw registry stays "
+            "un-migrated and later removal loses per-agent provenance "
+            "(#2948)"
+        )
+        assert registered_skills.get("claude") == ["speckit-specify"]
+
+        # Switch to a different skill-mode agent and rescaffold again —
+        # with the dict format now in place, both directories should be
+        # tracked and therefore restorable on removal.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata = manager.registry.get("legacy-skills-preset")
+        assert set(metadata.get("registered_skills", {})) == {"claude", "codex"}, (
+            "the migrated dict must keep recording every agent directory "
+            "the preset actually wrote to, exactly like a preset that was "
+            "always in dict format (#2948)"
+        )
+
+        assert manager.remove("legacy-skills-preset") is True
+
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        codex_skill = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:legacy-skills-preset" not in content, (
+                f"{label}'s preset override must be restored on removal, "
+                "not orphaned because the registry stayed in legacy "
+                "flat-list format (#2948)"
+            )
+            assert "Core specify body" in content
+
     def test_symlinked_skills_dir_rejected_on_removal(self, project_dir, temp_dir):
         """Removal must validate a recorded skill directory before touching it.
 

@@ -805,8 +805,9 @@ class PresetManager:
                     self.registry.update(pack_id, {"registered_commands": merged_commands})
 
                 registered_skills = self._register_skills(manifest, pack_dir)
+                raw_existing_skills = metadata.get("registered_skills")
                 existing_skills = self._normalize_registered_skills(
-                    metadata.get("registered_skills"), fallback_agent=agent_name
+                    raw_existing_skills, fallback_agent=agent_name
                 )
                 merged_skills = copy.deepcopy(existing_skills)
                 if registered_skills.get(agent_name):
@@ -821,7 +822,19 @@ class PresetManager:
                     self._unregister_skills(
                         {agent_name: merged_skills.pop(agent_name)}, pack_dir
                     )
-                if merged_skills != existing_skills:
+                # A legacy flat-list registered_skills value (predating
+                # per-agent provenance) must migrate to the dict format on
+                # disk even when the rescaffolded names are unchanged from
+                # what the list already held — comparing only the
+                # *normalized* forms would otherwise treat that as a no-op
+                # and leave the raw un-migrated list in the registry, which
+                # later removal/switch handling treats as legacy
+                # best-effort (restoring only the currently active agent's
+                # directory) instead of per-agent provenance (#2948).
+                needs_migration = (
+                    isinstance(raw_existing_skills, list) and raw_existing_skills
+                )
+                if merged_skills != existing_skills or needs_migration:
                     self.registry.update(pack_id, {"registered_skills": merged_skills})
 
                 for tmpl in manifest.templates:
