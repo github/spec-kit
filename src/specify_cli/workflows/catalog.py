@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 import time
 from dataclasses import dataclass
@@ -146,6 +147,19 @@ class WorkflowRegistry:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self.data, f, indent=2)
+            # mkstemp creates the temp file at 0600. A pre-existing registry
+            # may be shared more permissively (e.g. 0640/0644); preserve its
+            # mode across the replace so a save doesn't silently lock other
+            # project users out. A brand-new registry has no prior mode to
+            # preserve, so mkstemp's secure 0600 default stands. Mirrors
+            # _utils.py's atomic_write_json (best-effort; data safety over
+            # metadata preservation).
+            try:
+                if self.registry_path.exists():
+                    existing_mode = stat.S_IMODE(self.registry_path.stat().st_mode)
+                    os.chmod(tmp, existing_mode)
+            except OSError:
+                pass
             os.replace(tmp, self.registry_path)
         except BaseException:
             try:

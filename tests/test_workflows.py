@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -5985,18 +5986,28 @@ class TestWorkflowRemoveGuard:
         assert (workflow_dir / "workflow.yml").read_text(encoding="utf-8") == "keep-me"
         # The on-disk registry must still claim the workflow installed.
         assert WorkflowRegistry(project_dir).is_installed("test-wf")
+        # The directory must be restored to its exact original location, with
+        # no leftover staging directory from the stage/restore-on-failure
+        # sequence.
+        entries = [
+            p.name
+            for p in (project_dir / ".specify" / "workflows").iterdir()
+            if p.name != "workflow-registry.json"
+        ]
+        assert entries == ["test-wf"]
 
-    def test_remove_directory_failure_restores_registry_entry_verbatim(
+    def test_remove_staged_cleanup_failure_reports_warning_not_error(
         self, project_dir, monkeypatch
     ):
-        """If the registry removal already persisted successfully but the
-        subsequent shutil.rmtree fails, the directory was never actually
-        deleted (rmtree raised before removing anything usable), so the
-        registry must not be left claiming the workflow uninstalled. The
-        restored entry must be byte-for-byte the original (same
-        installed_at/updated_at) -- calling add() again would stamp a new
-        updated_at, which is why workflow_step_remove restores directly via
-        registry.data and save() instead of add()."""
+        """The directory is staged (atomically renamed out of
+        .specify/workflows/<id>) *before* the registry write, and the actual
+        deletion of the staged directory only happens *after* the registry
+        has already durably recorded the removal. If that final deletion
+        fails, the registry write already succeeded and must stand -- an
+        "Error: Failed to remove..." message at that point would contradict
+        the registry, which is exactly the incoherent state this staging
+        order exists to prevent. It must be reported as a cleanup warning,
+        and the command must still succeed."""
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -6007,8 +6018,6 @@ class TestWorkflowRemoveGuard:
         workflow_dir.mkdir(parents=True, exist_ok=True)
         (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
 
-        original_entry = WorkflowRegistry(project_dir).get("test-wf")
-
         def boom(*args, **kwargs):
             raise OSError("permission denied")
 
@@ -6017,26 +6026,31 @@ class TestWorkflowRemoveGuard:
             mp.setattr("shutil.rmtree", boom)
             result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
 
-        assert result.exit_code != 0
-        assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert "Failed to remove workflow directory" in result.output
-        # rmtree raised, so nothing was actually deleted.
-        assert workflow_dir.exists()
-        assert (workflow_dir / "workflow.yml").read_text(encoding="utf-8") == "keep-me"
-        # The registry entry must come back exactly as it was, not re-added.
-        restored = WorkflowRegistry(project_dir).get("test-wf")
-        assert restored == original_entry
-        assert WorkflowRegistry(project_dir).is_installed("test-wf")
+        assert result.exit_code == 0
+        assert "Warning" in result.output
+        # The registry write already committed -- it must stand.
+        assert not WorkflowRegistry(project_dir).is_installed("test-wf")
+        # The original install path is gone (staged away before the registry
+        # write ever ran); only a leftover staged directory remains, never
+        # at the original path the registry/CLI would treat as installed.
+        assert not workflow_dir.exists()
+        leftovers = [
+            p
+            for p in (project_dir / ".specify" / "workflows").iterdir()
+            if p.name != "workflow-registry.json"
+        ]
+        assert len(leftovers) == 1
+        assert (leftovers[0] / "workflow.yml").read_text(encoding="utf-8") == "keep-me"
 
-    def test_remove_directory_and_restore_failure_escapes_rich_markup(
+    def test_remove_stage_restore_failure_escapes_rich_markup(
         self, temp_dir, monkeypatch
     ):
-        """The project path (workflow_dir) and the rmtree/restore-save
-        exceptions interpolated into these new Rich error/warning messages
-        must be escaped like every other error path here -- unescaped Rich
-        markup characters (e.g. brackets) in a project directory name or an
-        OS/registry error message could otherwise be parsed as markup and
-        hide or corrupt the displayed text instead of showing it verbatim."""
+        """When the registry write fails (already rolled back in-memory by
+        WorkflowRegistry.remove()) and the attempt to rename the staged
+        directory back to its original location also fails, both the
+        restore exception and the registry-update exception interpolated
+        into these warning/error messages must be escaped like every other
+        error path here."""
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -6052,37 +6066,31 @@ class TestWorkflowRemoveGuard:
         workflow_dir.mkdir(parents=True, exist_ok=True)
         (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
 
-        def rmtree_boom(*args, **kwargs):
-            raise OSError("[disk] permission denied")
-
-        real_save = WorkflowRegistry.save
-        call_count = {"n": 0}
-
         def save_boom(self):
-            # The first save() call is registry.remove()'s own persist,
-            # which must succeed so we reach the rmtree failure below; only
-            # the second call (the post-rmtree-failure restore attempt)
-            # should fail, to exercise the restore-failure warning path.
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                return real_save(self)
-            raise Exception("[warn] save exploded")
+            raise OSError("[reg] disk full")
+
+        real_rename = os.rename
+        rename_calls = {"n": 0}
+
+        def rename_boom(src, dst):
+            rename_calls["n"] += 1
+            if rename_calls["n"] == 1:
+                # Allow the initial stage-out rename to succeed so the
+                # restore-back rename (the second call) is what fails.
+                return real_rename(src, dst)
+            raise OSError("[stage] permission denied")
 
         monkeypatch.chdir(project_dir)
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("shutil.rmtree", rmtree_boom)
             mp.setattr(WorkflowRegistry, "save", save_boom)
+            mp.setattr(os, "rename", rename_boom)
             result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        # Rich may soft-wrap the long path across lines; compare with
-        # whitespace collapsed so the wrap position doesn't affect the check.
         output_compact = "".join(result.output.split())
-        assert "".join(str(workflow_dir).split()) in output_compact
-        assert "[disk]permissiondenied" in output_compact
-        assert "[warn]saveexploded" in output_compact
-
+        assert "[stage]permissiondenied" in output_compact
+        assert "[reg]diskfull" in output_compact
 
 class TestWorkflowAddSymlinkGuard:
     def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
@@ -8034,6 +8042,33 @@ steps:
             WorkflowRegistry(project_dir)
         assert not (outside / "workflows").exists()
 
+    def test_registry_save_preserves_existing_file_mode(self, project_dir):
+        """A registry shared as 0640/0644 must keep that mode after a save,
+        not be silently replaced by mkstemp's 0600 default -- otherwise
+        every add/remove locks other project users out of a previously
+        shared registry file."""
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("first-wf", {"name": "First"})
+        registry.registry_path.chmod(0o644)
+
+        registry.add("second-wf", {"name": "Second"})
+
+        mode = stat.S_IMODE(registry.registry_path.stat().st_mode)
+        assert mode == 0o644, f"expected 0644, got {oct(mode)}"
+
+    def test_registry_save_on_new_registry_uses_secure_default_mode(self, project_dir):
+        """A brand-new registry file (no prior mode to preserve) should keep
+        mkstemp's secure 0600 default rather than something more permissive."""
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("first-wf", {"name": "First"})
+
+        mode = stat.S_IMODE(registry.registry_path.stat().st_mode)
+        assert mode == 0o600, f"expected 0600, got {oct(mode)}"
+
     def test_add_dev_dir_with_workflow_yml_directory_errors_cleanly(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -8089,13 +8124,16 @@ steps:
         assert not dest_dir.exists()
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
-    def test_add_dev_reinstall_copy_failure_restores_prior_file(self, project_dir, monkeypatch):
-        """_validate_and_install_local's copy2 call currently runs *before* the
-        try/except block that protects registry.add(): a copy2 failure (e.g. a
-        truncating partial write on a reinstall) is not caught at all, so the
-        existing backup-restore cleanup never runs and the prior working
-        workflow.yml is left corrupted. copy2 must be covered by the same
-        rollback-protected section as registry.add()."""
+    def test_add_dev_reinstall_copy_failure_leaves_prior_file_untouched(
+        self, project_dir, monkeypatch
+    ):
+        """copy2 now writes into a same-directory staging file, never
+        dest_file directly, so a copy2 failure (even one that partially
+        writes before raising, mirroring a real disk-full/interrupted-copy
+        failure) can no longer touch -- let alone truncate -- the prior
+        working workflow.yml: dest_file is only ever touched by the final
+        atomic commit swap, which never runs if copy2 raises. No leftover
+        staging file may remain either."""
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -8113,10 +8151,11 @@ steps:
             self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
         )
 
-        def boom(*args, **kwargs):
-            # Simulate a truncating partial write followed by an OSError,
-            # mirroring a real disk-full/interrupted-copy failure.
-            installed_yaml.write_bytes(b"")
+        def boom(src_path, dst_path, *args, **kwargs):
+            # Simulate a truncating partial write followed by an OSError on
+            # the *staging* file -- the only file copy2 is now allowed to
+            # touch -- mirroring a real disk-full/interrupted-copy failure.
+            Path(dst_path).write_bytes(b"")
             raise OSError("disk full")
 
         with pytest.MonkeyPatch.context() as mp:
@@ -8128,44 +8167,58 @@ steps:
         assert result.output.strip() != ""
         assert installed_yaml.read_bytes() == original_bytes
         assert WorkflowRegistry(project_dir).get("align-wf") == original_registry_entry
+        # No orphaned staging file left behind in the workflow directory.
+        leftovers = [p.name for p in installed_yaml.parent.iterdir() if p.name != "workflow.yml"]
+        assert leftovers == []
 
-    def test_add_dev_reinstall_backup_read_failure_gives_clean_error(
+    def test_add_dev_reinstall_restore_failure_reports_warning_and_original_error(
         self, project_dir, monkeypatch
     ):
-        """The prior-file backup read (used to restore on a later install
-        failure) ran before any guarded section: a read failure on the
-        existing workflow.yml (e.g. a transient permission/FS issue) leaked
-        a raw OSError instead of the clean escaped CLI error used by every
-        other failure branch here, and left the destination untouched since
-        it happens before any write."""
+        """The prior file is now restored via an atomic rename (not a
+        content rewrite) when registry.add() fails on a reinstall. If that
+        restore rename itself also fails (e.g. a transient FS issue), it
+        must not silently claim success or crash with a raw traceback: it
+        must report a clear warning about the restore failure in addition
+        to the original clean registry error."""
         from typer.testing import CliRunner
         from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
 
         monkeypatch.chdir(project_dir)
         runner = CliRunner()
         src = self._install_dev(runner, app, project_dir)
-        installed_yaml = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        original_bytes = installed_yaml.read_bytes()
 
         (src / "workflow.yml").write_text(
             self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
         )
 
-        real_read_bytes = Path.read_bytes
+        def save_boom(self):
+            raise OSError("disk full")
 
-        def boom(self_path, *args, **kwargs):
-            if self_path.resolve() == installed_yaml.resolve():
-                raise OSError("permission denied")
-            return real_read_bytes(self_path, *args, **kwargs)
+        real_replace = os.replace
+        calls = {"n": 0}
+
+        def replace_boom(src_path, dst_path):
+            # The commit swap for a reinstall makes exactly two os.replace
+            # calls (backup-aside, then staged-into-dest); let both succeed
+            # and only fail the third call -- the post-registry-failure
+            # restore-back rename.
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                return real_replace(src_path, dst_path)
+            raise OSError("permission denied")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(Path, "read_bytes", boom)
+            mp.setattr(WorkflowRegistry, "save", save_boom)
+            mp.setattr(os, "replace", replace_boom)
             result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        assert installed_yaml.read_bytes() == original_bytes
+        output_compact = "".join(result.output.split())
+        assert "Warning" in result.output
+        assert "diskfull" in output_compact
+        assert "permissiondenied" in output_compact
 
     def test_add_dev_fresh_install_into_preexisting_empty_dir_cleans_new_file(
         self, project_dir, monkeypatch
@@ -8390,18 +8443,18 @@ steps:
         assert registry.is_installed("align-wf")
         assert registry.get("align-wf")["version"] == "1.0.0"
 
-    def test_add_catalog_reinstall_backup_read_failure_gives_clean_error(
+    def test_add_catalog_reinstall_restore_failure_reports_warning_and_original_error(
         self, project_dir, monkeypatch
     ):
-        """Same backup-read boundary gap as the local-install path: the
-        prior-file read used to seed the reinstall's rollback ran before
-        the download/validation error boundary, so a read failure on the
-        existing workflow.yml (e.g. a transient permission/FS issue) leaked
-        a raw OSError instead of a clean escaped CLI error, and must be
-        caught before any download/write is attempted."""
+        """Same restore-rename boundary as the local-install path: the
+        prior file is restored via an atomic rename (not a content rewrite)
+        when registry.add() fails on a reinstall. If that restore rename
+        itself also fails, it must report a clear warning in addition to
+        the original clean registry error, never crash or silently claim
+        success."""
         from typer.testing import CliRunner
         from specify_cli import app
-        from specify_cli.workflows.catalog import WorkflowCatalog
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
 
         monkeypatch.chdir(project_dir)
         monkeypatch.setattr(
@@ -8428,22 +8481,41 @@ steps:
             result = runner.invoke(app, ["workflow", "add", "align-wf"])
         assert result.exit_code == 0, result.output
 
-        dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        real_read_bytes = Path.read_bytes
+        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
 
-        def boom(self_path, *args, **kwargs):
-            if self_path.resolve() == dest_file.resolve():
-                raise OSError("permission denied")
-            return real_read_bytes(self_path, *args, **kwargs)
+        def save_boom(self):
+            raise OSError("disk full")
+
+        real_replace = os.replace
+        calls = {"n": 0}
+
+        def replace_boom(src_path, dst_path):
+            # The commit swap for a reinstall makes exactly two os.replace
+            # calls (backup-aside, then staged-into-dest); let both succeed
+            # and only fail the third call -- the post-registry-failure
+            # restore-back rename.
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                return real_replace(src_path, dst_path)
+            raise OSError("permission denied")
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(Path, "read_bytes", boom)
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    new_data, url
+                ),
+            )
+            mp.setattr(WorkflowRegistry, "save", save_boom)
+            mp.setattr(os, "replace", replace_boom)
             result = runner.invoke(app, ["workflow", "add", "align-wf"])
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
-        assert dest_file.read_bytes() == original_data
+        output_compact = "".join(result.output.split())
+        assert "Warning" in result.output
+        assert "diskfull" in output_compact
+        assert "permissiondenied" in output_compact
 
     def test_add_catalog_fresh_install_into_preexisting_empty_dir_cleans_new_file(
         self, project_dir, monkeypatch
@@ -8612,11 +8684,15 @@ steps:
         assert seen["validator"] is _reject_insecure_download_redirect
 
     def test_registry_save_failure_preserves_file_on_disk(self, project_dir, monkeypatch):
-        """A failed dump must not truncate the persisted registry."""
+        """A failed dump must not truncate the persisted registry, and must
+        not alter its on-disk mode either -- the chmod-to-match-existing-mode
+        step operates on the temp file, never the target, so a failed save
+        (which never reaches os.replace) cannot touch the original's mode."""
         from specify_cli.workflows.catalog import WorkflowRegistry
 
         registry = WorkflowRegistry(project_dir)
         registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
+        registry.registry_path.chmod(0o644)
 
         import specify_cli.workflows.catalog as catalog_mod
 
@@ -8630,6 +8706,7 @@ steps:
 
         fresh = WorkflowRegistry(project_dir)
         assert fresh.get("align-wf")["version"] == "1.0.0"
+        assert stat.S_IMODE(registry.registry_path.stat().st_mode) == 0o644
         assert not list(registry.workflows_dir.glob("*.tmp"))
 
     def test_update_mixed_targets_does_not_claim_all_up_to_date(self, project_dir, monkeypatch):

@@ -262,6 +262,91 @@ def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
     return dest_dir
 
 
+def _stage_workflow_file(dest_dir: Path) -> Path:
+    """Reserve a same-directory staging file so new/updated workflow.yml
+    content can be written and validated without ever touching (and risking
+    truncating) an existing destination file before the final atomic swap.
+    Shared by the local-install and catalog-install paths."""
+    import tempfile
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=dest_dir, prefix=".workflow.yml.", suffix=".tmp")
+    os.close(fd)
+    return Path(tmp_name)
+
+
+def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bool) -> Path | None:
+    """Atomically swap ``staged_file`` onto ``dest_file``. If a prior file
+    existed, it is first renamed aside (path returned) so a later failure
+    (e.g. registry.add()) can restore it via rename instead of a content
+    rewrite -- the destination is never truncated/overwritten in place. If
+    the second rename fails after the first succeeded, the prior file is
+    put back immediately so dest_file is never left simply missing."""
+    if existed_before and dest_file.exists():
+        backup_file = dest_file.with_name(dest_file.name + ".bak")
+        os.replace(dest_file, backup_file)
+        try:
+            os.replace(staged_file, dest_file)
+        except OSError:
+            os.replace(backup_file, dest_file)
+            raise
+        return backup_file
+    os.replace(staged_file, dest_file)
+    return None
+
+
+def _discard_staged_workflow_file(staged_file: Path, dest_dir: Path, existed_before: bool) -> None:
+    """Clean up after a pre-commit failure (staged_file was never swapped
+    onto dest_file): remove the staged file, and for a fresh install (no
+    prior directory) remove the now-orphaned dest_dir too."""
+    staged_file.unlink(missing_ok=True)
+    if not existed_before:
+        import shutil
+        shutil.rmtree(dest_dir, ignore_errors=True)
+
+
+def _rollback_committed_workflow_file(
+    dest_file: Path, dest_dir: Path, existed_before: bool, backup_file: Path | None
+) -> None:
+    """Undo a successful _commit_workflow_file swap after a later failure
+    (registry.add()): restore the prior file via rename, remove the newly
+    committed file for a reinstall over a pre-existing empty directory
+    (no backup), or remove the whole directory for a fresh install."""
+    if backup_file is not None:
+        os.replace(backup_file, dest_file)
+    elif existed_before:
+        dest_file.unlink(missing_ok=True)
+    else:
+        import shutil
+        shutil.rmtree(dest_dir, ignore_errors=True)
+
+
+def _safe_discard_staged_workflow_file(staged_file: Path, dest_dir: Path, existed_before: bool) -> None:
+    """Guarded wrapper: a cleanup failure must be reported, never crash or
+    silently mask the original install error that triggered it."""
+    try:
+        _discard_staged_workflow_file(staged_file, dest_dir, existed_before)
+    except OSError as exc:
+        console.print(
+            "[yellow]Warning:[/yellow] Failed to clean up incomplete workflow "
+            f"install: {_escape_markup(str(exc))}"
+        )
+
+
+def _safe_rollback_committed_workflow_file(
+    dest_file: Path, dest_dir: Path, existed_before: bool, backup_file: Path | None
+) -> None:
+    """Guarded wrapper: a rollback failure must be reported, never crash or
+    silently claim the prior workflow file was restored when it wasn't."""
+    try:
+        _rollback_committed_workflow_file(dest_file, dest_dir, existed_before, backup_file)
+    except OSError as exc:
+        console.print(
+            "[yellow]Warning:[/yellow] Failed to restore prior workflow file "
+            f"after registry update failure: {_escape_markup(str(exc))}"
+        )
+
+
 # Root helper re-fetched at call time so test monkeypatching of
 # `specify_cli._require_specify_project` keeps working after the move.
 def _require_specify_project(*args, **kwargs):
@@ -474,9 +559,11 @@ def workflow_run(
                 # own .specify is itself a symlink to an attacker-controlled
                 # tree) -- check it explicitly rather than trusting that
                 # cwd-scoped guard, and don't rely on WorkflowRegistry's own
-                # symlinked-parent handling below (it silently substitutes
-                # an empty registry instead of raising, so a query against
-                # it can't be trusted as a safety signal here).
+                # symlinked-parent handling below as the safety signal here:
+                # it now fails closed by raising OSError at construction
+                # time (see catalog.py's _load), but that surfaces as an
+                # opaque exception rather than this guard's clean, specific
+                # CLI error for the actual owning project root.
                 _reject_unsafe_dir(registry_root / ".specify", ".specify")
                 _reject_unsafe_dir(
                     registry_root / ".specify" / "workflows", ".specify/workflows"
@@ -800,38 +887,39 @@ def workflow_add(
         dest_dir = _safe_workflow_id_dir(workflows_dir, definition.id)
         dest_file = dest_dir / "workflow.yml"
         existed_before = dest_dir.is_dir()
-        try:
-            backup_bytes = (
-                dest_file.read_bytes() if existed_before and dest_file.is_file() else None
-            )
-        except OSError as exc:
-            console.print(
-                f"[red]Error:[/red] Failed to read existing workflow "
-                f"'{_escape_markup(definition.id)}' before install: {_escape_markup(str(exc))}"
-            )
-            raise typer.Exit(1)
+
         import shutil
 
-        def _cleanup_failed_install() -> None:
-            # Don't leave an orphan directory behind for a fresh install; for
-            # a reinstall over an existing local workflow, restore the prior
-            # workflow.yml instead of clobbering it with the failed update.
-            # A pre-existing directory with no prior workflow.yml (no backup
-            # bytes) must have the newly written file removed instead of
-            # doing nothing, so it doesn't linger as an orphan.
-            if existed_before:
-                if backup_bytes is not None:
-                    dest_file.write_bytes(backup_bytes)
-                else:
-                    dest_file.unlink(missing_ok=True)
-            else:
-                shutil.rmtree(dest_dir, ignore_errors=True)
+        try:
+            staged_file = _stage_workflow_file(dest_dir)
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to install workflow "
+                f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
 
         try:
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(yaml_path, dest_file)
+            # Copied into the staging file, never dest_file directly, so a
+            # reinstall's prior working copy is never touched until the
+            # atomic commit below runs.
+            shutil.copy2(yaml_path, staged_file)
         except OSError as exc:
-            _cleanup_failed_install()
+            _safe_discard_staged_workflow_file(staged_file, dest_dir, existed_before)
+            console.print(
+                f"[red]Error:[/red] Failed to install workflow "
+                f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+
+        # Commit the staged copy onto dest_file via an atomic swap. A prior
+        # file (reinstall) is renamed aside rather than overwritten in
+        # place, so it can be restored by rename (not a content rewrite) if
+        # registry.add() below fails.
+        try:
+            backup_file = _commit_workflow_file(staged_file, dest_file, existed_before)
+        except OSError as exc:
+            _safe_discard_staged_workflow_file(staged_file, dest_dir, existed_before)
             console.print(
                 f"[red]Error:[/red] Failed to install workflow "
                 f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
@@ -845,7 +933,7 @@ def workflow_add(
                 "source": source_label,
             })
         except OSError as exc:
-            _cleanup_failed_install()
+            _safe_rollback_committed_workflow_file(dest_file, dest_dir, existed_before, backup_file)
             console.print(
                 f"[red]Error:[/red] Failed to update workflow registry for "
                 f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
@@ -1065,39 +1153,17 @@ def _install_workflow_from_catalog(
 
     # Captured before any mkdir/download writes so every failure branch below
     # can tell a fresh install from a reinstall-over-an-existing-one,
-    # mirroring _validate_and_install_local's existed-before/backup-aware
-    # rollback.
+    # mirroring _validate_and_install_local's existed-before-aware cleanup.
     existed_before = workflow_dir.is_dir()
+
     try:
-        prior_workflow_bytes = (
-            workflow_file.read_bytes() if existed_before and workflow_file.is_file() else None
-        )
+        staged_file = _stage_workflow_file(workflow_dir)
     except OSError as exc:
         console.print(
-            f"[red]Error:[/red] Failed to read existing workflow "
-            f"'{safe_wf_id}' before install: {_escape_markup(str(exc))}"
+            f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: "
+            f"{_escape_markup(str(exc))}"
         )
         raise typer.Exit(1)
-
-    def _cleanup_failed_install() -> None:
-        """Restore the prior workflow.yml on a reinstall, or remove the
-        directory entirely for a fresh install. Every failure branch that
-        runs after the mkdir/download step -- redirect rejection, download
-        exception, invalid YAML, ID mismatch, version mismatch, and
-        registry.add() failure -- must call this instead of rmtree'ing
-        directly, so none of them can destroy a working install that
-        predates this attempt. A pre-existing directory with no prior
-        workflow.yml (no backup bytes) must have the newly downloaded file
-        removed instead of doing nothing, so it doesn't linger as an
-        orphan."""
-        if existed_before:
-            if prior_workflow_bytes is not None:
-                workflow_file.write_bytes(prior_workflow_bytes)
-            else:
-                workflow_file.unlink(missing_ok=True)
-        else:
-            import shutil
-            shutil.rmtree(workflow_dir, ignore_errors=True)
 
     try:
         from specify_cli.authentication.http import open_url as _open_url
@@ -1112,7 +1178,6 @@ def _install_workflow_from_catalog(
             workflow_url = _resolved_workflow_url
             _wf_cat_extra_headers = {"Accept": "application/octet-stream"}
 
-        workflow_dir.mkdir(parents=True, exist_ok=True)
         with _open_url(
             workflow_url,
             timeout=30,
@@ -1131,31 +1196,35 @@ def _install_workflow_from_catalog(
                     # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
                     pass
             if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
-                _cleanup_failed_install()
+                _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
                 console.print(
                     f"[red]Error:[/red] Workflow '{safe_wf_id}' redirected to non-HTTPS URL: {_escape_markup(final_url)}"
                 )
                 raise typer.Exit(1)
-            workflow_file.write_bytes(_read_response_within_limit(response))
+            # Written to the staging file, never workflow_file directly, so a
+            # reinstall's prior working copy is never touched until the
+            # atomic commit below runs.
+            staged_file.write_bytes(_read_response_within_limit(response))
     except typer.Exit:
         raise
     except Exception as exc:
-        _cleanup_failed_install()
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
-    # Validate the downloaded workflow before registering
+    # Validate the downloaded workflow (still staged, not yet committed)
+    # before registering.
     try:
-        definition = WorkflowDefinition.from_yaml(workflow_file)
+        definition = WorkflowDefinition.from_yaml(staged_file)
     except (ValueError, yaml.YAMLError) as exc:
-        _cleanup_failed_install()
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(f"[red]Error:[/red] Downloaded workflow is invalid: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     from .engine import validate_workflow
     errors = validate_workflow(definition)
     if errors:
-        _cleanup_failed_install()
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print("[red]Error:[/red] Downloaded workflow validation failed:")
         for err in errors:
             console.print(f"  \u2022 {_escape_markup(str(err))}")
@@ -1163,7 +1232,7 @@ def _install_workflow_from_catalog(
 
     # Enforce that the workflow's internal ID matches the catalog key
     if definition.id and definition.id != workflow_id:
-        _cleanup_failed_install()
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(
             f"[red]Error:[/red] Workflow ID in YAML ({_escape_markup(repr(definition.id))}) "
             f"does not match catalog key ({_escape_markup(repr(workflow_id))}). "
@@ -1181,13 +1250,27 @@ def _install_workflow_from_catalog(
         except pkg_version.InvalidVersion:
             version_matches = str(definition.version) == expected_version
         if not version_matches:
-            _cleanup_failed_install()
+            _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
             console.print(
                 f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
                 f"does not match the catalog version ({_escape_markup(expected_version)}). "
                 f"The catalog entry may be stale or misconfigured."
             )
             raise typer.Exit(1)
+
+    # Commit the staged download onto workflow_file via an atomic swap. A
+    # prior file (reinstall) is renamed aside rather than overwritten in
+    # place, so it can be restored by rename (not a content rewrite) if
+    # registry.add() below fails.
+    try:
+        backup_file = _commit_workflow_file(staged_file, workflow_file, existed_before)
+    except OSError as exc:
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+        console.print(
+            f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
 
     entry = {
         "name": definition.name or info.get("name", workflow_id),
@@ -1204,7 +1287,7 @@ def _install_workflow_from_catalog(
     try:
         registry.add(workflow_id, entry)
     except OSError as exc:
-        _cleanup_failed_install()
+        _safe_rollback_committed_workflow_file(workflow_file, workflow_dir, existed_before, backup_file)
         console.print(
             f"[red]Error:[/red] Failed to update workflow registry for "
             f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
@@ -1261,49 +1344,69 @@ def workflow_remove(
         )
         raise typer.Exit(1)
 
-    # Captured before the registry write so a subsequent directory-removal
-    # failure can restore it verbatim (bypassing add(), which would stamp a
-    # new updated_at), mirroring workflow_step_remove's same restore pattern.
-    registry_metadata = registry.get(workflow_id)
+    import shutil
+    import tempfile
 
-    # Persist the registry removal before touching any files: if save()
+    # Stage the directory out of the way via an atomic rename *before* the
+    # registry write, so a mid-delete rmtree failure can never leave a
+    # partially-deleted directory that gets re-marked "installed". A rename
+    # is a metadata-only operation (unlike rmtree), so it either fully
+    # succeeds or leaves the original directory completely untouched.
+    staged_dir: Path | None = None
+    if workflow_dir.exists():
+        try:
+            reserved = Path(
+                tempfile.mkdtemp(prefix=f".{workflow_id}.removing-", dir=workflows_dir)
+            )
+            reserved.rmdir()
+            os.rename(workflow_dir, reserved)
+            staged_dir = reserved
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to stage workflow directory "
+                f"{_escape_markup(str(workflow_dir))} for removal: {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+
+    # Persist the registry removal only after staging succeeded: if save()
     # fails, WorkflowRegistry.remove() rolls back its in-memory state and
-    # raises, so the workflow stays fully installed (files + registry) rather
-    # than being deleted while the registry still (or no longer) claims it.
+    # raises, so we rename the staged directory back to its original
+    # location, restoring the pre-command state exactly (files + registry
+    # both still claim the workflow installed).
     try:
         registry.remove(workflow_id)
     except OSError as exc:
+        if staged_dir is not None:
+            try:
+                os.rename(staged_dir, workflow_dir)
+            except OSError as restore_exc:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Failed to restore workflow directory "
+                    f"after registry update failure; it remains staged at "
+                    f"{_escape_markup(str(staged_dir))}: {_escape_markup(str(restore_exc))}"
+                )
         console.print(
             f"[red]Error:[/red] Failed to update workflow registry for '{safe_id}': "
             f"{_escape_markup(str(exc))}"
         )
         raise typer.Exit(1)
 
-    if workflow_dir.exists():
-        import shutil
-        try:
-            shutil.rmtree(workflow_dir)
-        except OSError as exc:
-            # The registry removal already succeeded; restore the original
-            # entry verbatim so the registry doesn't claim this workflow is
-            # uninstalled while its directory is still sitting on disk.
-            try:
-                if registry_metadata is not None:
-                    registry.data["workflows"][workflow_id] = registry_metadata
-                    registry.save()
-            except Exception as restore_exc:  # noqa: BLE001
-                console.print(
-                    f"[yellow]Warning:[/yellow] Failed to restore registry entry "
-                    f"for '{safe_id}' after directory removal failure: "
-                    f"{_escape_markup(str(restore_exc))}"
-                )
-            console.print(
-                f"[red]Error:[/red] Failed to remove workflow directory "
-                f"{_escape_markup(str(workflow_dir))}: {_escape_markup(str(exc))}"
-            )
-            raise typer.Exit(1)
-
     console.print(f"[green]✓[/green] Workflow '{workflow_id}' removed")
+
+    # The registry has already durably committed the removal at this point,
+    # so it must stand regardless of what happens below: deleting the staged
+    # directory is now just cleanup, not a data-integrity concern, and a
+    # failure here is reported as a warning (not an error) to avoid
+    # contradicting the registry state that already succeeded.
+    if staged_dir is not None:
+        try:
+            shutil.rmtree(staged_dir)
+        except OSError as exc:
+            console.print(
+                f"[yellow]Warning:[/yellow] Workflow '{safe_id}' was removed, but its "
+                f"staged directory could not be deleted: {_escape_markup(str(exc))}. "
+                f"Remove it manually: {_escape_markup(str(staged_dir))}"
+            )
 
 
 @workflow_app.command("update")
