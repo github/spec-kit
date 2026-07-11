@@ -412,7 +412,9 @@ def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
     return dest_dir
 
 
-def _stage_workflow_file(dest_dir: Path) -> Path:
+def _stage_workflow_file(
+    dest_dir: Path, *, use_project_file_mode: bool = False
+) -> Path:
     """Reserve a same-directory staging file so new/updated workflow.yml
     content can be written and validated without ever touching (and risking
     truncating) an existing destination file before the final atomic swap.
@@ -423,14 +425,36 @@ def _stage_workflow_file(dest_dir: Path) -> Path:
     again via a guarded rmdir (never a broad rmtree, so any concurrently
     written content is left untouched) before the original OSError is
     re-raised unchanged. A pre-existing dest_dir (reinstall) is never
-    touched by this cleanup."""
+    touched by this cleanup. For catalog-created files,
+    ``use_project_file_mode`` recreates the reserved path exclusively with
+    mode 0666 so the process umask supplies the normal project-file mode."""
     import tempfile
 
     created_dir = not dest_dir.exists()
     dest_dir.mkdir(parents=True, exist_ok=True)
+    fd = -1
+    staged_file: Path | None = None
     try:
         fd, tmp_name = tempfile.mkstemp(dir=dest_dir, prefix=".workflow.yml.", suffix=".tmp")
+        staged_file = Path(tmp_name)
+        if use_project_file_mode:
+            os.close(fd)
+            fd = -1
+            staged_file.unlink()
+            flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(staged_file, flags, 0o666)
     except OSError:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if staged_file is not None:
+            try:
+                staged_file.unlink(missing_ok=True)
+            except OSError:
+                pass
         if created_dir:
             try:
                 dest_dir.rmdir()
@@ -441,7 +465,58 @@ def _stage_workflow_file(dest_dir: Path) -> Path:
                 )
         raise
     os.close(fd)
-    return Path(tmp_name)
+    assert staged_file is not None
+    return staged_file
+
+
+@contextlib.contextmanager
+def _workflow_install_transaction(project_root: Path):
+    """Serialize workflow file swaps with their registry updates."""
+    from ..shared_infra import _ensure_safe_shared_directory
+
+    lock_dir = project_root / ".specify"
+    try:
+        _ensure_safe_shared_directory(
+            project_root, lock_dir, context="workflow install lock directory"
+        )
+    except ValueError as exc:
+        raise OSError(str(exc)) from exc
+    lock_file = lock_dir / ".workflow-install.lock"
+    if lock_file.is_symlink():
+        raise OSError(f"Refusing to use symlinked workflow install lock: {lock_file}")
+
+    flags = os.O_RDWR | os.O_CREAT
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(lock_file, flags, 0o600)
+    try:
+        if lock_file.is_symlink():
+            raise OSError(
+                f"Refusing to use symlinked workflow install lock: {lock_file}"
+            )
+        if os.name == "nt":
+            import errno
+            import msvcrt
+            import time
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            while True:
+                os.lseek(fd, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                        raise
+                    time.sleep(0.05)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bool) -> Path | None:
@@ -1120,40 +1195,62 @@ def workflow_add(
             )
             raise typer.Exit(1)
 
-        # Commit the staged copy onto dest_file via an atomic swap. A prior
-        # file (reinstall) is renamed aside rather than overwritten in
-        # place, so it can be restored by rename (not a content rewrite) if
-        # registry.add() below fails.
         try:
-            backup_file = _commit_workflow_file(staged_file, dest_file, existed_before)
+            transaction = _workflow_install_transaction(project_root)
+            with transaction:
+                transaction_existed_before = existed_before or dest_file.exists()
+                transaction_registry = _open_workflow_registry(project_root)
+                # Commit the staged copy onto dest_file via an atomic swap. A
+                # prior file is renamed aside so registry failure can restore it.
+                try:
+                    backup_file = _commit_workflow_file(
+                        staged_file, dest_file, transaction_existed_before
+                    )
+                except OSError as exc:
+                    _safe_discard_staged_workflow_file(
+                        staged_file, dest_dir, existed_before
+                    )
+                    console.print(
+                        f"[red]Error:[/red] Failed to install workflow "
+                        f"'{_escape_markup(definition.id)}': "
+                        f"{_escape_markup(str(exc))}"
+                    )
+                    raise typer.Exit(1)
+                try:
+                    entry = {
+                        "name": definition.name,
+                        "version": definition.version,
+                        "description": definition.description,
+                        "source": source_label,
+                    }
+                    existing = transaction_registry.get(definition.id)
+                    if isinstance(existing, dict) and not existing.get(
+                        "enabled", True
+                    ):
+                        entry["enabled"] = False
+                    transaction_registry.add(definition.id, entry)
+                except OSError as exc:
+                    _safe_rollback_committed_workflow_file(
+                        dest_file,
+                        dest_dir,
+                        transaction_existed_before,
+                        backup_file,
+                    )
+                    console.print(
+                        f"[red]Error:[/red] Failed to update workflow registry for "
+                        f"'{_escape_markup(definition.id)}': "
+                        f"{_escape_markup(str(exc))}"
+                    )
+                    raise typer.Exit(1)
+                # Registry update succeeded while the transaction lock is held.
+                _discard_committed_backup_file(backup_file)
         except OSError as exc:
             _safe_discard_staged_workflow_file(staged_file, dest_dir, existed_before)
             console.print(
-                f"[red]Error:[/red] Failed to install workflow "
+                f"[red]Error:[/red] Failed to lock workflow install "
                 f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
             )
             raise typer.Exit(1)
-        try:
-            entry = {
-                "name": definition.name,
-                "version": definition.version,
-                "description": definition.description,
-                "source": source_label,
-            }
-            existing = registry.get(definition.id)
-            if isinstance(existing, dict) and not existing.get("enabled", True):
-                entry["enabled"] = False
-            registry.add(definition.id, entry)
-        except OSError as exc:
-            _safe_rollback_committed_workflow_file(dest_file, dest_dir, existed_before, backup_file)
-            console.print(
-                f"[red]Error:[/red] Failed to update workflow registry for "
-                f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
-            )
-            raise typer.Exit(1)
-        # registry.add() durably succeeded -- the renamed-aside backup is no
-        # longer needed for rollback.
-        _discard_committed_backup_file(backup_file)
         console.print(
             f"[green]✓[/green] Workflow '{_escape_markup(definition.name)}' "
             f"({_escape_markup(definition.id)}) installed"
@@ -1396,7 +1493,10 @@ def _install_workflow_from_catalog(
     existed_before = workflow_dir.is_dir()
 
     try:
-        staged_file = _stage_workflow_file(workflow_dir)
+        staged_file = _stage_workflow_file(
+            workflow_dir,
+            use_project_file_mode=not workflow_file.exists(),
+        )
     except OSError as exc:
         console.print(
             f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: "
@@ -1497,44 +1597,69 @@ def _install_workflow_from_catalog(
             )
             raise typer.Exit(1)
 
-    # Commit the staged download onto workflow_file via an atomic swap. A
-    # prior file (reinstall) is renamed aside rather than overwritten in
-    # place, so it can be restored by rename (not a content rewrite) if
-    # registry.add() below fails.
     try:
-        backup_file = _commit_workflow_file(staged_file, workflow_file, existed_before)
+        transaction = _workflow_install_transaction(project_root)
+        with transaction:
+            transaction_existed_before = (
+                existed_before or workflow_file.exists()
+            )
+            transaction_registry = _open_workflow_registry(project_root)
+            # Commit the staged download onto workflow_file via an atomic
+            # swap. A prior file is renamed aside for registry rollback.
+            try:
+                backup_file = _commit_workflow_file(
+                    staged_file, workflow_file, transaction_existed_before
+                )
+            except OSError as exc:
+                _safe_discard_staged_workflow_file(
+                    staged_file, workflow_dir, existed_before
+                )
+                console.print(
+                    f"[red]Error:[/red] Failed to install workflow "
+                    f"'{safe_wf_id}' from catalog: {_escape_markup(str(exc))}"
+                )
+                raise typer.Exit(1)
+
+            entry = {
+                "name": definition.name or info.get("name", workflow_id),
+                "version": definition.version or info.get("version", "0.0.0"),
+                "description": definition.description
+                or info.get("description", ""),
+                "source": "catalog",
+                "catalog_name": info.get("_catalog_name", ""),
+                "url": workflow_url,
+            }
+            # Preserve a prior disabled state across updates/reinstalls.
+            existing = transaction_registry.get(workflow_id)
+            if isinstance(existing, dict) and not existing.get(
+                "enabled", True
+            ):
+                entry["enabled"] = False
+            try:
+                transaction_registry.add(workflow_id, entry)
+            except OSError as exc:
+                _safe_rollback_committed_workflow_file(
+                    workflow_file,
+                    workflow_dir,
+                    transaction_existed_before,
+                    backup_file,
+                )
+                console.print(
+                    f"[red]Error:[/red] Failed to update workflow registry for "
+                    f"'{_escape_markup(workflow_id)}': "
+                    f"{_escape_markup(str(exc))}"
+                )
+                raise typer.Exit(1)
+            # Registry update succeeded while the transaction lock is held.
+            _discard_committed_backup_file(backup_file)
     except OSError as exc:
         _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(
-            f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: "
+            f"[red]Error:[/red] Failed to lock workflow install "
+            f"'{safe_wf_id}': "
             f"{_escape_markup(str(exc))}"
         )
         raise typer.Exit(1)
-
-    entry = {
-        "name": definition.name or info.get("name", workflow_id),
-        "version": definition.version or info.get("version", "0.0.0"),
-        "description": definition.description or info.get("description", ""),
-        "source": "catalog",
-        "catalog_name": info.get("_catalog_name", ""),
-        "url": workflow_url,
-    }
-    # Preserve a prior disabled state across updates/reinstalls.
-    existing = registry.get(workflow_id)
-    if isinstance(existing, dict) and not existing.get("enabled", True):
-        entry["enabled"] = False
-    try:
-        registry.add(workflow_id, entry)
-    except OSError as exc:
-        _safe_rollback_committed_workflow_file(workflow_file, workflow_dir, existed_before, backup_file)
-        console.print(
-            f"[red]Error:[/red] Failed to update workflow registry for "
-            f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
-        )
-        raise typer.Exit(1)
-    # registry.add() durably succeeded -- the renamed-aside backup is no
-    # longer needed for rollback.
-    _discard_committed_backup_file(backup_file)
     console.print(
         f"[green]✓[/green] Workflow '{_escape_markup(str(info.get('name', workflow_id)))}' "
         "installed from catalog"

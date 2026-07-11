@@ -8984,6 +8984,164 @@ steps:
         leftovers = [p.name for p in workflow_dir.iterdir() if p.name != "workflow.yml"]
         assert leftovers == [], f"orphan sibling(s) left behind: {leftovers}"
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+    def test_add_catalog_fresh_install_uses_project_file_mode(
+        self, project_dir, monkeypatch
+    ):
+        import stat
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+
+        previous_umask = os.umask(0o022)
+        try:
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setattr(
+                    "specify_cli.authentication.http.open_url",
+                    lambda url, timeout=None, extra_headers=None,
+                    redirect_validator=None: self._FakeResponse(data, url),
+                )
+                result = CliRunner().invoke(
+                    app, ["workflow", "add", "align-wf"]
+                )
+        finally:
+            os.umask(previous_umask)
+
+        assert result.exit_code == 0, result.output
+        workflow_file = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "align-wf"
+            / "workflow.yml"
+        )
+        assert stat.S_IMODE(workflow_file.stat().st_mode) == 0o644
+
+    def test_concurrent_catalog_reinstalls_keep_file_and_registry_aligned(
+        self, project_dir, monkeypatch
+    ):
+        import threading
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        workflows_dir = project_dir / ".specify" / "workflows"
+        workflow_file = workflows_dir / "align-wf" / "workflow.yml"
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        WorkflowRegistry(project_dir).add(
+            "align-wf",
+            {
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "source": "catalog",
+            },
+        )
+
+        versions = {"install-a": "2.0.0", "install-b": "3.0.0"}
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": versions[threading.current_thread().name],
+                "url": (
+                    "https://example.com/"
+                    f"{versions[threading.current_thread().name]}.yml"
+                ),
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None,
+            redirect_validator=None: self._FakeResponse(
+                self.WORKFLOW_YAML.format(
+                    version=url.rsplit("/", 1)[-1].removesuffix(".yml")
+                ).encode(),
+                url,
+            ),
+        )
+
+        a_committed = threading.Event()
+        b_committed = threading.Event()
+        a_saving = threading.Event()
+        b_saved = threading.Event()
+        real_commit = _commands._commit_workflow_file
+        real_save = WorkflowRegistry.save
+
+        def coordinated_commit(*args, **kwargs):
+            backup = real_commit(*args, **kwargs)
+            if threading.current_thread().name == "install-a":
+                a_committed.set()
+                b_committed.wait(0.5)
+            else:
+                b_committed.set()
+            return backup
+
+        def coordinated_save(registry):
+            if threading.current_thread().name == "install-a":
+                a_saving.set()
+                b_saved.wait(0.5)
+                return real_save(registry)
+            assert a_saving.wait(2)
+            real_save(registry)
+            b_saved.set()
+
+        monkeypatch.setattr(
+            _commands, "_commit_workflow_file", coordinated_commit
+        )
+        monkeypatch.setattr(WorkflowRegistry, "save", coordinated_save)
+
+        errors = []
+
+        def install():
+            try:
+                _commands._install_workflow_from_catalog(
+                    project_dir,
+                    WorkflowRegistry(project_dir),
+                    workflows_dir,
+                    "align-wf",
+                )
+            except BaseException as exc:
+                errors.append(exc)
+
+        first = threading.Thread(target=install, name="install-a")
+        second = threading.Thread(target=install, name="install-b")
+        first.start()
+        assert a_committed.wait(2)
+        second.start()
+        first.join(5)
+        second.join(5)
+
+        assert not first.is_alive()
+        assert not second.is_alive()
+        assert errors == []
+        file_version = WorkflowDefinition.from_yaml(workflow_file).version
+        registry_version = WorkflowRegistry(project_dir).get("align-wf")[
+            "version"
+        ]
+        assert file_version == registry_version
+
     def test_add_catalog_reinstall_restore_failure_reports_warning_and_original_error(
         self, project_dir, monkeypatch
     ):
