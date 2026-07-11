@@ -123,6 +123,36 @@ def test_remove_converts_raw_installer_exception_to_bundler_error(tmp_path: Path
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
+def test_remove_partial_failure_message_reflects_partial_state(tmp_path: Path):
+    """A failure can occur after earlier components in the same bundle have
+    already been removed from disk. The bundle record is left unchanged
+    (save_records never runs on this path), so it still claims the bundle
+    fully installed -- but the message must not claim "No changes were
+    recorded" when components were, in fact, already removed."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    real_remove = installer.remove
+    calls = {"n": 0}
+
+    def remove_then_fail(project_root, component):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real_remove(project_root, component)
+        raise OSError("disk full")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "remove", remove_then_fail)
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no changes were recorded" not in message.lower()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
 def test_remove_reports_uninstalled_not_installed(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())

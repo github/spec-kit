@@ -202,9 +202,16 @@ def remove_bundle(
     except BundlerError:
         raise
     except Exception as exc:  # noqa: BLE001
+        if result.uninstalled:
+            detail = (
+                f"{len(result.uninstalled)} component(s) were already removed "
+                "before this failure; the bundle record was left unchanged, "
+                "so the project may be partially uninstalled."
+            )
+        else:
+            detail = "No components were removed."
         raise BundlerError(
-            f"Failed to remove bundle '{bundle_id}': {exc}. "
-            "No changes were recorded."
+            f"Failed to remove bundle '{bundle_id}': {exc}. {detail}"
         ) from exc
 
     save_records(project_root, remove_record(records, bundle_id))

@@ -88,9 +88,18 @@ class WorkflowRegistry:
             "workflows": {},
         }
         # Defense-in-depth: refuse to read through symlinked parents or a
-        # symlinked registry file (mirrors StepRegistry._load).
+        # symlinked registry file. Unlike StepRegistry (read-only best-effort
+        # elsewhere), a fabricated empty registry here is not safe: read-only
+        # callers (notably the bundler's remove path) query is_installed()
+        # before ever writing, and would otherwise conclude an installed
+        # workflow is absent, skip removing it, then delete the bundle
+        # record -- leaving the workflow untracked but still on disk. Fail
+        # closed here just like the unreadable-file case below.
         if self._has_symlinked_parent() or self.registry_path.is_symlink():
-            return default_registry
+            raise OSError(
+                f"Refusing to read workflow registry at {self.registry_path}: "
+                "a parent directory or the registry file itself is a symlink"
+            )
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:

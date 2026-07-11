@@ -747,18 +747,30 @@ def workflow_add(
         dest_dir = _safe_workflow_id_dir(workflows_dir, definition.id)
         dest_file = dest_dir / "workflow.yml"
         existed_before = dest_dir.is_dir()
-        backup_bytes = (
-            dest_file.read_bytes() if existed_before and dest_file.is_file() else None
-        )
+        try:
+            backup_bytes = (
+                dest_file.read_bytes() if existed_before and dest_file.is_file() else None
+            )
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to read existing workflow "
+                f"'{_escape_markup(definition.id)}' before install: {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
         import shutil
 
         def _cleanup_failed_install() -> None:
             # Don't leave an orphan directory behind for a fresh install; for
             # a reinstall over an existing local workflow, restore the prior
             # workflow.yml instead of clobbering it with the failed update.
+            # A pre-existing directory with no prior workflow.yml (no backup
+            # bytes) must have the newly written file removed instead of
+            # doing nothing, so it doesn't linger as an orphan.
             if existed_before:
                 if backup_bytes is not None:
                     dest_file.write_bytes(backup_bytes)
+                else:
+                    dest_file.unlink(missing_ok=True)
             else:
                 shutil.rmtree(dest_dir, ignore_errors=True)
 
@@ -996,9 +1008,16 @@ def _install_workflow_from_catalog(
     # mirroring _validate_and_install_local's existed-before/backup-aware
     # rollback.
     existed_before = workflow_dir.is_dir()
-    prior_workflow_bytes = (
-        workflow_file.read_bytes() if existed_before and workflow_file.is_file() else None
-    )
+    try:
+        prior_workflow_bytes = (
+            workflow_file.read_bytes() if existed_before and workflow_file.is_file() else None
+        )
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to read existing workflow "
+            f"'{safe_wf_id}' before install: {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
 
     def _cleanup_failed_install() -> None:
         """Restore the prior workflow.yml on a reinstall, or remove the
@@ -1007,10 +1026,15 @@ def _install_workflow_from_catalog(
         exception, invalid YAML, ID mismatch, version mismatch, and
         registry.add() failure -- must call this instead of rmtree'ing
         directly, so none of them can destroy a working install that
-        predates this attempt."""
+        predates this attempt. A pre-existing directory with no prior
+        workflow.yml (no backup bytes) must have the newly downloaded file
+        removed instead of doing nothing, so it doesn't linger as an
+        orphan."""
         if existed_before:
             if prior_workflow_bytes is not None:
                 workflow_file.write_bytes(prior_workflow_bytes)
+            else:
+                workflow_file.unlink(missing_ok=True)
         else:
             import shutil
             shutil.rmtree(workflow_dir, ignore_errors=True)
@@ -1210,10 +1234,12 @@ def workflow_remove(
             except Exception as restore_exc:  # noqa: BLE001
                 console.print(
                     f"[yellow]Warning:[/yellow] Failed to restore registry entry "
-                    f"for '{safe_id}' after directory removal failure: {restore_exc}"
+                    f"for '{safe_id}' after directory removal failure: "
+                    f"{_escape_markup(str(restore_exc))}"
                 )
             console.print(
-                f"[red]Error:[/red] Failed to remove workflow directory {workflow_dir}: {exc}"
+                f"[red]Error:[/red] Failed to remove workflow directory "
+                f"{_escape_markup(str(workflow_dir))}: {_escape_markup(str(exc))}"
             )
             raise typer.Exit(1)
 

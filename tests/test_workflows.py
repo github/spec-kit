@@ -4820,6 +4820,33 @@ class TestWorkflowRegistry:
         with pytest.raises(OSError):
             WorkflowRegistry(project_dir)
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_load_symlinked_workflows_dir_fails_closed_not_silently_empty(
+        self, project_dir
+    ):
+        """A symlinked .specify/workflows is the same fail-open hazard as a
+        read OSError: silently reporting an empty registry lets a read-only
+        caller (e.g. the bundler's remove path) conclude a workflow isn't
+        installed, skip removing it, and then delete the bundle record --
+        leaving the workflow untracked but still on disk. Raise here too,
+        exactly like the unreadable-file case, so callers cannot act on
+        fabricated empty state."""
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        import json as _json
+
+        outside = project_dir.parent / "outside-workflows"
+        outside.mkdir(parents=True, exist_ok=True)
+        (outside / "workflow-registry.json").write_text(
+            _json.dumps({"schema_version": "1.0", "workflows": {"evil": {}}}),
+            encoding="utf-8",
+        )
+        workflows_link = project_dir / ".specify" / "workflows"
+        workflows_link.rmdir()
+        workflows_link.symlink_to(outside, target_is_directory=True)
+
+        with pytest.raises(OSError):
+            WorkflowRegistry(project_dir)
+
 
 # ===== Workflow Catalog Tests =====
 
@@ -6000,6 +6027,61 @@ class TestWorkflowRemoveGuard:
         restored = WorkflowRegistry(project_dir).get("test-wf")
         assert restored == original_entry
         assert WorkflowRegistry(project_dir).is_installed("test-wf")
+
+    def test_remove_directory_and_restore_failure_escapes_rich_markup(
+        self, temp_dir, monkeypatch
+    ):
+        """The project path (workflow_dir) and the rmtree/restore-save
+        exceptions interpolated into these new Rich error/warning messages
+        must be escaped like every other error path here -- unescaped Rich
+        markup characters (e.g. brackets) in a project directory name or an
+        OS/registry error message could otherwise be parsed as markup and
+        hide or corrupt the displayed text instead of showing it verbatim."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        project_dir = temp_dir / "weird[project]"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "workflows").mkdir()
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
+        workflow_dir = project_dir / ".specify" / "workflows" / "test-wf"
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
+
+        def rmtree_boom(*args, **kwargs):
+            raise OSError("[disk] permission denied")
+
+        real_save = WorkflowRegistry.save
+        call_count = {"n": 0}
+
+        def save_boom(self):
+            # The first save() call is registry.remove()'s own persist,
+            # which must succeed so we reach the rmtree failure below; only
+            # the second call (the post-rmtree-failure restore attempt)
+            # should fail, to exercise the restore-failure warning path.
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return real_save(self)
+            raise Exception("[warn] save exploded")
+
+        monkeypatch.chdir(project_dir)
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("shutil.rmtree", rmtree_boom)
+            mp.setattr(WorkflowRegistry, "save", save_boom)
+            result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        # Rich may soft-wrap the long path across lines; compare with
+        # whitespace collapsed so the wrap position doesn't affect the check.
+        output_compact = "".join(result.output.split())
+        assert "".join(str(workflow_dir).split()) in output_compact
+        assert "[disk]permissiondenied" in output_compact
+        assert "[warn]saveexploded" in output_compact
 
 
 class TestWorkflowAddSymlinkGuard:
@@ -7758,6 +7840,9 @@ steps:
         assert fresh.get("align-wf")["version"] == "1.0.0"
 
     def test_registry_save_refuses_symlinked_parent(self, project_dir, tmp_path):
+        """Construction now fails closed on a symlinked .specify just like
+        an unreadable registry file: a symlinked parent must never be
+        silently tolerated up to save() -- it must raise immediately."""
         from specify_cli.workflows.catalog import WorkflowRegistry
 
         outside = tmp_path / "outside-specify"
@@ -7766,9 +7851,8 @@ steps:
         if specify_dir.exists():
             shutil.rmtree(specify_dir)
         specify_dir.symlink_to(outside)
-        registry = WorkflowRegistry(project_dir)
         with pytest.raises(OSError, match="symlink"):
-            registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
+            WorkflowRegistry(project_dir)
         assert not (outside / "workflows").exists()
 
     def test_add_dev_dir_with_workflow_yml_directory_errors_cleanly(self, project_dir, monkeypatch):
@@ -7865,6 +7949,75 @@ steps:
         assert result.output.strip() != ""
         assert installed_yaml.read_bytes() == original_bytes
         assert WorkflowRegistry(project_dir).get("align-wf") == original_registry_entry
+
+    def test_add_dev_reinstall_backup_read_failure_gives_clean_error(
+        self, project_dir, monkeypatch
+    ):
+        """The prior-file backup read (used to restore on a later install
+        failure) ran before any guarded section: a read failure on the
+        existing workflow.yml (e.g. a transient permission/FS issue) leaked
+        a raw OSError instead of the clean escaped CLI error used by every
+        other failure branch here, and left the destination untouched since
+        it happens before any write."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._install_dev(runner, app, project_dir)
+        installed_yaml = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
+        original_bytes = installed_yaml.read_bytes()
+
+        (src / "workflow.yml").write_text(
+            self.WORKFLOW_YAML.format(version="2.0.0"), encoding="utf-8"
+        )
+
+        real_read_bytes = Path.read_bytes
+
+        def boom(self_path, *args, **kwargs):
+            if self_path.resolve() == installed_yaml.resolve():
+                raise OSError("permission denied")
+            return real_read_bytes(self_path, *args, **kwargs)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(Path, "read_bytes", boom)
+            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        assert installed_yaml.read_bytes() == original_bytes
+
+    def test_add_dev_fresh_install_into_preexisting_empty_dir_cleans_new_file(
+        self, project_dir, monkeypatch
+    ):
+        """When the destination directory already exists but has no
+        workflow.yml (e.g. an empty dir left over from elsewhere), a later
+        registry.add() failure must remove the newly copied file -- the
+        rollback previously did nothing in this case (existed_before=True
+        with no backup bytes), leaving the new file behind -- while leaving
+        the pre-existing directory itself intact."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        src = self._write_workflow_dir(project_dir)
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        dest_dir.mkdir(parents=True)  # pre-existing, but empty: no workflow.yml
+
+        def boom(self, *args, **kwargs):
+            raise OSError("disk full")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(WorkflowRegistry, "add", boom)
+            result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+
+        assert result.exit_code != 0
+        assert result.output.strip() != ""
+        assert dest_dir.is_dir()
+        assert not (dest_dir / "workflow.yml").exists()
 
     def test_add_catalog_save_failure_leaves_no_orphan_directory(self, project_dir, monkeypatch):
         """Same guarantee as the local-install paths, but for a fresh catalog
@@ -7972,6 +8125,108 @@ steps:
         registry = WorkflowRegistry(project_dir)
         assert registry.is_installed("align-wf")
         assert registry.get("align-wf")["version"] == "1.0.0"
+
+    def test_add_catalog_reinstall_backup_read_failure_gives_clean_error(
+        self, project_dir, monkeypatch
+    ):
+        """Same backup-read boundary gap as the local-install path: the
+        prior-file read used to seed the reinstall's rollback ran before
+        the download/validation error boundary, so a read failure on the
+        existing workflow.yml (e.g. a transient permission/FS issue) leaked
+        a raw OSError instead of a clean escaped CLI error, and must be
+        caught before any download/write is attempted."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        runner = CliRunner()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    original_data, url
+                ),
+            )
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+        assert result.exit_code == 0, result.output
+
+        dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
+        real_read_bytes = Path.read_bytes
+
+        def boom(self_path, *args, **kwargs):
+            if self_path.resolve() == dest_file.resolve():
+                raise OSError("permission denied")
+            return real_read_bytes(self_path, *args, **kwargs)
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(Path, "read_bytes", boom)
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        assert dest_file.read_bytes() == original_data
+
+    def test_add_catalog_fresh_install_into_preexisting_empty_dir_cleans_new_file(
+        self, project_dir, monkeypatch
+    ):
+        """Same rollback orphan gap as the local-install path, but for a
+        fresh catalog install: a pre-existing empty destination directory
+        (no workflow.yml) sets existed_before=True with no backup bytes, so
+        the rollback previously did nothing on a later failure -- leaving
+        the freshly downloaded workflow.yml behind. It must be removed,
+        leaving the pre-existing directory itself intact."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        dest_dir.mkdir(parents=True)  # pre-existing, but empty: no workflow.yml
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+
+        def boom(self):
+            raise OSError("disk full")
+
+        runner = CliRunner()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
+            )
+            mp.setattr(WorkflowRegistry, "save", boom)
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code != 0
+        assert result.output.strip() != ""
+        assert dest_dir.is_dir()
+        assert not (dest_dir / "workflow.yml").exists()
 
     @pytest.mark.parametrize(
         "mode", ["redirect_rejected", "download_exception", "invalid_yaml", "id_mismatch"]
