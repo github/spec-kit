@@ -1241,31 +1241,31 @@ class ExtensionManager:
         Called during extension removal to clean up skill files that
         were created by ``_register_extension_skills()``.
 
-        If *skills_dir* is not provided and ``_get_skills_dir()`` returns
-        ``None`` (e.g. the user removed init-options.json or toggled
-        ai_skills after installation), we fall back to scanning all known
-        agent skills directories so that orphaned skill directories are
-        still cleaned up.  In that case each candidate directory is
-        verified against the SKILL.md ``metadata.source`` field before
-        removal to avoid accidentally deleting user-created skills with
-        the same name.
+        When *skills_dir* is omitted, this is a genuinely unscoped removal
+        (e.g. full extension removal): ``registered_skills`` is a single
+        flat list covering mirrors created under *every* agent this
+        extension was ever activated under, not just the currently active
+        one, so we always scan all known agent skills directories rather
+        than narrowing to whichever agent happens to be active right now.
+        Each candidate directory is verified against the SKILL.md
+        ``metadata.source`` field before removal to avoid accidentally
+        deleting user-created skills with the same name.
 
         Args:
             skill_names: List of skill names to remove.
             extension_id: Extension ID used to verify ownership during
                 fallback candidate scanning.
-            skills_dir: Optional explicit skills directory to use instead
-                of resolving via ``_get_skills_dir()``.  Useful when the
-                caller needs to target a specific agent's skills directory
-                regardless of the currently-active agent in init-options.
+            skills_dir: Optional explicit skills directory to scope
+                cleanup to. Useful when the caller needs to target a
+                specific agent's skills directory regardless of the
+                currently-active agent in init-options. When omitted,
+                every configured agent's skills directory is scanned
+                instead of resolving just the currently active one.
         """
         if not skill_names:
             return
 
         from ..shared_infra import _validate_safe_shared_directory
-
-        if skills_dir is None:
-            skills_dir = self._get_skills_dir()
 
         if skills_dir:
             # Reject the candidate directory itself (any path component,

@@ -2247,6 +2247,30 @@ class PresetManager:
         metadata = self.registry.get(pack_id)
         # Restore original skills when preset is removed
         registered_skills = metadata.get("registered_skills", []) if metadata else []
+        if isinstance(registered_skills, list) and registered_skills:
+            # Legacy flat-list registries predate per-agent provenance
+            # tracking. Migration to the per-agent dict form previously
+            # only happened during a rescaffold (register_enabled_presets_
+            # for_agent); if the *first* post-upgrade operation is instead
+            # `preset remove` (no intervening use/upgrade), the legacy
+            # branch of _unregister_skills restores only the currently
+            # active agent's directory, leaving this preset's overrides in
+            # every previously active agent's directory orphaned. Infer
+            # real per-agent ownership from the on-disk preset marker now,
+            # while pack_id is still known, and hand the resulting mapping
+            # through the same dict-based cleanup path already used for
+            # non-legacy registries (#2948).
+            from .. import load_init_options
+
+            init_opts = load_init_options(self.project_root)
+            fallback_agent = init_opts.get("ai") if isinstance(init_opts, dict) else None
+            if not isinstance(fallback_agent, str):
+                fallback_agent = ""
+            registered_skills = self._infer_legacy_skill_provenance(
+                [name for name in registered_skills if isinstance(name, str)],
+                pack_id,
+                fallback_agent=fallback_agent,
+            )
         registered_commands = metadata.get("registered_commands", {}) if metadata else {}
         pack_dir = self.presets_dir / pack_id
 

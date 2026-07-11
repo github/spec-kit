@@ -1448,6 +1448,68 @@ class TestExtensionSkillRegistration:
             "prematurely dropped during the earlier toggle (#2948)"
         )
 
+    def test_remove_while_second_agent_still_in_skills_mode_cleans_up_first_agent_mirror(
+        self, project_dir, temp_dir
+    ):
+        """Full extension removal must clean up every previously-active
+        agent's mirror, not just the currently active one, even with no
+        intervening toggle.
+
+        Auggie is activated first (skills mode), writing a mirror.
+        Copilot is then activated (also skills mode, still active at
+        removal time) and writes its own mirror for the same names.
+        ``remove()`` calls ``_unregister_extension_skills(registered_skills,
+        extension_id)`` with no explicit ``skills_dir`` — genuinely
+        unscoped, "clean up everywhere this extension owns something".
+        Before this fix, omitting ``skills_dir`` caused the method to
+        resolve the *currently active* agent's directory via
+        ``_get_skills_dir()`` and take the scoped fast path instead of the
+        all-directory fallback scan, so only Copilot's mirror was removed
+        and Auggie's was silently left orphaned (#2948).
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="remove-multi-agent-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        auggie_skills_dir = project_dir / ".augment" / "skills"
+        auggie_hello = auggie_skills_dir / "speckit-remove-multi-agent-ext-hello" / "SKILL.md"
+        auggie_world = auggie_skills_dir / "speckit-remove-multi-agent-ext-world" / "SKILL.md"
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "sanity: auggie's skills-mode activation should mirror both "
+            "extension commands as SKILL.md files"
+        )
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        copilot_hello = copilot_skills_dir / "speckit-remove-multi-agent-ext-hello" / "SKILL.md"
+        copilot_world = copilot_skills_dir / "speckit-remove-multi-agent-ext-world" / "SKILL.md"
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's skills-mode activation should also mirror "
+            "both extension commands"
+        )
+
+        # Remove the extension while copilot (the second agent) is still
+        # the active, skills-mode agent — no toggle, no intervening
+        # rescaffold for auggie.
+        assert manager.remove("remove-multi-agent-ext") is True
+
+        assert not copilot_hello.exists() and not copilot_world.exists(), (
+            "sanity: the currently active agent's mirrors must be removed"
+        )
+        assert not auggie_hello.exists() and not auggie_world.exists(), (
+            "removal must also clean up the first agent's (auggie) "
+            "mirrors even though it is no longer the active agent — "
+            "omitting skills_dir must trigger the all-directory fallback "
+            "scan, not silently narrow to the currently active agent's "
+            "directory (#2948)"
+        )
+
     def test_extension_owned_skill_names_rejects_symlinked_candidate_directory(
         self, project_dir, temp_dir
     ):

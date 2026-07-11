@@ -4907,6 +4907,83 @@ class TestPresetSkills:
             "side effect of probing for provenance (#2948)"
         )
 
+    def test_remove_infers_legacy_flat_list_provenance_without_prior_rescaffold(
+        self, project_dir, temp_dir
+    ):
+        """``preset remove`` on a legacy flat-list registry must restore
+        every previously active agent's directory, not just the currently
+        active one, even when it is the *very first* post-upgrade
+        operation (no intervening ``use``/``upgrade``/rescaffold).
+
+        Pre-#2948 registries recorded a flat ``registered_skills`` list
+        because presets were rendered for every detected skill-mode agent
+        at once, not just the active one. Migrating that legacy format to
+        the per-agent dict form previously only happened as a side effect
+        of ``register_enabled_presets_for_agent`` (i.e. a rescaffold or
+        ``integration use``/``switch``). If the user's first action after
+        upgrading is instead directly running ``preset remove``, the
+        legacy branch of ``_unregister_skills`` restored only the
+        currently active agent's directory (via ``_get_skills_dir()``),
+        permanently leaving this preset's override in every other,
+        previously active agent's directory (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "remove-legacy-no-rescaffold-preset", "speckit.specify",
+            "Remove legacy no rescaffold test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:remove-legacy-no-rescaffold-preset" in claude_skill.read_text(), (
+            "sanity: install should have written the override under "
+            "claude's skill directory"
+        )
+        # Simulate the pre-#2948 "register for every detected agent"
+        # install behaviour by also placing the marker under codex's
+        # directory directly (mirroring the old, non-active-only
+        # rendering that predates this PR).
+        codex_skill = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        codex_skill.write_text(claude_skill.read_text(), encoding="utf-8")
+
+        # Simulate a pre-#2948 registry: a flat list with no per-agent
+        # provenance, even though both directories actually hold this
+        # preset's marker on disk.
+        manager.registry.update(
+            "remove-legacy-no-rescaffold-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        # No intervening use/upgrade/rescaffold: remove() is the very
+        # first operation run after the legacy registry was written.
+        assert manager.remove("remove-legacy-no-rescaffold-preset") is True
+
+        for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:remove-legacy-no-rescaffold-preset" not in content, (
+                f"{label}'s preset override must be restored on removal "
+                "even with no prior rescaffold to migrate the legacy "
+                "flat-list format first — remove() must infer real "
+                "per-agent ownership from on-disk provenance itself "
+                "(#2948)"
+            )
+            assert "Core specify body" in content
+
     def test_symlinked_skills_dir_rejected_on_removal(self, project_dir, temp_dir):
         """Removal must validate a recorded skill directory before touching it.
 
