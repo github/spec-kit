@@ -10014,6 +10014,23 @@ steps:
         result = runner.invoke(app, ["workflow", "run", "align-wf"])
         assert result.exit_code == 0, result.output
 
+    def test_run_rejects_corrupted_registry_entry(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        registry = WorkflowRegistry(project_dir)
+        registry.data["workflows"]["align-wf"] = "corrupted"
+        registry.save()
+
+        result = runner.invoke(app, ["workflow", "run", "align-wf"])
+        assert result.exit_code != 0
+        assert "corrupted" in result.output
+
     def test_disable_blocks_run_via_path_equivalent_id(self, project_dir, monkeypatch):
         """Path spelling "align-wf/" must not run a disabled workflow by dodging the registry lookup."""
         from typer.testing import CliRunner
@@ -10306,6 +10323,25 @@ steps:
         resumed = json.loads(result.stdout)
         assert resumed["run_id"] == run_id
 
+    def test_resume_rejects_corrupted_registry_entry(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+
+        registry = WorkflowRegistry(project_dir)
+        registry.data["workflows"]["gated-wf"] = "corrupted"
+        registry.save()
+
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+        assert result.exit_code != 0
+        assert "corrupted" in result.output
+
     def test_resume_preload_io_error_is_reported_cleanly(
         self, project_dir, monkeypatch
     ):
@@ -10459,14 +10495,12 @@ steps:
         assert result.exit_code != 0
         assert "disabled" in result.output
 
-    def test_resume_falls_back_to_current_project_when_cross_project_root_vanishes(
+    def test_resume_rejects_missing_cross_project_owner_root(
         self, temp_dir, monkeypatch
     ):
-        """A persisted cross-project owning root that no longer exists (that
-        other project was itself deleted/moved away) must not be trusted as
-        a safety signal -- silently skipping the disabled check just
-        because the stored path happens not to resolve would defeat the
-        guard. Falls back to the current project's own registry instead."""
+        """A vanished explicit cross-project owner cannot be safely
+        rediscovered, so resume must fail closed instead of consulting the
+        unrelated project that stores the run state."""
         from typer.testing import CliRunner
         from specify_cli import app
         import shutil
@@ -10494,21 +10528,10 @@ steps:
         # is now dangling.
         shutil.rmtree(owner_project)
 
-        # unrelated_cwd (where this run's own state.json lives) has its own
-        # separately-installed, disabled workflow under the same ID.
-        src2 = unrelated_cwd / "gated-src"
-        src2.mkdir()
-        (src2 / "workflow.yml").write_text(
-            self._GATED_WORKFLOW_YAML, encoding="utf-8"
-        )
-        result = runner.invoke(app, ["workflow", "add", str(src2), "--dev"])
-        assert result.exit_code == 0, result.output
-        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
-        assert result.exit_code == 0, result.output
-
         result = runner.invoke(app, ["workflow", "resume", run_id])
         assert result.exit_code != 0
-        assert "disabled" in result.output
+        assert "owner" in result.output.lower()
+        assert "unavailable" in result.output.lower()
 
     @pytest.mark.parametrize(
         "field, bad_value",

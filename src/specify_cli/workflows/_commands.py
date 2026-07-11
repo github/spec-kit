@@ -77,6 +77,25 @@ def _open_workflow_registry(project_root: Path, out=None):
         raise typer.Exit(1)
 
 
+def _require_enabled_workflow(
+    registry_root: Path, workflow_id: str, out: Any
+) -> None:
+    """Fail closed for corrupted or explicitly disabled registry entries."""
+    metadata = _open_workflow_registry(registry_root, out).get(workflow_id)
+    if metadata is not None and not isinstance(metadata, dict):
+        out.print(
+            f"[red]Error:[/red] Registry entry for "
+            f"'{_escape_markup(workflow_id)}' is corrupted"
+        )
+        raise typer.Exit(1)
+    if isinstance(metadata, dict) and not metadata.get("enabled", True):
+        out.print(
+            f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is disabled. "
+            f"Enable with: specify workflow enable {_escape_markup(workflow_id)}"
+        )
+        raise typer.Exit(1)
+
+
 def _resolve_run_owner_root(
     installed_registry_root: str | None, project_root: Path
 ) -> Path:
@@ -91,16 +110,17 @@ def _resolve_run_owner_root(
     falling back to the *current* ``project_root`` instead of a stale
     absolute path baked in at run start.
 
-    A persisted cross-project root that itself no longer exists (that
-    other project moved/was deleted) is not trusted either: silently
-    skipping the disabled check because a stored path merely happens not
-    to resolve would defeat the guard's purpose, so this also falls back
-    to ``project_root`` rather than risk that.
+    A persisted cross-project root that no longer exists cannot be safely
+    rediscovered and must fail closed instead of consulting the unrelated
+    project that happens to store the run state.
     """
     if installed_registry_root:
         candidate = Path(installed_registry_root)
         if candidate.is_dir():
             return candidate
+        raise ValueError(
+            "Installed workflow owner is unavailable; cannot safely resume"
+        )
     return project_root
 
 
@@ -726,13 +746,7 @@ def workflow_run(
             registered_id = owner_id
 
     if registered_id is not None:
-        installed_meta = _open_workflow_registry(registry_root, err).get(registered_id)
-        if isinstance(installed_meta, dict) and not installed_meta.get("enabled", True):
-            err.print(
-                f"[red]Error:[/red] Workflow '{_escape_markup(registered_id)}' is disabled. "
-                f"Enable with: specify workflow enable {_escape_markup(registered_id)}"
-            )
-            raise typer.Exit(1)
+        _require_enabled_workflow(registry_root, registered_id, err)
 
     try:
         definition = engine.load_workflow(source_path if is_file_source else source)
@@ -851,18 +865,16 @@ def workflow_resume(
         raise typer.Exit(1)
 
     if pre_state.installed_workflow_id is not None:
-        owner_root = _resolve_run_owner_root(
-            pre_state.installed_registry_root, project_root
-        )
-        installed_meta = _open_workflow_registry(owner_root, err).get(
-            pre_state.installed_workflow_id
-        )
-        if isinstance(installed_meta, dict) and not installed_meta.get("enabled", True):
-            err.print(
-                f"[red]Error:[/red] Workflow '{_escape_markup(pre_state.installed_workflow_id)}' is disabled. "
-                f"Enable with: specify workflow enable {_escape_markup(pre_state.installed_workflow_id)}"
+        try:
+            owner_root = _resolve_run_owner_root(
+                pre_state.installed_registry_root, project_root
             )
+        except ValueError as exc:
+            err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1)
+        _require_enabled_workflow(
+            owner_root, pre_state.installed_workflow_id, err
+        )
 
     try:
         with _stdout_to_stderr_when(json_output):
