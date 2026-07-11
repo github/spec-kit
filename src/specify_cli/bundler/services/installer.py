@@ -188,16 +188,24 @@ def remove_bundle(
     still_needed = components_still_needed(records, exclude_bundle_id=bundle_id)
     result = InstallResult(bundle_id=bundle_id)
 
-    for component in target.contributed_components:
-        key = (component.kind, component.id)
-        if key in still_needed:
-            result.skipped.append(component)
-            continue
-        if installer.is_installed(project_root, component):
-            installer.remove(project_root, component)
-            result.uninstalled.append(component)
-        else:
-            result.skipped.append(component)
+    try:
+        for component in target.contributed_components:
+            key = (component.kind, component.id)
+            if key in still_needed:
+                result.skipped.append(component)
+                continue
+            if installer.is_installed(project_root, component):
+                installer.remove(project_root, component)
+                result.uninstalled.append(component)
+            else:
+                result.skipped.append(component)
+    except BundlerError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise BundlerError(
+            f"Failed to remove bundle '{bundle_id}': {exc}. "
+            "No changes were recorded."
+        ) from exc
 
     save_records(project_root, remove_record(records, bundle_id))
     return result

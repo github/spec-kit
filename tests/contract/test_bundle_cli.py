@@ -63,6 +63,42 @@ def test_commands_outside_project_fail_with_guidance(tmp_path: Path, monkeypatch
     assert "Spec Kit project" in result.output
 
 
+def test_remove_reports_clean_error_when_primitive_raises_raw_exception(
+    project: Path,
+):
+    """A raw exception from a primitive installer (e.g. an OSError from an
+    unreadable workflow registry surfacing through _WorkflowKindManager's
+    fail-closed construction) must not propagate uncaught through
+    `specify bundle remove` -- the command only catches BundlerError, so
+    without a conversion at the remove_bundle boundary this would exit
+    with an unhandled exception and empty/raw output instead of a clean,
+    actionable message, and no removal side effects should occur either."""
+    from specify_cli.bundler.models.manifest import BundleManifest
+    from specify_cli.bundler.models.records import load_records
+    from specify_cli.bundler.services.adapters import DefaultPrimitiveInstaller
+    from specify_cli.bundler.services.installer import install_bundle
+    from specify_cli.bundler.services.resolver import resolve_install_plan
+    from tests.bundler_helpers import FakeInstaller
+
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    plan = resolve_install_plan(
+        manifest, speckit_version="0.11.2", active_integration="copilot"
+    )
+    install_bundle(project, plan, FakeInstaller(), manifest=manifest)
+
+    def boom(self, project_root, component):
+        raise OSError("workflow registry unreadable")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(DefaultPrimitiveInstaller, "is_installed", boom)
+        result = runner.invoke(app, ["bundle", "remove", "demo-bundle"])
+
+    assert result.exit_code != 0
+    assert result.output.strip() != ""
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert {r.bundle_id for r in load_records(project)} == {"demo-bundle"}
+
+
 def test_fail_writes_error_to_stderr_not_stdout(capsys):
     """_fail must write to stderr, not stdout: every bundle command routes errors
     through it, and under --json the error would otherwise corrupt the JSON payload

@@ -97,6 +97,32 @@ def test_remove_unknown_bundle_errors(tmp_path: Path):
         remove_bundle(tmp_path, "ghost", FakeInstaller())
 
 
+def test_remove_converts_raw_installer_exception_to_bundler_error(tmp_path: Path):
+    """A raw exception from a primitive installer (e.g. an OSError from an
+    unreadable workflow registry surfacing through _WorkflowKindManager's
+    fail-closed construction) must not propagate uncaught out of
+    remove_bundle: install_bundle already converts any non-BundlerError
+    exception into a clean BundlerError, but remove_bundle had no such
+    conversion, so the CLI's `bundle remove` (which only catches
+    BundlerError) would let a raw exception through with no clean message
+    and no removal side effects should occur either."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    def boom(project_root, component):
+        raise OSError("workflow registry unreadable")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "is_installed", boom)
+        with pytest.raises(BundlerError):
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    # No removal side effects: the bundle record must still be present.
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
 def test_remove_reports_uninstalled_not_installed(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
