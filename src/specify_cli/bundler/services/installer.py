@@ -199,8 +199,6 @@ def remove_bundle(
                 result.uninstalled.append(component)
             else:
                 result.skipped.append(component)
-    except BundlerError:
-        raise
     except Exception as exc:  # noqa: BLE001
         if result.uninstalled:
             detail = (

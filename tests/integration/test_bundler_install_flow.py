@@ -153,6 +153,66 @@ def test_remove_partial_failure_message_reflects_partial_state(tmp_path: Path):
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
+def test_remove_bundlerror_from_installer_after_partial_removal_reports_partial_state(
+    tmp_path: Path,
+):
+    """If the primitive installer itself raises BundlerError (not a raw/
+    unexpected exception) after an earlier component in the same bundle was
+    already removed, the surfaced message must still carry the same
+    partial-removal detail as the generic-exception path -- a bare
+    ``except BundlerError: raise`` would re-raise the installer's original
+    message verbatim with no mention that the project may now be partially
+    uninstalled."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    real_remove = installer.remove
+    calls = {"n": 0}
+
+    def remove_then_raise_bundler_error(project_root, component):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real_remove(project_root, component)
+        raise BundlerError("kind manager refused removal")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "remove", remove_then_raise_bundler_error)
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no changes were recorded" not in message.lower()
+    assert "kind manager refused removal" in message
+    assert "partially uninstalled" in message.lower()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_bundlerror_from_installer_with_zero_removed_reports_no_changes(
+    tmp_path: Path,
+):
+    """When the installer raises BundlerError before anything was actually
+    removed, the message should not misleadingly claim partial state."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    def boom(project_root, component):
+        raise BundlerError("kind manager unavailable")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "is_installed", boom)
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no components were removed" in message.lower()
+    assert "kind manager unavailable" in message
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
 def test_remove_reports_uninstalled_not_installed(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())

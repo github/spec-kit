@@ -6797,8 +6797,16 @@ steps:
                 self._data = data
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, amt=None):
+                if not hasattr(self, "_pos"):
+                    self._pos = 0
+                if amt is None:
+                    chunk = self._data[self._pos :]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + amt]
+                self._pos += len(chunk)
+                return chunk
 
             def geturl(self):
                 return self._url
@@ -6849,8 +6857,16 @@ steps:
                 self._data = data
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, amt=None):
+                if not hasattr(self, "_pos"):
+                    self._pos = 0
+                if amt is None:
+                    chunk = self._data[self._pos :]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + amt]
+                self._pos += len(chunk)
+                return chunk
 
             def geturl(self):
                 return self._url
@@ -6892,8 +6908,16 @@ steps:
                 self._data = data
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/55"
 
-            def read(self):
-                return self._data
+            def read(self, amt=None):
+                if not hasattr(self, "_pos"):
+                    self._pos = 0
+                if amt is None:
+                    chunk = self._data[self._pos :]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + amt]
+                self._pos += len(chunk)
+                return chunk
 
             def geturl(self):
                 return self._url
@@ -6968,8 +6992,16 @@ steps:
                 self._data = data
                 self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"
 
-            def read(self):
-                return self._data
+            def read(self, amt=None):
+                if not hasattr(self, "_pos"):
+                    self._pos = 0
+                if amt is None:
+                    chunk = self._data[self._pos :]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + amt]
+                self._pos += len(chunk)
+                return chunk
 
             def geturl(self):
                 return self._url
@@ -7023,8 +7055,16 @@ steps:
                 self._data = data
                 self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"
 
-            def read(self):
-                return self._data
+            def read(self, amt=None):
+                if not hasattr(self, "_pos"):
+                    self._pos = 0
+                if amt is None:
+                    chunk = self._data[self._pos :]
+                    self._pos = len(self._data)
+                    return chunk
+                chunk = self._data[self._pos : self._pos + amt]
+                self._pos += len(chunk)
+                return chunk
 
             def geturl(self):
                 return self._url
@@ -7582,12 +7622,23 @@ steps:
     # -- add --from ----------------------------------------------------
 
     class _FakeResponse:
-        def __init__(self, data, url="https://example.com/workflow.yml"):
+        def __init__(self, data, url="https://example.com/workflow.yml", headers=None):
             self._data = data
             self._url = url
+            self._pos = 0
+            self._headers = headers or {}
 
-        def read(self):
-            return self._data
+        def read(self, amt=None):
+            if amt is None:
+                chunk = self._data[self._pos :]
+                self._pos = len(self._data)
+                return chunk
+            chunk = self._data[self._pos : self._pos + amt]
+            self._pos += len(chunk)
+            return chunk
+
+        def getheader(self, name, default=None):
+            return self._headers.get(name, default)
 
         def geturl(self):
             return self._url
@@ -7597,6 +7648,64 @@ steps:
 
         def __exit__(self, *a):
             return False
+
+    def test_add_from_url_rejects_oversized_content_length(self, project_dir, monkeypatch):
+        """A --from download must not trust an advertised Content-Length
+        alone by reading the whole body first -- it must reject a response
+        that declares a size over the workflow YAML limit before reading
+        the (potentially huge) body into memory at all."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        small_body = b"id: align-wf\n"  # small actual body; Content-Length lies
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                small_body, url, headers={"Content-Length": "1000"}
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+
+    def test_add_from_url_rejects_oversized_streamed_body_without_content_length(
+        self, project_dir, monkeypatch
+    ):
+        """A chunked/no-Content-Length response must still be capped by
+        actually counting streamed bytes -- a malicious or misbehaving
+        server cannot bypass the limit merely by omitting or lying about
+        Content-Length."""
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        oversized_body = b"x" * 500  # no Content-Length header at all
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                oversized_body, url
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
 
     def test_add_from_url_installs(self, project_dir, monkeypatch):
         from unittest.mock import patch
@@ -8052,6 +8161,91 @@ steps:
                 lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(data, url),
             )
             mp.setattr(WorkflowRegistry, "save", boom)
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        assert not dest_dir.exists()
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_catalog_rejects_oversized_content_length(self, project_dir, monkeypatch):
+        """Catalog installs must share the same size cap as --from: a
+        response that declares an oversized Content-Length is rejected
+        before its body is read into memory, and no orphan directory or
+        registry mutation is left behind."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        small_body = b"id: align-wf\n"  # actual body is small; header lies
+        runner = CliRunner()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    small_body, url, headers={"Content-Length": "1000"}
+                ),
+            )
+            result = runner.invoke(app, ["workflow", "add", "align-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert result.output.strip() != ""
+        dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
+        assert not dest_dir.exists()
+        assert not WorkflowRegistry(project_dir).is_installed("align-wf")
+
+    def test_add_catalog_rejects_oversized_streamed_body_without_content_length(
+        self, project_dir, monkeypatch
+    ):
+        """Catalog installs must also cap actual streamed bytes when
+        Content-Length is absent or understated, leaving no orphan
+        directory or registry mutation behind."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        oversized_body = b"x" * 500  # no Content-Length header at all
+        runner = CliRunner()
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "specify_cli.authentication.http.open_url",
+                lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                    oversized_body, url
+                ),
+            )
             result = runner.invoke(app, ["workflow", "add", "align-wf"])
 
         assert result.exit_code != 0

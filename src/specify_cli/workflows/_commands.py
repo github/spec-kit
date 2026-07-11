@@ -147,6 +147,52 @@ def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
         )
 
 
+# Workflow YAML definitions are small step/metadata text, not binaries, so
+# this is generous headroom against a malicious or misbehaving server -- not
+# a ceiling any legitimate workflow definition should ever approach.
+_MAX_WORKFLOW_YAML_BYTES = 5 * 1024 * 1024  # 5 MiB
+_DOWNLOAD_CHUNK_SIZE = 65536
+
+
+def _read_response_within_limit(response, max_bytes: int = _MAX_WORKFLOW_YAML_BYTES) -> bytes:
+    """Read *response* fully, enforcing *max_bytes* via bounded streaming.
+
+    A ``Content-Length`` header is checked up front to fail fast, but it is
+    never trusted alone: the actual bytes read are also counted as they
+    stream in, so a chunked or ``Content-Length``-less response that lies
+    about (or omits) its size still cannot exceed the limit.
+    """
+    content_length = None
+    getheader = getattr(response, "getheader", None)
+    if callable(getheader):
+        try:
+            raw_length = getheader("Content-Length")
+        except Exception:
+            raw_length = None
+        if raw_length is not None:
+            try:
+                content_length = int(raw_length)
+            except (TypeError, ValueError):
+                content_length = None
+    if content_length is not None and content_length > max_bytes:
+        raise ValueError(
+            f"response declared {content_length} bytes, exceeding the "
+            f"{max_bytes}-byte workflow size limit"
+        )
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = response.read(_DOWNLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError(f"response exceeds the {max_bytes}-byte workflow size limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _validate_workflow_id_or_exit(workflow_id: str) -> None:
     """Validate that ``workflow_id`` is a safe installed-workflow directory name."""
     if (
@@ -887,7 +933,7 @@ def workflow_add(
                     )
                     raise typer.Exit(1)
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
+                    tmp.write(_read_response_within_limit(resp))
                     tmp_path = Path(tmp.name)
         except typer.Exit:
             raise
@@ -1076,7 +1122,7 @@ def _install_workflow_from_catalog(
                     f"[red]Error:[/red] Workflow '{safe_wf_id}' redirected to non-HTTPS URL: {_escape_markup(final_url)}"
                 )
                 raise typer.Exit(1)
-            workflow_file.write_bytes(response.read())
+            workflow_file.write_bytes(_read_response_within_limit(response))
     except typer.Exit:
         raise
     except Exception as exc:
