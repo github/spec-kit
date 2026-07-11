@@ -1122,6 +1122,11 @@ def workflow_remove(
         )
         raise typer.Exit(1)
 
+    # Captured before the registry write so a subsequent directory-removal
+    # failure can restore it verbatim (bypassing add(), which would stamp a
+    # new updated_at), mirroring workflow_step_remove's same restore pattern.
+    registry_metadata = registry.get(workflow_id)
+
     # Persist the registry removal before touching any files: if save()
     # fails, WorkflowRegistry.remove() rolls back its in-memory state and
     # raises, so the workflow stays fully installed (files + registry) rather
@@ -1140,6 +1145,18 @@ def workflow_remove(
         try:
             shutil.rmtree(workflow_dir)
         except OSError as exc:
+            # The registry removal already succeeded; restore the original
+            # entry verbatim so the registry doesn't claim this workflow is
+            # uninstalled while its directory is still sitting on disk.
+            try:
+                if registry_metadata is not None:
+                    registry.data["workflows"][workflow_id] = registry_metadata
+                    registry.save()
+            except Exception as restore_exc:  # noqa: BLE001
+                console.print(
+                    f"[yellow]Warning:[/yellow] Failed to restore registry entry "
+                    f"for '{safe_id}' after directory removal failure: {restore_exc}"
+                )
             console.print(
                 f"[red]Error:[/red] Failed to remove workflow directory {workflow_dir}: {exc}"
             )

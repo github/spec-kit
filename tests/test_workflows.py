@@ -5935,6 +5935,48 @@ class TestWorkflowRemoveGuard:
         # The on-disk registry must still claim the workflow installed.
         assert WorkflowRegistry(project_dir).is_installed("test-wf")
 
+    def test_remove_directory_failure_restores_registry_entry_verbatim(
+        self, project_dir, monkeypatch
+    ):
+        """If the registry removal already persisted successfully but the
+        subsequent shutil.rmtree fails, the directory was never actually
+        deleted (rmtree raised before removing anything usable), so the
+        registry must not be left claiming the workflow uninstalled. The
+        restored entry must be byte-for-byte the original (same
+        installed_at/updated_at) -- calling add() again would stamp a new
+        updated_at, which is why workflow_step_remove restores directly via
+        registry.data and save() instead of add()."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("test-wf", {"name": "Test", "version": "1.0.0"})
+        workflow_dir = project_dir / ".specify" / "workflows" / "test-wf"
+        workflow_dir.mkdir(parents=True, exist_ok=True)
+        (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
+
+        original_entry = WorkflowRegistry(project_dir).get("test-wf")
+
+        def boom(*args, **kwargs):
+            raise OSError("permission denied")
+
+        monkeypatch.chdir(project_dir)
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("shutil.rmtree", boom)
+            result = CliRunner().invoke(app, ["workflow", "remove", "test-wf"])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Failed to remove workflow directory" in result.output
+        # rmtree raised, so nothing was actually deleted.
+        assert workflow_dir.exists()
+        assert (workflow_dir / "workflow.yml").read_text(encoding="utf-8") == "keep-me"
+        # The registry entry must come back exactly as it was, not re-added.
+        restored = WorkflowRegistry(project_dir).get("test-wf")
+        assert restored == original_entry
+        assert WorkflowRegistry(project_dir).is_installed("test-wf")
+
 
 class TestWorkflowAddSymlinkGuard:
     def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
