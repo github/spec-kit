@@ -66,7 +66,7 @@ if (Test-Path $configFile) {
     # Top-level scalar key: commit_style (fixed | conventional)
     foreach ($line in Get-Content $configFile) {
         if ($line -match '^commit_style:\s*(.+)$') {
-            $styleVal = $matches[1].Trim() -replace '^["'']' -replace '["'']$'
+            $styleVal = (($matches[1] -replace '\s+#.*$', '').Trim()) -replace '^["'']' -replace '["'']$'
             if ($styleVal) { $commitStyle = $styleVal.ToLower() }
             break
         }

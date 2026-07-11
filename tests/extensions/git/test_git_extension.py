@@ -1177,6 +1177,29 @@ class TestAutoCommitBashCommitStyle:
         assert result.returncode == 0
         assert "No changes" in result.stderr
 
+    def test_conventional_with_trailing_inline_comment(self, tmp_path: Path):
+        """commit_style value with a trailing YAML inline comment is still recognized."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional  # team standard\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestAutoCommitPowerShell:
@@ -1308,6 +1331,47 @@ class TestAutoCommitPowerShellCommitStyle:
             ["git", "log", "--oneline"],
             cwd=project, capture_output=True, text=True,
         )
+        assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_conventional_skips_cleanly_with_no_changes(self, tmp_path: Path):
+        """No pending changes short-circuits before the missing-message failure."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        subprocess.run(["git", "add", "."], cwd=project, check=True)
+        subprocess.run(["git", "commit", "-m", "setup", "-q"], cwd=project, check=True)
+
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        combined = result.stdout + result.stderr
+        assert "No changes" in combined
+
+    def test_conventional_with_trailing_inline_comment(self, tmp_path: Path):
+        """commit_style value with a trailing YAML inline comment is still recognized."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional  # team standard\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
         assert "[Spec Kit] Add specification" not in log.stdout
 
 
