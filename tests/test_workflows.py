@@ -4262,7 +4262,7 @@ steps:
         wf_dir = project_dir / "wf"
         wf_dir.mkdir()
         wf_file = wf_dir / "workflow.yml"
-        python = sys.executable
+        python = sys.executable.replace("\\", "/")
         wf_file.write_text(f"""
 schema_version: "1.0"
 workflow:
@@ -4272,7 +4272,7 @@ workflow:
 steps:
   - id: print-env
     type: shell
-    run: "{python} -c \\"import os; print(os.environ.get('SPECKIT_WORKFLOW_DIR', 'UNSET'))\\""
+    run: '{python} -c "import os; print(os.environ.get(''SPECKIT_WORKFLOW_DIR'', ''UNSET''))"'
 """)
         definition = WorkflowDefinition.from_yaml(wf_file)
         engine = WorkflowEngine(project_dir)
@@ -4288,7 +4288,7 @@ steps:
 
         monkeypatch.delenv("SPECKIT_WORKFLOW_DIR", raising=False)
 
-        python = sys.executable
+        python = sys.executable.replace("\\", "/")
         definition = WorkflowDefinition.from_string(f"""
 schema_version: "1.0"
 workflow:
@@ -4298,7 +4298,7 @@ workflow:
 steps:
   - id: check-env
     type: shell
-    run: "{python} -c \\"import os; print(os.environ.get('SPECKIT_WORKFLOW_DIR', 'UNSET'))\\""
+    run: '{python} -c "import os; print(os.environ.get(''SPECKIT_WORKFLOW_DIR'', ''UNSET''))"'
 """)
         engine = WorkflowEngine(project_dir)
         state = engine.execute(definition)
