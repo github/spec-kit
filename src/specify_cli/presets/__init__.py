@@ -1667,46 +1667,55 @@ class PresetManager:
         written under. Blindly attributing every name to ``fallback_agent``
         (the agent currently being processed) loses the real writer whenever
         the *first* operation after upgrading is a direct switch to a
-        *different* skill-mode agent — e.g. a legacy Claude override
-        followed directly by ``integration use codex``, with no
-        intervening rescaffold for Claude — permanently orphaning Claude's
-        override on later removal.
+        *different* agent — e.g. a legacy Copilot override (written while
+        Copilot was active with ``ai_skills`` enabled) followed directly by
+        ``integration use claude``, with no intervening rescaffold for
+        Copilot — permanently orphaning Copilot's override on later
+        removal.
 
-        Instead, every configured skill-mode agent's directory is probed
-        (via the same safe, symlink-validated helpers used for
-        restore/removal) for a ``SKILL.md`` whose frontmatter records this
-        exact preset as the owner (``metadata.source == "preset:<pack_id>"``,
-        the same marker :meth:`_register_skills` writes). A name can
-        legitimately be found under more than one agent's directory — the
-        preset may have been active while the user switched between several
-        skill-mode agents before provenance tracking existed — so every
-        matching agent is recorded, not just the first. Names that can't be
-        matched to any directory (e.g. the file was deleted out of band)
-        fall back to ``fallback_agent``, preserving the previous
-        best-effort behaviour for the unrecoverable case.
+        Every *configured* integration's skills directory is probed (via
+        the same safe, symlink-validated helpers used for
+        restore/removal), not only agents whose registrar config is
+        statically ``/SKILL.md``-only: a command-backed agent (e.g.
+        Copilot, whose command extension is ``.agent.md``) renders its
+        preset overrides as ``SKILL.md`` files exactly like a native
+        skill-only agent whenever it was the active agent with
+        ``ai_skills`` enabled, so excluding it would miss real,
+        preset-owned provenance and misattribute it to whichever agent
+        happens to be processed first. Each directory is probed for a
+        ``SKILL.md`` whose frontmatter records this exact preset as the
+        owner (``metadata.source == "preset:<pack_id>"``, the same marker
+        :meth:`_register_skills` writes) — this marker check is what keeps
+        the broadened probe from falsely attributing ownership to an
+        agent's directory that never actually held this preset's override
+        (e.g. a command-mode agent that never rendered skills, or an
+        unrelated skill of the same name). A name can legitimately be
+        found under more than one agent's directory — the preset may have
+        been active while the user switched between several agents before
+        provenance tracking existed — so every matching agent is recorded,
+        not just the first. Names that can't be matched to any directory
+        (e.g. the file was deleted out of band) fall back to
+        ``fallback_agent``, preserving the previous best-effort behaviour
+        for the unrecoverable case.
         """
         from ..agents import CommandRegistrar
 
         registrar = CommandRegistrar()
-        skill_mode_agents = sorted(
-            name
-            for name, cfg in registrar.AGENT_CONFIGS.items()
-            if cfg.get("extension") == "/SKILL.md"
-        )
+        candidate_agents = sorted(registrar.AGENT_CONFIGS)
 
         # Multiple agent names can resolve to the same physical directory
-        # (e.g. agy/codex/zed all use .agents/skills); group by directory so
-        # each is probed once and attributed to a single deterministic
-        # canonical agent name, matching the tie-break already used by
-        # _unregister_skills's directory grouping. Deliberately keep the
-        # unresolved path (matching what _safe_skills_dir_for_agent already
-        # validated) rather than calling .resolve() here: on macOS /var is
-        # itself a symlink to /private/var, so resolving would make this
-        # path diverge from self.project_root's own resolution state and
-        # make every subsequent containment check in
+        # (e.g. agy/amp/codex/zed all use .agents/skills); group by
+        # directory so each is probed once and attributed to a single
+        # deterministic canonical agent name, matching the tie-break
+        # already used by _unregister_skills's directory grouping. Deliberately
+        # keep the unresolved path (matching what _safe_skills_dir_for_agent
+        # already validated) rather than calling .resolve() here: on macOS
+        # /var is itself a symlink to /private/var, so resolving would make
+        # this path diverge from self.project_root's own resolution state
+        # and make every subsequent containment check in
         # _validate_skill_subdir() spuriously fail.
         dir_to_agents: Dict[Path, List[str]] = {}
-        for agent_name in skill_mode_agents:
+        for agent_name in candidate_agents:
             skills_dir = self._safe_skills_dir_for_agent(agent_name)
             if skills_dir is None:
                 continue

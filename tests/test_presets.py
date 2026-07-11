@@ -4756,6 +4756,157 @@ class TestPresetSkills:
             )
             assert "Core specify body" in content
 
+    def test_rescaffold_legacy_flat_list_infers_command_backed_skills_owner(
+        self, project_dir, temp_dir
+    ):
+        """Legacy provenance inference must also probe command-backed agents
+        that were running in skills mode, not only agents whose command
+        registrar config is statically ``/SKILL.md``-only.
+
+        Copilot is command-backed (``extension: ".agent.md"``), but with
+        ``ai_skills`` enabled its preset overrides render as ``SKILL.md``
+        files under ``.github/skills`` exactly like a native skill-only
+        agent (claude, codex, ...). Before the fix,
+        ``_infer_legacy_skill_provenance`` only probed agents whose
+        registrar config has a static ``extension == "/SKILL.md"``, so a
+        real preset-owned ``.github/skills/.../SKILL.md`` written while
+        Copilot was the active, skills-mode agent was never found — the
+        legacy flat list was misattributed entirely to whichever agent the
+        first post-upgrade switch happened to activate, permanently
+        orphaning Copilot's override on later removal (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(copilot_skills_dir, "speckit-specify")
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "legacy-copilot-skills-preset", "speckit.specify",
+            "Legacy copilot skills test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        copilot_skill = copilot_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:legacy-copilot-skills-preset" in copilot_skill.read_text(), (
+            "sanity: install should have written the override under "
+            "copilot's skills directory while copilot was active in "
+            "skills mode"
+        )
+        # Sanity: no command-mode artifact was written either — copilot's
+        # command file and skills file are mutually exclusive.
+        assert not list((project_dir / ".github" / "agents").glob("*specify*")), (
+            "sanity: copilot in skills mode must not also write a command "
+            "file that could be falsely attributed instead"
+        )
+
+        # Simulate a pre-#2948 registry: a flat list with no per-agent
+        # provenance, even though the file on disk was actually written
+        # under copilot's skills directory.
+        manager.registry.update(
+            "legacy-copilot-skills-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        # Directly switch to claude — no intervening rescaffold for
+        # copilot — mirroring `integration use claude` run right after
+        # upgrading spec-kit versions.
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        manager.register_enabled_presets_for_agent("claude")
+
+        metadata = manager.registry.get("legacy-copilot-skills-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict)
+        assert set(registered_skills) == {"copilot", "claude"}, (
+            "migrating a legacy flat-list entry on a direct switch must "
+            "infer the actual writer (copilot, running in skills mode) "
+            "even though copilot's registrar config is command-backed, "
+            "not just agents with a static /SKILL.md extension (#2948)"
+        )
+
+        assert manager.remove("legacy-copilot-skills-preset") is True
+
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        for skill_file, label in ((copilot_skill, "copilot"), (claude_skill, "claude")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:legacy-copilot-skills-preset" not in content, (
+                f"{label}'s preset override must be restored on removal, "
+                "not permanently orphaned by a legacy migration that "
+                "failed to probe command-backed skills-mode agents (#2948)"
+            )
+            assert "Core specify body" in content
+
+    def test_infer_legacy_skill_provenance_does_not_falsely_attribute_command_mode_copilot(
+        self, project_dir, temp_dir
+    ):
+        """Broadening provenance inference to command-backed agents must not
+        falsely attribute ownership to an agent's directory that has no
+        preset-owned marker.
+
+        Copilot stays in plain command mode throughout (no skills ever
+        rendered there), so ``.github/skills`` never receives this
+        preset's ``SKILL.md``. Probing copilot's skills directory anyway
+        (now that inference isn't restricted to static ``/SKILL.md``
+        agents) must find nothing there and must not invent a false
+        ``"copilot"`` entry (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        # Copilot has never been active; its command directory holds an
+        # unrelated file so the directory exists, but no skills directory
+        # or SKILL.md was ever written for it.
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "no-false-attribution-preset", "speckit.specify",
+            "No false attribution test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        manager.registry.update(
+            "no-false-attribution-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        # Rescaffold again for the same agent (claude) with unchanged
+        # names, triggering the legacy migration path.
+        manager.register_enabled_presets_for_agent("claude")
+
+        metadata = manager.registry.get("no-false-attribution-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict)
+        assert set(registered_skills) == {"claude"}, (
+            "copilot must not appear in the migrated registry when it has "
+            "never actually rendered this preset's skill — probing its "
+            "directory for a marker match must not create a false "
+            "attribution (#2948)"
+        )
+        assert not (project_dir / ".github" / "skills").exists(), (
+            "no .github/skills directory should have been created as a "
+            "side effect of probing for provenance (#2948)"
+        )
+
     def test_symlinked_skills_dir_rejected_on_removal(self, project_dir, temp_dir):
         """Removal must validate a recorded skill directory before touching it.
 
