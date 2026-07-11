@@ -1510,6 +1510,75 @@ class TestExtensionSkillRegistration:
             "directory (#2948)"
         )
 
+    def test_unregister_agent_artifacts_stays_scoped_when_agent_dir_absent(
+        self, project_dir, temp_dir
+    ):
+        """``unregister_agent_artifacts`` must remain scoped to the given
+        agent even when that agent's own skills directory does not exist —
+        it must never fall through to the genuinely-unscoped, all-directory
+        removal semantics reserved for ``remove()``.
+
+        Auggie and Copilot are both activated in skills mode, each writing
+        its own mirror. ``unregister_agent_artifacts("cursor-agent")`` is
+        then called for a supported agent that was *never* activated, so
+        its skills directory does not exist on disk. Before this fix, the
+        caller converted the resolved-but-absent directory to ``None``
+        before calling ``_unregister_extension_skills`` — and after the
+        prior fix (1d8f9e3), omitting ``skills_dir`` means "scan and clean
+        up every configured agent's directory", not "this specific agent
+        has nothing to clean up". That silently deleted Auggie's and
+        Copilot's still-live mirrors while "cleaning up" an agent that was
+        never even active.
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="scoped-unregister-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        auggie_skills_dir = project_dir / ".augment" / "skills"
+        auggie_hello = auggie_skills_dir / "speckit-scoped-unregister-ext-hello" / "SKILL.md"
+        auggie_world = auggie_skills_dir / "speckit-scoped-unregister-ext-world" / "SKILL.md"
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "sanity: auggie's skills-mode activation should mirror both "
+            "extension commands as SKILL.md files"
+        )
+
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        copilot_hello = copilot_skills_dir / "speckit-scoped-unregister-ext-hello" / "SKILL.md"
+        copilot_world = copilot_skills_dir / "speckit-scoped-unregister-ext-world" / "SKILL.md"
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's skills-mode activation should also mirror "
+            "both extension commands"
+        )
+
+        cursor_skills_dir = project_dir / ".cursor" / "skills"
+        assert not cursor_skills_dir.exists(), (
+            "sanity: cursor-agent was never activated so it has no "
+            "skills directory on disk"
+        )
+
+        # Unregister artifacts for an agent that was never activated (its
+        # skills directory is absent). This must be a no-op with respect
+        # to other agents' live mirrors.
+        manager.unregister_agent_artifacts("cursor-agent")
+
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "unregistering a never-activated agent's artifacts must not "
+            "delete auggie's live mirror — an absent target directory "
+            "must not widen cleanup to every configured agent directory"
+        )
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "unregistering a never-activated agent's artifacts must not "
+            "delete copilot's live mirror — an absent target directory "
+            "must not widen cleanup to every configured agent directory"
+        )
+
     def test_extension_owned_skill_names_rejects_symlinked_candidate_directory(
         self, project_dir, temp_dir
     ):

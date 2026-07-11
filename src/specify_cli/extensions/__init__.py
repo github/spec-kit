@@ -1871,30 +1871,44 @@ class ExtensionManager:
                 metadata.get("registered_skills", [])
             )
             if registered_skills:
-                # Only pass the resolved skills_dir when it actually exists.
-                # Otherwise let _unregister_extension_skills fall back to
-                # scanning all known agent skills directories, which is useful
-                # for cleaning up stale entries created by earlier installs.
-                skills_dir = agent_skills_dir if agent_skills_dir.is_dir() else None
+                # Always pass the explicit, agent-scoped skills_dir — even
+                # when it doesn't currently exist on disk. This method must
+                # stay scoped to *this* agent only; omitting skills_dir (a
+                # bare ``None``) tells _unregister_extension_skills "this is
+                # a genuinely unscoped removal", which triggers its
+                # all-configured-agents fallback scan — reserved for
+                # ExtensionManager.remove()'s full project cleanup. If this
+                # agent's directory doesn't exist, there is nothing under it
+                # to clean up; the fast path below is a safe no-op in that
+                # case (every candidate skill_subdir.is_dir() check fails).
                 self._unregister_extension_skills(
-                    registered_skills, ext_id, skills_dir=skills_dir
+                    registered_skills, ext_id, skills_dir=agent_skills_dir
                 )
 
-                # Only reconcile registry state when cleanup was scoped to a
-                # specific existing directory. When skills_dir is None,
-                # _unregister_extension_skills falls back to scanning multiple
-                # candidate directories, so agent_skills_dir cannot be used to
-                # infer what was removed.  When skills_dir is set,
-                # _unregister_extension_skills may intentionally skip deletion
-                # when ownership cannot be verified (e.g., corrupted/missing
-                # SKILL.md or mismatching metadata.source).  Only drop registry
-                # entries for skill directories that were actually removed so
-                # future cleanup attempts can still find skipped ones.
-                if skills_dir is not None:
+                # Only reconcile registry state when this agent's directory
+                # actually exists. When it's absent, this agent never had
+                # any of these skills mirrored under its own directory in
+                # the first place, so there is nothing to conclude about
+                # global ``registered_skills`` tracking from that absence —
+                # other agents' directories may still legitimately hold
+                # live mirrors for these same names (the flat list is
+                # agent-agnostic). Recomputing "remaining" against an
+                # absent directory would incorrectly conclude every name
+                # was removed and drop them all from the registry, silently
+                # orphaning any still-live mirrors under other agents'
+                # directories from future cleanup/removal.
+                #
+                # When the directory does exist, _unregister_extension_skills
+                # may intentionally skip deletion when ownership cannot be
+                # verified (e.g., corrupted/missing SKILL.md or mismatching
+                # metadata.source). Only drop registry entries for skill
+                # directories that were actually removed so future cleanup
+                # attempts can still find skipped ones.
+                if agent_skills_dir.is_dir():
                     remaining_skills = [
                         skill_name
                         for skill_name in registered_skills
-                        if (skills_dir / skill_name).is_dir()
+                        if (agent_skills_dir / skill_name).is_dir()
                     ]
                     if remaining_skills != registered_skills:
                         updates["registered_skills"] = remaining_skills
