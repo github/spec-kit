@@ -8413,13 +8413,8 @@ steps:
     def test_add_fresh_install_staged_discard_cleanup_failure_reports_warning(
         self, project_dir, monkeypatch
     ):
-        """_discard_staged_workflow_file's fresh-install rmtree(dest_dir) was
-        previously called with ignore_errors=True, so a genuine cleanup
-        failure there could never reach _safe_discard_staged_workflow_file's
-        warning -- an orphaned directory was left behind with no report at
-        all. The cleanup failure must propagate so the safe wrapper can
-        warn, while the original copy2 install error remains the primary,
-        already-printed failure."""
+        """A genuine fresh-directory rmdir failure must be reported while
+        the original copy failure remains the primary error."""
         from typer.testing import CliRunner
         from specify_cli import app
         from specify_cli.workflows.catalog import WorkflowRegistry
@@ -8431,19 +8426,16 @@ steps:
         def copy_boom(*args, **kwargs):
             raise OSError("disk full")
 
-        def rmtree_boom(path, ignore_errors=False, onerror=None, **kwargs):
-            # Mirrors real shutil.rmtree's ignore_errors contract: a caller
-            # that still passes ignore_errors=True must have any failure
-            # here swallowed exactly like the buggy prior behavior, so this
-            # fake only serves as a true red/green discriminator once the
-            # production code drops that flag.
-            if ignore_errors:
-                return
-            raise OSError("cleanup denied")
+        real_rmdir = Path.rmdir
+
+        def rmdir_boom(path):
+            if path.name == "align-wf":
+                raise OSError("cleanup denied")
+            return real_rmdir(path)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("shutil.copy2", copy_boom)
-            mp.setattr("shutil.rmtree", rmtree_boom)
+            mp.setattr(Path, "rmdir", rmdir_boom)
             result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
 
         assert result.exit_code != 0
@@ -9141,6 +9133,221 @@ steps:
             "version"
         ]
         assert file_version == registry_version
+
+    def test_precommit_discard_preserves_concurrent_install(self, project_dir):
+        from specify_cli.workflows import _commands
+
+        workflow_dir = (
+            project_dir / ".specify" / "workflows" / "concurrent-wf"
+        )
+        workflow_dir.mkdir(parents=True)
+        staged_file = workflow_dir / ".workflow.yml.staged.tmp"
+        staged_file.write_text("staged", encoding="utf-8")
+        committed_file = workflow_dir / "workflow.yml"
+        committed_file.write_text("committed", encoding="utf-8")
+
+        _commands._discard_staged_workflow_file(
+            staged_file, workflow_dir, existed_before=False
+        )
+
+        assert committed_file.read_text(encoding="utf-8") == "committed"
+        assert not staged_file.exists()
+
+    def test_remove_serializes_with_concurrent_catalog_install(
+        self, project_dir, monkeypatch
+    ):
+        import threading
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        workflows_dir = project_dir / ".specify" / "workflows"
+        workflow_file = workflows_dir / "align-wf" / "workflow.yml"
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        WorkflowRegistry(project_dir).add(
+            "align-wf",
+            {
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "source": "catalog",
+            },
+        )
+        monkeypatch.setattr(
+            _commands, "_require_specify_project", lambda: project_dir
+        )
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None,
+            redirect_validator=None: self._FakeResponse(new_data, url),
+        )
+
+        removal_ready = threading.Event()
+        install_done = threading.Event()
+        real_remove = WorkflowRegistry.remove
+
+        def coordinated_remove(registry, workflow_id):
+            if threading.current_thread().name == "remove":
+                removal_ready.set()
+                install_done.wait(0.5)
+            return real_remove(registry, workflow_id)
+
+        monkeypatch.setattr(WorkflowRegistry, "remove", coordinated_remove)
+        errors = []
+
+        def remove():
+            try:
+                _commands.workflow_remove("align-wf")
+            except BaseException as exc:
+                errors.append(exc)
+
+        def install():
+            try:
+                _commands._install_workflow_from_catalog(
+                    project_dir,
+                    WorkflowRegistry(project_dir),
+                    workflows_dir,
+                    "align-wf",
+                )
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                install_done.set()
+
+        remove_thread = threading.Thread(target=remove, name="remove")
+        install_thread = threading.Thread(target=install, name="install")
+        remove_thread.start()
+        assert removal_ready.wait(2)
+        install_thread.start()
+        remove_thread.join(5)
+        install_thread.join(5)
+
+        assert not remove_thread.is_alive()
+        assert not install_thread.is_alive()
+        assert errors == []
+        assert WorkflowDefinition.from_yaml(workflow_file).version == "2.0.0"
+        metadata = WorkflowRegistry(project_dir).get("align-wf")
+        assert metadata["version"] == "2.0.0"
+
+    @pytest.mark.parametrize(
+        ("command_name", "initial_enabled", "expected_enabled"),
+        [
+            ("enable", False, True),
+            ("disable", True, False),
+        ],
+    )
+    def test_toggle_serializes_with_concurrent_catalog_update(
+        self,
+        project_dir,
+        monkeypatch,
+        command_name,
+        initial_enabled,
+        expected_enabled,
+    ):
+        import threading
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+        from specify_cli.workflows.engine import WorkflowDefinition
+
+        workflows_dir = project_dir / ".specify" / "workflows"
+        workflow_file = workflows_dir / "align-wf" / "workflow.yml"
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        WorkflowRegistry(project_dir).add(
+            "align-wf",
+            {
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "source": "catalog",
+                "enabled": initial_enabled,
+            },
+        )
+        monkeypatch.setattr(
+            _commands, "_require_specify_project", lambda: project_dir
+        )
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "2.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None,
+            redirect_validator=None: self._FakeResponse(new_data, url),
+        )
+
+        toggle_ready = threading.Event()
+        update_done = threading.Event()
+        real_add = WorkflowRegistry.add
+
+        def coordinated_add(registry, workflow_id, metadata):
+            if threading.current_thread().name == "toggle":
+                toggle_ready.set()
+                update_done.wait(0.5)
+            return real_add(registry, workflow_id, metadata)
+
+        monkeypatch.setattr(WorkflowRegistry, "add", coordinated_add)
+        errors = []
+
+        def toggle():
+            try:
+                getattr(_commands, f"workflow_{command_name}")("align-wf")
+            except BaseException as exc:
+                errors.append(exc)
+
+        def update():
+            try:
+                _commands._install_workflow_from_catalog(
+                    project_dir,
+                    WorkflowRegistry(project_dir),
+                    workflows_dir,
+                    "align-wf",
+                )
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                update_done.set()
+
+        toggle_thread = threading.Thread(target=toggle, name="toggle")
+        update_thread = threading.Thread(target=update, name="update")
+        toggle_thread.start()
+        assert toggle_ready.wait(2)
+        update_thread.start()
+        toggle_thread.join(5)
+        update_thread.join(5)
+
+        assert not toggle_thread.is_alive()
+        assert not update_thread.is_alive()
+        assert errors == []
+        assert WorkflowDefinition.from_yaml(workflow_file).version == "2.0.0"
+        metadata = WorkflowRegistry(project_dir).get("align-wf")
+        assert metadata["version"] == "2.0.0"
+        assert metadata.get("enabled", True) is expected_enabled
 
     def test_add_catalog_reinstall_restore_failure_reports_warning_and_original_error(
         self, project_dir, monkeypatch
@@ -10258,6 +10465,37 @@ steps:
         assert "disabled" in result.output or "symlink" in result.output.lower()
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_alias_rejects_symlinked_workflow_storage_before_resolve(
+        self, project_dir, temp_dir
+    ):
+        import shutil
+        import typer
+        from specify_cli.workflows import _commands
+
+        specify_dir = project_dir / ".specify"
+        shutil.rmtree(specify_dir)
+        redirected = temp_dir / "redirected-storage"
+        workflow_file = redirected / "workflows" / "evil" / "workflow.yml"
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(
+            self.WORKFLOW_YAML.format(version="1.0.0"), encoding="utf-8"
+        )
+        specify_dir.symlink_to(redirected, target_is_directory=True)
+        alias = temp_dir / "workflow-alias.yml"
+        alias.symlink_to(
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "evil"
+            / "workflow.yml"
+        )
+
+        with pytest.raises(typer.Exit):
+            _commands._resolve_installed_workflow_ownership(
+                alias, _commands.err_console
+            )
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_run_refuses_symlinked_specify_dir_hiding_disabled_workflow(
         self, temp_dir, monkeypatch
     ):
@@ -10270,8 +10508,8 @@ steps:
         unsafe .specify/.specify-workflows for the actual path-derived
         registry root before ever consulting the registry -- it must not
         rely on WorkflowRegistry's own symlinked-parent handling, which
-        silently returns an empty registry instead of raising and so is not
-        a safety signal a caller can depend on."""
+        raises a generic OSError; the ownership guard should surface the
+        specific unsafe-storage error before registry construction."""
         from typer.testing import CliRunner
         from specify_cli import app
 

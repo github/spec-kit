@@ -189,13 +189,33 @@ def _scan_for_workflow_owner(parts: tuple[str, ...]) -> tuple[int, str] | None:
     return None
 
 
+def _expand_first_symlink_target(path: Path) -> Path | None:
+    """Expand one symlink component while preserving the remaining path."""
+    parts = path.parts
+    current = Path(path.anchor) if path.is_absolute() else Path()
+    start = 1 if path.is_absolute() else 0
+    for index in range(start, len(parts)):
+        current = current / parts[index]
+        if not current.is_symlink():
+            continue
+        try:
+            target = Path(os.readlink(current))
+        except OSError:
+            return None
+        if not target.is_absolute():
+            target = current.parent / target
+        expanded = target.joinpath(*parts[index + 1 :])
+        return Path(os.path.normpath(str(expanded.absolute())))
+    return None
+
+
 def _resolve_installed_workflow_ownership(
     source_path: Path, err
 ) -> tuple[Path | None, str | None]:
     """Map a direct ``workflow.yml`` *source_path* back to the installed
     workflow (``registry_root``, ``registered_id``) it belongs to, if any.
 
-    A path can point at installed storage two ways, both of which must
+    A path can point at installed storage three ways, all of which must
     receive the same registry disabled-check:
 
     1. Lexically: the path's own (symlink-preserving) segments literally
@@ -203,25 +223,25 @@ def _resolve_installed_workflow_ownership(
        never resolving symlinks, so a symlinked ``workflow.yml`` leaf (or
        symlinked ``<id>`` directory) inside the owned tree is caught by the
        inward-symlink refusal below rather than silently followed.
-    2. Via an outward-pointing alias: *source_path* (or one of its parent
-       directories) is itself a symlink whose *resolved* target lands
-       inside some project's ``.specify/workflows/<id>/workflow.yml``, even
-       though the raw path used to invoke the command has no such segments
-       at all (e.g. ``/tmp/alias.yml`` -> a disabled installed workflow's
-       real file). Only the lexical case also runs the inward-symlink
-       refusal: the resolved case's segments are real by construction (an
-       already-fully-resolved path cannot itself contain a symlink
-       component), so that check would be a vacuous no-op there.
+    2. Via an intermediate alias target whose lexical path identifies
+       ``.specify/workflows/<id>`` before a symlinked storage ancestor is
+       resolved away.
+    3. Via an outward-pointing alias whose fully resolved target lands
+       inside legitimate installed storage, even though the raw invocation
+       path has no ownership segments.
 
     Returns ``(None, None)`` when neither applies -- a genuinely standalone
     external workflow file, which is allowed to run unchecked.
     """
-    lexical = Path(os.path.normpath(str(source_path.absolute())))
-    parts = lexical.parts
-    match = _scan_for_workflow_owner(parts)
-    if match is not None:
+    def ownership_for(candidate: Path) -> tuple[Path, str] | None:
+        parts = candidate.parts
+        match = _scan_for_workflow_owner(parts)
+        if match is None:
+            return None
         i, registered_id = match
-        registry_root = Path(*parts[:i]) if i else Path(lexical.anchor or ".")
+        registry_root = (
+            Path(*parts[:i]) if i else Path(candidate.anchor or ".")
+        )
         # The path-derived registry_root here may differ from the cwd's
         # project_root already checked by _reject_unsafe_workflow_storage
         # (e.g. this path points into another project entirely, or this
@@ -252,25 +272,37 @@ def _resolve_installed_workflow_ownership(
                 raise typer.Exit(1)
         return registry_root, registered_id
 
-    # No lexical owner segments. source_path (or a parent directory) might
-    # still be a symlink whose resolved target lands inside some project's
-    # installed workflow storage under a completely unrelated-looking path
-    # -- check that too so an alias into a disabled workflow can't dodge
-    # the registry guard.
+    lexical = Path(os.path.normpath(str(source_path.absolute())))
+    ownership = ownership_for(lexical)
+    if ownership is not None:
+        return ownership
+
+    # Inspect each intermediate symlink target before fully resolving it.
+    # Full resolution can erase .specify/workflows ownership segments when
+    # one of those storage directories is itself a symlink.
+    candidate = lexical
+    seen = {candidate}
+    for _ in range(40):
+        expanded = _expand_first_symlink_target(candidate)
+        if expanded is None or expanded in seen:
+            break
+        ownership = ownership_for(expanded)
+        if ownership is not None:
+            return ownership
+        seen.add(expanded)
+        candidate = expanded
+
+    # A fully resolved target may still land in legitimate installed
+    # storage through an unrelated-looking alias.
     try:
         resolved = source_path.resolve(strict=False)
-    except OSError:
+    except (OSError, RuntimeError):
         return None, None
     if resolved == lexical:
         # Nothing on this path is a symlink; already covered above.
         return None, None
-    resolved_parts = resolved.parts
-    resolved_match = _scan_for_workflow_owner(resolved_parts)
-    if resolved_match is None:
-        return None, None
-    i, registered_id = resolved_match
-    registry_root = Path(*resolved_parts[:i]) if i else Path(resolved.anchor or ".")
-    return registry_root, registered_id
+    ownership = ownership_for(resolved)
+    return ownership if ownership is not None else (None, None)
 
 
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
@@ -549,8 +581,15 @@ def _discard_staged_workflow_file(staged_file: Path, dest_dir: Path, existed_bef
     already absent is not itself an error."""
     staged_file.unlink(missing_ok=True)
     if not existed_before and dest_dir.exists():
-        import shutil
-        shutil.rmtree(dest_dir)
+        import errno
+
+        try:
+            dest_dir.rmdir()
+        except OSError as exc:
+            # Another concurrent install may already have committed content
+            # into this once-fresh directory. Never recursively delete it.
+            if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                raise
 
 
 def _rollback_committed_workflow_file(
@@ -1666,24 +1705,19 @@ def _install_workflow_from_catalog(
     )
 
 
-@workflow_app.command("remove")
-def workflow_remove(
-    workflow_id: str = typer.Argument(..., help="Workflow ID to uninstall"),
-):
-    """Uninstall a workflow."""
-    project_root = _require_specify_project()
-    workflows_dir = project_root / ".specify" / "workflows"
-    _validate_workflow_id_or_exit(workflow_id)
-
+def _remove_workflow_locked(
+    project_root: Path, workflows_dir: Path, workflow_id: str
+) -> Path | None:
+    """Stage a workflow directory and persist removal while locked."""
     registry = _open_workflow_registry(project_root)
-
+    safe_id = _escape_markup(workflow_id)
     if not registry.is_installed(workflow_id):
-        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' is not installed")
+        console.print(
+            f"[red]Error:[/red] Workflow '{safe_id}' is not installed"
+        )
         raise typer.Exit(1)
 
-    # Remove workflow files
     workflow_dir_unresolved = workflows_dir / workflow_id
-    safe_id = _escape_markup(workflow_id)
     if workflow_dir_unresolved.is_symlink():
         console.print(
             f"[red]Error:[/red] Refusing to remove symlinked "
@@ -1696,34 +1730,33 @@ def workflow_remove(
         rel_parts = workflow_dir.relative_to(workflows_dir.resolve()).parts
     except ValueError:
         console.print(
-            f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
+            f"[red]Error:[/red] Invalid workflow ID: "
+            f"{_escape_markup(repr(workflow_id))}"
         )
         raise typer.Exit(1)
     if rel_parts != (workflow_id,):
         console.print(
-            f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
+            f"[red]Error:[/red] Invalid workflow ID: "
+            f"{_escape_markup(repr(workflow_id))}"
         )
         raise typer.Exit(1)
 
     if workflow_dir.exists() and not workflow_dir.is_dir():
         console.print(
-            f"[red]Error:[/red] .specify/workflows/{safe_id} exists but is not a directory"
+            f"[red]Error:[/red] .specify/workflows/{safe_id} exists "
+            "but is not a directory"
         )
         raise typer.Exit(1)
 
-    import shutil
     import tempfile
 
-    # Stage the directory out of the way via an atomic rename *before* the
-    # registry write, so a mid-delete rmtree failure can never leave a
-    # partially-deleted directory that gets re-marked "installed". A rename
-    # is a metadata-only operation (unlike rmtree), so it either fully
-    # succeeds or leaves the original directory completely untouched.
     staged_dir: Path | None = None
     if workflow_dir.exists():
         try:
             reserved = Path(
-                tempfile.mkdtemp(prefix=f".{workflow_id}.removing-", dir=workflows_dir)
+                tempfile.mkdtemp(
+                    prefix=f".{workflow_id}.removing-", dir=workflows_dir
+                )
             )
             reserved.rmdir()
             os.rename(workflow_dir, reserved)
@@ -1731,15 +1764,11 @@ def workflow_remove(
         except OSError as exc:
             console.print(
                 f"[red]Error:[/red] Failed to stage workflow directory "
-                f"{_escape_markup(str(workflow_dir))} for removal: {_escape_markup(str(exc))}"
+                f"{_escape_markup(str(workflow_dir))} for removal: "
+                f"{_escape_markup(str(exc))}"
             )
             raise typer.Exit(1)
 
-    # Persist the registry removal only after staging succeeded: if save()
-    # fails, WorkflowRegistry.remove() rolls back its in-memory state and
-    # raises, so we rename the staged directory back to its original
-    # location, restoring the pre-command state exactly (files + registry
-    # both still claim the workflow installed).
     try:
         registry.remove(workflow_id)
     except OSError as exc:
@@ -1748,13 +1777,38 @@ def workflow_remove(
                 os.rename(staged_dir, workflow_dir)
             except OSError as restore_exc:
                 console.print(
-                    f"[yellow]Warning:[/yellow] Failed to restore workflow directory "
-                    f"after registry update failure; it remains staged at "
-                    f"{_escape_markup(str(staged_dir))}: {_escape_markup(str(restore_exc))}"
+                    f"[yellow]Warning:[/yellow] Failed to restore workflow "
+                    "directory after registry update failure; it remains "
+                    f"staged at {_escape_markup(str(staged_dir))}: "
+                    f"{_escape_markup(str(restore_exc))}"
                 )
         console.print(
-            f"[red]Error:[/red] Failed to update workflow registry for '{safe_id}': "
-            f"{_escape_markup(str(exc))}"
+            f"[red]Error:[/red] Failed to update workflow registry for "
+            f"'{safe_id}': {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+    return staged_dir
+
+
+@workflow_app.command("remove")
+def workflow_remove(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to uninstall"),
+):
+    """Uninstall a workflow."""
+    project_root = _require_specify_project()
+    workflows_dir = project_root / ".specify" / "workflows"
+    _validate_workflow_id_or_exit(workflow_id)
+    safe_id = _escape_markup(workflow_id)
+    import shutil
+    try:
+        with _workflow_install_transaction(project_root):
+            staged_dir = _remove_workflow_locked(
+                project_root, workflows_dir, workflow_id
+            )
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to lock workflow removal "
+            f"'{safe_id}': {_escape_markup(str(exc))}"
         )
         raise typer.Exit(1)
 
@@ -1904,36 +1958,56 @@ def workflow_update(
         raise typer.Exit(1)
 
 
+def _set_workflow_enabled(workflow_id: str, enabled: bool) -> None:
+    """Update enabled state from a fresh registry snapshot while locked."""
+    project_root = _require_specify_project()
+    safe_id = _escape_markup(workflow_id)
+    try:
+        with _workflow_install_transaction(project_root):
+            registry = _open_workflow_registry(project_root)
+            metadata = registry.get(workflow_id)
+            if metadata is None:
+                console.print(
+                    f"[red]Error:[/red] Workflow '{safe_id}' is not installed"
+                )
+                raise typer.Exit(1)
+            if not isinstance(metadata, dict):
+                console.print(
+                    f"[red]Error:[/red] Registry entry for '{safe_id}' "
+                    "is corrupted"
+                )
+                raise typer.Exit(1)
+            current = bool(metadata.get("enabled", True))
+            state = "enabled" if enabled else "disabled"
+            if current is enabled:
+                console.print(
+                    f"[yellow]Workflow '{safe_id}' is already {state}[/yellow]"
+                )
+                raise typer.Exit(0)
+            try:
+                registry.add(workflow_id, {**metadata, "enabled": enabled})
+            except OSError as exc:
+                console.print(
+                    f"[red]Error:[/red] Failed to update workflow registry "
+                    f"for '{safe_id}': {_escape_markup(str(exc))}"
+                )
+                raise typer.Exit(1)
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to lock workflow registry for "
+            f"'{safe_id}': {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+    state = "enabled" if enabled else "disabled"
+    console.print(f"[green]✓[/green] Workflow '{safe_id}' {state}")
+
+
 @workflow_app.command("enable")
 def workflow_enable(
     workflow_id: str = typer.Argument(..., help="Workflow ID to enable"),
 ):
     """Enable a disabled workflow."""
-    project_root = _require_specify_project()
-    registry = _open_workflow_registry(project_root)
-    metadata = registry.get(workflow_id)
-    if metadata is None:
-        console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
-        raise typer.Exit(1)
-    if not isinstance(metadata, dict):
-        console.print(
-            f"[red]Error:[/red] Registry entry for '{_escape_markup(workflow_id)}' is corrupted"
-        )
-        raise typer.Exit(1)
-    if metadata.get("enabled", True):
-        console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already enabled[/yellow]")
-        raise typer.Exit(0)
-    # Fresh mapping: registry.get() returns the live entry, and mutating it
-    # in place would defeat WorkflowRegistry.add's rollback-on-save-failure.
-    try:
-        registry.add(workflow_id, {**metadata, "enabled": True})
-    except OSError as exc:
-        console.print(
-            f"[red]Error:[/red] Failed to update workflow registry for "
-            f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
-        )
-        raise typer.Exit(1)
-    console.print(f"[green]✓[/green] Workflow '{_escape_markup(workflow_id)}' enabled")
+    _set_workflow_enabled(workflow_id, True)
 
 
 @workflow_app.command("disable")
@@ -1941,30 +2015,7 @@ def workflow_disable(
     workflow_id: str = typer.Argument(..., help="Workflow ID to disable"),
 ):
     """Disable a workflow without removing it."""
-    project_root = _require_specify_project()
-    registry = _open_workflow_registry(project_root)
-    metadata = registry.get(workflow_id)
-    if metadata is None:
-        console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
-        raise typer.Exit(1)
-    if not isinstance(metadata, dict):
-        console.print(
-            f"[red]Error:[/red] Registry entry for '{_escape_markup(workflow_id)}' is corrupted"
-        )
-        raise typer.Exit(1)
-    if not metadata.get("enabled", True):
-        console.print(f"[yellow]Workflow '{_escape_markup(workflow_id)}' is already disabled[/yellow]")
-        raise typer.Exit(0)
-    # Fresh mapping for the same rollback reason as workflow_enable.
-    try:
-        registry.add(workflow_id, {**metadata, "enabled": False})
-    except OSError as exc:
-        console.print(
-            f"[red]Error:[/red] Failed to update workflow registry for "
-            f"'{_escape_markup(workflow_id)}': {_escape_markup(str(exc))}"
-        )
-        raise typer.Exit(1)
-    console.print(f"[green]✓[/green] Workflow '{_escape_markup(workflow_id)}' disabled")
+    _set_workflow_enabled(workflow_id, False)
     console.print(f"To re-enable: specify workflow enable {_escape_markup(workflow_id)}")
 
 
