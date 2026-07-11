@@ -271,6 +271,7 @@ The currently declared multi-install safe integrations are:
 | `grok` | `.grok/skills` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |
 | `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
+| `kiro-cli` | `.kiro/prompts` |
 | `qodercli` | `.qoder/commands`, `QODER.md` |
 | `qwen` | `.qwen/commands`, `QWEN.md` |
 | `shai` | `.shai/commands`, `SHAI.md` |
