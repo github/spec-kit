@@ -662,6 +662,9 @@ def _commit_workflow_file(
         try:
             if isinstance(staged_file, _StagedWorkflowFile):
                 staged_file.verify_path()
+                # Windows cannot replace an open file. Verify through the
+                # exclusive descriptor, then close immediately before rename.
+                staged_file.close()
             os.replace(staged_path, dest_file)
         except OSError as commit_exc:
             try:
@@ -674,12 +677,11 @@ def _commit_workflow_file(
                     f"{backup_file}."
                 ) from restore_exc
             raise
-        if isinstance(staged_file, _StagedWorkflowFile):
-            staged_file.close()
         return backup_file
-    os.replace(staged_path, dest_file)
     if isinstance(staged_file, _StagedWorkflowFile):
+        staged_file.verify_path()
         staged_file.close()
+    os.replace(staged_path, dest_file)
     return None
 
 

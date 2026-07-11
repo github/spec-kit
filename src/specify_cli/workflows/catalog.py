@@ -106,24 +106,32 @@ class WorkflowRegistry:
                 with open(self.registry_path, encoding="utf-8") as f:
                     data = json.load(f)
             except OSError as exc:
-                # An I/O failure (e.g. permissions, transient FS issue) is not
-                # the same as a corrupted file: the real data may still be
-                # intact on disk. Fail closed here, at construction, rather
-                # than falling back to an empty registry -- a caller that
-                # only queries is_installed()/get()/list() before writing a
-                # file (never reaching save()) would otherwise mistake this
-                # for "nothing installed" and overwrite real data.
+                # The real data may still be intact on disk. Fail closed at
+                # construction rather than fabricating an empty registry that
+                # a read-only caller could mistake for "nothing installed."
                 raise OSError(
                     f"Failed to read workflow registry at {self.registry_path}: {exc}"
                 ) from exc
-            except (json.JSONDecodeError, ValueError, UnicodeError):
-                # Corrupted registry file — reset to default
-                return default_registry
+            except (
+                json.JSONDecodeError,
+                ValueError,
+                UnicodeError,
+            ) as exc:
+                raise OSError(
+                    f"Workflow registry at {self.registry_path} is corrupted: "
+                    f"{exc}"
+                ) from exc
             # Validate shape: must be a dict with a dict "workflows" field.
             if not isinstance(data, dict):
-                return default_registry
+                raise OSError(
+                    f"Workflow registry at {self.registry_path} is corrupted: "
+                    "top-level value must be an object"
+                )
             if not isinstance(data.get("workflows"), dict):
-                data["workflows"] = {}
+                raise OSError(
+                    f"Workflow registry at {self.registry_path} is corrupted: "
+                    "'workflows' must be an object"
+                )
             return data
         return default_registry
 

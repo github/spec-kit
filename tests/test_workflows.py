@@ -8280,16 +8280,28 @@ steps:
         registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
         assert registry.get("align-wf")["version"] == "1.0.0"
 
-    def test_registry_load_normalizes_malformed_workflows_field(self, project_dir):
+    @pytest.mark.parametrize(
+        "contents",
+        [
+            "not json",
+            "[]",
+            '{"schema_version": "1.0"}',
+            '{"schema_version": "1.0", "workflows": "broken"}',
+        ],
+    )
+    def test_registry_load_rejects_corrupt_contents(
+        self, project_dir, contents
+    ):
         from specify_cli.workflows.catalog import WorkflowRegistry
 
         registry = WorkflowRegistry(project_dir)
         registry.workflows_dir.mkdir(parents=True, exist_ok=True)
-        registry.registry_path.write_text('{"workflows": "broken"}', encoding="utf-8")
-        fresh = WorkflowRegistry(project_dir)
-        assert fresh.get("anything") is None
-        fresh.add("align-wf", {"version": "1.0.0", "source": "catalog"})
-        assert fresh.get("align-wf")["version"] == "1.0.0"
+        registry.registry_path.write_text(contents, encoding="utf-8")
+
+        with pytest.raises(OSError, match="corrupt"):
+            WorkflowRegistry(project_dir)
+
+        assert registry.registry_path.read_text(encoding="utf-8") == contents
 
     def test_registry_save_refuses_symlinked_parent(self, project_dir, tmp_path):
         """Construction now fails closed on a symlinked .specify just like
@@ -10955,6 +10967,24 @@ steps:
         result = runner.invoke(app, ["workflow", "run", "align-wf"])
         assert result.exit_code != 0
         assert "corrupted" in result.output
+
+    def test_run_rejects_corrupt_registry_file(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        self._install_dev(runner, app, project_dir)
+
+        registry_path = WorkflowRegistry(project_dir).registry_path
+        registry_path.write_text("not json", encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "run", "align-wf"])
+
+        assert result.exit_code != 0
+        assert "registry" in result.output.lower()
+        assert "corrupt" in result.output.lower()
 
     def test_disable_blocks_run_via_path_equivalent_id(self, project_dir, monkeypatch):
         """Path spelling "align-wf/" must not run a disabled workflow by dodging the registry lookup."""
