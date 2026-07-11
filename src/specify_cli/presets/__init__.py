@@ -800,7 +800,12 @@ class PresetManager:
                 # (#2948).
                 stale_command_names: Optional[List[str]] = None
                 if registered_commands.get(agent_name):
-                    merged_commands[agent_name] = registered_commands[agent_name]
+                    existing_names = merged_commands.get(agent_name, [])
+                    merged_commands[agent_name] = existing_names + [
+                        name
+                        for name in registered_commands[agent_name]
+                        if name not in existing_names
+                    ]
                 elif ai_skills_now and merged_commands.get(agent_name):
                     stale_command_names = merged_commands[agent_name]
                 # Persist the commands phase immediately, mirroring
@@ -843,7 +848,12 @@ class PresetManager:
                     )
                 merged_skills = copy.deepcopy(existing_skills)
                 if registered_skills.get(agent_name):
-                    merged_skills[agent_name] = registered_skills[agent_name]
+                    existing_names = merged_skills.get(agent_name, [])
+                    merged_skills[agent_name] = existing_names + [
+                        name
+                        for name in registered_skills[agent_name]
+                        if name not in existing_names
+                    ]
                 elif is_command_backed and not ai_skills_now and merged_skills.get(agent_name):
                     # Mirror image: toggled skills -> command for this same
                     # agent. _get_skills_dir() no longer resolves a skills

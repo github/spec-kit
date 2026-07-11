@@ -4546,6 +4546,58 @@ class TestPresetSkills:
             "sanity: the new skills-mode artifact should still be written"
         )
 
+    def test_same_mode_partial_command_rescaffold_keeps_skipped_tracking(
+        self, project_dir, temp_dir
+    ):
+        """A partial command refresh must keep still-live skipped artifacts tracked."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+        preset_dir = self._create_multi_command_preset(
+            temp_dir,
+            "same-mode-partial-command-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        installed_dir = manager.presets_dir / "same-mode-partial-command-preset"
+        (installed_dir / "commands" / "speckit.plan.md").unlink()
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("same-mode-partial-command-preset")
+        assert set(metadata["registered_commands"]["copilot"]) == {
+            "speckit.specify",
+            "speckit.plan",
+        }
+        assert (commands_dir / "speckit.plan.agent.md").exists()
+
+    def test_same_mode_partial_skill_rescaffold_keeps_skipped_tracking(
+        self, project_dir, temp_dir
+    ):
+        """A partial skill refresh must keep still-live skipped artifacts tracked."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        self._create_skill(skills_dir, "speckit-plan")
+        preset_dir = self._create_multi_command_preset(
+            temp_dir,
+            "same-mode-partial-skill-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        installed_dir = manager.presets_dir / "same-mode-partial-skill-preset"
+        (installed_dir / "commands" / "speckit.plan.md").unlink()
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("same-mode-partial-skill-preset")
+        assert set(metadata["registered_skills"]["copilot"]) == {
+            "speckit-specify",
+            "speckit-plan",
+        }
+
     def test_toggle_command_to_skills_preserves_old_command_on_skills_failure(
         self, project_dir, temp_dir, monkeypatch
     ):
