@@ -10038,6 +10038,156 @@ steps:
         result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
         assert result.exit_code == 0, result.output
 
+    def test_resume_blocks_after_project_moved_following_disable(
+        self, temp_dir, monkeypatch
+    ):
+        """Renaming/moving the entire project after starting a run must not
+        let a subsequent disable-then-resume bypass the guard. Persisting
+        the run's *creation-time absolute* project path would make resume
+        open a now-nonexistent old root (WorkflowRegistry falls back to an
+        empty default there), missing the disabled entry that actually
+        lives in the *current* (moved) project's registry. The common,
+        same-project case must instead re-derive the owning root from the
+        project's current location on every resume."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import shutil
+
+        project_v1 = temp_dir / "project-v1"
+        (project_v1 / ".specify" / "workflows").mkdir(parents=True)
+        monkeypatch.chdir(project_v1)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_v1)
+
+        project_v2 = temp_dir / "project-v2"
+        shutil.move(str(project_v1), str(project_v2))
+        monkeypatch.chdir(project_v2)
+
+        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
+        assert result.exit_code == 0, result.output
+
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
+    def test_resume_after_project_moved_still_works_when_enabled(
+        self, temp_dir, monkeypatch
+    ):
+        """The inverse of the move regression: an enabled workflow's run
+        must still resume normally after the project is moved -- the
+        current-project fallback must not itself block legitimate
+        resumes."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import shutil
+
+        project_v1 = temp_dir / "project-v1-ok"
+        (project_v1 / ".specify" / "workflows").mkdir(parents=True)
+        monkeypatch.chdir(project_v1)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_v1)
+
+        project_v2 = temp_dir / "project-v2-ok"
+        shutil.move(str(project_v1), str(project_v2))
+        monkeypatch.chdir(project_v2)
+
+        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+        assert result.exit_code == 0, result.output
+
+    def test_resume_respects_cross_project_registry_root(
+        self, temp_dir, monkeypatch
+    ):
+        """A run started via a direct workflow.yml path belonging to a
+        different project than the cwd used for `workflow run`/`workflow
+        resume` must still gate resuming on *that* owning project's
+        registry, not the cwd project's (which has no entry for this ID
+        at all). This is the genuine cross-project case that must remain
+        unaffected by only special-casing the common same-project one."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        owner_project = temp_dir / "owner-project"
+        (owner_project / ".specify" / "workflows").mkdir(parents=True)
+        monkeypatch.chdir(owner_project)
+        runner = CliRunner()
+        src = owner_project / "gated-src"
+        src.mkdir()
+        (src / "workflow.yml").write_text(self._GATED_WORKFLOW_YAML, encoding="utf-8")
+        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+        assert result.exit_code == 0, result.output
+
+        unrelated_cwd = temp_dir / "unrelated-cwd"
+        unrelated_cwd.mkdir()
+        monkeypatch.chdir(unrelated_cwd)
+
+        target = owner_project / ".specify" / "workflows" / "gated-wf" / "workflow.yml"
+        result = runner.invoke(app, ["workflow", "run", str(target), "--json"])
+        assert result.exit_code == 0, result.output
+        run_id = json.loads(result.stdout)["run_id"]
+
+        monkeypatch.chdir(owner_project)
+        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
+        assert result.exit_code == 0, result.output
+
+        # Resume must run from unrelated_cwd (where this run's own
+        # state.json actually lives) yet still be blocked by the owner
+        # project's disabled entry.
+        monkeypatch.chdir(unrelated_cwd)
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
+    def test_resume_falls_back_to_current_project_when_cross_project_root_vanishes(
+        self, temp_dir, monkeypatch
+    ):
+        """A persisted cross-project owning root that no longer exists (that
+        other project was itself deleted/moved away) must not be trusted as
+        a safety signal -- silently skipping the disabled check just
+        because the stored path happens not to resolve would defeat the
+        guard. Falls back to the current project's own registry instead."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import shutil
+
+        owner_project = temp_dir / "owner-project-2"
+        (owner_project / ".specify" / "workflows").mkdir(parents=True)
+        monkeypatch.chdir(owner_project)
+        runner = CliRunner()
+        src = owner_project / "gated-src"
+        src.mkdir()
+        (src / "workflow.yml").write_text(self._GATED_WORKFLOW_YAML, encoding="utf-8")
+        result = runner.invoke(app, ["workflow", "add", str(src), "--dev"])
+        assert result.exit_code == 0, result.output
+
+        unrelated_cwd = temp_dir / "unrelated-cwd-2"
+        unrelated_cwd.mkdir()
+        monkeypatch.chdir(unrelated_cwd)
+
+        target = owner_project / ".specify" / "workflows" / "gated-wf" / "workflow.yml"
+        result = runner.invoke(app, ["workflow", "run", str(target), "--json"])
+        assert result.exit_code == 0, result.output
+        run_id = json.loads(result.stdout)["run_id"]
+
+        # owner_project vanishes entirely -- its persisted absolute root
+        # is now dangling.
+        shutil.rmtree(owner_project)
+
+        # unrelated_cwd (where this run's own state.json lives) has its own
+        # separately-installed, disabled workflow under the same ID.
+        src2 = unrelated_cwd / "gated-src"
+        src2.mkdir()
+        (src2 / "workflow.yml").write_text(
+            self._GATED_WORKFLOW_YAML, encoding="utf-8"
+        )
+        result = runner.invoke(app, ["workflow", "add", str(src2), "--dev"])
+        assert result.exit_code == 0, result.output
+        result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
+        assert result.exit_code == 0, result.output
+
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app

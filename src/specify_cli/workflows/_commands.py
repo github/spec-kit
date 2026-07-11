@@ -77,6 +77,33 @@ def _open_workflow_registry(project_root: Path, out=None):
         raise typer.Exit(1)
 
 
+def _resolve_run_owner_root(
+    installed_registry_root: str | None, project_root: Path
+) -> Path:
+    """Determine which project's registry gates resuming a run.
+
+    ``installed_registry_root`` is only ever persisted when the run's
+    installed workflow genuinely belongs to a *different* project than the
+    one whose ``runs/`` directory holds this run's own state (a direct
+    external workflow-file invocation) -- see ``workflow_run``. The common
+    case (an installed workflow run from its own project) stores ``None``,
+    so a later project rename/move is transparently picked up here by
+    falling back to the *current* ``project_root`` instead of a stale
+    absolute path baked in at run start.
+
+    A persisted cross-project root that itself no longer exists (that
+    other project moved/was deleted) is not trusted either: silently
+    skipping the disabled check because a stored path merely happens not
+    to resolve would defeat the guard's purpose, so this also falls back
+    to ``project_root`` rather than risk that.
+    """
+    if installed_registry_root:
+        candidate = Path(installed_registry_root)
+        if candidate.is_dir():
+            return candidate
+    return project_root
+
+
 def _parse_input_values(
     input_values: list[str] | None, *, json_output: bool = False
 ) -> dict[str, Any]:
@@ -730,7 +757,20 @@ def workflow_run(
                 definition,
                 inputs,
                 installed_workflow_id=registered_id,
-                installed_registry_root=registry_root if registered_id else None,
+                # Only persist an explicit root when the installed workflow
+                # genuinely belongs to a *different* project than the one
+                # whose runs/ directory holds this run's own state (a
+                # direct external workflow-file invocation) -- the common
+                # case (an installed workflow run from its own project)
+                # leaves this None so resume re-derives the owning root
+                # from wherever the project currently is, transparently
+                # surviving a project rename/move instead of baking in a
+                # stale absolute path at run start.
+                installed_registry_root=(
+                    registry_root
+                    if registered_id and registry_root != project_root
+                    else None
+                ),
             )
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {exc}")
@@ -801,10 +841,8 @@ def workflow_resume(
         raise typer.Exit(1)
 
     if pre_state.installed_workflow_id is not None:
-        owner_root = (
-            Path(pre_state.installed_registry_root)
-            if pre_state.installed_registry_root
-            else project_root
+        owner_root = _resolve_run_owner_root(
+            pre_state.installed_registry_root, project_root
         )
         installed_meta = _open_workflow_registry(owner_root, err).get(
             pre_state.installed_workflow_id
