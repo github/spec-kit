@@ -7675,7 +7675,7 @@ steps:
             )
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
+        assert "exceedingthe100-byteworkflowsizelimit" in "".join(result.output.split())
 
     def test_add_from_url_rejects_oversized_streamed_body_without_content_length(
         self, project_dir, monkeypatch
@@ -7705,7 +7705,77 @@ steps:
             )
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
+        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
+
+    def test_add_from_url_oversized_streamed_body_leaves_no_temp_file(
+        self, project_dir, monkeypatch, tmp_path
+    ):
+        """A rejected --from download (oversized streamed body, no
+        Content-Length) must not leave the 0-byte NamedTemporaryFile behind:
+        the file is created on disk as soon as it is opened (delete=False),
+        before any bytes are written, so a failure inside the size-limit
+        check must still clean it up rather than merely erroring out."""
+        import tempfile as tempfile_mod
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        scratch_tmp = tmp_path / "scratch-tmp"
+        scratch_tmp.mkdir()
+        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
+        oversized_body = b"x" * 500  # no Content-Length header at all
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                oversized_body, url
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+        assert result.exit_code != 0
+        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
+        leaked = list(scratch_tmp.glob("*.yml"))
+        assert leaked == [], f"leaked temp files: {leaked}"
+
+    def test_add_from_url_oversized_content_length_leaves_no_temp_file(
+        self, project_dir, monkeypatch, tmp_path
+    ):
+        """Same guarantee for the fail-fast Content-Length rejection path:
+        it must not even leave a 0-byte temp file behind."""
+        import tempfile as tempfile_mod
+        from unittest.mock import patch
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        scratch_tmp = tmp_path / "scratch-tmp"
+        scratch_tmp.mkdir()
+        monkeypatch.setattr(tempfile_mod, "tempdir", str(scratch_tmp))
+        small_body = b"id: align-wf\n"  # small actual body; Content-Length lies
+        runner = CliRunner()
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
+                small_body, url, headers={"Content-Length": "1000"}
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+            )
+        assert result.exit_code != 0
+        assert "exceedingthe100-byteworkflowsizelimit" in "".join(result.output.split())
+        leaked = list(scratch_tmp.glob("*.yml"))
+        assert leaked == [], f"leaked temp files: {leaked}"
+
 
     def test_add_from_url_installs(self, project_dir, monkeypatch):
         from unittest.mock import patch
@@ -8207,7 +8277,7 @@ steps:
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
+        assert "exceedingthe100-byteworkflowsizelimit" in "".join(result.output.split())
         dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
         assert not dest_dir.exists()
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
@@ -8250,7 +8320,7 @@ steps:
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        assert result.output.strip() != ""
+        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
         dest_dir = project_dir / ".specify" / "workflows" / "align-wf"
         assert not dest_dir.exists()
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")

@@ -154,14 +154,21 @@ _MAX_WORKFLOW_YAML_BYTES = 5 * 1024 * 1024  # 5 MiB
 _DOWNLOAD_CHUNK_SIZE = 65536
 
 
-def _read_response_within_limit(response, max_bytes: int = _MAX_WORKFLOW_YAML_BYTES) -> bytes:
+def _read_response_within_limit(response, max_bytes: int | None = None) -> bytes:
     """Read *response* fully, enforcing *max_bytes* via bounded streaming.
 
     A ``Content-Length`` header is checked up front to fail fast, but it is
     never trusted alone: the actual bytes read are also counted as they
     stream in, so a chunked or ``Content-Length``-less response that lies
     about (or omits) its size still cannot exceed the limit.
+
+    ``max_bytes`` defaults to ``None`` (resolved to the module-level
+    ``_MAX_WORKFLOW_YAML_BYTES`` at call time, not at function-definition
+    time) so tests can override the effective limit via monkeypatching the
+    module attribute.
     """
+    if max_bytes is None:
+        max_bytes = _MAX_WORKFLOW_YAML_BYTES
     content_length = None
     getheader = getattr(response, "getheader", None)
     if callable(getheader):
@@ -910,6 +917,7 @@ def workflow_add(
             _wf_url_extra_headers = {"Accept": "application/octet-stream"}
 
         import tempfile
+        tmp_path: Path | None = None
         try:
             with _open_url(
                 download_url,
@@ -933,11 +941,17 @@ def workflow_add(
                     )
                     raise typer.Exit(1)
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(_read_response_within_limit(resp))
+                    # Assign tmp_path immediately: NamedTemporaryFile(delete=False)
+                    # creates the file on disk right away, before any bytes are
+                    # written, so a failure in the size-limited read below must
+                    # still be able to find and remove it.
                     tmp_path = Path(tmp.name)
+                    tmp.write(_read_response_within_limit(resp))
         except typer.Exit:
             raise
         except Exception as exc:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
             console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         try:
