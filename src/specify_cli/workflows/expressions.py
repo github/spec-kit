@@ -464,9 +464,9 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
             if op == "<=":
                 return _safe_compare(left, right, "<=")
             if op == " in ":
-                return left in right if right is not None else False
+                return _safe_contains(left, right)
             if op == " not in ":
-                return left not in right if right is not None else True
+                return not _safe_contains(left, right)
 
     # Numeric literal
     try:
@@ -509,6 +509,24 @@ def _coerce_number(value: Any) -> Any:
         except ValueError:
             return value
     return value
+
+
+def _safe_contains(left: Any, right: Any) -> bool:
+    """Return ``left in right``, treating a non-container *right* as empty.
+
+    ``left in right`` raises ``TypeError`` when *right* is not a container or
+    iterable (int, bool, float, ...) and raises no membership at all when it is
+    ``None``. Both cases mean "nothing is contained", so return ``False`` rather
+    than leaking a raw ``TypeError`` that crashes the workflow run. This mirrors
+    ``_safe_compare``, which already swallows ``TypeError`` for the ordering
+    operators. ``not in`` is derived by negating this result.
+    """
+    if right is None:
+        return False
+    try:
+        return left in right
+    except TypeError:
+        return False
 
 
 def _safe_compare(left: Any, right: Any, op: str) -> bool:
