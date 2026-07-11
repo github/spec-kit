@@ -911,6 +911,9 @@ def workflow_status(
         except FileNotFoundError:
             console.print(f"[red]Error:[/red] Run not found: {run_id}")
             raise typer.Exit(1)
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1)
 
         if json_output:
             # Build on the shared run/resume payload so the common fields

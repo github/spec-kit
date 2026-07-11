@@ -10401,6 +10401,69 @@ steps:
         result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
         assert result.exit_code == 0, result.output
 
+    @pytest.mark.parametrize(
+        "field, bad_value",
+        [
+            ("installed_workflow_id", 123),
+            ("installed_workflow_id", ["gated-wf"]),
+            ("installed_registry_root", 123),
+            ("installed_registry_root", ["."]),
+        ],
+    )
+    def test_status_rejects_malformed_run_state_origin_fields(
+        self, project_dir, monkeypatch, field, bad_value
+    ):
+        """`workflow status <run_id>` calls RunState.load() same as resume,
+        but only caught FileNotFoundError -- the new type validation there
+        (int/list instead of str-or-null) raises ValueError, which leaked
+        as a raw unhandled traceback instead of `workflow resume`'s clean
+        `[red]Error:[/red] {exc}` + exit 1. Must get the identical clean
+        boundary, leaving the no-run-id list path (and FileNotFoundError
+        behavior) unchanged."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+
+        state_path = (
+            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        )
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        data[field] = bad_value
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "status", run_id])
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Error" in result.output
+
+    def test_status_run_not_found_unchanged(self, project_dir, monkeypatch):
+        """FileNotFoundError behavior for a nonexistent run_id must remain
+        exactly as before this fix."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "status", "nonexistent-run"])
+        assert result.exit_code != 0
+        assert "Run not found: nonexistent-run" in result.output
+
+    def test_status_no_run_id_list_path_unaffected(self, project_dir, monkeypatch):
+        """The no-run-id list-all-runs path must remain unaffected by the
+        new single-run ValueError boundary."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
+        runner = CliRunner()
+        result = runner.invoke(app, ["workflow", "status"])
+        assert result.exit_code == 0, result.output
+
     def test_disable_shows_marker_in_list(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
