@@ -1359,6 +1359,95 @@ class TestExtensionSkillRegistration:
             "skill file, not left dangling once it's orphaned (#2948)"
         )
 
+    def test_toggle_to_command_preserves_tracking_for_mirror_in_other_agent_dir(
+        self, project_dir, temp_dir
+    ):
+        """Skills->command toggle cleanup must not drop global tracking for a
+        skill name that still has a mirror under a *different* agent's
+        skills directory from an earlier activation.
+
+        ``registered_skills`` is a flat, agent-agnostic list for extensions
+        (skills are only ever rendered for the currently active agent, by
+        design). Auggie is activated first (skills mode), writing a mirror
+        under ``.augment/skills``. Copilot is then activated (also skills
+        mode), writing its own mirror under ``.github/skills`` for the same
+        skill names — the flat list already contains those names, so
+        nothing new is added. Copilot is then toggled to command mode: its
+        own ``.github/skills`` mirror becomes stale and must be removed,
+        but the still-existing Auggie mirror means the extension still
+        globally owns these skill names. Before this fix, the recompute
+        after toggle-cleanup only checked *copilot's* directory, so it
+        dropped the names from ``registered_skills`` entirely — losing
+        track of Auggie's still-existing mirror, which a later `remove()`
+        would then never find and clean up (or restore during override
+        reconciliation), permanently orphaning it (#2948).
+        """
+        _create_init_options(project_dir, ai="auggie", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="multi-agent-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("auggie")
+
+        auggie_skills_dir = project_dir / ".augment" / "skills"
+        auggie_hello = auggie_skills_dir / "speckit-multi-agent-ext-hello" / "SKILL.md"
+        auggie_world = auggie_skills_dir / "speckit-multi-agent-ext-world" / "SKILL.md"
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "sanity: auggie's skills-mode activation should mirror both "
+            "extension commands as SKILL.md files"
+        )
+
+        # Activate copilot in skills mode too (no intervening removal of
+        # auggie's mirrors) — the same extension's skills get mirrored a
+        # second time, under a different agent's directory.
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        copilot_skills_dir = project_dir / ".github" / "skills"
+        copilot_hello = copilot_skills_dir / "speckit-multi-agent-ext-hello" / "SKILL.md"
+        copilot_world = copilot_skills_dir / "speckit-multi-agent-ext-world" / "SKILL.md"
+        assert copilot_hello.exists() and copilot_world.exists(), (
+            "sanity: copilot's skills-mode activation should also mirror "
+            "both extension commands"
+        )
+
+        # Toggle copilot to command mode (mirroring `integration upgrade
+        # copilot` with no --skills) — copilot's mirror is now stale.
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not copilot_hello.exists() and not copilot_world.exists(), (
+            "copilot's own stale skills-mode mirrors must be removed once "
+            "it toggles to command mode"
+        )
+        assert auggie_hello.exists() and auggie_world.exists(), (
+            "auggie's mirrors from an earlier activation must be left "
+            "untouched by copilot's own toggle cleanup"
+        )
+
+        metadata = manager.registry.get("multi-agent-ext")
+        registered_skills = metadata.get("registered_skills", [])
+        assert set(registered_skills) == {
+            "speckit-multi-agent-ext-hello",
+            "speckit-multi-agent-ext-world",
+        }, (
+            "registered_skills must retain both names: auggie's mirrors "
+            "still exist on disk, so the extension still globally owns "
+            "these skill names even though copilot's own copy is now gone "
+            "(#2948)"
+        )
+
+        # Full removal must still find and clean up Auggie's remaining
+        # mirrors via the preserved tracking.
+        assert manager.remove("multi-agent-ext") is True
+        assert not auggie_hello.exists() and not auggie_world.exists(), (
+            "removal must clean up every remaining extension-owned mirror, "
+            "not just the ones under the last-active agent's directory — "
+            "this only works if registered_skills tracking wasn't "
+            "prematurely dropped during the earlier toggle (#2948)"
+        )
+
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir
     ):

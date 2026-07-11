@@ -1366,6 +1366,93 @@ class ExtensionManager:
                         continue
                     shutil.rmtree(skill_subdir)
 
+    def _extension_owned_skill_names(
+        self, skill_names: List[str], extension_id: str
+    ) -> List[str]:
+        """Return the subset of *skill_names* still marker-verified anywhere.
+
+        ``registered_skills`` is a single flat list shared across every
+        agent this extension has ever been activated under (skills are
+        only ever rendered for the currently active agent, so there is no
+        per-agent registry key to consult). A name can therefore still be
+        globally owned by this extension even after it's removed from one
+        particular agent's directory, if an earlier activation under a
+        *different* agent left its own marker-verified mirror behind.
+
+        This scans the same candidate directories (every configured
+        agent's skills folder, deduped by shared path, plus the default
+        skills directory) as the fallback branch of
+        :meth:`_unregister_extension_skills`, but read-only: no directory
+        is created and a name is only kept if at least one candidate
+        directory contains a ``SKILL.md`` whose ``metadata.source`` field
+        matches this exact extension (the same ownership marker
+        :meth:`_register_extension_skills` writes), so an unrelated
+        directory or user-created skill of the same name can't cause a
+        false positive. Symlink/containment safety mirrors the existing
+        fallback scan: each candidate path is resolved and the resulting
+        skill subdirectory is required to stay within it before any file
+        is read.
+        """
+        if not skill_names:
+            return []
+
+        from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+
+        candidate_dirs: set[Path] = set()
+        for cfg in AGENT_CONFIG.values():
+            folder = cfg.get("folder", "")
+            if folder:
+                candidate_dirs.add(self.project_root / folder.rstrip("/") / "skills")
+        candidate_dirs.add(self.project_root / DEFAULT_SKILLS_DIR)
+
+        marker = f"extension:{extension_id}"
+        owned: set = set()
+        for skills_candidate in candidate_dirs:
+            if len(owned) == len(skill_names):
+                break  # every name already confirmed owned somewhere
+            if not skills_candidate.is_dir():
+                continue
+            try:
+                resolved_candidate = skills_candidate.resolve()
+            except OSError:
+                continue
+            for skill_name in skill_names:
+                if skill_name in owned:
+                    continue
+                sn_path = Path(skill_name)
+                if sn_path.is_absolute() or len(sn_path.parts) != 1:
+                    continue
+                try:
+                    skill_subdir = (skills_candidate / skill_name).resolve()
+                    skill_subdir.relative_to(resolved_candidate)  # raises if outside
+                except (OSError, ValueError):
+                    continue
+                if not skill_subdir.is_dir():
+                    continue
+                skill_md = skill_subdir / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                try:
+                    import yaml as _yaml
+
+                    raw = skill_md.read_text(encoding="utf-8")
+                    source = ""
+                    if raw.startswith("---"):
+                        parts = raw.split("---", 2)
+                        if len(parts) >= 3:
+                            fm = _yaml.safe_load(parts[1]) or {}
+                            source = (
+                                fm.get("metadata", {}).get("source", "")
+                                if isinstance(fm, dict)
+                                else ""
+                            )
+                except (OSError, UnicodeDecodeError, Exception):
+                    continue
+                if source == marker:
+                    owned.add(skill_name)
+
+        return [name for name in skill_names if name in owned]
+
     def check_compatibility(
         self, manifest: ExtensionManifest, speckit_version: str
     ) -> bool:
@@ -1940,11 +2027,21 @@ class ExtensionManager:
                                 self._unregister_extension_skills(
                                     owned_here, ext_id, skills_dir=agent_skills_dir
                                 )
-                                remaining = [
-                                    name
-                                    for name in existing_skills
-                                    if (agent_skills_dir / name).is_dir()
-                                ]
+                                # registered_skills is a single flat list
+                                # shared across every agent this extension
+                                # was ever activated under (unlike presets'
+                                # per-agent dict), so a name removed from
+                                # *this* agent's directory may still have a
+                                # marker-verified mirror under a different,
+                                # previously-active agent's directory.
+                                # Recompute across every safe, supported
+                                # skills directory rather than just this
+                                # one, or a still-existing mirror elsewhere
+                                # would be silently dropped from tracking
+                                # and orphaned on later removal (#2948).
+                                remaining = self._extension_owned_skill_names(
+                                    existing_skills, ext_id
+                                )
                                 if remaining != existing_skills:
                                     updates["registered_skills"] = remaining
 
