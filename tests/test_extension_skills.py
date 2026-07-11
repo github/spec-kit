@@ -1824,6 +1824,149 @@ class TestExtensionSkillRegistration:
             "removed via an explicit symlinked directory argument"
         )
 
+    def test_extension_owned_skill_names_rejects_symlinked_child_skill_dir(
+        self, project_dir, temp_dir
+    ):
+        """Provenance probing must reject a per-skill child directory that
+        is itself a symlink, even when its resolved target stays inside
+        the (real, non-symlinked) skills root.
+
+        Both ``_extension_owned_skill_names`` and
+        ``_unregister_extension_skills`` previously only validated the
+        *parent* ``skills_dir`` for symlink escape, then resolved
+        ``skills_dir / skill_name`` and checked containment relative to
+        the already-resolved parent. A child symlink whose target
+        resolves inside that same root passes that containment check, so
+        a corrupted or attacker-controlled registry entry naming a
+        symlink alias could cause a legitimate, unrelated skill directory
+        to be falsely attributed as extension-owned via the alias.
+        """
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        # A real, legitimately marker-matching skill directory under its
+        # own name — this represents genuine extension-owned content.
+        real_skill_dir = skills_dir / "speckit-child-sym-real"
+        real_skill_dir.mkdir()
+        (real_skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: speckit-child-sym-real\n"
+            "description: real skill\n"
+            "metadata:\n"
+            "  source: extension:child-sym-ext\n"
+            "---\n\n"
+            "real body\n",
+            encoding="utf-8",
+        )
+
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        # A *different* registered name that is merely a symlink alias
+        # pointing at the real skill directory above — both still live
+        # inside the same, non-symlinked skills root.
+        alias_name = "speckit-child-sym-alias"
+        os.symlink(str(real_skill_dir), str(skills_dir / alias_name))
+
+        manager = ExtensionManager(project_dir)
+        owned = manager._extension_owned_skill_names(
+            [alias_name], "child-sym-ext"
+        )
+
+        assert owned == [], (
+            "a per-skill child directory that is itself a symlink must "
+            "never be followed for provenance attribution, even when its "
+            "resolved target remains inside the skills root"
+        )
+
+    def test_unregister_extension_skills_explicit_dir_rejects_symlinked_child(
+        self, project_dir, temp_dir
+    ):
+        """Fast (explicit ``skills_dir``) removal path must refuse to
+        delete through a per-skill child directory that is itself a
+        symlink, even when the resolved target stays inside the skills
+        root — deleting the resolved target would destroy a legitimate,
+        differently-named skill directory via the alias.
+        """
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        precious_skill_dir = skills_dir / "speckit-child-sym-precious"
+        precious_skill_dir.mkdir()
+        precious_skill_md = precious_skill_dir / "SKILL.md"
+        precious_skill_md.write_text(
+            "---\n"
+            "name: speckit-child-sym-precious\n"
+            "description: precious skill\n"
+            "metadata:\n"
+            "  source: extension:child-sym-ext2\n"
+            "---\n\n"
+            "precious body\n",
+            encoding="utf-8",
+        )
+
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        alias_name = "speckit-child-sym-alias2"
+        os.symlink(str(precious_skill_dir), str(skills_dir / alias_name))
+
+        manager = ExtensionManager(project_dir)
+        manager._unregister_extension_skills(
+            [alias_name], "child-sym-ext2", skills_dir=skills_dir,
+        )
+
+        assert precious_skill_dir.exists(), (
+            "the real skill directory reached only through a symlink "
+            "alias must survive removal of the alias name (#2948)"
+        )
+        assert precious_skill_md.exists(), (
+            "the real skill directory's SKILL.md must not be deleted via "
+            "a differently-named symlink alias"
+        )
+
+    def test_unregister_extension_skills_fallback_rejects_symlinked_child(
+        self, project_dir, temp_dir
+    ):
+        """Fallback (unscoped, ``skills_dir=None``) removal scan must also
+        refuse to delete through a per-skill child symlink, mirroring the
+        explicit-dir fast path.
+        """
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        precious_skill_dir = skills_dir / "speckit-child-sym-precious3"
+        precious_skill_dir.mkdir()
+        precious_skill_md = precious_skill_dir / "SKILL.md"
+        precious_skill_md.write_text(
+            "---\n"
+            "name: speckit-child-sym-precious3\n"
+            "description: precious skill\n"
+            "metadata:\n"
+            "  source: extension:child-sym-ext3\n"
+            "---\n\n"
+            "precious body\n",
+            encoding="utf-8",
+        )
+
+        if not _can_create_symlink(temp_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        alias_name = "speckit-child-sym-alias3"
+        os.symlink(str(precious_skill_dir), str(skills_dir / alias_name))
+
+        manager = ExtensionManager(project_dir)
+        manager._unregister_extension_skills([alias_name], "child-sym-ext3")
+
+        assert precious_skill_dir.exists(), (
+            "the real skill directory reached only through a symlink "
+            "alias must survive the unscoped fallback removal scan (#2948)"
+        )
+        assert precious_skill_md.exists(), (
+            "the real skill directory's SKILL.md must not be deleted via "
+            "a differently-named symlink alias during fallback removal"
+        )
+
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir
     ):

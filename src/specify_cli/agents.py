@@ -11,7 +11,7 @@ import platform
 import re
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import yaml
 
@@ -1083,6 +1083,7 @@ class CommandRegistrar:
         link_outputs: bool = False,
         extension_id: Optional[str] = None,
         only_agent: Optional[str] = None,
+        extra_agents: Optional[Iterable[str]] = None,
     ) -> Dict[str, List[str]]:
         """Register commands for all non-skill agents in the project.
 
@@ -1102,14 +1103,25 @@ class CommandRegistrar:
             only_agent: If set, restrict registration to this single agent
                 (#2948). An agent name that matches no configured agent
                 (e.g. an empty string) yields no registrations at all.
+            extra_agents: Additional agent names to register for besides
+                ``only_agent``. Used by post-removal reconciliation to also
+                restore surviving content into historical agent directories
+                a just-removed preset actually wrote to, not only the
+                currently active agent (#2948). Ignored when ``only_agent``
+                is ``None`` (already unrestricted).
 
         Returns:
             Dictionary mapping agent names to list of registered commands
         """
         results = {}
         self._ensure_configs()
+        extra_agents_set = frozenset(extra_agents) if extra_agents else frozenset()
         for agent_name, agent_config in self.AGENT_CONFIGS.items():
-            if only_agent is not None and agent_name != only_agent:
+            if (
+                only_agent is not None
+                and agent_name != only_agent
+                and agent_name not in extra_agents_set
+            ):
                 continue
             if agent_config.get("extension") == "/SKILL.md":
                 continue

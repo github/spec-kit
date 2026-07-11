@@ -5295,6 +5295,157 @@ class TestPresetSkills:
             "inactive agent's directory (#2948)"
         )
 
+    def test_remove_reconciles_command_for_every_historical_agent(
+        self, project_dir, temp_dir
+    ):
+        """Removing a preset must reconcile every historical agent its
+        ``registered_commands`` actually targeted, not only the currently
+        active one.
+
+        Preset B (lower precedence, survives) is installed while gemini is
+        active, then preset A (higher precedence) overrides the same
+        command while gemini is still active. Switching the active
+        integration to opencode and rescaffolding re-registers both
+        presets under opencode too, so preset A's ``registered_commands``
+        now spans two agents: gemini (now inactive) and opencode (active).
+        Removing A deletes its command file from *both* directories via
+        ``_unregister_commands``, but active-only reconciliation used to
+        recreate the surviving preset B's content only for the active
+        agent (opencode), leaving gemini's directory with a stale/missing
+        file (#2948).
+        """
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "hist-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "hist-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+
+        gemini_cmd_files = list(gemini_dir.glob("*specify*"))
+        assert gemini_cmd_files, "sanity: gemini should have the command file"
+        assert "preset A body" in gemini_cmd_files[0].read_text(), (
+            "sanity: preset A (higher precedence) should win initially"
+        )
+
+        # Switch the active integration to opencode and rescaffold, mirroring
+        # `integration use opencode`. This merges opencode into both
+        # presets' registered_commands alongside the pre-existing gemini
+        # entry recorded while gemini was active.
+        self._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        opencode_dir = project_dir / ".opencode" / "commands"
+        opencode_dir.mkdir(parents=True, exist_ok=True)
+        manager.register_enabled_presets_for_agent("opencode")
+
+        metadata_a = manager.registry.get("hist-preset-a")
+        assert set(metadata_a.get("registered_commands", {})) == {"gemini", "opencode"}, (
+            "sanity: preset A's registered_commands must span both the "
+            "historical (gemini) and currently active (opencode) agents"
+        )
+
+        assert manager.remove("hist-preset-a") is True
+
+        gemini_cmd_files = list(gemini_dir.glob("*specify*"))
+        opencode_cmd_files = list(opencode_dir.glob("*specify*"))
+        assert gemini_cmd_files, "gemini's command file must still exist after removal"
+        assert opencode_cmd_files, "opencode's command file must still exist after removal"
+        assert "preset B body" in gemini_cmd_files[0].read_text(), (
+            "removing the higher-precedence preset must restore the "
+            "surviving preset's content in the historical (inactive) "
+            "agent's directory too, not only the active agent's (#2948)"
+        )
+        assert "preset B body" in opencode_cmd_files[0].read_text(), (
+            "the surviving preset's content must also be restored for the "
+            "currently active agent"
+        )
+
+    def test_remove_reconciles_skill_for_every_historical_agent(
+        self, project_dir, temp_dir
+    ):
+        """Removing a preset must reconcile every historical skills
+        directory its ``registered_skills`` actually targeted, not only
+        the currently active one.
+
+        Preset B (survives) is installed while claude is active, then
+        preset A (higher precedence) overrides the same command while
+        claude is still active. Switching to codex and rescaffolding
+        records codex too, so preset A's ``registered_skills`` spans both
+        claude (now inactive) and codex (active) directories. Removing A
+        restores both directories to core/extension via
+        ``_unregister_skills``, but ``_reconcile_skills`` used to only
+        resolve/apply the surviving winner for the currently active
+        skills directory, leaving claude's directory reverted to
+        core/extension content instead of preset B's override (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = project_dir / ".claude" / "skills"
+
+        # A core template fallback is required so unregistering the
+        # top-priority preset's SKILL.md restores core content rather than
+        # deleting the skill directory outright when no preset remains to
+        # apply on top of it (mirrors the pre-existing skills-reconciliation
+        # fixtures elsewhere in this file).
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        preset_b_dir = self._create_command_preset(
+            temp_dir, "hist-skill-preset-b", "speckit.specify",
+            "Preset B", "preset B body",
+        )
+        preset_a_dir = self._create_command_preset(
+            temp_dir, "hist-skill-preset-a", "speckit.specify",
+            "Preset A", "preset A body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_b_dir, "0.1.5", priority=10)
+        manager.install_from_directory(preset_a_dir, "0.1.5", priority=1)
+
+        claude_skill_file = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:hist-skill-preset-a" in claude_skill_file.read_text(), (
+            "sanity: preset A (higher precedence) should win initially"
+        )
+
+        # Switch the active integration to codex (a distinct skills
+        # directory) and rescaffold, mirroring `integration use codex`.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata_a = manager.registry.get("hist-skill-preset-a")
+        assert set(metadata_a.get("registered_skills", {})) == {"claude", "codex"}, (
+            "sanity: preset A's registered_skills must span both the "
+            "historical (claude) and currently active (codex) agents"
+        )
+
+        assert manager.remove("hist-skill-preset-a") is True
+
+        codex_skill_file = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        assert claude_skill_file.exists(), "claude's skill file must still exist after removal"
+        assert codex_skill_file.exists(), "codex's skill file must still exist after removal"
+        assert "preset:hist-skill-preset-b" in claude_skill_file.read_text(), (
+            "removing the higher-precedence preset must restore the "
+            "surviving preset's override in the historical (inactive) "
+            "agent's directory too, not only the active agent's (#2948)"
+        )
+        assert "preset:hist-skill-preset-b" in codex_skill_file.read_text(), (
+            "the surviving preset's override must also be restored for "
+            "the currently active agent"
+        )
+
     def test_symlinked_skill_subdir_rejected_on_restore(self, project_dir, temp_dir):
         """Restore must validate each per-skill subdirectory, not just its parent.
 

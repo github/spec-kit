@@ -1290,10 +1290,19 @@ class ExtensionManager:
                 sn_path = Path(skill_name)
                 if sn_path.is_absolute() or len(sn_path.parts) != 1:
                     continue
+                skill_subdir = skills_dir / skill_name
+                # Validate every path component down to the skill's own
+                # subdirectory, not just the already-validated parent
+                # skills_dir: a per-skill child can itself be a symlink to
+                # another directory whose *resolved* target still lands
+                # inside this same (safe) skills root, which the previous
+                # resolve()+relative_to() containment check alone would
+                # not catch. Reject the symlink outright rather than
+                # following it, even when the target is otherwise
+                # in-bounds (#2948).
                 try:
-                    skill_subdir = (skills_dir / skill_name).resolve()
-                    skill_subdir.relative_to(skills_dir.resolve())  # raises if outside
-                except (OSError, ValueError):
+                    _validate_safe_shared_directory(self.project_root, skill_subdir)
+                except (ValueError, OSError):
                     continue
                 if not skill_subdir.is_dir():
                     continue
@@ -1354,12 +1363,19 @@ class ExtensionManager:
                     sn_path = Path(skill_name)
                     if sn_path.is_absolute() or len(sn_path.parts) != 1:
                         continue
+                    skill_subdir = skills_candidate / skill_name
+                    # Validate every path component down to the skill's
+                    # own subdirectory, not just the already-validated
+                    # candidate parent: a per-skill child can itself be a
+                    # symlink to another directory whose resolved target
+                    # still lands inside this same candidate, which the
+                    # previous resolve()+relative_to() containment check
+                    # alone would not catch (#2948).
                     try:
-                        skill_subdir = (skills_candidate / skill_name).resolve()
-                        skill_subdir.relative_to(
-                            skills_candidate.resolve()
-                        )  # raises if outside
-                    except (OSError, ValueError):
+                        _validate_safe_shared_directory(
+                            self.project_root, skill_subdir
+                        )
+                    except (ValueError, OSError):
                         continue
                     if not skill_subdir.is_dir():
                         continue
@@ -1450,20 +1466,23 @@ class ExtensionManager:
                 _validate_safe_shared_directory(self.project_root, skills_candidate)
             except (ValueError, OSError):
                 continue
-            try:
-                resolved_candidate = skills_candidate.resolve()
-            except OSError:
-                continue
             for skill_name in skill_names:
                 if skill_name in owned:
                     continue
                 sn_path = Path(skill_name)
                 if sn_path.is_absolute() or len(sn_path.parts) != 1:
                     continue
+                skill_subdir = skills_candidate / skill_name
+                # Validate every path component down to the skill's own
+                # subdirectory, not just the already-validated candidate
+                # parent: a per-skill child can itself be a symlink to
+                # another directory whose resolved target still lands
+                # inside this same candidate, which the previous
+                # resolve()+relative_to() containment check alone would
+                # not catch (#2948).
                 try:
-                    skill_subdir = (skills_candidate / skill_name).resolve()
-                    skill_subdir.relative_to(resolved_candidate)  # raises if outside
-                except (OSError, ValueError):
+                    _validate_safe_shared_directory(self.project_root, skill_subdir)
+                except (ValueError, OSError):
                     continue
                 if not skill_subdir.is_dir():
                     continue
