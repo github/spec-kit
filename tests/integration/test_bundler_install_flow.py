@@ -209,6 +209,8 @@ def test_remove_bundler_error_from_installer_with_zero_removed_reports_no_change
 
     message = str(exc_info.value)
     assert "no components were removed" in message.lower()
+    assert "no removal was attempted" in message.lower()
+    assert "partially uninstalled" not in message.lower()
     assert "kind manager unavailable" in message
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
@@ -267,6 +269,32 @@ def test_remove_record_save_failure_reports_partial_state(tmp_path: Path):
     assert "disk full" in message
     assert "partially uninstalled" in message.lower()
     assert installer.installed == set()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_record_save_failure_without_remove_attempt_is_not_partial(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    installer.installed.clear()
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "specify_cli.bundler.services.installer.save_records",
+            fail_save,
+        )
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no removal was attempted" in message.lower()
+    assert "partially uninstalled" not in message.lower()
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 

@@ -156,8 +156,15 @@ class WorkflowRegistry:
             # metadata preservation).
             try:
                 if self.registry_path.exists():
-                    existing_mode = stat.S_IMODE(self.registry_path.stat().st_mode)
-                    os.chmod(tmp, existing_mode)
+                    existing_stat = self.registry_path.stat()
+                    os.chmod(tmp, stat.S_IMODE(existing_stat.st_mode))
+                    if hasattr(os, "chown"):
+                        try:
+                            os.chown(
+                                tmp, existing_stat.st_uid, existing_stat.st_gid
+                            )
+                        except PermissionError:
+                            pass
             except OSError:
                 pass
             os.replace(tmp, self.registry_path)

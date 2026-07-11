@@ -7765,6 +7765,7 @@ steps:
                         "workflow", "add", "align-wf",
                         "--from", "https://example.com/workflow.yml",
                     ],
+                    input="y\n",
                 )
 
         assert result.exit_code == 0, result.output
@@ -7793,10 +7794,40 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
         assert "exceedingthe100-byteworkflowsizelimit" in "".join(result.output.split())
+
+    def test_add_from_url_requires_default_deny_confirmation(
+        self, project_dir, monkeypatch
+    ):
+        from unittest.mock import patch
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        with patch(
+            "specify_cli.authentication.http.open_url",
+            side_effect=AssertionError("download should not start"),
+        ):
+            result = CliRunner().invoke(
+                app,
+                [
+                    "workflow",
+                    "add",
+                    "align-wf",
+                    "--from",
+                    "https://example.com/workflow.yml",
+                ],
+                input="n\n",
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Untrusted Source" in result.output
+        assert "Cancelled" in result.output
 
     def test_add_from_url_rejects_oversized_streamed_body_without_content_length(
         self, project_dir, monkeypatch
@@ -7823,6 +7854,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
@@ -7858,6 +7890,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
         assert result.exit_code != 0
         assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
@@ -7891,6 +7924,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
         assert result.exit_code != 0
         assert "exceedingthe100-byteworkflowsizelimit" in "".join(result.output.split())
@@ -7939,6 +7973,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
 
         assert result.exit_code != 0
@@ -7966,6 +8001,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
         assert result.exit_code == 0, result.output
         assert WorkflowRegistry(project_dir).is_installed("align-wf")
@@ -8003,6 +8039,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
 
         assert result.exit_code == 0, result.output
@@ -8026,6 +8063,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "other-id", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
         assert result.exit_code != 0
         assert "does not match" in result.output
@@ -8060,6 +8098,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
         assert result.exit_code != 0
         assert redirected_url in result.output
@@ -8285,6 +8324,31 @@ steps:
         mode = stat.S_IMODE(registry.registry_path.stat().st_mode)
         assert mode == 0o644, f"expected 0644, got {oct(mode)}"
 
+    @pytest.mark.skipif(not hasattr(os, "chown"), reason="os.chown is unavailable")
+    def test_registry_save_preserves_existing_owner_group(
+        self, project_dir, monkeypatch
+    ):
+        from specify_cli.workflows.catalog import WorkflowRegistry
+        import specify_cli.workflows.catalog as catalog_mod
+
+        registry = WorkflowRegistry(project_dir)
+        registry.add("first-wf", {"name": "First"})
+        existing = registry.registry_path.stat()
+        calls: list[tuple[Path, int, int]] = []
+
+        monkeypatch.setattr(
+            catalog_mod.os,
+            "chown",
+            lambda path, uid, gid: calls.append((Path(path), uid, gid)),
+        )
+        registry.add("second-wf", {"name": "Second"})
+
+        assert len(calls) == 1
+        temp_path, uid, gid = calls[0]
+        assert temp_path.parent == registry.registry_path.parent
+        assert uid == existing.st_uid
+        assert gid == existing.st_gid
+
     @pytest.mark.skipif(sys.platform == "win32", reason="chmod mode bits not reliable on Windows")
     def test_registry_save_on_new_registry_uses_secure_default_mode(self, project_dir):
         """A brand-new registry file (no prior mode to preserve) should keep
@@ -8343,7 +8407,9 @@ steps:
 
         with url_patch, pytest.MonkeyPatch.context() as mp:
             mp.setattr(WorkflowRegistry, "save", boom)
-            result = runner.invoke(app, args)
+            result = runner.invoke(
+                app, args, input="y\n" if mode == "from_url" else None
+            )
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
@@ -8440,7 +8506,9 @@ steps:
 
         with url_patch, pytest.MonkeyPatch.context() as mp:
             mp.setattr("tempfile.mkstemp", boom)
-            result = runner.invoke(app, args)
+            result = runner.invoke(
+                app, args, input="y\n" if mode == "from_url" else None
+            )
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
@@ -9727,6 +9795,7 @@ steps:
             result = runner.invoke(
                 app,
                 ["workflow", "add", "align-wf", "--from", "https://example.com/workflow.yml"],
+                input="y\n",
             )
         assert result.exit_code == 0, result.output
         from specify_cli.workflows._commands import _reject_insecure_download_redirect
@@ -10472,6 +10541,44 @@ steps:
         assert current["version"] == "1.0.0"
         assert not workflow_file.with_name("workflow.yml.bak").exists()
 
+    def test_commit_failure_reports_unrestored_backup_location(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.workflows import _commands
+
+        dest_dir = tmp_path / "align-wf"
+        dest_dir.mkdir()
+        dest_file = dest_dir / "workflow.yml"
+        staged_file = dest_dir / ".workflow.yml.staged"
+        backup_file = dest_dir / "workflow.yml.bak"
+        dest_file.write_text("original", encoding="utf-8")
+        staged_file.write_text("replacement", encoding="utf-8")
+
+        real_replace = os.replace
+        calls = 0
+
+        def fail_commit_and_restore(src, dst):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return real_replace(src, dst)
+            if calls == 2:
+                raise OSError("commit denied")
+            raise OSError("restore denied")
+
+        monkeypatch.setattr(os, "replace", fail_commit_and_restore)
+        with pytest.raises(OSError) as exc_info:
+            _commands._commit_workflow_file(
+                staged_file, dest_file, existed_before=True
+            )
+
+        message = str(exc_info.value)
+        assert "commit denied" in message
+        assert "restore denied" in message
+        assert str(backup_file) in message
+        assert not dest_file.exists()
+        assert backup_file.read_text(encoding="utf-8") == "original"
+
     @pytest.mark.parametrize(
         ("replacement_source", "replacement_version"),
         [("local", "1.0.0"), ("catalog", "1.5.0")],
@@ -10557,6 +10664,20 @@ steps:
         current = WorkflowRegistry(project_dir).get("align-wf")
         assert current["source"] == replacement_source
         assert current["version"] == replacement_version
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_resume_rejects_symlinked_cross_project_owner_root(
+        self, project_dir, tmp_path
+    ):
+        from specify_cli.workflows import _commands
+
+        real_owner = tmp_path / "real-owner"
+        real_owner.mkdir()
+        owner_link = tmp_path / "owner-link"
+        owner_link.symlink_to(real_owner, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="unavailable"):
+            _commands._resolve_run_owner_root(str(owner_link), project_dir)
 
     def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
         import json

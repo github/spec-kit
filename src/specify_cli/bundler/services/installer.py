@@ -187,6 +187,7 @@ def remove_bundle(
 
     still_needed = components_still_needed(records, exclude_bundle_id=bundle_id)
     result = InstallResult(bundle_id=bundle_id)
+    remove_attempted = False
 
     try:
         for component in target.contributed_components:
@@ -195,6 +196,7 @@ def remove_bundle(
                 result.skipped.append(component)
                 continue
             if installer.is_installed(project_root, component):
+                remove_attempted = True
                 installer.remove(project_root, component)
                 result.uninstalled.append(component)
         save_records(project_root, remove_record(records, bundle_id))
@@ -205,11 +207,16 @@ def remove_bundle(
                 "before this failure; the bundle record was left unchanged, "
                 "so the project may be partially uninstalled."
             )
-        else:
+        elif remove_attempted:
             detail = (
                 "No components were removed, but the failing component may "
                 "have made partial changes before raising, so the project "
                 "may be partially uninstalled."
+            )
+        else:
+            detail = (
+                "No components were removed and no removal was attempted; "
+                "the bundle record was left unchanged."
             )
         raise BundlerError(
             f"Failed to remove bundle '{bundle_id}': {exc}. {detail}"

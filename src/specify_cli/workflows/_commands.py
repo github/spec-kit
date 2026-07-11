@@ -116,7 +116,7 @@ def _resolve_run_owner_root(
     """
     if installed_registry_root:
         candidate = Path(installed_registry_root)
-        if candidate.is_dir():
+        if not candidate.is_symlink() and candidate.is_dir():
             return candidate
         raise ValueError(
             "Installed workflow owner is unavailable; cannot safely resume"
@@ -564,8 +564,16 @@ def _commit_workflow_file(staged_file: Path, dest_file: Path, existed_before: bo
         os.replace(dest_file, backup_file)
         try:
             os.replace(staged_file, dest_file)
-        except OSError:
-            os.replace(backup_file, dest_file)
+        except OSError as commit_exc:
+            try:
+                os.replace(backup_file, dest_file)
+            except OSError as restore_exc:
+                raise OSError(
+                    f"Failed to commit workflow file ({commit_exc}); failed "
+                    f"to restore the prior workflow from {backup_file} "
+                    f"({restore_exc}). The prior workflow remains at "
+                    f"{backup_file}."
+                ) from restore_exc
             raise
         return backup_file
     os.replace(staged_file, dest_file)
@@ -1348,6 +1356,28 @@ def workflow_add(
         if parsed_src.scheme != "https" and not (parsed_src.scheme == "http" and src_loopback):
             console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
             raise typer.Exit(1)
+
+        if from_url is not None:
+            from rich.panel import Panel
+
+            safe_url = _escape_markup(from_url)
+            console.print()
+            console.print(
+                Panel(
+                    "[bold]You are installing a workflow from an external URL "
+                    "that is not\nlisted in any of your configured workflow "
+                    "catalogs.[/bold]\n\n"
+                    f"URL: {safe_url}\n\n"
+                    "Only install workflows from sources you trust.",
+                    title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
+                    border_style="yellow",
+                    padding=(1, 2),
+                )
+            )
+            console.print()
+            if not typer.confirm("Continue with installation?", default=False):
+                console.print("Cancelled")
+                raise typer.Exit(0)
 
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
         from specify_cli.authentication.http import github_provider_hosts as _github_provider_hosts
