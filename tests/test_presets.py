@@ -6023,6 +6023,55 @@ class TestPresetSkills:
                 "with no preset left to track or clean it up (#2948)"
             )
 
+    def test_extension_reconciliation_tracks_new_historical_agent(
+        self, project_dir
+    ):
+        from specify_cli.extensions import ExtensionRegistry
+
+        self._write_init_options(project_dir, ai="opencode", ai_skills=False)
+        (project_dir / ".opencode" / "commands").mkdir(parents=True)
+        (project_dir / ".gemini" / "commands").mkdir(parents=True)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "tracked-ext"
+        (ext_dir / "commands").mkdir(parents=True)
+        (ext_dir / "commands" / "tracked.md").write_text(
+            "---\ndescription: tracked\n---\n\nExtension body\n",
+            encoding="utf-8",
+        )
+        (ext_dir / "extension.yml").write_text(
+            "schema_version: '1.0'\n"
+            "extension:\n  id: tracked-ext\n  name: Tracked\n  version: 1.0.0\n"
+            "  description: test\n  author: test\n  repository: https://example.com\n"
+            "  license: MIT\n"
+            "requires:\n  speckit_version: '>=0.2.0'\n"
+            "provides:\n"
+            "  commands:\n"
+            "    - name: speckit.tracked\n"
+            "      file: commands/tracked.md\n"
+            "      description: Tracked command\n",
+            encoding="utf-8",
+        )
+        ExtensionRegistry(ext_dir.parent).add(
+            "tracked-ext",
+            {
+                "version": "1.0.0",
+                "source": "dev",
+                "enabled": True,
+                "registered_commands": {
+                    "opencode": ["speckit.tracked-ext.tracked"]
+                },
+            },
+        )
+
+        manager = PresetManager(project_dir)
+        manager._reconcile_composed_commands(
+            ["speckit.tracked-ext.tracked"], extra_agents={"gemini"}
+        )
+
+        assert list((project_dir / ".gemini" / "commands").glob("*tracked*"))
+        metadata = ExtensionRegistry(ext_dir.parent).get("tracked-ext")
+        assert set(metadata["registered_commands"]) == {"gemini", "opencode"}
+
     def test_remove_reconciles_skill_for_every_historical_agent(
         self, project_dir, temp_dir
     ):
@@ -6100,6 +6149,46 @@ class TestPresetSkills:
             "the surviving preset's override must also be restored for "
             "the currently active agent"
         )
+
+    def test_skill_reconciliation_preserves_per_directory_names(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_dir, "speckit-alpha")
+        alpha_dir = self._create_command_preset(
+            temp_dir, "partial-alpha", "speckit.alpha",
+            "Alpha", "alpha body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(alpha_dir, "0.1.5")
+
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        codex_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_dir, "speckit-beta")
+        beta_dir = self._create_command_preset(
+            temp_dir, "partial-beta", "speckit.beta",
+            "Beta", "beta body",
+        )
+        manager.install_from_directory(beta_dir, "0.1.5")
+
+        affected = manager._unregister_skills(
+            {
+                "claude": ["speckit-alpha"],
+                "codex": ["speckit-beta"],
+            },
+            manager.presets_dir / "partial-alpha",
+        )
+        manager._reconcile_skills(
+            ["speckit.alpha", "speckit.beta"],
+            extra_skills_dirs=affected,
+        )
+
+        assert (claude_dir / "speckit-alpha" / "SKILL.md").exists()
+        assert (codex_dir / "speckit-beta" / "SKILL.md").exists()
+        assert not (claude_dir / "speckit-beta").exists()
+        assert not (codex_dir / "speckit-alpha").exists()
 
     def test_remove_reconciliation_tracks_new_historical_skill_agent_for_survivor(
         self, project_dir, temp_dir

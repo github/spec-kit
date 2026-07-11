@@ -1144,6 +1144,30 @@ class PresetManager:
         if changed:
             self.registry.update(pack_id, {"registered_commands": merged_commands})
 
+    def _merge_extension_registered_commands(
+        self, extension_id: str, written: Optional[Dict[str, List[str]]]
+    ) -> None:
+        """Merge reconciliation writes into an extension's registry entry."""
+        if not written:
+            return
+        registry = ExtensionRegistry(self.project_root / ".specify" / "extensions")
+        metadata = registry.get(extension_id)
+        if metadata is None:
+            return
+        existing_commands = metadata.get("registered_commands", {})
+        if not isinstance(existing_commands, dict):
+            existing_commands = {}
+        merged_commands = copy.deepcopy(existing_commands)
+        changed = False
+        for agent_name, cmd_names in written.items():
+            existing_names = merged_commands.get(agent_name, [])
+            new_names = [name for name in cmd_names if name not in existing_names]
+            if new_names:
+                merged_commands[agent_name] = existing_names + new_names
+                changed = True
+        if changed:
+            registry.update(extension_id, {"registered_commands": merged_commands})
+
     def _reconcile_composed_commands(
         self, command_names: List[str], extra_agents: Optional[Set[str]] = None
     ) -> None:
@@ -1249,10 +1273,14 @@ class PresetManager:
                     # Top layer is a non-preset source (extension, core, or
                     # project override). Register directly from the layer path.
                     source = layers[0]["source"]
+                    extension_id = None
+                    written: Dict[str, List[str]] = {}
                     if source.startswith("extension:"):
                         # Use extension's own registration to preserve context formatting
-                        ext_id = source.split(":", 1)[1].split(" ", 1)[0]
-                        ext_dir = self.project_root / ".specify" / "extensions" / ext_id
+                        extension_id = source.split(":", 1)[1].split(" ", 1)[0]
+                        ext_dir = (
+                            self.project_root / ".specify" / "extensions" / extension_id
+                        )
                         ext_manifest_path = ext_dir / "extension.yml"
                         if ext_manifest_path.exists():
                             try:
@@ -1264,10 +1292,10 @@ class PresetManager:
                                     if c.get("name") == cmd_name
                                 ]
                                 if matching_cmds:
-                                    registrar.register_commands_for_non_skill_agents(
-                                        matching_cmds, ext_id, ext_dir,
+                                    written = registrar.register_commands_for_non_skill_agents(
+                                        matching_cmds, extension_id, ext_dir,
                                         self.project_root,
-                                        context_note=f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n",
+                                        context_note=f"\n<!-- Extension: {extension_id} -->\n<!-- Config: .specify/extensions/{extension_id}/ -->\n",
                                         only_agent=only_agent, extra_agents=extra_agents,
                                     )
                                     registered = True
@@ -1276,11 +1304,15 @@ class PresetManager:
                                 # generic path-based registration below.
                                 pass
                     if not registered:
-                        source_id = source.split(":", 1)[1].split(" ", 1)[0] if source.startswith("extension:") else source
-                        self._register_command_from_path(
+                        source_id = extension_id or source
+                        written = self._register_command_from_path(
                             registrar, cmd_name, top_path,
                             source_id=source_id,
                             only_agent=only_agent, extra_agents=extra_agents,
+                        )
+                    if extension_id:
+                        self._merge_extension_registered_commands(
+                            extension_id, written
                         )
             else:
                 # Composed command — resolve from full stack
@@ -1364,11 +1396,15 @@ class PresetManager:
                         source_id = source.split(":", 1)[1].split(" ", 1)[0]
                     else:
                         source_id = source
-                    self._register_command_from_path(
+                    written = self._register_command_from_path(
                         registrar, cmd_name, composed_file,
                         source_id=source_id,
                         only_agent=only_agent, extra_agents=extra_agents,
                     )
+                    if source.startswith("extension:"):
+                        self._merge_extension_registered_commands(
+                            source_id, written
+                        )
 
     def _register_command_from_path(
         self,
@@ -1550,7 +1586,9 @@ class PresetManager:
     def _reconcile_skills(
         self,
         command_names: List[str],
-        extra_skills_dirs: Optional[Dict[Path, Optional[str]]] = None,
+        extra_skills_dirs: Optional[
+            Dict[Path, tuple[Optional[str], List[str]]]
+        ] = None,
     ) -> None:
         """Re-register skills for commands whose winning layer changed.
 
@@ -1560,16 +1598,10 @@ class PresetManager:
 
         Args:
             command_names: List of command names to reconcile skills for
-            extra_skills_dirs: Additional ``{skills_dir: renderer_agent}``
-                pairs to reconcile besides the currently active skills
-                directory. Populated by ``remove()`` from the directories
-                ``_unregister_skills`` just restored to core/extension
-                content: a surviving lower-priority preset's override must
-                be re-applied to every one of those directories too, not
-                only the currently active agent's directory, or an
-                inactive integration is left with stale/missing content
-                even though the removed preset no longer wins there
-                either (#2948).
+            extra_skills_dirs: Additional
+                ``{skills_dir: (renderer_agent, managed_skill_names)}``
+                entries restored by ``_unregister_skills``. Reconciliation
+                is limited to the names actually managed in each directory.
         """
         if not command_names:
             return
@@ -1639,13 +1671,20 @@ class PresetManager:
         override_skills = [s for s in non_preset_skills if s[2]["source"] == "project override"]
 
         def apply_to_dir(
-            skills_dir: Path, dir_agent: Optional[str], *, is_active: bool
+            skills_dir: Path,
+            dir_agent: Optional[str],
+            *,
+            is_active: bool,
+            managed_names: Optional[Set[str]] = None,
         ) -> None:
+            dir_managed_names = (
+                managed_skill_names if managed_names is None else managed_names
+            )
             # Re-create the skill directory only if it was previously
             # managed (i.e., listed in some preset's registered_skills).
             # This avoids creating new skill dirs that _register_skills
             # would normally skip.
-            for skill_name in managed_skill_names:
+            for skill_name in dir_managed_names:
                 skill_subdir = skills_dir / skill_name
                 if not skill_subdir.exists():
                     skill_subdir.mkdir(parents=True, exist_ok=True)
@@ -1654,12 +1693,23 @@ class PresetManager:
             # _unregister_skills_in_dir can rmtree the skill dir, so
             # overrides must be handled directly (create dir + write)
             # without that call.
-            if core_ext_skills:
+            dir_core_ext_names = [
+                candidate
+                for _skill_name, cmd_name, _top_layer in core_ext_skills
+                for candidate in self._skill_names_for_command(cmd_name)
+                if candidate in dir_managed_names
+            ]
+            if dir_core_ext_names:
                 self._unregister_skills_in_dir(
-                    [s[0] for s in core_ext_skills], skills_dir, dir_agent
+                    dir_core_ext_names, skills_dir, dir_agent
                 )
 
             for skill_name, cmd_name, top_layer in override_skills:
+                if not any(
+                    name in dir_managed_names
+                    for name in self._skill_names_for_command(cmd_name)
+                ):
+                    continue
                 skill_subdir = skills_dir / skill_name
                 # Same symlink guard as _register_skills's registration path
                 # (#2948): mkdir(exist_ok=True) alone would silently follow
@@ -1713,6 +1763,16 @@ class PresetManager:
             # reconciled, not all commands in each winning preset's
             # manifest.
             for pack_id, cmds in preset_cmds.items():
+                dir_cmds = [
+                    cmd
+                    for cmd in cmds
+                    if any(
+                        name in dir_managed_names
+                        for name in self._skill_names_for_command(cmd)
+                    )
+                ]
+                if not dir_cmds:
+                    continue
                 pack_dir = self.presets_dir / pack_id
                 manifest_path = pack_dir / "preset.yml"
                 if not manifest_path.exists():
@@ -1721,7 +1781,7 @@ class PresetManager:
                     manifest = PresetManifest(manifest_path)
                 except PresetValidationError:
                     continue
-                cmds_set = set(cmds)
+                cmds_set = set(dir_cmds)
                 filtered_manifest = self._FilteredManifest(manifest, cmds_set)
                 if is_active:
                     # Preserve exact prior behaviour for the currently
@@ -1743,13 +1803,27 @@ class PresetManager:
                 # reconciliation just wrote to on its behalf (#2948).
                 self._merge_pack_registered_skills(pack_id, written)
 
+        extra_dirs = extra_skills_dirs or {}
         if active_skills_dir:
-            apply_to_dir(active_skills_dir, active_ai, is_active=True)
+            active_provenance = extra_dirs.get(active_skills_dir)
+            apply_to_dir(
+                active_skills_dir,
+                active_ai,
+                is_active=True,
+                managed_names=(
+                    set(active_provenance[1]) if active_provenance else None
+                ),
+            )
 
-        for extra_dir, extra_agent in (extra_skills_dirs or {}).items():
+        for extra_dir, (extra_agent, extra_names) in extra_dirs.items():
             if extra_dir == active_skills_dir:
                 continue  # already reconciled above as the active directory
-            apply_to_dir(extra_dir, extra_agent, is_active=False)
+            apply_to_dir(
+                extra_dir,
+                extra_agent,
+                is_active=False,
+                managed_names=set(extra_names),
+            )
 
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
@@ -2273,7 +2347,7 @@ class PresetManager:
         self,
         registered_skills: Union[Dict[str, List[str]], List[str]],
         preset_dir: Path,
-    ) -> Dict[Path, Optional[str]]:
+    ) -> Dict[Path, tuple[Optional[str], List[str]]]:
         """Restore original SKILL.md files after a preset is removed.
 
         For each skill that was overridden by the preset, attempts to
@@ -2296,12 +2370,8 @@ class PresetManager:
             preset_dir: The preset's installed directory (may already be deleted).
 
         Returns:
-            ``{skills_dir: renderer_agent}`` for every directory actually
-            restored, so callers (e.g. ``remove()``) can hand these same
-            directories to :meth:`_reconcile_skills` — a surviving
-            lower-priority preset's override must be re-applied to every
-            directory this removal touched, not only the currently active
-            agent's directory (#2948).
+            ``{skills_dir: (renderer_agent, managed_skill_names)}`` for
+            every directory actually restored.
         """
         if not registered_skills:
             return {}
@@ -2335,21 +2405,24 @@ class PresetManager:
                 group = groups.setdefault(skills_dir, {"agents": [], "names": []})
                 group["agents"].append(agent_name)
                 for name in skill_names:
-                    if name not in group["names"]:
+                    if (
+                        self._is_safe_registry_skill_name(name)
+                        and name not in group["names"]
+                    ):
                         group["names"].append(name)
 
+            restored: Dict[Path, tuple[Optional[str], List[str]]] = {}
             for skills_dir, group in groups.items():
                 agents = group["agents"]
                 renderer_agent = (
                     active_agent if active_agent in agents else sorted(agents)[0]
                 )
                 self._unregister_skills_in_dir(group["names"], skills_dir, renderer_agent)
-            return {
-                skills_dir: (
-                    active_agent if active_agent in group["agents"] else sorted(group["agents"])[0]
+                restored[skills_dir] = (
+                    renderer_agent,
+                    list(group["names"]),
                 )
-                for skills_dir, group in groups.items()
-            }
+            return restored
 
         # Legacy flat-list format: no record of which agent directory these
         # names were written under, so best-effort restore is limited to the
@@ -2364,12 +2437,13 @@ class PresetManager:
             init_opts = {}
         selected_ai = init_opts.get("ai")
         selected_ai = selected_ai if isinstance(selected_ai, str) else None
-        self._unregister_skills_in_dir(
-            registered_skills,
-            skills_dir,
-            selected_ai,
-        )
-        return {skills_dir: selected_ai}
+        safe_names = [
+            name
+            for name in registered_skills
+            if self._is_safe_registry_skill_name(name)
+        ]
+        self._unregister_skills_in_dir(safe_names, skills_dir, selected_ai)
+        return {skills_dir: (selected_ai, safe_names)}
 
     def _unregister_skills_in_dir(
         self, skill_names: List[str], skills_dir: Path, selected_ai: Optional[str]
@@ -2781,7 +2855,9 @@ class PresetManager:
                 # names from registered_commands are still unregistered.
                 pass
 
-        affected_skill_dirs: Dict[Path, Optional[str]] = {}
+        affected_skill_dirs: Dict[
+            Path, tuple[Optional[str], List[str]]
+        ] = {}
         if registered_skills:
             affected_skill_dirs = self._unregister_skills(registered_skills, pack_dir)
             try:
