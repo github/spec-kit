@@ -9110,7 +9110,6 @@ steps:
             try:
                 _commands._install_workflow_from_catalog(
                     project_dir,
-                    WorkflowRegistry(project_dir),
                     workflows_dir,
                     "align-wf",
                 )
@@ -9190,7 +9189,7 @@ steps:
     ):
         import typer
         from specify_cli.workflows import _commands
-        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+        from specify_cli.workflows.catalog import WorkflowCatalog
 
         workflows_dir = project_dir / ".specify" / "workflows"
         monkeypatch.setattr(
@@ -9220,7 +9219,6 @@ steps:
         with pytest.raises(typer.Exit):
             _commands._install_workflow_from_catalog(
                 project_dir,
-                WorkflowRegistry(project_dir),
                 workflows_dir,
                 "align-wf",
             )
@@ -9294,7 +9292,6 @@ steps:
             try:
                 _commands._install_workflow_from_catalog(
                     project_dir,
-                    WorkflowRegistry(project_dir),
                     workflows_dir,
                     "align-wf",
                 )
@@ -9398,7 +9395,6 @@ steps:
             try:
                 _commands._install_workflow_from_catalog(
                     project_dir,
-                    WorkflowRegistry(project_dir),
                     workflows_dir,
                     "align-wf",
                 )

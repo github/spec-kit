@@ -197,8 +197,6 @@ def remove_bundle(
             if installer.is_installed(project_root, component):
                 installer.remove(project_root, component)
                 result.uninstalled.append(component)
-            else:
-                result.skipped.append(component)
         save_records(project_root, remove_record(records, bundle_id))
     except Exception as exc:  # noqa: BLE001
         if result.uninstalled:

@@ -1158,7 +1158,7 @@ def workflow_add(
     from .engine import WorkflowDefinition
 
     project_root = _require_specify_project()
-    registry = _open_workflow_registry(project_root)
+    _open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
     # With --from, source names the expected workflow ID: validate it up
     # front so a URL/path/typo fails without a network fetch.
@@ -1449,12 +1449,11 @@ def workflow_add(
             return
 
     # Try from catalog
-    _install_workflow_from_catalog(project_root, registry, workflows_dir, source)
+    _install_workflow_from_catalog(project_root, workflows_dir, source)
 
 
 def _install_workflow_from_catalog(
     project_root: Path,
-    registry: Any,
     workflows_dir: Path,
     workflow_id: str,
     expected_version: str | None = None,
@@ -1950,7 +1949,7 @@ def workflow_update(
         # own backup/restore.
         try:
             _install_workflow_from_catalog(
-                project_root, registry, workflows_dir, update["id"],
+                project_root, workflows_dir, update["id"],
                 expected_version=update["available"],
             )
         except (typer.Exit, OSError) as exc:

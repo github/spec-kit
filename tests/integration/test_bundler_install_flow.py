@@ -153,7 +153,7 @@ def test_remove_partial_failure_message_reflects_partial_state(tmp_path: Path):
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
-def test_remove_bundlerror_from_installer_after_partial_removal_reports_partial_state(
+def test_remove_bundler_error_from_installer_after_partial_removal_reports_partial_state(
     tmp_path: Path,
 ):
     """If the primitive installer itself raises BundlerError (not a raw/
@@ -189,7 +189,7 @@ def test_remove_bundlerror_from_installer_after_partial_removal_reports_partial_
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
-def test_remove_bundlerror_from_installer_with_zero_removed_reports_no_changes(
+def test_remove_bundler_error_from_installer_with_zero_removed_reports_no_changes(
     tmp_path: Path,
 ):
     """When the installer raises BundlerError before anything was actually
@@ -301,7 +301,7 @@ def test_remove_counts_only_components_actually_removed(tmp_path: Path):
 
     assert len(result.uninstalled) == 3
     assert (gone.kind, gone.id) not in installer.remove_calls
-    assert gone in result.skipped
+    assert gone not in result.skipped
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     installer = FakeInstaller()
