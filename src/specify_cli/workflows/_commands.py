@@ -2200,7 +2200,7 @@ def workflow_step_add(
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
             if not final_parsed.hostname:
                 raise ValueError(f"Redirect to URL with no hostname: {final_url}")
-            return resp.read()
+            return _read_response_within_limit(resp)
 
     _validate_step_id_or_exit(step_id)
 

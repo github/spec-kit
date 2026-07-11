@@ -6351,6 +6351,71 @@ class TestWorkflowStepAddCLI:
         assert result.exit_code != 0
         assert "Refusing to use symlinked step directory" in result.output
 
+    def test_add_rejects_oversized_step_response(self, project_dir, monkeypatch):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands as wf_commands
+        from specify_cli.workflows.catalog import StepCatalog
+        from specify_cli.authentication import http as auth_http
+
+        monkeypatch.chdir(project_dir)
+        monkeypatch.setattr(wf_commands, "_MAX_WORKFLOW_YAML_BYTES", 100)
+        monkeypatch.setattr(
+            StepCatalog,
+            "get_step_info",
+            lambda self, step_id: {
+                "id": step_id,
+                "name": "Test Step",
+                "url": "https://example.com/step.yml",
+                "init_url": "https://example.com/__init__.py",
+                "_install_allowed": True,
+            },
+        )
+
+        class _FakeResponse:
+            def __init__(self, url):
+                self.url = url
+                self.body = b"x" * 500
+                self.offset = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def getheader(self, name):
+                return None
+
+            def geturl(self):
+                return self.url
+
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self.body) - self.offset
+                chunk = self.body[self.offset : self.offset + size]
+                self.offset += len(chunk)
+                return chunk
+
+        monkeypatch.setattr(
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(url),
+        )
+
+        result = CliRunner().invoke(
+            app, ["workflow", "step", "add", "my-step"]
+        )
+
+        assert result.exit_code != 0
+        assert (
+            "responseexceedsthe100-byteworkflowsizelimit"
+            in "".join(result.output.split())
+        )
+        assert not (
+            project_dir / ".specify" / "workflows" / "steps" / "my-step"
+        ).exists()
+
     def test_add_rejects_non_string_extra_files_key(self, project_dir, monkeypatch):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -6381,7 +6446,10 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
+            def read(self, size=-1):
+                if getattr(self, "_read", False):
+                    return b""
+                self._read = True
                 if self.url.endswith("/step.yml"):
                     return b"step:\n  type_key: my-step\n"
                 return b""
@@ -6440,7 +6508,10 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
+            def read(self, size=-1):
+                if getattr(self, "_read", False):
+                    return b""
+                self._read = True
                 if self.url.endswith("/step.yml"):
                     return b"step:\n  type_key: my-step\n"
                 return b""
@@ -6488,7 +6559,10 @@ class TestWorkflowStepAddCLI:
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
+            def read(self, size=-1):
+                if getattr(self, "_read", False):
+                    return b""
+                self._read = True
                 if self.url.endswith("/step.yml"):
                     return b"step:\n  type_key: my-step\n"
                 return b""
