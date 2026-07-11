@@ -804,11 +804,36 @@ class PresetManager:
                 if merged_commands != existing_commands:
                     self.registry.update(pack_id, {"registered_commands": merged_commands})
 
+                # Record this preset's command names for reconciliation now,
+                # right after the commands phase succeeds and before calling
+                # the independently fallible _register_skills(). Both used to
+                # be recorded together after skills also succeeded; if skills
+                # raised, the exception (caught below) skipped this entirely,
+                # so a preset whose commands phase wrote real content never
+                # got reconciled against the full priority stack and its raw
+                # content could be left in place instead of a project
+                # override or higher-precedence preset (#2948).
+                for tmpl in manifest.templates:
+                    if tmpl.get("type") == "command":
+                        affected_cmd_names.add(tmpl["name"])
+
                 registered_skills = self._register_skills(manifest, pack_dir)
                 raw_existing_skills = metadata.get("registered_skills")
-                existing_skills = self._normalize_registered_skills(
-                    raw_existing_skills, fallback_agent=agent_name
-                )
+                if isinstance(raw_existing_skills, list) and raw_existing_skills:
+                    # Legacy flat-list value: don't assume agent_name wrote
+                    # every name (the first post-upgrade operation may be a
+                    # direct switch to a different skill-mode agent) —
+                    # infer real ownership from on-disk provenance instead
+                    # (#2948).
+                    existing_skills = self._infer_legacy_skill_provenance(
+                        [n for n in raw_existing_skills if isinstance(n, str)],
+                        pack_id,
+                        fallback_agent=agent_name,
+                    )
+                else:
+                    existing_skills = self._normalize_registered_skills(
+                        raw_existing_skills, fallback_agent=agent_name
+                    )
                 merged_skills = copy.deepcopy(existing_skills)
                 if registered_skills.get(agent_name):
                     merged_skills[agent_name] = registered_skills[agent_name]
@@ -836,10 +861,6 @@ class PresetManager:
                 )
                 if merged_skills != existing_skills or needs_migration:
                     self.registry.update(pack_id, {"registered_skills": merged_skills})
-
-                for tmpl in manifest.templates:
-                    if tmpl.get("type") == "command":
-                        affected_cmd_names.add(tmpl["name"])
             except Exception as pack_err:
                 from .. import _print_cli_warning
 
@@ -1636,6 +1657,97 @@ class PresetManager:
 
         return {selected_ai: written} if written else {}
 
+    def _infer_legacy_skill_provenance(
+        self, skill_names: List[str], pack_id: str, fallback_agent: str
+    ) -> Dict[str, List[str]]:
+        """Infer per-agent ownership of a legacy flat-list ``registered_skills`` value.
+
+        Pre-#2948 registries recorded ``registered_skills`` as a flat list
+        with no record of which agent directory each name was actually
+        written under. Blindly attributing every name to ``fallback_agent``
+        (the agent currently being processed) loses the real writer whenever
+        the *first* operation after upgrading is a direct switch to a
+        *different* skill-mode agent — e.g. a legacy Claude override
+        followed directly by ``integration use codex``, with no
+        intervening rescaffold for Claude — permanently orphaning Claude's
+        override on later removal.
+
+        Instead, every configured skill-mode agent's directory is probed
+        (via the same safe, symlink-validated helpers used for
+        restore/removal) for a ``SKILL.md`` whose frontmatter records this
+        exact preset as the owner (``metadata.source == "preset:<pack_id>"``,
+        the same marker :meth:`_register_skills` writes). A name can
+        legitimately be found under more than one agent's directory — the
+        preset may have been active while the user switched between several
+        skill-mode agents before provenance tracking existed — so every
+        matching agent is recorded, not just the first. Names that can't be
+        matched to any directory (e.g. the file was deleted out of band)
+        fall back to ``fallback_agent``, preserving the previous
+        best-effort behaviour for the unrecoverable case.
+        """
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        skill_mode_agents = sorted(
+            name
+            for name, cfg in registrar.AGENT_CONFIGS.items()
+            if cfg.get("extension") == "/SKILL.md"
+        )
+
+        # Multiple agent names can resolve to the same physical directory
+        # (e.g. agy/codex/zed all use .agents/skills); group by directory so
+        # each is probed once and attributed to a single deterministic
+        # canonical agent name, matching the tie-break already used by
+        # _unregister_skills's directory grouping. Deliberately keep the
+        # unresolved path (matching what _safe_skills_dir_for_agent already
+        # validated) rather than calling .resolve() here: on macOS /var is
+        # itself a symlink to /private/var, so resolving would make this
+        # path diverge from self.project_root's own resolution state and
+        # make every subsequent containment check in
+        # _validate_skill_subdir() spuriously fail.
+        dir_to_agents: Dict[Path, List[str]] = {}
+        for agent_name in skill_mode_agents:
+            skills_dir = self._safe_skills_dir_for_agent(agent_name)
+            if skills_dir is None:
+                continue
+            dir_to_agents.setdefault(skills_dir, []).append(agent_name)
+
+        marker = f"preset:{pack_id}"
+        inferred: Dict[str, List[str]] = {}
+        matched_names: set = set()
+        for resolved_dir, agents in dir_to_agents.items():
+            canonical_agent = fallback_agent if fallback_agent in agents else sorted(agents)[0]
+            for name in skill_names:
+                skill_subdir = resolved_dir / name
+                if not self._validate_skill_subdir(skill_subdir, create=False):
+                    continue
+                skill_file = skill_subdir / "SKILL.md"
+                if not skill_file.is_file():
+                    continue
+                try:
+                    content = skill_file.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                frontmatter, _ = registrar.parse_frontmatter(content)
+                skill_metadata = frontmatter.get("metadata")
+                source = (
+                    skill_metadata.get("source")
+                    if isinstance(skill_metadata, dict)
+                    else None
+                )
+                if source == marker:
+                    inferred.setdefault(canonical_agent, []).append(name)
+                    matched_names.add(name)
+
+        unmatched = [name for name in skill_names if name not in matched_names]
+        if unmatched and fallback_agent:
+            fallback_names = inferred.setdefault(fallback_agent, [])
+            for name in unmatched:
+                if name not in fallback_names:
+                    fallback_names.append(name)
+
+        return inferred
+
     @staticmethod
     def _normalize_registered_skills(
         value: Any, fallback_agent: Optional[str] = None
@@ -1651,6 +1763,11 @@ class PresetManager:
         list to the agent currently being processed so the format
         self-migrates on the next write. Without a fallback agent, legacy
         lists are dropped rather than guessed at.
+
+        Callers that can identify the owning preset (i.e. have a
+        ``pack_id``) should prefer :meth:`_infer_legacy_skill_provenance`
+        for a legacy flat-list value instead, which probes on-disk
+        provenance rather than assuming ``fallback_agent`` wrote every name.
         """
         if isinstance(value, dict):
             return {

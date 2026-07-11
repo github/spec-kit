@@ -1262,6 +1262,103 @@ class TestExtensionSkillRegistration:
         assert "register extension skills for extension 'skill-fail'" in captured.out
         assert "Continuing with available registration results" in captured.out
 
+    def test_rescaffold_toggle_command_to_skills_removes_stale_extension_command_file(
+        self, project_dir, temp_dir
+    ):
+        """Toggling the *same* active agent from command mode to skills mode
+        must remove the stale extension command-mode artifact, not just add
+        the skills-mode one.
+
+        Copilot stays the active agent throughout (mirroring ``integration
+        upgrade copilot --skills``, not a switch to a different agent).
+        ``register_enabled_extensions_for_agent`` skips the commands phase
+        once ``skills_mode_active`` is true, but before this fix it never
+        removed the ``.agent.md`` file (and ``registered_commands["copilot"]``
+        entry) the commands phase previously wrote while command mode was
+        active — leaving both artifacts on disk at once and violating the
+        command/skill mutual-exclusion the PR description claims (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-ext"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        cmd_file = agents_dir / "speckit.toggle-ext.hello.agent.md"
+        assert cmd_file.exists(), "sanity: command mode should write .agent.md"
+
+        # Toggle ai_skills on for the same active agent (copilot) and
+        # rescaffold, mirroring `integration upgrade copilot --skills`.
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        assert not cmd_file.exists(), (
+            "the stale command-mode .agent.md file must be removed once "
+            "this agent toggles to skills mode, not left alongside the "
+            "new SKILL.md (#2948)"
+        )
+        metadata = manager.registry.get("toggle-ext")
+        registered_commands = metadata.get("registered_commands", {})
+        assert not registered_commands.get("copilot"), (
+            "registered_commands tracking for copilot must be cleared "
+            "once its command file is removed on toggle (#2948)"
+        )
+        skills_dir = project_dir / ".github" / "skills"
+        skill_file = skills_dir / "speckit-toggle-ext-hello" / "SKILL.md"
+        assert skill_file.exists(), "sanity: skills mode should write SKILL.md"
+
+    def test_rescaffold_toggle_skills_to_command_removes_stale_extension_skill_file(
+        self, project_dir, temp_dir
+    ):
+        """Toggling the *same* active agent from skills mode to command mode
+        must remove the stale extension skills-mode artifact, not just add
+        the command-mode one.
+
+        Mirror image of the command->skills toggle: ``_register_extension_skills``
+        returns an empty list once skills mode is off for this agent (its
+        skills directory no longer resolves), but before this fix an empty
+        result was silently treated as "nothing to register" rather than
+        "this agent's skill was rendered here previously and is now stale",
+        so the ``SKILL.md`` this extension wrote while skills mode was
+        active stayed on disk even though a fresh ``.agent.md`` was written
+        right alongside it (#2948).
+        """
+        _create_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            _create_extension_dir(temp_dir, ext_id="toggle-ext2"), "0.1.0",
+            register_commands=False,
+        )
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        skills_dir = project_dir / ".github" / "skills"
+        skill_file = skills_dir / "speckit-toggle-ext2-hello" / "SKILL.md"
+        assert skill_file.exists(), "sanity: skills mode should write SKILL.md"
+
+        # Toggle ai_skills off for the same active agent (copilot) and
+        # rescaffold, mirroring `integration upgrade copilot` (no --skills).
+        _create_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        agents_dir = project_dir / ".github" / "agents"
+        cmd_file = agents_dir / "speckit.toggle-ext2.hello.agent.md"
+        assert cmd_file.exists(), "sanity: command mode should write .agent.md"
+
+        assert not skill_file.exists(), (
+            "the stale skills-mode SKILL.md file must be removed once this "
+            "agent toggles to command mode, not left alongside the new "
+            ".agent.md (#2948)"
+        )
+        metadata = manager.registry.get("toggle-ext2")
+        registered_skills = metadata.get("registered_skills", [])
+        assert "speckit-toggle-ext2-hello" not in registered_skills, (
+            "registered_skills tracking must be cleared for the removed "
+            "skill file, not left dangling once it's orphaned (#2948)"
+        )
+
     def test_existing_agent_command_path_file_is_not_detected(
         self, project_dir, temp_dir
     ):

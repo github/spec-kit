@@ -1805,6 +1805,22 @@ class ExtensionManager:
             and bool(agent_config)
             and agent_config.get("extension") != "/SKILL.md"
         )
+        # Mirror image of skills_mode_active: this agent is command-backed,
+        # active, and currently in command mode. Used to detect a
+        # skills -> command toggle for this same agent, where the skills
+        # phase below returns empty (its directory no longer resolves) but
+        # a previously-written extension SKILL.md is now stale (#2948).
+        command_mode_active = (
+            active_agent == agent_name
+            and not ai_skills_enabled
+            and bool(agent_config)
+            and agent_config.get("extension") != "/SKILL.md"
+        )
+        agent_skills_dir = None
+        if agent_config and agent_config.get("extension") != "/SKILL.md":
+            from .. import _get_skills_dir as _resolve_agent_skills_dir
+
+            agent_skills_dir = _resolve_agent_skills_dir(self.project_root, agent_name)
 
         for ext_id, metadata in self.registry.list().items():
             if not metadata.get("enabled", True):
@@ -1840,6 +1856,30 @@ class ExtensionManager:
                         new_registered.pop(agent_name, None)
                     if new_registered != registered_commands:
                         updates["registered_commands"] = new_registered
+                elif agent_config and skills_mode_active:
+                    # Toggled command -> skills for this same agent: the
+                    # commands phase above is skipped, but a command file
+                    # this extension previously wrote for this agent while
+                    # command mode was active is still on disk and still
+                    # tracked. Remove it narrowly for this agent so
+                    # command-mode and skills-mode artifacts stay mutually
+                    # exclusive, matching unregister_agent_artifacts's
+                    # per-agent command cleanup (#2948).
+                    registered_commands = metadata.get("registered_commands", {})
+                    if isinstance(registered_commands, dict) and registered_commands.get(
+                        agent_name
+                    ):
+                        stale_commands = self._valid_name_list(
+                            registered_commands.get(agent_name)
+                        )
+                        if stale_commands:
+                            registrar.unregister_commands(
+                                {agent_name: stale_commands}, self.project_root
+                            )
+                        new_registered = copy.deepcopy(registered_commands)
+                        new_registered.pop(agent_name, None)
+                        if new_registered != registered_commands:
+                            updates["registered_commands"] = new_registered
 
                 # Extension *skills* are only ever rendered for the active agent:
                 # `_register_extension_skills` resolves the skills dir and
@@ -1879,6 +1919,34 @@ class ExtensionManager:
                                 dict.fromkeys(existing_skills + registered_skills)
                             )
                             updates["registered_skills"] = merged_skills
+                        elif command_mode_active and agent_skills_dir is not None:
+                            # Mirror image: toggled skills -> command for
+                            # this same agent. _register_extension_skills
+                            # returned empty because this agent's skills
+                            # directory no longer resolves once ai_skills is
+                            # off, but a SKILL.md this extension wrote while
+                            # skills mode was active may still be tracked
+                            # and still on disk. Remove it narrowly for this
+                            # agent's directory only (#2948).
+                            existing_skills = self._valid_name_list(
+                                metadata.get("registered_skills", [])
+                            )
+                            owned_here = [
+                                name
+                                for name in existing_skills
+                                if (agent_skills_dir / name).is_dir()
+                            ]
+                            if owned_here:
+                                self._unregister_extension_skills(
+                                    owned_here, ext_id, skills_dir=agent_skills_dir
+                                )
+                                remaining = [
+                                    name
+                                    for name in existing_skills
+                                    if (agent_skills_dir / name).is_dir()
+                                ]
+                                if remaining != existing_skills:
+                                    updates["registered_skills"] = remaining
 
                 if updates:
                     self.registry.update(ext_id, updates)

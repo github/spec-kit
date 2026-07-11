@@ -4274,6 +4274,68 @@ class TestPresetSkills:
             "and preset removal can't clean it up (#2948)"
         )
 
+    def test_rescaffold_reconciles_override_even_when_skills_phase_fails(
+        self, project_dir, temp_dir
+    ):
+        """A project override must still win after rescaffold even if the
+        independently-fallible skills phase raises for that preset.
+
+        ``register_enabled_presets_for_agent`` only records a preset's
+        command names into ``affected_cmd_names`` — the set later passed to
+        ``_reconcile_composed_commands``/``_reconcile_skills`` — in the
+        ``for tmpl in manifest.templates`` loop that runs *after*
+        ``_register_skills`` inside the per-preset ``try`` block. If
+        ``_register_skills`` raises, the per-preset ``except`` catches it
+        and ``continue``s before that loop ever runs, so this preset's
+        command names never make it into ``affected_cmd_names`` even though
+        ``_register_commands`` already wrote its raw content to disk. The
+        final reconciliation call is skipped for this preset entirely,
+        leaving the raw preset content in place instead of the project
+        override that should win (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "reconcile-despite-skills-failure", "speckit.specify",
+            "Preset specify", "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # Simulate `integration use gemini` with the skills phase failing
+        # for this preset (e.g. a symlink/permission error unrelated to the
+        # commands phase, which already succeeded).
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+
+        from unittest.mock import patch
+
+        with patch.object(
+            PresetManager, "_register_skills",
+            side_effect=RuntimeError("simulated skills failure"),
+        ):
+            manager.register_enabled_presets_for_agent("gemini")
+
+        cmd_file = gemini_dir / "speckit.specify.toml"
+        assert cmd_file.exists(), "sanity: gemini should get a command file at all"
+        content = cmd_file.read_text()
+        assert "Override body" in content, (
+            "the project override must still win after rescaffold, even "
+            "though this preset's skills phase raised — a fallible skills "
+            "phase must not skip reconciliation for command writes that "
+            "already succeeded (#2948)"
+        )
+        assert "Preset body" not in content
+
     def test_copilot_skills_mode_skips_command_registration(self, project_dir, temp_dir):
         """``integration use copilot`` with skills mode enabled must only
         write the SKILL.md mirror, not also copilot's static command file.
@@ -4607,6 +4669,90 @@ class TestPresetSkills:
                 f"{label}'s preset override must be restored on removal, "
                 "not orphaned because the registry stayed in legacy "
                 "flat-list format (#2948)"
+            )
+            assert "Core specify body" in content
+
+    def test_rescaffold_legacy_flat_list_direct_switch_preserves_original_agent(
+        self, project_dir, temp_dir
+    ):
+        """A legacy flat-list ``registered_skills`` entry must not be
+        misattributed to the wrong agent when the *first* post-upgrade
+        operation is a direct switch to a different skill-mode agent.
+
+        Blindly attributing every legacy flat-list name to ``agent_name`` —
+        the agent currently being (re)activated — loses the actual writer
+        whenever that first operation is ``integration use codex`` (or
+        ``switch``) run directly against a legacy Claude override, without
+        an intervening same-agent rescaffold for Claude first. The
+        migrated dict then only records ``{"codex": [...]}``, so a later
+        ``remove()`` restores Codex but permanently orphans the Claude
+        override that was never in the registry to begin with (#2948).
+        """
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify command\n---\n\nCore specify body\n",
+            encoding="utf-8",
+        )
+
+        claude_skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(claude_skills_dir, "speckit-specify")
+        codex_skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(codex_skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "legacy-direct-switch-preset", "speckit.specify",
+            "Legacy direct switch test", "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        # install_from_directory wrote the preset's override to Claude's
+        # skill directory (the active agent at install time) — sanity-check
+        # that the marker is actually there before simulating the legacy
+        # registry format.
+        claude_skill = claude_skills_dir / "speckit-specify" / "SKILL.md"
+        assert "preset:legacy-direct-switch-preset" in claude_skill.read_text(), (
+            "sanity: install should have written the override under claude"
+        )
+
+        # Simulate a pre-#2948 registry: a flat list with no per-agent
+        # provenance, even though the file on disk was actually written
+        # under claude's directory.
+        manager.registry.update(
+            "legacy-direct-switch-preset",
+            {"registered_skills": ["speckit-specify"]},
+        )
+
+        # Directly switch to codex — no intervening rescaffold for claude —
+        # mirroring `integration use codex` / `switch codex` run right after
+        # upgrading spec-kit versions.
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+
+        metadata = manager.registry.get("legacy-direct-switch-preset")
+        registered_skills = metadata.get("registered_skills")
+        assert isinstance(registered_skills, dict)
+        assert set(registered_skills) == {"claude", "codex"}, (
+            "migrating a legacy flat-list entry on a direct switch must "
+            "infer the actual writer (claude) from the existing on-disk "
+            "SKILL.md provenance, not attribute every name to whichever "
+            "agent happens to be activated first after the upgrade "
+            "(#2948)"
+        )
+
+        assert manager.remove("legacy-direct-switch-preset") is True
+
+        codex_skill = codex_skills_dir / "speckit-specify" / "SKILL.md"
+        for skill_file, label in ((claude_skill, "claude"), (codex_skill, "codex")):
+            assert skill_file.exists(), f"{label} skill file should still exist after removal"
+            content = skill_file.read_text()
+            assert "preset:legacy-direct-switch-preset" not in content, (
+                f"{label}'s preset override must be restored on removal, "
+                "not permanently orphaned by a misattributed legacy "
+                "migration (#2948)"
             )
             assert "Core specify body" in content
 
