@@ -202,6 +202,8 @@ Jira Integration (v1.0.0)
 
 When an extension is removed, its corresponding skills are also cleaned up automatically. Pre-existing skills that were manually customized are never overwritten.
 
+Extension command bodies can keep portable slash-dot references such as `/speckit.jira.sync-status`. During skill registration, spec-kit rewrites standalone command references to the active agent's invocation style—for example, `$speckit-jira-sync-status` for Codex, `/skill:speckit-jira-sync-status` for Kimi, or `/speckit-jira-sync-status` for slash-based skills integrations. URL and path-like references are left unchanged.
+
 ---
 
 ## Using Extensions

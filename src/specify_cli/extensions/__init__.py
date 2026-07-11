@@ -49,12 +49,74 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
     }
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+_SPECKIT_SLASH_REF_PATTERN = re.compile(
+    r"(?<!\]\()(?<![.\w:/\\])"
+    r"/(speckit\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)\b"
+    r"(?![\w/\\?#-]|\.[A-Za-z0-9_-])"
+)
+_MARKDOWN_LINK_DESTINATION_PREFIX_PATTERN = re.compile(r"\]\(\s*$")
+_HTML_LINK_ATTRIBUTE_PREFIX_PATTERN = re.compile(
+    r"\b(?:href|src)\s*=\s*['\"]\s*$", re.IGNORECASE
+)
 
 VALID_EFFECTS = frozenset({"read-only", "read-write"})
 
 DEFAULT_HOOK_PRIORITY = 10
 
 REINSTALL_COMMAND = "uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git"
+
+
+def _skill_name_from_command(command: Any) -> str:
+    """Map a command id like ``speckit.plan`` to its installed skill name."""
+    if not isinstance(command, str):
+        return ""
+    command_id = command.strip()
+    if not command_id.startswith("speckit."):
+        return ""
+    return f"speckit-{command_id[len('speckit.') :].replace('.', '-')}"
+
+
+def _render_agent_command_invocation(
+    command: Any, selected_ai: Any, ai_skills_enabled: bool
+) -> str:
+    """Render a command using the active agent's invocation syntax."""
+    if not isinstance(command, str):
+        return ""
+
+    command_id = command.strip()
+    if not command_id:
+        return ""
+
+    skill_name = _skill_name_from_command(command_id)
+    if is_dollar_skills_agent(selected_ai, ai_skills_enabled) and skill_name:
+        return f"${skill_name}"
+    if selected_ai == "kimi" and skill_name:
+        return f"/skill:{skill_name}"
+    if selected_ai == "cline":
+        from ..integrations.cline import format_cline_command_name
+
+        return f"/{format_cline_command_name(command_id)}"
+    if is_slash_skills_agent(selected_ai, ai_skills_enabled) and skill_name:
+        return f"/{skill_name}"
+    return f"/{command_id}"
+
+
+def _rewrite_skill_body_command_refs(
+    body: str, selected_ai: str, ai_skills_enabled: bool
+) -> str:
+    """Rewrite slash-dot command references for an agent skill body."""
+    def replace(match: re.Match[str]) -> str:
+        line_start = body.rfind("\n", 0, match.start()) + 1
+        line_prefix = body[line_start : match.start()]
+        if _MARKDOWN_LINK_DESTINATION_PREFIX_PATTERN.search(
+            line_prefix
+        ) or _HTML_LINK_ATTRIBUTE_PREFIX_PATTERN.search(line_prefix):
+            return match.group(0)
+        return _render_agent_command_invocation(
+            match.group(1), selected_ai, ai_skills_enabled
+        )
+
+    return _SPECKIT_SLASH_REF_PATTERN.sub(replace, body)
 
 
 def _load_core_command_names() -> frozenset[str]:
@@ -1080,6 +1142,13 @@ class ExtensionManager:
             )
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
+            )
+            # Extension authors commonly reference sibling commands using the
+            # portable slash-dot spelling (for example,
+            # ``/speckit.memory.prepare``). Rewrite those references to the
+            # active skills integration's native invocation form.
+            body = _rewrite_skill_body_command_refs(
+                body, selected_ai, is_ai_skills_enabled(opts)
             )
 
             original_desc = frontmatter.get("description", "")
@@ -2898,12 +2967,7 @@ class HookExecutor:
     @staticmethod
     def _skill_name_from_command(command: Any) -> str:
         """Map a command id like speckit.plan to speckit-plan skill name."""
-        if not isinstance(command, str):
-            return ""
-        command_id = command.strip()
-        if not command_id.startswith("speckit."):
-            return ""
-        return f"speckit-{command_id[len('speckit.') :].replace('.', '-')}"
+        return _skill_name_from_command(command)
 
     def _render_hook_invocation(self, command: Any) -> str:
         """Render an agent-specific invocation string for a hook command."""
@@ -2918,26 +2982,9 @@ class HookExecutor:
         selected_ai = init_options.get("ai")
         ai_skills_enabled = is_ai_skills_enabled(init_options)
 
-        dollar_skill_mode = is_dollar_skills_agent(selected_ai, ai_skills_enabled)
-        kimi_skill_mode = selected_ai == "kimi"
-        cline_mode = selected_ai == "cline"
-
-        skill_name = self._skill_name_from_command(command_id)
-        if dollar_skill_mode and skill_name:
-            return f"${skill_name}"
-        if kimi_skill_mode and skill_name:
-            return f"/skill:{skill_name}"
-        if cline_mode:
-            from ..integrations.cline import format_cline_command_name
-
-            return f"/{format_cline_command_name(command_id)}"
-
-        use_slash = is_slash_skills_agent(selected_ai, ai_skills_enabled)
-
-        if skill_name and use_slash:
-            return f"/{skill_name}"
-
-        return f"/{command_id}"
+        return _render_agent_command_invocation(
+            command_id, selected_ai, ai_skills_enabled
+        )
 
     def get_project_config(self) -> Dict[str, Any]:
         """Load project-level extension configuration.

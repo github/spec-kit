@@ -292,6 +292,55 @@ class TestExtensionManagerGetSkillsDir:
 class TestExtensionSkillRegistration:
     """Test _register_extension_skills() on ExtensionManager."""
 
+    @pytest.mark.parametrize(
+        ("ai", "expected_invocation"),
+        [
+            ("codex", "$speckit-test-ext-world"),
+            ("kimi", "/skill:speckit-test-ext-world"),
+            ("claude", "/speckit-test-ext-world"),
+        ],
+    )
+    def test_dotted_command_refs_use_skill_invocation(
+        self, project_dir, extension_dir, ai, expected_invocation
+    ):
+        """Extension cross-command refs should match each skills integration."""
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+        hello_command = extension_dir / "commands" / "hello.md"
+        hello_command.write_text(
+            hello_command.read_text(encoding="utf-8")
+            + (
+                "\nContinue with /speckit.test-ext.world.\n"
+                "Documentation: https://speckit.test-ext.world/docs\n"
+                "Local path: ./speckit.test-ext.world/docs\n"
+                "Parent path: ../speckit.test-ext.world/docs\n"
+                "Root path: /speckit.test-ext.world/docs\n"
+                "Markdown link: [guide](/speckit.test-ext.world.md)\n"
+                "Spaced link: [guide]( /speckit.test-ext.world.md )\n"
+                'HTML link: <a href="/speckit.test-ext.world.md">guide</a>\n'
+                "Query path: /speckit.test-ext.world?raw=1\n"
+            ),
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        content = (
+            skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        assert f"Continue with {expected_invocation}." in content
+        assert "Documentation: https://speckit.test-ext.world/docs" in content
+        assert "Local path: ./speckit.test-ext.world/docs" in content
+        assert "Parent path: ../speckit.test-ext.world/docs" in content
+        assert "Root path: /speckit.test-ext.world/docs" in content
+        assert "Markdown link: [guide](/speckit.test-ext.world.md)" in content
+        assert "Spaced link: [guide]( /speckit.test-ext.world.md )" in content
+        assert 'HTML link: <a href="/speckit.test-ext.world.md">' in content
+        assert "Query path: /speckit.test-ext.world?raw=1" in content
+
     def test_skills_created_when_ai_skills_active(self, skills_project, extension_dir):
         """Skills should be created when ai_skills is enabled."""
         project_dir, skills_dir = skills_project
