@@ -246,6 +246,30 @@ def test_remove_zero_completed_removals_still_cautions_about_partial_changes(
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
+def test_remove_record_save_failure_reports_partial_state(tmp_path: Path):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "specify_cli.bundler.services.installer.save_records",
+            fail_save,
+        )
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "disk full" in message
+    assert "partially uninstalled" in message.lower()
+    assert installer.installed == set()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
 def test_remove_reports_uninstalled_not_installed(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())

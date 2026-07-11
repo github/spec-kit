@@ -199,6 +199,7 @@ def remove_bundle(
                 result.uninstalled.append(component)
             else:
                 result.skipped.append(component)
+        save_records(project_root, remove_record(records, bundle_id))
     except Exception as exc:  # noqa: BLE001
         if result.uninstalled:
             detail = (
@@ -216,7 +217,6 @@ def remove_bundle(
             f"Failed to remove bundle '{bundle_id}': {exc}. {detail}"
         ) from exc
 
-    save_records(project_root, remove_record(records, bundle_id))
     return result
 
 

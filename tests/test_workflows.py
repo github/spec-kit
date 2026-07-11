@@ -9153,6 +9153,80 @@ steps:
         assert committed_file.read_text(encoding="utf-8") == "committed"
         assert not staged_file.exists()
 
+    def test_add_dev_registry_reopen_exit_discards_staged_file(
+        self, project_dir, monkeypatch
+    ):
+        import typer
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows import _commands
+
+        monkeypatch.chdir(project_dir)
+        source_dir = self._write_workflow_dir(project_dir)
+        real_open_registry = _commands._open_workflow_registry
+        calls = 0
+
+        def fail_transaction_reopen(root):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise typer.Exit(1)
+            return real_open_registry(root)
+
+        monkeypatch.setattr(
+            _commands, "_open_workflow_registry", fail_transaction_reopen
+        )
+        result = CliRunner().invoke(
+            app, ["workflow", "add", str(source_dir), "--dev"]
+        )
+
+        assert result.exit_code != 0
+        assert not (
+            project_dir / ".specify" / "workflows" / "align-wf"
+        ).exists()
+
+    def test_add_catalog_registry_reopen_exit_discards_staged_file(
+        self, project_dir, monkeypatch
+    ):
+        import typer
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowRegistry
+
+        workflows_dir = project_dir / ".specify" / "workflows"
+        monkeypatch.setattr(
+            WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: {
+                "id": wid,
+                "name": "Align Workflow",
+                "version": "1.0.0",
+                "url": "https://example.com/workflow.yml",
+                "_install_allowed": True,
+                "_catalog_name": "test-catalog",
+            },
+        )
+        data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda url, timeout=None, extra_headers=None,
+            redirect_validator=None: self._FakeResponse(data, url),
+        )
+        monkeypatch.setattr(
+            _commands,
+            "_open_workflow_registry",
+            lambda _root: (_ for _ in ()).throw(typer.Exit(1)),
+        )
+
+        with pytest.raises(typer.Exit):
+            _commands._install_workflow_from_catalog(
+                project_dir,
+                WorkflowRegistry(project_dir),
+                workflows_dir,
+                "align-wf",
+            )
+
+        assert not (workflows_dir / "align-wf").exists()
+
     def test_remove_serializes_with_concurrent_catalog_install(
         self, project_dir, monkeypatch
     ):

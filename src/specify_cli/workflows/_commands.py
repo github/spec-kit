@@ -1283,6 +1283,11 @@ def workflow_add(
                     raise typer.Exit(1)
                 # Registry update succeeded while the transaction lock is held.
                 _discard_committed_backup_file(backup_file)
+        except typer.Exit:
+            _safe_discard_staged_workflow_file(
+                staged_file, dest_dir, existed_before
+            )
+            raise
         except OSError as exc:
             _safe_discard_staged_workflow_file(staged_file, dest_dir, existed_before)
             console.print(
@@ -1691,6 +1696,11 @@ def _install_workflow_from_catalog(
                 raise typer.Exit(1)
             # Registry update succeeded while the transaction lock is held.
             _discard_committed_backup_file(backup_file)
+    except typer.Exit:
+        _safe_discard_staged_workflow_file(
+            staged_file, workflow_dir, existed_before
+        )
+        raise
     except OSError as exc:
         _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(
