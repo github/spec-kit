@@ -2974,6 +2974,59 @@ class TestIntegrationUpgrade:
             "upgrade of the active integration re-registers extension commands"
         )
 
+    def test_upgrade_active_integration_reregisters_presets(self, tmp_path):
+        """Upgrading the active integration restores missing preset artifacts."""
+        import yaml
+
+        project = _init_project(tmp_path, "claude")
+        preset_src = tmp_path / "upgrade-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.upgrade-check.md").write_text(
+            "---\ndescription: Upgrade check\n---\nPreset upgrade body\n",
+            encoding="utf-8",
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "upgrade-preset",
+                "name": "Upgrade Preset",
+                "version": "1.0.0",
+                "description": "Upgrade preset test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.upgrade-check",
+                        "file": "commands/speckit.upgrade-check.md",
+                    }
+                ]
+            },
+        }
+        (preset_src / "preset.yml").write_text(
+            yaml.dump(manifest), encoding="utf-8"
+        )
+
+        result = _run_in_project(
+            project, ["preset", "add", "--dev", str(preset_src)]
+        )
+        assert result.exit_code == 0, result.output
+
+        skill_dir = (
+            project / ".claude" / "skills" / "speckit-upgrade-check"
+        )
+        skill_file = skill_dir / "SKILL.md"
+        assert "Preset upgrade body" in skill_file.read_text(encoding="utf-8")
+        shutil.rmtree(skill_dir)
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "claude",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+        assert "Preset upgrade body" in skill_file.read_text(encoding="utf-8")
+
     def test_upgrade_non_active_agent_preserves_active_agent_skills(self, tmp_path):
         """Upgrading a non-active agent must not touch the active agent's skills.
 

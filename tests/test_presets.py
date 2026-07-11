@@ -4297,6 +4297,49 @@ class TestPresetSkills:
         )
         assert "Preset body" not in content
 
+    def test_hermes_rescaffold_reconciles_global_skill_output(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        home = temp_dir / "home"
+        home.mkdir()
+        monkeypatch.setattr(Path, "home", lambda: home)
+        (home / ".hermes" / "skills").mkdir(parents=True)
+        self._write_init_options(project_dir, ai="hermes", ai_skills=True)
+        (project_dir / ".hermes" / "skills").mkdir(parents=True)
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "hermes-reconcile-preset", "speckit.specify",
+            "Preset specify", "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.register_enabled_presets_for_agent("hermes")
+
+        skill_file = (
+            home / ".hermes" / "skills" / "speckit-specify" / "SKILL.md"
+        )
+        assert skill_file.exists()
+        content = skill_file.read_text(encoding="utf-8")
+        assert "Override body" in content
+        assert "Preset body" not in content
+        assert not list(
+            (project_dir / ".hermes" / "skills").glob("speckit-*/SKILL.md")
+        )
+
+        (overrides_dir / "speckit.specify.md").unlink()
+        assert manager.remove("hermes-reconcile-preset") is True
+        if skill_file.exists():
+            restored = skill_file.read_text(encoding="utf-8")
+            assert "Override body" not in restored
+            assert "Preset body" not in restored
+
     def test_rescaffold_persists_commands_before_fallible_skills_phase(
         self, project_dir, temp_dir
     ):

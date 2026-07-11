@@ -1715,7 +1715,9 @@ class PresetManager:
                 # (#2948): mkdir(exist_ok=True) alone would silently follow
                 # an existing symlinked subdirectory before writing SKILL.md
                 # through it.
-                if not self._validate_skill_subdir(skill_subdir, create=True):
+                if not self._validate_skill_subdir(
+                    skill_subdir, create=True, skills_root=skills_dir
+                ):
                     continue
                 skill_file = skill_subdir / "SKILL.md"
                 try:
@@ -1825,26 +1827,87 @@ class PresetManager:
                 managed_names=set(extra_names),
             )
 
+    def _resolve_agent_skills_dir(self, agent_name: str) -> Path:
+        """Resolve the real skill output directory for an integration."""
+        from .. import _get_skills_dir as _project_skills_dir
+        from ..agents import CommandRegistrar
+
+        registrar = CommandRegistrar()
+        agent_config = registrar.AGENT_CONFIGS.get(agent_name)
+        if agent_config and agent_config.get("extension") == "/SKILL.md":
+            return registrar._resolve_agent_dir(
+                agent_name, agent_config, self.project_root
+            )
+        return _project_skills_dir(self.project_root, agent_name)
+
+    def _skills_validation_root(self, skills_dir: Path) -> Optional[Path]:
+        """Return the trusted root containing a project or user skill dir."""
+        for root in (self.project_root, Path.home()):
+            if skills_dir.is_relative_to(root):
+                return root
+        return None
+
     def _get_skills_dir(self) -> Optional[Path]:
         """Return the active skills directory for preset skill overrides.
 
-        Delegates to :func:`resolve_active_skills_dir` which reads
-        init-options, applies the Kimi native-skills fallback, and
-        safely creates the directory when ``ai_skills`` is enabled.
+        Uses :func:`resolve_active_skills_dir` for activation/detection,
+        then resolves native skill agents through the registrar's output
+        directory so integrations such as Hermes write to their global
+        skills path rather than their project-local detection marker.
 
         Returns ``None`` (instead of raising) when the directory cannot
         be created due to symlink, containment, or permission issues so
         that callers can fall back gracefully.
         """
-        from .. import resolve_active_skills_dir, _print_cli_warning
+        from .. import (
+            _print_cli_warning,
+            load_init_options,
+            resolve_active_skills_dir,
+        )
+        from ..shared_infra import _ensure_safe_shared_directory
         try:
-            return resolve_active_skills_dir(self.project_root)
+            skills_dir = resolve_active_skills_dir(self.project_root)
         except (ValueError, OSError) as exc:
             _print_cli_warning(
                 "resolve", "skills directory", None, exc,
                 continuing="Continuing without skill registration.",
             )
             return None
+        if skills_dir is None:
+            return None
+
+        opts = load_init_options(self.project_root)
+        selected_ai = opts.get("ai") if isinstance(opts, dict) else None
+        if not isinstance(selected_ai, str) or not selected_ai:
+            return skills_dir
+
+        agent_skills_dir = self._resolve_agent_skills_dir(selected_ai)
+        if agent_skills_dir == skills_dir:
+            return skills_dir
+
+        validation_root = self._skills_validation_root(agent_skills_dir)
+        if validation_root is None:
+            _print_cli_warning(
+                "resolve",
+                "skills directory",
+                str(agent_skills_dir),
+                ValueError("skills directory is outside trusted roots"),
+                continuing="Continuing without skill registration.",
+            )
+            return None
+        try:
+            _ensure_safe_shared_directory(
+                validation_root,
+                agent_skills_dir,
+                context="preset skills directory",
+            )
+        except (ValueError, OSError) as exc:
+            _print_cli_warning(
+                "resolve", "skills directory", str(agent_skills_dir), exc,
+                continuing="Continuing without skill registration.",
+            )
+            return None
+        return agent_skills_dir
 
     @staticmethod
     def _skill_names_for_command(cmd_name: str) -> tuple[str, str]:
@@ -2093,7 +2156,9 @@ class PresetManager:
                 # is_dir() above follows symlinks, so a symlinked subdir
                 # with a real parent would otherwise slip through and have
                 # SKILL.md written through it to an arbitrary location (#2948).
-                if not self._validate_skill_subdir(skill_subdir, create=True):
+                if not self._validate_skill_subdir(
+                    skill_subdir, create=True, skills_root=skills_dir
+                ):
                     continue
                 frontmatter_data = registrar.build_skill_frontmatter(
                     selected_ai,
@@ -2199,7 +2264,9 @@ class PresetManager:
             canonical_agent = fallback_agent if fallback_agent in agents else sorted(agents)[0]
             for name in safe_skill_names:
                 skill_subdir = resolved_dir / name
-                if not self._validate_skill_subdir(skill_subdir, create=False):
+                if not self._validate_skill_subdir(
+                    skill_subdir, create=False, skills_root=resolved_dir
+                ):
                     continue
                 skill_file = skill_subdir / "SKILL.md"
                 if not skill_file.is_file():
@@ -2271,13 +2338,15 @@ class PresetManager:
         touched; directories that don't exist or fail validation are
         skipped rather than raising.
         """
-        from .. import _get_skills_dir as _resolve_skills_dir
         from ..shared_infra import _ensure_safe_shared_directory
 
-        skills_dir = _resolve_skills_dir(self.project_root, agent_name)
+        skills_dir = self._resolve_agent_skills_dir(agent_name)
+        validation_root = self._skills_validation_root(skills_dir)
+        if validation_root is None:
+            return None
         try:
             _ensure_safe_shared_directory(
-                self.project_root, skills_dir,
+                validation_root, skills_dir,
                 create=False, context="preset skills directory",
             )
         except (ValueError, OSError):
@@ -2314,7 +2383,13 @@ class PresetManager:
             return False
         return True
 
-    def _validate_skill_subdir(self, skill_subdir: Path, *, create: bool) -> bool:
+    def _validate_skill_subdir(
+        self,
+        skill_subdir: Path,
+        *,
+        create: bool,
+        skills_root: Optional[Path] = None,
+    ) -> bool:
         """Validate a single skill's subdirectory is symlink-free.
 
         Unlike :meth:`_safe_skills_dir_for_agent` (which only validates the
@@ -2327,18 +2402,25 @@ class PresetManager:
         restore/removal path (``create=False``, so a missing directory is
         left for the caller's own existence check to skip). Returns
         ``False`` rather than raising when the path escapes the project
-        root or crosses a symlink.
+        root or crosses a symlink. ``skills_root`` supplies the trusted
+        agent output boundary for native global skill integrations such as
+        Hermes; project-local callers default to ``self.project_root``.
         """
         from ..shared_infra import _ensure_safe_shared_directory, _validate_safe_shared_directory
 
+        validation_root = skills_root or self.project_root
+        if validation_root.is_symlink():
+            return False
         try:
             if create:
                 _ensure_safe_shared_directory(
-                    self.project_root, skill_subdir,
+                    validation_root, skill_subdir,
                     create=True, context="preset skill directory",
                 )
             else:
-                _validate_safe_shared_directory(self.project_root, skill_subdir)
+                _validate_safe_shared_directory(
+                    validation_root, skill_subdir
+                )
         except (ValueError, OSError):
             return False
         return True
@@ -2496,7 +2578,9 @@ class PresetManager:
             # (with a safe, non-symlinked parent) would otherwise slip past
             # _safe_skills_dir_for_agent's parent-only check and have
             # write_text/rmtree operate through it (#2948).
-            if not self._validate_skill_subdir(skill_subdir, create=False):
+            if not self._validate_skill_subdir(
+                skill_subdir, create=False, skills_root=skills_dir
+            ):
                 continue
             if not skill_file.is_file():
                 # Only manage directories that contain the expected skill entrypoint.
