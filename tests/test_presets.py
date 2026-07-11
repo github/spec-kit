@@ -6628,6 +6628,74 @@ class TestPresetSkills:
             "opencode's tracking must be preserved untouched"
         )
 
+    def test_unregister_native_agent_persists_skills_metadata_pop(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "native-metadata-cleanup-preset",
+            "speckit.shared-cleanup",
+            "Shared cleanup",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        metadata = manager.registry.get("native-metadata-cleanup-preset")
+        assert "agy" in metadata.get("registered_commands", {})
+        manager.registry.update(
+            "native-metadata-cleanup-preset",
+            {"registered_skills": {"agy": ["speckit-shared-cleanup"]}},
+        )
+
+        manager.unregister_agent_artifacts("agy")
+
+        metadata = manager.registry.get("native-metadata-cleanup-preset")
+        assert "agy" not in metadata.get("registered_commands", {})
+        assert "agy" not in metadata.get("registered_skills", {})
+
+    def test_unregister_native_agent_preserves_shared_output_owner(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="agy", ai_skills=True)
+        (project_dir / ".agents" / "skills").mkdir(parents=True)
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "shared-native-output-preset",
+            "speckit.shared-owner",
+            "Shared owner",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        self._write_init_options(project_dir, ai="codex", ai_skills=True)
+        manager.register_enabled_presets_for_agent("codex")
+        skill_file = (
+            project_dir
+            / ".agents"
+            / "skills"
+            / "speckit-shared-owner"
+            / "SKILL.md"
+        )
+        assert skill_file.exists()
+        metadata = manager.registry.get("shared-native-output-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert "agy" in registered_commands and "codex" in registered_commands
+
+        manager.unregister_agent_artifacts("agy")
+
+        assert skill_file.exists(), (
+            "shared SKILL.md must survive while codex still owns the same "
+            "physical output"
+        )
+        metadata = manager.registry.get("shared-native-output-preset")
+        registered_commands = metadata.get("registered_commands", {})
+        assert "agy" not in registered_commands
+        assert "codex" in registered_commands
+
     def test_unregister_agent_artifacts_migrates_legacy_skill_list_scoped(
         self, project_dir, temp_dir
     ):

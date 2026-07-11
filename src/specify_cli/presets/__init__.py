@@ -1010,10 +1010,12 @@ class PresetManager:
         try:
             from ..agents import CommandRegistrar
 
-            agent_config = CommandRegistrar().AGENT_CONFIGS.get(agent_name)
+            registrar = CommandRegistrar()
+            agent_config = registrar.AGENT_CONFIGS.get(agent_name)
         except ImportError:
+            registrar = None
             agent_config = None
-        if agent_config is None:
+        if agent_config is None or registrar is None:
             return
 
         for pack_id, metadata in list(self.registry.list().items()):
@@ -1063,17 +1065,58 @@ class PresetManager:
             # own coordination: whenever this agent's artifact is already
             # handled via registered_commands, never additionally treat it
             # as a registered_skills entry for the same agent.
+            native_skills_entry_removed = False
             if agent_command_names and agent_config.get("extension") == "/SKILL.md":
+                native_skills_entry_removed = agent_name in registered_skills_all
                 registered_skills_all.pop(agent_name, None)
 
             if agent_command_names:
-                self._unregister_commands({agent_name: agent_command_names})
+                command_names_to_unregister = agent_command_names
+                if agent_config.get("extension") == "/SKILL.md":
+                    agent_output = registrar._resolve_agent_dir(
+                        agent_name, agent_config, self.project_root
+                    )
+                    shared_names: set[str] = set()
+                    for other_agent, other_names in registered_commands.items():
+                        if (
+                            other_agent == agent_name
+                            or not isinstance(other_names, list)
+                        ):
+                            continue
+                        other_config = registrar.AGENT_CONFIGS.get(other_agent)
+                        if (
+                            not other_config
+                            or other_config.get("extension") != "/SKILL.md"
+                        ):
+                            continue
+                        other_output = registrar._resolve_agent_dir(
+                            other_agent, other_config, self.project_root
+                        )
+                        if other_output == agent_output:
+                            shared_names.update(
+                                name
+                                for name in other_names
+                                if isinstance(name, str)
+                            )
+                    command_names_to_unregister = [
+                        name
+                        for name in agent_command_names
+                        if name not in shared_names
+                    ]
+                if command_names_to_unregister:
+                    self._unregister_commands(
+                        {agent_name: command_names_to_unregister}
+                    )
                 new_registered_commands = copy.deepcopy(registered_commands)
                 new_registered_commands.pop(agent_name, None)
                 updates["registered_commands"] = new_registered_commands
 
             agent_skill_names = registered_skills_all.get(agent_name) or []
-            if agent_skill_names or skills_migrated:
+            if (
+                agent_skill_names
+                or skills_migrated
+                or native_skills_entry_removed
+            ):
                 if agent_skill_names:
                     self._unregister_skills({agent_name: agent_skill_names}, pack_dir)
                 remaining = {
