@@ -2355,6 +2355,29 @@ class TestFanInStep:
         result = step.execute(config, ctx)
         assert result.output["results"] == [{}]
 
+    @pytest.mark.parametrize("bad_wait_for", ["stepA", 5, None, {"a": 1}])
+    def test_execute_non_list_wait_for_fails_loudly(self, bad_wait_for):
+        """A non-list ``wait_for`` must fail the step, not crash the run or
+        silently produce a bogus join.
+
+        ``validate`` rejects a non-list ``wait_for``, but the engine's
+        ``execute()`` does not auto-validate. Before the guard, ``execute``
+        iterated the raw value: a scalar (int/None) raised TypeError and took
+        down the whole run, while a string silently iterated its characters and
+        returned a join of empty results with a COMPLETED status — the exact
+        "silent empty result + COMPLETED" wiring bug the engine's fan-in
+        validation warns against. Mirrors the fan-out non-list ``items`` guard.
+        """
+        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanInStep()
+        ctx = StepContext(steps={"a": {"output": {"x": 1}}})
+        result = step.execute({"id": "collect", "wait_for": bad_wait_for}, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "'wait_for' must be a list" in (result.error or "")
+        assert result.output["results"] == []
+
     def test_validate_empty_wait_for(self):
         from specify_cli.workflows.steps.fan_in import FanInStep
 
