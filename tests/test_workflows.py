@@ -4805,6 +4805,31 @@ class TestWorkflowCatalog:
         # Should not raise
         catalog._validate_catalog_url("http://localhost:8080/catalog.json")
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://[::1",              # unterminated IPv6 bracket
+            "https://[not-an-ip]/x",     # bracketed non-IP host
+        ],
+    )
+    def test_validate_url_malformed_raises_validation_error(self, project_dir, url):
+        """A malformed authority must raise WorkflowValidationError, not leak a
+        raw ValueError.
+
+        ``urlparse``/``.hostname`` raise ValueError on a malformed IPv6
+        authority. The command handler only catches WorkflowValidationError,
+        so a raw ValueError would surface as an uncaught traceback instead of a
+        clean 'Error:' message + exit 1. Mirrors specify_cli.catalogs (#3435).
+        """
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowValidationError,
+        )
+
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="malformed"):
+            catalog._validate_catalog_url(url)
+
     def test_add_catalog(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -5250,6 +5275,24 @@ class TestStepCatalog:
         catalog = StepCatalog(project_dir)
         # Should not raise
         catalog._validate_catalog_url("http://localhost:8080/step-catalog.json")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://[::1",              # unterminated IPv6 bracket
+            "https://[not-an-ip]/x",     # bracketed non-IP host
+        ],
+    )
+    def test_validate_url_malformed_raises_validation_error(self, project_dir, url):
+        """A malformed authority must raise StepValidationError, not leak a raw
+        ValueError past the command handler (which only catches
+        StepValidationError). Mirrors specify_cli.catalogs (#3435).
+        """
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="malformed"):
+            catalog._validate_catalog_url(url)
 
     def test_add_catalog(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog

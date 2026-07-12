@@ -157,8 +157,20 @@ class WorkflowCatalog:
         """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
         from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # "https://[::1") makes urlparse / hostname access raise ValueError.
+        # This validator's contract is to raise WorkflowValidationError for a
+        # bad URL, so surface that rather than leaking a raw ValueError past the
+        # command handler (which only catches WorkflowValidationError). Mirrors
+        # specify_cli.catalogs (#3435).
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise WorkflowValidationError(
+                f"Catalog URL is malformed: {url}"
+            ) from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
@@ -166,7 +178,7 @@ class WorkflowCatalog:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.hostname:
+        if not hostname:
             raise WorkflowValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -332,15 +344,26 @@ class WorkflowCatalog:
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_catalog_url(url: str) -> None:
-            parsed = urlparse(url)
-            is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            # A malformed authority (e.g. "https://[::1") makes urlparse /
+            # hostname access raise ValueError; treat it as a refused fetch
+            # rather than leaking a raw ValueError (this also validates the
+            # post-redirect resp.geturl(), so a hostile redirect target cannot
+            # crash the fetch either).
+            try:
+                parsed = urlparse(url)
+                hostname = parsed.hostname
+            except ValueError:
+                raise WorkflowCatalogError(
+                    f"Refusing to fetch catalog from malformed URL: {url}"
+                ) from None
+            is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
             if parsed.scheme != "https" and not (
                 parsed.scheme == "http" and is_localhost
             ):
                 raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
-            if not parsed.hostname:
+            if not hostname:
                 raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
@@ -774,8 +797,20 @@ class StepCatalog:
         """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
         from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # "https://[::1") makes urlparse / hostname access raise ValueError.
+        # This validator's contract is to raise StepValidationError for a bad
+        # URL, so surface that rather than leaking a raw ValueError past the
+        # command handler (which only catches StepValidationError). Mirrors
+        # specify_cli.catalogs (#3435).
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise StepValidationError(
+                f"Catalog URL is malformed: {url}"
+            ) from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
@@ -783,7 +818,7 @@ class StepCatalog:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.hostname:
+        if not hostname:
             raise StepValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -949,15 +984,26 @@ class StepCatalog:
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_url(url: str) -> None:
-            parsed = urlparse(url)
-            is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            # A malformed authority (e.g. "https://[::1") makes urlparse /
+            # hostname access raise ValueError; treat it as a refused fetch
+            # rather than leaking a raw ValueError (this also validates the
+            # post-redirect resp.geturl(), so a hostile redirect target cannot
+            # crash the fetch either).
+            try:
+                parsed = urlparse(url)
+                hostname = parsed.hostname
+            except ValueError:
+                raise StepCatalogError(
+                    f"Refusing to fetch catalog from malformed URL: {url}"
+                ) from None
+            is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
             if parsed.scheme != "https" and not (
                 parsed.scheme == "http" and is_localhost
             ):
                 raise StepCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
-            if not parsed.hostname:
+            if not hostname:
                 raise StepCatalogError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
