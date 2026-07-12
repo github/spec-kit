@@ -2052,6 +2052,35 @@ class TestSwitchStep:
         assert result.output["matched_case"] == "__default__"
         assert result.next_steps == []
 
+    def test_execute_non_dict_cases_fails_loudly(self):
+        """A non-mapping ``cases`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-dict ``cases``, but the engine's
+        ``execute()`` does not auto-validate (see ``WorkflowEngine.load_workflow``
+        docstring). Before the guard, ``execute`` called ``cases.items()`` on the
+        raw value, so an unvalidated run with a list/scalar ``cases`` raised
+        AttributeError and took down the whole run instead of failing this step.
+        Mirrors the fan-out step's non-list ``items`` handling.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = SwitchStep()
+        ctx = StepContext(steps={"review": {"output": {"choice": "approve"}}})
+        for bad_cases in (["approve"], "approve", 5):
+            result = step.execute(
+                {
+                    "id": "route",
+                    "expression": "{{ steps.review.output.choice }}",
+                    "cases": bad_cases,
+                },
+                ctx,
+            )
+            assert result.status == StepStatus.FAILED
+            assert "'cases' must be a mapping" in (result.error or "")
+            # expression is still evaluated, so its value is surfaced for context.
+            assert result.output["expression_value"] == "approve"
+
     def test_validate_missing_expression(self):
         from specify_cli.workflows.steps.switch import SwitchStep
 
