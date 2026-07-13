@@ -146,17 +146,36 @@ def test_python_invalid_number_fails_cleanly(repo: Path) -> None:
     assert py.stderr == "Error: --number must be an integer, got 'abc'\n"
 
 
-@requires_bash
-def test_python_negative_number_matches_bash(repo: Path) -> None:
-    # bash's $((10#$BRANCH_NUMBER)) rejects signed values, so a negative
-    # --number must fail cleanly rather than produce a "-01-..." prefix.
+def test_python_negative_number_fails_cleanly(repo: Path) -> None:
+    # Shell arithmetic differs across platforms for signed decimal strings;
+    # the Python port deliberately rejects them consistently.
     args = ("--json", "--dry-run", "--number", "-1", "add rate limiting")
-    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
     py = run(py_cmd(repo, SCRIPT, *args), repo)
 
-    assert py.returncode == bash.returncode == 1
-    assert py.stdout == bash.stdout == ""
+    assert py.returncode == 1
+    assert py.stdout == ""
     assert py.stderr == "Error: --number must be an integer, got '-1'\n"
+
+
+@pytest.mark.parametrize("digit_count", [244, 5000])
+def test_python_oversized_number_fails_cleanly(repo: Path, digit_count: int) -> None:
+    number = "9" * digit_count
+    py = run(
+        py_cmd(
+            repo,
+            SCRIPT,
+            "--json",
+            "--dry-run",
+            "--number",
+            number,
+            "add rate limiting",
+        ),
+        repo,
+    )
+
+    assert py.returncode == 1
+    assert py.stdout == ""
+    assert py.stderr == "Error: feature number is too long for a branch name\n"
 
 
 @requires_bash

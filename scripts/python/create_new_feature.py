@@ -211,15 +211,27 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            number = int(branch_number, 10)
+            normalized_number = branch_number.lstrip("0") or "0"
+            if len(normalized_number) + 1 >= _MAX_BRANCH_LENGTH:
+                print(
+                    "Error: feature number is too long for a branch name",
+                    file=sys.stderr,
+                )
+                return 1
+            number = int(normalized_number, 10)
         else:
             number = _get_highest_from_specs(specs_dir) + 1
         feature_num = f"{number:03d}"
+
+    max_suffix_length = _MAX_BRANCH_LENGTH - (len(feature_num) + 1)
+    if max_suffix_length <= 0:
+        print("Error: feature number is too long for a branch name", file=sys.stderr)
+        return 1
+
     branch_name = f"{feature_num}-{branch_suffix}"
 
     # GitHub enforces a 244-byte limit on branch names.
     if len(branch_name) > _MAX_BRANCH_LENGTH:
-        max_suffix_length = _MAX_BRANCH_LENGTH - (len(feature_num) + 1)
         truncated_suffix = re.sub(r"-$", "", branch_suffix[:max_suffix_length])
         original_branch_name = branch_name
         branch_name = f"{feature_num}-{truncated_suffix}"

@@ -71,3 +71,33 @@ def test_missing_py_variant_falls_back_to_available_script(tmp_path, monkeypatch
     )
     assert "{SCRIPT}" not in body
     assert "setup-plan" in body
+
+
+def test_py_install_includes_python_and_fallback_scripts(tmp_path, monkeypatch):
+    from specify_cli import _install_shared_infra
+
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.shutil.which",
+        lambda name: "/usr/bin/python3" if name == "python3" else None,
+    )
+    _install_shared_infra(tmp_path, "py", force=True)
+
+    assert (tmp_path / ".specify/scripts/python/setup_plan.py").is_file()
+    assert (tmp_path / ".specify/scripts/python/setup_tasks.py").is_file()
+
+    save_init_options(tmp_path, {"script": "py"})
+    frontmatter = {
+        "scripts": {
+            "sh": "scripts/bash/check-prerequisites.sh --json",
+            "ps": "scripts/powershell/check-prerequisites.ps1 -Json",
+        }
+    }
+    body = CommandRegistrar.resolve_skill_placeholders(
+        "codex", frontmatter, "Run {SCRIPT} now.", tmp_path
+    )
+    fallback = (
+        ".specify/scripts/bash/check-prerequisites.sh"
+        if "scripts/bash/" in body
+        else ".specify/scripts/powershell/check-prerequisites.ps1"
+    )
+    assert (tmp_path / fallback).is_file()
