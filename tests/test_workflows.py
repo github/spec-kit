@@ -6198,8 +6198,9 @@ class TestWorkflowRemoveGuard:
         assert workflow_path.read_text(encoding="utf-8") == "not a directory"
         assert WorkflowRegistry(project_dir).is_installed("test-wf")
 
+    @pytest.mark.parametrize("error_type", [OSError, TypeError, ValueError])
     def test_remove_registry_save_failure_preserves_files_and_registry(
-        self, project_dir, monkeypatch
+        self, project_dir, monkeypatch, error_type
     ):
         """If persisting the registry removal fails, the workflow's files must
         not have already been deleted: the CLI must not delete files before the
@@ -6215,7 +6216,7 @@ class TestWorkflowRemoveGuard:
         (workflow_dir / "workflow.yml").write_text("keep-me", encoding="utf-8")
 
         def boom(self):
-            raise OSError("disk full")
+            raise error_type("save failed")
 
         monkeypatch.chdir(project_dir)
         with pytest.MonkeyPatch.context() as mp:

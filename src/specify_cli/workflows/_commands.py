@@ -2003,7 +2003,7 @@ def _remove_workflow_locked(
 
     try:
         registry.remove(workflow_id)
-    except OSError as exc:
+    except (OSError, TypeError, ValueError) as exc:
         if staged_dir is not None:
             try:
                 os.rename(staged_dir, workflow_dir)
