@@ -11,7 +11,8 @@ If you want to try Spec Kit without installing it permanently, use `uvx` to run 
 # Create a new project (latest from main)
 uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
 
-# Or target a specific release (replace vX.Y.Z with a tag from Releases)
+# Or target a specific release (replace vX.Y.Z with a tag from Releases;
+# keep the leading v, e.g. v0.12.11 not 0.12.11)
 uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
 
 # Initialize in the current directory
