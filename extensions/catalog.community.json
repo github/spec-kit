@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-08T00:00:00Z",
+  "updated_at": "2026-07-13T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2539,6 +2539,40 @@
       "stars": 0,
       "created_at": "2026-04-24T14:00:00Z",
       "updated_at": "2026-04-24T14:00:00Z"
+    },
+    "patchwarden-evidence": {
+      "name": "PatchWarden Evidence Pack",
+      "id": "patchwarden-evidence",
+      "description": "Create bounded, traceable PatchWarden evidence packs for Spec Kit implementations.",
+      "author": "Zengjie",
+      "version": "1.0.0",
+      "download_url": "https://github.com/jiezeng2004-design/spec-kit-patchwarden/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/jiezeng2004-design/spec-kit-patchwarden",
+      "homepage": "https://github.com/jiezeng2004-design/spec-kit-patchwarden",
+      "documentation": "https://github.com/jiezeng2004-design/spec-kit-patchwarden/blob/main/README.md",
+      "changelog": "https://github.com/jiezeng2004-design/spec-kit-patchwarden/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [{"name": "patchwarden", "version": ">=1.5.1", "required": true}]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "verification",
+        "evidence",
+        "traceability",
+        "security"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-13T00:00:00Z",
+      "updated_at": "2026-07-13T00:00:00Z"
     },
     "plan-review-gate": {
       "name": "Plan Review Gate",
