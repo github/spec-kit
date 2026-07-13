@@ -927,7 +927,7 @@ class TestCommandStep:
 
     def test_validate_rejects_non_mapping_input_and_options(self):
         from specify_cli.workflows.steps.command import CommandStep
-        from specify_cli.workflows.base import StepContext
+        from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
         # execute() does input.items() / options.update(); a non-mapping must be
@@ -939,9 +939,18 @@ class TestCommandStep:
         assert any("'options' must be a mapping" in e for e in errs)
         # a valid mapping config is still accepted
         assert step.validate({"id": "c", "command": "/x", "input": {"args": "y"}, "options": {"k": 1}}) == []
-        # defense in depth: execute() coerces a non-mapping input instead of crashing
-        result = step.execute({"id": "c", "command": "echo", "input": None}, StepContext())
-        assert result.status is not None
+        # execute() has no auto-validation guarantee (the engine may skip
+        # validate), so a non-mapping input/options FAILS the step with the same
+        # contract error — it does not silently coerce to empty and report
+        # COMPLETED (which would defeat continue_on_error).
+        res_in = step.execute({"id": "c", "command": "echo", "input": None}, StepContext())
+        assert res_in.status is StepStatus.FAILED
+        assert "'input' must be a mapping" in (res_in.error or "")
+        res_opt = step.execute(
+            {"id": "c", "command": "echo", "input": {}, "options": 42}, StepContext()
+        )
+        assert res_opt.status is StepStatus.FAILED
+        assert "'options' must be a mapping" in (res_opt.error or "")
 
     def test_step_override_integration(self):
         from unittest.mock import patch
