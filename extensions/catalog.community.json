@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-09T00:00:00Z",
+  "updated_at": "2026-07-13T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1449,6 +1449,14 @@
           },
           {
             "name": "git",
+            "required": true
+          },
+          {
+            "name": "node",
+            "required": false
+          },
+          {
+            "name": "shellcheck",
             "required": false
           }
         ]
@@ -1468,7 +1476,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-07-09T00:00:00Z"
+      "updated_at": "2026-07-13T00:00:00Z"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
