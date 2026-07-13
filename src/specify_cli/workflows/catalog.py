@@ -76,8 +76,16 @@ class WorkflowRegistry:
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, ValueError):
+                    data = json.load(f)
+                # Validate shape: must be a dict with a dict "workflows" field,
+                # otherwise every method that indexes data["workflows"] crashes.
+                # Mirrors StepRegistry._load.
+                if not isinstance(data, dict):
+                    return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
+                if not isinstance(data.get("workflows"), dict):
+                    data["workflows"] = {}
+                return data
+            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
                 # Corrupted registry file — reset to default
                 return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
         return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
@@ -438,9 +446,9 @@ class WorkflowCatalog:
                 q = query.lower()
                 searchable = " ".join(
                     [
-                        wf_data.get("name", ""),
-                        wf_data.get("description", ""),
-                        wf_data.get("id", ""),
+                        str(wf_data.get("name") or ""),
+                        str(wf_data.get("description") or ""),
+                        str(wf_data.get("id") or ""),
                     ]
                 ).lower()
                 if q not in searchable:

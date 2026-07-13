@@ -778,6 +778,7 @@ class PresetManager:
                                         matching_cmds, ext_id, ext_dir,
                                         self.project_root,
                                         context_note=f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n",
+                                        extension_id=ext_id,
                                     )
                                     registered = True
                             except Exception:
@@ -1199,6 +1200,8 @@ class PresetManager:
                     "command_name": cmd_name,
                     "source_file": source_file,
                     "source": f"extension:{manifest.id}",
+                    "extension_id": manifest.id,
+                    "extension_dir": ext_root,
                 }
                 modern_skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
                 restore_index.setdefault(modern_skill_name, restore_info)
@@ -1463,6 +1466,17 @@ class PresetManager:
             if extension_restore:
                 content = extension_restore["source_file"].read_text(encoding="utf-8")
                 frontmatter, body = registrar.parse_frontmatter(content)
+                # Mirror the register-time rewrite (#2101): resolve
+                # extension-relative subdir references (agents/,
+                # knowledge-base/, etc.) to their installed location before
+                # the generic placeholder resolution below, otherwise
+                # restoring after a preset override removal would leave
+                # bare, unresolvable paths in the skill body.
+                body = registrar.rewrite_extension_paths(
+                    body,
+                    extension_restore["extension_id"],
+                    extension_restore["extension_dir"],
+                )
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
@@ -2574,6 +2588,39 @@ class PresetResolver:
                 self._manifest_cache[key] = None
         return self._manifest_cache[key]
 
+    def _manifest_declared_template(
+        self, pack_dir: Path, template_name: str, template_type: str
+    ) -> tuple[dict | None, Path | None]:
+        """Resolve a preset's manifest-declared template entry and usable file.
+
+        Returns ``(entry, candidate)``:
+        - ``entry`` is the matching ``provides.templates`` mapping, or ``None`` if
+          the manifest is absent or does not list this ``(name, type)``.
+        - ``candidate`` is the declared ``file:`` resolved under ``pack_dir`` IFF
+          it is a regular file (``is_file()``); ``None`` otherwise — a missing,
+          empty, or non-file (e.g. directory) declaration yields ``(entry, None)``.
+
+        The manifest is authoritative: when it declares a template (``entry`` is
+        not ``None``) but the file is unusable (``candidate`` is ``None``),
+        callers must NOT fall back to the convention lookup — that would mask a
+        typo or pick up an undeclared file. Shared by ``resolve()`` and
+        ``collect_all_layers()`` so their manifest-first resolution cannot
+        silently diverge again (the divergence this fix addressed).
+        """
+        manifest = self._get_manifest(pack_dir)
+        if not manifest:
+            return None, None
+        for tmpl in manifest.templates:
+            if tmpl.get("name") == template_name and tmpl.get("type") == template_type:
+                file_path = tmpl.get("file")
+                if file_path:
+                    manifest_candidate = pack_dir / file_path
+                    return tmpl, (
+                        manifest_candidate if manifest_candidate.is_file() else None
+                    )
+                return tmpl, None
+        return None, None
+
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
 
@@ -2676,6 +2723,27 @@ class PresetResolver:
             registry = PresetRegistry(self.presets_dir)
             for pack_id, _metadata in registry.list_by_priority():
                 pack_dir = self.presets_dir / pack_id
+                # The preset manifest is authoritative: if it declares this
+                # template with an explicit ``file:``, resolve to that path —
+                # and do NOT fall back to convention when it's missing, to
+                # avoid masking typos or picking up an undeclared file. Only
+                # when the manifest is absent or doesn't list this template do
+                # we use the convention-based subdir lookup. Mirrors
+                # collect_all_layers()/resolve_content() so resolve() and
+                # resolve_with_source() agree with them instead of returning
+                # the core template (or a stray convention file).
+                entry, manifest_candidate = self._manifest_declared_template(
+                    pack_dir, template_name, template_type
+                )
+                if manifest_candidate is not None:
+                    return manifest_candidate
+                if entry is not None:
+                    # Manifest declares this template but the file is missing,
+                    # non-file (e.g. a directory), or an empty/falsey ``file``
+                    # value. The manifest is authoritative, so skip this pack's
+                    # convention fallback rather than mask a typo — mirrors
+                    # collect_all_layers().
+                    continue
                 for subdir in subdirs:
                     if subdir:
                         candidate = pack_dir / subdir / f"{template_name}{ext}"
@@ -2943,31 +3011,22 @@ class PresetResolver:
                 pack_dir = self.presets_dir / pack_id
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"
-                manifest_file_path = None
                 manifest_has_strategy = False
-                manifest_found_entry = False
-                manifest = self._get_manifest(pack_dir)
-                if manifest:
-                    for tmpl in manifest.templates:
-                        if (tmpl.get("name") == template_name
-                                and tmpl.get("type") == template_type):
-                            strategy = tmpl.get("strategy", "replace")
-                            manifest_has_strategy = "strategy" in tmpl
-                            manifest_file_path = tmpl.get("file")
-                            manifest_found_entry = True
-                            break
-                # Use manifest file path if specified, otherwise convention-based
-                # lookup — but only when the manifest doesn't exist or doesn't
-                # list this template, so preset.yml stays authoritative.
+                entry, manifest_candidate = self._manifest_declared_template(
+                    pack_dir, template_name, template_type
+                )
+                if entry is not None:
+                    strategy = entry.get("strategy", "replace")
+                    manifest_has_strategy = "strategy" in entry
+                # Use the manifest's declared file when it's a usable regular file;
+                # only fall back to convention-based lookup when the manifest
+                # doesn't list this template at all, so preset.yml stays
+                # authoritative (a declared-but-unusable file skips convention —
+                # parity with resolve()).
                 candidate = None
-                if manifest_file_path:
-                    manifest_candidate = pack_dir / manifest_file_path
-                    if manifest_candidate.exists():
-                        candidate = manifest_candidate
-                    # Explicit file path that doesn't exist: skip convention
-                    # fallback to avoid masking typos or picking up unintended files.
-                elif not manifest_found_entry:
-                    # Manifest doesn't list this template — check convention paths
+                if manifest_candidate is not None:
+                    candidate = manifest_candidate
+                elif entry is None:
                     candidate = _find_in_subdirs(pack_dir)
                 if candidate:
                     # Legacy fallback: if manifest doesn't explicitly declare a
@@ -3038,6 +3097,8 @@ class PresetResolver:
                     "path": candidate,
                     "source": source,
                     "strategy": "replace",
+                    "extension_id": ext_id,
+                    "extension_dir": ext_dir,
                 })
 
         # Priority 4: Core templates (always "replace")
@@ -3157,10 +3218,32 @@ class PresetResolver:
         if not layers:
             return None
 
+        def _read_layer_content(layer: Dict[str, Any]) -> str:
+            """Read a layer's raw text, rewriting extension-relative subdir
+            references (agents/, knowledge-base/, etc.) to their installed
+            location when the layer is extension-provided (#2101).
+
+            Extension layers are always inserted with strategy "replace"
+            (see collect_all_layers), so a layer only ever needs this
+            rewrite when it wins outright above or serves as the
+            composition base below — never as a mid-stack composing
+            (append/prepend/wrap) layer.
+            """
+            text = layer["path"].read_text(encoding="utf-8")
+            extension_id = layer.get("extension_id")
+            extension_dir = layer.get("extension_dir")
+            if extension_id and extension_dir:
+                from ..agents import CommandRegistrar
+
+                text = CommandRegistrar.rewrite_extension_paths(
+                    text, extension_id, extension_dir
+                )
+            return text
+
         # If the top (highest-priority) layer is replace, it wins entirely —
         # lower layers are irrelevant regardless of their strategies.
         if layers[0]["strategy"] == "replace":
-            return layers[0]["path"].read_text(encoding="utf-8")
+            return _read_layer_content(layers[0])
 
         # Composition: build content bottom-up from the effective base.
         # The base is the nearest replace layer scanning from highest priority
@@ -3183,7 +3266,7 @@ class PresetResolver:
 
         # Convert to reversed_layers index
         base_reversed_idx = len(layers) - 1 - base_layer_idx
-        content = layers[base_layer_idx]["path"].read_text(encoding="utf-8")
+        content = _read_layer_content(layers[base_layer_idx])
         # Compose only the layers above the base (higher priority = lower index in layers,
         # higher index in reversed_layers). Process bottom-up from base+1.
         start_idx = base_reversed_idx + 1
