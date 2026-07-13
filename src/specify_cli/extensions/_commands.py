@@ -398,10 +398,10 @@ def _resolve_catalog_extension(
             table.add_column("Catalog", style="dim")
             for ext in name_matches:
                 table.add_row(
-                    _escape_markup(str(ext.get("id", ""))),
-                    _escape_markup(str(ext.get("name", ""))),
-                    _escape_markup(str(ext.get("version", ""))),
-                    _escape_markup(str(ext.get("_catalog_name", ""))),
+                    _escape_markup(_catalog_id(ext)),
+                    _escape_markup(_catalog_str(ext, "name", "(unnamed)")),
+                    _escape_markup(_catalog_str(ext, "version", "?")),
+                    _escape_markup(_catalog_str(ext, "_catalog_name")),
                 )
             console.print(table)
             console.print("\nPlease rerun using the extension ID:")

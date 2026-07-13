@@ -393,6 +393,58 @@ def test_download_rejects_catalog_id_path_traversal(project_dir, monkeypatch):
         catalog.download_extension(malicious_id)
 
 
+@pytest.mark.parametrize(
+    ("argument", "catalog_entry"),
+    [
+        (
+            "none",
+            {
+                "id": "null-name",
+                "name": None,
+                "version": "1.0.0",
+                "description": "JSON null name",
+            },
+        ),
+        (
+            "123",
+            {
+                "id": "numeric-name",
+                "name": 123,
+                "version": "1.0.0",
+                "description": "Numeric name",
+            },
+        ),
+        (
+            "Hidden Name",
+            {
+                "id": "../bad",
+                "name": "Hidden Name",
+                "version": "1.0.0",
+                "description": "Invalid ID",
+            },
+        ),
+    ],
+)
+def test_info_display_name_resolution_ignores_malformed_catalog_entries(
+    project_dir, monkeypatch, argument, catalog_entry
+):
+    """Display-name lookup must follow the same untrusted-entry rules as rendering.
+
+    JSON null / numeric names are unnamed, and invalid IDs are not installable
+    or addressable even when their display name matches exactly.
+    """
+    monkeypatch.chdir(project_dir)
+
+    monkeypatch.setattr(ExtensionManager, "list_installed", lambda self: [])
+    monkeypatch.setattr(ExtensionCatalog, "get_extension_info", lambda self, ext_id: None)
+    monkeypatch.setattr(ExtensionCatalog, "search", lambda self, **kwargs: [catalog_entry])
+
+    result = runner.invoke(app, ["extension", "info", argument], obj={"project_root": project_dir})
+
+    assert result.exit_code == 1, result.output
+    assert f"Extension '{argument}' not found" in result.output
+
+
 def test_info_json_null_fields_render_placeholders_not_none(project_dir, monkeypatch):
     """`extension info` must coalesce JSON null fields, not print "None".
 
