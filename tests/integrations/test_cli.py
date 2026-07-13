@@ -141,6 +141,37 @@ class TestInitIntegrationFlag:
         # Aborted before scaffolding: the pre-existing file is untouched.
         assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
 
+    def test_init_here_interactive_cancel_exits_zero(self, tmp_path, monkeypatch):
+        """An interactive Ctrl+C at the merge confirmation (typer.Abort on a TTY)
+        is a normal cancellation — exit 0, "cancelled" — NOT the missing-input
+        --force error, which is reserved for non-interactive EOF. Guards the
+        regression where Abort was caught unconditionally and every cancel became
+        an exit-1 --force error."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        # Simulate an interactive terminal so the Abort is treated as a cancel.
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        project = tmp_path / "cancel-here"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            # No input → typer.confirm raises Abort (stands in for Ctrl+C).
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert "cancelled" in result.output.lower()
+        assert "--force" not in result.output  # not the missing-input error
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
     def test_integration_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
