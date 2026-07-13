@@ -2,6 +2,51 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.13] - 2026-07-13
+
+### Changed
+
+- fix(workflows): fail switch step on non-mapping cases instead of crashing (#3481)
+- Cleanup agent-file-template.md (#2579)
+- fix: mark Kiro integration as multi-install safe (#3472)
+- fix: rewrite extension-relative subdir paths in generated command bodies (#3444)
+- fix(templates): point constitution sync checklist at installed command files (#3418)
+- feat(workflows): make shell step timeout configurable (#3327) (#3328)
+- docs: clarify that release tags keep the leading v prefix (#3463)
+- fix(workflows): don't crash on membership test against a non-iterable (#3448)
+- fix(workflows): if-step validate accepts falsy non-list else (#3264)
+- chore: release 0.12.12, begin 0.12.13.dev0 development (#3490)
+
+## [0.12.12] - 2026-07-13
+
+### Changed
+
+- fix(extensions): set-priority repairs corrupted boolean priority (#3268)
+- fix(presets): set-priority repairs corrupted boolean priority (#3269)
+- fix(workflows): engine loop cap ignores bool max_iterations (#3270)
+- docs(bundles): document --integration on 'bundle update' (#3271)
+- fix(workflows): harden catalog.py against mis-shaped registry & non-string fields (#3375)
+- Add Verify Review Ship extension to community catalog (#3450)
+- fix(bundle): reject file:// / local download_url — catalog URLs are HTTPS-only (#3344)
+- fix(extensions): handle prefix-colliding env vars in _get_env_config (#3350)
+- docs: document copilot skills mode (--skills) and markdown deprecation (#3313)
+- chore: release 0.12.11, begin 0.12.12.dev0 development (#3460)
+
+## [0.12.11] - 2026-07-10
+
+### Changed
+
+- fix(agent-context): discover nested plan.md in scoped layouts (#3024) (#3301)
+- fix(auth): return no matches, not raw ValueError, for a malformed URL (#3437)
+- fix(catalogs): raise catalog error, not raw ValueError, on a malformed URL (#3435)
+- fix(bundler): raise BundlerError, not raw ValueError, on a malformed catalog URL (#3433)
+- chore: add pre-commit config and fix trailing whitespace/end-of-file (#3430)
+- Add EARS Requirements Syntax extension to community catalog (#3407)
+- Add Spec Kit Figma extension to community catalog (#3408)
+- fix(workflows): report validation errors instead of crashing on non-string workflow.yml scalars (#3421)
+- fix(templates): remove self-referencing path in plan-template.md note (#3417)
+- chore: release 0.12.10, begin 0.12.11.dev0 development (#3453)
+
 ## [0.12.10] - 2026-07-10
 
 ### Changed

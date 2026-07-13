@@ -190,7 +190,15 @@ def _parse_integration_options(integration: Any, raw_options: str) -> dict[str, 
     """
     import shlex
     parsed: dict[str, Any] = {}
-    tokens = shlex.split(raw_options)
+    try:
+        tokens = shlex.split(raw_options)
+    except ValueError as exc:
+        # An unbalanced quote (e.g. --integration-options='--commands-dir "foo')
+        # makes shlex raise "No closing quotation". Translate it into the same
+        # clean exit-1 UX as every other bad-input path below rather than
+        # letting a raw traceback escape.
+        console.print(f"[red]Error:[/red] Could not parse integration options: {exc}.")
+        raise typer.Exit(1)
     declared_options = list(integration.options())
     declared = {opt.name.lstrip("-"): opt for opt in declared_options}
     allowed = ", ".join(sorted(opt.name for opt in declared_options))

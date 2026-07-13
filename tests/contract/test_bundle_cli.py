@@ -175,7 +175,23 @@ def test_build_produces_artifact(project: Path):
     assert len(artifacts) == 1
 
 
-def test_info_expands_full_component_set(project: Path):
+def _mock_manifest_download(monkeypatch, source_path: Path) -> None:
+    """Mock the HTTPS manifest fetch to return a locally-authored manifest.
+
+    Catalog ``download_url``s are HTTPS-only, so ``info`` tests can no longer
+    point one at a local file. Patch ``_download_manifest`` to return the
+    manifest parsed from *source_path* (a bundle.yml or a .zip artifact),
+    exercising ``info``'s expansion without a network call.
+    """
+    from specify_cli.commands.bundle import _local_manifest_source
+
+    monkeypatch.setattr(
+        "specify_cli.commands.bundle._download_manifest",
+        lambda resolved, *, offline: _local_manifest_source(str(source_path)),
+    )
+
+
+def test_info_expands_full_component_set(project: Path, monkeypatch):
     bundle_dir = project / "src-bundle"
     bundle_dir.mkdir()
     (bundle_dir / "bundle.yml").write_text(
@@ -183,13 +199,14 @@ def test_info_expands_full_component_set(project: Path):
     )
     catalog = project / "local-catalog.json"
     entry = catalog_entry_dict(
-        "demo-bundle", download_url=str(bundle_dir / "bundle.yml")
+        "demo-bundle", download_url="https://example.com/demo-bundle.zip"
     )
     write_catalog_file(catalog, {"demo-bundle": entry})
     added = runner.invoke(
         app, ["bundle", "catalog", "add", str(catalog), "--id", "local"]
     )
     assert added.exit_code == 0, added.output
+    _mock_manifest_download(monkeypatch, bundle_dir / "bundle.yml")
 
     result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
     assert result.exit_code == 0, result.output
@@ -207,7 +224,7 @@ def test_info_expands_full_component_set(project: Path):
     assert "Trust" in text.output
 
 
-def test_info_expands_discovery_only_bundle(project: Path):
+def test_info_expands_discovery_only_bundle(project: Path, monkeypatch):
     # Discovery-only bundles must still be fully inspectable via `info`;
     # only `install` is refused for them.
     bundle_dir = project / "disc-bundle"
@@ -217,7 +234,7 @@ def test_info_expands_discovery_only_bundle(project: Path):
     )
     catalog = project / "disc-catalog.json"
     entry = catalog_entry_dict(
-        "demo-bundle", download_url=str(bundle_dir / "bundle.yml")
+        "demo-bundle", download_url="https://example.com/demo-bundle.zip"
     )
     write_catalog_file(catalog, {"demo-bundle": entry})
     config = {
@@ -230,6 +247,7 @@ def test_info_expands_discovery_only_bundle(project: Path):
     (project / ".specify" / "bundle-catalogs.yml").write_text(
         yaml.safe_dump(config), encoding="utf-8"
     )
+    _mock_manifest_download(monkeypatch, bundle_dir / "bundle.yml")
     result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -237,8 +255,9 @@ def test_info_expands_discovery_only_bundle(project: Path):
     assert ("extensions", "ext-a") in components
 
 
-def test_info_resolves_local_zip_download_url(project: Path):
-    # A local .zip artifact as download_url is extracted to read bundle.yml.
+def test_info_expands_zip_sourced_bundle(project: Path, monkeypatch):
+    # A .zip artifact is extracted to read bundle.yml; info expands it. (The
+    # download itself is HTTPS-only now and mocked here — see contract note.)
     bundle_dir = project / "zip-src"
     bundle_dir.mkdir()
     (bundle_dir / "bundle.yml").write_text(
@@ -249,12 +268,15 @@ def test_info_resolves_local_zip_download_url(project: Path):
     catalog = project / "zip-catalog.json"
     write_catalog_file(
         catalog,
-        {"demo-bundle": catalog_entry_dict("demo-bundle", download_url=str(artifact))},
+        {"demo-bundle": catalog_entry_dict(
+            "demo-bundle", download_url="https://example.com/demo-bundle.zip"
+        )},
     )
     added = runner.invoke(
         app, ["bundle", "catalog", "add", str(catalog), "--id", "local"]
     )
     assert added.exit_code == 0, added.output
+    _mock_manifest_download(monkeypatch, artifact)
     result = runner.invoke(app, ["bundle", "info", "demo-bundle", "--json", "--offline"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)

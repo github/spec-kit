@@ -196,7 +196,15 @@ def find_entries_for_url(
     url: str, entries: list[AuthConfigEntry]
 ) -> list[AuthConfigEntry]:
     """Return entries whose ``hosts`` match the hostname of *url*."""
-    hostname = (urlparse(url).hostname or "").lower()
+    # A malformed authority (e.g. an unterminated IPv6 bracket "https://[::1")
+    # makes urlparse/hostname raise ValueError. Treat that the same as a
+    # host-less URL: no entry can match, so return no matches rather than
+    # leaking a raw ValueError out of the shared HTTP client (build_request /
+    # open_url call this before any URL validation).
+    try:
+        hostname = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return []
     if not hostname:
         return []
     return [

@@ -213,6 +213,52 @@ class CommandRegistrar:
             ".specify.specify/", ".specify/"
         )
 
+    @staticmethod
+    def rewrite_extension_paths(
+        text: str, extension_id: str, extension_dir: Path
+    ) -> str:
+        """Rewrite extension-relative paths to their installed locations.
+
+        Extension command bodies reference bundled files relative to the
+        extension root (e.g. ``agents/control/commander.md``). After install
+        those files live under ``.specify/extensions/<id>/``, so bare
+        references would resolve against the workspace root and never be
+        found (#2101).
+
+        Only directories that actually exist inside *extension_dir* are
+        rewritten, keeping the behaviour conservative and avoiding false
+        positives on prose. ``commands`` (slash-command sources), ``specs``
+        (user project artifacts) and dot-directories are never rewritten.
+        """
+        if not isinstance(text, str) or not text:
+            return text
+
+        skip = {"commands", ".git", "specs"}
+        try:
+            subdirs = [
+                entry.name
+                for entry in extension_dir.iterdir()
+                if entry.is_dir()
+                and entry.name not in skip
+                and not entry.name.startswith(".")
+            ]
+        except OSError:
+            return text
+
+        for subdir in subdirs:
+            # Only rewrite relative references (subdir/... or ./subdir/...);
+            # absolute paths like /subdir/... keep their meaning. Use a
+            # callable replacement: subdir/extension_id come from the
+            # filesystem and could contain backslashes or "\1"-like
+            # sequences, which would corrupt a string replacement template.
+            replacement = f".specify/extensions/{extension_id}/{subdir}/"
+            text = re.sub(
+                r'(^|[\s`"\'(])(?:\./)?' + re.escape(subdir) + "/",
+                lambda m: m.group(1) + replacement,
+                text,
+            )
+        return text
+
     def render_markdown_command(
         self, frontmatter: dict, body: str, source_id: str, context_note: str = None
     ) -> str:
@@ -638,6 +684,9 @@ class CommandRegistrar:
                     if key not in frontmatter and key in core_frontmatter:
                         frontmatter[key] = core_frontmatter[key]
                 frontmatter.pop("strategy", None)
+
+            if extension_id:
+                body = self.rewrite_extension_paths(body, extension_id, source_root)
 
             frontmatter = self._adjust_script_paths(
                 frontmatter, extension_id=extension_id
