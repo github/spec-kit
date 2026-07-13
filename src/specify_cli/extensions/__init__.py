@@ -1432,7 +1432,9 @@ class ExtensionManager:
         for filename, (content, mode) in stranded_configs.items():
             target = dest_dir / filename
             target.write_bytes(content)
-            target.chmod(mode)
+            # Mask to only user/group read-write bits to avoid restoring
+            # setuid/setgid or world-writable permissions.
+            target.chmod(mode & 0o660)
 
         # Register commands with AI agents
         registered_commands = {}
