@@ -7909,7 +7909,12 @@ class TestConfigManagerCrossExtensionEnvLeak:
     """
 
     def _install(self, project_root, ext_id):
-        (project_root / ".specify" / "extensions" / ext_id).mkdir(parents=True)
+        extensions_dir = project_root / ".specify" / "extensions"
+        (extensions_dir / ext_id).mkdir(parents=True)
+        # Register in the extension registry — the registry is the source of
+        # truth for "installed" (a bare directory can be a config-only leftover
+        # from ``ExtensionManager.remove(..., keep_config=True)``).
+        ExtensionRegistry(extensions_dir).add(ext_id, {})
 
     def test_sibling_owns_longer_prefix_env(self, tmp_path, monkeypatch):
         """SPECKIT_GIT_HOOKS_URL belongs to git-hooks when co-installed with git."""
@@ -7977,3 +7982,29 @@ class TestConfigManagerCrossExtensionEnvLeak:
 
         cfg = ConfigManager(tmp_path, "testext")._get_env_config()
         assert cfg == {"url": "v"}
+
+    def test_config_only_leftover_not_treated_as_sibling(self, tmp_path, monkeypatch):
+        """A directory left behind by ``remove(..., keep_config=True)`` must
+        NOT be treated as an installed sibling.
+
+        ``ExtensionManager.remove(keep_config=True)`` preserves the extension
+        directory (config files remain, dormant, for a possible reinstall) but
+        removes the registry entry. The sibling scan is sourced from the
+        registry, so a leftover ``git-hooks/`` directory without a registry
+        entry must not silently discard ``SPECKIT_GIT_HOOKS_*`` from ``git``.
+        """
+        self._install(tmp_path, "git")
+        # Simulate ``remove('git-hooks', keep_config=True)``: dir present,
+        # config file preserved, but no registry entry.
+        gh_dir = tmp_path / ".specify" / "extensions" / "git-hooks"
+        gh_dir.mkdir(parents=True)
+        (gh_dir / "git-hooks-config.yml").write_text("url: leftover\n")
+        # Sanity: git-hooks is NOT registered.
+        registry = ExtensionRegistry(tmp_path / ".specify" / "extensions")
+        assert "git-hooks" not in registry.keys()
+
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        # git absorbs the var (no registered sibling owns it).
+        assert cfg == {"hooks": {"url": "for_git"}}

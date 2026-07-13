@@ -2740,10 +2740,15 @@ class ConfigManager:
     def _sibling_extension_ids(self) -> list[str]:
         """Return IDs of other extensions installed alongside this one.
 
-        Scans ``.specify/extensions/`` for sibling directories and returns
-        their names. Dot-prefixed entries (``.cache``, ``.backup``, …) and
-        non-directories are skipped, so a misconfigured extensions dir never
-        raises. Returns an empty list if the extensions dir does not exist
+        Sourced from ``ExtensionRegistry`` (``.specify/extensions/.registry``)
+        rather than a directory scan: ``ExtensionManager.remove(...,
+        keep_config=True)`` deliberately preserves the extension directory
+        while dropping the registry entry, so a directory scan would treat
+        that config-only leftover as an installed sibling and keep silently
+        absorbing its ``SPECKIT_<sibling>_*`` env vars into no one. The
+        registry is the source of truth for "installed".
+
+        Returns an empty list if the registry is missing or corrupted
         (fresh project, ad-hoc test harness) so ``_get_env_config`` degrades
         to its pre-fix behaviour rather than crashing.
 
@@ -2752,14 +2757,8 @@ class ConfigManager:
         owned by ``git-hooks`` when it is co-installed with ``git``).
         """
         extensions_dir = self.project_root / ".specify" / "extensions"
-        if not extensions_dir.is_dir():
-            return []
         try:
-            return [
-                entry.name
-                for entry in extensions_dir.iterdir()
-                if entry.is_dir() and not entry.name.startswith(".")
-            ]
+            return list(ExtensionRegistry(extensions_dir).keys())
         except OSError:
             return []
 
