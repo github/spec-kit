@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-10T00:00:00Z",
+  "updated_at": "2026-07-13T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1426,6 +1426,57 @@
       "stars": 0,
       "created_at": "2026-05-06T00:00:00Z",
       "updated_at": "2026-05-06T00:00:00Z"
+    },
+    "gates": {
+      "name": "Quality Gates (Enforcement Layer)",
+      "id": "gates",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries — agent hooks, git pre-commit, CI — with one policy file and provable enforcement (attestations, canaries, verified parity).",
+      "author": "schwichtgit",
+      "version": "0.1.0",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.1.0/gates-0.1.0.zip",
+      "repository": "https://github.com/schwichtgit/spec-gates",
+      "homepage": "https://github.com/schwichtgit/spec-gates",
+      "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "jq",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "node",
+            "required": false
+          },
+          {
+            "name": "shellcheck",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "quality",
+        "enforcement",
+        "hooks",
+        "ci",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-09T00:00:00Z",
+      "updated_at": "2026-07-13T00:00:00Z"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",

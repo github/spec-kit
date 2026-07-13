@@ -953,50 +953,32 @@ class TestCommandStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'command'" in e for e in errors)
 
-    def test_validate_rejects_non_mapping_input(self):
-        """`input: null` / list / string must fail validation, not crash at run.
-
-        Before the fix, execute() iterated ``input.items()`` and raised
-        ``AttributeError`` for a non-mapping value, bypassing validate().
-        """
-        from specify_cli.workflows.steps.command import CommandStep
-
-        step = CommandStep()
-        for bad in (None, [1, 2], "foo"):
-            errors = step.validate({"id": "t", "command": "/x", "input": bad})
-            assert any("'input' must be a mapping" in e for e in errors), (
-                f"expected mapping error for input={bad!r}, got {errors!r}"
-            )
-
-    def test_execute_non_mapping_input_does_not_crash(self):
-        """execute() must fail cleanly *before* dispatch when validate() is bypassed.
-
-        Some callers (e.g. ad-hoc step execution) skip
-        ``WorkflowEngine.validate()``. In that path, a non-mapping ``input``
-        used to raise ``AttributeError: 'NoneType' object has no attribute
-        'items'`` from execute(). It must now fail with a field-specific
-        validation error *before* ``_try_dispatch`` runs — silent coercion to
-        ``{}`` would let the integration CLI (if installed) execute the command
-        with empty arguments and return ``COMPLETED``, masking the config error.
-        """
-        from unittest.mock import patch
+    def test_validate_rejects_non_mapping_input_and_options(self):
         from specify_cli.workflows.steps.command import CommandStep
         from specify_cli.workflows.base import StepContext, StepStatus
 
         step = CommandStep()
-        ctx = StepContext(default_integration="claude", project_root="/tmp")
-        # Patch ``_try_dispatch`` (not ``shutil.which``) so the test would also
-        # catch a regression where the guard is removed and dispatch runs.
-        with patch.object(CommandStep, "_try_dispatch") as mock_dispatch:
-            result = step.execute(
-                {"id": "t", "command": "/speckit.specify", "input": None},
-                ctx,
-            )
-        mock_dispatch.assert_not_called()
-        assert result.status == StepStatus.FAILED
-        assert "'input' must be a mapping" in (result.error or "")
-        assert result.output["dispatched"] is False
-        assert result.output["input"] == {}
+        # execute() does input.items() / options.update(); a non-mapping must be
+        # reported by validate(), not crash at run time (like switch 'cases').
+        for bad in (None, "args", ["a", "b"], 5):
+            errs = step.validate({"id": "c", "command": "/x", "input": bad})
+            assert any("'input' must be a mapping" in e for e in errs), bad
+        errs = step.validate({"id": "c", "command": "/x", "options": 42})
+        assert any("'options' must be a mapping" in e for e in errs)
+        # a valid mapping config is still accepted
+        assert step.validate({"id": "c", "command": "/x", "input": {"args": "y"}, "options": {"k": 1}}) == []
+        # execute() has no auto-validation guarantee (the engine may skip
+        # validate), so a non-mapping input/options FAILS the step with the same
+        # contract error — it does not silently coerce to empty and report
+        # COMPLETED (which would defeat continue_on_error).
+        res_in = step.execute({"id": "c", "command": "echo", "input": None}, StepContext())
+        assert res_in.status is StepStatus.FAILED
+        assert "'input' must be a mapping" in (res_in.error or "")
+        res_opt = step.execute(
+            {"id": "c", "command": "echo", "input": {}, "options": 42}, StepContext()
+        )
+        assert res_opt.status is StepStatus.FAILED
+        assert "'options' must be a mapping" in (res_opt.error or "")
 
     def test_step_override_integration(self):
         from unittest.mock import patch
@@ -2188,6 +2170,35 @@ class TestSwitchStep:
         assert result.output["matched_case"] == "__default__"
         assert result.next_steps == []
 
+    def test_execute_non_dict_cases_fails_loudly(self):
+        """A non-mapping ``cases`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-dict ``cases``, but the engine's
+        ``execute()`` does not auto-validate (see ``WorkflowEngine.load_workflow``
+        docstring). Before the guard, ``execute`` called ``cases.items()`` on the
+        raw value, so an unvalidated run with a list/scalar ``cases`` raised
+        AttributeError and took down the whole run instead of failing this step.
+        Mirrors the fan-out step's non-list ``items`` handling.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = SwitchStep()
+        ctx = StepContext(steps={"review": {"output": {"choice": "approve"}}})
+        for bad_cases in (["approve"], "approve", 5):
+            result = step.execute(
+                {
+                    "id": "route",
+                    "expression": "{{ steps.review.output.choice }}",
+                    "cases": bad_cases,
+                },
+                ctx,
+            )
+            assert result.status == StepStatus.FAILED
+            assert "'cases' must be a mapping" in (result.error or "")
+            # expression is still evaluated, so its value is surfaced for context.
+            assert result.output["expression_value"] == "approve"
+
     def test_validate_missing_expression(self):
         from specify_cli.workflows.steps.switch import SwitchStep
 
@@ -2490,6 +2501,29 @@ class TestFanInStep:
         }
         result = step.execute(config, ctx)
         assert result.output["results"] == [{}]
+
+    @pytest.mark.parametrize("bad_wait_for", ["stepA", 5, None, {"a": 1}])
+    def test_execute_non_list_wait_for_fails_loudly(self, bad_wait_for):
+        """A non-list ``wait_for`` must fail the step, not crash the run or
+        silently produce a bogus join.
+
+        ``validate`` rejects a non-list ``wait_for``, but the engine's
+        ``execute()`` does not auto-validate. Before the guard, ``execute``
+        iterated the raw value: a scalar (int/None) raised TypeError and took
+        down the whole run, while a string silently iterated its characters and
+        returned a join of empty results with a COMPLETED status — the exact
+        "silent empty result + COMPLETED" wiring bug the engine's fan-in
+        validation warns against. Mirrors the fan-out non-list ``items`` guard.
+        """
+        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanInStep()
+        ctx = StepContext(steps={"a": {"output": {"x": 1}}})
+        result = step.execute({"id": "collect", "wait_for": bad_wait_for}, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "'wait_for' must be a list" in (result.error or "")
+        assert result.output["results"] == []
 
     def test_validate_empty_wait_for(self):
         from specify_cli.workflows.steps.fan_in import FanInStep

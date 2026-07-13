@@ -31,23 +31,15 @@ class CommandStep(StepBase):
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         command = config.get("command", "")
         input_data = config.get("input", {})
-        # A non-mapping ``input`` (``null``, list, string, …) is a config error.
-        # ``validate()`` catches this at load time; guard here so a caller that
-        # bypasses ``WorkflowEngine.validate()`` still fails cleanly rather than
-        # raising ``AttributeError`` from ``input_data.items()``.  Silently
-        # coercing to ``{}`` and continuing would let ``_try_dispatch`` run the
-        # command with empty arguments when the CLI is installed, masking the
-        # misconfiguration and possibly executing an unintended external
-        # command; fail before dispatch instead.
+        # validate() rejects a non-mapping input, but the engine does not
+        # auto-validate before execute(); a workflow that skipped validation can
+        # still reach here. Fail the step with the same contract error rather
+        # than silently coercing to {} and dispatching with empty args — that
+        # would change the command's meaning, hide the config error, and report
+        # COMPLETED, defeating the per-step FAILED / continue_on_error behavior.
         if not isinstance(input_data, dict):
             return StepResult(
                 status=StepStatus.FAILED,
-                output={
-                    "command": command,
-                    "input": {},
-                    "dispatched": False,
-                    "exit_code": 1,
-                },
                 error=(
                     f"Command step {config.get('id', '?')!r}: 'input' must be a "
                     f"mapping, got {type(input_data).__name__}."
@@ -72,8 +64,18 @@ class CommandStep(StepBase):
         # Merge options (workflow defaults ← step overrides)
         options = dict(context.default_options)
         step_options = config.get("options", {})
-        if step_options:
-            options.update(step_options)
+        # Same rationale as 'input': a malformed options fails the step rather
+        # than being silently ignored (which would let an invalid step run and
+        # apparently complete).
+        if not isinstance(step_options, dict):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Command step {config.get('id', '?')!r}: 'options' must be a "
+                    f"mapping, got {type(step_options).__name__}."
+                ),
+            )
+        options.update(step_options)
 
         # Attempt CLI dispatch
         args_str = str(resolved_input.get("args", ""))
@@ -177,13 +179,16 @@ class CommandStep(StepBase):
             errors.append(
                 f"Command step {config.get('id', '?')!r} is missing 'command' field."
             )
+        # execute() iterates input.items() and options.update(step_options); a
+        # non-mapping here would raise at run time. Validate the shape like the
+        # sibling steps (switch 'cases', fan-out 'step') so it is reported, not
+        # crashed on.
         if "input" in config and not isinstance(config["input"], dict):
-            # ``execute`` iterates ``input.items()`` to resolve template expressions;
-            # a non-mapping ``input`` (``null``, list, string) would crash there
-            # with a bare ``AttributeError``. Reject at validation so the failure
-            # surfaces at load time with a message that points at the field.
             errors.append(
-                f"Command step {config.get('id', '?')!r}: 'input' must be a "
-                f"mapping, got {type(config['input']).__name__}."
+                f"Command step {config.get('id', '?')!r}: 'input' must be a mapping."
+            )
+        if "options" in config and not isinstance(config["options"], dict):
+            errors.append(
+                f"Command step {config.get('id', '?')!r}: 'options' must be a mapping."
             )
         return errors
