@@ -13,12 +13,12 @@ repository, and add the AI Team extension, handoff-spec preset, and workflows:
 specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
 specify extension add bug
-specify preset add ai-team-handoff-spec
+specify preset add ai-team-sdd-governance
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset composes handoff spec rules and composite AI Team
+The `ai-team-sdd-governance` preset composes handoff spec rules and composite AI Team
 gates into native SDD commands (checks/evidence in converge
 or bug.test). Plan check is `speckit.ai-team.plan-check` (chat report, not preset).
 The `bug` extension is required for bugfix composite evidence on `speckit.bug.test`.
@@ -32,7 +32,7 @@ AI Team feature work uses three cooperating layers:
 | Layer | What runs | Typical output |
 |---|---|---|
 | **Extension** | `speckit.ai-team.plan-check` after `speckit.plan` | Plan Check Report in **chat**; `plan_check` summary in work context |
-| **Preset** | `ai-team-handoff-spec` on `converge`, `bug.test` | Handoff spec rules; composite checks, Evidence Board |
+| **Preset** | `ai-team-sdd-governance` on `converge`, `bug.test` | Handoff spec rules; composite checks, Evidence Board |
 | **Workflow** | `review-plan`, `review-tasks`, … | **Human** approve / revise / reject |
 
 The bundled `ai-team-sdd` workflow does **not** include core `speckit.checklist`.

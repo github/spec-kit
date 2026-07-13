@@ -59,7 +59,7 @@ plain-language request -> read-only intake -> reviewed work item
 | Layer | Example | Output |
 |---|---|---|
 | Extension command | `speckit.ai-team.plan-check` | Plan Check Report in chat; `plan_check` in work context |
-| Preset (optional) | `ai-team-handoff-spec` on `converge` / `bug.test` | Handoff spec rules; composite checks / evidence |
+| Preset (optional) | `ai-team-sdd-governance` on `converge` / `bug.test` | Handoff spec rules; composite checks / evidence |
 | Workflow human gate | `review-plan`, `review-tasks` | You approve, revise, or reject before the next SDD step |
 
 The `ai-team-sdd` workflow does **not** run core `speckit.checklist`. Requirement-quality
@@ -92,7 +92,7 @@ uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.g
 specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
 specify extension add bug
-specify preset add ai-team-handoff-spec
+specify preset add ai-team-sdd-governance
 specify workflow add ai-team-intake
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
@@ -105,7 +105,7 @@ inside `speckit.bug.test`).
 Plan Check Report in chat (no gate markdown file), and records `plan_check` in the
 Work Context Package.
 
-**Preset:** `ai-team-handoff-spec` composes handoff spec rules and composite AI Team
+**Preset:** `ai-team-sdd-governance` composes handoff spec rules and composite AI Team
 logic into native commands: checks/evidence in `speckit.converge` (feature) or
 `speckit.bug.test` (bugfix). `speckit.analyze` stays native (read-only report).
 

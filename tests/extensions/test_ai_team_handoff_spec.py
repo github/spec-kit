@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 EXTENSION_ROOT = REPO_ROOT / "extensions" / "ai-team"
 COMMON_SH = REPO_ROOT / "scripts" / "bash" / "common.sh"
 SYNC_SH = EXTENSION_ROOT / "scripts" / "bash" / "sync-handoff-spec.sh"
-PRESET_ROOT = EXTENSION_ROOT / "preset"
+PRESET_ROOT = REPO_ROOT / "presets" / "ai-team-sdd-governance"
 
 
 def _install_handoff_repo(repo: Path, feature_dir: str = "specs/001-test") -> Path:
@@ -70,7 +70,7 @@ def test_ai_team_handoff_spec_hooks_registered():
 
 def test_ai_team_handoff_spec_preset_files():
     preset = yaml.safe_load((PRESET_ROOT / "preset.yml").read_text(encoding="utf-8"))
-    assert preset["preset"]["id"] == "ai-team-handoff-spec"
+    assert preset["preset"]["id"] == "ai-team-sdd-governance"
     entries = preset["provides"]["templates"]
     names = {e["name"] for e in entries}
     assert names == {

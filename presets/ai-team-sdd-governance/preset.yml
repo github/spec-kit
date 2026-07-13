@@ -1,7 +1,7 @@
 schema_version: "1.0"
 
 preset:
-  id: ai-team-handoff-spec
+  id: ai-team-sdd-governance
   name: "AI Team SDD Governance Overlay"
   version: "1.0.0"
   description: "Compose work-item traceability, handoff reading, plan/task boundaries, architecture convergence, and evidence into native SDD commands."
@@ -64,5 +64,6 @@ provides:
 
 tags:
   - ai-team
-  - handoff
-  - remote-spec
+  - sdd
+  - governance
+  - evidence

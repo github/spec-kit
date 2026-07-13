@@ -402,12 +402,12 @@ installs (plus `bug` for bugfix):
 ```bash
 specify extension add ai-team
 specify extension add bug
-specify preset add ai-team-handoff-spec
+specify preset add ai-team-sdd-governance
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset composes into native SDD and bug commands:
+The `ai-team-sdd-governance` preset composes into native SDD and bug commands:
 
 - **prepend** on `plan`, `tasks`, `plan-template`: prefer `spec.override.md` when reading requirements
 - **wrap** on `converge`: handoff spec before core steps, composite checks / evidence after
@@ -425,7 +425,7 @@ For local development:
 
 ```bash
 specify extension add --dev /path/to/spec-kit/extensions/ai-team
-specify preset add --dev /path/to/spec-kit/extensions/ai-team/preset
+specify preset add ai-team-sdd-governance
 specify workflow add /path/to/spec-kit/workflows/ai-team-sdd
 specify workflow add /path/to/spec-kit/workflows/ai-team-bugfix
 ```

@@ -52,12 +52,12 @@ Install it in a Spec Kit project with:
 ```bash
 specify extension add ai-team
 specify extension add bug
-specify preset add ai-team-handoff-spec
+specify preset add ai-team-sdd-governance
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
 
-The `ai-team-handoff-spec` preset composes handoff spec rules and composite AI Team
+The `ai-team-sdd-governance` preset composes handoff spec rules and composite AI Team
 logic into native SDD commands (`speckit.converge`) and composite
 checks/evidence to `speckit.bug.test`. `speckit.analyze` stays native.
 

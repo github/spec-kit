@@ -25,6 +25,29 @@
         "workflow",
         "core"
       ]
+    },
+    "ai-team-sdd-governance": {
+      "name": "AI Team SDD Governance Overlay",
+      "id": "ai-team-sdd-governance",
+      "version": "1.0.0",
+      "description": "Compose work-item traceability, handoff reading, plan/task boundaries, architecture convergence, and evidence into native SDD commands.",
+      "author": "AI Team Template",
+      "repository": "https://github.com/EuphoriaYan/spec-kit",
+      "license": "MIT",
+      "bundled": true,
+      "requires": {
+        "speckit_version": ">=0.12.4"
+      },
+      "provides": {
+        "commands": 6,
+        "templates": 2
+      },
+      "tags": [
+        "ai-team",
+        "sdd",
+        "governance",
+        "evidence"
+      ]
     }
   }
 }

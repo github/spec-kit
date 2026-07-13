@@ -112,7 +112,7 @@ contains, imports, calls, implements, extends, reads_config, tests, depends_on
 8. Hand the graph artifact to `speckit.ai-team.impact`, `speckit.plan`,
    `speckit.ai-team.plan-check`, `speckit.analyze`, or `speckit.converge`
    (composite checks and evidence run inside converge when preset
-   `ai-team-handoff-spec` is installed).
+   `ai-team-sdd-governance` is installed).
 
 ## Stop Conditions
 
