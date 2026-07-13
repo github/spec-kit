@@ -315,6 +315,20 @@ class TestFindEntriesForUrl:
     def test_empty_url_returns_empty(self):
         assert find_entries_for_url("", [_github_entry()]) == []
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://[::1",                 # unterminated ipv6 bracket
+            "https://[not-an-ip]/file",     # bracketed non-ip host
+        ],
+    )
+    def test_malformed_url_returns_empty(self, url):
+        # A malformed authority makes urlparse/hostname raise ValueError.
+        # Since no entry can match such a URL, this must return no matches
+        # (like a host-less URL) rather than leaking a raw ValueError out of
+        # the shared HTTP client.
+        assert find_entries_for_url(url, [_github_entry()]) == []
+
     def test_empty_entries_returns_empty(self):
         assert find_entries_for_url("https://github.com/org/repo", []) == []
 

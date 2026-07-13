@@ -982,7 +982,16 @@ class WorkflowEngine:
                     from .expressions import evaluate_condition
 
                     max_iters = step_config.get("max_iterations")
-                    if not isinstance(max_iters, int) or max_iters < 1:
+                    # A bool is an int in Python (isinstance(True, int) is True
+                    # and True == 1), so a bool max_iterations would slip past
+                    # the int check and cap the loop at range(0)==1 iteration
+                    # instead of the default. Exclude bools, mirroring the
+                    # while/do-while validators and the continue_on_error guard.
+                    if (
+                        isinstance(max_iters, bool)
+                        or not isinstance(max_iters, int)
+                        or max_iters < 1
+                    ):
                         max_iters = 10
                     condition = step_config.get("condition", False)
                     for _loop_iter in range(max_iters - 1):

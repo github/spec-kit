@@ -7628,3 +7628,56 @@ class TestConfigManagerNonMappingYaml:
         (ext_dir / "jira-config.yml").write_text("just a string\n", encoding="utf-8")
         executor = HookExecutor(tmp_path)
         assert executor._evaluate_condition("config.x is set", "jira") is False
+
+
+class TestConfigManagerEnvPrefixCollision:
+    """Prefix-colliding env vars must not crash or clobber nested config."""
+
+    def test_scalar_then_nested_yields_nested(self, tmp_path, monkeypatch):
+        """SPECKIT_X_CONNECTION=x then SPECKIT_X_CONNECTION_URL=y.
+
+        The scalar-first order previously raised TypeError ('str' object
+        does not support item assignment) when the walk indexed into 'x'.
+        """
+        monkeypatch.setenv("SPECKIT_TESTEXT_CONNECTION", "x")
+        monkeypatch.setenv("SPECKIT_TESTEXT_CONNECTION_URL", "y")
+        cm = ConfigManager(tmp_path, "testext")
+        assert cm._get_env_config() == {"connection": {"url": "y"}}
+
+    def test_nested_then_scalar_does_not_clobber(self, tmp_path, monkeypatch):
+        """Reverse order previously returned {'connection': 'x'}, losing url."""
+        monkeypatch.setenv("SPECKIT_TESTEXT_CONNECTION_URL", "y")
+        monkeypatch.setenv("SPECKIT_TESTEXT_CONNECTION", "x")
+        cm = ConfigManager(tmp_path, "testext")
+        assert cm._get_env_config() == {"connection": {"url": "y"}}
+
+    def test_colliding_env_does_not_disable_hook_condition(self, tmp_path, monkeypatch):
+        """`config.connection.url is set` must stay True under colliding env.
+
+        Before the fix the TypeError propagated into should_execute_hook's
+        blanket `except Exception: return False`, silently disabling the hook.
+        """
+        ext_dir = tmp_path / ".specify" / "extensions" / "testext"
+        ext_dir.mkdir(parents=True)
+        (ext_dir / "testext-config.yml").write_text(
+            "connection:\n  url: https://example.com\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("SPECKIT_TESTEXT_CONNECTION", "x")
+        monkeypatch.setenv("SPECKIT_TESTEXT_CONNECTION_URL", "y")
+        executor = HookExecutor(tmp_path)
+        # Exercise the public API: before the fix the TypeError was swallowed
+        # by should_execute_hook's `except Exception: return False`, so the
+        # hook was silently disabled (False); after the fix it returns True.
+        assert executor.should_execute_hook(
+            {"condition": "config.connection.url is set", "extension": "testext"}
+        ) is True
+
+    def test_malformed_env_names_ignored(self, tmp_path, monkeypatch):
+        """A name with no key (SPECKIT_X_) or empty parts (consecutive
+        underscores) must not create an entry under an empty key."""
+        monkeypatch.setenv("SPECKIT_TESTEXT_", "orphan")  # no key at all
+        monkeypatch.setenv("SPECKIT_TESTEXT_A__B", "z")   # empty middle part
+        cm = ConfigManager(tmp_path, "testext")
+        cfg = cm._get_env_config()
+        assert "" not in cfg
+        assert cfg == {"a": {"b": "z"}}
