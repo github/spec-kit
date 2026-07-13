@@ -460,6 +460,34 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.s | contains('ab') }}", ctx2) is True
         assert evaluate_expression("{{ inputs.missing | default('a|b') }}", ctx2) == "a|b"
 
+    def test_membership_against_non_iterable_is_false_not_error(self):
+        from specify_cli.workflows.expressions import (
+            evaluate_condition,
+            evaluate_expression,
+        )
+        from specify_cli.workflows.base import StepContext
+
+        # A non-iterable right operand (int, bool, None, float) makes a raw
+        # `x in y` raise TypeError in Python. The evaluator must treat it as
+        # "not contained" (False, and `not in` as True) instead of leaking the
+        # TypeError and crashing the whole workflow run. This generalizes the
+        # previous `right is not None` guard and mirrors _safe_compare, which
+        # already swallows TypeError for the ordering operators.
+        ctx = StepContext(inputs={"tag": "x", "count": 5, "ratio": 1.5, "flag": True})
+        assert evaluate_expression("{{ inputs.tag in inputs.count }}", ctx) is False
+        assert evaluate_expression("{{ inputs.tag not in inputs.count }}", ctx) is True
+        assert evaluate_expression("{{ 'a' in inputs.ratio }}", ctx) is False
+        assert evaluate_expression("{{ 'a' in inputs.flag }}", ctx) is False
+        assert evaluate_expression("{{ inputs.tag in inputs.missing }}", ctx) is False
+        # A condition that would otherwise crash the run now evaluates cleanly.
+        assert evaluate_condition("{{ inputs.tag in inputs.count }}", ctx) is False
+
+        # Regression: genuine membership over a real iterable still works.
+        ok = StepContext(inputs={"items": ["x", "y"], "s": "xyz"})
+        assert evaluate_expression("{{ 'x' in inputs.items }}", ok) is True
+        assert evaluate_expression("{{ 'z' not in inputs.items }}", ok) is True
+        assert evaluate_expression("{{ 'y' in inputs.s }}", ok) is True
+
     def test_filter_default(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
@@ -1987,6 +2015,46 @@ class TestIfThenStep:
         step = IfThenStep()
         errors = step.validate({"id": "test", "then": []})
         assert any("missing 'condition'" in e for e in errors)
+
+    @pytest.mark.parametrize("bad_else", [False, 0, "", {}, 42])
+    def test_validate_rejects_non_list_else(self, bad_else):
+        """A non-list 'else' must be rejected even when it is falsy.
+
+        The original guard used ``if else_branch and ...`` which
+        short-circuits for falsy non-list values (False/0/''/{}), letting a
+        malformed else-branch pass validation only to be silently skipped at
+        runtime. ``then`` is already strictly validated; ``else`` must match.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate(
+            {"id": "i", "condition": "true", "then": [], "else": bad_else}
+        )
+        assert any("'else' must be a list of steps" in e for e in errors)
+
+    @pytest.mark.parametrize("ok_else", [None, [], [{"id": "x", "command": "/y"}]])
+    def test_validate_accepts_valid_else(self, ok_else):
+        """An explicit 'else' of None or a list stays valid.
+
+        ``else`` is set explicitly here (including ``else: None``) so the
+        explicit-None case is exercised, not just the missing-key case.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate(
+            {"id": "i", "condition": "true", "then": [], "else": ok_else}
+        )
+        assert not any("'else'" in e for e in errors)
+
+    def test_validate_accepts_missing_else(self):
+        """A missing 'else' key stays valid (no else branch)."""
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate({"id": "i", "condition": "true", "then": []})
+        assert not any("'else'" in e for e in errors)
 
 
 class TestSwitchStep:
@@ -3872,6 +3940,56 @@ steps:
         assert "retry-loop:tick:1" in state.step_results
         assert "retry-loop:tick:2" in state.step_results
 
+    def test_loop_with_bool_max_iterations_uses_default_cap(self, project_dir):
+        """A boolean max_iterations must fall back to the default cap of 10,
+        not be treated as the int 1 (bool-is-int trap).
+
+        ``max_iterations: true`` would otherwise slip past the int check
+        (``isinstance(True, int)`` is True and ``True < 1`` is False) and
+        cap the loop at ``range(True - 1) == range(0)`` — a single
+        iteration. ``execute()`` does not auto-validate, so the engine's own
+        guard is the only line of defence here.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        import sys
+
+        counter_file = project_dir / ".counter"
+        counter_file.write_text("0", encoding="utf-8")
+        py = sys.executable
+        script_file = project_dir / "_tick.py"
+        script_file.write_text(
+            f"import pathlib; p = pathlib.Path(r'{counter_file}')\n"
+            "n = int(p.read_text()) + 1; p.write_text(str(n))\n"
+            "print('pending', end='')\n",
+            encoding="utf-8",
+        )
+
+        yaml_str = f"""
+schema_version: "1.0"
+workflow:
+  id: "while-bool-max-iterations"
+  name: "While Bool Max Iterations"
+  version: "1.0.0"
+steps:
+  - id: retry-loop
+    type: while
+    condition: "{{{{ 'done' not in steps.tick.output.stdout }}}}"
+    max_iterations: true
+    steps:
+      - id: tick
+        type: shell
+        run: '"{py}" "{script_file}"'
+"""
+        definition = WorkflowDefinition.from_string(yaml_str)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        # Falls back to the default cap of 10, not range(True - 1) == 1 run.
+        assert counter_file.read_text(encoding="utf-8").strip() == "10"
+
     def test_do_while_loop_runs_to_max_when_condition_stays_true(self, project_dir):
         """Do-while loop must still run to max_iterations when the condition
         never becomes false.
@@ -4746,11 +4864,58 @@ class TestWorkflowRegistry:
         registry2 = WorkflowRegistry(project_dir)
         assert registry2.is_installed("test-wf")
 
+    @pytest.mark.parametrize("bad_content", ["[]", '{"schema_version": "1.0"}'])
+    def test_load_tolerates_misshaped_registry(self, project_dir, bad_content):
+        """A JSON-valid but mis-shaped registry file must not crash every method.
+
+        A list root, or a dict lacking a 'workflows' mapping, previously made
+        is_installed/get/list/remove/add raise TypeError/KeyError. Mirrors the
+        shape guard StepRegistry._load already has.
+        """
+        from specify_cli.workflows.catalog import WorkflowRegistry
+
+        reg_path = project_dir / ".specify" / "workflows" / "workflow-registry.json"
+        reg_path.parent.mkdir(parents=True, exist_ok=True)
+        reg_path.write_text(bad_content, encoding="utf-8")
+
+        registry = WorkflowRegistry(project_dir)
+        assert registry.data == {
+            "schema_version": WorkflowRegistry.SCHEMA_VERSION,
+            "workflows": {},
+        }
+        # None of these should raise on the recovered-default shape.
+        assert registry.is_installed("x") is False
+        assert registry.get("x") is None
+        assert registry.list() == {}  # list() always returns a dict
+        registry.remove("x")
+        registry.add("x", {"name": "X"})
+        assert registry.is_installed("x")
+
 
 # ===== Workflow Catalog Tests =====
 
 class TestWorkflowCatalog:
     """Test WorkflowCatalog catalog resolution."""
+
+    def test_search_with_non_string_fields(self, project_dir, monkeypatch):
+        """Non-string workflow fields (null/int name/description) must not
+        raise TypeError in search — StepCatalog.search already coerces these."""
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        catalog = WorkflowCatalog(project_dir)
+        monkeypatch.setattr(catalog, "_get_merged_workflows", lambda **kw: {
+            "42": {
+                "id": 42,
+                "name": None,
+                "description": 99,
+                "_catalog_name": "test",
+                "_install_allowed": True,
+            },
+        })
+
+        assert len(catalog.search()) == 1
+        assert len(catalog.search(query="42")) == 1
+        assert len(catalog.search(query="missing")) == 0
 
     def test_default_catalogs(self, project_dir, monkeypatch):
         from specify_cli.workflows.catalog import WorkflowCatalog
