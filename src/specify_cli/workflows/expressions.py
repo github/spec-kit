@@ -512,15 +512,14 @@ def _coerce_number(value: Any) -> Any:
 
 
 def _safe_contains(left: Any, right: Any) -> bool:
-    """Return ``left in right``, treating a non-container *right* as empty.
+"""Return ``left in right`` safely.
 
-    ``left in right`` raises ``TypeError`` when *right* is not a container or
-    iterable (int, bool, float, ...) and raises no membership at all when it is
-    ``None``. Both cases mean "nothing is contained", so return ``False`` rather
-    than leaking a raw ``TypeError`` that crashes the workflow run. This mirrors
-    ``_safe_compare``, which already swallows ``TypeError`` for the ordering
-    operators. ``not in`` is derived by negating this result.
-    """
+Returns ``False`` when *right* is ``None`` or when the membership test raises
+``TypeError`` (e.g. non-iterable *right*, unhashable *left*, or incompatible
+operand types), instead of propagating the exception and crashing the workflow.
+
+``not in`` is derived by negating this result.
+"""
     if right is None:
         return False
     try:
