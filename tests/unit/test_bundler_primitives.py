@@ -299,8 +299,6 @@ def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
         "components": [{"kind": "extensions", "id": "my-ext"}],
     }
     manifest = BundleManifest(raw, source_id="test")
-    from specify_cli.bundler.services.adapters import DefaultPrimitiveInstaller
-
     installer = DefaultPrimitiveInstaller(allow_network=False)
     # First install
     install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
@@ -315,4 +313,10 @@ def _plan(manifest):
     from specify_cli.bundler.models.manifest import ComponentRef as CR
 
     components = [CR(kind=c.kind, id=c.id) for c in manifest.components]
-    return InstallPlan(bundle_id=manifest.bundle_id, version=manifest.version, components=components)
+    return InstallPlan(
+        bundle_id=manifest.bundle_id,
+        version=manifest.version,
+        role=manifest.bundle.role,
+        effective_integration=None,
+        components=components,
+    )
