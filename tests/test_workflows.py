@@ -460,6 +460,34 @@ class TestExpressions:
         assert evaluate_expression("{{ inputs.s | contains('ab') }}", ctx2) is True
         assert evaluate_expression("{{ inputs.missing | default('a|b') }}", ctx2) == "a|b"
 
+    def test_membership_against_non_iterable_is_false_not_error(self):
+        from specify_cli.workflows.expressions import (
+            evaluate_condition,
+            evaluate_expression,
+        )
+        from specify_cli.workflows.base import StepContext
+
+        # A non-iterable right operand (int, bool, None, float) makes a raw
+        # `x in y` raise TypeError in Python. The evaluator must treat it as
+        # "not contained" (False, and `not in` as True) instead of leaking the
+        # TypeError and crashing the whole workflow run. This generalizes the
+        # previous `right is not None` guard and mirrors _safe_compare, which
+        # already swallows TypeError for the ordering operators.
+        ctx = StepContext(inputs={"tag": "x", "count": 5, "ratio": 1.5, "flag": True})
+        assert evaluate_expression("{{ inputs.tag in inputs.count }}", ctx) is False
+        assert evaluate_expression("{{ inputs.tag not in inputs.count }}", ctx) is True
+        assert evaluate_expression("{{ 'a' in inputs.ratio }}", ctx) is False
+        assert evaluate_expression("{{ 'a' in inputs.flag }}", ctx) is False
+        assert evaluate_expression("{{ inputs.tag in inputs.missing }}", ctx) is False
+        # A condition that would otherwise crash the run now evaluates cleanly.
+        assert evaluate_condition("{{ inputs.tag in inputs.count }}", ctx) is False
+
+        # Regression: genuine membership over a real iterable still works.
+        ok = StepContext(inputs={"items": ["x", "y"], "s": "xyz"})
+        assert evaluate_expression("{{ 'x' in inputs.items }}", ok) is True
+        assert evaluate_expression("{{ 'z' not in inputs.items }}", ok) is True
+        assert evaluate_expression("{{ 'y' in inputs.s }}", ok) is True
+
     def test_filter_default(self):
         from specify_cli.workflows.expressions import evaluate_expression
         from specify_cli.workflows.base import StepContext
