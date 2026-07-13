@@ -1683,6 +1683,38 @@ class TestExtensionManager:
         assert config_file.is_file()
         assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
 
+    def test_reinstall_config_survives_copytree_failure(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """The preserved config is captured in memory and the old dir is removed
+        before copytree runs. If copytree fails, the config must be written back
+        (not lost) so a failed reinstall leaves the user's config intact."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("api_key: MY-CUSTOMIZED-VALUE")
+        config_file.chmod(0o600)
+        assert manager.remove("test-ext", keep_config=True) is True
+
+        # Simulate a mid-reinstall failure after the old dir was removed.
+        def boom(src, dst, *args, **kwargs):
+            raise OSError("simulated disk-full during copytree")
+
+        monkeypatch.setattr(shutil, "copytree", boom)
+
+        with pytest.raises(OSError):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Config recovered despite the failure (was permanently lost before).
+        assert config_file.is_file()
+        assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
+        if platform.system() != "Windows":
+            assert config_file.stat().st_mode & 0o777 == 0o600
+
 
 # ===== CommandRegistrar Tests =====
 

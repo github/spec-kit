@@ -1343,6 +1343,44 @@ class ExtensionManager:
 
         return True
 
+    @staticmethod
+    def _atomic_restore_config(
+        dest: Path, data: bytes, mode: int, atime: float, mtime: float
+    ) -> None:
+        """Restore a preserved config to *dest* atomically (temp file + os.replace).
+
+        Writes to a sibling temp file, then ``os.replace()`` swaps it into place.
+        ``os.replace`` operates on the directory entry, so it (a) never follows a
+        symlink that may occupy *dest* — closing the check-then-use race where a
+        racing process swaps in a symlink to overwrite an external target — and
+        (b) leaves either the old file or the fully-written new one, never a
+        partial write. Mirrors ``shared_infra._write_shared_bytes``. Mode and
+        timestamps are set on the temp file (independently — either can succeed
+        on its own) so the installed file carries them from the first moment.
+        """
+        # os.replace cannot replace a directory with a file; clear a stray
+        # (non-symlink) directory at the path first. A symlink is handled by
+        # os.replace itself (it swaps the link entry without following it).
+        if dest.is_dir() and not dest.is_symlink():
+            shutil.rmtree(dest, ignore_errors=True)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            try:
+                temp_path.chmod(mode & 0o7777)  # permission bits only
+            except OSError:
+                pass
+            try:
+                os.utime(temp_path, (atime, mtime))
+            except OSError:
+                pass
+            os.replace(temp_path, dest)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+
     def install_from_directory(
         self,
         source_dir: Path,
@@ -1459,43 +1497,43 @@ class ExtensionManager:
                         st.st_mtime,
                     )
 
-        # Install extension (dest_dir computed above during self-install guard)
+        # Install extension (dest_dir computed above during self-install guard).
+        # rmtree removes the only on-disk copy of the preserved configs; the sole
+        # remaining copy is in `preserved_configs` (in memory). If copytree then
+        # fails (permissions, disk full, a bad source entry), write the configs
+        # back into a clean dest_dir before re-raising so a failed reinstall never
+        # loses the user's config.
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
         ignore_fn = self._load_extensionignore(source_dir)
-        shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+        try:
+            shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+        except Exception:
+            if preserved_configs:
+                if dest_dir.exists():
+                    shutil.rmtree(dest_dir, ignore_errors=True)
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                for name, (data, mode, atime, mtime) in preserved_configs.items():
+                    try:
+                        self._atomic_restore_config(
+                            dest_dir / name, data, mode, atime, mtime
+                        )
+                    except OSError:
+                        pass
+            raise
 
         # Restore configs preserved from a keep-config leftover (see above),
         # preserving the original file mode and timestamps. The --force
         # backup-restore below (did_remove) still takes precedence for that
-        # path, which uses .backup/ rather than an in-place leftover.
+        # path, which uses .backup/ rather than an in-place leftover. Each write
+        # is atomic (temp file + os.replace) so it never follows a symlink that
+        # may occupy the path (see _atomic_restore_config).
         for name, (data, mode, atime, mtime) in preserved_configs.items():
-            dest_cfg = dest_dir / name
-            # Never write *through* a symlink (or a non-regular-file) at this
-            # path: if dest_cfg is a symlink — copied with symlinks=True, or
-            # swapped in by a racing process between the copytree above and
-            # here — write_bytes() would follow it and clobber an arbitrary
-            # target outside the extension dir. Drop any non-regular entry
-            # first so write_bytes() always creates a fresh regular file.
             try:
-                if dest_cfg.is_symlink():
-                    dest_cfg.unlink()  # remove the link itself, never follow it
-                elif dest_cfg.is_dir():
-                    shutil.rmtree(dest_cfg)
+                self._atomic_restore_config(dest_dir / name, data, mode, atime, mtime)
             except OSError:
-                continue  # can't make the path safe — skip rather than clobber
-            dest_cfg.write_bytes(data)
-            # Restore mode and timestamps independently: a failure to set one
-            # must not prevent the other, since either can succeed on its own.
-            try:
-                os.chmod(dest_cfg, mode & 0o7777)  # permission bits only
-            except OSError:
-                pass
-            try:
-                os.utime(dest_cfg, (atime, mtime))  # and timestamps
-            except OSError:
-                pass
+                continue  # can't safely restore this one — skip rather than clobber
 
         # Register commands with AI agents
         registered_commands = {}
