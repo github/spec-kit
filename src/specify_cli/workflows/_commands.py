@@ -346,23 +346,30 @@ _RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"runs", "steps"})
 
 
 def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
-    """Reject a redirect before it is followed unless HTTPS (or loopback HTTP)."""
+    """Reject insecure redirects before they are followed."""
     import urllib.error
     from ipaddress import ip_address
     from urllib.parse import urlparse
 
-    parsed = urlparse(new_url)
-    host = parsed.hostname or ""
-    loopback = host == "localhost"
-    if not loopback:
+    def _is_loopback_http(url: str) -> bool:
+        parsed = urlparse(url)
+        if parsed.scheme != "http":
+            return False
+        host = parsed.hostname or ""
+        if host == "localhost":
+            return True
         try:
-            loopback = ip_address(host).is_loopback
+            return ip_address(host).is_loopback
         except ValueError:
-            pass
-    if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
-        raise urllib.error.URLError(
-            "redirect target must use HTTPS, or HTTP for localhost/loopback"
-        )
+            return False
+
+    if urlparse(new_url).scheme == "https":
+        return
+    if _is_loopback_http(old_url) and _is_loopback_http(new_url):
+        return
+    raise urllib.error.URLError(
+        "redirect target must use HTTPS; loopback HTTP may only redirect from loopback HTTP"
+    )
 
 
 # Workflow YAML definitions are small step/metadata text, not binaries, so
@@ -748,7 +755,7 @@ def _rollback_committed_workflow_file(
     (no backup), or remove the new file and then its directory when empty
     for a fresh install. A genuine removal failure must propagate (not be
     swallowed) so the safe wrapper below can warn instead of silently
-    leaving an orphan; a     dest_dir already absent is not itself an error."""
+    leaving an orphan; a dest_dir already absent is not itself an error."""
     if backup_file is not None:
         os.replace(backup_file, dest_file)
     else:

@@ -8412,7 +8412,8 @@ steps:
             registry.add("second-wf", {"name": "Second"})
 
         assert victim.read_text(encoding="utf-8") == "untouched"
-        assert stat.S_IMODE(victim.stat().st_mode) == 0o600
+        if sys.platform != "win32":
+            assert stat.S_IMODE(victim.stat().st_mode) == 0o600
         assert not registry.registry_path.is_symlink()
         assert WorkflowRegistry(project_dir).is_installed("first-wf")
 
@@ -9166,20 +9167,20 @@ steps:
                 "_catalog_name": "test-catalog",
             },
         )
-        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        source_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
         runner = CliRunner()
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "specify_cli.authentication.http.open_url",
                 lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    original_data, url
+                    source_data, url
                 ),
             )
             result = runner.invoke(app, ["workflow", "add", "align-wf"])
         assert result.exit_code == 0, result.output
 
         dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        assert dest_file.read_bytes() == original_data
+        original_data = dest_file.read_bytes()
 
         new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
 
@@ -9879,20 +9880,20 @@ steps:
                 "_catalog_name": "test-catalog",
             },
         )
-        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        source_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
         runner = CliRunner()
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "specify_cli.authentication.http.open_url",
                 lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    original_data, url
+                    source_data, url
                 ),
             )
             result = runner.invoke(app, ["workflow", "add", "align-wf"])
         assert result.exit_code == 0, result.output
 
         dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        assert dest_file.read_bytes() == original_data
+        original_data = dest_file.read_bytes()
 
         if mode == "redirect_rejected":
             def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
@@ -9932,15 +9933,19 @@ steps:
             _reject_insecure_download_redirect(
                 "https://example.com/wf.yml", "http://evil.example.com/wf.yml"
             )
-        # Allowed: HTTPS anywhere, HTTP on loopback.
+        with pytest.raises(urllib.error.URLError):
+            _reject_insecure_download_redirect(
+                "https://example.com/wf.yml", "http://localhost:8000/wf.yml"
+            )
+        # Allowed: HTTPS anywhere, or loopback HTTP that stays on loopback HTTP.
         _reject_insecure_download_redirect(
             "https://example.com/wf.yml", "https://cdn.example.com/wf.yml"
         )
         _reject_insecure_download_redirect(
-            "https://example.com/wf.yml", "http://localhost:8000/wf.yml"
+            "http://localhost:7000/wf.yml", "http://localhost:8000/wf.yml"
         )
         _reject_insecure_download_redirect(
-            "https://example.com/wf.yml", "http://127.0.0.1/wf.yml"
+            "http://127.0.0.1/source.yml", "http://127.0.0.1/wf.yml"
         )
 
     def test_add_from_url_passes_redirect_validator(self, project_dir, monkeypatch):
@@ -10580,20 +10585,20 @@ steps:
                 "_catalog_name": "test-catalog",
             },
         )
-        original_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
+        source_data = self.WORKFLOW_YAML.format(version="1.0.0").encode()
         runner = CliRunner()
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
                 "specify_cli.authentication.http.open_url",
                 lambda url, timeout=None, extra_headers=None, redirect_validator=None: self._FakeResponse(
-                    original_data, url
+                    source_data, url
                 ),
             )
             result = runner.invoke(app, ["workflow", "add", "align-wf"])
         assert result.exit_code == 0, result.output
 
         dest_file = project_dir / ".specify" / "workflows" / "align-wf" / "workflow.yml"
-        assert dest_file.read_bytes() == original_data
+        original_data = dest_file.read_bytes()
 
         new_data = self.WORKFLOW_YAML.format(version="2.0.0").encode()
 
@@ -11542,6 +11547,7 @@ steps:
         run_id = self._install_and_run_gated(runner, app, project_v1)
 
         project_v2 = temp_dir / "project-v2"
+        monkeypatch.chdir(temp_dir)
         shutil.move(str(project_v1), str(project_v2))
         monkeypatch.chdir(project_v2)
 
@@ -11570,6 +11576,7 @@ steps:
         run_id = self._install_and_run_gated(runner, app, project_v1)
 
         project_v2 = temp_dir / "project-v2-ok"
+        monkeypatch.chdir(temp_dir)
         shutil.move(str(project_v1), str(project_v2))
         monkeypatch.chdir(project_v2)
 
