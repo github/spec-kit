@@ -2757,6 +2757,31 @@ class TestParseIntegrationOptionsEqualsForm:
         with pytest.raises(typer.Exit):
             _parse_integration_options(integration, "--[/red]bad")
 
+    def test_malformed_quoting_with_rich_markup_exits_cleanly(self):
+        """A malformed value carrying Rich markup must still exit cleanly.
+
+        raw_options is user-controlled. A value like '--commands-dir "[/red]foo'
+        first trips the shlex ValueError path, but the error message then
+        interpolates the raw value into console.print — an unbalanced Rich tag
+        such as '[/red]' would raise rich.errors.MarkupError there and leak a
+        traceback anyway. The value must be escaped so the clean typer.Exit
+        survives."""
+        import typer
+
+        from specify_cli.integrations._commands import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        # Unbalanced quote (shlex path) + markup injection in one value.
+        with pytest.raises(typer.Exit):
+            _parse_integration_options(integration, '--commands-dir "[/red]foo')
+
+        # Markup injection in a token that parses but is unexpected/unknown.
+        with pytest.raises(typer.Exit):
+            _parse_integration_options(integration, "[/red]foo")
+
 
 class TestUninstallNoManifestClearsInitOptions:
     def test_init_options_cleared_on_no_manifest_uninstall(self, tmp_path):
