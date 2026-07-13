@@ -1409,14 +1409,17 @@ class ExtensionManager:
         # silently discarding the preserved config.  We read those files into
         # memory now and write them back after copytree so the user's values
         # always win over the packaged defaults.
-        stranded_configs: dict[str, bytes] = {}
+        stranded_configs: dict[str, tuple[bytes, int]] = {}
         if dest_dir.exists() and not self.registry.is_installed(manifest.id):
             for cfg_file in (
                 list(dest_dir.glob("*-config.yml"))
                 + list(dest_dir.glob("*-config.local.yml"))
             ):
                 if cfg_file.is_file() and not cfg_file.is_symlink():
-                    stranded_configs[cfg_file.name] = cfg_file.read_bytes()
+                    stranded_configs[cfg_file.name] = (
+                        cfg_file.read_bytes(),
+                        cfg_file.stat().st_mode,
+                    )
 
         # Install extension (dest_dir computed above during self-install guard)
         if dest_dir.exists():
@@ -1424,6 +1427,12 @@ class ExtensionManager:
 
         ignore_fn = self._load_extensionignore(source_dir)
         shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+
+        # Restore stranded configs rescued before the rmtree above.
+        for filename, (content, mode) in stranded_configs.items():
+            target = dest_dir / filename
+            target.write_bytes(content)
+            target.chmod(mode)
 
         # Register commands with AI agents
         registered_commands = {}
@@ -1447,10 +1456,6 @@ class ExtensionManager:
         # Register hooks and update installed list in extensions.yml
         hook_executor = HookExecutor(self.project_root)
         hook_executor.register_hooks(manifest)
-
-        # Restore stranded configs rescued before the rmtree above.
-        for filename, content in stranded_configs.items():
-            (dest_dir / filename).write_bytes(content)
 
         # Restore config files from backup when --force triggered a removal.
         # Only restore *.yml config files to match what remove() backs up,

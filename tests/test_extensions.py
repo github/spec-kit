@@ -1282,7 +1282,7 @@ class TestExtensionManager:
         assert local_cfg.exists()
         assert "local_override: true" in local_cfg.read_text()
 
-
+    def test_install_force_without_existing(self, extension_dir, project_dir):
         """Test force-install when extension is NOT already installed (works normally)."""
         manager = ExtensionManager(project_dir)
 
