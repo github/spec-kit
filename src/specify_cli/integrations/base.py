@@ -653,7 +653,8 @@ class IntegrationBase(ABC):
         """Process a raw command template into agent-ready content.
 
         Performs the same transformations as the release script:
-        1. Extract ``scripts.<script_type>`` value from YAML frontmatter
+        1. Select ``scripts.<script_type>`` from YAML frontmatter, falling
+           back to the platform shell when that variant is unavailable
         2. Replace ``{SCRIPT}`` with the extracted script command
         3. Strip ``scripts:`` section from frontmatter
         4. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
@@ -662,10 +663,8 @@ class IntegrationBase(ABC):
         7. Replace ``__SPECKIT_COMMAND_<NAME>__`` with invocation strings
         """
         # 1. Extract script command from frontmatter
-        script_command = ""
-        script_pattern = re.compile(
-            rf"^\s*{re.escape(script_type)}:\s*(.+)$", re.MULTILINE
-        )
+        script_commands: dict[str, str] = {}
+        script_pattern = re.compile(r"^\s*([A-Za-z0-9_-]+):\s*(.+)$")
         # Find the scripts: block
         in_scripts = False
         for line in content.splitlines():
@@ -677,15 +676,32 @@ class IntegrationBase(ABC):
             if in_scripts:
                 m = script_pattern.match(line)
                 if m:
-                    script_command = m.group(1).strip()
-                    break
+                    script_commands[m.group(1)] = m.group(2).strip()
+
+        selected_script_type = script_type
+        if selected_script_type not in script_commands:
+            default_variant = "ps" if os.name == "nt" else "sh"
+            secondary_variant = "sh" if default_variant == "ps" else "ps"
+            fallback_order = [
+                variant
+                for variant in (default_variant, secondary_variant)
+                if variant in script_commands
+            ]
+            fallback_order.extend(
+                variant
+                for variant in script_commands
+                if variant not in fallback_order
+            )
+            selected_script_type = fallback_order[0] if fallback_order else ""
+
+        script_command = script_commands.get(selected_script_type, "")
 
         # 2. Replace {SCRIPT}
         if script_command:
             # For the Python script type, prefix the resolved interpreter so
             # the command is portable (``.py`` files are not directly
             # executable on Windows).
-            if script_type == "py":
+            if selected_script_type == "py":
                 interpreter = IntegrationBase.resolve_python_interpreter(project_root)
                 # Quote the interpreter if it contains whitespace (e.g. an
                 # absolute ``sys.executable`` path under Windows

@@ -511,6 +511,39 @@ class TestProcessTemplatePyScriptType:
         )
         assert ".venv/bin/python .specify/scripts/python/check-prerequisites.py" in result
 
+    def test_setup_py_falls_back_to_platform_shell(
+        self, monkeypatch, tmp_path
+    ):
+        template = tmp_path / "fallback.md"
+        template.write_text(
+            "---\n"
+            "scripts:\n"
+            "  sh: scripts/bash/check-prerequisites.sh --json\n"
+            "  ps: scripts/powershell/check-prerequisites.ps1 -Json\n"
+            "---\n"
+            "Run {SCRIPT} now.\n",
+            encoding="utf-8",
+        )
+        integration = StubIntegration()
+        monkeypatch.setattr(
+            integration, "list_command_templates", lambda: [template]
+        )
+
+        created = integration.setup(
+            tmp_path,
+            IntegrationManifest("stub", tmp_path),
+            script_type="py",
+        )
+
+        rendered = created[0].read_text(encoding="utf-8")
+        expected = (
+            ".specify/scripts/powershell/check-prerequisites.ps1"
+            if sys.platform == "win32"
+            else ".specify/scripts/bash/check-prerequisites.sh"
+        )
+        assert "{SCRIPT}" not in rendered
+        assert expected in rendered
+
 
 class TestInstallScriptsPython:
     def _make_integration_with_scripts(self, monkeypatch, tmp_path):
