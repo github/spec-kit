@@ -2232,7 +2232,10 @@
       "category": "docs",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.2.0"
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          { "name": "memsearch", "required": false }
+        ]
       },
       "provides": {
         "commands": 2,
