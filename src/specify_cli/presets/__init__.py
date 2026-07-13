@@ -778,6 +778,14 @@ class PresetManager:
             if manifest is None:
                 continue
 
+            # Registration can write one command and then fail on a later
+            # template. Record names first so final reconciliation can repair
+            # any partial writes even when _register_commands never returns.
+            for tmpl in manifest.templates:
+                name = tmpl.get("name")
+                if tmpl.get("type") == "command" and isinstance(name, str):
+                    affected_cmd_names.add(name)
+
             # Isolate per-preset failures: one preset that fails to register
             # must not abort registration of the remaining enabled presets.
             try:
@@ -816,19 +824,6 @@ class PresetManager:
                 # tracked so preset removal can clean them up (#2948).
                 if merged_commands != existing_commands:
                     self.registry.update(pack_id, {"registered_commands": merged_commands})
-
-                # Record this preset's command names for reconciliation now,
-                # right after the commands phase succeeds and before calling
-                # the independently fallible _register_skills(). Both used to
-                # be recorded together after skills also succeeded; if skills
-                # raised, the exception (caught below) skipped this entirely,
-                # so a preset whose commands phase wrote real content never
-                # got reconciled against the full priority stack and its raw
-                # content could be left in place instead of a project
-                # override or higher-precedence preset (#2948).
-                for tmpl in manifest.templates:
-                    if tmpl.get("type") == "command":
-                        affected_cmd_names.add(tmpl["name"])
 
                 registered_skills = self._register_skills(manifest, pack_dir)
                 raw_existing_skills = metadata.get("registered_skills")

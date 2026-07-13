@@ -4723,6 +4723,46 @@ class TestPresetSkills:
         )
         assert "Preset body" not in content
 
+    def test_rescaffold_reconciles_partial_command_write_after_failure(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A command written before _register_commands raises must still be
+        included in final priority-stack reconciliation."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+
+        overrides_dir = project_dir / ".specify" / "templates" / "overrides"
+        overrides_dir.mkdir(parents=True, exist_ok=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override specify\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "partial-command-failure-preset",
+            "speckit.specify",
+            "Preset specify",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        self._write_init_options(project_dir, ai="gemini", ai_skills=False)
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+        cmd_file = gemini_dir / "speckit.specify.toml"
+
+        def partial_register(manifest, pack_dir):
+            cmd_file.write_text("Partially written preset body\n", encoding="utf-8")
+            raise RuntimeError("simulated partial command failure")
+
+        monkeypatch.setattr(manager, "_register_commands", partial_register)
+        manager.register_enabled_presets_for_agent("gemini")
+
+        content = cmd_file.read_text(encoding="utf-8")
+        assert "Override body" in content
+        assert "Partially written preset body" not in content
+
     def test_copilot_skills_mode_skips_command_registration(self, project_dir, temp_dir):
         """``integration use copilot`` with skills mode enabled must only
         write the SKILL.md mirror, not also copilot's static command file.
