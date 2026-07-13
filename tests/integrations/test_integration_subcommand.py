@@ -2675,6 +2675,27 @@ class TestParseIntegrationOptionsEqualsForm:
         assert result_space["commands_dir"] == "./mydir"
         assert result_equals["commands_dir"] == "./mydir"
 
+    def test_unbalanced_quote_exits_cleanly(self, capsys):
+        """An unbalanced quote must exit(1) with a message, not a raw ValueError.
+
+        shlex.split() raises ValueError("No closing quotation") on an unbalanced
+        quote; the parser must translate that into the same clean typer.Exit(1)
+        UX as unknown-option / missing-value, rather than letting the traceback
+        escape (issue #3457).
+        """
+        import typer
+
+        from specify_cli.integrations._commands import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        with pytest.raises(typer.Exit) as excinfo:
+            _parse_integration_options(integration, '--commands-dir "foo')
+        assert excinfo.value.exit_code == 1
+        assert "Error: Could not parse integration options: No closing quotation." in capsys.readouterr().out
+
 
 class TestUninstallNoManifestClearsInitOptions:
     def test_init_options_cleared_on_no_manifest_uninstall(self, tmp_path):

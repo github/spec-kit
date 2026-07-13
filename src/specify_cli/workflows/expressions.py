@@ -464,9 +464,9 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
             if op == "<=":
                 return _safe_compare(left, right, "<=")
             if op == " in ":
-                return left in right if right is not None else False
+                return _safe_membership(left, right, negate=False)
             if op == " not in ":
-                return left not in right if right is not None else True
+                return _safe_membership(left, right, negate=True)
 
     # Numeric literal
     try:
@@ -509,6 +509,26 @@ def _coerce_number(value: Any) -> Any:
         except ValueError:
             return value
     return value
+
+
+def _safe_membership(left: Any, right: Any, *, negate: bool) -> bool:
+    """Safely evaluate ``left in right`` (or ``not in``) without crashing.
+
+    ``left in right`` raises ``TypeError`` whenever the operands don't support
+    membership testing — most commonly a non-iterable right operand (``None``,
+    an int, a bool), but also cases like an unhashable ``left`` against a set.
+    In every such case the membership relation is undefined, so treat it as
+    ``False`` (``not in`` as ``True``) rather than leaking the error out of the
+    evaluator and crashing the whole workflow. Mirrors the graceful
+    ``TypeError`` handling in ``_safe_compare`` for the ordering operators, and
+    generalizes the previous ``right is not None`` guard to any operand pair
+    that can't be membership-tested.
+    """
+    try:
+        contained = left in right
+    except TypeError:
+        contained = False
+    return not contained if negate else contained
 
 
 def _safe_compare(left: Any, right: Any, op: str) -> bool:

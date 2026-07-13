@@ -45,7 +45,7 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify CLI
 
-Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest tag from [Releases](https://github.com/github/spec-kit/releases):
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the latest release tag from [Releases](https://github.com/github/spec-kit/releases) — keep the leading `v` (for example, `v0.12.11`, not `0.12.11`):
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z

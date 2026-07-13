@@ -2,6 +2,36 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.13] - 2026-07-13
+
+### Changed
+
+- fix(workflows): fail switch step on non-mapping cases instead of crashing (#3481)
+- Cleanup agent-file-template.md (#2579)
+- fix: mark Kiro integration as multi-install safe (#3472)
+- fix: rewrite extension-relative subdir paths in generated command bodies (#3444)
+- fix(templates): point constitution sync checklist at installed command files (#3418)
+- feat(workflows): make shell step timeout configurable (#3327) (#3328)
+- docs: clarify that release tags keep the leading v prefix (#3463)
+- fix(workflows): don't crash on membership test against a non-iterable (#3448)
+- fix(workflows): if-step validate accepts falsy non-list else (#3264)
+- chore: release 0.12.12, begin 0.12.13.dev0 development (#3490)
+
+## [0.12.12] - 2026-07-13
+
+### Changed
+
+- fix(extensions): set-priority repairs corrupted boolean priority (#3268)
+- fix(presets): set-priority repairs corrupted boolean priority (#3269)
+- fix(workflows): engine loop cap ignores bool max_iterations (#3270)
+- docs(bundles): document --integration on 'bundle update' (#3271)
+- fix(workflows): harden catalog.py against mis-shaped registry & non-string fields (#3375)
+- Add Verify Review Ship extension to community catalog (#3450)
+- fix(bundle): reject file:// / local download_url — catalog URLs are HTTPS-only (#3344)
+- fix(extensions): handle prefix-colliding env vars in _get_env_config (#3350)
+- docs: document copilot skills mode (--skills) and markdown deprecation (#3313)
+- chore: release 0.12.11, begin 0.12.12.dev0 development (#3460)
+
 ## [0.12.11] - 2026-07-10
 
 ### Changed

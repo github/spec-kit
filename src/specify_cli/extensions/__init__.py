@@ -1078,6 +1078,11 @@ class ExtensionManager:
             frontmatter = registrar._adjust_script_paths(
                 frontmatter, extension_id=manifest.id
             )
+            # Mirror the register_commands() rewrite (#2101): resolve
+            # extension-relative subdir references (agents/, knowledge-base/,
+            # etc.) to their installed .specify/extensions/<id>/ location
+            # before the generic placeholder/path resolution below.
+            body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
@@ -2755,18 +2760,32 @@ class ConfigManager:
             if not key.startswith(prefix):
                 continue
 
-            # Remove prefix and split into parts
-            config_path = key[len(prefix) :].lower().split("_")
+            # Remove prefix and split into parts. Drop empty components from a
+            # malformed name (e.g. ``SPECKIT_<EXT>_`` with no key, or
+            # consecutive underscores ``SPECKIT_X__Y``) so we never create an
+            # entry under an empty key.
+            config_path = [p for p in key[len(prefix) :].lower().split("_") if p]
+            if not config_path:
+                continue
 
-            # Build nested dict
+            # Build nested dict. Two env vars can collide on a prefix, e.g.
+            # SPECKIT_X_CONNECTION=a and SPECKIT_X_CONNECTION_URL=b. Guard the
+            # walk so a colliding scalar is replaced by a dict (deeper/more
+            # specific vars win) instead of being indexed into — which raised
+            # TypeError ('str' object does not support item assignment) — and
+            # guard the leaf so a scalar processed after the nested var does
+            # not clobber the nested dict. Order-independent: both insertion
+            # orders yield {'connection': {'url': ...}}. Nested-wins mirrors
+            # _merge_configs' dict-preserving semantics.
             current = env_config
             for part in config_path[:-1]:
-                if part not in current:
+                if not isinstance(current.get(part), dict):
                     current[part] = {}
                 current = current[part]
 
-            # Set the final value
-            current[config_path[-1]] = value
+            # Set the final value, unless a nested dict already occupies it.
+            if not isinstance(current.get(config_path[-1]), dict):
+                current[config_path[-1]] = value
 
         return env_config
 

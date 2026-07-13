@@ -241,7 +241,7 @@ class WorkflowRegistry:
             del self.data["workflows"][workflow_id]
             try:
                 self.save()
-            except OSError:
+            except (OSError, TypeError, ValueError):
                 # Roll back the in-memory deletion so a save failure can't
                 # desync this instance from the untouched file on disk,
                 # mirroring add()'s rollback-on-save-failure.
@@ -581,9 +581,9 @@ class WorkflowCatalog:
                 q = query.lower()
                 searchable = " ".join(
                     [
-                        wf_data.get("name", ""),
-                        wf_data.get("description", ""),
-                        wf_data.get("id", ""),
+                        str(wf_data.get("name") or ""),
+                        str(wf_data.get("description") or ""),
+                        str(wf_data.get("id") or ""),
                     ]
                 ).lower()
                 if q not in searchable:
