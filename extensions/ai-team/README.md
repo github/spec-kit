@@ -396,15 +396,35 @@ knowledge consolidation, and `speckit.ai-team.support` to audit a project.
 
 ## Installation
 
-AI Team handoff spec and composite gates require **extension + preset + workflow**
-installs (plus `bug` for bugfix):
+Install the full AI Team stack in one step with the **`ai-team` bundle** (see
+[`bundles/catalog.json`](../../bundles/catalog.json)):
+
+```bash
+specify init . --integration cursor-agent
+
+# Once per project: register where the CLI fetches the bundle catalog
+specify bundle catalog add https://raw.githubusercontent.com/EuphoriaYan/spec-kit/main/bundles/catalog.json \
+  --id ai-team --policy install-allowed
+
+specify bundle info ai-team
+specify bundle install ai-team
+```
+
+Supported integrations: `codex`, `claude`, `cursor-agent`, `trae`.
+
+On an existing Spec Kit project, skip `specify init` and run `catalog add` (if
+not already registered) plus `specify bundle install ai-team`.
+
+**Alternative: manual install** (extension + preset + workflow separately):
 
 ```bash
 specify extension add ai-team
 specify extension add bug
+specify extension add agent-context
 specify preset add ai-team-sdd-governance
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
+specify workflow add ai-team-intake
 ```
 
 The `ai-team-sdd-governance` preset composes into native SDD and bug commands:
@@ -421,11 +441,11 @@ checks / evidence rules.
 The `bug` extension supplies `speckit.bug.test`, which receives composite checks
 and Evidence Board rules from the preset during bugfix workflows.
 
-For local development:
+For local development from this repository (catalog URL can point at the local
+file while iterating on `bundles/catalog.json`):
 
 ```bash
-specify extension add --dev /path/to/spec-kit/extensions/ai-team
-specify preset add ai-team-sdd-governance
-specify workflow add /path/to/spec-kit/workflows/ai-team-sdd
-specify workflow add /path/to/spec-kit/workflows/ai-team-bugfix
+specify init . --integration cursor-agent
+specify bundle catalog add ./bundles/catalog.json --id ai-team --policy install-allowed
+specify bundle install ai-team
 ```

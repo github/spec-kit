@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-07-13T00:00:00Z",
+  "catalog_url": "https://raw.githubusercontent.com/EuphoriaYan/spec-kit/main/bundles/catalog.json",
+  "bundles": {
+    "ai-team": {
+      "id": "ai-team",
+      "name": "AI Team SDD Stack",
+      "version": "0.1.0",
+      "role": "ai-team",
+      "description": "Enterprise AI Team SDD stack: extensions, governance preset, and intake/SDD/bugfix workflows.",
+      "author": "AI Team Template",
+      "repository": "https://github.com/EuphoriaYan/spec-kit",
+      "license": "MIT",
+      "download_url": "https://raw.githubusercontent.com/EuphoriaYan/spec-kit/main/bundles/ai-team/bundle.yml",
+      "requires": {
+        "speckit_version": ">=0.12.4"
+      },
+      "provides": {
+        "extensions": 3,
+        "presets": 1,
+        "workflows": 3
+      },
+      "tags": [
+        "ai-team",
+        "sdd",
+        "enterprise",
+        "governance"
+      ],
+      "verified": true
+    }
+  }
+}

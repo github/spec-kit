@@ -84,14 +84,42 @@ For detailed steps, start with
 
 ### AI Team Quick Start
 
-Install this distribution, initialize the coding repository, and add the AI
-Team extension, handoff-spec preset, and workflows:
+Install this distribution, then bootstrap each coding repository with the
+**`ai-team` bundle** (extensions, governance preset, and workflows in one
+`bundle install` — not separate primitive commands).
 
 ```bash
 uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
-specify init . --integration codex --integration-options="--skills"
+cd your-coding-repo
+
+# 1. Spec Kit project + agent integration
+specify init . --integration cursor-agent
+
+# 2. Register the bundle catalog (once per project; persisted in .specify/bundle-catalogs.yml)
+specify bundle catalog add https://raw.githubusercontent.com/EuphoriaYan/spec-kit/main/bundles/catalog.json \
+  --id ai-team --policy install-allowed
+
+# 3. Preview, then install the full stack by bundle id
+specify bundle info ai-team
+specify bundle install ai-team
+```
+
+Use `codex`, `claude`, `cursor-agent`, or `trae` for `--integration`. Add
+`--integration-options="--skills"` when initializing a fresh repo with Codex if
+you prefer skills mode.
+
+The catalog is published at [`bundles/catalog.json`](bundles/catalog.json); the
+manifest lives at [`bundles/ai-team/bundle.yml`](bundles/ai-team/bundle.yml).
+`catalog add` tells the CLI where to fetch that catalog — the file in this repo
+is the catalog content, not automatic CLI configuration.
+
+**Alternative: manual install** (same components, separate commands):
+
+```bash
+specify init . --integration cursor-agent
 specify extension add ai-team
 specify extension add bug
+specify extension add agent-context
 specify preset add ai-team-sdd-governance
 specify workflow add ai-team-intake
 specify workflow add ai-team-sdd

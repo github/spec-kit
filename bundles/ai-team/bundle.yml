@@ -1,0 +1,42 @@
+schema_version: "1.0"
+
+bundle:
+  id: ai-team
+  name: "AI Team SDD Stack"
+  version: "0.1.0"
+  role: ai-team
+  description: "Enterprise AI Team SDD stack: extensions, governance preset, and intake/SDD/bugfix workflows."
+  author: AI Team Template
+  license: MIT
+
+requires:
+  speckit_version: ">=0.12.4"
+  tools: []
+  mcp: []
+
+provides:
+  extensions:
+    - id: ai-team
+      version: "0.1.0"
+    - id: bug
+      version: "1.0.0"
+    - id: agent-context
+      version: "1.0.0"
+  presets:
+    - id: ai-team-sdd-governance
+      version: "1.0.0"
+      priority: 10
+      strategy: wrap
+  workflows:
+    - id: ai-team-intake
+      version: "0.1.0"
+    - id: ai-team-sdd
+      version: "0.1.0"
+    - id: ai-team-bugfix
+      version: "0.1.0"
+
+tags:
+  - ai-team
+  - sdd
+  - enterprise
+  - governance
