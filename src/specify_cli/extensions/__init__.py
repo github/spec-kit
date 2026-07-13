@@ -1426,7 +1426,19 @@ class ExtensionManager:
             shutil.rmtree(dest_dir)
 
         ignore_fn = self._load_extensionignore(source_dir)
-        shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+        try:
+            shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+        except BaseException:
+            # copytree failed — dest_dir may be absent or only partially
+            # created.  Write the rescued configs back now so they are not
+            # permanently lost even though the install did not complete.
+            if stranded_configs:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                for filename, (content, mode) in stranded_configs.items():
+                    target = dest_dir / filename
+                    target.write_bytes(content)
+                    target.chmod(mode & 0o660)
+            raise
 
         # Restore stranded configs rescued before the rmtree above.
         for filename, (content, mode) in stranded_configs.items():

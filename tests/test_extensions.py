@@ -1232,12 +1232,17 @@ class TestExtensionManager:
         """Reinstalling after `remove --keep-config` must not overwrite preserved config."""
         manager = ExtensionManager(project_dir)
 
-        # Install once
+        # Add a packaged default config so the reinstall has a file to overwrite.
+        # Without the fix, the packaged default would silently win on reinstall.
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\nmax_iterations: 1\n")
+
+        # Install once (packaged default is copied into the installed directory)
         manager.install_from_directory(
             extension_dir, "0.1.0", register_commands=False
         )
 
-        # Customize the config file
+        # Overwrite the installed config with user-customized values
         ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
         config_file = ext_dir / "test-ext-config.yml"
         config_file.write_text("model: custom-model\nmax_iterations: 99\n")
@@ -1248,15 +1253,17 @@ class TestExtensionManager:
         assert config_file.exists()
         assert "custom-model" in config_file.read_text()
 
-        # Plain reinstall (no --force)
+        # Plain reinstall (no --force) — packaged default is still present in
+        # extension_dir, so a naive implementation would overwrite the custom values.
         manager.install_from_directory(
             extension_dir, "0.1.0", register_commands=False
         )
 
-        # Preserved config must survive the reinstall
+        # Preserved config must survive the reinstall and beat the packaged default
         assert config_file.exists()
         assert "custom-model" in config_file.read_text()
         assert "99" in config_file.read_text()
+        assert "default-model" not in config_file.read_text()
 
     def test_reinstall_after_keep_config_preserves_local_config(
         self, extension_dir, project_dir
