@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
+import specify_cli.extensions as _ext_module
 
 from tests.conftest import strip_ansi
 from specify_cli.extensions import (
@@ -1298,7 +1299,6 @@ class TestExtensionManager:
         rollback path must write the rescued bytes back to dest_dir and restore
         the original file mode, while leaving the extension unregistered.
         """
-        import specify_cli.extensions as _ext_module
         import stat
 
         manager = ExtensionManager(project_dir)
