@@ -34,9 +34,25 @@ class CommandStep(StepBase):
         # A non-mapping ``input`` (``null``, list, string, …) is a config error.
         # ``validate()`` catches this at load time; guard here so a caller that
         # bypasses ``WorkflowEngine.validate()`` still fails cleanly rather than
-        # raising ``AttributeError`` from ``input_data.items()``.
+        # raising ``AttributeError`` from ``input_data.items()``.  Silently
+        # coercing to ``{}`` and continuing would let ``_try_dispatch`` run the
+        # command with empty arguments when the CLI is installed, masking the
+        # misconfiguration and possibly executing an unintended external
+        # command; fail before dispatch instead.
         if not isinstance(input_data, dict):
-            input_data = {}
+            return StepResult(
+                status=StepStatus.FAILED,
+                output={
+                    "command": command,
+                    "input": {},
+                    "dispatched": False,
+                    "exit_code": 1,
+                },
+                error=(
+                    f"Command step {config.get('id', '?')!r}: 'input' must be a "
+                    f"mapping, got {type(input_data).__name__}."
+                ),
+            )
 
         # Resolve expressions in input
         resolved_input: dict[str, Any] = {}

@@ -969,13 +969,15 @@ class TestCommandStep:
             )
 
     def test_execute_non_mapping_input_does_not_crash(self):
-        """execute() must fail cleanly when validate() is bypassed.
+        """execute() must fail cleanly *before* dispatch when validate() is bypassed.
 
         Some callers (e.g. ad-hoc step execution) skip
         ``WorkflowEngine.validate()``. In that path, a non-mapping ``input``
         used to raise ``AttributeError: 'NoneType' object has no attribute
-        'items'`` from execute(). Now it is treated as an empty mapping and
-        the step reports the usual dispatch failure.
+        'items'`` from execute(). It must now fail with a field-specific
+        validation error *before* ``_try_dispatch`` runs — silent coercion to
+        ``{}`` would let the integration CLI (if installed) execute the command
+        with empty arguments and return ``COMPLETED``, masking the config error.
         """
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
@@ -983,12 +985,17 @@ class TestCommandStep:
 
         step = CommandStep()
         ctx = StepContext(default_integration="claude", project_root="/tmp")
-        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+        # Patch ``_try_dispatch`` (not ``shutil.which``) so the test would also
+        # catch a regression where the guard is removed and dispatch runs.
+        with patch.object(CommandStep, "_try_dispatch") as mock_dispatch:
             result = step.execute(
                 {"id": "t", "command": "/speckit.specify", "input": None},
                 ctx,
             )
+        mock_dispatch.assert_not_called()
         assert result.status == StepStatus.FAILED
+        assert "'input' must be a mapping" in (result.error or "")
+        assert result.output["dispatched"] is False
         assert result.output["input"] == {}
 
     def test_step_override_integration(self):
