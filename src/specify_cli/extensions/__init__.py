@@ -1078,6 +1078,11 @@ class ExtensionManager:
             frontmatter = registrar._adjust_script_paths(
                 frontmatter, extension_id=manifest.id
             )
+            # Mirror the register_commands() rewrite (#2101): resolve
+            # extension-relative subdir references (agents/, knowledge-base/,
+            # etc.) to their installed .specify/extensions/<id>/ location
+            # before the generic placeholder/path resolution below.
+            body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
