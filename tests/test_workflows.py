@@ -960,11 +960,13 @@ class TestCommandStep:
         step = CommandStep()
         # execute() does input.items() / options.update(); a non-mapping must be
         # reported by validate(), not crash at run time (like switch 'cases').
+        # ``None`` is included because a bare YAML ``options:`` parses as ``None``.
         for bad in (None, "args", ["a", "b"], 5):
             errs = step.validate({"id": "c", "command": "/x", "input": bad})
             assert any("'input' must be a mapping" in e for e in errs), bad
-        errs = step.validate({"id": "c", "command": "/x", "options": 42})
-        assert any("'options' must be a mapping" in e for e in errs)
+        for bad in (None, "foo", [1, 2], 42):
+            errs = step.validate({"id": "c", "command": "/x", "options": bad})
+            assert any("'options' must be a mapping" in e for e in errs), bad
         # a valid mapping config is still accepted
         assert step.validate({"id": "c", "command": "/x", "input": {"args": "y"}, "options": {"k": 1}}) == []
         # execute() has no auto-validation guarantee (the engine may skip
@@ -979,6 +981,41 @@ class TestCommandStep:
         )
         assert res_opt.status is StepStatus.FAILED
         assert "'options' must be a mapping" in (res_opt.error or "")
+
+    def test_execute_non_mapping_options_fails_before_dispatch(self):
+        """execute() must fail *before dispatch* when validate() is bypassed.
+
+        Silently discarding a non-mapping ``options`` and continuing would
+        let an installed CLI return exit code 0 and mark the malformed step
+        ``COMPLETED``. Force ``_try_dispatch`` to a success result so an
+        accidental dispatch would surface as ``COMPLETED`` rather than
+        being masked by an unrelated CLI-missing failure.
+        """
+        from unittest.mock import patch, MagicMock
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(
+            default_integration="claude",
+            default_options={"max-tokens": 8000},
+            project_root="/tmp",
+        )
+        dispatch_ok = MagicMock(
+            return_value={"exit_code": 0, "stdout": "", "stderr": ""}
+        )
+        with patch.object(CommandStep, "_try_dispatch", dispatch_ok):
+            result = step.execute(
+                {"id": "t", "command": "/speckit.plan", "options": [1, 2]},
+                ctx,
+            )
+        assert result.status == StepStatus.FAILED
+        assert "'options' must be a mapping" in (result.error or "")
+        # Dispatch must not be attempted for a malformed options value.
+        assert not dispatch_ok.called
+        # Workflow defaults preserved; malformed step-level override discarded.
+        assert result.output["options"] == {"max-tokens": 8000}
+        assert result.output["dispatched"] is False
 
     def test_step_override_integration(self):
         from unittest.mock import patch

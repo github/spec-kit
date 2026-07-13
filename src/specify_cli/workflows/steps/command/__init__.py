@@ -61,15 +61,25 @@ class CommandStep(StepBase):
         if model and isinstance(model, str) and "{{" in model:
             model = evaluate_expression(model, context)
 
-        # Merge options (workflow defaults ← step overrides)
+        # Merge options (workflow defaults ← step overrides). Same rationale as
+        # 'input': a malformed options fails the step *before dispatch* rather
+        # than being silently ignored — a silent skip would let an installed
+        # CLI report ``COMPLETED`` for a malformed step, and ``dict.update``
+        # would still crash on a list.
         options = dict(context.default_options)
         step_options = config.get("options", {})
-        # Same rationale as 'input': a malformed options fails the step rather
-        # than being silently ignored (which would let an invalid step run and
-        # apparently complete).
         if not isinstance(step_options, dict):
             return StepResult(
                 status=StepStatus.FAILED,
+                output={
+                    "command": command,
+                    "integration": integration,
+                    "model": model,
+                    "options": options,
+                    "input": resolved_input,
+                    "dispatched": False,
+                    "exit_code": 1,
+                },
                 error=(
                     f"Command step {config.get('id', '?')!r}: 'options' must be a "
                     f"mapping, got {type(step_options).__name__}."
