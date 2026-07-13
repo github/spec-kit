@@ -1238,9 +1238,9 @@ class YamlIntegration(IntegrationBase):
     def _render_yaml(cls, title: str, description: str, body: str, source_id: str) -> str:
         """Render a YAML recipe file from title, description, and body.
 
-        Produces a Goose-compatible recipe with a literal block scalar
-        for the prompt content.  Uses ``yaml.safe_dump()`` for the
-        header fields to ensure proper escaping.
+        Produces a Goose-compatible recipe with a literal block scalar for
+        normal prompt content, or an escaped quoted scalar when control
+        characters require it. Uses ``yaml.safe_dump()`` for the header fields.
         """
         header = cls._build_yaml_header(title, description)
 
