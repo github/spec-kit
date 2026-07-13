@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>第 2 期：让 AI 完成第一次可检查的小改动</title>
+  <style>
+  :root {
+    --ink: #172033;
+    --muted: #40506a;
+    --blue: #2563eb;
+    --teal: #0f8a79;
+    --green: #2f7d4f;
+    --amber: #b7791f;
+    --rose: #be3a5d;
+    --violet: #6d5bd0;
+    --line: #d4deee;
+    --paper: #fffdf8;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: #ebeef5;
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  }
+
+  body {
+    display: grid;
+    place-items: center;
+    padding: 16px;
+  }
+
+  .deck {
+    width: min(100vw - 32px, 1120px);
+    aspect-ratio: 4 / 3;
+    position: relative;
+    background: var(--paper);
+    border: 1px solid #cfd7e6;
+    border-radius: 8px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .15);
+    overflow: hidden;
+  }
+
+  .deck::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 10px;
+    background: linear-gradient(90deg, #2563eb, #0f8a79, #d97706, #be3a5d, #6d5bd0);
+    z-index: 4;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    padding: 46px 42px 48px;
+    background: var(--paper);
+  }
+
+  .slide.active { display: block; }
+
+  .slide-inner {
+    height: 100%;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+  }
+
+  .eyebrow {
+    color: var(--blue);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 15px;
+    font-weight: 900;
+  }
+
+  h1, h2, h3, p { margin: 0; }
+
+  h1 {
+    max-width: 920px;
+    font-size: 52px;
+    line-height: 1.05;
+    letter-spacing: 0;
+  }
+
+  h2 {
+    max-width: 980px;
+    font-size: 40px;
+    line-height: 1.1;
+    letter-spacing: 0;
+  }
+
+  h3 {
+    margin-bottom: 8px;
+    font-size: 22px;
+    line-height: 1.18;
+  }
+
+  .lead {
+    max-width: 980px;
+    color: var(--muted);
+    font-size: 21px;
+    line-height: 1.45;
+  }
+
+  .subtitle {
+    max-width: 820px;
+    color: var(--muted);
+    font-size: 24px;
+    line-height: 1.42;
+  }
+
+  .grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 17px 18px;
+    min-width: 0;
+  }
+
+  .panel.blue { background: #eff6ff; border-color: #bfdbfe; }
+  .panel.teal { background: #ecfdf5; border-color: #99f6e4; }
+  .panel.green { background: #f0fdf4; border-color: #bbf7d0; }
+  .panel.amber { background: #fffbeb; border-color: #fde68a; }
+  .panel.rose { background: #fff1f2; border-color: #fecdd3; }
+  .panel.violet { background: #f5f3ff; border-color: #ddd6fe; }
+
+  .panel p, .panel li {
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.45;
+  }
+
+  ul {
+    margin: 8px 0 0;
+    padding-left: 20px;
+  }
+
+  li + li { margin-top: 6px; }
+
+  .tag {
+    display: inline-block;
+    margin-bottom: 12px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: var(--blue);
+    color: white;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+  }
+
+  .tag.teal { background: var(--teal); }
+  .tag.green { background: var(--green); }
+  .tag.amber { background: var(--amber); }
+  .tag.rose { background: var(--rose); }
+  .tag.violet { background: var(--violet); }
+
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .flow.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+  .step {
+    position: relative;
+    min-height: 138px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 14px;
+  }
+
+  .step::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: -10px;
+    width: 10px;
+    border-top: 2px solid #a8b5c8;
+  }
+
+  .step:last-child::after { display: none; }
+
+  .num {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-bottom: 10px;
+    border-radius: 50%;
+    background: var(--blue);
+    color: white;
+    font-weight: 900;
+  }
+
+  .num.teal { background: var(--teal); }
+  .num.green { background: var(--green); }
+  .num.amber { background: var(--amber); }
+  .num.rose { background: var(--rose); }
+  .num.violet { background: var(--violet); }
+
+  .step b {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 17px;
+    line-height: 1.22;
+  }
+
+  .step small {
+    display: block;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.38;
+  }
+
+  .example {
+    display: block;
+    border: 1px solid #29364b;
+    border-radius: 8px;
+    background: #111827;
+    color: #e5edf8;
+    padding: 14px 16px;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 14px;
+    line-height: 1.55;
+    min-height: 96px;
+    white-space: pre-wrap;
+  }
+
+  .script {
+    display: grid;
+    gap: 10px;
+  }
+
+  .script-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 12px;
+    align-items: start;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 14px 16px;
+    min-height: 66px;
+  }
+
+  .script-row b {
+    color: var(--blue);
+    font-size: 15px;
+  }
+
+  .script-row span {
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.42;
+  }
+
+  .matrix {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    font-size: 15px;
+  }
+
+  .matrix th,
+  .matrix td {
+    padding: 9px 11px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    line-height: 1.38;
+  }
+
+  .matrix th {
+    background: #eaf0f8;
+    text-align: left;
+  }
+
+  .matrix tr:last-child td { border-bottom: 0; }
+  .matrix th:last-child, .matrix td:last-child { border-right: 0; }
+
+  .note {
+    border-left: 5px solid var(--blue);
+    background: #f8fbff;
+    padding: 15px 18px;
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1.45;
+  }
+
+  .classroom {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  .classroom div {
+    border: 1px solid #d8e2f2;
+    border-radius: 8px;
+    background: #fbfdff;
+    padding: 10px 12px;
+    min-height: 78px;
+    min-width: 0;
+  }
+
+  .classroom b {
+    display: block;
+    margin-bottom: 4px;
+    color: #1d4ed8;
+    font-size: 13.5px;
+  }
+
+  .classroom span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.34;
+  }
+
+  .case-lab {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  .case-lab div {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 11px 13px;
+    min-height: 84px;
+  }
+
+  .case-lab b {
+    display: block;
+    margin-bottom: 4px;
+    color: #172033;
+    font-size: 14px;
+  }
+
+  .case-lab span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.38;
+  }
+
+  .mini-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mini-row.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mini-card {
+    border: 1px solid #d8e2f2;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 10px 12px;
+    min-height: 72px;
+  }
+
+  .mini-card b {
+    display: block;
+    margin-bottom: 4px;
+    color: #172033;
+    font-size: 14px;
+  }
+
+  .mini-card span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.36;
+  }
+
+  .mini-card a {
+    color: #1d4ed8;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .mini-card code {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 11px;
+    white-space: normal;
+  }
+
+  .slide:not(.cover) .grid.three > .panel {
+    min-height: 154px;
+    padding: 22px;
+  }
+
+  .slide:not(.cover) .grid.four > .panel {
+    min-height: 166px;
+    padding: 20px;
+  }
+
+  .slide:not(.cover) .grid.two > .panel {
+    min-height: 176px;
+    padding: 24px;
+  }
+
+  .slide:not(.cover) .panel p,
+  .slide:not(.cover) .panel li {
+    font-size: 17px;
+    line-height: 1.52;
+  }
+
+  .slide:not(.cover) .flow .step {
+    min-height: 174px;
+    padding: 18px 15px;
+  }
+
+  .slide:not(.cover) .step small {
+    font-size: 14px;
+    line-height: 1.48;
+  }
+
+  .slide:not(.cover) .matrix th,
+  .slide:not(.cover) .matrix td {
+    padding: 13px 14px;
+    font-size: 16px;
+    line-height: 1.46;
+  }
+
+  .bottom {
+    position: absolute;
+    left: 42px;
+    right: 42px;
+    bottom: 28px;
+    display: flex;
+    justify-content: space-between;
+    color: #9aa7bb;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .controls {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid #d7deea;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .92);
+    box-shadow: 0 8px 28px rgba(15, 23, 42, .12);
+    z-index: 20;
+  }
+
+  .nav-button {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: #172033;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .counter {
+    min-width: 58px;
+    color: #40506a;
+    font-size: 13px;
+    text-align: center;
+    font-weight: 800;
+  }
+
+  @media print {
+    @page { size: 10in 7.5in; margin: 0; }
+    body { display: block; padding: 0; background: white; }
+    .deck { width: 10in; height: 7.5in; aspect-ratio: auto; border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+    .slide { position: relative; display: block !important; width: 10in; height: 7.5in; page-break-after: always; break-after: page; }
+    .slide:last-child { page-break-after: auto; break-after: auto; }
+    .controls { display: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="deck">
+
+    <section class="slide active cover">
+      <div class="slide-inner" style="align-content:start; gap:16px">
+        <div class="eyebrow">金融中队 AI Coding 入门系列</div>
+        <h1 style="font-size:46px">第 2 期：让 AI 完成第一次可检查的小改动</h1>
+        <p class="subtitle">认识研发协作词汇，学会让 AI 先读项目、留下任务上下文，再小步修改并提供证据。</p>
+        <div class="grid three">
+          <div class="panel blue"><h3>本期起点</h3><p>已经能把一个问题整理成可靠的协作材料。</p></div><div class="panel teal"><h3>本期能力</h3><p>在 AI Coding 工具里完成一次受控的小改动。</p></div><div class="panel green"><h3>为后面埋线</h3><p>项目知识地图、任务上下文和人工确认点。</p></div>
+        </div>
+        <table class="matrix">
+      <thead><tr><th>学习路径</th><th>这一段解决什么问题</th></tr></thead>
+      <tbody><tr><td>认识工具</td><td>Codex、Claude Code、Cursor Agent、Trae 能做什么。</td></tr><tr><td>理解项目</td><td>先读源码、说明和项目结构，再提出计划。</td></tr><tr><td>小步修改</td><td>基于分支执行最小改动，遇到边界停下来。</td></tr><tr><td>证明结果</td><td>用测试、差异和未验证项说明完成情况。</td></tr></tbody>
+    </table>
+        <div class="mini-row">
+    <div class="mini-card"><b>课前准备</b><span>准备一个可练习的小项目；安装团队支持的任一 AI Coding 工具。</span></div><div class="mini-card"><b>本期操作</b><span>练习任务只选文字、校验或小逻辑，不碰公共接口和数据库。</span></div>
+  </div>
+      </div>
+      <div class="bottom"><span>Course 02</span><span>1 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">AI Coding</div>
+          <h2>聊天工具回答问题，AI Coding 工具还能读取和修改项目</h2>
+
+        </div>
+        <table class="matrix"><thead><tr><th>工具</th><th>主要能力</th><th>在流程中的位置</th></tr></thead>
+    <tbody><tr><td>豆包等聊天工具</td><td>根据你提供的文字和文件生成回答</td><td>适合整理、理解和起草</td></tr><tr><td>AI Coding 工具</td><td>读取目录、搜索代码、运行命令、修改文件</td><td>适合在真实项目中完成研发任务</td></tr><tr><td>团队研发平台</td><td>记录 issue、分支、PR、审核和测试</td><td>让改动可追踪、可审核、可回滚</td></tr></tbody></table>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>2 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Common Words</div>
+          <h2>先把常见研发词翻译成人话</h2>
+
+        </div>
+        <div class="grid three">
+    <div class="panel blue"><h3>Repository 仓库</h3><p>项目所有文件及其修改历史所在的地方。</p></div><div class="panel teal"><h3>Issue 问题单</h3><p>记录为什么要改、现象是什么、希望得到什么。</p></div><div class="panel green"><h3>Branch 分支</h3><p>为本次修改建立的独立工作副本。</p></div><div class="panel amber"><h3>PR 合并申请</h3><p>把改动、证据和风险交给负责人审核。</p></div><div class="panel rose"><h3>Test 测试</h3><p>用可重复方式证明功能符合预期。</p></div><div class="panel violet"><h3>Owner 负责人</h3><p>对模块边界、质量和是否接受改动负责的人。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>3 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Safe Loop</div>
+          <h2>第一次改代码，只走这条最小闭环</h2>
+
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>理解</b><small>复述目标，读取相关项目资料。</small></div><div class="step"><span class="num teal">2</span><b>计划</b><small>说明要改哪里、为什么、风险是什么。</small></div><div class="step"><span class="num green">3</span><b>确认</b><small>人确认范围和基础分支。</small></div><div class="step"><span class="num amber">4</span><b>修改</b><small>只做实现目标所需的最小变化。</small></div><div class="step"><span class="num rose">5</span><b>验证</b><small>运行测试并汇报差异、结果和缺口。</small></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>4 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Project Knowledge</div>
+          <h2>AI 理解项目时，需要一张可靠的知识地图</h2>
+          <p class="lead">第一期讲“回答要有来源”；进入代码仓后，来源变成源码、结构投影和项目说明。</p>
+        </div>
+        <div class="grid four">
+    <div class="panel blue"><h3>源码是第一事实</h3><p>真实类、函数、配置和测试决定系统当前如何运行。</p></div><div class="panel teal"><h3>Code Graph 是结构投影</h3><p>帮助快速看到类、接口、调用和模块依赖，定位影响范围。</p></div><div class="panel green"><h3>文档解释意图</h3><p>README、架构说明和历史决定解释为什么这样设计。</p></div><div class="panel amber"><h3>Issue 提供任务背景</h3><p>说明本轮为什么改、期望结果和已知限制。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>5 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Task Context</div>
+          <h2>每次任务先建立一份可接续的上下文</h2>
+          <p class="lead">这份记录连接第一期的工作摘要与后面的团队 Work Context Package。</p>
+        </div>
+        <table class="matrix"><thead><tr><th>记录部分</th><th>至少包含</th><th>解决的问题</th></tr></thead>
+    <tbody><tr><td>任务</td><td>issue 地址、目标、完成标准</td><td>避免改着改着忘记为什么做</td></tr><tr><td>项目</td><td>基础分支、相关模块、关键资料</td><td>避免读错仓库或改错目录</td></tr><tr><td>边界</td><td>允许修改、禁止修改、需要谁确认</td><td>避免小需求演变成架构改造</td></tr><tr><td>状态</td><td>已完成、待确认、下一步、证据</td><td>中断后可以继续</td></tr></tbody></table>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>6 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Read First</div>
+          <h2>第一条操作口令：只理解项目，暂时不要改</h2>
+
+        </div>
+        <code class="example">请先不要修改任何文件。
+1. 复述“大文件上传失败”问题和完成标准；
+2. 读取仓库入口规则、相关模块 README、源码和测试；
+3. 如有 Code Graph，给出相关类和调用链；
+4. 列出已有能力、可复用实现、未知项和可能影响的模块；
+5. 生成本轮任务上下文摘要，等我确认后再继续。</code>
+        <div class="note">合格结果不是“我已理解”，而是能指出依据文件、相关模块、可复用实现和未知项。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>7 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Plan</div>
+          <h2>第二条操作口令：给出最小计划和停下条件</h2>
+
+        </div>
+        <code class="example">基于已确认的任务上下文，提出最小修改计划。
+请写明：修改文件、复用点、测试、风险、回滚方式。
+如果涉及公共接口、跨模块、配置含义或数据库，请停止实现并要求负责人确认。</code>
+        <div class="grid three">
+    <div class="panel blue"><h3>计划要具体</h3><p>能看出修改位置、顺序和验证方法。</p></div><div class="panel teal"><h3>范围要小</h3><p>不包含顺手重构、无关清理和另起一套实现。</p></div><div class="panel green"><h3>停下条件要明确</h3><p>遇到公共边界时把决定交回给人。</p></div>
+  </div>
+        <div class="note">后续课程会介绍已经提供的 Compact 模式：低风险小改动可以用一句话启动 Plan 与 Tasks 的联合审核，但仍要分清“技术决定”和“执行步骤”，并由人确认是否适用。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>8 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Human Gate</div>
+          <h2>真正修改前，人至少确认三件事</h2>
+
+        </div>
+        <div class="grid three">
+    <div class="panel blue"><h3>从哪个分支开始</h3><p>确认基础版本，避免在过期代码上开发。</p></div><div class="panel teal"><h3>范围是否正确</h3><p>确认 AI 找对模块，没有扩大任务。</p></div><div class="panel green"><h3>是否触碰架构边界</h3><p>公共接口、跨模块和数据归属变化必须升级审核。</p></div>
+  </div><div class="note">AI 可以给建议，但“允许改什么”和“是否接受架构变化”是人的决定。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>9 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Implement</div>
+          <h2>第三条操作口令：只做计划内的最小改动</h2>
+
+        </div>
+        <code class="example">计划已确认。请创建本次任务分支，只修改计划中列出的文件。
+优先复用已有上传状态和错误处理；不要新增公共参数或改其他模块数据库。
+完成后逐个检查改动文件，并说明任何偏离计划的地方。</code>
+        <table class="matrix"><thead><tr><th>做法</th><th>会发生什么</th><th>判断标准</th></tr></thead>
+    <tbody><tr><td>新增一套上传状态</td><td>重复已有能力，后续维护两套逻辑</td><td>先搜索和复用</td></tr><tr><td>顺手重构多个模块</td><td>范围扩大，审核和回滚困难</td><td>拆成独立任务</td></tr><tr><td>只修改定位到的处理逻辑</td><td>差异可读、风险可控</td><td>符合最小变更</td></tr></tbody></table>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>10 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Evidence</div>
+          <h2>完成不是一句话，而是一组可检查证据</h2>
+
+        </div>
+        <div class="grid four">
+    <div class="panel blue"><h3>改了什么</h3><p>列出文件和行为变化，并说明为什么需要。</p></div><div class="panel teal"><h3>怎么验证</h3><p>给出真实运行过的命令、测试结果和关键输出。</p></div><div class="panel green"><h3>还没验证什么</h3><p>明确环境缺口、跳过项和剩余风险。</p></div><div class="panel amber"><h3>怎么撤回</h3><p>说明关闭功能、回滚提交或恢复配置的方法。</p></div>
+  </div><code class="example">证据摘要：修改文件 / 测试命令 / 通过结果 / 未执行项 / 风险 / 回滚方式</code>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>11 / 12</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Hands On</div>
+          <h2>课堂练习：完成一次只读分析和最小计划</h2>
+
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>选择任务</b><small>挑一个文字、校验或小逻辑问题。</small></div><div class="step"><span class="num teal">2</span><b>建立上下文</b><small>记录目标、仓库、分支、边界和状态。</small></div><div class="step"><span class="num green">3</span><b>只读分析</b><small>让 AI 指出源码、测试和复用点。</small></div><div class="step"><span class="num amber">4</span><b>审核计划</b><small>检查范围和停下条件。</small></div><div class="step"><span class="num rose">5</span><b>保存结果</b><small>把上下文和计划留给下一次继续。</small></div>
+  </div><div class="note">下一期会解释：为什么多人使用不同 AI 工具时，仅靠每个人自觉还不够。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 02</span><span>12 / 12</span></div>
+    </section>
+  </main>
+  <div class="controls" aria-label="Slide controls">
+    <button class="nav-button" id="prev" type="button" aria-label="上一页">‹</button>
+    <div class="counter" id="counter">1 / 12</div>
+    <button class="nav-button" id="next" type="button" aria-label="下一页">›</button>
+  </div>
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const prev = document.getElementById("prev");
+    const next = document.getElementById("next");
+    const counter = document.getElementById("counter");
+    let current = 0;
+    const hash = window.location.hash.match(/^#slide-(\d+)$/);
+    if (hash) current = Math.min(Math.max(Number(hash[1]) - 1, 0), slides.length - 1);
+    function show(index, updateHash = true) {
+      current = Math.min(Math.max(index, 0), slides.length - 1);
+      slides.forEach((slide, i) => slide.classList.toggle("active", i === current));
+      prev.disabled = current === 0;
+      next.disabled = current === slides.length - 1;
+      counter.textContent = `${current + 1} / ${slides.length}`;
+      if (updateHash) history.replaceState(null, "", `#slide-${current + 1}`);
+    }
+    prev.addEventListener("click", () => show(current - 1));
+    next.addEventListener("click", () => show(current + 1));
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") show(current - 1);
+      if (event.key === "ArrowRight" || event.key === " ") show(current + 1);
+      if (event.key === "Home") show(0);
+      if (event.key === "End") show(slides.length - 1);
+    });
+    show(current, false);
+  </script>
+</body>
+</html>

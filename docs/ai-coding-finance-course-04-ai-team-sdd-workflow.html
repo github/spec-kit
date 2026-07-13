@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>第 4 期：用 AI Team SDD 完成一次团队级研发任务</title>
+  <style>
+  :root {
+    --ink: #172033;
+    --muted: #40506a;
+    --blue: #2563eb;
+    --teal: #0f8a79;
+    --green: #2f7d4f;
+    --amber: #b7791f;
+    --rose: #be3a5d;
+    --violet: #6d5bd0;
+    --line: #d4deee;
+    --paper: #fffdf8;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: #ebeef5;
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  }
+
+  body {
+    display: grid;
+    place-items: center;
+    padding: 16px;
+  }
+
+  .deck {
+    width: min(100vw - 32px, 1120px);
+    aspect-ratio: 4 / 3;
+    position: relative;
+    background: var(--paper);
+    border: 1px solid #cfd7e6;
+    border-radius: 8px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .15);
+    overflow: hidden;
+  }
+
+  .deck::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 10px;
+    background: linear-gradient(90deg, #2563eb, #0f8a79, #d97706, #be3a5d, #6d5bd0);
+    z-index: 4;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    padding: 46px 42px 48px;
+    background: var(--paper);
+  }
+
+  .slide.active { display: block; }
+
+  .slide-inner {
+    height: 100%;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+  }
+
+  .eyebrow {
+    color: var(--blue);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 15px;
+    font-weight: 900;
+  }
+
+  h1, h2, h3, p { margin: 0; }
+
+  h1 {
+    max-width: 920px;
+    font-size: 52px;
+    line-height: 1.05;
+    letter-spacing: 0;
+  }
+
+  h2 {
+    max-width: 980px;
+    font-size: 40px;
+    line-height: 1.1;
+    letter-spacing: 0;
+  }
+
+  h3 {
+    margin-bottom: 8px;
+    font-size: 22px;
+    line-height: 1.18;
+  }
+
+  .lead {
+    max-width: 980px;
+    color: var(--muted);
+    font-size: 21px;
+    line-height: 1.45;
+  }
+
+  .subtitle {
+    max-width: 820px;
+    color: var(--muted);
+    font-size: 24px;
+    line-height: 1.42;
+  }
+
+  .grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 17px 18px;
+    min-width: 0;
+  }
+
+  .panel.blue { background: #eff6ff; border-color: #bfdbfe; }
+  .panel.teal { background: #ecfdf5; border-color: #99f6e4; }
+  .panel.green { background: #f0fdf4; border-color: #bbf7d0; }
+  .panel.amber { background: #fffbeb; border-color: #fde68a; }
+  .panel.rose { background: #fff1f2; border-color: #fecdd3; }
+  .panel.violet { background: #f5f3ff; border-color: #ddd6fe; }
+
+  .panel p, .panel li {
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.45;
+  }
+
+  ul {
+    margin: 8px 0 0;
+    padding-left: 20px;
+  }
+
+  li + li { margin-top: 6px; }
+
+  .tag {
+    display: inline-block;
+    margin-bottom: 12px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: var(--blue);
+    color: white;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+  }
+
+  .tag.teal { background: var(--teal); }
+  .tag.green { background: var(--green); }
+  .tag.amber { background: var(--amber); }
+  .tag.rose { background: var(--rose); }
+  .tag.violet { background: var(--violet); }
+
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .flow.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+  .step {
+    position: relative;
+    min-height: 138px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 14px;
+  }
+
+  .step::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: -10px;
+    width: 10px;
+    border-top: 2px solid #a8b5c8;
+  }
+
+  .step:last-child::after { display: none; }
+
+  .num {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-bottom: 10px;
+    border-radius: 50%;
+    background: var(--blue);
+    color: white;
+    font-weight: 900;
+  }
+
+  .num.teal { background: var(--teal); }
+  .num.green { background: var(--green); }
+  .num.amber { background: var(--amber); }
+  .num.rose { background: var(--rose); }
+  .num.violet { background: var(--violet); }
+
+  .step b {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 17px;
+    line-height: 1.22;
+  }
+
+  .step small {
+    display: block;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.38;
+  }
+
+  .example {
+    display: block;
+    border: 1px solid #29364b;
+    border-radius: 8px;
+    background: #111827;
+    color: #e5edf8;
+    padding: 14px 16px;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 14px;
+    line-height: 1.55;
+    min-height: 96px;
+    white-space: pre-wrap;
+  }
+
+  .script {
+    display: grid;
+    gap: 10px;
+  }
+
+  .script-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 12px;
+    align-items: start;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 14px 16px;
+    min-height: 66px;
+  }
+
+  .script-row b {
+    color: var(--blue);
+    font-size: 15px;
+  }
+
+  .script-row span {
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.42;
+  }
+
+  .matrix {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    font-size: 15px;
+  }
+
+  .matrix th,
+  .matrix td {
+    padding: 9px 11px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    line-height: 1.38;
+  }
+
+  .matrix th {
+    background: #eaf0f8;
+    text-align: left;
+  }
+
+  .matrix tr:last-child td { border-bottom: 0; }
+  .matrix th:last-child, .matrix td:last-child { border-right: 0; }
+
+  .note {
+    border-left: 5px solid var(--blue);
+    background: #f8fbff;
+    padding: 15px 18px;
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1.45;
+  }
+
+  .classroom {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  .classroom div {
+    border: 1px solid #d8e2f2;
+    border-radius: 8px;
+    background: #fbfdff;
+    padding: 10px 12px;
+    min-height: 78px;
+    min-width: 0;
+  }
+
+  .classroom b {
+    display: block;
+    margin-bottom: 4px;
+    color: #1d4ed8;
+    font-size: 13.5px;
+  }
+
+  .classroom span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.34;
+  }
+
+  .case-lab {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  .case-lab div {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 11px 13px;
+    min-height: 84px;
+  }
+
+  .case-lab b {
+    display: block;
+    margin-bottom: 4px;
+    color: #172033;
+    font-size: 14px;
+  }
+
+  .case-lab span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.38;
+  }
+
+  .mini-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mini-row.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mini-card {
+    border: 1px solid #d8e2f2;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 10px 12px;
+    min-height: 72px;
+  }
+
+  .mini-card b {
+    display: block;
+    margin-bottom: 4px;
+    color: #172033;
+    font-size: 14px;
+  }
+
+  .mini-card span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.36;
+  }
+
+  .mini-card a {
+    color: #1d4ed8;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .mini-card code {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 11px;
+    white-space: normal;
+  }
+
+  .slide:not(.cover) .grid.three > .panel {
+    min-height: 154px;
+    padding: 22px;
+  }
+
+  .slide:not(.cover) .grid.four > .panel {
+    min-height: 166px;
+    padding: 20px;
+  }
+
+  .slide:not(.cover) .grid.two > .panel {
+    min-height: 176px;
+    padding: 24px;
+  }
+
+  .slide:not(.cover) .panel p,
+  .slide:not(.cover) .panel li {
+    font-size: 17px;
+    line-height: 1.52;
+  }
+
+  .slide:not(.cover) .flow .step {
+    min-height: 174px;
+    padding: 18px 15px;
+  }
+
+  .slide:not(.cover) .step small {
+    font-size: 14px;
+    line-height: 1.48;
+  }
+
+  .slide:not(.cover) .matrix th,
+  .slide:not(.cover) .matrix td {
+    padding: 13px 14px;
+    font-size: 16px;
+    line-height: 1.46;
+  }
+
+  .bottom {
+    position: absolute;
+    left: 42px;
+    right: 42px;
+    bottom: 28px;
+    display: flex;
+    justify-content: space-between;
+    color: #9aa7bb;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .controls {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid #d7deea;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .92);
+    box-shadow: 0 8px 28px rgba(15, 23, 42, .12);
+    z-index: 20;
+  }
+
+  .nav-button {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: #172033;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .counter {
+    min-width: 58px;
+    color: #40506a;
+    font-size: 13px;
+    text-align: center;
+    font-weight: 800;
+  }
+
+  @media print {
+    @page { size: 10in 7.5in; margin: 0; }
+    body { display: block; padding: 0; background: white; }
+    .deck { width: 10in; height: 7.5in; aspect-ratio: auto; border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+    .slide { position: relative; display: block !important; width: 10in; height: 7.5in; page-break-after: always; break-after: page; }
+    .slide:last-child { page-break-after: auto; break-after: auto; }
+    .controls { display: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="deck">
+
+    <section class="slide active cover">
+      <div class="slide-inner" style="align-content:start; gap:16px">
+        <div class="eyebrow">金融中队 AI Coding 入门系列</div>
+        <h1 style="font-size:46px">第 4 期：用 AI Team SDD 完成一次团队级研发任务</h1>
+        <p class="subtitle">把需求、架构、开发、验证和经验沉淀连成可中断、可审核、可复用的完整闭环。</p>
+        <div class="grid three">
+          <div class="panel blue"><h3>本期起点</h3><p>已经理解个人 AI Coding 和团队风险控制。</p></div><div class="panel teal"><h3>本期能力</h3><p>从一句自然语言启动并接续完整 SDD 流程。</p></div><div class="panel green"><h3>最终闭环</h3><p>Skill 执行流程，Knowledge 提供依据，Memory 积累经验。</p></div>
+        </div>
+        <table class="matrix">
+      <thead><tr><th>学习路径</th><th>这一段解决什么问题</th></tr></thead>
+      <tbody><tr><td>进入流程</td><td>判断 bug、新特性或从零项目，并建立工作项。</td></tr><tr><td>角色交接</td><td>产品、架构和开发上下文隔离，通过文档或 issue 交接。</td></tr><tr><td>受控实施</td><td>Work Context、Code Graph、Gate 和 Evidence 贯穿任务。</td></tr><tr><td>沉淀经验</td><td>三级记忆按价值和敏感程度保存、晋升和归档。</td></tr></tbody>
+    </table>
+        <div class="mini-row">
+    <div class="mini-card"><b>课前准备</b><span>准备一个脱敏需求或 bug 现象；选择一个练习仓库。</span></div><div class="mini-card"><b>本期操作</b><span>可以直接在 AI Coding 聊天框说一句话启动，不要求记命令。</span></div>
+  </div>
+      </div>
+      <div class="bottom"><span>Course 04</span><span>1 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">SDD</div>
+          <h2>Spec Driven Development：先形成共同理解，再生成代码</h2>
+
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>原始需求</b><small>一句自然语言、业务现象或客户目标。</small></div><div class="step"><span class="num teal">2</span><b>Specify</b><small>明确用户场景、目标、边界和验收标准。</small></div><div class="step"><span class="num green">3</span><b>Plan</b><small>基于项目结构决定实现方案和影响范围。</small></div><div class="step"><span class="num amber">4</span><b>Tasks</b><small>把计划拆成有顺序、可验证的小任务。</small></div><div class="step"><span class="num rose">5</span><b>Implement</b><small>最小修改、运行验证、形成证据。</small></div>
+  </div><div class="note">文档不是额外负担，而是不同角色、不同 AI 会话之间的交接接口。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>2 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Natural Language Entry</div>
+          <h2>用户只需要从一句真实问题开始</h2>
+
+        </div>
+        <code class="example">我们的大文件上传经常超时，请帮我按团队流程处理。
+
+或者：
+我希望管理员可以查看每次上传失败的原因，请帮我启动新特性流程。</code>
+        <div class="grid three">
+    <div class="panel blue"><h3>AI 先分类</h3><p>判断是 bug、公开新特性、私有需求还是从零项目。</p></div><div class="panel teal"><h3>信息不足先追问</h3><p>不凭一句话直接修改代码。</p></div><div class="panel green"><h3>生成工作入口</h3><p>起草 issue、spec 或任务上下文，交给人确认。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>3 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Bug Flow</div>
+          <h2>Bugfix：从现象和 coding issue 开始</h2>
+
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>报告现象</b><small>业务人员描述发生了什么，不要求判断根因。</small></div><div class="step"><span class="num teal">2</span><b>创建 issue</b><small>记录复现、影响、期望和缺失信息。</small></div><div class="step"><span class="num green">3</span><b>评估影响</b><small>定位相关模块和架构风险，由人确认范围。</small></div><div class="step"><span class="num amber">4</span><b>修复验证</b><small>最小修复并补回归、失败路径证据。</small></div><div class="step"><span class="num rose">5</span><b>沉淀经验</b><small>保留根因、误判线索和预防检查项。</small></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>4 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Feature Flow</div>
+          <h2>公开新特性：从 coding issue 进入完整 SDD</h2>
+
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>提出目标</b><small>说明用户场景、价值和非目标。</small></div><div class="step"><span class="num teal">2</span><b>确认是否做</b><small>技术委员会或相应决策组织确认方向。</small></div><div class="step"><span class="num green">3</span><b>Specify</b><small>形成场景、边界和验收标准。</small></div><div class="step"><span class="num amber">4</span><b>Plan 与 Tasks</b><small>架构师规划，开发拆分任务。</small></div><div class="step"><span class="num rose">5</span><b>实现与证据</b><small>代码 PR 关联原始 issue。</small></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>5 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Planning Modes</div>
+          <h2>小改动可以少一道流程，但不能少掉思考</h2>
+          <p class="lead">团队已经提供 Compact 扩展模式。使用者只需在聊天中明确说出 Compact，AI 就会启动对应流程；它不是让 AI 直接编码，而是把 Plan 和 Tasks 放进一次操作和一次联合审核中。</p>
+        </div>
+        <table class="matrix"><thead><tr><th>选择</th><th>怎么运行</th><th>适用情况</th></tr></thead>
+    <tbody><tr><td>标准流程</td><td>Plan 单独审核，再生成 Tasks 并审核</td><td>新特性、跨模块、公共接口、数据库、安全权限、发布风险</td></tr><tr><td>Compact 模式（已支持）</td><td>一句话启动；架构和开发仍隔离上下文；最后联合审核</td><td>需求清楚、单模块、路径唯一、失败成本低、容易回滚</td></tr></tbody></table><code class="example">例子：给已有 UserValidator 补充空邮箱校验。
+
+Plan：复用现有校验入口，不改变公共接口。
+Tasks：补失败测试 → 修改校验 → 运行用户模块自测。
+
+如果分析发现要改公共 API 或数据库，就停止 Compact，回到标准流程。</code>
+        <div class="grid three">
+          <div class="panel blue"><h3>不是按文件数判断</h3><p>一个文件也可能是高风险 SPI；多个本地测试文件也可能仍是低风险。</p></div>
+          <div class="panel amber"><h3>AI 只能建议</h3><p>先看影响分析，再由负责人确认是否允许使用 Compact。</p></div>
+          <div class="panel green"><h3>发现范围扩大就退出</h3><p>保留已有证据，回到独立 Plan 和 Tasks，不在快捷清单上继续打补丁。</p></div>
+        </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>6 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">New Project</div>
+          <h2>从零项目：先把地基建好，再开始堆功能</h2>
+          <p class="lead">它与新特性共享 SDD 主流程，但要额外明确产品边界、架构骨架和第一条可运行链路。</p>
+        </div>
+        <div class="grid four">
+    <div class="panel blue"><h3>产品基线</h3><p>服务谁、解决什么、不解决什么、第一版成功标准。</p></div><div class="panel teal"><h3>架构基线</h3><p>模块职责、公共接口、数据归属、依赖最小集。</p></div><div class="panel green"><h3>工程基线</h3><p>目录、构建、测试、日志、配置和发布方式。</p></div><div class="panel amber"><h3>运行主干</h3><p>先完成一条端到端可运行的小链路，再扩展能力。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>7 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Role Isolation</div>
+          <h2>三个 AI 角色隔离上下文，用文档或 issue 交接</h2>
+
+        </div>
+        <table class="matrix"><thead><tr><th>角色</th><th>交付物</th><th>上下文边界</th></tr></thead>
+    <tbody><tr><td>产品/客户经理角色</td><td>specify：用户场景、目标、边界、验收</td><td>不带入实现偏好</td></tr><tr><td>架构师角色</td><td>plan：模块、接口、复用、风险和验证策略</td><td>基于 spec 和项目知识判断</td></tr><tr><td>开发角色</td><td>tasks + implement：拆任务、编码、自测和证据</td><td>不擅自改写需求和架构决定</td></tr></tbody></table><div class="note">上下文隔离让责任更清楚，也减少同一个 AI 为自己早先的假设辩护。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>8 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Work Context</div>
+          <h2>Work Context Package 让任务可以中断和继续</h2>
+
+        </div>
+        <table class="matrix"><thead><tr><th>文件</th><th>作用</th><th>下次打开时先看什么</th></tr></thead>
+    <tbody><tr><td>context-pack.md</td><td>面向下一位协作者的任务摘要</td><td>目标、来源、模块、边界、证据要求</td></tr><tr><td>work-context.yml</td><td>机器可读的当前状态</td><td>工作标识、状态、URL、下一步和停下条件</td></tr><tr><td>evidence/</td><td>本轮验证材料索引</td><td>命令、结果、环境、失败和未验证项</td></tr><tr><td>state.json</td><td>工作流引擎的执行进度</td><td>用于从暂停的步骤继续运行</td></tr></tbody></table><div class="note">这些文件是否进入 Git 按项目策略决定；本地敏感内容和临时运行状态默认不上传。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>9 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Code Graph</div>
+          <h2>Code Graph 在计划前帮助 AI 看清影响范围</h2>
+
+        </div>
+        <code class="example">上传页面 → UploadController → UploadService → StorageAdapter
+                         ↘ UploadEvent → AuditService
+
+计划问题：新增“失败原因”会影响返回对象、事件结构、审计记录和哪些测试？</code>
+        <div class="grid three">
+    <div class="panel blue"><h3>先定位</h3><p>找出相关类、接口、调用链和数据流。</p></div><div class="panel teal"><h3>再复用</h3><p>识别已有能力和扩展点，避免重复实现。</p></div><div class="panel green"><h3>控制半径</h3><p>优先单模块修改；跨模块时明确接口需求和负责人。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>10 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Three Support Layers</div>
+          <h2>Skill、Knowledge、Memory 分别解决三类问题</h2>
+
+        </div>
+        <table class="matrix"><thead><tr><th>外围支撑</th><th>回答的问题</th><th>典型内容</th></tr></thead>
+    <tbody><tr><td>Skill</td><td>这一步怎么做</td><td>启动任务、影响分析、审核、验证、提交和复盘流程</td></tr><tr><td>Knowledge</td><td>当前项目是什么</td><td>源码、Code Graph、术语、架构、接口和历史决定</td></tr><tr><td>Memory</td><td>过去发生过什么</td><td>已做决定、失败尝试、bug 根因和可复用经验</td></tr></tbody></table><div class="note">三层共同作用：Skill 决定动作，Knowledge 提供事实，Memory 提醒历史经验和已知风险。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>11 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Three Memory Tiers</div>
+          <h2>三级记忆按敏感度、成熟度和长期价值管理</h2>
+
+        </div>
+        <table class="matrix"><thead><tr><th>记忆层</th><th>保存内容</th><th>Git 与发布边界</th></tr></thead>
+    <tbody><tr><td>本地记忆</td><td>个人尝试、临时线索、未验证判断</td><td>不上传；可随任务清理</td></tr><tr><td>部门记忆</td><td>脱敏后的案例、排障经验、可检索模式</td><td>上传内部空间；不进入正式 docs 和版本记录</td></tr><tr><td>企业记忆</td><td>稳定架构原则、成熟实践、长期兼容与运维经验</td><td>审核后进入 docs；随正式版本长期保留</td></tr></tbody></table>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>12 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Memory Consolidation</div>
+          <h2>经验归档不必等发布，由贡献者和维护者按价值触发</h2>
+
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>选择来源</b><small>完成的 feature、bugfix、事故、迁移或评审意见。</small></div><div class="step"><span class="num teal">2</span><b>提炼经验</b><small>保留问题、判断条件、做法、证据和适用范围。</small></div><div class="step"><span class="num green">3</span><b>隐私处理</b><small>删除客户、账号、内部地址和不可公开实现细节。</small></div><div class="step"><span class="num amber">4</span><b>选择层级</b><small>本地、部门或企业；不默认全部晋升。</small></div><div class="step"><span class="num rose">5</span><b>审核与复用</b><small>进入检索、规则、测试或正式文档。</small></div>
+  </div><div class="note">发布归档是批量整理的一种场景，不是每次发布前必须完成的硬 Gate。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>13 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Human Gates</div>
+          <h2>关键节点由人做决定，Evidence Board 提供依据</h2>
+
+        </div>
+        <table class="matrix"><thead><tr><th>人工确认点</th><th>主要判断</th><th>典型责任人</th></tr></thead>
+    <tbody><tr><td>Spec Gate</td><td>目标、边界和验收是否正确</td><td>需求提出者或相应负责人</td></tr><tr><td>Plan Gate</td><td>架构、复用、影响半径和验证策略是否合理</td><td>架构师、模块负责人</td></tr><tr><td>Task Gate</td><td>任务是否可执行、顺序正确、没有遗漏验证</td><td>维护者、贡献者</td></tr><tr><td>PR Gate</td><td>差异与证据是否足以合入</td><td>代码审核者、测试和运维责任人</td></tr></tbody></table>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>14 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Private Requirement Extension</div>
+          <h2>扩展场景：私有客户需求只把可公开的交接信息带入代码仓</h2>
+
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>内部留痕</b><small>原始企业需求记录在严格权限的内部需求仓。</small></div><div class="step"><span class="num teal">2</span><b>审核脱敏</b><small>形成可供研发使用的安全摘要和验收边界。</small></div><div class="step"><span class="num green">3</span><b>URL 交接</b><small>代码仓通过需求 URL 关联来源，不复制原始私密内容。</small></div><div class="step"><span class="num amber">4</span><b>Plan 融合</b><small>计划阶段获取内容，生成本地忽略的 spec.override.md。</small></div><div class="step"><span class="num rose">5</span><b>公开实现</b><small>代码、测试和 PR 只保留实现所需的公开安全信息。</small></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>15 / 16</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Final Practice</div>
+          <h2>毕业练习：用一句话启动，并在任意 Gate 继续</h2>
+
+        </div>
+        <code class="example">我们的大文件上传经常超时，请按团队 bugfix 流程处理。
+如果信息不足，先帮我起草 issue 并列出待确认项；不要猜根因。
+
+继续任务时：
+请恢复“bug-upload-timeout-123”的 Work Context，先告诉我当前阶段、已有决定、失败尝试、证据缺口和下一步，等我确认后继续。</code>
+        <div class="grid three">
+    <div class="panel blue"><h3>你负责目标</h3><p>确认真实问题、业务边界和是否继续。</p></div><div class="panel teal"><h3>AI 负责执行</h3><p>读取知识、遵循 Skill、记录上下文、生成改动和证据。</p></div><div class="panel green"><h3>团队负责质量</h3><p>审核架构、验证结果、合入代码并沉淀经验。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 04</span><span>16 / 16</span></div>
+    </section>
+  </main>
+  <div class="controls" aria-label="Slide controls">
+    <button class="nav-button" id="prev" type="button" aria-label="上一页">‹</button>
+    <div class="counter" id="counter">1 / 16</div>
+    <button class="nav-button" id="next" type="button" aria-label="下一页">›</button>
+  </div>
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const prev = document.getElementById("prev");
+    const next = document.getElementById("next");
+    const counter = document.getElementById("counter");
+    let current = 0;
+    const hash = window.location.hash.match(/^#slide-(\d+)$/);
+    if (hash) current = Math.min(Math.max(Number(hash[1]) - 1, 0), slides.length - 1);
+    function show(index, updateHash = true) {
+      current = Math.min(Math.max(index, 0), slides.length - 1);
+      slides.forEach((slide, i) => slide.classList.toggle("active", i === current));
+      prev.disabled = current === 0;
+      next.disabled = current === slides.length - 1;
+      counter.textContent = `${current + 1} / ${slides.length}`;
+      if (updateHash) history.replaceState(null, "", `#slide-${current + 1}`);
+    }
+    prev.addEventListener("click", () => show(current - 1));
+    next.addEventListener("click", () => show(current + 1));
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") show(current - 1);
+      if (event.key === "ArrowRight" || event.key === " ") show(current + 1);
+      if (event.key === "Home") show(0);
+      if (event.key === "End") show(slides.length - 1);
+    });
+    show(current, false);
+  </script>
+</body>
+</html>

@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>第 1 期：从日常问答到可靠的 AI 协作</title>
+  <style>
+  :root {
+    --ink: #172033;
+    --muted: #40506a;
+    --blue: #2563eb;
+    --teal: #0f8a79;
+    --green: #2f7d4f;
+    --amber: #b7791f;
+    --rose: #be3a5d;
+    --violet: #6d5bd0;
+    --line: #d4deee;
+    --paper: #fffdf8;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: #ebeef5;
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+  }
+
+  body {
+    display: grid;
+    place-items: center;
+    padding: 16px;
+  }
+
+  .deck {
+    width: min(100vw - 32px, 1120px);
+    aspect-ratio: 4 / 3;
+    position: relative;
+    background: var(--paper);
+    border: 1px solid #cfd7e6;
+    border-radius: 8px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .15);
+    overflow: hidden;
+  }
+
+  .deck::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 10px;
+    background: linear-gradient(90deg, #2563eb, #0f8a79, #d97706, #be3a5d, #6d5bd0);
+    z-index: 4;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    padding: 46px 42px 48px;
+    background: var(--paper);
+  }
+
+  .slide.active { display: block; }
+
+  .slide-inner {
+    height: 100%;
+    display: grid;
+    align-content: start;
+    gap: 12px;
+  }
+
+  .eyebrow {
+    color: var(--blue);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 15px;
+    font-weight: 900;
+  }
+
+  h1, h2, h3, p { margin: 0; }
+
+  h1 {
+    max-width: 920px;
+    font-size: 52px;
+    line-height: 1.05;
+    letter-spacing: 0;
+  }
+
+  h2 {
+    max-width: 980px;
+    font-size: 40px;
+    line-height: 1.1;
+    letter-spacing: 0;
+  }
+
+  h3 {
+    margin-bottom: 8px;
+    font-size: 22px;
+    line-height: 1.18;
+  }
+
+  .lead {
+    max-width: 980px;
+    color: var(--muted);
+    font-size: 21px;
+    line-height: 1.45;
+  }
+
+  .subtitle {
+    max-width: 820px;
+    color: var(--muted);
+    font-size: 24px;
+    line-height: 1.42;
+  }
+
+  .grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 17px 18px;
+    min-width: 0;
+  }
+
+  .panel.blue { background: #eff6ff; border-color: #bfdbfe; }
+  .panel.teal { background: #ecfdf5; border-color: #99f6e4; }
+  .panel.green { background: #f0fdf4; border-color: #bbf7d0; }
+  .panel.amber { background: #fffbeb; border-color: #fde68a; }
+  .panel.rose { background: #fff1f2; border-color: #fecdd3; }
+  .panel.violet { background: #f5f3ff; border-color: #ddd6fe; }
+
+  .panel p, .panel li {
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.45;
+  }
+
+  ul {
+    margin: 8px 0 0;
+    padding-left: 20px;
+  }
+
+  li + li { margin-top: 6px; }
+
+  .tag {
+    display: inline-block;
+    margin-bottom: 12px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: var(--blue);
+    color: white;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+  }
+
+  .tag.teal { background: var(--teal); }
+  .tag.green { background: var(--green); }
+  .tag.amber { background: var(--amber); }
+  .tag.rose { background: var(--rose); }
+  .tag.violet { background: var(--violet); }
+
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .flow.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+  .step {
+    position: relative;
+    min-height: 138px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 14px;
+  }
+
+  .step::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: -10px;
+    width: 10px;
+    border-top: 2px solid #a8b5c8;
+  }
+
+  .step:last-child::after { display: none; }
+
+  .num {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-bottom: 10px;
+    border-radius: 50%;
+    background: var(--blue);
+    color: white;
+    font-weight: 900;
+  }
+
+  .num.teal { background: var(--teal); }
+  .num.green { background: var(--green); }
+  .num.amber { background: var(--amber); }
+  .num.rose { background: var(--rose); }
+  .num.violet { background: var(--violet); }
+
+  .step b {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 17px;
+    line-height: 1.22;
+  }
+
+  .step small {
+    display: block;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.38;
+  }
+
+  .example {
+    display: block;
+    border: 1px solid #29364b;
+    border-radius: 8px;
+    background: #111827;
+    color: #e5edf8;
+    padding: 14px 16px;
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 14px;
+    line-height: 1.55;
+    min-height: 96px;
+    white-space: pre-wrap;
+  }
+
+  .script {
+    display: grid;
+    gap: 10px;
+  }
+
+  .script-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 12px;
+    align-items: start;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 14px 16px;
+    min-height: 66px;
+  }
+
+  .script-row b {
+    color: var(--blue);
+    font-size: 15px;
+  }
+
+  .script-row span {
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.42;
+  }
+
+  .matrix {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #ffffff;
+    font-size: 15px;
+  }
+
+  .matrix th,
+  .matrix td {
+    padding: 9px 11px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+    line-height: 1.38;
+  }
+
+  .matrix th {
+    background: #eaf0f8;
+    text-align: left;
+  }
+
+  .matrix tr:last-child td { border-bottom: 0; }
+  .matrix th:last-child, .matrix td:last-child { border-right: 0; }
+
+  .note {
+    border-left: 5px solid var(--blue);
+    background: #f8fbff;
+    padding: 15px 18px;
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1.45;
+  }
+
+  .classroom {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  .classroom div {
+    border: 1px solid #d8e2f2;
+    border-radius: 8px;
+    background: #fbfdff;
+    padding: 10px 12px;
+    min-height: 78px;
+    min-width: 0;
+  }
+
+  .classroom b {
+    display: block;
+    margin-bottom: 4px;
+    color: #1d4ed8;
+    font-size: 13.5px;
+  }
+
+  .classroom span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.34;
+  }
+
+  .case-lab {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  .case-lab div {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 11px 13px;
+    min-height: 84px;
+  }
+
+  .case-lab b {
+    display: block;
+    margin-bottom: 4px;
+    color: #172033;
+    font-size: 14px;
+  }
+
+  .case-lab span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.38;
+  }
+
+  .mini-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .mini-row.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mini-card {
+    border: 1px solid #d8e2f2;
+    border-radius: 8px;
+    background: #ffffff;
+    padding: 10px 12px;
+    min-height: 72px;
+  }
+
+  .mini-card b {
+    display: block;
+    margin-bottom: 4px;
+    color: #172033;
+    font-size: 14px;
+  }
+
+  .mini-card span {
+    display: block;
+    color: #40506a;
+    font-size: 12.5px;
+    line-height: 1.36;
+  }
+
+  .mini-card a {
+    color: #1d4ed8;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .mini-card code {
+    display: block;
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 11px;
+    white-space: normal;
+  }
+
+  .slide:not(.cover) .grid.three > .panel {
+    min-height: 154px;
+    padding: 22px;
+  }
+
+  .slide:not(.cover) .grid.four > .panel {
+    min-height: 166px;
+    padding: 20px;
+  }
+
+  .slide:not(.cover) .grid.two > .panel {
+    min-height: 176px;
+    padding: 24px;
+  }
+
+  .slide:not(.cover) .panel p,
+  .slide:not(.cover) .panel li {
+    font-size: 17px;
+    line-height: 1.52;
+  }
+
+  .slide:not(.cover) .flow .step {
+    min-height: 174px;
+    padding: 18px 15px;
+  }
+
+  .slide:not(.cover) .step small {
+    font-size: 14px;
+    line-height: 1.48;
+  }
+
+  .slide:not(.cover) .matrix th,
+  .slide:not(.cover) .matrix td {
+    padding: 13px 14px;
+    font-size: 16px;
+    line-height: 1.46;
+  }
+
+  .bottom {
+    position: absolute;
+    left: 42px;
+    right: 42px;
+    bottom: 28px;
+    display: flex;
+    justify-content: space-between;
+    color: #9aa7bb;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .controls {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border: 1px solid #d7deea;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .92);
+    box-shadow: 0 8px 28px rgba(15, 23, 42, .12);
+    z-index: 20;
+  }
+
+  .nav-button {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: #172033;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .counter {
+    min-width: 58px;
+    color: #40506a;
+    font-size: 13px;
+    text-align: center;
+    font-weight: 800;
+  }
+
+  @media print {
+    @page { size: 10in 7.5in; margin: 0; }
+    body { display: block; padding: 0; background: white; }
+    .deck { width: 10in; height: 7.5in; aspect-ratio: auto; border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+    .slide { position: relative; display: block !important; width: 10in; height: 7.5in; page-break-after: always; break-after: page; }
+    .slide:last-child { page-break-after: auto; break-after: auto; }
+    .controls { display: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="deck">
+
+    <section class="slide active cover">
+      <div class="slide-inner" style="align-content:start; gap:16px">
+        <div class="eyebrow">金融中队 AI Coding 入门系列</div>
+        <h1 style="font-size:46px">第 1 期：从日常问答到可靠的 AI 协作</h1>
+        <p class="subtitle">先学会把问题说清楚、给出可靠来源，并留下下一次还能继续使用的工作记录。</p>
+        <div class="grid three">
+          <div class="panel blue"><h3>本期起点</h3><p>会用豆包或类似工具回答日常问题。</p></div><div class="panel teal"><h3>本期能力</h3><p>把模糊想法整理成别人可以继续处理的材料。</p></div><div class="panel green"><h3>为后面埋线</h3><p>可靠知识从哪里来，聊天结束后什么应该留下。</p></div>
+        </div>
+        <table class="matrix">
+      <thead><tr><th>学习路径</th><th>这一段解决什么问题</th></tr></thead>
+      <tbody><tr><td>认识</td><td>通用一句话助手、AI Coding 和 AI Team Coding 有什么不同。</td></tr><tr><td>方法</td><td>背景、目标、边界、输出和自检五要素。</td></tr><tr><td>可靠性</td><td>区分来源、推断和待确认信息。</td></tr><tr><td>练习</td><td>把上传失败的一句话变成可交接的问题材料。</td></tr></tbody>
+    </table>
+        <div class="mini-row">
+    <div class="mini-card"><b>课前准备</b><span>打开豆包、WorkBuddy 或常用聊天工具；准备一个已经脱敏的工作问题。</span></div><div class="mini-card"><b>本期操作</b><span>先认识三类使用方式，再练习可靠表达和可接续记录；本期不写代码。</span></div>
+  </div>
+      </div>
+      <div class="bottom"><span>Course 01</span><span>1 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Why AI</div>
+          <h2>AI 的价值，不只是更快得到一段答案</h2>
+          <p class="lead">真正有用的变化，是把整理、比较、起草和检查交给 AI，人把精力留给判断。但当 AI 从回答问题走到修改项目，影响范围和责任也会改变。</p>
+        </div>
+        <div class="grid four">
+    <div class="panel blue"><h3>整理</h3><p>把零散描述整理成清单、表格、问题单或操作步骤。</p></div><div class="panel teal"><h3>比较</h3><p>根据明确标准比较多个方案，并标出差异和未知项。</p></div><div class="panel green"><h3>起草</h3><p>快速形成初稿，再由人补充事实、边界和责任。</p></div><div class="panel amber"><h3>检查</h3><p>检查遗漏、矛盾、风险和仍需确认的信息。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>2 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Assistant Mindset</div>
+          <h2>无论使用哪种工具，都先把 AI 当成刚加入的协作同事</h2>
+          <p class="lead">它很能干，但不知道你的现场情况，也不会自动知道哪些资料可信。先学会正确协作，再决定让它接触多少项目能力。</p>
+        </div>
+        <table class="matrix"><thead><tr><th>做法</th><th>会发生什么</th><th>判断标准</th></tr></thead>
+    <tbody><tr><td>只说：帮我看看上传失败</td><td>AI 只能猜系统、用户和原因</td><td>答案可能流畅，但无法交给研发继续处理</td></tr><tr><td>补充场景、目标和已知事实</td><td>AI 可以整理现象和缺失信息</td><td>输出开始具备协作价值</td></tr><tr><td>指定资料来源并要求标注推断</td><td>AI 能区分事实、推断和待确认项</td><td>别人知道哪些内容可以相信</td></tr></tbody></table>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>3 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Three Ways To Use AI</div>
+          <h2>一句话助手、AI Coding、AI Team Coding 不是同一种用法</h2>
+          <p class="lead">协作方法相同，但工具能看到的上下文、能执行的动作和承担的风险不同。这里比较常见使用方式，而不是给豆包、WorkBuddy 等产品贴固定标签。</p>
+        </div>
+        <table class="matrix"><thead><tr><th>比较项</th><th>通用一句话助手</th><th>AI Coding 工具</th><th>AI Team Coding</th></tr></thead>
+    <tbody><tr><td>上下文</td><td>当前对话与手工上传材料</td><td>IDE、仓库文件、搜索结果和命令输出</td><td>任务上下文、项目知识、Code Graph 和历史决定</td></tr><tr><td>主要动作</td><td>问答、整理、总结和起草</td><td>读代码、改文件、运行命令和查看差异</td><td>按角色和阶段完成需求、计划、开发、审核与归档</td></tr><tr><td>规则</td><td>主要依靠用户在对话中说明</td><td>读取仓库入口规则和工具配置</td><td>团队规范自动进入每次任务，并设置停下条件</td></tr><tr><td>记忆</td><td>通常围绕个人对话和手工保存结果</td><td>可保留本地任务状态，但不天然等于团队记忆</td><td>共享决定、失败经验和三级记忆由团队治理</td></tr><tr><td>权限</td><td>决定可上传什么、可访问哪些企业能力</td><td>控制可读目录、可写文件、命令执行和网络访问</td><td>再叠加模块责任、人工 Gate 和合入权限</td></tr></tbody></table>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>4 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Team Layer</div>
+          <h2>AI Team Coding 是在编程工具外，再加一层团队协作系统</h2>
+          <p class="lead">AI Coding 能读取和修改真实项目，所以仅靠个人提示词不够。团队层用代码仓、规则、流程和服务把它的能力放进共同边界。</p>
+        </div>
+        <div class="grid three">
+    <div class="panel blue"><h3>IDE / 仓库上下文</h3><p>让 AI 看到当前项目、相关源码、测试、配置和真实差异，不只依赖你复制的一段文字。</p></div><div class="panel teal"><h3>团队规范</h3><p>明确模块边界、公共接口、验证要求和遇到什么情况必须停下来找人。</p></div><div class="panel green"><h3>项目知识</h3><p>通过源码、Code Graph、README、术语和历史决定帮助 AI 理解项目，而不是重新猜设计。</p></div><div class="panel amber"><h3>团队记忆</h3><p>保存已做决定、失败尝试、bug 根因和成熟经验，让后续任务少走重复弯路。</p></div><div class="panel rose"><h3>权限与 Gate</h3><p>限制可读、可写、可执行范围；架构、模块和合入决定仍由相应责任人确认。</p></div><div class="panel violet"><h3>证据与追踪</h3><p>把 issue、计划、代码差异、测试、风险和审核连接起来，发生问题时可以定位和回滚。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>5 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Prompt Pattern</div>
+          <h2>进入任何 AI 工具前，先把任务说成五件事</h2>
+          <p class="lead">团队层约束工具可以做什么；清楚的任务约束这一轮要做什么。两者共同决定 AI 是否会沿着正确方向工作。</p>
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>背景</b><small>事情发生在哪里，谁受到影响。</small></div><div class="step"><span class="num teal">2</span><b>目标</b><small>希望最终获得什么结果。</small></div><div class="step"><span class="num green">3</span><b>边界</b><small>不能泄露、不能假设、不能越过什么。</small></div><div class="step"><span class="num amber">4</span><b>输出</b><small>需要清单、草稿、表格还是步骤。</small></div><div class="step"><span class="num rose">5</span><b>自检</b><small>标出推断、遗漏和需要人确认的地方。</small></div>
+  </div>
+        <code class="example">请把“大文件上传失败”整理成问题单草稿。
+背景：管理员反馈 500MB 以上附件偶发失败。
+目标：让研发能判断是否需要修复。
+边界：不要猜系统原因，不使用真实客户信息。
+输出：现象、影响、已知事实、待确认问题、建议下一步。
+自检：标出所有推断和缺失信息。</code>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>6 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Reliable Knowledge</div>
+          <h2>AI 的回答要能说清楚：依据来自哪里</h2>
+          <p class="lead">五要素解决“要做什么”，可靠来源解决“凭什么这样判断”。后面课程会把这些来源进一步整理成项目知识层。</p>
+        </div>
+        <div class="grid three">
+    <div class="panel blue"><h3>你提供的材料</h3><p>业务说明、操作记录、截图文字和经过脱敏的日志，是本轮最直接的依据。</p></div><div class="panel teal"><h3>团队已有资料</h3><p>制度、术语表、项目说明和历史问题，可以减少重复解释。</p></div><div class="panel green"><h3>AI 的推断</h3><p>可以作为调查方向，但必须显式标记，不能冒充事实。</p></div>
+  </div><div class="note">可靠输出的最低要求：事实有来源，推断有标签，未知项有人确认。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>7 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Knowledge Practice</div>
+          <h2>同一个问题，先给资料再提问</h2>
+          <p class="lead">知道来源类型之后，再看输入资料如何改变 AI 的输出：材料越贴近现场，推断越少，协作价值越高。</p>
+        </div>
+        <table class="matrix"><thead><tr><th>输入条件</th><th>AI 的输出变化</th><th>协作价值</th></tr></thead>
+    <tbody><tr><td>没有资料</td><td>列出十几个常见上传失败原因</td><td>信息很多，但未必与当前系统有关</td></tr><tr><td>提供操作记录和错误时间</td><td>先整理可确认事实，再列调查方向</td><td>研发可以按线索继续检查</td></tr><tr><td>再补团队术语和约束</td><td>输出使用统一名称并避开敏感信息</td><td>材料更容易在团队中复用</td></tr></tbody></table><code class="example">只使用我提供的操作记录回答。资料里没有的信息写“未知”，不要用常见原因补全。</code>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>8 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Memory Seed</div>
+          <h2>聊天会结束，工作记录应该留下</h2>
+          <p class="lead">有依据的结论仍会随着对话结束而消失，所以还要留下可接续记录。这就是后面“记忆层”的起点。</p>
+        </div>
+        <div class="grid four">
+    <div class="panel blue"><h3>留下目标</h3><p>我们正在解决什么问题，完成标准是什么。</p></div><div class="panel teal"><h3>留下事实</h3><p>已经确认了什么，使用了哪些资料。</p></div><div class="panel green"><h3>留下决定</h3><p>为什么选择当前方向，哪些方案被排除。</p></div><div class="panel amber"><h3>留下下一步</h3><p>谁需要确认什么，下一次从哪里继续。</p></div>
+  </div><code class="example">工作记录：目标 / 已确认事实 / 未确认问题 / 已做决定 / 下一步 / 资料来源</code>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>9 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Safety</div>
+          <h2>上下文和记忆越多，越要先管好权限与信息</h2>
+          <p class="lead">工作记录应该可接续，但不等于把所有对话、客户资料和项目文件都保存或上传。能力扩大时，边界也要同步加强。</p>
+        </div>
+        <div class="grid four">
+    <div class="panel blue"><h3>先脱敏</h3><p>客户姓名、账号、交易明细、密钥和内部地址不能直接输入。</p></div><div class="panel teal"><h3>少上传</h3><p>只提供完成任务必需的片段，不把整个文件夹一次性交给工具。</p></div><div class="panel green"><h3>不照抄</h3><p>重要结论回到原始资料或责任人处核对。</p></div><div class="panel amber"><h3>留边界</h3><p>不确定时让 AI 停下来提问，不让它自行补全事实。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>10 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Video Walkthrough</div>
+          <h2>操作演示：把一句话整理成可交接材料</h2>
+          <p class="lead">现在把前面的五要素、可靠资料、工作记录和安全边界串成一次完整操作。</p>
+        </div>
+        <div class="flow">
+    <div class="step"><span class="num ">1</span><b>第一次输入</b><small>只说“上传失败，帮我看看”。</small></div><div class="step"><span class="num teal">2</span><b>观察缺口</b><small>找出 AI 猜测的系统、原因和目标。</small></div><div class="step"><span class="num green">3</span><b>补五要素</b><small>加入背景、目标、边界、输出、自检。</small></div><div class="step"><span class="num amber">4</span><b>加入资料</b><small>粘贴脱敏后的操作记录。</small></div><div class="step"><span class="num rose">5</span><b>留下记录</b><small>生成可供下一次继续的工作摘要。</small></div>
+  </div>
+        <div class="mini-row"><div class="mini-card"><b>豆包入口</b><span><a href="https://www.doubao.com/">doubao.com</a></span></div><div class="mini-card"><b>观看重点</b><span>不要只看按钮，重点观察输入如何改变输出质量。</span></div></div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>11 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Hands On</div>
+          <h2>课堂练习：完成一份问题材料和工作记录</h2>
+          <p class="lead">看完完整操作后，换成自己的脱敏问题，走一遍相同链路，并检查另一位同事能否继续。</p>
+        </div>
+        <div class="grid three">
+    <div class="panel blue"><h3>选择问题</h3><p>使用一个真实但已脱敏的问题，例如报表难懂、附件上传失败或审批缓慢。</p></div><div class="panel teal"><h3>生成问题材料</h3><p>使用五要素提示词，要求 AI 区分事实、推断和待确认项。</p></div><div class="panel green"><h3>生成工作记录</h3><p>让 AI 再输出目标、事实、决定、下一步和资料来源。</p></div>
+  </div><div class="note">完成标准：另一位同事只看这两份材料，也知道发生了什么、还缺什么、下一步做什么。</div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>12 / 13</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-inner">
+        <div>
+          <div class="eyebrow">Bridge</div>
+          <h2>下一期：当 AI 可以读取项目，规则会更重要</h2>
+          <p class="lead">第一期已经把问题、依据、记录和安全边界准备好。第二期让 AI 进入真实项目时，这些基础会升级成任务上下文、项目知识、分支和验证证据。</p>
+        </div>
+        <div class="grid three">
+    <div class="panel blue"><h3>今天已经有</h3><p>清楚的问题、可靠来源、可接续的工作记录。</p></div><div class="panel teal"><h3>下一期增加</h3><p>项目目录、源代码、修改计划、分支和自测证据。</p></div><div class="panel green"><h3>继续保留</h3><p>不知道就提问，重要边界由人确认，做完必须给证据。</p></div>
+  </div>
+
+
+
+      </div>
+      <div class="bottom"><span>Course 01</span><span>13 / 13</span></div>
+    </section>
+  </main>
+  <div class="controls" aria-label="Slide controls">
+    <button class="nav-button" id="prev" type="button" aria-label="上一页">‹</button>
+    <div class="counter" id="counter">1 / 13</div>
+    <button class="nav-button" id="next" type="button" aria-label="下一页">›</button>
+  </div>
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const prev = document.getElementById("prev");
+    const next = document.getElementById("next");
+    const counter = document.getElementById("counter");
+    let current = 0;
+    const hash = window.location.hash.match(/^#slide-(\d+)$/);
+    if (hash) current = Math.min(Math.max(Number(hash[1]) - 1, 0), slides.length - 1);
+    function show(index, updateHash = true) {
+      current = Math.min(Math.max(index, 0), slides.length - 1);
+      slides.forEach((slide, i) => slide.classList.toggle("active", i === current));
+      prev.disabled = current === 0;
+      next.disabled = current === slides.length - 1;
+      counter.textContent = `${current + 1} / ${slides.length}`;
+      if (updateHash) history.replaceState(null, "", `#slide-${current + 1}`);
+    }
+    prev.addEventListener("click", () => show(current - 1));
+    next.addEventListener("click", () => show(current + 1));
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") show(current - 1);
+      if (event.key === "ArrowRight" || event.key === " ") show(current + 1);
+      if (event.key === "Home") show(0);
+      if (event.key === "End") show(slides.length - 1);
+    });
+    show(current, false);
+  </script>
+</body>
+</html>
