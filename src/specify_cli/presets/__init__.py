@@ -778,6 +778,7 @@ class PresetManager:
                                         matching_cmds, ext_id, ext_dir,
                                         self.project_root,
                                         context_note=f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n",
+                                        extension_id=ext_id,
                                     )
                                     registered = True
                             except Exception:
@@ -1199,6 +1200,8 @@ class PresetManager:
                     "command_name": cmd_name,
                     "source_file": source_file,
                     "source": f"extension:{manifest.id}",
+                    "extension_id": manifest.id,
+                    "extension_dir": ext_root,
                 }
                 modern_skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
                 restore_index.setdefault(modern_skill_name, restore_info)
@@ -1463,6 +1466,17 @@ class PresetManager:
             if extension_restore:
                 content = extension_restore["source_file"].read_text(encoding="utf-8")
                 frontmatter, body = registrar.parse_frontmatter(content)
+                # Mirror the register-time rewrite (#2101): resolve
+                # extension-relative subdir references (agents/,
+                # knowledge-base/, etc.) to their installed location before
+                # the generic placeholder resolution below, otherwise
+                # restoring after a preset override removal would leave
+                # bare, unresolvable paths in the skill body.
+                body = registrar.rewrite_extension_paths(
+                    body,
+                    extension_restore["extension_id"],
+                    extension_restore["extension_dir"],
+                )
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
@@ -3038,6 +3052,8 @@ class PresetResolver:
                     "path": candidate,
                     "source": source,
                     "strategy": "replace",
+                    "extension_id": ext_id,
+                    "extension_dir": ext_dir,
                 })
 
         # Priority 4: Core templates (always "replace")
@@ -3157,10 +3173,32 @@ class PresetResolver:
         if not layers:
             return None
 
+        def _read_layer_content(layer: Dict[str, Any]) -> str:
+            """Read a layer's raw text, rewriting extension-relative subdir
+            references (agents/, knowledge-base/, etc.) to their installed
+            location when the layer is extension-provided (#2101).
+
+            Extension layers are always inserted with strategy "replace"
+            (see collect_all_layers), so a layer only ever needs this
+            rewrite when it wins outright above or serves as the
+            composition base below — never as a mid-stack composing
+            (append/prepend/wrap) layer.
+            """
+            text = layer["path"].read_text(encoding="utf-8")
+            extension_id = layer.get("extension_id")
+            extension_dir = layer.get("extension_dir")
+            if extension_id and extension_dir:
+                from ..agents import CommandRegistrar
+
+                text = CommandRegistrar.rewrite_extension_paths(
+                    text, extension_id, extension_dir
+                )
+            return text
+
         # If the top (highest-priority) layer is replace, it wins entirely —
         # lower layers are irrelevant regardless of their strategies.
         if layers[0]["strategy"] == "replace":
-            return layers[0]["path"].read_text(encoding="utf-8")
+            return _read_layer_content(layers[0])
 
         # Composition: build content bottom-up from the effective base.
         # The base is the nearest replace layer scanning from highest priority
@@ -3183,7 +3221,7 @@ class PresetResolver:
 
         # Convert to reversed_layers index
         base_reversed_idx = len(layers) - 1 - base_layer_idx
-        content = layers[base_layer_idx]["path"].read_text(encoding="utf-8")
+        content = _read_layer_content(layers[base_layer_idx])
         # Compose only the layers above the base (higher priority = lower index in layers,
         # higher index in reversed_layers). Process bottom-up from base+1.
         start_idx = base_reversed_idx + 1

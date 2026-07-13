@@ -13,6 +13,7 @@ _KIRO_ARG_FALLBACK = "(the user will provide the argument in this conversation)"
 
 class KiroCliIntegration(MarkdownIntegration):
     key = "kiro-cli"
+    multi_install_safe = True
     config = {
         "name": "Kiro CLI",
         "folder": ".kiro/",
