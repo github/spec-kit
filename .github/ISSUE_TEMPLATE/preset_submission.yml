@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for contributing a preset! This template helps you submit your preset to the community catalog.
-        
+
         **Before submitting:**
         - Review the [Preset Publishing Guide](https://github.com/github/spec-kit/blob/main/presets/PUBLISHING.md)
         - Ensure your preset has a valid `preset.yml` manifest

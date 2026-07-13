@@ -242,6 +242,26 @@ def _interpolate_expressions(template: str, namespace: dict[str, Any]) -> str:
     return "".join(out)
 
 
+def _split_top_level(text: str, sep: str) -> list[str]:
+    """Split *text* on each occurrence of *sep* that lies outside any quoted
+    string or nested brackets.
+
+    Used to break a filter chain (``a | map('x') | join(',')``) into its
+    individual filter segments without splitting on a ``|`` that appears inside
+    a quoted argument. Each returned segment is a slice at a top-level
+    boundary, so the quote/bracket scan restarts cleanly on the remainder.
+    """
+    parts: list[str] = []
+    start = 0
+    while True:
+        idx = _find_top_level(text[start:], sep)
+        if idx == -1:
+            parts.append(text[start:])
+            return parts
+        parts.append(text[start:start + idx])
+        start += idx + len(sep)
+
+
 def _split_top_level_commas(text: str) -> list[str]:
     """Split *text* on commas that are not inside quotes or nested brackets.
 
@@ -305,6 +325,68 @@ def _find_top_level(text: str, token: str) -> int:
     return -1
 
 
+def _apply_filter(value: Any, filter_expr: str, namespace: dict[str, Any]) -> Any:
+    """Apply a single pipe filter segment to *value*.
+
+    *filter_expr* is one link of a filter chain — the text between two
+    top-level ``|`` separators, already stripped (e.g. ``map('name')``,
+    ``default('x')``, ``from_json``). Returns the filtered value so the caller
+    can feed it into the next link.
+
+    Raises ``ValueError`` on any mis-wired or unknown filter rather than
+    silently returning *value* unchanged: a passthrough would turn a mistyped
+    or unsupported filter into a wrong result with no signal.
+    """
+    # `from_json` is strict: it takes no arguments and tolerates no trailing
+    # tokens. Match on the leading filter name and require the whole filter to
+    # be exactly `from_json`, so every mis-wired form (`from_json()`,
+    # `from_json('x')`, `from_json)`, `from_json extra`) fails loudly instead of
+    # silently falling through to the unknown-filter path.
+    leading = re.match(r"\w+", filter_expr)
+    if leading and leading.group(0) == "from_json":
+        if filter_expr != "from_json":
+            raise ValueError(
+                "from_json: expected '| from_json' with no arguments or "
+                f"trailing tokens, got '| {filter_expr}'"
+            )
+        return _filter_from_json(value)
+
+    # Parse filter name and argument
+    filter_match = re.match(r"(\w+)\((.+)\)", filter_expr)
+    if filter_match:
+        fname = filter_match.group(1)
+        farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
+        if fname == "default":
+            return _filter_default(value, farg)
+        if fname == "join":
+            return _filter_join(value, farg)
+        if fname == "map":
+            return _filter_map(value, farg)
+        if fname == "contains":
+            return _filter_contains(value, farg)
+    # Filter without args
+    if filter_expr == "default":
+        return _filter_default(value)
+    # No recognized filter matched. Fail loudly rather than silently returning
+    # the unfiltered value. Distinguish a *registered* filter used in an
+    # unsupported form (e.g. `| join` or `| map` with no argument) from a
+    # genuinely unknown filter name, so the message names the real problem
+    # instead of calling a known filter "unknown".
+    name = leading.group(0) if leading else filter_expr
+    expected = (
+        "expected one of default or default('x'), join('sep'), "
+        "map('attr'), contains('s'), or from_json"
+    )
+    if name in _REGISTERED_FILTERS:
+        raise ValueError(
+            f"filter '{name}' used in an unsupported form (got "
+            f"'| {filter_expr}'): {expected}"
+        )
+    raise ValueError(
+        f"unknown filter '{name}': {expected} (got '| {filter_expr}')"
+    )
+
+
 def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     """Evaluate a simple expression against the namespace.
 
@@ -329,65 +411,17 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
     # Handle pipe filters. Detect the pipe at the top level only, so a literal
     # '|' inside a quoted operand (e.g. `inputs.x == 'a|b'`) or nested brackets is
     # not mistaken for a filter separator — mirroring the operator parsing below.
+    # Filters chain left-to-right: `list | map('name') | join(', ')` feeds each
+    # filter's result into the next, so `map` (which yields a list) can be
+    # rendered by `join`. Splitting only at the first pipe would hand the whole
+    # tail to one filter and mangle any later `|`.
     pipe_idx = _find_top_level(expr, "|")
     if pipe_idx != -1:
-        value = _evaluate_simple_expression(expr[:pipe_idx].strip(), namespace)
-        filter_expr = expr[pipe_idx + 1:].strip()
-
-        # `from_json` is strict: it takes no arguments and tolerates no
-        # trailing tokens. Match on the leading filter name and require the
-        # whole filter to be exactly `from_json`, so every mis-wired form
-        # (`from_json()`, `from_json('x')`, `from_json)`, `from_json extra`)
-        # fails loudly instead of silently falling through to the
-        # unknown-filter path and returning the unparsed value. (filter_expr
-        # is already stripped above.)
-        leading = re.match(r"\w+", filter_expr)
-        if leading and leading.group(0) == "from_json":
-            if filter_expr != "from_json":
-                raise ValueError(
-                    "from_json: expected '| from_json' with no arguments or "
-                    f"trailing tokens, got '| {filter_expr}'"
-                )
-            return _filter_from_json(value)
-
-        # Parse filter name and argument
-        filter_match = re.match(r"(\w+)\((.+)\)", filter_expr)
-        if filter_match:
-            fname = filter_match.group(1)
-            farg = _evaluate_simple_expression(filter_match.group(2).strip(), namespace)
-            if fname == "default":
-                return _filter_default(value, farg)
-            if fname == "join":
-                return _filter_join(value, farg)
-            if fname == "map":
-                return _filter_map(value, farg)
-            if fname == "contains":
-                return _filter_contains(value, farg)
-        # Filter without args
-        filter_name = filter_expr.strip()
-        if filter_name == "default":
-            return _filter_default(value)
-        # No recognized filter matched. Fail loudly rather than silently
-        # returning the unfiltered value: a passthrough turns a mis-typed or
-        # unsupported filter into a wrong result with no signal. Mirrors the
-        # strict `from_json` handling above. Distinguish a *registered* filter
-        # used in an unsupported form (e.g. `| join` or `| map` with no
-        # argument) from a genuinely unknown filter name, so the message names
-        # the real problem instead of calling a known filter "unknown".
-        leading_name = re.match(r"\w+", filter_expr)
-        name = leading_name.group(0) if leading_name else filter_expr
-        expected = (
-            "expected one of default or default('x'), join('sep'), "
-            "map('attr'), contains('s'), or from_json"
-        )
-        if name in _REGISTERED_FILTERS:
-            raise ValueError(
-                f"filter '{name}' used in an unsupported form (got "
-                f"'| {filter_expr}'): {expected}"
-            )
-        raise ValueError(
-            f"unknown filter '{name}': {expected} (got '| {filter_expr}')"
-        )
+        segments = _split_top_level(expr, "|")
+        value = _evaluate_simple_expression(segments[0].strip(), namespace)
+        for segment in segments[1:]:
+            value = _apply_filter(value, segment.strip(), namespace)
+        return value
 
     # Boolean operators — parse 'or' first (lower precedence) so that
     # 'a or b and c' is evaluated as 'a or (b and c)'. Splits are quote/bracket

@@ -1321,4 +1321,3 @@ class TestDescriptionQuoting:
         """Plain description without special characters continues to work."""
         result = run_script(git_repo, "--dry-run", "--short-name", "feat", "Add login feature")
         assert result.returncode == 0, result.stderr
-        

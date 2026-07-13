@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 from abc import ABC
 from dataclasses import dataclass
@@ -52,6 +53,18 @@ _CORE_COMMAND_TEMPLATE_ORDER = (
 _CORE_COMMAND_TEMPLATE_RANK = {
     command: index for index, command in enumerate(_CORE_COMMAND_TEMPLATE_ORDER)
 }
+
+
+def yaml_quote(value: str) -> str:
+    """Emit *value* as a double-quoted YAML scalar on a single line.
+
+    A hand-rolled quote cannot carry raw newlines (YAML folds them to
+    spaces) or control characters (the reader rejects them), so let the
+    YAML emitter produce the escapes.
+    """
+    return yaml.safe_dump(
+        str(value), default_style='"', allow_unicode=True, width=sys.maxsize
+    ).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -592,9 +605,41 @@ class IntegrationBase(ABC):
                 if candidate.exists():
                     return relative
         for name in ("python3", "python"):
-            if shutil.which(name):
-                return name
+            found = shutil.which(name)
+            if not found:
+                continue
+            # On Windows, python3/python on PATH may be the Microsoft
+            # Store App Execution Alias stub: it exists but only prints
+            # an installer hint and exits non-zero, so existence is not
+            # enough (see #3304 for the same defect in the sh scripts).
+            if sys.platform == "win32" and not IntegrationBase._interpreter_runs(
+                found
+            ):
+                continue
+            return name
         return sys.executable or "python3"
+
+    @staticmethod
+    def _interpreter_runs(path: str) -> bool:
+        """Return True when *path* executes as a Python interpreter.
+
+        Runs isolated (``-I``) without ``site`` (``-S``) and discards
+        I/O so the probe is a fast liveness check that cannot trigger
+        ``sitecustomize``/user startup hooks.
+        """
+        try:
+            return (
+                subprocess.run(
+                    [path, "-I", "-S", "-c", ""],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=15,
+                ).returncode
+                == 0
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
 
     @staticmethod
     def process_template(
@@ -1077,7 +1122,6 @@ class TomlIntegration(IntegrationBase):
 # YamlIntegration — YAML-format agents (Goose)
 # ---------------------------------------------------------------------------
 
-
 class YamlIntegration(IntegrationBase):
     """Concrete base for integrations that use YAML recipe format.
 
@@ -1480,21 +1524,17 @@ class SkillsIntegration(IntegrationBase):
             if not description:
                 description = f"Spec Kit: {command_name} workflow"
 
-            # Build SKILL.md with manually formatted frontmatter to match
-            # the release packaging script output exactly (double-quoted
-            # values, no yaml.safe_dump quoting differences).
-            def _quote(v: str) -> str:
-                escaped = v.replace("\\", "\\\\").replace('"', '\\"')
-                return f'"{escaped}"'
-
+            # Build SKILL.md with manually formatted frontmatter (stable
+            # double-quoted values). yaml_quote escapes newlines and control
+            # characters that a plain quoted f-string cannot carry.
             skill_content = (
                 f"---\n"
-                f"name: {_quote(skill_name)}\n"
-                f"description: {_quote(description)}\n"
-                f"compatibility: {_quote('Requires spec-kit project structure with .specify/ directory')}\n"
+                f"name: {yaml_quote(skill_name)}\n"
+                f"description: {yaml_quote(description)}\n"
+                f"compatibility: {yaml_quote('Requires spec-kit project structure with .specify/ directory')}\n"
                 f"metadata:\n"
-                f"  author: {_quote('github-spec-kit')}\n"
-                f"  source: {_quote('templates/commands/' + src_file.name)}\n"
+                f"  author: {yaml_quote('github-spec-kit')}\n"
+                f"  source: {yaml_quote('templates/commands/' + src_file.name)}\n"
                 f"---\n"
                 f"{processed_body}"
             )

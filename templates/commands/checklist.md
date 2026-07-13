@@ -3,6 +3,7 @@ description: Generate a custom checklist for the current feature based on user r
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json
   ps: scripts/powershell/check-prerequisites.ps1 -Json
+  py: scripts/python/check_prerequisites.py --json
 ---
 
 ## Checklist Purpose: "Unit Tests for English"
