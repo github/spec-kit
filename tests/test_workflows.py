@@ -953,6 +953,44 @@ class TestCommandStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'command'" in e for e in errors)
 
+    def test_validate_rejects_non_mapping_input(self):
+        """`input: null` / list / string must fail validation, not crash at run.
+
+        Before the fix, execute() iterated ``input.items()`` and raised
+        ``AttributeError`` for a non-mapping value, bypassing validate().
+        """
+        from specify_cli.workflows.steps.command import CommandStep
+
+        step = CommandStep()
+        for bad in (None, [1, 2], "foo"):
+            errors = step.validate({"id": "t", "command": "/x", "input": bad})
+            assert any("'input' must be a mapping" in e for e in errors), (
+                f"expected mapping error for input={bad!r}, got {errors!r}"
+            )
+
+    def test_execute_non_mapping_input_does_not_crash(self):
+        """execute() must fail cleanly when validate() is bypassed.
+
+        Some callers (e.g. ad-hoc step execution) skip
+        ``WorkflowEngine.validate()``. In that path, a non-mapping ``input``
+        used to raise ``AttributeError: 'NoneType' object has no attribute
+        'items'`` from execute(). Now it is treated as an empty mapping and
+        the step reports the usual dispatch failure.
+        """
+        from unittest.mock import patch
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(default_integration="claude", project_root="/tmp")
+        with patch("specify_cli.workflows.steps.command.shutil.which", return_value=None):
+            result = step.execute(
+                {"id": "t", "command": "/speckit.specify", "input": None},
+                ctx,
+            )
+        assert result.status == StepStatus.FAILED
+        assert result.output["input"] == {}
+
     def test_step_override_integration(self):
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep

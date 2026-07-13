@@ -31,6 +31,12 @@ class CommandStep(StepBase):
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         command = config.get("command", "")
         input_data = config.get("input", {})
+        # A non-mapping ``input`` (``null``, list, string, …) is a config error.
+        # ``validate()`` catches this at load time; guard here so a caller that
+        # bypasses ``WorkflowEngine.validate()`` still fails cleanly rather than
+        # raising ``AttributeError`` from ``input_data.items()``.
+        if not isinstance(input_data, dict):
+            input_data = {}
 
         # Resolve expressions in input
         resolved_input: dict[str, Any] = {}
@@ -154,5 +160,14 @@ class CommandStep(StepBase):
         if "command" not in config:
             errors.append(
                 f"Command step {config.get('id', '?')!r} is missing 'command' field."
+            )
+        if "input" in config and not isinstance(config["input"], dict):
+            # ``execute`` iterates ``input.items()`` to resolve template expressions;
+            # a non-mapping ``input`` (``null``, list, string) would crash there
+            # with a bare ``AttributeError``. Reject at validation so the failure
+            # surfaces at load time with a message that points at the field.
+            errors.append(
+                f"Command step {config.get('id', '?')!r}: 'input' must be a "
+                f"mapping, got {type(config['input']).__name__}."
             )
         return errors
