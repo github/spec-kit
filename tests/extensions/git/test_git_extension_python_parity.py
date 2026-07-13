@@ -295,6 +295,21 @@ class TestCreateFeatureBranchParity:
 
         assert module["_git_lines"](tmp_path, "status") == []
 
+    def test_windows_persist_hint_quotes_branch_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        module = runpy.run_path(str(EXT_PY / "create_new_feature_branch.py"))
+        monkeypatch.setattr(module["os"], "name", "nt")
+
+        result = module["_persist_hint"](
+            "GIT_BRANCH_NAME", "feature/$value's-\"quoted\""
+        )
+
+        assert (
+            result
+            == "$env:GIT_BRANCH_NAME = 'feature/$value''s-\"quoted\"'"
+        )
+
     def test_empty_description_errors(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
         b = _run_bash("create-new-feature-branch.sh", bash_proj, "--json", "   ")

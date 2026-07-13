@@ -71,7 +71,8 @@ def _err(message: str) -> None:
 def _persist_hint(var_name: str, value: str) -> str:
     """Shell-appropriate guidance for persisting an env var in the caller's shell."""
     if os.name == "nt":
-        return f'$env:{var_name} = "{value}"'
+        escaped_value = value.replace("'", "''")
+        return f"$env:{var_name} = '{escaped_value}'"
     return f"export {var_name}={shlex.quote(value)}"
 
 
