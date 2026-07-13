@@ -20,8 +20,15 @@ After native converge completes (Phase 1), continue in this run with portable ch
 
 1. Identify repository role and load work context when present.
 2. Confirm feature work links the correct coding issue or allowed handoff requirement.
-3. Run governance, build/self-test, and boundary checks for touched areas.
-4. Record skipped checks with concrete reasons and update the Work Context Package.
+3. Compare changed files with `plan.md#change-scope`; any unplanned path is a
+   deviation and blocks success until recorded and reviewed.
+4. When architecture impact was required, generate the post-change Code Graph
+   or source-structure evidence and compare it with every `ARCH-*` expectation.
+5. Detect public contract or default-behavior changes from API/SPI, config,
+   wire/data shapes, examples, golden files, and snapshots. Require an owner
+   decision only when the result is incompatible or behavior-changing.
+6. Run governance, build/self-test, and boundary checks for touched areas.
+7. Record skipped checks with concrete reasons and update the Work Context Package.
 
 ## Evidence board
 
@@ -38,12 +45,23 @@ After checks (or when checks are skipped with documented reasons), produce the e
 - **Context Path**:
 - **Repository role**:
 - **Linked work item**:
-- **Coding issue or handoff requirement URL**:
+- **Primary coding issue or handoff requirement URL**:
+- **Also resolves coding issues**:
 - **Implementation status**:
 
 ## Scope and Impact
 
 ## Code Graph / Source Structure Evidence
+
+## Planned vs As-Built Architecture
+
+| Plan delta | Expected | Actual | Result / deviation |
+|---|---|---|---|
+
+## Work Item Verification
+
+| Work item | Symptom or behavior | Test/evidence | Result |
+|---|---|---|---|
 
 ## Self-Test Evidence
 
@@ -64,4 +82,7 @@ After checks (or when checks are skipped with documented reasons), produce the e
 
 3. Update the Work Context Package with evidence path and next command (`speckit.ai-team.pr` when ready).
 
-Stop before claiming implementation success when behavior changed without self-test evidence, feature work lacks a work item anchor, or skipped checks have vague reasons.
+Stop before claiming implementation success when behavior changed without
+self-test evidence, a linked work item lacks its own verification mapping,
+actual paths exceed the planned scope, required architecture comparison is
+missing, or skipped checks have vague reasons.

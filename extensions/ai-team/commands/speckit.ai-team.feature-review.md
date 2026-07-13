@@ -8,6 +8,8 @@ Help a maintainer or technical committee review a feature work item before it
 is accepted for implementation. Public work may start from a coding issue.
 Confidential enterprise work should start from an internal enhancement handoff.
 This command does not approve on behalf of humans.
+It records the human decision and state transition; it does not author the
+requirement, perform implementation, or launch the formal workflow.
 
 ## User Input
 
@@ -24,8 +26,9 @@ feature approval authority unless explicitly delegated.
 
 ## Review Questions
 
-- Is there a Work Context Package tying this review to the requirement and
-  intended coding repository?
+- Is there a public coding Issue, handoff requirement, or Intake result tying
+  this review to the intended coding repository? Formal Work Context is not
+  required before acceptance.
 - Is the user problem or product goal concrete?
 - Is the work item stable: public coding issue, allowed handoff URL, or
   public-safe summary?

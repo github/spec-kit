@@ -1,0 +1,113 @@
+schema_version: "1.0"
+workflow:
+  id: "ai-team-intake"
+  name: "AI Team Plain-Language Intake"
+  version: "0.1.0"
+  author: "AI Team Template"
+  description: "Turns an unanchored plain-language request into read-only impact evidence, a reviewed coding issue, and a resumable handoff to the formal bug-fix or feature SDD workflow."
+
+requires:
+  speckit_version: ">=0.12.4"
+  integrations:
+    any:
+      - "codex"
+      - "claude"
+      - "cursor-agent"
+      - "trae"
+
+inputs:
+  request:
+    type: string
+    required: true
+    prompt: "Describe the problem or capability in your own words"
+  integration:
+    type: string
+    default: "codex"
+    enum: ["codex", "claude", "cursor-agent", "trae"]
+  intake_slug:
+    type: string
+    required: true
+    prompt: "Stable lower-kebab identifier generated from the request"
+  work_type:
+    type: string
+    default: "auto"
+    enum: ["auto", "bug", "feature", "new-project"]
+  privacy_class:
+    type: string
+    default: "unknown"
+    enum: ["unknown", "public-safe", "confidential"]
+  planning_preference:
+    type: string
+    default: "auto"
+    enum: ["auto", "standard", "compact"]
+
+steps:
+  - id: workspace
+    command: speckit.ai-team.workspace
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }}"
+
+  - id: intake-boundary-cycle
+    type: do-while
+    condition: "{{ steps.review-intake-boundary.output.choice == 'revise' }}"
+    max_iterations: 10
+    steps:
+      - id: intake-open
+        command: speckit.ai-team.intake
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "{{ inputs.request }} mode=analyze intake_slug={{ inputs.intake_slug }} work_type={{ inputs.work_type }} privacy_class={{ inputs.privacy_class }} planning_preference={{ inputs.planning_preference }} workflow_run_id={{ context.run_id }}"
+
+      - id: permission-analysis
+        command: speckit.ai-team.permissions
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "{{ inputs.request }} intake_mode=true intake_slug={{ inputs.intake_slug }} mode=analysis work_type={{ inputs.work_type }} workflow_run_id={{ context.run_id }}"
+
+      - id: review-intake-boundary
+        type: gate
+        message: "Confirm the provisional bug/feature classification, repository visibility, and read-only analysis boundary. Revise regenerates the intake analysis; reject aborts."
+        options: [approve, revise, reject]
+        on_reject: abort
+
+  - id: codegraph
+    command: speckit.ai-team.codegraph
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} work_slug=intake-{{ inputs.intake_slug }} work_type={{ inputs.work_type }} intake_mode=true workflow_run_id={{ context.run_id }}"
+    continue_on_error: true
+
+  - id: impact
+    command: speckit.ai-team.impact
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} work_slug=intake-{{ inputs.intake_slug }} work_type={{ inputs.work_type }} intake_mode=true workflow_run_id={{ context.run_id }}"
+    continue_on_error: true
+
+  - id: issue-draft-cycle
+    type: do-while
+    condition: "{{ steps.review-issue-draft.output.choice == 'revise' }}"
+    max_iterations: 10
+    steps:
+      - id: issue-draft
+        command: speckit.ai-team.intake
+        integration: "{{ inputs.integration }}"
+        input:
+          args: "{{ inputs.request }} mode=draft intake_slug={{ inputs.intake_slug }} work_type={{ inputs.work_type }} privacy_class={{ inputs.privacy_class }} planning_preference={{ inputs.planning_preference }} workflow_run_id={{ context.run_id }}"
+
+      - id: review-issue-draft
+        type: gate
+        message: "Review the issue draft, impact evidence, publication target, and planning recommendation. Revise regenerates the draft; approval authorizes publication. Feature acceptance must identify Technical Committee or delegated authority."
+        options: [approve, revise, reject]
+        on_reject: abort
+
+  - id: publish-issue
+    type: shell
+    run: "python .specify/extensions/ai-team/scripts/intake_router.py publish --run-id {{ context.run_id }} --intake-slug {{ inputs.intake_slug }}"
+    output_format: json
+
+  - id: launch-formal-workflow
+    type: shell
+    run: "python .specify/extensions/ai-team/scripts/intake_router.py route --run-id {{ context.run_id }} --intake-slug {{ inputs.intake_slug }}"
+    output_format: json

@@ -21,6 +21,12 @@ $ARGUMENTS
 
 Move confidential feature intent through the internal-only enhancement
 repository without leaking raw customer demand into the coding repository.
+This command authors the private requirement and sanitized handoff; it does not
+accept the Feature. Acceptance belongs to `speckit.ai-team.feature-review`.
+This command authors the private requirement and sanitized handoff; it does not
+accept the Feature. Acceptance belongs to `speckit.ai-team.feature-review`.
+This command authors the private requirement and sanitized handoff; it does not
+accept the Feature. Acceptance belongs to `speckit.ai-team.feature-review`.
 
 ## Repository Model
 

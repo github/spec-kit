@@ -34,9 +34,18 @@ inputs:
     type: string
     required: true
     prompt: "Work slug (equals bug_slug), for example bug-project-alpha-123"
+  work_type:
+    type: string
+    default: "bug"
+    enum: ["bug"]
   coding_issue_url:
     type: string
+    required: true
+    prompt: "Primary coding issue URL"
+  also_resolves_issue_urls:
+    type: string
     default: ""
+    prompt: "Optional comma-separated coding issue URLs resolved by the same root-cause fix"
   resume_from:
     type: string
     default: "auto"
@@ -61,15 +70,25 @@ steps:
     input:
       args: "{{ inputs.request }}"
 
+  - id: validate-work-item
+    type: shell
+    run: "python .specify/extensions/ai-team/scripts/check-work-item.py --run-id {{ context.run_id }}"
+
   - id: context-open
     command: speckit.ai-team.context
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.work_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} also_resolves_issue_urls={{ inputs.also_resolves_issue_urls }} bug_slug={{ inputs.work_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+
+  - id: permission-analysis
+    command: speckit.ai-team.permissions
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} mode=analysis work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }}"
 
   - id: review-context
     type: gate
-    message: "Review the bug work item, work_slug, and Work Context Package before source impact analysis."
+    message: "Review the bug work item, linked same-root-cause issues, analysis Permission Envelope, and resume point before source impact analysis."
     options: [approve, revise, reject]
     on_reject: abort
 
@@ -97,11 +116,23 @@ steps:
     command: speckit.bug.assess
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} coding_issue_url={{ inputs.coding_issue_url }} slug={{ inputs.work_slug }} work_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} coding_issue_url={{ inputs.coding_issue_url }} also_resolves_issue_urls={{ inputs.also_resolves_issue_urls }} slug={{ inputs.work_slug }} work_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }}"
 
   - id: review-assessment
     type: gate
     message: "Review the bug assessment, root-cause hypothesis, and proposed remediation before source edits."
+    options: [approve, revise, reject]
+    on_reject: abort
+
+  - id: permission-implementation
+    command: speckit.ai-team.permissions
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} mode=implementation work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }}"
+
+  - id: review-permissions
+    type: gate
+    message: "Review bug-fix write paths, commands, network access, enforcement mode, and gaps before source edits."
     options: [approve, revise, reject]
     on_reject: abort
 
@@ -121,4 +152,4 @@ steps:
     command: speckit.bug.test
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} slug={{ inputs.work_slug }} work_slug={{ inputs.work_slug }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} bug_slug={{ inputs.work_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} slug={{ inputs.work_slug }} work_slug={{ inputs.work_slug }} work_type=bug coding_issue_url={{ inputs.coding_issue_url }} also_resolves_issue_urls={{ inputs.also_resolves_issue_urls }} bug_slug={{ inputs.work_slug }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"

@@ -26,10 +26,16 @@ provides:
       description: "Create or update the AI Team workspace contract for coding repository and internal enhancement boundaries."
     - name: speckit.ai-team.start
       file: commands/speckit.ai-team.start.md
-      description: "Route a plain-language request to the correct AI Team bug, requirement, or template workflow and create a Work Context Package."
+      description: "Thin chat entry that routes resume, anchored work, or unanchored Intake without performing the routed phase."
+    - name: speckit.ai-team.intake
+      file: commands/speckit.ai-team.intake.md
+      description: "Classify an unanchored request and produce read-only impact evidence plus an Issue draft; workflow owns publication and routing."
     - name: speckit.ai-team.context
       file: commands/speckit.ai-team.context.md
-      description: "Open, update, or reconstruct the durable Work Context Package so interrupted AI Team SDD work can resume."
+      description: "Open, update, or reconstruct formal work context after a stable Issue, charter, or handoff exists."
+    - name: speckit.ai-team.permissions
+      file: commands/speckit.ai-team.permissions.md
+      description: "Create or verify an Intake or formal-work Permission Envelope and report its real enforcement level."
     - name: speckit.ai-team.requirement
       file: commands/speckit.ai-team.requirement.md
       description: "Create or refine internal enhancement context and sanitized handoff requirements for confidential feature work."
@@ -50,7 +56,7 @@ provides:
       description: "Fetch handoff requirement URL and build gitignored spec.override.md before planning."
     - name: speckit.ai-team.feature-review
       file: commands/speckit.ai-team.feature-review.md
-      description: "Help maintainers and the technical committee assess internal enhancement handoff readiness before coding."
+      description: "Own the human Feature acceptance assessment for maintainers and the Technical Committee."
     - name: speckit.ai-team.pr
       file: commands/speckit.ai-team.pr.md
       description: "Prepare a pull request in the correct repository with linked work item and evidence."
@@ -98,3 +104,4 @@ tags:
   - knowledge
   - evidence
   - code-graph
+  - permissions

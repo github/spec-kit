@@ -4,6 +4,10 @@ The Work Context Package is the durable handoff unit for AI Team SDD work. It
 ties one bug fix, feature, or template change to the current phase, source
 snapshot, graph evidence, required human decisions, and next command.
 
+Create it only after a stable Issue, charter, or handoff exists. Pre-work-item
+Intake remains under `.specify/ai-team/intake/<intake_slug>/` and must not create
+a formal Work Context Package.
+
 It exists because AI agents may stop, switch tools, lose chat context, or enter
 the work after a human approval step. Recovery must come from repository facts,
 not from hidden conversation memory.
@@ -16,6 +20,7 @@ Store work context in the coding repository:
 .specify/ai-team/work/<work_slug>/
 |-- work-context.yml
 |-- context-pack.md
+|-- permission-envelope.yml
 |-- handoffs/
 |-- codegraph/
 |-- evidence/
@@ -27,6 +32,18 @@ remain under `.specify/bugs/<bug_slug>/` when `work_type=bug`.
 Use `.specify/workflows/runs/<run-id>/state.json` for Spec Kit's workflow
 engine state. Use `.specify/ai-team/work/<work_slug>/` for AI Team work identity
 and cross-session recovery.
+
+The files have separate responsibilities:
+
+- `work-context.yml` is the compact cross-session index: work item, native
+  artifact locations, phase, last command, and next command;
+- `context-pack.md` is the human-readable resume summary;
+- `permission-envelope.yml` records task-scoped access and its real enforcement
+  mode.
+
+See [permission-envelope.md](permission-envelope.md) for the access contract.
+Do not create a second artifact ledger: `spec.md`, `plan.md`, `tasks.md`, bug
+reports, workflow state, and the Evidence Board remain authoritative.
 
 ## Work Identity
 
@@ -46,6 +63,12 @@ Feature work must use a stable work item. Public feature work can use a coding
 repository issue. Confidential enterprise work can use a sanitized handoff
 requirement URL where visibility allows it, or a public-safe summary plus
 private trace in approved channels.
+
+One work unit may resolve several coding issues when they describe different
+symptoms of the same root cause. Record one primary issue and an
+`also_resolves_issue_urls` list. Use separate work units when root cause,
+change boundary, rollback, or release risk differs, and map every linked issue
+to its own reproduction and verification evidence.
 
 ## Phase Model
 
@@ -85,12 +108,13 @@ implementation; there is no `plan-check.md`, `plan-gate.md`, or preset task-gate
 2. If a paused workflow run is recorded, inspect it with
    `specify workflow status <run-id>` and resume it with
    `specify workflow resume <run-id>` when appropriate.
-3. If there is no usable workflow run, load `work-context.yml`, `context-pack.md`,
-   current feature artifacts, bug artifacts, and code graph artifacts.
+3. If there is no usable workflow run, load `work-context.yml`,
+   `context-pack.md`, the permission envelope, and only the native artifacts
+   required by the current phase.
 4. Compare the recorded source snapshot and work item or bug state to current
    repository state.
-5. Run the `next_command` from `work-context.yml` only when the stop conditions are
-   clear.
+5. Run the `next_command` from `work-context.yml` only when the stop conditions
+   are clear and the Permission Envelope allows the required operation.
 
 If the source, work item, or context pack changed while the work was paused,
 run `speckit.ai-team.codegraph` and `speckit.ai-team.impact` again before
@@ -134,3 +158,15 @@ Archiving does not mean deleting evidence. Default behavior is to keep raw
 evidence available under the repository's retention policy while future AI
 tasks load the smaller memory card, release summary, bugfix lessons, and
 migration playbook.
+
+## Change And Permission Control
+
+Work context points to the standard SDD and bug artifacts instead of copying
+their content or status into a parallel manifest. It does not automatically
+change team governance, architecture rules, or enterprise guidance.
+
+Before code graph or source analysis, create an analysis Permission Envelope.
+Before implementation, revise it to the smallest approved write paths and
+commands. Record `policy-only` unless native or wrapper enforcement is actually
+configured and verified. If hard confinement is required and only policy
+controls exist, stop rather than claiming the task is sandboxed.

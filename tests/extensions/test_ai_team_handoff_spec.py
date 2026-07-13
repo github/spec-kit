@@ -74,6 +74,7 @@ def test_ai_team_handoff_spec_preset_files():
     entries = preset["provides"]["templates"]
     names = {e["name"] for e in entries}
     assert names == {
+        "speckit.specify",
         "speckit.plan",
         "speckit.tasks",
         "speckit.converge",
@@ -84,6 +85,7 @@ def test_ai_team_handoff_spec_preset_files():
     }
     by_name = {e["name"]: e for e in entries}
     expected_strategies = {
+        "speckit.specify": "prepend",
         "speckit.plan": "prepend",
         "speckit.tasks": "prepend",
         "speckit.converge": "wrap",
@@ -110,6 +112,10 @@ def test_ai_team_handoff_spec_preset_files():
         elif name == "speckit.bug.test":
             assert "evidence board" in text.lower()
             assert "checks" in text.lower()
+        elif name == "speckit.specify":
+            assert "primary coding issue" in text
+            assert "also_resolves_issue_urls" in text
+            assert "Work Items" in text
         else:
             assert "spec.override.md" in text
             assert handoff_stop in text
@@ -120,6 +126,25 @@ def test_ai_team_handoff_spec_preset_files():
     )
     assert "evidence board" in converge_text.lower()
     assert "checks" in converge_text.lower()
+    assert "Planned vs As-Built Architecture" in converge_text
+    assert "Work Item Verification" in converge_text
+    plan_text = (PRESET_ROOT / by_name["speckit.plan"]["file"]).read_text(
+        encoding="utf-8"
+    )
+    assert "AI Team plan contract" in plan_text
+    assert "Planning Mode" in plan_text
+    assert "Architecture Impact" in plan_text
+    assert "forward-compatible" in plan_text
+    tasks_text = (PRESET_ROOT / by_name["speckit.tasks"]["file"]).read_text(
+        encoding="utf-8"
+    )
+    assert "AI Team task traceability" in tasks_text
+    assert "ARCH-*" in tasks_text
+    bug_text = (PRESET_ROOT / by_name["speckit.bug.test"]["file"]).read_text(
+        encoding="utf-8"
+    )
+    assert "same root cause" in bug_text
+    assert "verification mapping" in bug_text
 
 
 @requires_bash

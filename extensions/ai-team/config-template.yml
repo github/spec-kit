@@ -25,6 +25,7 @@ work_context:
   root: .specify/ai-team/work
   context_pack_file: context-pack.md
   work_context_file: work-context.yml
+  permission_envelope_file: permission-envelope.yml
   allow_reconstruct_from_handoff_requirement_url: true
   allow_reconstruct_from_bug_slug: true
 
@@ -103,6 +104,48 @@ release_archive:
     - support/knowledge-map.md
     - docs/ai-team/memory/decisions
     - migration-playbook.md
+planning:
+  default_mode: standard
+  supported_modes:
+    - standard
+    - compact
+  compact_requires_explicit_user_selection: true
+  compact_requires_post_impact_human_gate: true
+  compact_for_new_project: false
+
+issue_publishing:
+  default_adapter: github-cli
+  supported_adapters:
+    - github-cli
+  github_cli:
+    command: gh
+  require_verified_issue_url: true
+  require_approved_intake_gates: true
+
+permissions:
+  # Spec Kit workflow gates are not a runtime sandbox. Keep policy-only until
+  # a tool-native or wrapper adapter is configured and verified.
+  default_enforcement_mode: policy-only
+  supported_enforcement_modes:
+    - policy-only
+    - agent-native
+    - wrapper-enforced
+  require_envelope: true
+  require_analysis_review: true
+  require_implementation_review: true
+  deny_unspecified_write_paths: true
+  deny_unspecified_network: true
+  require_human_approval_for:
+    - expand-write-paths
+    - public-contract-change
+    - cross-module-change
+    - dependency-install
+    - external-network-write
+  always_deny_without_explicit_exception:
+    - credential-read
+    - private-demand-export
+    - destructive-history-rewrite
+    - write-git-internals
 
 issue_workflow:
   type_labels:
@@ -228,6 +271,8 @@ roles:
 
 gates:
   require_role_handoff: true
+  require_work_item_anchor: true
+  allow_same_root_cause_issue_grouping: true
   require_code_graph_for_existing_project: true
   require_strict_build_plan_for_new_project: true
   require_selftest_mapping: true

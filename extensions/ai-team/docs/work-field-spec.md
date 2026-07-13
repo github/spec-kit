@@ -10,7 +10,8 @@ tools, PR reviews, and human approval pauses.
 | `work_type` | every work unit | `bug`, `feature`, `new-project`, or `template` |
 | `work_slug` | every durable work unit | Stable work identity and `.specify/ai-team/work/<work_slug>/` directory name |
 | `work_item.type` | every durable work unit | source kind: `coding_bug`, `coding_feature`, `internal_handoff`, `project_charter`, or `template_change` |
-| `coding_issue_url` | public bug or public feature | canonical coding repository issue URL |
+| `coding_issue_url` | public bug or public feature | primary coding repository issue URL |
+| `also_resolves_issue_urls` | one root-cause change resolves additional coding issues | additional issue URLs, each with separate verification evidence |
 | `bug_slug` | bug workflows | bug extension slug used by `.specify/bugs/<bug_slug>/`; equals `work_slug` for bugs |
 | `handoff_requirement_url` | confidential enterprise feature | sanitized internal enhancement handoff URL |
 | `published_requirement_url` | legacy only | deprecated compatibility alias for `handoff_requirement_url` |
@@ -59,9 +60,26 @@ work_item:
   bug_slug: bug-project-alpha-123
 ```
 
-If there is no issue yet, create a coding issue first when possible. If that is
-not possible, use a concise lower-kebab bug slug and replace it with the issue
-identity once the issue exists.
+Several coding issues may share one bug work unit and PR when they describe
+different symptoms of the same root cause. Keep one `coding_issue_url` as the
+primary anchor and list the others explicitly:
+
+```yaml
+work_item:
+  type: coding_bug
+  coding_issue_url: https://example.com/org/project-alpha/issues/123
+  also_resolves_issue_urls:
+    - https://example.com/org/project-alpha/issues/456
+```
+
+All linked issues must use the same work type and must map to distinct
+reproduction and verification evidence. Split the work when root cause,
+approved scope, rollback, or release risk differs.
+
+If there is no issue yet, `ai-team-intake` may use a concise lower-kebab Intake
+slug for read-only classification and impact analysis. After human review, the
+system creates the coding issue and replaces the provisional identity with the
+issue-derived work slug before formal SDD or bug-fix implementation begins.
 
 ## Feature Work Items
 

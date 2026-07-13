@@ -5,7 +5,8 @@ description: "Open, update, or reconstruct the durable Work Context Package so i
 # AI Team Context
 
 Create, load, update, or reconstruct the durable Work Context Package for an
-AI Team SDD work unit.
+AI Team SDD work unit after a stable Issue, charter, or handoff exists. Intake
+uses its own provisional directory and never creates a formal Work Context.
 
 ## User Input
 
@@ -33,6 +34,7 @@ Store work context under the coding repository:
 .specify/ai-team/work/<work_slug>/
 |-- work-context.yml
 |-- context-pack.md
+|-- permission-envelope.yml
 |-- handoffs/
 |-- codegraph/
 |-- evidence/
@@ -74,10 +76,14 @@ insertion for chat-first tools.
 ```text
 Work Context Package:
 - work slug:
+- permission envelope path:
+- permission enforcement mode:
 - work type: bug fix / feature / new project / template change / unclear
+- planning mode: standard / compact
 - work item:
 - work item type:
 - coding issue URL:
+- also resolves coding issue URLs:
 - bug slug:
 - handoff requirement URL:
 - published requirement URL, deprecated alias:
@@ -104,8 +110,11 @@ Work Context Package:
 ```yaml
 work_slug:
 work_type:
+planning_mode: standard
+permission_envelope: .specify/ai-team/work/<work_slug>/permission-envelope.yml
 work_item:
   coding_issue_url:
+  also_resolves_issue_urls: []
   handoff_requirement_url:
   published_requirement_url:
   bug_slug:
@@ -134,16 +143,22 @@ updated_at:
 
 1. Locate `.specify/extensions/ai-team/ai-team-config.yml` and integration
    metadata when present.
-2. Resolve `work_slug`, `work_type`, `coding_issue_url`,
+2. Resolve `work_slug`, `work_type`, `planning_mode`, `coding_issue_url`,
+   `also_resolves_issue_urls`,
    `handoff_requirement_url`, deprecated `published_requirement_url`,
    `bug_slug`, and `workflow_run_id` from arguments and existing work context.
-3. If `resume=true`, load `work-context.yml` and `context-pack.md`; otherwise create
-   them if missing.
-4. Reconcile the context pack with current source, current work item, bug
-   report, and active feature files.
-5. Update `phase`, `last_completed_command`, `next_command`, and artifact
+3. If `resume=true`, load `work-context.yml`, `context-pack.md`, and
+   `permission-envelope.yml`; otherwise create the first two and leave
+   permissions blocked until explicitly assessed.
+4. Resolve native artifacts from the active feature directory or bug slug.
+   Record missing artifacts as missing; do not invent paths.
+5. Treat `coding_issue_url` as the primary coding issue. Accept
+   `also_resolves_issue_urls` only when the linked issues describe different
+   symptoms of the same root-cause change. Keep all linked issues the same work
+   type and require separate evidence mapping for each one.
+6. Update `phase`, `last_completed_command`, `next_command`, and artifact
    locations when arguments include newer phase evidence.
-6. Return the resume summary and next command.
+7. Return the resume summary, permission status, and next command.
 
 ## Output Shape
 
@@ -151,8 +166,11 @@ updated_at:
 AI Team Context:
 - work slug:
 - work type:
+- planning mode:
 - work item:
 - context path:
+- permission envelope:
+- permission enforcement mode:
 - workflow run id:
 - current phase:
 - last completed command:
@@ -170,11 +188,15 @@ Stop and ask when:
 
 - the work cannot be mapped to a bug issue/slug, coding issue URL, handoff
   requirement URL, or explicit work slug;
-- a feature tries to resume without a coding issue, handoff requirement, or
-  approved work slug;
+- a feature or new project tries to enter formal SDD without a coding issue,
+  charter, or handoff requirement;
+- additional issue URLs are present without a primary coding issue, use another
+  work type, or do not share one root-cause change;
 - the context pack contains private enhancement content in a public coding
   repository;
 - `work-context.yml` and `context-pack.md` disagree about work type, work item, or
   phase;
+- the work context points at another work unit;
+- the next command requires access outside the current Permission Envelope;
 - current source or work item changed since the recorded source snapshot and
   the impact radius is unknown.

@@ -37,7 +37,14 @@ inputs:
     type: string
     default: "auto"
     enum: ["auto", "feature", "new-project", "template"]
+  planning_mode:
+    type: string
+    default: "standard"
+    enum: ["standard", "compact"]
   coding_issue_url:
+    type: string
+    default: ""
+  also_resolves_issue_urls:
     type: string
     default: ""
   published_requirement_url:
@@ -74,11 +81,17 @@ steps:
     command: speckit.ai-team.context
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode={{ inputs.planning_mode }} coding_issue_url={{ inputs.coding_issue_url }} also_resolves_issue_urls={{ inputs.also_resolves_issue_urls }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+
+  - id: permission-analysis
+    command: speckit.ai-team.permissions
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} mode=analysis work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} workflow_run_id={{ context.run_id }}"
 
   - id: review-context
     type: gate
-    message: "Review the Work Context Package, work item, and resume point before continuing."
+    message: "Review the work item, linked same-root-cause issues, analysis Permission Envelope, and resume point before continuing."
     options: [approve, revise, reject]
     on_reject: abort
 
@@ -96,11 +109,15 @@ steps:
       args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
     continue_on_error: true
 
+  - id: validate-work-item
+    type: shell
+    run: "python .specify/extensions/ai-team/scripts/check-work-item.py --run-id {{ context.run_id }}"
+
   - id: specify
     command: speckit.specify
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode={{ inputs.planning_mode }} coding_issue_url={{ inputs.coding_issue_url }} also_resolves_issue_urls={{ inputs.also_resolves_issue_urls }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
   - id: review-spec
     type: gate
@@ -114,80 +131,145 @@ steps:
     input:
       args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} phase=specified work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
-  - id: plan-cycle
-    type: do-while
-    condition: "{{ steps.review-plan.output.choice == 'revise' }}"
-    max_iterations: 10
-    steps:
-      - id: plan
-        type: if
-        condition: "{{ steps.review-plan.output.choice == 'revise' }}"
-        then:
-          - id: plan-revise
-            command: speckit.plan
-            integration: "{{ inputs.integration }}"
-            input:
-              args: "work_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }} Revise plan.md only using plan_check and Required Plan Revisions in context-pack.md. Patch the listed issues; do not rewrite unrelated sections or re-plan from spec unless a listed revision requires it."
-        else:
-          - id: plan-initial
-            command: speckit.plan
-            integration: "{{ inputs.integration }}"
-            input:
-              args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+  - id: planning-path
+    type: switch
+    expression: "{{ inputs.planning_mode }}"
+    cases:
+      standard:
+        - id: plan-cycle
+          type: do-while
+          condition: "{{ steps.review-plan.output.choice == 'revise' }}"
+          max_iterations: 10
+          steps:
+            - id: plan
+              type: if
+              condition: "{{ steps.review-plan.output.choice == 'revise' }}"
+              then:
+                - id: plan-revise
+                  command: speckit.plan
+                  integration: "{{ inputs.integration }}"
+                  input:
+                    args: "work_slug={{ inputs.work_slug }} planning_mode=standard workflow_run_id={{ context.run_id }} Revise plan.md only using plan_check and Required Plan Revisions in context-pack.md. Patch the listed issues; do not rewrite unrelated sections or re-plan from spec unless a listed revision requires it."
+              else:
+                - id: plan-initial
+                  command: speckit.plan
+                  integration: "{{ inputs.integration }}"
+                  input:
+                    args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode=standard coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
-      - id: plan-check
-        command: speckit.ai-team.plan-check
-        integration: "{{ inputs.integration }}"
-        input:
-          args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+            - id: plan-check
+              command: speckit.ai-team.plan-check
+              integration: "{{ inputs.integration }}"
+              input:
+                args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode=standard coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
-      - id: review-plan
-        type: gate
-        message: "Review the Plan Check Report in chat. Approve to generate tasks, revise to re-run plan and plan-check, or reject to abort."
-        options: [approve, revise, reject]
-        on_reject: abort
+            - id: review-plan
+              type: gate
+              message: "Review the Plan Check Report in chat. Approve to generate tasks, revise to re-run plan and plan-check, or reject to abort."
+              options: [approve, revise, reject]
+              on_reject: abort
 
-  - id: task-cycle
-    type: do-while
-    condition: "{{ steps.review-tasks.output.choice == 'revise' }}"
-    max_iterations: 10
-    steps:
-      - id: tasks
-        type: if
-        condition: "{{ steps.review-tasks.output.choice == 'revise' }}"
-        then:
-          - id: tasks-revise
-            command: speckit.tasks
-            integration: "{{ inputs.integration }}"
-            input:
-              args: "work_slug={{ inputs.work_slug }} workflow_run_id={{ context.run_id }} Revise tasks.md only using native analyze findings and the analyze section in context-pack.md when present. Patch the listed issues; do not regenerate tasks from spec unless a listed revision requires it."
-        else:
-          - id: tasks-initial
-            command: speckit.tasks
-            integration: "{{ inputs.integration }}"
-            input:
-              args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+        - id: task-cycle
+          type: do-while
+          condition: "{{ steps.review-tasks.output.choice == 'revise' }}"
+          max_iterations: 10
+          steps:
+            - id: tasks
+              type: if
+              condition: "{{ steps.review-tasks.output.choice == 'revise' }}"
+              then:
+                - id: tasks-revise
+                  command: speckit.tasks
+                  integration: "{{ inputs.integration }}"
+                  input:
+                    args: "work_slug={{ inputs.work_slug }} planning_mode=standard workflow_run_id={{ context.run_id }} Revise tasks.md only using native analyze findings and the analyze section in context-pack.md when present. Patch the listed issues; do not regenerate tasks from spec unless a listed revision requires it."
+              else:
+                - id: tasks-initial
+                  command: speckit.tasks
+                  integration: "{{ inputs.integration }}"
+                  input:
+                    args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode=standard coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
-      - id: analyze
-        command: speckit.analyze
-        integration: "{{ inputs.integration }}"
-        input:
-          args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+            - id: analyze
+              command: speckit.analyze
+              integration: "{{ inputs.integration }}"
+              input:
+                args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode=standard coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
 
-      - id: review-tasks
-        type: gate
-        message: "Review the native analyze report before implementation. Revise re-runs tasks and analyze."
-        options: [approve, revise, reject]
-        on_reject: abort
+            - id: review-tasks
+              type: gate
+              message: "Review the native analyze report before implementation. Revise re-runs tasks and analyze."
+              options: [approve, revise, reject]
+              on_reject: abort
+
+      compact:
+        - id: review-compact-eligibility
+          type: gate
+          message: "Confirm the impact evidence is local or single-module, low risk, and has no public-contract, migration, security/privacy, critical dependency, cross-module, or complex rollback change. Approve Compact or reject and restart with Standard."
+          options: [approve, reject]
+          on_reject: abort
+
+        - id: compact-cycle
+          type: do-while
+          condition: "{{ steps.review-compact-plan-tasks.output.choice == 'revise' }}"
+          max_iterations: 10
+          steps:
+            - id: compact-plan
+              command: speckit.plan
+              integration: "{{ inputs.integration }}"
+              input:
+                args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode=compact coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }} Create or revise only the concise Compact plan from impact evidence and prior combined-review findings."
+
+            - id: compact-plan-check
+              command: speckit.ai-team.plan-check
+              integration: "{{ inputs.integration }}"
+              input:
+                args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode=compact coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} workflow_run_id={{ context.run_id }}"
+
+            - id: handoff-plan-to-tasks
+              command: speckit.ai-team.handoff
+              integration: "{{ inputs.integration }}"
+              input:
+                args: "work_slug={{ inputs.work_slug }} phase=planned planning_mode=compact workflow_run_id={{ context.run_id }} Create the plan-to-tasks handoff from plan.md and recorded impact evidence only; do not share hidden architect chat context."
+
+            - id: compact-tasks
+              command: speckit.tasks
+              integration: "{{ inputs.integration }}"
+              input:
+                args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode=compact coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} workflow_run_id={{ context.run_id }} Derive concise native tasks.md from plan.md and the plan-to-tasks handoff."
+
+            - id: compact-analyze
+              command: speckit.analyze
+              integration: "{{ inputs.integration }}"
+              input:
+                args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode=compact workflow_run_id={{ context.run_id }}"
+
+            - id: review-compact-plan-tasks
+              type: gate
+              message: "Review the Compact Plan Check and native analyze reports together. Approve both Plan and Tasks, revise to regenerate both, or reject to abort."
+              options: [approve, revise, reject]
+              on_reject: abort
+
+  - id: permission-implementation
+    command: speckit.ai-team.permissions
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} mode=implementation work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} workflow_run_id={{ context.run_id }}"
+
+  - id: review-permissions
+    type: gate
+    message: "Review implementation write paths, commands, network access, enforcement mode, and gaps. Approve, revise, or reject before source edits."
+    options: [approve, revise, reject]
+    on_reject: abort
 
   - id: implement
     command: speckit.implement
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode={{ inputs.planning_mode }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} workflow_run_id={{ context.run_id }}"
 
   - id: converge
     command: speckit.converge
     integration: "{{ inputs.integration }}"
     input:
-      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} coding_issue_url={{ inputs.coding_issue_url }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"
+      args: "{{ inputs.request }} work_slug={{ inputs.work_slug }} work_type={{ inputs.work_type }} planning_mode={{ inputs.planning_mode }} coding_issue_url={{ inputs.coding_issue_url }} also_resolves_issue_urls={{ inputs.also_resolves_issue_urls }} handoff_requirement_url={{ inputs.handoff_requirement_url }} published_requirement_url={{ inputs.published_requirement_url }} resume_from={{ inputs.resume_from }} workflow_run_id={{ context.run_id }}"

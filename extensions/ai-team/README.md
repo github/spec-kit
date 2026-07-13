@@ -28,6 +28,8 @@ and adds enterprise collaboration constraints:
 - external Skill, Knowledge, and Memory support layers around the project.
 - durable Work Context Packages so interrupted work can resume from a work item
   instead of hidden chat context.
+- task-scoped Permission Envelopes that distinguish policy-only constraints
+  from verified agent-native or wrapper enforcement;
 - replaceable code graph adapters for source-grounded impact analysis.
 
 ## Role Model
@@ -67,6 +69,7 @@ Every AI Team work unit should have a durable Work Context Package:
 ```text
 .specify/ai-team/work/<work_slug>/context-pack.md
 .specify/ai-team/work/<work_slug>/work-context.yml
+.specify/ai-team/work/<work_slug>/permission-envelope.yml
 .specify/ai-team/work/<work_slug>/handoffs/
 .specify/ai-team/work/<work_slug>/codegraph/
 .specify/ai-team/work/<work_slug>/evidence/
@@ -85,17 +88,25 @@ speckit.ai-team.context work_slug=<work_slug> resume=true
 ```
 
 Use [docs/work-context-package.md](docs/work-context-package.md) for the
-storage format, phase model, and resume protocol. Use
+storage format, phase model, and resume protocol. Native Spec Kit artifacts
+remain authoritative: `spec.md` owns behavior, `plan.md` owns the technical
+approach, `tasks.md` owns execution, workflow state owns gate decisions, and
+the Evidence Board owns verification. Use
+[docs/permission-envelope.md](docs/permission-envelope.md) for access and
+enforcement semantics, and
 [docs/work-field-spec.md](docs/work-field-spec.md) for canonical `work_slug`,
 `bug_slug`, `coding_issue_url`, and `handoff_requirement_url` rules.
 
 ## User Journeys
 
 Use [docs/user-journeys.md](docs/user-journeys.md) for the complete
-step-by-step journeys. The short version:
+step-by-step journeys. See
+[docs/compact-planning.md](docs/compact-planning.md) for the bundled low-risk
+Plan/Tasks extension and its mandatory fallback rules. The short version:
 
 | Journey | Work item | Main path |
 |---|---|---|
+| one-sentence request with no issue | provisional local Intake slug | `ai-team-intake`: privacy/classification gate -> read-only code graph and impact -> issue draft -> human approval -> create issue -> formal workflow |
 | existing project bug fix | coding issue or bug slug | `ai-team-bugfix`: context -> context gate -> code graph -> impact gate -> bug assess -> assessment gate -> bug fix -> fix gate -> `speckit.bug.test` (composite checks/evidence) -> PR |
 | existing project new feature | coding issue URL or handoff requirement URL | optional requirement review -> context -> code graph -> native SDD with plan check, task gate, and converge evidence -> PR |
 | new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> native SDD with plan-check, task gate (preset), and converge evidence -> thin slice -> PR |
@@ -103,6 +114,26 @@ step-by-step journeys. The short version:
 | failed review/check/incident | PR, check, incident, or repeated AI mistake | retrospect -> update command, gate, knowledge, memory, graph, or test evidence |
 | memory consolidation | work slug, bug slug, PR, incident, release id, or manual lesson | sanitize -> choose local/department/enterprise tier -> sync/index -> promote to skill, knowledge, test, gate, or playbook |
 | release archive | release id, tag range, release issue, or work slugs | release-scoped memory consolidation -> bugfix lessons -> feature decisions -> migration playbook -> support memory/knowledge update |
+
+### Standard And Compact Planning
+
+The standard path remains the default:
+
+```text
+Spec -> Plan -> Plan Review -> Tasks -> Tasks Review -> Implement
+```
+
+The bundled Compact mode allows one workflow launch and one combined Plan/Tasks
+review for clear, low-risk, single-module work. It still generates `plan.md`
+before `tasks.md` in isolated role contexts and connects them with a written
+handoff. Both remain native Spec Kit artifacts with their existing meanings.
+
+Compact mode must never be selected only because a change sounds small or
+touches few files. Public contracts, database migration, security/privacy,
+cross-module work, dependency changes, uncertain design, new-project
+architecture, or non-trivial release/rollback needs require the standard path.
+AI may recommend Compact mode, but the user must explicitly select it and an
+accountable human confirms eligibility after impact analysis.
 
 ### Chat Aliases
 
@@ -112,7 +143,8 @@ aliases instead of asking the user to remember command details:
 | Chat alias | Maps to |
 |---|---|
 | `ai-team-sdd feature path` | `work_type=feature` plus a coding issue URL or handoff requirement URL |
-| `ai-team-bugfix path` | `work_slug=bug-<repo-slug>-<issue-number>` and an optional coding issue URL |
+| `ai-team-sdd compact path` | `work_type=feature`, `planning_mode=compact`, plus a coding issue URL or handoff requirement URL |
+| `ai-team-bugfix path` | `work_slug=bug-<repo-slug>-<issue-number>` and a required coding issue URL |
 | `ai-team-sdd new-project path` | `work_type=new-project` plus a public project issue/charter or handoff requirement URL |
 | `ai-team-sdd resume path` | `work_slug=<work_slug>` plus `resume_from=<phase>` or workflow run resume |
 | `ai-team-memory consolidate path` | completed work source plus `target_tier=local|department|enterprise` |
@@ -121,11 +153,16 @@ aliases instead of asking the user to remember command details:
 Recommended prompts:
 
 ```text
+请帮我在导出结果里增加 CSV 格式，字段和页面列表保持一致；如果影响很小，可以建议走 Compact。
+
 Use the ai-team-sdd feature path for this public coding issue:
 https://example.com/org/project/issues/456
 
 Use the ai-team-sdd feature path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-015
+
+请用 AI Team Compact 模式实现搜索结果导出，需求单是：
+https://example.com/org/project/issues/456
 
 Use the ai-team-bugfix path with work_slug=bug-project-alpha-123 for this coding issue:
 https://example.com/org/project/issues/123
@@ -140,8 +177,8 @@ Focus on bugfix lessons and reusable design patterns.
 
 ### Existing Project Bug Fix
 
-Bug fixes should use the dedicated `ai-team-bugfix` workflow. Bug work should
-link a coding repository issue when possible and must provide a stable
+Bug fixes should use the dedicated `ai-team-bugfix` workflow. Bug work must
+link a primary coding repository issue and provide a stable
 `work_slug` (equal to `bug_slug`). The reporter may describe only
 symptoms; the AI agent uses source evidence and code graph impact to find the
 likely module. The actual bug lifecycle uses the bundled bug extension:
@@ -154,6 +191,11 @@ AI Team adds work context, route review, code graph impact, architecture impact
 review, assessment review, fix-scope review, and composite checks/Evidence Board
 (via preset inside `speckit.bug.test`), plus PR description and review support
 around that bug lifecycle.
+
+One PR may also resolve other coding issues when they are different symptoms
+of the same root cause. Pass them through `also_resolves_issue_urls` and map
+each issue to separate reproduction and verification evidence. Split the work
+when root cause, approved scope, rollback, or release risk differs.
 
 ### Existing Project New Feature
 
@@ -215,23 +257,29 @@ New project work needs a stricter build-from-zero plan:
 
 ## Commands
 
-| Command | Use |
-|---|---|
-| `speckit.ai-team.workspace` | create or update repository role and privacy boundary config |
-| `speckit.ai-team.start` | chat-first routing to bug, feature, or template workflow (not a bundled workflow step) |
-| `speckit.ai-team.context` | open, update, or reconstruct a durable Work Context Package |
-| `speckit.ai-team.requirement` | create or refine internal enhancement context and sanitized handoff requirements |
-| `speckit.ai-team.codegraph` | generate or attach the code graph slice used for impact and gates |
-| `speckit.ai-team.impact` | inspect code graph or source-structure impact before code edits |
-| `speckit.ai-team.plan-check` | assess plan readiness after `speckit.plan`; chat report only (no gate file) |
-| `speckit.ai-team.handoff` | create role-isolated handoff documents between phases |
-| `speckit.ai-team.feature-review` | help maintainers and the technical committee assess internal enhancement handoff readiness |
-| `speckit.ai-team.pr` | prepare a PR in the correct repository with linked work item and evidence |
-| `speckit.ai-team.review` | help human reviewers assess boundary safety and evidence |
-| `speckit.ai-team.retrospect` | turn failures into durable process improvements |
-| `speckit.ai-team.memory-consolidate` | consolidate completed work into local, department, or enterprise memory |
-| `speckit.ai-team.release-archive` | archive a release and distill feature, bugfix, migration, and operations knowledge |
-| `speckit.ai-team.support` | audit Skill, Knowledge, and Memory support layers |
+Each command owns one phase. Workflow files own sequencing; commands must not
+silently perform the next command's decision.
+
+| Command | Unique responsibility | Explicitly does not own |
+|---|---|---|
+| `workspace` | repository roles, remotes, privacy configuration | task routing or work analysis |
+| `start` | thin chat routing and workflow launch | classification without a work item, context creation, code analysis |
+| `intake` | unanchored request classification, read-only impact, Issue draft | Issue publication, Feature acceptance, formal context |
+| `requirement` | confidential demand and sanitized handoff | public Issue publication or Feature acceptance |
+| `feature-review` | Technical Committee/delegated Feature acceptance evidence | requirement writing or implementation |
+| `context` | formal Work Context creation and resume | pre-Issue Intake or long-term memory |
+| `permissions` | Intake/formal access envelope and enforcement truth | business or architecture approval |
+| `codegraph` | source-derived graph facts and normalized graph artifacts | task-specific impact decisions |
+| `impact` | interpret graph/source facts for one work item | graph generation or architecture approval |
+| `handoff-spec-sync` | fetch an allowed private handoff into ignored override input | role handoff or requirement approval |
+| `handoff` | role-isolated phase-to-phase document transfer | remote requirement synchronization |
+| `plan-check` | pre-Tasks plan readiness report | PR review or human gate decision |
+| `pr` | assemble and submit the PR evidence package | independent merge-readiness judgment |
+| `review` | independent PR architecture/evidence assessment | PR authorship or Feature acceptance |
+| `retrospect` | classify one failure and propose a durable control | general memory promotion or release batching |
+| `memory-consolidate` | promote reviewed lessons across memory tiers | failure diagnosis or release enumeration |
+| `release-archive` | batch one release's work and invoke memory promotion | changing current system specification |
+| `support` | audit Skill, Knowledge, and Memory registries | task execution or lesson creation |
 
 ## Workflow
 
@@ -240,21 +288,34 @@ resumable path that reuses Spec Kit's native SDD commands:
 
 ```text
 optional Spec Kit init bootstrap -> workspace contract -> request routing
--> work context package -> context gate -> code graph -> impact
+-> work context -> analysis permission check -> context gate
+-> code graph -> impact
 -> speckit.specify -> review-spec gate -> AI Team handoff -> speckit.plan
 -> speckit.ai-team.plan-check -> review-plan gate
 -> speckit.tasks -> speckit.analyze (native cross-artifact report)
--> review-tasks gate -> speckit.implement -> speckit.converge (native + checks + evidence via preset)
+-> review-tasks gate -> implementation permission check -> permission gate
+-> speckit.implement -> speckit.converge (native + checks + evidence via preset)
+```
+
+That diagram is the Standard branch. The explicit Compact branch reuses the
+same intake, Spec, permissions, implementation, and evidence stages, but runs:
+
+```text
+impact -> compact eligibility gate -> plan -> plan check
+-> plan-to-tasks handoff -> tasks -> analyze
+-> combined Plan/Tasks review -> implementation
 ```
 
 ### Plan check, preset, and workflow gates
 
 | Step | Type | Writes files? | Human decision |
 |---|---|---|---|
-| `speckit.ai-team.plan-check` | extension command | Updates `work-context.yml` (`plan_check`) and `context-pack.md` only | No; produces chat report |
-| `review-plan` | workflow gate | No | Yes; approve / revise / reject before `tasks` |
-| `speckit.analyze` | native cross-artifact check | Read-only chat report | No; produces analyze report |
-| `review-tasks` | workflow gate | No | Yes; approve / revise / reject before `implement` |
+| `speckit.ai-team.plan-check` | extension command | Updates `work-context.yml` (`plan_check`) and `context-pack.md` only | No — produces chat report |
+| `review-plan` | workflow gate | No | Yes — approve / revise / reject before `tasks` |
+| `speckit.analyze` | native cross-artifact check | Read-only chat report | No — produces analyze report |
+| `review-tasks` | workflow gate | No | Yes — approve / revise / reject before `implement` |
+| `review-compact-eligibility` | workflow gate | No | Yes - confirm Compact after impact analysis |
+| `review-compact-plan-tasks` | workflow gate | No | Yes - approve or revise Plan and Tasks together |
 
 Plan check does **not** run core `speckit.checklist` and does **not** create
 `checklists/*.md` or `plan-check.md`. Cross-artifact consistency before
@@ -268,13 +329,24 @@ not the original spec/request args. At `review-tasks`, **revise** re-runs
 `speckit.tasks` and `speckit.analyze` (`task-cycle` loop) with the same pattern for
 `tasks.md` and native analyze findings.
 
+In Compact mode, `compact-cycle` regenerates Plan, the role-isolated handoff,
+Tasks, Plan Check, and native analyze output after a combined review chooses
+**revise**. There is no separate Plan review and Tasks review.
+
 The bundled `ai-team-bugfix` workflow gives bug work a deterministic path:
 
 ```text
 optional Spec Kit init bootstrap -> workspace contract -> work context package
--> work context package -> context gate -> code graph -> impact -> impact gate
--> bug assessment -> assessment gate -> bug fix -> fix gate -> speckit.bug.test (composite checks + evidence via preset)
+-> analysis permission check -> context gate -> code graph
+-> impact -> impact gate -> bug assessment -> assessment gate
+-> implementation permission check -> permission gate -> bug fix -> fix gate
+-> speckit.bug.test (composite checks + evidence via preset)
 ```
+
+Permission gates do not create a sandbox. The envelope defaults to
+`policy-only`; use `agent-native` or `wrapper-enforced` only when the concrete
+adapter and verification evidence are recorded. A task that requires hard
+confinement must stop when only policy controls are available.
 
 Workspace creation uses Spec Kit's own `init` step. AI Team does not copy
 template repositories into product repositories.
@@ -289,10 +361,12 @@ model and [docs/release-archive.md](docs/release-archive.md) for the
 release-scoped artifact contract.
 
 `ai-team-sdd` accepts `work_slug`, `work_type`, `coding_issue_url`,
+`also_resolves_issue_urls`,
 `handoff_requirement_url`, backward-compatible `published_requirement_url`, and
 `resume_from` so a user can restart feature or new-project work from the
-middle. `ai-team-bugfix` accepts `work_slug`, `coding_issue_url`, and
-`resume_from` so a user can restart after context review, impact review, bug
+middle. `ai-team-bugfix` accepts `work_slug`, required `coding_issue_url`,
+optional `also_resolves_issue_urls`, and `resume_from` so a user can restart
+after context review, impact review, bug
 assessment, fix review, testing, evidence, PR, or final review.
 
 ## Skill, Knowledge, Memory Support

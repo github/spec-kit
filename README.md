@@ -46,8 +46,8 @@ or Trae to collaborate on enterprise software. It keeps the Spec Kit SDD phases
 but adds team controls around them:
 
 ```text
-intake -> work context -> requirement or bug work item -> code graph impact
--> specify -> review-spec gate -> plan
+plain-language request -> read-only intake -> reviewed work item
+-> work context -> code graph impact -> specify -> review-spec gate -> plan
 -> plan-check (chat report) -> review-plan gate -> tasks
 -> analyze (native cross-artifact report) -> review-tasks gate
 -> implement -> converge (composite checks/evidence) -> PR/review
@@ -69,7 +69,8 @@ The exact path depends on the user journey:
 
 | Journey | When to use | Required anchor |
 |---|---|---|
-| existing project bug fix | current behavior is broken, flaky, regressed, or throws errors | coding issue URL or bug slug |
+| start with one sentence | intent is clear enough to analyze, but no issue exists | generated Intake slug; issue required only before formal SDD |
+| existing project bug fix | current behavior is broken, flaky, regressed, or throws errors | primary coding issue URL; work slug identifies local artifacts |
 | existing project new feature | adding public behavior to an existing repository | coding issue URL for public work, or internal handoff requirement URL for confidential enterprise traceability |
 | new project from zero | creating a new repository, service, product, or application | public project issue/charter, or handoff requirement URL for confidential enterprise work |
 | resume from middle | work stopped after approval, gate, failed check, tool switch, or lost chat | workflow run ID or Work Context Package work slug |
@@ -92,6 +93,7 @@ specify init . --integration codex --integration-options="--skills"
 specify extension add ai-team
 specify extension add bug
 specify preset add ai-team-handoff-spec
+specify workflow add ai-team-intake
 specify workflow add ai-team-sdd
 specify workflow add ai-team-bugfix
 ```
@@ -113,6 +115,32 @@ or `task-cycle` do-while). Revise iterations pass a fixed patch instruction (plu
 `work_slug`) instead of the original request/spec URLs — agents revise from
 `plan_check`, `context-pack.md`, or native analyze findings already on disk.
 
+**Compact planning:** Users do not need to know `planning_mode` or type a CLI
+command. In an installed Codex, Claude Code, Cursor Agent, or Trae workspace,
+say:
+
+```text
+请帮我在导出结果里增加 CSV 格式，字段和页面列表保持一致；如果影响很小，可以建议走 Compact。
+```
+
+No issue is needed for this first message. `speckit.ai-team.start` launches the
+read-only `ai-team-intake` workflow, which analyzes impact, drafts the issue,
+and asks a human to confirm publication and Standard/Compact mode. The system
+then creates the issue and launches formal SDD when its approval conditions are
+met. The user never has to compose the workflow command.
+
+An existing issue can still be supplied explicitly:
+
+```text
+请用 AI Team Compact 模式实现搜索结果导出，需求单是：
+https://example.com/org/project/issues/456
+```
+
+`speckit.ai-team.start` recognizes the explicit request and launches the same
+`ai-team-sdd` workflow with its Compact branch. After impact analysis, a human
+confirms Compact eligibility; Plan and Tasks run in isolated contexts and share
+one combined review. Requests without an explicit Compact choice use Standard.
+
 Without the preset, core commands do not know about `spec.override.md` or AI Team
 policy overlays.
 
@@ -126,7 +154,8 @@ Examples:
 specify workflow run ai-team-bugfix \
   --input request="Fix the upload timeout reported by customer support" \
   --input work_slug=bug-project-alpha-123 \
-  --input coding_issue_url="https://example.com/org/project/issues/123"
+  --input coding_issue_url="https://example.com/org/project/issues/123" \
+  --input also_resolves_issue_urls="https://example.com/org/project/issues/456"
 
 # Existing project public feature
 specify workflow run ai-team-sdd \
@@ -164,6 +193,8 @@ For chat-first tools, use stable path aliases. These phrases are aliases for the
 workflow inputs above:
 
 ```text
+Please add CSV export whose fields match the page list. I do not have an issue yet.
+
 Use the ai-team-sdd feature path for this public coding issue:
 https://example.com/org/project/issues/456
 

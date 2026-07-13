@@ -6,6 +6,8 @@ description: "Convert failed PRs, checks, incidents, or repeated AI mistakes int
 
 Close the learning loop after AI-assisted work fails. This command does not
 edit production code by default.
+It diagnoses one failure and proposes a durable control. Actual cross-tier
+lesson promotion belongs to `speckit.ai-team.memory-consolidate`.
 
 ## User Input
 

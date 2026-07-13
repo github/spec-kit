@@ -2,9 +2,9 @@ schema_version: "1.0"
 
 preset:
   id: ai-team-handoff-spec
-  name: "AI Team Handoff Spec Reading Rules"
+  name: "AI Team SDD Governance Overlay"
   version: "1.0.0"
-  description: "Prepend handoff spec reading rules and append composite checks/evidence into native SDD commands."
+  description: "Compose work-item traceability, handoff reading, plan/task boundaries, architecture convergence, and evidence into native SDD commands."
   author: AI Team Template
   repository: https://github.com/EuphoriaYan/spec-kit
   license: MIT
@@ -14,6 +14,12 @@ requires:
 
 provides:
   templates:
+    - type: command
+      name: speckit.specify
+      file: commands/specify-work-item-prepend.md
+      strategy: prepend
+      description: "Record the primary work item and same-root-cause issue group"
+
     - type: command
       name: speckit.plan
       file: commands/plan-handoff-prepend.md

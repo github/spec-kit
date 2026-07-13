@@ -1694,6 +1694,49 @@
         </div>
       </section>
 
+      <section class="slide" data-kicker="Planning Modes">
+        <div class="slide-inner">
+          <div class="slide-title wide">
+            <div class="eyebrow">Standard / Compact</div>
+            <h2>规划中的扩展：小改动可以合并 Plan 与 Tasks，但不能混淆两种责任</h2>
+            <p class="lead">
+              标准流程仍是默认。Compact 模式面向路径明确、单模块、低失败成本的修改，
+              由人根据影响分析选择；AI 只能建议，不能自行走捷径。
+            </p>
+          </div>
+          <div class="split">
+            <div class="panel blue">
+              <span class="tag">标准流程</span>
+              <h3>中大型或高风险任务分别审核</h3>
+              <div class="flow" style="grid-template-columns:repeat(3, 1fr); margin-top:14px">
+                <div class="step"><span class="num">1</span><b>Plan</b><small>架构师确认技术路径、边界和风险。</small></div>
+                <div class="step"><span class="num teal">2</span><b>Plan Gate</b><small>先判断方向是否正确。</small></div>
+                <div class="step"><span class="num green">3</span><b>Tasks</b><small>开发角色拆执行顺序和验证点。</small></div>
+              </div>
+              <p>公共接口、数据库、安全隐私、跨模块、依赖变更、发布与回滚，一律走标准流程。</p>
+            </div>
+            <div class="panel green">
+              <span class="tag green">Compact 模式，待实现</span>
+              <h3>一次启动、两个隔离子阶段、一次联合审核</h3>
+              <div class="flow" style="grid-template-columns:repeat(3, 1fr); margin-top:14px">
+                <div class="step"><span class="num">1</span><b>影响分析</b><small>确认单模块、低风险和复用路径。</small></div>
+                <div class="step"><span class="num teal">2</span><b>Plan → Tasks</b><small>架构与开发上下文隔离，用文档交接。</small></div>
+                <div class="step"><span class="num green">3</span><b>联合 Gate</b><small>同时审核方向和执行步骤。</small></div>
+              </div>
+              <p><span class="mono">plan.md</span> 保留 Plan 与 Execution Tasks 两个章节；工具需要的 <span class="mono">tasks.md</span> 只是自动生成投影。</p>
+            </div>
+          </div>
+          <table class="matrix compact" style="margin-top:18px">
+            <thead><tr><th>可以考虑 Compact</th><th>必须退回标准流程</th><th>关键判断</th></tr></thead>
+            <tbody>
+              <tr><td>需求清楚、技术路径唯一、单模块、容易回滚</td><td>API/SPI、数据库、权限安全、跨模块、依赖或发布风险</td><td>不按“文件少”判断，要看不确定性 × 影响范围 × 失败代价</td></tr>
+              <tr><td>已知根因的局部修复、已有函数的小校验</td><td>“简单 CRUD”“新增配置项”“小型新项目”仍有未决边界</td><td>实现中发现范围扩大，立即停止并回到标准 Plan</td></tr>
+            </tbody>
+          </table>
+          <div class="note">当前仓库尚未提供 Compact workflow。本页描述的是已确认的扩展方向，不应当作已经可调用的命令。</div>
+        </div>
+      </section>
+
       <section class="slide" data-kicker="Bugfix Flow">
         <div class="slide-inner">
           <div class="slide-title wide">
@@ -2012,7 +2055,7 @@
       <button class="nav-button" id="prev" type="button" title="上一页" aria-label="上一页">‹</button>
       <div class="progress">
         <div class="bar" aria-hidden="true"><div class="bar-fill" id="barFill"></div></div>
-        <div class="counter" id="counter">1 / 17</div>
+        <div class="counter" id="counter">1 / 18</div>
       </div>
       <button class="nav-button" id="next" type="button" title="下一页" aria-label="下一页">›</button>
     </div>
