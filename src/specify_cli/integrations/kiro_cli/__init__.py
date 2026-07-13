@@ -26,3 +26,10 @@ class KiroCliIntegration(MarkdownIntegration):
         "args": _KIRO_ARG_FALLBACK,
         "extension": ".md",
     }
+
+    # Kiro CLI keeps everything under a static, isolated agent root
+    # (``.kiro/`` with commands in ``.kiro/prompts``) that no other
+    # integration writes to, so it is safe to install alongside others
+    # (issue #3471). The registry's multi-install-safe contract tests
+    # enforce that isolation for every integration setting this flag.
+    multi_install_safe = True
