@@ -328,7 +328,10 @@ def refresh_shared_templates(
         _ensure_safe_shared_destination(project_path, dst)
         rel = dst.relative_to(project_path).as_posix()
         if dst.exists() and not force:
-            if rel not in tracked_files or rel in modified:
+            if rel not in tracked_files or rel in modified or manifest.is_recovered(rel):
+                # Never overwrite a recovered (pre-existing user) file without
+                # --force, matching install_shared_infra's is_recovered gate
+                # (#2918). Without this, refresh clobbers user content.
                 skipped_files.append(rel)
                 continue
 
@@ -344,7 +347,7 @@ def refresh_shared_templates(
 
     if skipped_files:
         console.print(
-            f"[yellow]⚠[/yellow]  {len(skipped_files)} modified or untracked shared template file(s) were not updated:"
+            f"[yellow]⚠[/yellow]  {len(skipped_files)} modified, untracked, or preserved (recovered) shared template file(s) were not updated:"
         )
         for rel in skipped_files:
             console.print(f"    {rel}")
@@ -469,6 +472,10 @@ def install_shared_infra(
                     continue
                 for src_path in variant_src.rglob("*"):
                     if not src_path.is_file():
+                        continue
+                    # Python bytecode caches are local artifacts, not
+                    # workflow scripts — never install them.
+                    if "__pycache__" in src_path.parts:
                         continue
                     # Mark scanned only once a real source file is seen. An
                     # empty (or symlink-skipped) variant stays untracked, so

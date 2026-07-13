@@ -322,3 +322,87 @@ class TestWorkflowRunWithoutProject:
 
         assert result.exit_code != 0
         assert ".specify path exists but is not a directory" in result.output
+
+
+class TestWorkflowRunJsonErrorStream:
+    """Under --json, error text must go to stderr so stdout stays parseable."""
+
+    def _bad_workflow(self, tmp_path):
+        wf = tmp_path / "bad.yml"
+        wf.write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "workflow": {
+                        "id": "bad-wf",
+                        "name": "Bad",
+                        "version": "1.0.0",
+                        "description": "fails validation",
+                    },
+                    # shell step missing required 'run' -> validation error
+                    "steps": [{"id": "s", "type": "shell"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return wf
+
+    def test_run_json_validation_error_not_on_stdout(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        wf = self._bad_workflow(tmp_path)
+        runner = CliRunner()
+        old = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(
+                app, ["workflow", "run", str(wf), "--json"], catch_exceptions=False
+            )
+        finally:
+            os.chdir(old)
+
+        assert result.exit_code == 1
+        # stdout must carry only JSON (here: nothing) — never human error text.
+        assert "validation failed" not in result.stdout
+        assert "Error" not in result.stdout
+        # The message is routed to stderr instead.
+        assert "validation failed" in result.stderr
+
+    def test_run_json_invalid_input_not_on_stdout(self, tmp_path):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        # A valid single-shell workflow so we get past load/validate to
+        # _parse_input_values, which rejects the malformed --input.
+        wf = tmp_path / "ok.yml"
+        wf.write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "workflow": {
+                        "id": "ok-wf",
+                        "name": "OK",
+                        "version": "1.0.0",
+                        "description": "x",
+                    },
+                    "steps": [{"id": "s", "type": "shell", "run": "echo hi"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        old = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            result = runner.invoke(
+                app,
+                ["workflow", "run", str(wf), "--json", "--input", "no-equals"],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old)
+
+        assert result.exit_code == 1
+        assert "Invalid input format" not in result.stdout
+        assert "Invalid input format" in result.stderr

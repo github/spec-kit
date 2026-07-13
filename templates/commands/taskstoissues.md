@@ -4,6 +4,7 @@ tools: ['github/github-mcp-server/list_issues', 'github/github-mcp-server/issue_
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+  py: scripts/python/check_prerequisites.py --json --require-tasks --include-tasks
 ---
 
 ## User Input

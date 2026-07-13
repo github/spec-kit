@@ -26,6 +26,20 @@ class SwitchStep(StepBase):
         str_value = str(value) if value is not None else ""
 
         cases = config.get("cases", {})
+        if not isinstance(cases, dict):
+            # The engine does not auto-validate step config, so an unvalidated
+            # run with a non-mapping ``cases`` (a list/scalar authoring mistake)
+            # would otherwise raise AttributeError from ``.items()`` below and
+            # crash the whole run. Fail this step loudly instead, mirroring the
+            # fan-out step's non-list ``items`` handling.
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Switch step {config.get('id', '?')!r}: 'cases' must be a "
+                    f"mapping, got {type(cases).__name__}."
+                ),
+                output={"matched_case": None, "expression_value": value},
+            )
         for case_key, case_steps in cases.items():
             if str(case_key) == str_value:
                 return StepResult(

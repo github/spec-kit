@@ -3,6 +3,7 @@ description: Perform a non-destructive cross-artifact consistency and quality an
 scripts:
   sh: scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks
   ps: scripts/powershell/check-prerequisites.ps1 -Json -RequireTasks -IncludeTasks
+  py: scripts/python/check_prerequisites.py --json --require-tasks --include-tasks
 ---
 
 ## User Input
