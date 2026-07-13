@@ -27,7 +27,12 @@ GIT_CREATE_FEATURE_SH = (
 )
 
 HAS_PWSH = shutil.which("pwsh") is not None
-_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+if os.name == "nt":
+    _POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+else:
+    # WSL interop may expose powershell.exe, but it cannot consume the Linux
+    # cwd and temporary paths used by these tests. Require a native runner.
+    _POWERSHELL = shutil.which("powershell")
 _PS_EXE = "pwsh" if HAS_PWSH else _POWERSHELL
 
 
