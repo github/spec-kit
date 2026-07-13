@@ -79,7 +79,7 @@ def _open_workflow_registry(project_root: Path, out=None):
 
 def _require_enabled_workflow(
     registry_root: Path, workflow_id: str, out: Any
-) -> None:
+) -> bool:
     """Fail closed for corrupted or explicitly disabled registry entries."""
     metadata = _open_workflow_registry(registry_root, out).get(workflow_id)
     if metadata is not None and not isinstance(metadata, dict):
@@ -94,6 +94,26 @@ def _require_enabled_workflow(
             f"Enable with: specify workflow enable {_escape_markup(workflow_id)}"
         )
         raise typer.Exit(1)
+    return metadata is not None
+
+
+def _path_has_symlink_component(path: Path) -> bool:
+    """Return whether any component of an absolute path is a symlink."""
+    absolute = Path(os.path.abspath(path))
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _same_existing_path(left: Path, right: Path) -> bool:
+    """Return whether two existing paths identify the same filesystem entry."""
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return left == right
 
 
 def _resolve_run_owner_root(
@@ -116,7 +136,11 @@ def _resolve_run_owner_root(
     """
     if installed_registry_root:
         candidate = Path(installed_registry_root)
-        if not candidate.is_symlink() and candidate.is_dir():
+        if (
+            candidate.is_absolute()
+            and not _path_has_symlink_component(candidate)
+            and candidate.is_dir()
+        ):
             return candidate
         raise ValueError(
             "Installed workflow owner is unavailable; cannot safely resume"
@@ -429,7 +453,7 @@ def _validate_workflow_id_or_exit(workflow_id: str) -> None:
     """Validate that ``workflow_id`` is a safe installed-workflow directory name."""
     if (
         workflow_id in _RESERVED_WORKFLOW_IDS
-        or not _WORKFLOW_ID_PATTERN.match(workflow_id)
+        or not _WORKFLOW_ID_PATTERN.fullmatch(workflow_id)
     ):
         console.print(
             f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
@@ -669,7 +693,8 @@ def _commit_workflow_file(
     if existed_before and dest_file.exists():
         import tempfile
 
-        mode = dest_file.stat(follow_symlinks=False).st_mode & 0o7777
+        dest_state = dest_file.stat(follow_symlinks=False)
+        mode = dest_state.st_mode & 0o7777
         if isinstance(staged_file, _StagedWorkflowFile):
             staged_file.set_mode(mode)
         else:
@@ -679,15 +704,39 @@ def _commit_workflow_file(
             prefix=f".{dest_file.name}.",
             suffix=".bak",
         )
-        os.close(fd)
+        try:
+            placeholder_state = os.fstat(fd)
+        finally:
+            os.close(fd)
         backup_file = Path(backup_name)
         try:
             os.replace(dest_file, backup_file)
-        except BaseException:
+        except BaseException as move_exc:
+            backup_state = None
             try:
-                backup_file.unlink(missing_ok=True)
+                backup_state = backup_file.stat(follow_symlinks=False)
             except OSError:
                 pass
+            if (
+                backup_state is not None
+                and os.path.samestat(dest_state, backup_state)
+            ):
+                try:
+                    os.replace(backup_file, dest_file)
+                except OSError as restore_exc:
+                    raise OSError(
+                        f"Failed to stage prior workflow ({move_exc}); failed "
+                        f"to restore it from {backup_file} ({restore_exc}). "
+                        f"The prior workflow remains at {backup_file}."
+                    ) from restore_exc
+            elif (
+                backup_state is not None
+                and os.path.samestat(placeholder_state, backup_state)
+            ):
+                try:
+                    backup_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
             raise
         try:
             if isinstance(staged_file, _StagedWorkflowFile):
@@ -1009,7 +1058,7 @@ def workflow_run(
         # Reject path-equivalent spellings ("align-wf/", "align-wf/.") that
         # would miss the registry lookup yet still load the installed file,
         # bypassing the disabled check below.
-        if source in _RESERVED_WORKFLOW_IDS or not _WORKFLOW_ID_PATTERN.match(source):
+        if source in _RESERVED_WORKFLOW_IDS or not _WORKFLOW_ID_PATTERN.fullmatch(source):
             err.print(
                 f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(source))}"
             )
@@ -1068,8 +1117,9 @@ def workflow_run(
                 # surviving a project rename/move instead of baking in a
                 # stale absolute path at run start.
                 installed_registry_root=(
-                    registry_root
-                    if registered_id and registry_root != project_root
+                    registry_root.resolve(strict=True)
+                    if registered_id
+                    and not _same_existing_path(registry_root, project_root)
                     else None
                 ),
             )
@@ -1155,6 +1205,17 @@ def workflow_resume(
         _require_enabled_workflow(
             owner_root, pre_state.installed_workflow_id, err
         )
+    elif not pre_state.installed_origin_tracked:
+        if _require_enabled_workflow(
+            project_root, pre_state.workflow_id, err
+        ):
+            pre_state.installed_workflow_id = pre_state.workflow_id
+        pre_state.installed_origin_tracked = True
+        try:
+            pre_state.save()
+        except OSError as exc:
+            err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
 
     try:
         with _stdout_to_stderr_when(json_output):

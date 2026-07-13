@@ -150,7 +150,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"'workflow.id' must be a string, got "
             f"{type(definition.id).__name__} ({definition.id!r})."
         )
-    elif not _ID_PATTERN.match(definition.id):
+    elif not _ID_PATTERN.fullmatch(definition.id):
         errors.append(
             f"Workflow ID {definition.id!r} must be lowercase alphanumeric "
             f"with hyphens."
@@ -172,7 +172,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"{type(definition.version).__name__} ({definition.version!r}) — "
             f'quote it in YAML (version: "1.0.0").'
         )
-    elif not re.match(r"^\d+\.\d+\.\d+$", definition.version):
+    elif not re.fullmatch(r"\d+\.\d+\.\d+", definition.version):
         errors.append(
             f"Workflow version {definition.version!r} is not valid "
             f"semantic versioning (expected X.Y.Z)."
@@ -416,7 +416,7 @@ class RunState:
         ID into a path so a malicious value cannot probe or read files
         outside ``.specify/workflows/runs/<run_id>/``.
         """
-        if not isinstance(run_id, str) or not cls._RUN_ID_PATTERN.match(run_id):
+        if not isinstance(run_id, str) or not cls._RUN_ID_PATTERN.fullmatch(run_id):
             raise ValueError(
                 f"Invalid run_id {run_id!r}: must be alphanumeric with "
                 "hyphens/underscores only (and must start with an "
@@ -430,6 +430,7 @@ class RunState:
         project_root: Path | None = None,
         installed_workflow_id: str | None = None,
         installed_registry_root: str | None = None,
+        installed_origin_tracked: bool = True,
     ) -> None:
         # ``run_id is None`` (omitted) → auto-generate. An explicit empty
         # string is *not* the same as "omitted" and must be validated like
@@ -447,11 +448,13 @@ class RunState:
         # from, and the project root that owns its registry — set by
         # execute() when the source was resolved to an installed ID (see
         # workflow_run's ownership mapping). None for a direct/non-installed
-        # YAML source, and for any run persisted before this field existed
-        # (load() defaults it to None), preserving old runs' existing
-        # resume behavior unchanged.
+        # YAML source. ``installed_origin_tracked`` distinguishes those
+        # explicit None values from legacy state files that predate both
+        # fields, allowing the CLI to conservatively infer same-project
+        # registry ownership before resuming.
         self.installed_workflow_id = installed_workflow_id
         self.installed_registry_root = installed_registry_root
+        self.installed_origin_tracked = installed_origin_tracked
         self.status = RunStatus.CREATED
         self.current_step_index = 0
         self.current_step_id: str | None = None
@@ -568,18 +571,45 @@ class RunState:
         with open(state_path, encoding="utf-8") as f:
             state_data = json.load(f)
 
+        has_installed_workflow_id = "installed_workflow_id" in state_data
+        has_installed_registry_root = "installed_registry_root" in state_data
+        if has_installed_workflow_id != has_installed_registry_root:
+            raise ValueError(
+                "Invalid run state: installed workflow origin fields must "
+                "either both be present or both be absent"
+            )
+
         installed_workflow_id = state_data.get("installed_workflow_id")
-        if installed_workflow_id is not None and not isinstance(installed_workflow_id, str):
-            raise ValueError(
-                "Invalid run state: 'installed_workflow_id' must be a "
-                f"string or null, got {type(installed_workflow_id).__name__}"
-            )
+        if installed_workflow_id is not None:
+            if not isinstance(installed_workflow_id, str):
+                raise ValueError(
+                    "Invalid run state: 'installed_workflow_id' must be a "
+                    f"string or null, got {type(installed_workflow_id).__name__}"
+                )
+            if not _ID_PATTERN.fullmatch(installed_workflow_id):
+                raise ValueError(
+                    "Invalid run state: 'installed_workflow_id' must be a "
+                    "lowercase alphanumeric workflow ID with hyphens"
+                )
         installed_registry_root = state_data.get("installed_registry_root")
-        if installed_registry_root is not None and not isinstance(installed_registry_root, str):
-            raise ValueError(
-                "Invalid run state: 'installed_registry_root' must be a "
-                f"string or null, got {type(installed_registry_root).__name__}"
-            )
+        if installed_registry_root is not None:
+            if not isinstance(installed_registry_root, str):
+                raise ValueError(
+                    "Invalid run state: 'installed_registry_root' must be a "
+                    f"string or null, got {type(installed_registry_root).__name__}"
+                )
+            if not installed_registry_root or not Path(
+                installed_registry_root
+            ).is_absolute():
+                raise ValueError(
+                    "Invalid run state: 'installed_registry_root' must be "
+                    "an absolute path or null"
+                )
+            if installed_workflow_id is None:
+                raise ValueError(
+                    "Invalid run state: 'installed_registry_root' requires "
+                    "'installed_workflow_id'"
+                )
 
         state = cls(
             run_id=state_data["run_id"],
@@ -587,6 +617,7 @@ class RunState:
             project_root=project_root,
             installed_workflow_id=installed_workflow_id,
             installed_registry_root=installed_registry_root,
+            installed_origin_tracked=has_installed_workflow_id,
         )
         state.status = RunStatus(state_data["status"])
         state.current_step_index = state_data.get("current_step_index", 0)

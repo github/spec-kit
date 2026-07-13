@@ -2965,6 +2965,21 @@ steps:
         errors = validate_workflow(definition)
         assert any("lowercase alphanumeric" in e for e in errors)
 
+    def test_workflow_id_with_trailing_newline_is_invalid(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "valid\\n"
+  name: "Test"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("lowercase alphanumeric" in e for e in errors)
+
     def test_non_string_workflow_id_reports_error(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 
@@ -3009,6 +3024,21 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert any("workflow.version" in e and "quote" in e for e in errors)
+
+    def test_version_with_trailing_newline_is_invalid(self):
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+workflow:
+  id: "test"
+  name: "Test"
+  version: "1.0.0\\n"
+steps:
+  - id: step-one
+    command: speckit.specify
+""")
+        errors = validate_workflow(definition)
+        assert any("semantic version" in e for e in errors)
 
     def test_non_string_step_id_reports_error(self):
         from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
@@ -4825,6 +4855,7 @@ class TestRunState:
             "../escape",    # parent-directory traversal
             "foo/bar",      # embedded path separator
             ".hidden",      # leading non-alphanumeric
+            "valid\n",      # regex end-anchor bypass
             "",             # empty / degenerate
         ],
     )
@@ -11034,6 +11065,39 @@ steps:
         assert staged_file.read_text(encoding="utf-8") == "replacement"
         assert list(dest_dir.glob("*.bak")) == []
 
+    def test_commit_interrupt_after_first_rename_restores_prior_file(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.workflows import _commands
+
+        dest_dir = tmp_path / "align-wf"
+        dest_dir.mkdir()
+        dest_file = dest_dir / "workflow.yml"
+        staged_file = dest_dir / ".workflow.yml.staged"
+        dest_file.write_text("original", encoding="utf-8")
+        staged_file.write_text("replacement", encoding="utf-8")
+
+        real_replace = os.replace
+        calls = 0
+
+        def interrupt_after_replace(src, dst):
+            nonlocal calls
+            calls += 1
+            result = real_replace(src, dst)
+            if calls == 1:
+                raise KeyboardInterrupt
+            return result
+
+        monkeypatch.setattr(os, "replace", interrupt_after_replace)
+        with pytest.raises(KeyboardInterrupt):
+            _commands._commit_workflow_file(
+                staged_file, dest_file, existed_before=True
+            )
+
+        assert dest_file.read_text(encoding="utf-8") == "original"
+        assert staged_file.read_text(encoding="utf-8") == "replacement"
+        assert list(dest_dir.glob("*.bak")) == []
+
     def test_commit_uses_unique_backup_without_overwriting_existing_sibling(
         self, tmp_path
     ):
@@ -11157,6 +11221,23 @@ steps:
 
         with pytest.raises(ValueError, match="unavailable"):
             _commands._resolve_run_owner_root(str(owner_link), project_dir)
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
+    def test_resume_rejects_cross_project_owner_with_symlinked_ancestor(
+        self, project_dir, tmp_path
+    ):
+        from specify_cli.workflows import _commands
+
+        real_parent = tmp_path / "real-parent"
+        owner = real_parent / "owner"
+        owner.mkdir(parents=True)
+        parent_link = tmp_path / "parent-link"
+        parent_link.symlink_to(real_parent, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="unavailable"):
+            _commands._resolve_run_owner_root(
+                str(parent_link / "owner"), project_dir
+            )
 
     def test_enable_disable_corrupted_registry_entry_errors(self, project_dir, monkeypatch):
         import json
@@ -11340,7 +11421,7 @@ steps:
         assert "disabled" in result.output
 
     def test_disable_blocks_run_via_path_equivalent_id(self, project_dir, monkeypatch):
-        """Path spelling "align-wf/" must not run a disabled workflow by dodging the registry lookup."""
+        """Path-equivalent and newline IDs must not dodge the registry lookup."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -11351,7 +11432,7 @@ steps:
         result = runner.invoke(app, ["workflow", "disable", "align-wf"])
         assert result.exit_code == 0, result.output
 
-        for spelling in ("align-wf/", "align-wf/."):
+        for spelling in ("align-wf/", "align-wf/.", "align-wf\n"):
             result = runner.invoke(app, ["workflow", "run", spelling])
             assert result.exit_code != 0, spelling
             assert "Invalid workflow ID" in result.output, spelling
@@ -11768,15 +11849,10 @@ steps:
         assert "Resume failed" in result.output
         assert "permission [denied]" in result.output
 
-    def test_resume_backward_compatible_with_run_state_missing_new_fields(
+    def test_resume_legacy_run_respects_current_disabled_state(
         self, project_dir, monkeypatch
     ):
-        """A run's state.json persisted before installed-origin tracking
-        existed (missing the installed_workflow_id/installed_registry_root
-        keys entirely) must still resume normally: RunState.load's
-        defaults must not raise, and the absent origin must skip the
-        disabled check rather than block or error -- old runs are
-        unaffected by this guard."""
+        """Legacy runs infer same-project registry ownership before resume."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -11795,11 +11871,34 @@ steps:
         result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
         assert result.exit_code == 0, result.output
 
-        # Origin metadata is absent from disk -- disabling the (now
-        # unrelated, from this run's perspective) installed workflow must
-        # not block resuming this legacy run.
+        result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
+        assert result.exit_code != 0
+        assert "disabled" in result.output
+
+    def test_resume_migrates_legacy_installed_origin_metadata(
+        self, project_dir, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+
+        state_path = (
+            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        )
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        data.pop("installed_workflow_id", None)
+        data.pop("installed_registry_root", None)
+        state_path.write_text(json.dumps(data), encoding="utf-8")
+
         result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
         assert result.exit_code == 0, result.output
+
+        migrated = json.loads(state_path.read_text(encoding="utf-8"))
+        assert migrated["installed_workflow_id"] == "gated-wf"
+        assert migrated["installed_registry_root"] is None
 
     def test_resume_blocks_after_project_moved_following_disable(
         self, temp_dir, monkeypatch
@@ -11859,6 +11958,7 @@ steps:
         result = runner.invoke(app, ["workflow", "resume", run_id, "--json"])
         assert result.exit_code == 0, result.output
 
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
     def test_resume_respects_cross_project_registry_root(
         self, temp_dir, monkeypatch
     ):
@@ -11885,10 +11985,22 @@ steps:
         unrelated_cwd.mkdir()
         monkeypatch.chdir(unrelated_cwd)
 
-        target = owner_project / ".specify" / "workflows" / "gated-wf" / "workflow.yml"
+        owner_alias = temp_dir / "owner-project-alias"
+        owner_alias.symlink_to(owner_project, target_is_directory=True)
+        target = owner_alias / ".specify" / "workflows" / "gated-wf" / "workflow.yml"
         result = runner.invoke(app, ["workflow", "run", str(target), "--json"])
         assert result.exit_code == 0, result.output
         run_id = json.loads(result.stdout)["run_id"]
+        state_path = (
+            unrelated_cwd
+            / ".specify"
+            / "workflows"
+            / "runs"
+            / run_id
+            / "state.json"
+        )
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state["installed_registry_root"] == str(owner_project.resolve())
 
         monkeypatch.chdir(owner_project)
         result = runner.invoke(app, ["workflow", "disable", "gated-wf"])
@@ -11947,25 +12059,21 @@ steps:
             ("installed_workflow_id", ["gated-wf"]),
             ("installed_workflow_id", {"id": "gated-wf"}),
             ("installed_workflow_id", True),
+            ("installed_workflow_id", ""),
+            ("installed_workflow_id", "gated-wf\n"),
             ("installed_registry_root", 123),
             ("installed_registry_root", ["."]),
             ("installed_registry_root", {"root": "."}),
             ("installed_registry_root", False),
+            ("installed_registry_root", ""),
+            ("installed_registry_root", "relative-owner"),
         ],
     )
     def test_resume_rejects_malformed_run_state_origin_fields(
         self, project_dir, monkeypatch, field, bad_value
     ):
-        """RunState.load() trusts installed_workflow_id/installed_registry_root
-        straight out of the JSON state file with no type validation. A
-        malformed value (int/list/dict/bool instead of str-or-null) -- from
-        disk corruption or an externally-crafted state.json -- would
-        otherwise crash deep inside `_resolve_run_owner_root`/registry
-        lookups (TypeError constructing a Path, unhashable dict/list key)
-        rather than failing cleanly. `load()` must validate each field as
-        `str | None` and raise a clear ValueError, which `workflow resume`'s
-        existing ValueError boundary already converts into a clean CLI
-        error with no traceback."""
+        """RunState.load() rejects malformed or unsafe origin metadata
+        before registry/path lookups and reports a clean CLI error."""
         from typer.testing import CliRunner
         from specify_cli import app
 
@@ -12014,15 +12122,12 @@ steps:
         [
             (None, None),
             ("gated-wf", None),
-            ("", ""),
         ],
     )
     def test_resume_accepts_valid_run_state_origin_fields(
         self, project_dir, monkeypatch, installed_workflow_id, installed_registry_root
     ):
-        """Valid str-or-null values (including the empty-string fallback
-        policy `_resolve_run_owner_root` already treats as "no root
-        stored") must continue to load and resume without error."""
+        """Valid installed-origin values continue to load and resume."""
         from typer.testing import CliRunner
         from specify_cli import app
 
