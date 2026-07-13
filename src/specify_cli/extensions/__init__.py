@@ -2737,6 +2737,32 @@ class ConfigManager:
         config_file = self.extension_dir / "local-config.yml"
         return self._load_yaml_config(config_file)
 
+    def _sibling_extension_ids(self) -> list[str]:
+        """Return IDs of other extensions installed alongside this one.
+
+        Scans ``.specify/extensions/`` for sibling directories and returns
+        their names. Dot-prefixed entries (``.cache``, ``.backup``, …) and
+        non-directories are skipped, so a misconfigured extensions dir never
+        raises. Returns an empty list if the extensions dir does not exist
+        (fresh project, ad-hoc test harness) so ``_get_env_config`` degrades
+        to its pre-fix behaviour rather than crashing.
+
+        Used by ``_get_env_config`` to detect env vars whose remainder claims
+        a longer, sibling-owned prefix (e.g. ``SPECKIT_GIT_HOOKS_URL`` is
+        owned by ``git-hooks`` when it is co-installed with ``git``).
+        """
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        if not extensions_dir.is_dir():
+            return []
+        try:
+            return [
+                entry.name
+                for entry in extensions_dir.iterdir()
+                if entry.is_dir() and not entry.name.startswith(".")
+            ]
+        except OSError:
+            return []
+
     def _get_env_config(self) -> Dict[str, Any]:
         """Get configuration from environment variables.
 
@@ -2756,15 +2782,49 @@ class ConfigManager:
         ext_id_upper = self.extension_id.replace("-", "_").upper()
         prefix = f"SPECKIT_{ext_id_upper}_"
 
+        # Cross-extension prefix collision: because ``_`` doubles as both the
+        # separator between the extension ID and the config path *and* the
+        # substitute for ``-`` inside an extension ID, an env var like
+        # ``SPECKIT_GIT_HOOKS_URL`` begins with *both* the ``SPECKIT_GIT_``
+        # prefix of the ``git`` extension and the ``SPECKIT_GIT_HOOKS_`` prefix
+        # of a co-installed ``git-hooks`` extension. It logically belongs to
+        # the extension whose normalized ID is the longer, more specific match
+        # — otherwise config intended for one extension silently surfaces
+        # inside another and can drive hooks that only inspect
+        # ``config.<field> is set``. Build the list of sibling-owned
+        # remainder-prefixes here so a later env var can be skipped if it
+        # matches one.
+        sibling_prefixes: list[str] = []
+        for sibling_id in self._sibling_extension_ids():
+            if sibling_id == self.extension_id:
+                continue
+            sib_upper = sibling_id.replace("-", "_").upper()
+            # A sibling collides only when its normalized ID *extends* our own
+            # (i.e. starts with ``<US>_``). ``git`` vs ``not-git`` is not a
+            # collision; ``git`` vs ``git-hooks`` is.
+            if sib_upper.startswith(ext_id_upper + "_"):
+                # The portion of the env-var *remainder* the sibling claims,
+                # including the trailing ``_`` so a shorter ID that shares a
+                # non-boundary prefix cannot false-positive (e.g. sibling
+                # ``hook`` would not eat env vars under key ``hooks``).
+                sibling_prefixes.append(sib_upper[len(ext_id_upper) + 1 :] + "_")
+
         for key, value in os.environ.items():
             if not key.startswith(prefix):
+                continue
+
+            remainder = key[len(prefix) :]
+            # Skip when a longer sibling ID claims this var — see the block
+            # above. Keeps ``SPECKIT_GIT_HOOKS_URL`` out of the ``git``
+            # extension's config when ``git-hooks`` is co-installed.
+            if any(remainder.startswith(sp) for sp in sibling_prefixes):
                 continue
 
             # Remove prefix and split into parts. Drop empty components from a
             # malformed name (e.g. ``SPECKIT_<EXT>_`` with no key, or
             # consecutive underscores ``SPECKIT_X__Y``) so we never create an
             # entry under an empty key.
-            config_path = [p for p in key[len(prefix) :].lower().split("_") if p]
+            config_path = [p for p in remainder.lower().split("_") if p]
             if not config_path:
                 continue
 

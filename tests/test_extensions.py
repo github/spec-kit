@@ -7896,3 +7896,84 @@ class TestConfigManagerEnvPrefixCollision:
         cfg = cm._get_env_config()
         assert "" not in cfg
         assert cfg == {"a": {"b": "z"}}
+
+
+class TestConfigManagerCrossExtensionEnvLeak:
+    """Cross-extension env-var leak: a longer, co-installed sibling ID must
+    own its own env vars instead of leaking them into a shorter-prefix sibling.
+
+    Before the fix, ``SPECKIT_GIT_HOOKS_URL`` (intended for a ``git-hooks``
+    extension) also surfaced inside the ``git`` extension's config as
+    ``{'hooks': {'url': ...}}`` because ``SPECKIT_GIT_`` is a strict prefix of
+    ``SPECKIT_GIT_HOOKS_``.
+    """
+
+    def _install(self, project_root, ext_id):
+        (project_root / ".specify" / "extensions" / ext_id).mkdir(parents=True)
+
+    def test_sibling_owns_longer_prefix_env(self, tmp_path, monkeypatch):
+        """SPECKIT_GIT_HOOKS_URL belongs to git-hooks when co-installed with git."""
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "git-hooks")
+        monkeypatch.setenv("SPECKIT_GIT_URL", "for_git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        git_cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        gh_cfg = ConfigManager(tmp_path, "git-hooks")._get_env_config()
+
+        # 'git' must NOT see the git-hooks var — no cross-extension leak.
+        assert git_cfg == {"url": "for_git"}
+        # 'git-hooks' still receives its own var (unchanged behaviour).
+        assert gh_cfg == {"url": "for_git_hooks"}
+
+    def test_no_sibling_installed_keeps_legacy_absorption(self, tmp_path, monkeypatch):
+        """Without a longer-prefix sibling installed, the legacy behaviour is
+        preserved: ``SPECKIT_GIT_HOOKS_URL`` is absorbed as a nested key of
+        the ``git`` extension. This keeps the fix strictly to the *collision*
+        case and avoids surprising users who deliberately set a nested key
+        via env with no sibling to disambiguate against.
+        """
+        self._install(tmp_path, "git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_hooks"}}
+
+    def test_non_prefix_sibling_ignored(self, tmp_path, monkeypatch):
+        """A sibling whose ID does not extend our own is not a collision.
+
+        e.g. current='git' and sibling='not-git' — 'not-git' normalized to
+        'NOT_GIT' does not start with 'GIT_', so its presence must not
+        influence git's env-var interpretation.
+        """
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "not-git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_hooks"}}
+
+    def test_boundary_prevents_false_positive(self, tmp_path, monkeypatch):
+        """Sibling ID 'hook' (not 'hooks') must NOT eat env keys starting
+        with 'hooks'. The trailing-underscore boundary in the sibling prefix
+        prevents this false positive.
+        """
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "git-hook")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_key_hooks")
+
+        # git-hook's prefix is 'HOOK_', which does not match 'HOOKS_URL',
+        # so 'git' keeps the env var (single-installed semantics).
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_key_hooks"}}
+
+    def test_missing_extensions_dir_does_not_crash(self, tmp_path, monkeypatch):
+        """A ConfigManager built against a project without ``.specify/extensions``
+        (fresh project, ad-hoc test harness) must still evaluate env config
+        rather than raising from the sibling scan.
+        """
+        # Note: no _install call — extensions dir intentionally absent.
+        monkeypatch.setenv("SPECKIT_TESTEXT_URL", "v")
+
+        cfg = ConfigManager(tmp_path, "testext")._get_env_config()
+        assert cfg == {"url": "v"}
