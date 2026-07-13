@@ -220,3 +220,68 @@ def test_pre_existing_component_is_not_attributed_or_removed(tmp_path: Path):
 
     remove_bundle(tmp_path, "demo-bundle", installer)
     assert ("extensions", "ext-a") in installer.installed
+
+
+def _bundle(manifest_id, ext_ids, *, version="1.0.0"):
+    data = valid_manifest_dict()
+    data["bundle"]["id"] = manifest_id
+    data["bundle"]["version"] = version
+    data["provides"] = {
+        "extensions": [{"id": e, "version": version} for e in ext_ids]
+    }
+    return BundleManifest.from_dict(data)
+
+
+def test_update_uninstalls_components_dropped_by_new_version(tmp_path: Path):
+    """`bundle update` must uninstall components the new version no longer
+    ships, instead of orphaning them (installed on disk, tracked by nothing)."""
+    make_project(tmp_path)
+    installer = FakeInstaller()
+
+    man_v1 = _bundle("demo", ["ext-a", "ext-b"])
+    install_bundle(tmp_path, _plan(man_v1), installer, manifest=man_v1)
+    assert ("extensions", "ext-b") in installer.installed
+
+    man_v2 = _bundle("demo", ["ext-a"], version="2.0.0")
+    result = install_bundle(
+        tmp_path, _plan(man_v2), installer, manifest=man_v2, refresh=True
+    )
+
+    # ext-b was dropped by v2 -> uninstalled and reported.
+    assert ("extensions", "ext-b") in installer.remove_calls
+    assert ("extensions", "ext-b") in {(c.kind, c.id) for c in result.uninstalled}
+    assert ("extensions", "ext-b") not in installer.installed
+    assert ("extensions", "ext-a") in installer.installed
+
+    # The saved record lists only ext-a.
+    rec = next(r for r in load_records(tmp_path) if r.bundle_id == "demo")
+    keys = {(c.kind, c.id) for c in rec.contributed_components}
+    assert ("extensions", "ext-a") in keys
+    assert ("extensions", "ext-b") not in keys
+
+
+def test_update_keeps_component_still_needed_by_sibling_bundle(tmp_path: Path):
+    """A dropped component still owned by another bundle stays installed."""
+    make_project(tmp_path)
+    installer = FakeInstaller()
+
+    man_sib = _bundle("sibling", ["ext-b"])
+    install_bundle(tmp_path, _plan(man_sib), installer, manifest=man_sib)
+
+    man_v1 = _bundle("demo", ["ext-a", "ext-b"])
+    install_bundle(tmp_path, _plan(man_v1), installer, manifest=man_v1)
+
+    man_v2 = _bundle("demo", ["ext-a"], version="2.0.0")
+    install_bundle(
+        tmp_path, _plan(man_v2), installer, manifest=man_v2, refresh=True
+    )
+
+    # ext-b is still needed by 'sibling' -> not removed, stays installed.
+    assert ("extensions", "ext-b") not in installer.remove_calls
+    assert ("extensions", "ext-b") in installer.installed
+
+    # But demo's record no longer attributes it.
+    rec = next(r for r in load_records(tmp_path) if r.bundle_id == "demo")
+    assert ("extensions", "ext-b") not in {
+        (c.kind, c.id) for c in rec.contributed_components
+    }

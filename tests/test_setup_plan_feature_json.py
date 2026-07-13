@@ -127,6 +127,71 @@ def test_setup_plan_errors_without_feature_context(plan_repo: Path) -> None:
 
 
 @requires_bash
+def test_setup_plan_survives_broken_python3_stub(plan_repo: Path) -> None:
+    """A `python3` on PATH that exists but fails at runtime must not defeat
+    feature.json parsing.
+
+    On Windows `python3` typically resolves to the Microsoft Store App Execution
+    Alias stub: it satisfies `command -v python3` yet exits non-zero at runtime.
+    The parser must fall through to the grep/sed fallback on that failure instead
+    of selecting python3 by mere availability and swallowing its error (#3304).
+    """
+    subprocess.run(
+        ["git", "checkout", "-q", "-b", "feature/my-feature-branch"],
+        cwd=plan_repo,
+        check=True,
+    )
+    feat = plan_repo / "specs" / "001-tiny-notes-app"
+    feat.mkdir(parents=True)
+    (feat / "spec.md").write_text("# spec\n", encoding="utf-8")
+    _write_feature_json(plan_repo, "specs/001-tiny-notes-app")
+
+    # A stub python3 that mimics the Windows Store alias: on PATH, exits 49.
+    stub_dir = plan_repo / "_stubbin"
+    stub_dir.mkdir()
+    stub = stub_dir / "python3"
+    stub.write_text(
+        "#!/bin/sh\n"
+        'echo "Python was not found; run without arguments to install from the '
+        'Microsoft Store" >&2\n'
+        "exit 49\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+
+    # A stub jq that shadows any real jq on PATH and also fails, so the parser
+    # cannot short-circuit on jq and must reach the broken python3 stub and then
+    # fall through to grep/sed. Without this, a runner that has jq installed
+    # would parse feature.json via jq and never exercise the fallback this test
+    # is meant to cover.
+    jq_stub = stub_dir / "jq"
+    jq_stub.write_text(
+        "#!/bin/sh\n"
+        'echo "jq: simulated failure" >&2\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    jq_stub.chmod(0o755)
+
+    env = _clean_env()
+    # Prepend the stub dir so the failing jq and python3 stubs take precedence
+    # over any real ones; PATH still needs the real bash utilities for grep/sed.
+    env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+
+    script = plan_repo / ".specify" / "scripts" / "bash" / "setup-plan.sh"
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=plan_repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (feat / "plan.md").is_file()
+
+
+@requires_bash
 def test_setup_plan_numbered_branch_works_with_feature_json(
     plan_repo: Path,
 ) -> None:

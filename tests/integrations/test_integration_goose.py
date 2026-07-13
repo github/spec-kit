@@ -36,3 +36,50 @@ class TestGooseIntegration(YamlIntegrationTests):
                 param.get("key") == "args"
                 for param in data.get("parameters", [])
             ), f"{recipe_file} uses {{{{args}}}} but does not declare args"
+
+
+class TestGooseCommandPlaceholderResolution:
+    """register_commands must resolve skill placeholders for the yaml branch.
+
+    The yaml (Goose recipe) branch previously skipped
+    resolve_skill_placeholders / _convert_argument_placeholder that the
+    markdown and toml branches apply, so extension/preset command bodies
+    kept literal {SCRIPT} / __AGENT__ / repo-relative paths.
+    """
+
+    def test_register_commands_resolves_placeholders_in_recipe(self, tmp_path):
+        from specify_cli.agents import CommandRegistrar
+
+        ext_dir = tmp_path / "extension"
+        cmd_dir = ext_dir / "commands"
+        cmd_dir.mkdir(parents=True)
+        cmd_file = cmd_dir / "example.md"
+        cmd_file.write_text(
+            "---\n"
+            "description: Placeholder command\n"
+            "scripts:\n"
+            "  sh: scripts/bash/do.sh\n"
+            "  ps: scripts/powershell/do.ps1\n"
+            "---\n\n"
+            "Run {SCRIPT} for agent __AGENT__ with $ARGUMENTS.\n",
+            encoding="utf-8",
+        )
+
+        registrar = CommandRegistrar()
+        commands = [{"name": "speckit.example", "file": "commands/example.md"}]
+        registrar.register_commands("goose", commands, "test-ext", ext_dir, tmp_path)
+
+        recipe = tmp_path / ".goose" / "recipes" / "speckit.example.yaml"
+        assert recipe.exists(), "goose recipe should be generated"
+        # Parse the recipe and assert the prompt actually got the correct
+        # replacements — not merely that the literal tokens are absent (which
+        # a wrong-but-token-free output could also satisfy).
+        data = yaml.safe_load(recipe.read_text(encoding="utf-8"))
+        prompt = data["prompt"]
+        assert ".specify/scripts/" in prompt  # {SCRIPT} -> resolved script path
+        assert "agent goose" in prompt  # __AGENT__ -> agent name
+        assert "{{args}}" in prompt  # $ARGUMENTS -> goose args token
+        # And the raw placeholders must not survive.
+        assert "{SCRIPT}" not in prompt
+        assert "__AGENT__" not in prompt
+        assert "$ARGUMENTS" not in prompt

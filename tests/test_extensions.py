@@ -1147,10 +1147,12 @@ class TestExtensionManager:
             context_note=None,
             link_outputs=False,
             create_missing_active_skills_dir=False,
+            extension_id=None,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
             )
+            captured["extension_id"] = extension_id
             return {}
 
         monkeypatch.setattr(
@@ -1164,6 +1166,7 @@ class TestExtensionManager:
         registrar.register_commands_for_all_agents(manifest, extension_dir, project_dir)
 
         assert captured["create_missing_active_skills_dir"] is False
+        assert captured["extension_id"] == manifest.id
 
     def test_install_duplicate(self, extension_dir, project_dir):
         """Test installing already installed extension."""
@@ -1695,6 +1698,29 @@ $ARGUMENTS
         assert adjusted["scripts"]["sh"] == ".specify/extensions/test-ext/scripts/setup.sh {ARGS}"
         assert adjusted["scripts"]["ps"] == ".specify/scripts/powershell/setup-plan.ps1 {ARGS}"
 
+    def test_adjust_script_paths_rewrites_extension_top_level_scripts(self):
+        """Extension command-local scripts should resolve under the installed extension."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        original = {
+            "scripts": {
+                "sh": "scripts/bash/resolve-skill.sh {ARGS}",
+                "ps": "../../scripts/powershell/setup-plan.ps1 -Json",
+            }
+        }
+
+        adjusted = registrar._adjust_script_paths(original, extension_id="test-ext")
+
+        assert (
+            adjusted["scripts"]["sh"]
+            == ".specify/extensions/test-ext/scripts/bash/resolve-skill.sh {ARGS}"
+        )
+        assert (
+            adjusted["scripts"]["ps"]
+            == ".specify/scripts/powershell/setup-plan.ps1 -Json"
+        )
+
     def test_rewrite_project_relative_paths_preserves_extension_local_body_paths(self):
         """Body rewrites should preserve extension-local assets while fixing top-level refs."""
         from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
@@ -1708,6 +1734,24 @@ $ARGUMENTS
 
         assert ".specify/extensions/test-ext/templates/spec.md" in rewritten
         assert ".specify/scripts/bash/setup-plan.sh" in rewritten
+
+    def test_rewrite_project_relative_paths_uses_extension_context_for_scripts(self):
+        """Extension source bodies treat top-level scripts/ as extension-local."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        body = (
+            "Run scripts/bash/ensure-skills.sh\n"
+            "Fallback ../../scripts/bash/setup-plan.sh\n"
+            "Read templates/checklist.md\n"
+        )
+
+        rewritten = AgentCommandRegistrar.rewrite_project_relative_paths(
+            body, extension_id="test-ext"
+        )
+
+        assert ".specify/extensions/test-ext/scripts/bash/ensure-skills.sh" in rewritten
+        assert ".specify/scripts/bash/setup-plan.sh" in rewritten
+        assert ".specify/templates/checklist.md" in rewritten
 
     def test_render_toml_command_handles_embedded_triple_double_quotes(self):
         """TOML renderer should stay valid when body includes triple double-quotes."""
@@ -1750,6 +1794,25 @@ $ARGUMENTS
         parsed = tomllib.loads(output)
 
         assert parsed["description"] == "first line\nsecond line\n"
+
+    def test_render_toml_command_escapes_control_characters(self):
+        """Control characters and a lone CR must be escaped so the TOML parses.
+
+        TOML forbids literal control characters (U+0000–U+001F except tab and
+        newline, plus U+007F) in any string, and treats a bare CR outside a
+        CRLF pair as illegal. The renderer used to emit these raw — into a
+        basic string (single-line) or a ``\"\"\"`` multiline string (for a lone
+        CR) — producing a command file that fails to parse."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        registrar = AgentCommandRegistrar()
+        body = "start\x00null\x01ctrl\x1besc\x7fdel\rlone-cr end"
+        output = registrar.render_toml_command(
+            {"description": "d"}, body, "extension:test-ext"
+        )
+
+        parsed = tomllib.loads(output)
+        assert parsed["prompt"] == body
 
     def test_render_toml_command_preserves_backslashes_in_body(self):
         """A backslash in the body (e.g. a Windows path) must not break TOML.
@@ -5396,6 +5459,29 @@ class TestExtensionAddCLI:
             assert call_order.index("confirm") < call_order.index("spinner"), \
                 f"confirm must precede spinner, got: {call_order}"
         assert result.exit_code == 0  # user declined → clean exit
+
+    def test_add_from_malformed_ipv6_url_exits_cleanly(self, tmp_path):
+        """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "add", "my-ext", "--from", "https://[::1/ext.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        plain = strip_ansi(result.output)
+        assert "Invalid URL" in plain
 
     def test_add_status_escapes_extension_markup(self, tmp_path):
         """User-controlled extension names must not be parsed as Rich markup."""

@@ -95,7 +95,11 @@ def _is_local_path(url: str) -> bool:
     """True when *url* denotes a local filesystem path rather than a URL."""
     if _WINDOWS_DRIVE_RE.match(url):
         return True
-    scheme = urlparse(url).scheme.lower()
+    try:
+        scheme = urlparse(url).scheme.lower()
+    except ValueError:
+        # Malformed URLs (e.g. an unclosed IPv6 bracket) are not local paths.
+        return False
     return scheme not in _REMOTE_SCHEMES
 
 
@@ -137,7 +141,10 @@ def add_source(
     url = url.strip()
     if not url:
         raise BundlerError("A catalog url is required.")
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError as exc:
+        raise BundlerError(f"Invalid catalog url: '{url}'.") from exc
     if not (parsed.scheme or parsed.path):
         raise BundlerError(f"Invalid catalog url: '{url}'.")
     # Reject unsupported URL schemes (e.g. ssh://, ftp://) up front so they are
@@ -148,6 +155,20 @@ def add_source(
             f"Unsupported catalog url scheme '{parsed.scheme}://' in '{url}'. "
             "Use http(s)://, file://, builtin://, or a local path."
         )
+    if parsed.scheme.lower() in {"http", "https"}:
+        # Mirror specify_cli.catalogs._validate_catalog_url (#3209/#3210):
+        # HTTPS only (HTTP just for localhost), and check hostname, not
+        # netloc — netloc is truthy for host-less URLs like "https://:8080"
+        # or "https://user@". Validating here keeps junk out of
+        # bundle-catalogs.yml instead of failing later at fetch time.
+        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        if parsed.scheme.lower() != "https" and not is_localhost:
+            raise BundlerError(
+                f"Catalog url must use HTTPS (got {parsed.scheme}://). "
+                "HTTP is only allowed for localhost."
+            )
+        if not parsed.hostname:
+            raise BundlerError(f"Catalog url must be a valid URL with a host: {url}")
 
     url = _canonicalize_url(url)
     install_policy = InstallPolicy.parse(policy)

@@ -58,4 +58,13 @@ class FanInStep(StepBase):
                 f"Fan-in step {config.get('id', '?')!r}: "
                 f"'wait_for' must be a non-empty list of step IDs."
             )
+        output = config.get("output")
+        if output is not None and not isinstance(output, dict):
+            # execute() silently coerces a non-mapping output to {}, so the
+            # author's declared aggregation keys would vanish with no error.
+            # Reject at validation, mirroring the command-step (#3262) fix.
+            errors.append(
+                f"Fan-in step {config.get('id', '?')!r}: 'output' must be a "
+                f"mapping of key -> expression, got {type(output).__name__}."
+            )
         return errors

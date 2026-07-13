@@ -288,13 +288,13 @@ class TestForgeCommandRegistrar:
     def test_registrar_formats_extension_command_names_for_forge(self, tmp_path):
         """Verify CommandRegistrar converts dot notation to hyphens for Forge."""
         from specify_cli.agents import CommandRegistrar
-        
+
         # Create a mock extension command file
         ext_dir = tmp_path / "extension"
         ext_dir.mkdir()
         cmd_dir = ext_dir / "commands"
         cmd_dir.mkdir()
-        
+
         # Create a test command with dot notation name
         cmd_file = cmd_dir / "example.md"
         cmd_file.write_text(
@@ -304,7 +304,7 @@ class TestForgeCommandRegistrar:
             "Test content with $ARGUMENTS\n",
             encoding="utf-8"
         )
-        
+
         # Register with Forge
         registrar = CommandRegistrar()
         commands = [
@@ -313,7 +313,7 @@ class TestForgeCommandRegistrar:
                 "file": "commands/example.md"
             }
         ]
-        
+
         registered = registrar.register_commands(
             "forge",
             commands,
@@ -321,14 +321,14 @@ class TestForgeCommandRegistrar:
             ext_dir,
             tmp_path
         )
-        
+
         # Verify registration succeeded
         assert "speckit.my-extension.example" in registered
-        
+
         # Check the generated file has hyphenated name in frontmatter
         forge_cmd = tmp_path / ".forge" / "commands" / "speckit-my-extension-example.md"
         assert forge_cmd.exists()
-        
+
         content = forge_cmd.read_text(encoding="utf-8")
         # Parse frontmatter to validate name field precisely
         frontmatter, _ = registrar.parse_frontmatter(content)
@@ -339,13 +339,13 @@ class TestForgeCommandRegistrar:
     def test_registrar_formats_alias_names_for_forge(self, tmp_path):
         """Verify CommandRegistrar converts alias names to hyphens for Forge."""
         from specify_cli.agents import CommandRegistrar
-        
+
         # Create a mock extension command file
         ext_dir = tmp_path / "extension"
         ext_dir.mkdir()
         cmd_dir = ext_dir / "commands"
         cmd_dir.mkdir()
-        
+
         cmd_file = cmd_dir / "example.md"
         cmd_file.write_text(
             "---\n"
@@ -354,7 +354,7 @@ class TestForgeCommandRegistrar:
             "Test content\n",
             encoding="utf-8"
         )
-        
+
         # Register with Forge including an alias
         registrar = CommandRegistrar()
         commands = [
@@ -364,7 +364,7 @@ class TestForgeCommandRegistrar:
                 "aliases": ["speckit.my-extension.ex"]
             }
         ]
-        
+
         registrar.register_commands(
             "forge",
             commands,
@@ -372,11 +372,11 @@ class TestForgeCommandRegistrar:
             ext_dir,
             tmp_path
         )
-        
+
         # Check the alias file has hyphenated name in frontmatter
         alias_file = tmp_path / ".forge" / "commands" / "speckit-my-extension-ex.md"
         assert alias_file.exists()
-        
+
         content = alias_file.read_text(encoding="utf-8")
         # Parse frontmatter to validate alias name field precisely
         frontmatter, _ = registrar.parse_frontmatter(content)
@@ -387,13 +387,13 @@ class TestForgeCommandRegistrar:
     def test_registrar_does_not_affect_other_agents(self, tmp_path):
         """Verify format_name callback is Forge-specific and doesn't affect other agents."""
         from specify_cli.agents import CommandRegistrar
-        
+
         # Create a mock extension command file
         ext_dir = tmp_path / "extension"
         ext_dir.mkdir()
         cmd_dir = ext_dir / "commands"
         cmd_dir.mkdir()
-        
+
         cmd_file = cmd_dir / "example.md"
         cmd_file.write_text(
             "---\n"
@@ -402,7 +402,7 @@ class TestForgeCommandRegistrar:
             "Test content with $ARGUMENTS\n",
             encoding="utf-8"
         )
-        
+
         # Register with Kilo Code (standard markdown agent without inject_name)
         registrar = CommandRegistrar()
         commands = [
@@ -411,7 +411,7 @@ class TestForgeCommandRegistrar:
                 "file": "commands/example.md"
             }
         ]
-        
+
         registrar.register_commands(
             "kilocode",
             commands,
@@ -419,12 +419,12 @@ class TestForgeCommandRegistrar:
             ext_dir,
             tmp_path
         )
-        
+
         # Kilo Code uses standard markdown format without name injection.
         # The format_name callback should not be invoked for non-Forge agents.
         kilocode_cmd = tmp_path / ".kilocode" / "workflows" / "speckit.my-extension.example.md"
         assert kilocode_cmd.exists()
-        
+
         content = kilocode_cmd.read_text(encoding="utf-8")
         # Kilo Code should NOT have a name field injected
         assert "name:" not in content, (

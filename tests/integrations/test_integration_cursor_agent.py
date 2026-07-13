@@ -231,4 +231,3 @@ class TestCursorAgentCliDispatch:
 
         argv = mock_run.call_args[0][0]
         assert argv[0] == "cursor-agent"
-

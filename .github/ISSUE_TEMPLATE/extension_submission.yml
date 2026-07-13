@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for contributing an extension! This template helps you submit your extension to the community catalog.
-        
+
         **Before submitting:**
         - Review the [Extension Publishing Guide](https://github.com/github/spec-kit/blob/main/extensions/EXTENSION-PUBLISHING-GUIDE.md)
         - Ensure your extension has a valid `extension.yml` manifest
@@ -209,9 +209,9 @@ body:
         **Tested on:**
         - macOS 14.0 with Spec Kit v0.1.0
         - Linux Ubuntu 22.04 with Spec Kit v0.1.0
-        
+
         **Test project:** [Link or description]
-        
+
         **Test scenarios:**
         1. Installed extension
         2. Configured settings
@@ -230,7 +230,7 @@ body:
         ```bash
         # Install extension
         specify extension add <extension-name> --from https://github.com/your-org/spec-kit-your-extension/archive/refs/tags/v1.0.0.zip
-        
+
         # Use a command
         /speckit.your-extension.command-name arg1 arg2
         ```
