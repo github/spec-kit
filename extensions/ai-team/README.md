@@ -22,6 +22,9 @@ and adds enterprise collaboration constraints:
 - strict build planning for new projects;
 - self-test and Evidence Board output;
 - failure evolution after review, test, incident, or repeated AI mistakes.
+- contributor/maintainer-controlled memory consolidation so completed work does
+  not leave unbounded context behind;
+- release-scoped archive as a batch view of the same memory consolidation flow.
 - external Skill, Knowledge, and Memory support layers around the project.
 - durable Work Context Packages so interrupted work can resume from a work item
   instead of hidden chat context.
@@ -98,6 +101,8 @@ step-by-step journeys. The short version:
 | new project from zero | public project issue/charter or handoff requirement URL | bootstrap -> workspace -> context -> native SDD with plan-check, task gate (preset), and converge evidence -> thin slice -> PR |
 | resume from middle | workflow run ID or work slug | workflow resume for paused runs, or `speckit.ai-team.context work_slug=<work_slug> resume=true` for cross-session recovery |
 | failed review/check/incident | PR, check, incident, or repeated AI mistake | retrospect -> update command, gate, knowledge, memory, graph, or test evidence |
+| memory consolidation | work slug, bug slug, PR, incident, release id, or manual lesson | sanitize -> choose local/department/enterprise tier -> sync/index -> promote to skill, knowledge, test, gate, or playbook |
+| release archive | release id, tag range, release issue, or work slugs | release-scoped memory consolidation -> bugfix lessons -> feature decisions -> migration playbook -> support memory/knowledge update |
 
 ### Chat Aliases
 
@@ -110,6 +115,8 @@ aliases instead of asking the user to remember command details:
 | `ai-team-bugfix path` | `work_slug=bug-<repo-slug>-<issue-number>` and an optional coding issue URL |
 | `ai-team-sdd new-project path` | `work_type=new-project` plus a public project issue/charter or handoff requirement URL |
 | `ai-team-sdd resume path` | `work_slug=<work_slug>` plus `resume_from=<phase>` or workflow run resume |
+| `ai-team-memory consolidate path` | completed work source plus `target_tier=local|department|enterprise` |
+| `ai-team-release archive path` | release id plus tag range, release issue, or shipped work slugs |
 
 Recommended prompts:
 
@@ -122,6 +129,13 @@ https://example.com/enhancements/rfcs/REQ-2026-015
 
 Use the ai-team-bugfix path with work_slug=bug-project-alpha-123 for this coding issue:
 https://example.com/org/project/issues/123
+
+Use the ai-team-memory consolidate path for bug_slug=bug-project-alpha-123
+target_tier=department. Summarize the bugfix lesson after sanitizing private
+details.
+
+Use the ai-team-release archive path for release_id=v1.4.0 since_tag=v1.3.0.
+Focus on bugfix lessons and reusable design patterns.
 ```
 
 ### Existing Project Bug Fix
@@ -215,6 +229,8 @@ New project work needs a stricter build-from-zero plan:
 | `speckit.ai-team.pr` | prepare a PR in the correct repository with linked work item and evidence |
 | `speckit.ai-team.review` | help human reviewers assess boundary safety and evidence |
 | `speckit.ai-team.retrospect` | turn failures into durable process improvements |
+| `speckit.ai-team.memory-consolidate` | consolidate completed work into local, department, or enterprise memory |
+| `speckit.ai-team.release-archive` | archive a release and distill feature, bugfix, migration, and operations knowledge |
 | `speckit.ai-team.support` | audit Skill, Knowledge, and Memory support layers |
 
 ## Workflow
@@ -235,10 +251,10 @@ optional Spec Kit init bootstrap -> workspace contract -> request routing
 
 | Step | Type | Writes files? | Human decision |
 |---|---|---|---|
-| `speckit.ai-team.plan-check` | extension command | Updates `work-context.yml` (`plan_check`) and `context-pack.md` only | No — produces chat report |
-| `review-plan` | workflow gate | No | Yes — approve / revise / reject before `tasks` |
-| `speckit.analyze` | native cross-artifact check | Read-only chat report | No — produces analyze report |
-| `review-tasks` | workflow gate | No | Yes — approve / revise / reject before `implement` |
+| `speckit.ai-team.plan-check` | extension command | Updates `work-context.yml` (`plan_check`) and `context-pack.md` only | No; produces chat report |
+| `review-plan` | workflow gate | No | Yes; approve / revise / reject before `tasks` |
+| `speckit.analyze` | native cross-artifact check | Read-only chat report | No; produces analyze report |
+| `review-tasks` | workflow gate | No | Yes; approve / revise / reject before `implement` |
 
 Plan check does **not** run core `speckit.checklist` and does **not** create
 `checklists/*.md` or `plan-check.md`. Cross-artifact consistency before
@@ -263,6 +279,15 @@ optional Spec Kit init bootstrap -> workspace contract -> work context package
 Workspace creation uses Spec Kit's own `init` step. AI Team does not copy
 template repositories into product repositories.
 
+Memory consolidation is deliberately a contributor/maintainer-controlled command,
+not a required feature or bugfix workflow step. Run
+`speckit.ai-team.memory-consolidate` whenever a useful lesson is ready. Use
+`speckit.ai-team.release-archive` at release-candidate, final release, milestone,
+or maintainer-chosen checkpoint time to batch the same process across many work
+items. Use [docs/memory-tiers.md](docs/memory-tiers.md) for the three-tier memory
+model and [docs/release-archive.md](docs/release-archive.md) for the
+release-scoped artifact contract.
+
 `ai-team-sdd` accepts `work_slug`, `work_type`, `coding_issue_url`,
 `handoff_requirement_url`, backward-compatible `published_requirement_url`, and
 `resume_from` so a user can restart feature or new-project work from the
@@ -278,14 +303,22 @@ AI Team work is supported by three external layers:
 |---|---|---|
 | Skill | reusable procedures and tool recipes | skill inventory and reuse review |
 | Knowledge | project facts, terminology, boundaries, code graph, impact model | knowledge map |
-| Memory | approved historical decisions and curated attempt lessons | memory index |
+| Memory | local, department, and enterprise historical decisions and curated attempt lessons | memory index or mem0-like service |
 
 These layers are external supports, not a single giant prompt. Skills are
 loaded when needed, knowledge is sliced by task, and memory is lower precedence
 than current source, spec, plan, issue, and owner decisions.
 
+Memory consolidation feeds this support layer. Bugfix lessons usually start as
+local or department attempt memory; release-level architecture or compatibility
+choices become enterprise decision memory only when a human owner accepted them.
+Reusable designs move into the migration playbook and knowledge map so similar
+projects can start from reviewed patterns rather than old chat or PR archaeology.
+
 Use [docs/skill-knowledge-memory.md](docs/skill-knowledge-memory.md) for the
-full model and `speckit.ai-team.support` to audit a project.
+full model, [docs/memory-tiers.md](docs/memory-tiers.md) for the three memory
+tiers, [docs/release-archive.md](docs/release-archive.md) for release-scoped
+knowledge consolidation, and `speckit.ai-team.support` to audit a project.
 
 ## Installation
 

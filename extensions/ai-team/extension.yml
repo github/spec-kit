@@ -4,7 +4,7 @@ extension:
   id: ai-team
   name: "AI Team SDD Collaboration"
   version: "0.1.0"
-  description: "Enterprise AI Team workflow for Spec-Driven Development with role-isolated handoffs, public coding issue/internal enhancement boundaries, build-from-zero planning, self-test evidence, and failure evolution."
+  description: "Enterprise AI Team workflow for Spec-Driven Development with role-isolated handoffs, public coding issue/internal enhancement boundaries, build-from-zero planning, self-test evidence, failure evolution, and three-tier memory consolidation."
   author: AI Team Template
   repository: https://github.com/EuphoriaYan/spec-kit
   license: MIT
@@ -60,6 +60,12 @@ provides:
     - name: speckit.ai-team.retrospect
       file: commands/speckit.ai-team.retrospect.md
       description: "Convert failed PRs, checks, incidents, or repeated AI mistakes into durable process improvements."
+    - name: speckit.ai-team.memory-consolidate
+      file: commands/speckit.ai-team.memory-consolidate.md
+      description: "Consolidate contributor, department, or enterprise memory from completed AI Team work."
+    - name: speckit.ai-team.release-archive
+      file: commands/speckit.ai-team.release-archive.md
+      description: "Run release-scoped memory consolidation and distill reusable feature, bugfix, migration, and operations knowledge."
     - name: speckit.ai-team.support
       file: commands/speckit.ai-team.support.md
       description: "Audit and maintain the external Skill, Knowledge, and Memory support layers for AI Team SDD work."

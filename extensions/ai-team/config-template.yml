@@ -28,6 +28,82 @@ work_context:
   allow_reconstruct_from_handoff_requirement_url: true
   allow_reconstruct_from_bug_slug: true
 
+memory:
+  # Three-tier memory keeps contributor scratch, department learning, and
+  # enterprise guidance separate.
+  service:
+    default_backend: file
+    supported_backends:
+      - file
+      - mem0
+    require_namespace_for_upload: true
+    store_raw_transcripts_by_default: false
+    mem0:
+      optional_package: mem0ai
+      api_key_env: MEM0_API_KEY
+  tiers:
+    local:
+      path: .specify/ai-team/memory/local
+      upload: false
+      docs: false
+      release_artifact: false
+      git_policy: ignore-or-local-only
+    department:
+      path: .specify/ai-team/memory/department
+      upload: true
+      docs: false
+      release_artifact: false
+      git_policy: internal-only-or-service-sync
+      namespace: ""
+    enterprise:
+      path: docs/ai-team/memory
+      upload: true
+      docs: true
+      release_artifact: true
+      git_policy: commit-after-review
+      namespace: ""
+  promotion:
+    local_to_department_requires:
+      - contributor self-check
+      - maintainer acceptance
+      - privacy sanitization
+    department_to_enterprise_requires:
+      - maintainer approval
+      - relevant owner approval
+      - evidence links
+      - public-safe or approved visibility
+
+release_archive:
+  # Release archive is a release-scoped batch view of memory consolidation.
+  # It summarizes completed work so future tasks do not need to load every
+  # task-level trace.
+  private_root: .specify/ai-team/releases/private
+  enterprise_root: docs/ai-team/memory/releases
+  default_privacy: department-internal
+  default_target_tier: department
+  summarize_before_delete: true
+  delete_raw_evidence_by_default: false
+  private_outputs:
+    - evidence-rollup.md
+    - archived-work.yml
+    - privacy-review.md
+  enterprise_outputs:
+    - release-summary.md
+    - shipped-work-index.md
+    - bugfix-lessons.md
+    - feature-decisions.md
+    - migration-playbook.md
+  promote_bugfix_lessons_to:
+    - support/knowledge-map.md
+    - support/memory-index.md
+    - memory/department/attempts
+    - docs/ai-team/memory/bugfix-playbooks
+    - tests-or-gates-when-repeatable
+  promote_feature_decisions_to:
+    - support/knowledge-map.md
+    - docs/ai-team/memory/decisions
+    - migration-playbook.md
+
 issue_workflow:
   type_labels:
     enhancement_internal_allowed:

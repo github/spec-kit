@@ -60,6 +60,7 @@ private trace in approved channels.
 | `pr` | PR is prepared or open | `speckit.ai-team.review` |
 | `review` | human review is active | `speckit.ai-team.retrospect` if failure repeats |
 | `done` | merged or intentionally closed with evidence | none |
+| `archived` | memory consolidation or release archive has summarized this work and marked remaining raw traces by retention policy | none |
 | `blocked` | missing work item, owner decision, or evidence blocks progress | ask human |
 
 ## Plan check summary (`plan_check`)
@@ -76,7 +77,7 @@ plan_check:
 
 The full Plan Check Report stays in **chat**. A short summary also goes to
 `context-pack.md`. Native `speckit.analyze` covers cross-artifact consistency before
-implementation — there is no `plan-check.md`, `plan-gate.md`, or preset task-gate overlay.
+implementation; there is no `plan-check.md`, `plan-gate.md`, or preset task-gate overlay.
 
 ## Resume Protocol
 
@@ -107,3 +108,29 @@ The context pack records decisions but does not replace decision owners.
 
 AI-generated output is evidence for those roles, not a transfer of
 accountability.
+
+## Memory And Release Archive Status
+
+When a feature, bugfix, review cycle, or incident produces a reusable lesson,
+contributors or maintainers may run `speckit.ai-team.memory-consolidate` and
+choose local, department, or enterprise memory. After a release candidate,
+final release, milestone, or maintainer-chosen checkpoint, maintainers may run
+`speckit.ai-team.release-archive` to summarize many completed work items into
+`.specify/ai-team/releases/private/<release_id>/`; only reviewed, sanitized
+enterprise summaries are promoted to `docs/ai-team/memory/releases/<release_id>/`.
+
+The memory or release archive record should mark each `work_slug` or `bug_slug`
+as one of:
+
+- `archived`: summarized in the release package and no longer active;
+- `kept-active`: still relevant to an unfinished follow-up;
+- `private-only`: raw material stays outside the public coding repository;
+- `superseded`: detailed process artifact is replaced by release-level
+  summary;
+- `blocked`: cannot archive until a missing owner, evidence, or privacy
+  decision is resolved.
+
+Archiving does not mean deleting evidence. Default behavior is to keep raw
+evidence available under the repository's retention policy while future AI
+tasks load the smaller memory card, release summary, bugfix lessons, and
+migration playbook.

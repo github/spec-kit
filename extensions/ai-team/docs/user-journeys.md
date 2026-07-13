@@ -74,6 +74,8 @@ remember command details:
 | `ai-team-bugfix path` | `work_slug=bug-<repo-slug>-<issue-number>` and optional `coding_issue_url` |
 | `ai-team-sdd new-project path` | `work_type=new-project` |
 | `ai-team-sdd resume path` | `work_slug=<work_slug>` and `resume_from=<phase>` |
+| `ai-team-memory consolidate path` | `scope=<work-item|bugfix|feature|incident|release>` plus `target_tier=<local|department|enterprise>` |
+| `ai-team-release archive path` | `release_id=<version>` plus tag range, release issue, or work slugs |
 
 Recommended user prompts:
 
@@ -91,6 +93,13 @@ Use the ai-team-sdd new-project path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-020
 
 Use the ai-team-sdd resume path for work_slug=003-search-export from tasks-ready.
+
+Use the ai-team-memory consolidate path for bug_slug=bug-project-alpha-123
+target_tier=department. Summarize the bugfix lesson after sanitizing private
+details.
+
+Use the ai-team-release archive path for release_id=v1.4.0 since_tag=v1.3.0.
+Focus on bugfix lessons and reusable design patterns.
 ```
 
 ## Journey 1: Existing Project Bug Fix
@@ -294,3 +303,93 @@ Classify the failure as context missing, graph missing, skill missing, hook
 missing, gate missing, evidence missing, human decision missing, or privacy
 leak. Then update the smallest durable artifact: command, gate, knowledge map,
 memory entry, test, code graph adapter, or review checklist.
+
+## Journey 7: Memory Consolidation
+
+Use this journey when a contributor or maintainer has a useful lesson from a
+completed feature, bugfix, review, incident, or migration.
+
+```text
+speckit.ai-team.memory-consolidate scope=bugfix bug_slug=bug-project-alpha-123 target_tier=department privacy=department-internal memory_service=mem0
+```
+
+Flow:
+
+1. Identify the source: work slug, bug slug, issue, PR, incident, release, or
+   manual note.
+2. Load the relevant Work Context Package, specs, bug artifacts, code graph,
+   evidence, PR comments, and review findings.
+3. Sanitize the lesson:
+   - remove raw customer demand;
+   - remove secrets and commercial context;
+   - separate fact, decision, inference, and opinion;
+   - link evidence instead of copying large traces.
+4. Choose the target tier:
+   - `local` for contributor-only notes that are not uploaded;
+   - `department` for uploaded internal team memory that is not formal docs;
+   - `enterprise` for reviewed guidance stored under `docs/` and carried with
+     formal project/release knowledge.
+5. Write a structured memory card and update the relevant index.
+6. Sync to a mem0-like service only when namespace, privacy, and access boundary
+   are configured.
+7. Recommend whether the memory should become a skill, test, hook, gate,
+   knowledge-map entry, or code graph rule.
+
+Stop when the tier is unclear, a contributor is publishing someone else's local
+memory, a department lesson is being treated as enterprise guidance, or owner
+approval is missing for enterprise memory.
+
+Bugfix memory is especially valuable. Prefer a short card with symptom, root
+cause, fix pattern, missing detection, future guard, and similar modules to
+inspect.
+
+## Journey 8: Release Archive and Knowledge Consolidation
+
+Use this journey when a release candidate or final release is ready and the
+team needs to reduce active context, preserve lessons, and make the release
+useful for future projects. Maintainers may also run it at any milestone or
+checkpoint; it is not a mandatory pre-release gate.
+
+```text
+speckit.ai-team.release-archive release_id=v1.4.0 since_tag=v1.3.0 privacy=public-safe
+```
+
+Flow:
+
+1. Identify the release range from tags, release branch, release tracking issue,
+   or explicit `work_slugs`.
+2. Read completed Work Context Packages, specs, bug artifacts, PR evidence,
+   release verification, and code graph summaries.
+3. Create the ignored private archive under
+   `.specify/ai-team/releases/private/<release_id>/`.
+4. Promote only approved, sanitized summaries to
+   `docs/ai-team/memory/releases/<release_id>/`.
+5. Produce the private evidence/index files and reviewed enterprise summaries:
+   - release summary;
+   - shipped work index;
+   - bugfix lessons;
+   - feature decisions;
+   - migration playbook;
+   - evidence rollup;
+   - archived work status;
+   - privacy review.
+6. Promote durable knowledge:
+   - bugfix symptoms, root causes, missing detections, and future guards to
+     local, department, or enterprise memory, tests, hooks, or skills;
+   - accepted architecture and compatibility choices to decision memory;
+   - reusable module/API/config/test patterns to the migration playbook and
+     knowledge map.
+6. Mark task-level work context as archived, retained, private-only,
+   superseded, or blocked. Do not delete evidence unless retention policy says
+   so.
+7. Run `speckit.ai-team.support` when the release archive changes Skill,
+   Knowledge, or Memory support files.
+
+Stop when the release range is ambiguous, work items have no stable identity,
+raw customer demand would enter a public repository, or archive changes imply a
+new public compatibility decision without owner approval.
+
+Bugfix lessons are especially important. A small bugfix may be the only place
+that records a missing test, integration drift, code graph misunderstanding,
+or compatibility default. Preserve that lesson in a short card even when the
+patch itself was small.

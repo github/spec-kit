@@ -89,7 +89,20 @@ it should load the relevant knowledge slice for the current Work Context Package
 Memory stores historical context. It must not override current source, spec,
 plan, issue, or human approval.
 
-There are two useful memory types.
+Memory has two dimensions:
+
+- **tier**: local, department, or enterprise;
+- **type**: decision memory or attempt memory.
+
+Use [memory-tiers.md](memory-tiers.md) for the full tier model.
+
+| Tier | Upload? | Formal docs? | Git policy | Use |
+|---|---|---|---|---|
+| local memory | no | no | ignore or local-only | contributor scratch and unreviewed lessons |
+| department memory | yes, internal | no | internal-only repository or service sync | shared team lessons that are not formal guidance |
+| enterprise memory | yes, controlled | yes | commit after review | reviewed long-term guidance and release knowledge |
+
+There are two useful memory types inside those tiers.
 
 ### Decision Memory
 
@@ -117,6 +130,7 @@ Attempt memory records curated lessons from past attempts:
 - repeated review comments;
 - failed checks;
 - incident remediation;
+- release bugfix lessons;
 - debugging paths that did or did not work;
 - prompts or skills that caused drift;
 - successful playbooks for similar tasks.
@@ -138,6 +152,60 @@ Do not use attempt memory to:
 - justify a design without current evidence;
 - preserve every failed experiment forever.
 
+## Memory Consolidation Flow
+
+`speckit.ai-team.memory-consolidate` is the standard flow for turning completed
+work into memory. Contributors may run it after a feature or bugfix. Maintainers
+may run it at milestones or release time. It can write local, department, or
+enterprise memory depending on the chosen tier and review state.
+
+Before consolidation, detailed work context helps finish a feature or bugfix.
+After consolidation, future agents usually need a smaller artifact:
+
+- memory cards;
+- bugfix lessons;
+- feature decisions;
+- migration playbook;
+- evidence rollup.
+
+`speckit.ai-team.release-archive` is the release-scoped batch version of the same
+process. It may create `.specify/ai-team/releases/private/<release_id>/` and
+then use the same promotion rules to decide what stays local, what is shared to department
+memory, and what becomes enterprise memory.
+
+Bugfix lessons deserve special care because they often capture operational
+knowledge that does not appear in feature specs:
+
+- symptom and user impact;
+- root cause and fault pattern;
+- fix pattern;
+- missing test or missing monitoring;
+- future detection rule;
+- similar modules or projects to inspect.
+
+Reusable design knowledge should move into a migration playbook instead of
+staying buried in old plans or PRs. The playbook should describe what can be
+reused, what must be adapted, and what evidence is required before a similar
+project trusts the pattern.
+
+Release archive should mark old work artifacts as archived, retained,
+private-only, superseded, or blocked. The default is summarize and retain
+evidence, not delete raw material.
+
+## Default Memory Service
+
+The default service model should be compatible with mem0-style memory:
+
+- memory entries are small structured cards, not raw transcripts;
+- retrieval is scoped by work type, module, capability, code graph node, release,
+  and tier;
+- local memory stays local;
+- department memory syncs to an approved internal namespace;
+- enterprise memory syncs to a controlled namespace and has a docs copy;
+- current source, spec, plan, issue, and owner decisions outrank memory.
+
+Teams may implement this with mem0, another memory service, or files only.
+
 ## Precedence
 
 When sources disagree, use this order:
@@ -158,10 +226,28 @@ When sources disagree, use this order:
 `-- memory-index.md
 
 .specify/ai-team/memory/
-|-- decisions/
-|   `-- <date>-<slug>.md
-`-- attempts/
-    `-- <date>-<slug>.md
+|-- local/
+|-- department/
+|   |-- decisions/
+|   `-- attempts/
+`-- service-sync-index.md
+
+.specify/ai-team/releases/
+`-- <release_id>/
+    |-- release-summary.md
+    |-- shipped-work-index.md
+    |-- bugfix-lessons.md
+    |-- feature-decisions.md
+    |-- migration-playbook.md
+    |-- evidence-rollup.md
+    |-- archived-work.yml
+    `-- privacy-review.md
+
+docs/ai-team/memory/
+|-- index.md
+|-- bugfix-playbooks/
+|-- migration-playbooks/
+`-- decisions/
 ```
 
 These files may stay local or be committed depending on repository privacy.

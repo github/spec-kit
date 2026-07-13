@@ -51,6 +51,7 @@ intake -> work context -> requirement or bug work item -> code graph impact
 -> plan-check (chat report) -> review-plan gate -> tasks
 -> analyze (native cross-artifact report) -> review-tasks gate
 -> implement -> converge (composite checks/evidence) -> PR/review
+-> optional memory consolidation or release archive
 ```
 
 **Three layers** in the feature path:
@@ -73,6 +74,8 @@ The exact path depends on the user journey:
 | new project from zero | creating a new repository, service, product, or application | public project issue/charter, or handoff requirement URL for confidential enterprise work |
 | resume from middle | work stopped after approval, gate, failed check, tool switch, or lost chat | workflow run ID or Work Context Package work slug |
 | failure evolution | repeated AI mistake, failed review, failed check, escaped bug, or incident | failed PR, check, incident, or work slug |
+| memory consolidation | contributor or maintainer wants to preserve a useful lesson | work slug, bug slug, PR, incident, release id, or manual note |
+| release archive | maintainer wants release-scoped or milestone-scoped knowledge consolidation | release id, tag range, release issue, or shipped work slugs |
 
 For detailed steps, start with
 [`extensions/ai-team/README.md`](extensions/ai-team/) and
@@ -149,6 +152,12 @@ speckit.ai-team.context work_slug=<work_slug> resume=true
 
 # Resume by workflow run state
 specify workflow resume <run-id>
+
+# Consolidate one useful lesson into local, department, or enterprise memory
+speckit.ai-team.memory-consolidate scope=bugfix bug_slug=bug-project-alpha-123 target_tier=department privacy=department-internal
+
+# Archive a release or milestone and promote reusable lessons in batch
+speckit.ai-team.release-archive release_id=v1.4.0 since_tag=v1.3.0 privacy=public-safe
 ```
 
 For chat-first tools, use stable path aliases. These phrases are aliases for the
@@ -168,6 +177,13 @@ Use the ai-team-sdd new-project path for this internal handoff requirement:
 https://example.com/enhancements/rfcs/REQ-2026-020
 
 Use the ai-team-sdd resume path for work_slug=003-search-export from tasks-ready.
+
+Use the ai-team-memory consolidate path for bug_slug=bug-project-alpha-123
+target_tier=department. Summarize the bugfix lesson after sanitizing private
+details.
+
+Use the ai-team-release archive path for release_id=v1.4.0 since_tag=v1.3.0.
+Focus on bugfix lessons and reusable design patterns.
 ```
 
 ## Table of Contents
