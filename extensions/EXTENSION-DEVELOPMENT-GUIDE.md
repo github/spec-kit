@@ -252,6 +252,7 @@ Use standard Markdown with special placeholders:
 
 - `$ARGUMENTS`: User-provided arguments
 - `{SCRIPT}`: Replaced with script path during registration
+- `__SPECKIT_COMMAND_<NAME>__`: Replaced with the invocation of another command, rendered in the active agent's syntax (see [Referencing other commands](#referencing-other-commands))
 
 **Example**:
 
@@ -266,6 +267,30 @@ args="$ARGUMENTS"
 echo "Running with args: $args"
 ```
 ````
+
+### Referencing other commands
+
+A command body is a *template* that Spec Kit renders once per agent. Different agents invoke commands with different surface syntax — slash-based agents use `/speckit.plan`, skills-based agents use `/speckit-plan`, and some (Codex, Zcode) use `$speckit-plan` in skills mode. So when you reference a sibling command from a body, **do not hard-code a literal invocation** like `/speckit.my-ext.prepare`. A literal is correct for exactly one agent and breaks on the rest.
+
+Instead use the agent-neutral token `__SPECKIT_COMMAND_<NAME>__`. Spec Kit resolves it to the correct invocation for whichever agent the project is initialized with.
+
+Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore:
+
+| Command file | Token |
+| --- | --- |
+| `speckit.plan.md` | `__SPECKIT_COMMAND_PLAN__` |
+| `speckit.bug.fix.md` | `__SPECKIT_COMMAND_BUG_FIX__` |
+| `speckit.git.commit.md` | `__SPECKIT_COMMAND_GIT_COMMIT__` |
+
+The resolver maps each underscore back to the active agent's separator, so use tokens to reference commands whose name segments are single words. (Command names are dotted segments like `git.commit`; the token scheme rebuilds those dots and does not carry hyphens within a segment.)
+
+**Example** — a command body that points the user at the next step:
+
+```markdown
+Once the assessment exists, the next step is `__SPECKIT_COMMAND_BUG_FIX__ slug=<slug>`.
+```
+
+This renders as `/speckit.bug.fix slug=<slug>` for a slash-based agent, `/speckit-bug-fix slug=<slug>` for a skills-based agent, and so on — the author writes it once and it stays portable. The first-party `bug` and `git` extensions use this token exclusively; see `extensions/bug/commands/` for working examples.
 
 ### Script Path Rewriting
 
