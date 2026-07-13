@@ -6118,7 +6118,7 @@ class TestPresetSkills:
         # pass.
         gemini_cmd_files = list(gemini_dir.glob("*specify*"))
         assert gemini_cmd_files, "sanity: gemini's directory must have B's restored content"
-        assert "preset B body" in gemini_cmd_files[0].read_text()
+        assert "preset B body" in gemini_cmd_files[0].read_text(encoding="utf-8")
 
         metadata_b = manager.registry.get("orphan-preset-b")
         assert set(metadata_b.get("registered_commands", {})) == {"gemini", "opencode"}, (
@@ -6136,7 +6136,7 @@ class TestPresetSkills:
         # which would mean B's write there was never tracked for cleanup.
         remaining_gemini_files = list(gemini_dir.glob("*specify*"))
         for f in remaining_gemini_files:
-            assert "preset B body" not in f.read_text(), (
+            assert "preset B body" not in f.read_text(encoding="utf-8"), (
                 "removing preset B must clean up gemini's directory too, "
                 "since B's registered_commands was updated to include it "
                 "— otherwise B's stale content is orphaned there forever "

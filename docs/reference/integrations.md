@@ -153,7 +153,7 @@ specify integration upgrade [<key>]
 
 Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.
 
-Enabled extensions and presets are re-registered only when upgrading the currently active (default) integration; upgrading a non-default integration does not touch its extension or preset artifacts — `use`/`switch` that integration afterward to rescaffold them.
+Enabled extensions and presets are re-registered only when upgrading the currently active (default) integration. A non-default upgrade still refreshes that integration's core commands, but does not re-register its extension or preset layers — `use`/`switch` that integration afterward to rescaffold them.
 
 ## Report Integration Status
 
