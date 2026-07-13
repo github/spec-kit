@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-08T00:00:00Z",
+  "updated_at": "2026-07-13T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -968,6 +968,41 @@
       "stars": 0,
       "created_at": "2026-03-29T00:00:00Z",
       "updated_at": "2026-03-29T00:00:00Z"
+    },
+    "contextforge-mcp": {
+      "name": "ContextForge MCP",
+      "id": "contextforge-mcp",
+      "description": "Integrates codebase-memory-mcp + headroom into Spec Kit — graph-based code intelligence and context compression for the implement phase.",
+      "author": "capatinore",
+      "version": "0.1.0",
+      "download_url": "https://github.com/capatinore/contextforge-mcp/releases/download/ext-v0.1.0/contextforge-mcp-speckit-extension.zip",
+      "repository": "https://github.com/capatinore/contextforge-mcp",
+      "homepage": "https://github.com/capatinore/contextforge-mcp",
+      "documentation": "https://github.com/capatinore/contextforge-mcp/blob/main/README.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "code",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.10.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "mcp",
+        "code-intelligence",
+        "context-compression",
+        "tokens",
+        "claude",
+        "spec-driven-development"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-13T00:00:00Z",
+      "updated_at": "2026-07-13T00:00:00Z"
     },
     "cost": {
       "name": "Cost Tracker",
