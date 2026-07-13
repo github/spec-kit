@@ -218,6 +218,8 @@ def _extract_highest_number(names: list[str], scope_prefix: str) -> int:
 
 
 def _git_lines(repo_root: Path, *args: str, env_extra: dict | None = None) -> list[str]:
+    if shutil.which("git") is None:
+        return []
     env = {**os.environ, **(env_extra or {})}
     result = subprocess.run(
         ["git", *args], cwd=repo_root, capture_output=True, text=True, env=env

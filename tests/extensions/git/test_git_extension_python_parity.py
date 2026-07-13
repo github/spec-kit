@@ -8,6 +8,7 @@ and asserts matching output, exit codes, and resulting git state.
 import json
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -285,6 +286,14 @@ class TestCreateFeatureBranchParity:
         p = _run_py("create-new-feature-branch", py_proj, "--json", "offline feature")
         _assert_parity(b, p)
         assert "skipped branch creation" in p.stderr
+
+    def test_missing_git_executable_gracefully_degrades(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        module = runpy.run_path(str(EXT_PY / "create_new_feature_branch.py"))
+        monkeypatch.setenv("PATH", "")
+
+        assert module["_git_lines"](tmp_path, "status") == []
 
     def test_empty_description_errors(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
