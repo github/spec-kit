@@ -512,14 +512,14 @@ def _coerce_number(value: Any) -> Any:
 
 
 def _safe_contains(left: Any, right: Any) -> bool:
-"""Return ``left in right`` safely.
+    """Return ``left in right`` safely.
 
-Returns ``False`` when *right* is ``None`` or when the membership test raises
-``TypeError`` (e.g. non-iterable *right*, unhashable *left*, or incompatible
-operand types), instead of propagating the exception and crashing the workflow.
+    Returns ``False`` when *right* is ``None`` or when the membership test raises
+    ``TypeError`` (e.g. non-iterable *right*, unhashable *left*, or incompatible
+    operand types), instead of propagating the exception and crashing the workflow.
 
-``not in`` is derived by negating this result.
-"""
+    ``not in`` is derived by negating this result.
+    """
     if right is None:
         return False
     try:
