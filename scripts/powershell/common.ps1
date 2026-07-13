@@ -191,7 +191,7 @@ function Get-FeaturePathsEnv {
         [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or run the specify command to create .specify/feature.json.")
         exit 1
     }
-    
+
     # When no branch context exists (no SPECIFY_FEATURE, feature resolved via
     # SPECIFY_FEATURE_DIRECTORY or feature.json), fall back to the feature
     # directory basename so CURRENT_BRANCH is a usable identifier rather than

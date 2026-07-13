@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-08T00:00:00Z",
+  "updated_at": "2026-07-10T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1180,6 +1180,39 @@
       "created_at": "2026-03-13T00:00:00Z",
       "updated_at": "2026-03-13T00:00:00Z"
     },
+    "ears": {
+      "name": "EARS Requirements Syntax",
+      "id": "ears",
+      "description": "Author, lint, and convert requirements using EARS (Easy Approach to Requirements Syntax) - the five industry-standard sentence patterns for unambiguous, testable requirements.",
+      "author": "dhruv-15-03",
+      "version": "1.0.0",
+      "download_url": "https://github.com/dhruv-15-03/spec-kit-ears/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/dhruv-15-03/spec-kit-ears",
+      "homepage": "https://github.com/dhruv-15-03/spec-kit-ears",
+      "documentation": "https://github.com/dhruv-15-03/spec-kit-ears/blob/main/README.md",
+      "changelog": "https://github.com/dhruv-15-03/spec-kit-ears/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.9.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "ears",
+        "requirements",
+        "specification",
+        "quality"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-08T00:00:00Z",
+      "updated_at": "2026-07-08T00:00:00Z"
+    },
     "extensify": {
       "name": "Extensify",
       "id": "extensify",
@@ -1212,6 +1245,47 @@
       "stars": 0,
       "created_at": "2026-03-18T00:00:00Z",
       "updated_at": "2026-04-23T00:00:00Z"
+    },
+    "figma": {
+      "name": "Spec Kit Figma",
+      "id": "figma",
+      "description": "Agent-agnostic SpecKit extension that grounds spec, plan & task generation in Figma design context — REST + optional MCP, single/mono/multi-repo, macOS/Linux/Windows.",
+      "author": "Fyloss",
+      "version": "1.6.0",
+      "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip",
+      "repository": "https://github.com/Fyloss/spec-kit-figma",
+      "homepage": "https://github.com/Fyloss/spec-kit-figma",
+      "documentation": "https://github.com/Fyloss/spec-kit-figma/blob/main/docs/INSTALL.md",
+      "changelog": "https://github.com/Fyloss/spec-kit-figma/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "git", "required": true },
+          { "name": "bash", "required": false },
+          { "name": "curl", "required": false },
+          { "name": "jq", "required": false },
+          { "name": "pwsh", "required": false }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 6
+      },
+      "tags": [
+        "figma",
+        "design",
+        "frontend",
+        "ui",
+        "design-system"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-08T00:00:00Z",
+      "updated_at": "2026-07-08T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
@@ -4323,6 +4397,40 @@
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "verify-review-ship": {
+      "name": "Verify Review Ship",
+      "id": "verify-review-ship",
+      "description": "Adds post-implementation verify, review, and ship readiness gates to Spec Kit workflows.",
+      "author": "Carlos Eduardo Gevaerd Araujo",
+      "version": "0.1.0",
+      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
+      "homepage": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
+      "documentation": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/README.md",
+      "changelog": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "quality",
+        "review",
+        "shipping",
+        "workflow",
+        "testing"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-10T00:00:00Z",
+      "updated_at": "2026-07-10T00:00:00Z"
     },
     "verify-tasks": {
       "name": "Verify Tasks Extension",

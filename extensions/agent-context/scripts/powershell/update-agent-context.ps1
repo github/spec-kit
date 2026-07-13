@@ -426,7 +426,11 @@ if (-not $PlanPath) {
     if (-not $PlanPath) {
         try {
             $specsDir = Join-Path $ProjectRoot 'specs'
-            $candidate = Get-ChildItem -Path $specsDir -Recurse -File -Filter 'plan.md' -ErrorAction SilentlyContinue |
+            # Recurse (rather than the old one-level specs/*/plan.md scan) so scoped
+            # layouts created via SPECIFY_FEATURE_DIRECTORY, e.g.
+            # specs/<scope>/<feature>/plan.md, are still discovered when
+            # feature.json is absent (#3024).
+            $candidate = Get-ChildItem -Path $specsDir -Filter 'plan.md' -File -Recurse -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1
             if ($candidate) {
