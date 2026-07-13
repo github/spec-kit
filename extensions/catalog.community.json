@@ -2304,6 +2304,7 @@
       "author": "Fyloss",
       "version": "1.0.0",
       "download_url": "https://github.com/fyloss/spec-kit-multi-repo-sync/releases/download/v1.0.0/spec-kit-multi-repo-sync.zip",
+      "sha256": "12a5c7392145b4424b20715aaa3d8b6a8218c143dea596873e344146c1a76ba0",
       "repository": "https://github.com/fyloss/spec-kit-multi-repo-sync",
       "homepage": "https://github.com/fyloss/spec-kit-multi-repo-sync",
       "documentation": "https://github.com/fyloss/spec-kit-multi-repo-sync/blob/main/README.md",
