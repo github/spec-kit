@@ -2789,11 +2789,15 @@ class TestSelfTestPreset:
             "constitution.md was not seeded from the self-test preset template"
         )
 
-    def test_self_test_reseeds_placeholder_constitution(self, project_dir):
-        """A placeholder memory constitution is re-seeded from the preset template."""
+    def test_self_test_reseeds_exact_core_constitution(self, project_dir):
+        """An unchanged core constitution is re-seeded from the preset template."""
+        core = "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n"
+        (project_dir / ".specify" / "templates" / "constitution-template.md").write_text(
+            core
+        )
         memory = project_dir / ".specify" / "memory" / "constitution.md"
         memory.parent.mkdir(parents=True, exist_ok=True)
-        memory.write_text("# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n")
+        memory.write_text(core)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -2801,6 +2805,20 @@ class TestSelfTestPreset:
         content = memory.read_text()
         assert "preset:self-test" in content, "placeholder constitution was not re-seeded"
         assert "[PROJECT_NAME]" not in content
+
+    def test_self_test_preserves_authored_constitution_with_placeholder(
+        self, project_dir
+    ):
+        """A placeholder mention does not establish generated provenance."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\n\nGuidance for [PROJECT_NAME].\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
 
     def test_self_test_preserves_authored_constitution(self, project_dir):
         """An authored (placeholder-free) constitution is never overwritten."""
@@ -2875,17 +2893,129 @@ class TestSelfTestPreset:
         assert "# Wrapper Constitution" in content
         assert "## Core Principle" in content
 
-    def test_constitution_placeholder_tokens_are_pinned_to_core_template(self):
-        """Guard placeholder token drift between code and core template."""
-        from specify_cli.presets import _CONSTITUTION_PLACEHOLDER_TOKENS
+    def test_higher_priority_preset_reseeds_unchanged_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """An unchanged generated constitution follows resolver priority."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
 
-        expected_tokens = {"[PROJECT_NAME]", "[PRINCIPLE_1_NAME]"}
-        assert set(_CONSTITUTION_PLACEHOLDER_TOKENS) == expected_tokens
+        preset_dir = temp_dir / "higher-priority"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Higher Priority Constitution\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "higher-priority",
+                        "name": "Higher Priority",
+                        "version": "1.0.0",
+                        "description": "Higher-priority constitution",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "replace",
+                                "description": "Higher-priority constitution",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
 
-        core_template = Path(__file__).parent.parent / "templates" / "constitution-template.md"
-        content = core_template.read_text(encoding="utf-8")
-        for token in expected_tokens:
-            assert token in content
+        manager.install_from_directory(preset_dir, "0.1.5", priority=1)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Higher Priority Constitution\n"
+
+    def test_constitution_seed_rejects_symlinked_memory_directory(
+        self, project_dir, temp_dir
+    ):
+        """Preset installation cannot seed through a symlinked memory directory."""
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        try:
+            (project_dir / ".specify" / "memory").symlink_to(
+                outside, target_is_directory=True
+            )
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="symlinked"):
+            install_self_test_preset(manager)
+
+        assert manager.registry.is_installed("self-test")
+        assert not (outside / "constitution.md").exists()
+
+    def test_constitution_seed_rejects_dangling_destination_symlink(
+        self, project_dir, temp_dir
+    ):
+        """Preset installation cannot seed through a dangling destination symlink."""
+        memory = project_dir / ".specify" / "memory"
+        memory.mkdir(parents=True)
+        outside = temp_dir / "outside-constitution.md"
+        try:
+            (memory / "constitution.md").symlink_to(outside)
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="symlinked"):
+            install_self_test_preset(manager)
+
+        assert manager.registry.is_installed("self-test")
+        assert not outside.exists()
+
+    def test_constitution_materialization_error_is_nonfatal(
+        self, project_dir, temp_dir
+    ):
+        """An invalid wrap warns without reporting an uninstalled preset."""
+        preset_dir = temp_dir / "invalid-wrap"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Missing core placeholder\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "invalid-wrap",
+                        "name": "Invalid Wrap",
+                        "version": "1.0.0",
+                        "description": "Invalid wrapping constitution",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Invalid wrap",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="Failed to seed constitution"):
+            manifest = manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert manifest.id == "invalid-wrap"
+        assert manager.registry.is_installed("invalid-wrap")
 
     def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
         """Test that extension command overrides are skipped if the extension isn't installed."""
@@ -6376,6 +6506,7 @@ class TestEnsureConstitutionResolverAware:
         memory = project_dir / ".specify" / "memory" / "constitution.md"
         assert memory.exists()
         assert "[PROJECT_NAME]" in memory.read_text()
+        assert (memory.parent / ".constitution-template.json").exists()
 
     def test_seeds_from_preset_when_installed(self, project_dir):
         from specify_cli.commands.init import ensure_constitution_from_template
@@ -6406,6 +6537,20 @@ class TestEnsureConstitutionResolverAware:
         memory.write_text(authored)
 
         ensure_constitution_from_template(project_dir)
+
+        assert memory.read_text() == authored
+
+    def test_preserves_edited_generated_memory(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        ensure_constitution_from_template(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        authored = memory.read_text() + "\nAuthored amendment.\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
 
         assert memory.read_text() == authored
 

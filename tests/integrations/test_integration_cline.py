@@ -214,6 +214,7 @@ class TestClineIntegration(MarkdownIntegrationTests):
         ]:
             files.append(f".specify/templates/{name}")
 
+        files.append(".specify/memory/.constitution-template.json")
         files.append(".specify/memory/constitution.md")
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")

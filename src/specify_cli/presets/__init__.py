@@ -31,18 +31,50 @@ from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priorit
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
-from ..shared_infra import verify_archive_sha256
+from ..shared_infra import (
+    _ensure_safe_shared_destination,
+    _ensure_safe_shared_directory,
+    _write_shared_bytes,
+    _write_shared_text,
+    verify_archive_sha256,
+)
 
 
-# Tokens that mark an unmodified, generic constitution that has not yet been
-# authored. Used to decide whether seeding/re-seeding memory/constitution.md
-# from a preset-provided template is safe (i.e. won't clobber authored content).
-_CONSTITUTION_PLACEHOLDER_TOKENS = ("[PROJECT_NAME]", "[PRINCIPLE_1_NAME]")
+_CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
 
 
-def _constitution_is_placeholder(content: str) -> bool:
-    """Return True if a constitution body is still the generic placeholder."""
-    return any(token in content for token in _CONSTITUTION_PLACEHOLDER_TOKENS)
+def _content_sha256(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _constitution_is_generated(
+    project_root: Path,
+    memory_constitution: Path,
+    layers: list[dict[str, Any]],
+) -> bool:
+    """Return whether the live constitution is an unchanged generated file."""
+    _ensure_safe_shared_destination(project_root, memory_constitution)
+    content = memory_constitution.read_bytes()
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    _ensure_safe_shared_destination(project_root, provenance)
+
+    if provenance.exists():
+        try:
+            metadata = json.loads(provenance.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            metadata = {}
+        if (
+            isinstance(metadata, dict)
+            and metadata.get("sha256") == _content_sha256(content)
+        ):
+            return True
+
+    # Older projects have no provenance sidecar. Only the exact known core
+    # template is safe to treat as generated; placeholder substrings are not.
+    for layer in layers:
+        if layer["source"].startswith("core") and layer["path"].read_bytes() == content:
+            return True
+    return False
 
 
 def _materialize_constitution_template(
@@ -61,17 +93,33 @@ def _materialize_constitution_template(
     if not layers:
         return None
 
-    memory_constitution.parent.mkdir(parents=True, exist_ok=True)
     top_layer = layers[0]
     if top_layer["strategy"] == "replace":
-        shutil.copy2(top_layer["path"], memory_constitution)
-        return "copied"
+        content = top_layer["path"].read_bytes()
+        result = "copied"
+    else:
+        composed_content = resolver.resolve_content("constitution-template", "template")
+        if composed_content is None:
+            return None
+        content = composed_content.encode("utf-8")
+        result = "composed"
 
-    composed_content = resolver.resolve_content("constitution-template", "template")
-    if composed_content is None:
-        return None
-    memory_constitution.write_text(composed_content, encoding="utf-8")
-    return "composed"
+    _ensure_safe_shared_directory(project_root, memory_constitution.parent)
+    _write_shared_bytes(project_root, memory_constitution, content)
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    _write_shared_text(
+        project_root,
+        provenance,
+        json.dumps(
+            {
+                "sha256": _content_sha256(content),
+                "source": top_layer["source"],
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    return result
 
 
 def _substitute_core_template(
@@ -1660,8 +1708,8 @@ class PresetManager:
         # materialized to a live file rather than resolved on demand, so a
         # preset that ships one (e.g. strategy: replace with a ratified
         # constitution) must be propagated here. Guard against clobbering an
-        # already-authored constitution by only seeding when the memory file is
-        # missing or still contains generic placeholder tokens.
+        # already-authored constitution by only replacing a file whose recorded
+        # hash (or exact legacy core-template content) proves it was generated.
         self._seed_constitution_from_preset(manifest)
 
         return manifest
@@ -1671,7 +1719,7 @@ class PresetManager:
 
         Only runs when the preset declares a ``type: template`` entry named
         ``constitution-template`` and the live memory file is either missing or
-        still the generic placeholder. Authored constitutions are never
+        is an unchanged generated file. Authored constitutions are never
         overwritten.
         """
         provides_constitution = any(
@@ -1684,22 +1732,21 @@ class PresetManager:
         memory_constitution = (
             self.project_root / ".specify" / "memory" / "constitution.md"
         )
-        if memory_constitution.exists():
-            try:
-                existing = memory_constitution.read_text(encoding="utf-8")
-            except OSError:
-                return
-            if not _constitution_is_placeholder(existing):
-                # Legitimately authored constitution; leave it untouched.
-                return
-
         try:
+            resolver = PresetResolver(self.project_root)
+            layers = resolver.collect_all_layers(
+                "constitution-template", "template"
+            )
+            if memory_constitution.exists() and not _constitution_is_generated(
+                self.project_root, memory_constitution, layers
+            ):
+                return
             result = _materialize_constitution_template(
                 self.project_root, memory_constitution
             )
             if result is None:
                 return
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
             import warnings
 
             warnings.warn(
