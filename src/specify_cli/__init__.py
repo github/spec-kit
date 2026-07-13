@@ -416,7 +416,7 @@ def check():
     if not any(agent_results.values()):
         console.print("[dim]Tip: Install a coding agent for the best experience[/dim]")
 
-    console.print("[dim]Tip: Run 'specify self check' to verify you have the latest CLI version[/dim]")
+    console.print("[dim]AI Team distribution: pinned to v0.12.5+teamwork.1[/dim]")
 
 
 def _feature_capabilities() -> dict[str, bool]:
@@ -426,7 +426,7 @@ def _feature_capabilities() -> dict[str, bool]:
         "integration_use_command": True,
         "multi_install_safe_registry_metadata": True,
         "integration_upgrade_command": True,
-        "self_check_command": True,
+        "self_check_command": False,
         "workflow_catalog": True,
         "bundled_templates": True,
     }
@@ -492,7 +492,9 @@ def version(
     console.print(panel)
     console.print()
 
-app.add_typer(_self_app, name="self")
+# Keep the upstream implementation available for compatibility tests, but do
+# not advertise self-management in this pinned AI Team distribution.
+app.add_typer(_self_app, name="self", hidden=True)
 
 
 # ===== Extension Commands =====

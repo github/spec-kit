@@ -49,7 +49,7 @@ class TestVersionCommand:
         assert "Features:" in result.output
         assert "- controlled multi install integrations: yes" in result.output
         assert "- integration use command: yes" in result.output
-        assert "- self check command: yes" in result.output
+        assert "- self check command: no" in result.output
 
     def test_version_features_json(self):
         """specify version --features --json prints machine-readable capabilities."""
@@ -65,7 +65,7 @@ class TestVersionCommand:
                 "integration_use_command": True,
                 "multi_install_safe_registry_metadata": True,
                 "integration_upgrade_command": True,
-                "self_check_command": True,
+                "self_check_command": False,
                 "workflow_catalog": True,
                 "bundled_templates": True,
             },
@@ -77,3 +77,10 @@ class TestVersionCommand:
 
         assert result.exit_code != 0
         assert "--json requires --features" in result.output
+
+    def test_pinned_distribution_hides_self_management_from_root_help(self):
+        """The fixed Teamwork release does not advertise automatic upgrades."""
+        result = runner.invoke(app, ["--help"])
+
+        assert result.exit_code == 0
+        assert " self " not in result.output
