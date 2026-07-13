@@ -1124,6 +1124,14 @@
             "name": "node",
             "version": ">=18.0.0",
             "required": true
+          },
+          {
+            "name": "npx",
+            "required": true
+          },
+          {
+            "name": "specify",
+            "required": false
           }
         ]
       },
