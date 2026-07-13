@@ -8008,3 +8008,23 @@ class TestConfigManagerCrossExtensionEnvLeak:
         cfg = ConfigManager(tmp_path, "git")._get_env_config()
         # git absorbs the var (no registered sibling owns it).
         assert cfg == {"hooks": {"url": "for_git"}}
+
+    def test_non_utf8_registry_does_not_crash(self, tmp_path, monkeypatch):
+        """A registry file with invalid text encoding must NOT propagate
+        ``UnicodeDecodeError`` out of the sibling scan and abort every
+        config read. ``ExtensionRegistry._load()`` catches ``JSONDecodeError``
+        / ``FileNotFoundError`` only, so ``_sibling_extension_ids`` must
+        additionally swallow ``UnicodeError`` and degrade to the documented
+        pre-fix behaviour.
+        """
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        # Write bytes that are not valid UTF-8 to the registry file.
+        (extensions_dir / ExtensionRegistry.REGISTRY_FILE).write_bytes(
+            b"\xff\xfe invalid utf-8 registry \xc3\x28"
+        )
+        monkeypatch.setenv("SPECKIT_TESTEXT_URL", "v")
+
+        # Must not raise; must fall back to the "no siblings" path.
+        cfg = ConfigManager(tmp_path, "testext")._get_env_config()
+        assert cfg == {"url": "v"}

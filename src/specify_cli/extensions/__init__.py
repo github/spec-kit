@@ -2750,7 +2750,12 @@ class ConfigManager:
 
         Returns an empty list if the registry is missing or corrupted
         (fresh project, ad-hoc test harness) so ``_get_env_config`` degrades
-        to its pre-fix behaviour rather than crashing.
+        to its pre-fix behaviour rather than crashing. ``UnicodeError`` is
+        caught alongside ``OSError`` because ``ExtensionRegistry._load()``
+        opens the file in text mode and only handles ``JSONDecodeError`` /
+        ``FileNotFoundError``, so a registry file with non-UTF-8 bytes would
+        otherwise surface a ``UnicodeDecodeError`` here and break *every*
+        config read instead of degrading gracefully.
 
         Used by ``_get_env_config`` to detect env vars whose remainder claims
         a longer, sibling-owned prefix (e.g. ``SPECKIT_GIT_HOOKS_URL`` is
@@ -2759,7 +2764,7 @@ class ConfigManager:
         extensions_dir = self.project_root / ".specify" / "extensions"
         try:
             return list(ExtensionRegistry(extensions_dir).keys())
-        except OSError:
+        except (OSError, UnicodeError):
             return []
 
     def _get_env_config(self) -> Dict[str, Any]:
