@@ -1329,7 +1329,6 @@ class TestExtensionManager:
 
         # Make copytree create a partial destination then raise so the rollback
         # path is exercised.
-        original_copytree = shutil.copytree
 
         def failing_copytree(src, dst, **kwargs):
             Path(dst).mkdir(parents=True, exist_ok=True)
