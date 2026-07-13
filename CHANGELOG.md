@@ -2,6 +2,22 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.14] - 2026-07-13
+
+### Changed
+
+- [extension] Add Spec Kit Memory extension to community catalog (#3455)
+- Add Test-First Governance preset to community catalog (#3504)
+- Add Autonomous Run Governance preset to community catalog (#3501)
+- fix(workflows): validate command step input/options are mappings (#3262)
+- fix(presets): resolve() honors manifest-declared file: for installed presets (#3351)
+- fix(init): don't block on confirmation for 'init --here' without a TTY (#3236)
+- [extension] Add Quality Gates (Enforcement Layer) extension to community catalog (#3431)
+- fix(integrations): exit cleanly on unbalanced quote in --integration-options (#3457) (#3466)
+- fix(integrations): declare kiro-cli multi-install safe (#3471) (#3485)
+- fix(workflows): fail fan-in step on non-list wait_for instead of crashing (#3482)
+- chore: release 0.12.13, begin 0.12.14.dev0 development (#3498)
+
 ## [0.12.13] - 2026-07-13
 
 ### Changed
