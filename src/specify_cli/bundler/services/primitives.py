@@ -85,13 +85,17 @@ def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
 
 
 class _KindManager(Protocol):
-    def is_installed(self, component: ComponentRef) -> bool: ...
+    def is_installed(self, component: ComponentRef) -> bool:
+        pass
 
-    def install(self, component: ComponentRef) -> None: ...
+    def install(self, component: ComponentRef) -> None:
+        pass
 
-    def refresh(self, component: ComponentRef) -> None: ...
+    def refresh(self, component: ComponentRef) -> None:
+        pass
 
-    def remove(self, component: ComponentRef) -> None: ...
+    def remove(self, component: ComponentRef) -> None:
+        pass
 
 
 def primitive_manager(
@@ -176,7 +180,9 @@ class _PresetKindManager:
                 component.version,
                 _bundled_manifest_version(bundled / "preset.yml", "preset"),
             )
-            self._manager.install_from_directory(bundled, speckit_version, priority, force=force)
+            self._manager.install_from_directory(
+                bundled, speckit_version, priority, **({"force": True} if force else {})
+            )
             return
 
         if not self._allow_network:
@@ -202,7 +208,9 @@ class _PresetKindManager:
         )
         zip_path = catalog.download_pack(component.id)
         try:
-            self._manager.install_from_zip(zip_path, speckit_version, priority, force=force)
+            self._manager.install_from_zip(
+                zip_path, speckit_version, priority, **({"force": True} if force else {})
+            )
         finally:
             with contextlib.suppress(Exception):
                 if zip_path.exists():
@@ -398,8 +406,11 @@ class _StepKindManager:
             )
 
     def refresh(self, component: ComponentRef) -> None:
-        # workflow_step_add is idempotent for already-installed steps; delegate
-        # to the standard install path which handles version refresh correctly.
+        # workflow_step_add errors when the step is already installed; remove it
+        # first (when network is permitted so the re-install can follow) before
+        # delegating to install().
+        if self._allow_network and self.is_installed(component):
+            self.remove(component)
         self.install(component)
 
     def remove(self, component: ComponentRef) -> None:

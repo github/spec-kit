@@ -274,9 +274,9 @@ def test_default_installer_refresh_dispatches_to_kind_manager(tmp_path: Path, mo
     assert force_values == [True], "DefaultPrimitiveInstaller.refresh() must use force=True"
 
 
-def test_no_force_hint_in_bundler_error_on_refresh(tmp_path: Path, monkeypatch):
+def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     """Regression: bundle update (refresh=True) of an already-installed extension
-    must not surface the extension-level '--force' hint inside the BundlerError."""
+    must succeed and pass force=True to install_from_directory."""
     from specify_cli.bundler.services.installer import install_bundle
     from specify_cli.bundler.models.manifest import BundleManifest
     import specify_cli._assets as assets
@@ -299,7 +299,6 @@ def test_no_force_hint_in_bundler_error_on_refresh(tmp_path: Path, monkeypatch):
         "components": [{"kind": "extensions", "id": "my-ext"}],
     }
     manifest = BundleManifest(raw, source_id="test")
-    from specify_cli.bundler.services.installer import install_bundle
     from specify_cli.bundler.services.adapters import DefaultPrimitiveInstaller
 
     installer = DefaultPrimitiveInstaller(allow_network=False)
