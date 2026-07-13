@@ -239,7 +239,7 @@ class ExtensionManifest:
                 raise ValidationError(f"Missing extension.{field}")
 
         # Validate extension ID format
-        if not EXTENSION_ID_PATTERN.match(ext["id"]):
+        if not EXTENSION_ID_PATTERN.fullmatch(ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -2050,6 +2050,54 @@ class ExtensionCatalog(CatalogStackBase):
         self.cache_file = self.cache_dir / "catalog.json"
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
+    def _ensure_default_download_cache_dir(self) -> Path:
+        """Create the default download cache without following symlink parents."""
+        root = self.project_root.resolve()
+        target_dir = self.cache_dir / "downloads"
+        try:
+            rel = target_dir.relative_to(self.project_root)
+        except ValueError:
+            raise ExtensionError("Default extension download cache escapes project root") from None
+
+        current = self.project_root
+        for part in rel.parts:
+            current = current / part
+            try:
+                label = current.relative_to(self.project_root).as_posix()
+            except ValueError:
+                label = str(current)
+
+            if current.is_symlink():
+                raise ExtensionError(
+                    f"Refusing to use symlinked extension download cache path: {label}"
+                )
+            if current.exists():
+                if not current.is_dir():
+                    raise ExtensionError(
+                        f"Extension download cache path is not a directory: {label}"
+                    )
+                try:
+                    current.resolve().relative_to(root)
+                except (OSError, ValueError):
+                    raise ExtensionError(
+                        f"Extension download cache path escapes project root: {label}"
+                    ) from None
+                continue
+
+            current.mkdir()
+            if current.is_symlink():
+                raise ExtensionError(
+                    f"Refusing to use symlinked extension download cache path: {label}"
+                )
+            try:
+                current.resolve().relative_to(root)
+            except (OSError, ValueError):
+                raise ExtensionError(
+                    f"Extension download cache path escapes project root: {label}"
+                ) from None
+
+        return target_dir
+
     def _make_request(self, url: str):
         """Build a urllib Request, adding auth headers when a provider matches.
 
@@ -2611,7 +2659,7 @@ class ExtensionCatalog(CatalogStackBase):
         """
         import urllib.error
 
-        if not isinstance(extension_id, str) or not EXTENSION_ID_PATTERN.match(
+        if not isinstance(extension_id, str) or not EXTENSION_ID_PATTERN.fullmatch(
             extension_id
         ):
             raise ExtensionError(
@@ -2648,8 +2696,9 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Determine target path
         if target_dir is None:
-            target_dir = self.cache_dir / "downloads"
-        target_dir.mkdir(parents=True, exist_ok=True)
+            target_dir = self._ensure_default_download_cache_dir()
+        else:
+            target_dir.mkdir(parents=True, exist_ok=True)
 
         version = _safe_version_token(ext_info.get("version"))
         zip_filename = f"{extension_id}-{version}.zip"

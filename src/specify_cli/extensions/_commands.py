@@ -204,7 +204,11 @@ def _resolve_catalog_extension(
 
         # Try by display name - search using argument as query, then filter for exact match
         search_results = catalog.search(query=argument)
-        name_matches = [ext for ext in search_results if str(ext.get("name", "")).lower() == argument.lower()]
+        name_matches = [
+            ext
+            for ext in search_results
+            if _catalog_id(ext) and _catalog_str(ext, "name").lower() == argument.lower()
+        ]
 
         if len(name_matches) == 1:
             return (name_matches[0], None)
@@ -221,10 +225,10 @@ def _resolve_catalog_extension(
             table.add_column("Catalog", style="dim")
             for ext in name_matches:
                 table.add_row(
-                    _escape_markup(str(ext.get("id", ""))),
-                    _escape_markup(str(ext.get("name", ""))),
-                    _escape_markup(str(ext.get("version", ""))),
-                    _escape_markup(str(ext.get("_catalog_name", ""))),
+                    _escape_markup(_catalog_id(ext)),
+                    _escape_markup(_catalog_str(ext, "name", "(unnamed)")),
+                    _escape_markup(_catalog_str(ext, "version", "?")),
+                    _escape_markup(_catalog_str(ext, "_catalog_name")),
                 )
             console.print(table)
             console.print("\nPlease rerun using the extension ID:")
