@@ -696,7 +696,7 @@ def _commit_workflow_file(
                 # exclusive descriptor, then close immediately before rename.
                 staged_file.close()
             os.replace(staged_path, dest_file)
-        except OSError as commit_exc:
+        except BaseException as commit_exc:
             try:
                 os.replace(backup_file, dest_file)
             except OSError as restore_exc:

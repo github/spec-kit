@@ -11002,6 +11002,38 @@ steps:
         assert not dest_file.exists()
         assert backup_file.read_text(encoding="utf-8") == "original"
 
+    def test_commit_keyboard_interrupt_restores_prior_file(
+        self, tmp_path, monkeypatch
+    ):
+        from specify_cli.workflows import _commands
+
+        dest_dir = tmp_path / "align-wf"
+        dest_dir.mkdir()
+        dest_file = dest_dir / "workflow.yml"
+        staged_file = dest_dir / ".workflow.yml.staged"
+        dest_file.write_text("original", encoding="utf-8")
+        staged_file.write_text("replacement", encoding="utf-8")
+
+        real_replace = os.replace
+        calls = 0
+
+        def interrupt_commit(src, dst):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise KeyboardInterrupt
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(os, "replace", interrupt_commit)
+        with pytest.raises(KeyboardInterrupt):
+            _commands._commit_workflow_file(
+                staged_file, dest_file, existed_before=True
+            )
+
+        assert dest_file.read_text(encoding="utf-8") == "original"
+        assert staged_file.read_text(encoding="utf-8") == "replacement"
+        assert list(dest_dir.glob("*.bak")) == []
+
     def test_commit_uses_unique_backup_without_overwriting_existing_sibling(
         self, tmp_path
     ):

@@ -11,7 +11,7 @@ import pytest
 
 from specify_cli.bundler import BundlerError
 from specify_cli.bundler.models.manifest import BundleManifest
-from specify_cli.bundler.models.records import load_records
+from specify_cli.bundler.models.records import load_records, records_path
 from specify_cli.bundler.services.installer import install_bundle, remove_bundle
 from specify_cli.bundler.services.resolver import resolve_install_plan
 from tests.bundler_helpers import FakeInstaller, make_project, valid_manifest_dict
@@ -253,14 +253,18 @@ def test_remove_record_save_failure_reports_partial_state(tmp_path: Path):
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     installer = FakeInstaller()
     install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    record_file = records_path(tmp_path)
+    original_record = record_file.read_bytes()
 
-    def fail_save(*_args, **_kwargs):
+    def fail_dump(_data, handle, *_args, **_kwargs):
+        handle.write('{"partial":')
+        handle.flush()
         raise OSError("disk full")
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(
-            "specify_cli.bundler.services.installer.save_records",
-            fail_save,
+            "specify_cli.bundler.lib.yamlio.json.dump",
+            fail_dump,
         )
         with pytest.raises(BundlerError) as exc_info:
             remove_bundle(tmp_path, "demo-bundle", installer)
@@ -269,6 +273,7 @@ def test_remove_record_save_failure_reports_partial_state(tmp_path: Path):
     assert "disk full" in message
     assert "partially uninstalled" in message.lower()
     assert installer.installed == set()
+    assert record_file.read_bytes() == original_record
     assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
 
 
