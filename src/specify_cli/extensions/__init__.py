@@ -1430,7 +1430,6 @@ class ExtensionManager:
         def _restore_stranded_config_file(
             target: Path, content: bytes, preserved_mode: int
         ) -> None:
-            mode = preserved_mode & 0o660
             tmp_path: Path | None = None
             try:
                 with tempfile.NamedTemporaryFile(
@@ -1440,8 +1439,8 @@ class ExtensionManager:
                     delete=False,
                 ) as tmp:
                     tmp_path = Path(tmp.name)
-                    tmp_path.chmod(mode)
                     tmp.write(content)
+                tmp_path.chmod(preserved_mode)
                 os.replace(tmp_path, target)
             except BaseException:
                 if tmp_path is not None and tmp_path.exists():

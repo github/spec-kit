@@ -1289,6 +1289,72 @@ class TestExtensionManager:
         assert local_cfg.exists()
         assert "local_override: true" in local_cfg.read_text()
 
+    def test_copytree_failure_restores_stranded_config(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A copytree failure must not permanently lose a preserved config.
+
+        When copytree raises after the existing directory has been removed, the
+        rollback path must write the rescued bytes back to dest_dir and restore
+        the original file mode, while leaving the extension unregistered.
+        """
+        import specify_cli.extensions as _ext_module
+        import stat
+
+        manager = ExtensionManager(project_dir)
+
+        # Add a packaged default config so copytree would overwrite it on success.
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        # Install once so the extension is on disk.
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+
+        # Set a known, non-default mode so we can assert it survives the rollback.
+        if platform.system() != "Windows":
+            config_file.chmod(0o640)
+        original_bytes = config_file.read_bytes()
+        original_mode = config_file.stat().st_mode
+
+        # Remove while preserving the config — it is now a stranded file.
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        # Make copytree create a partial destination then raise so the rollback
+        # path is exercised.
+        original_copytree = shutil.copytree
+
+        def failing_copytree(src, dst, **kwargs):
+            Path(dst).mkdir(parents=True, exist_ok=True)
+            (Path(dst) / "_partial.txt").write_text("partial")
+            raise OSError("simulated disk full")
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", failing_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # The preserved config must have been written back by the rollback path.
+        assert config_file.exists(), "rollback must recreate the config file"
+        assert config_file.read_bytes() == original_bytes
+
+        # On POSIX, the original file mode must be faithfully restored.
+        if platform.system() != "Windows":
+            restored_mode = config_file.stat().st_mode
+            assert stat.S_IMODE(restored_mode) == stat.S_IMODE(original_mode)
+
+        # The extension must remain unregistered after the failed install.
+        assert not manager.registry.is_installed("test-ext")
+
     def test_install_force_without_existing(self, extension_dir, project_dir):
         """Test force-install when extension is NOT already installed (works normally)."""
         manager = ExtensionManager(project_dir)
