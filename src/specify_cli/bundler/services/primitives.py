@@ -406,12 +406,33 @@ class _StepKindManager:
             )
 
     def refresh(self, component: ComponentRef) -> None:
-        # workflow_step_add errors when the step is already installed; remove it
-        # first (when network is permitted so the re-install can follow) before
-        # delegating to install().
-        if self._allow_network and self.is_installed(component):
+        # Preserve an existing step until we've validated we can perform refresh.
+        # For already-installed steps, keep a backup and restore it if the
+        # remove+reinstall path fails.
+        if not (self._allow_network and self.is_installed(component)):
+            self.install(component)
+            return
+
+        import shutil
+        import tempfile
+
+        step_dir = self._registry.steps_dir / component.id
+        metadata = self._registry.get(component.id)
+        backup_dir = Path(tempfile.mkdtemp(prefix="speckit-step-refresh-")) / component.id
+        try:
+            if step_dir.exists():
+                shutil.copytree(step_dir, backup_dir)
             self.remove(component)
-        self.install(component)
+            try:
+                self.install(component)
+            except BundlerError:
+                if backup_dir.exists():
+                    shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)
+                if metadata is not None and not self._registry.is_installed(component.id):
+                    self._registry.add(component.id, metadata)
+                raise
+        finally:
+            shutil.rmtree(backup_dir.parent, ignore_errors=True)
 
     def remove(self, component: ComponentRef) -> None:
         from ... import workflow_step_remove

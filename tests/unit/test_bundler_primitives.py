@@ -20,6 +20,7 @@ from specify_cli.bundler.services.primitives import (
     _WorkflowKindManager,
     primitive_manager,
 )
+from tests.bundler_helpers import valid_manifest_dict
 
 
 def _component(kind: str, cid: str = "x") -> ComponentRef:
@@ -286,19 +287,32 @@ def test_refresh_succeeds_and_passes_force_true(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(assets, "_locate_bundled_extension", lambda cid: bundled)
     # Simulate refresh succeeding (force=True removes the duplicate-install guard)
     force_seen: list = []
+    def _fake_install_from_directory(self, *a, **k):
+        force_seen.append(k.get("force", False))
+        self.registry.add("my-ext", {"version": "1.0.0"})
+
     monkeypatch.setattr(
-        ExtensionManager, "install_from_directory",
-        lambda self, *a, **k: force_seen.append(k.get("force", False)),
+        ExtensionManager, "install_from_directory", _fake_install_from_directory
     )
 
-    raw = {
-        "schema_version": "1.0",
-        "bundle_id": "test-bundle",
-        "name": "Test",
-        "version": "1.0.0",
-        "components": [{"kind": "extensions", "id": "my-ext"}],
-    }
-    manifest = BundleManifest(raw, source_id="test")
+    raw = valid_manifest_dict(
+        bundle={
+            "id": "test-bundle",
+            "name": "Test",
+            "version": "1.0.0",
+            "role": "developer",
+            "description": "Test bundle",
+            "author": "Spec Kit",
+            "license": "MIT",
+        },
+        provides={
+            "extensions": [{"id": "my-ext", "version": "1.0.0"}],
+            "presets": [],
+            "steps": [],
+            "workflows": [],
+        },
+    )
+    manifest = BundleManifest.from_dict(raw)
     installer = DefaultPrimitiveInstaller(allow_network=False)
     # First install
     install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
@@ -314,8 +328,8 @@ def _plan(manifest):
 
     components = [CR(kind=c.kind, id=c.id) for c in manifest.components]
     return InstallPlan(
-        bundle_id=manifest.bundle_id,
-        version=manifest.version,
+        bundle_id=manifest.bundle.id,
+        version=manifest.bundle.version,
         role=manifest.bundle.role,
         effective_integration=None,
         components=components,
