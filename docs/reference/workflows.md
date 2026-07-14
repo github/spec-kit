@@ -134,9 +134,12 @@ Shows all active catalog sources.
 specify workflow catalog add <url>
 ```
 
-| Option          | Description                      |
-| --------------- | -------------------------------- |
-| `--name <name>` | Optional name for the catalog    |
+| Option                                       | Description                                        |
+| -------------------------------------------- | -------------------------------------------------- |
+| `--name <name>`                              | Optional name for the catalog                      |
+| `--priority <N>`                             | Priority (default: 10; lower = higher precedence)  |
+| `--install-allowed / --no-install-allowed`   | Whether workflows can be installed from this catalog |
+| `--description <text>`                       | Optional description                               |
 
 Adds a custom catalog URL to the project's `.specify/workflow-catalogs.yml`.
 
