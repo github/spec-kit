@@ -1973,6 +1973,7 @@ class PresetManager:
                 try:
                     from ..agents import CommandRegistrar
                     from .. import SKILL_DESCRIPTIONS
+                    from ..shared_infra import _write_shared_text
                     registrar = CommandRegistrar()
                     content = top_layer["path"].read_text(encoding="utf-8")
                     fm, body = registrar.parse_frontmatter(content)
@@ -2027,8 +2028,10 @@ class PresetManager:
                                     skill_content
                                 )
                             )
-                        (skill_subdir / "SKILL.md").write_text(
-                            skill_content, encoding="utf-8"
+                        _write_shared_text(
+                            skills_dir,
+                            skill_subdir / "SKILL.md",
+                            skill_content,
                         )
                         wrote_override = True
                     if (
@@ -2361,6 +2364,7 @@ class PresetManager:
         from .. import SKILL_DESCRIPTIONS, load_init_options
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
+        from ..shared_infra import _write_shared_text
 
         init_opts = load_init_options(self.project_root)
         if not isinstance(init_opts, dict):
@@ -2479,7 +2483,9 @@ class PresetManager:
                     )
 
                 skill_file = skill_subdir / "SKILL.md"
-                skill_file.write_text(skill_content, encoding="utf-8")
+                _write_shared_text(
+                    skills_dir, skill_file, skill_content
+                )
                 written.append(target_skill_name)
                 self._merge_pack_registered_skills(
                     manifest.id, {selected_ai: [target_skill_name]}
@@ -3091,16 +3097,17 @@ class PresetManager:
                 "registered_skills": registered_skills,
             })
         except Exception:
-            # Roll back all side effects. Note: if _register_commands or
-            # _register_skills raised mid-way (e.g. I/O error after writing
-            # some files), registered_commands/registered_skills may be empty
-            # and some agent command files could be orphaned. Removing dest_dir
-            # (which contains .composed/) and the registry entry ensures the
-            # preset system is consistent even if orphaned files remain.
+            # Roll back all side effects. _register_skills persists each
+            # successful write immediately, so reload that partial map when
+            # a later template fails before the call can return.
             if registered_commands:
                 self._unregister_commands(registered_commands)
-            if registered_skills:
-                self._unregister_skills(registered_skills, dest_dir)
+            persisted_metadata = self.registry.get(manifest.id) or {}
+            persisted_skills = persisted_metadata.get(
+                "registered_skills", registered_skills
+            )
+            if persisted_skills:
+                self._unregister_skills(persisted_skills, dest_dir)
             try:
                 if dest_dir.exists():
                     shutil.rmtree(dest_dir)

@@ -5516,6 +5516,49 @@ class TestPresetSkills:
             not in remaining_skill.read_text(encoding="utf-8")
         ), "persisted partial ownership must remain removable"
 
+    def test_partial_skill_install_failure_rolls_back_persisted_writes(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Install rollback must reload partial skill ownership before removal."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+        preset_dir = self._create_multi_command_preset(
+            temp_dir,
+            "partial-install-failure-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        original_read_text = Path.read_text
+
+        def fail_plan_source(path, *args, **kwargs):
+            if (
+                path.name == "speckit.plan.md"
+                and path.parent.name == "commands"
+                and "partial-install-failure-preset" in path.parts
+            ):
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", fail_plan_source)
+        with pytest.raises(UnicodeDecodeError):
+            manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert not manager.registry.is_installed(
+            "partial-install-failure-preset"
+        )
+        skill_file = (
+            project_dir
+            / ".github"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert (
+            not skill_file.exists()
+            or "preset:partial-install-failure-preset"
+            not in original_read_text(skill_file, encoding="utf-8")
+        ), "rollback must not orphan a skill written before the later failure"
+
     def test_toggle_skills_to_command_empty_result_preserves_old_skill(
         self, project_dir, temp_dir
     ):
@@ -7215,6 +7258,84 @@ class TestPresetSkills:
         assert (skills_dir / "speckit-specify").is_symlink(), (
             "the symlink itself should be left alone"
         )
+
+    def test_symlinked_skill_file_rejected_on_write(self, project_dir, temp_dir):
+        """Registration must not follow a symlinked SKILL.md destination."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        (project_dir / ".github" / "agents").mkdir(parents=True)
+        skill_dir = (
+            project_dir / ".github" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        outside_file = temp_dir / "outside-registration.md"
+        outside_file.write_text("do-not-touch", encoding="utf-8")
+        (skill_dir / "SKILL.md").symlink_to(outside_file)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "symlink-file-write-preset",
+            "speckit.specify",
+            "Symlink file write",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        with pytest.raises(ValueError):
+            manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
+        assert (skill_dir / "SKILL.md").is_symlink()
+
+    def test_symlinked_skill_file_rejected_on_override_reconcile(
+        self, project_dir, temp_dir
+    ):
+        """Project-override reconciliation must not follow SKILL.md symlinks."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skill_dir = (
+            project_dir / ".github" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        outside_file = temp_dir / "outside-reconciliation.md"
+        outside_file.write_text("do-not-touch", encoding="utf-8")
+        (skill_dir / "SKILL.md").symlink_to(outside_file)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "symlink-override-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.registry.add(
+            "symlink-override-preset",
+            {
+                "version": "1.0.0",
+                "source": "local",
+                "enabled": True,
+                "priority": 10,
+                "registered_commands": {},
+                "registered_skills": {
+                    "copilot": ["speckit-specify"]
+                },
+            },
+        )
+        installed_dir = (
+            manager.presets_dir / "symlink-override-preset"
+        )
+        shutil.copytree(preset_dir, installed_dir)
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        manager._reconcile_skills(["speckit.specify"])
+
+        assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
+        assert (skill_dir / "SKILL.md").is_symlink()
 
     def test_is_safe_registry_skill_name_rejects_unsafe_values(self, project_dir):
         """Unit-test the centralized registry skill-name boundary guard.
