@@ -586,6 +586,51 @@ class TestExpressions:
         with pytest.raises(ValueError, match="unknown filter 'upper'"):
             evaluate_expression("{{ inputs.text | upper('x') }}", ctx)
 
+    def test_filter_map_non_string_attr_raises(self):
+        # A non-string attribute (authoring mistake like `map(5)`) must raise a
+        # ValueError naming the problem, not leak the cryptic AttributeError
+        # from attr.split() that would escape the evaluator and crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"rows": [{"id": "a"}, {"id": "b"}]})
+        with pytest.raises(ValueError, match="map: expected a string attribute name"):
+            evaluate_expression("{{ inputs.rows | map(5) }}", ctx)
+
+    def test_filter_join_non_string_separator_raises(self):
+        # A non-string separator (authoring mistake like `join(5)`) must raise a
+        # ValueError, not leak the cryptic AttributeError from str.join.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"tags": ["a", "b"]})
+        with pytest.raises(ValueError, match="join: expected a string separator"):
+            evaluate_expression("{{ inputs.tags | join(5) }}", ctx)
+
+    def test_filter_contains_non_string_arg_on_string_raises(self):
+        # For a string value, `contains` requires a string argument: `x in y` on
+        # a string needs a string left operand. A non-string argument must raise
+        # a ValueError, not leak the cryptic TypeError that would crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"text": "hello"})
+        with pytest.raises(ValueError, match="contains: expected a string argument"):
+            evaluate_expression("{{ inputs.text | contains(5) }}", ctx)
+
+    def test_filter_contains_non_string_arg_on_list_ok(self):
+        # For a list value, membership of any element type is legitimate, so a
+        # non-string argument stays valid and is not rejected.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"nums": [1, 2, 5]})
+        assert evaluate_expression("{{ inputs.nums | contains(5) }}", ctx) is True
+        assert evaluate_expression("{{ inputs.nums | contains(9) }}", ctx) is False
+
     def test_registered_filters_unaffected(self):
         # Regression: all five registered filters keep working unchanged.
         from specify_cli.workflows.expressions import evaluate_expression
