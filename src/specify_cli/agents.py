@@ -499,15 +499,11 @@ class CommandRegistrar:
         script_command = scripts.get(script_variant) if script_variant else None
         if script_command:
             if script_variant == "py":
-                # Same portability handling as process_template: .py files
-                # are not directly executable on Windows, so prefix the
-                # resolved interpreter (quoted when it contains whitespace).
                 from specify_cli.integrations.base import IntegrationBase
 
-                interpreter = IntegrationBase.resolve_python_interpreter(project_root)
-                if any(ch.isspace() for ch in interpreter):
-                    interpreter = f'"{interpreter}"'
-                script_command = f"{interpreter} {script_command}"
+                script_command = IntegrationBase.build_python_invocation(
+                    script_command, project_root
+                )
             script_command = script_command.replace("{ARGS}", "$ARGUMENTS")
             body = body.replace("{SCRIPT}", script_command)
 

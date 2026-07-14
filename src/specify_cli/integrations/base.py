@@ -620,6 +620,18 @@ class IntegrationBase(ABC):
         return sys.executable or "python3"
 
     @staticmethod
+    def build_python_invocation(
+        script_command: str, project_root: Path | None = None
+    ) -> str:
+        """Build a Python script command for the current platform shell."""
+        interpreter = IntegrationBase.resolve_python_interpreter(project_root)
+        if any(ch.isspace() for ch in interpreter):
+            interpreter = f'"{interpreter}"'
+            if os.name == "nt":
+                interpreter = f"& {interpreter}"
+        return f"{interpreter} {script_command}"
+
+    @staticmethod
     def _interpreter_runs(path: str) -> bool:
         """Return True when *path* executes as a Python interpreter.
 
@@ -702,13 +714,9 @@ class IntegrationBase(ABC):
             # the command is portable (``.py`` files are not directly
             # executable on Windows).
             if selected_script_type == "py":
-                interpreter = IntegrationBase.resolve_python_interpreter(project_root)
-                # Quote the interpreter if it contains whitespace (e.g. an
-                # absolute ``sys.executable`` path under Windows
-                # ``Program Files``) so it isn't split into multiple args.
-                if any(ch.isspace() for ch in interpreter):
-                    interpreter = f'"{interpreter}"'
-                script_command = f"{interpreter} {script_command}"
+                script_command = IntegrationBase.build_python_invocation(
+                    script_command, project_root
+                )
             content = content.replace("{SCRIPT}", script_command)
 
         # 3. Strip scripts: section from frontmatter

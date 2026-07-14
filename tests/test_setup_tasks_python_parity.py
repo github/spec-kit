@@ -127,3 +127,17 @@ def test_python_json_output_matches_powershell(repo: Path) -> None:
 
     assert py.returncode == ps.returncode == 0
     assert json_stdout(py) == json_stdout(ps)
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_missing_template_error_matches_all_variants(repo: Path) -> None:
+    (repo / ".specify" / "templates" / "tasks-template.md").unlink()
+
+    bash = run(bash_cmd(repo, SCRIPT, "--json"), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json"), repo)
+    py = run(py_cmd(repo, SCRIPT, "--json"), repo)
+
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""
+    assert bash.stderr == ps.stderr == py.stderr

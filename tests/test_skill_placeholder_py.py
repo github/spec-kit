@@ -1,6 +1,7 @@
 """resolve_skill_placeholders must support the py script variant (#3280)."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from specify_cli._init_options import save_init_options
 from specify_cli.agents import CommandRegistrar
@@ -42,7 +43,9 @@ def test_sh_variant_is_not_prefixed(tmp_path, monkeypatch):
     assert "python3" not in body
 
 
-def test_py_interpreter_with_spaces_is_quoted(tmp_path, monkeypatch):
+def test_py_interpreter_with_spaces_uses_powershell_call_operator(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(
         "specify_cli.integrations.base.shutil.which", lambda name: None
     )
@@ -50,11 +53,14 @@ def test_py_interpreter_with_spaces_is_quoted(tmp_path, monkeypatch):
         "specify_cli.integrations.base.sys.executable",
         r"C:\Program Files\Python\python.exe",
     )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.os", SimpleNamespace(name="nt")
+    )
     save_init_options(tmp_path, {"script": "py"})
     body = CommandRegistrar.resolve_skill_placeholders(
         "codex", FRONTMATTER, "Run {SCRIPT} now.", tmp_path
     )
-    assert '"C:\\Program Files\\Python\\python.exe" ' in body
+    assert '& "C:\\Program Files\\Python\\python.exe" ' in body
 
 
 def test_missing_py_variant_falls_back_to_available_script(tmp_path, monkeypatch):
