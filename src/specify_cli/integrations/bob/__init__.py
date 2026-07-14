@@ -152,3 +152,7 @@ class BobIntegration(IntegrationBase):
         """Skills mode: delegate to ``_BobSkillsHelper``."""
         helper = _BobSkillsHelper()
         return SkillsIntegration.setup(helper, project_root, manifest, parsed_options, **opts)
+
+    def post_process_skill_content(self, content: str) -> str:
+        """Apply shared skills post-processing to externally generated skills."""
+        return _BobSkillsHelper().post_process_skill_content(content)
