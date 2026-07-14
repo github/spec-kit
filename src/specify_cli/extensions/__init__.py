@@ -121,6 +121,8 @@ def _fsync_directory(path: Path) -> None:
     """Sync a directory when the platform supports it."""
     if not path.exists():
         return
+    if os.name == "nt":
+        return
     try:
         dir_fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     except (AttributeError, NotImplementedError):
@@ -1543,6 +1545,10 @@ class ExtensionManager:
                         _fsync_fd(fd)
                     finally:
                         os.close(fd)
+                # Flush the staging directory metadata before publishing the
+                # completion marker so a crash cannot leave a visible marker with
+                # only a subset of staged files.
+                _fsync_directory(rescue_staging_dir)
                 # Write the completion marker only after every staged file is
                 # fully written so a retry trusts staging only when it is whole.
                 marker_fd = os.open(
@@ -1639,7 +1645,9 @@ class ExtensionManager:
             # crash mid-cleanup cannot leave a staging dir that a retry would
             # wrongly trust as a complete durable backup.
             rescue_complete_marker.unlink(missing_ok=True)
+            _fsync_directory(rescue_staging_dir)
             shutil.rmtree(rescue_staging_dir)
+            _fsync_directory(rescue_staging_dir.parent)
 
         # Register commands with AI agents
         registered_commands = {}

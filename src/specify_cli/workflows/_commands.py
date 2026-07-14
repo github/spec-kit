@@ -1666,7 +1666,8 @@ def workflow_add(
                 except OSError as cleanup_exc:
                     console.print(
                         "[yellow]Warning:[/yellow] Could not remove temporary "
-                        f"workflow download file: {_escape_markup(str(cleanup_exc))}"
+                        f"workflow download file: {_escape_markup(str(cleanup_exc))} "
+                        f"(path: {_escape_markup(str(tmp_path))})"
                     )
             console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
@@ -1690,7 +1691,8 @@ def workflow_add(
             except OSError as exc:
                 console.print(
                     "[yellow]Warning:[/yellow] Could not remove temporary "
-                    f"workflow download file: {_escape_markup(str(exc))}"
+                    f"workflow download file: {_escape_markup(str(exc))} "
+                    f"(path: {_escape_markup(str(tmp_path))})"
                 )
         return
 
