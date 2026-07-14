@@ -102,6 +102,14 @@ def _assert_parity(
         assert py_result.stderr == bash_result.stderr
 
 
+def _without_persist_hint(stderr: str) -> str:
+    return "".join(
+        line
+        for line in stderr.splitlines(keepends=True)
+        if not line.startswith("# To persist: ")
+    )
+
+
 @requires_bash
 class TestCreateFeatureBranchParity:
     def test_sequential_branch_json(self, tmp_path: Path):
@@ -258,7 +266,11 @@ class TestCreateFeatureBranchParity:
             "desc word",
             env_extra=env,
         )
-        _assert_parity(b, p)
+        _assert_parity(b, p, stderr=os.name != "nt")
+        if os.name == "nt":
+            assert _without_persist_hint(p.stderr) == _without_persist_hint(
+                b.stderr
+            )
 
     def test_long_branch_name_truncated_to_244_bytes(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
@@ -329,6 +341,20 @@ class TestCreateFeatureBranchParity:
         assert (
             result
             == "$env:GIT_BRANCH_NAME = 'feature/$value''s-\"quoted\"'"
+        )
+
+    def test_shell_specific_persist_hint_can_be_ignored_for_parity(self):
+        bash_stderr = (
+            "[specify] Warning\n"
+            "# To persist: export SPECIFY_FEATURE=feature/name\n"
+        )
+        windows_stderr = (
+            "[specify] Warning\n"
+            "# To persist: $env:SPECIFY_FEATURE = 'feature/name'\n"
+        )
+
+        assert _without_persist_hint(bash_stderr) == _without_persist_hint(
+            windows_stderr
         )
 
     def test_empty_description_errors(self, tmp_path: Path):
