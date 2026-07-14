@@ -142,6 +142,7 @@ def _fsync_directory(path: Path) -> None:
         try:
             os.close(dir_fd)
         except OSError:
+            # Cleanup after an fsync failure should not mask the original error.
             pass
 
 
