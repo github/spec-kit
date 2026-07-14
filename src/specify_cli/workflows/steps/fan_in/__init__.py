@@ -24,6 +24,24 @@ class FanInStep(StepBase):
         if not isinstance(output_config, dict):
             output_config = {}
 
+        # The engine does not auto-validate step config, so an unvalidated run
+        # with a non-list ``wait_for`` reaches here raw. Iterating it then
+        # either crashes the whole run (a scalar like an int or None raises
+        # TypeError) or, worse, silently iterates a string's characters and
+        # yields a bogus join of empty results with a COMPLETED status — the
+        # exact "silent empty result + COMPLETED" wiring bug the engine's
+        # fan-in validation guards against. Fail this step loudly instead,
+        # mirroring the fan-out step's non-list ``items`` handling.
+        if not isinstance(wait_for, list):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Fan-in step {config.get('id', '?')!r}: 'wait_for' must be "
+                    f"a list of step IDs, got {type(wait_for).__name__}."
+                ),
+                output={"results": []},
+            )
+
         # Collect results from referenced steps
         results = []
         for step_id in wait_for:
