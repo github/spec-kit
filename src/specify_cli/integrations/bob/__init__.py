@@ -98,6 +98,14 @@ class BobIntegration(IntegrationBase):
 
     key = "bob"
     invoke_separator = "-"
+
+    def effective_invoke_separator(
+        self, parsed_options: dict[str, Any] | None = None
+    ) -> str:
+        """Return the invocation separator for the selected Bob layout."""
+        if parsed_options and parsed_options.get("legacy_commands"):
+            return "."
+        return "-"
     config = {
         "name": "IBM Bob",
         "folder": ".bob/",
