@@ -364,13 +364,24 @@ class WorkflowCatalog:
             if not url:
                 continue
             self._validate_catalog_url(url)
-            try:
-                priority = int(item.get("priority", idx + 1))
-            except (TypeError, ValueError):
+            raw_priority = item.get("priority", idx + 1)
+            # bool is an int subclass: int(True) == 1 would silently accept a
+            # ``priority: true`` as priority 1. Reject it explicitly, mirroring
+            # the base CatalogStackBase loader.
+            if isinstance(raw_priority, bool):
                 raise WorkflowValidationError(
                     f"Invalid priority for catalog "
                     f"'{item.get('name', idx + 1)}': "
-                    f"expected integer, got {item.get('priority')!r}"
+                    f"expected integer, got {raw_priority!r}"
+                )
+            try:
+                priority = int(raw_priority)
+            except (TypeError, ValueError, OverflowError):
+                # OverflowError: int(float("inf")) — a ``priority: .inf``.
+                raise WorkflowValidationError(
+                    f"Invalid priority for catalog "
+                    f"'{item.get('name', idx + 1)}': "
+                    f"expected integer, got {raw_priority!r}"
                 )
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):
@@ -685,7 +696,9 @@ class WorkflowCatalog:
         def _coerce_priority(value: Any) -> int:
             try:
                 return int(value)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
+                # OverflowError: int(float("inf")) — treat an uncoercible
+                # existing priority as 0 rather than crashing 'catalog add'.
                 return 0
 
         max_priority = max(
@@ -1007,13 +1020,23 @@ class StepCatalog:
             if not url:
                 continue
             self._validate_catalog_url(url)
-            try:
-                priority = int(item.get("priority", idx + 1))
-            except (TypeError, ValueError):
+            raw_priority = item.get("priority", idx + 1)
+            # bool is an int subclass: reject ``priority: true`` explicitly rather
+            # than silently coercing it to 1 (mirrors CatalogStackBase).
+            if isinstance(raw_priority, bool):
                 raise StepValidationError(
                     f"Invalid priority for catalog "
                     f"'{item.get('name', idx + 1)}': "
-                    f"expected integer, got {item.get('priority')!r}"
+                    f"expected integer, got {raw_priority!r}"
+                )
+            try:
+                priority = int(raw_priority)
+            except (TypeError, ValueError, OverflowError):
+                # OverflowError: int(float("inf")) — a ``priority: .inf``.
+                raise StepValidationError(
+                    f"Invalid priority for catalog "
+                    f"'{item.get('name', idx + 1)}': "
+                    f"expected integer, got {raw_priority!r}"
                 )
             raw_install = item.get("install_allowed", False)
             if isinstance(raw_install, str):
@@ -1314,7 +1337,9 @@ class StepCatalog:
         def _coerce_priority(value: Any) -> int:
             try:
                 return int(value)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
+                # OverflowError: int(float("inf")) — treat an uncoercible
+                # existing priority as 0 rather than crashing 'catalog add'.
                 return 0
 
         max_priority = max(

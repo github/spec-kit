@@ -5775,6 +5775,26 @@ class TestWorkflowCatalog:
         assert len(entries) == 1
         assert entries[0].name == "custom"
 
+    @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
+    def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
+        """`priority: true` must not be silently coerced to 1, and `priority: .inf`
+        must not crash with an uncaught OverflowError — both raise a clean
+        validation error (parity with the base CatalogStackBase loader)."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "bad",
+                "url": "https://example.com/wf-catalog.json",
+                "priority": bad_priority,
+                "install_allowed": True,
+            }]
+        }))
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="Invalid priority|expected integer"):
+            catalog.get_active_catalogs()
+
     def test_validate_url_http_rejected(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
@@ -6297,6 +6317,25 @@ class TestStepCatalog:
         entries = catalog.get_active_catalogs()
         assert len(entries) == 1
         assert entries[0].name == "custom"
+
+    @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
+    def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
+        """`priority: true`/`.inf` in a step-catalog config raise a clean
+        validation error instead of coercing to 1 / crashing with OverflowError."""
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "bad",
+                "url": "https://example.com/step-catalog.json",
+                "priority": bad_priority,
+                "install_allowed": True,
+            }]
+        }))
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="Invalid priority|expected integer"):
+            catalog.get_active_catalogs()
 
     def test_validate_url_http_rejected(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
