@@ -1,480 +1,68 @@
-# Upgrade Guide
+# Fixed-Version Guide
 
-> You have Spec Kit installed and want to upgrade to the latest version to get new features, bug fixes, or updated slash commands. This guide covers both upgrading the CLI tool and updating your project files.
+The AI Team distribution is pinned to `v0.12.5+teamwork.1`. Automatic
+`specify self check` and `specify self upgrade` are not advertised for this
+release because the team intentionally uses one reviewed CLI and workflow
+baseline.
 
----
+## Install Or Repair The CLI
 
-## Quick Reference
-
-| What to Upgrade | Command | When to Use |
-|----------------|---------|-------------|
-| **CLI Tool (recommended)** | `specify self upgrade` | Latest stable release, in place. Auto-detects whether you installed via `uv tool` or `pipx`. |
-| **CLI Tool — pin a version** | `specify self upgrade --tag vX.Y.Z[suffix]` | Upgrade to a specific release tag instead of the latest stable. Suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms. |
-| **CLI Tool — manual fallback** | `uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z` | When `specify self upgrade` isn't available (older installs) or when you want explicit control. |
-| **CLI Tool — manual fallback (pipx)** | `pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z` | Same as above, for pipx installs. |
-| **Project Files** | `specify init --here --force --integration <your-agent>` | Update slash commands, templates, and scripts in your project |
-| **Both** | Run CLI upgrade, then project update | Recommended for major version updates |
-
----
-
-## Part 1: Upgrade the CLI Tool
-
-The CLI tool (`specify`) is separate from your project files. Upgrade it to get the latest features and bug fixes.
-
-### Recommended: `specify self upgrade`
-
-The CLI ships with two self-management commands that handle the common case automatically:
+Use the same command for a new installation, a repair, or standardizing a
+workstation that has another Spec Kit version:
 
 ```bash
-# Check whether a newer release is available (read-only — does not modify anything)
-specify self check
-
-# Preview what would run, without actually upgrading
-specify self upgrade --dry-run
-
-# Upgrade in place to the latest stable release (auto-detects uv tool vs pipx install)
-specify self upgrade
-
-# Or pin a specific release tag (replace vX.Y.Z[suffix] with the tag you want)
-specify self upgrade --tag vX.Y.Z[suffix]
+uv tool install specify-cli --force \
+  --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 ```
 
-Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. The CLI classifies your runtime into one of: `uv tool`, `pipx`, `uvx (ephemeral)`, source checkout, or unsupported. Only `uv tool` and `pipx` are upgraded automatically; for `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work. The other paths print path-specific guidance and exit 0 without touching anything.
-
-Pinned tags must start with `vMAJOR.MINOR.PATCH`. Optional suffixes are limited to dev, alpha/beta/rc, and/or build metadata forms such as `v1.0.0-rc1`, `v0.8.0.dev0`, `v0.8.0+build.42`, or the combination `v1.0.0-rc1+build.42`; branch names, hash refs, `latest`, and bare versions without `v` are rejected.
-
-Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed). If that internal timeout fires, `specify self upgrade` exits 124 and reports that it timed out while waiting for the installer subprocess, including the configured timeout and manual retry command. A real installer exit code 124 is propagated with `Upgrade failed. Installer exit code: 124.`, so scripts should treat exit 124 as ambiguous and inspect the message when they need to distinguish the two cases.
-
-If your installed CLI is older than the release that introduced `specify self upgrade`, use the manual equivalents below. These commands are also useful when you want explicit control over the installer command.
-
-### If you installed with `uv tool install`
-
-Upgrade to a specific release (check [Releases](https://github.com/github/spec-kit/releases) for the latest tag):
+For `pipx` environments:
 
 ```bash
-uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+pipx install --force \
+  git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 ```
 
-### If you use one-shot `uvx` commands
-
-Specify the desired release tag:
+Verify the pinned package version:
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init --here --integration copilot
+specify --version
 ```
 
-`uvx` runs a temporary copy of Spec Kit for that single command. It does not update a persistent `specify` installed with `uv tool install`, `pipx`, or another tool manager. If a newer feature works through `uvx` but your local `specify` still reports an older version, upgrade the persistent CLI with the command that matches your install method.
-
-### If you installed with `pipx`
-
-Upgrade to a specific release:
-
-```bash
-pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
-```
-
-### Verify the upgrade
-
-```bash
-# Confirms the CLI is working and shows installed tools
-specify check
-
-# Confirms the installed version against the latest GitHub release
-specify self check
-```
-
-`specify check` shows the surrounding tool environment; `specify self check` is read-only and tells you whether you're now on the latest release (`Up to date: X.Y.Z`) or if a newer one became available between releases.
-
----
-
-## Part 2: Updating Project Files
-
-When Spec Kit releases new features (like new slash commands or updated templates), you need to refresh your project's Spec Kit files.
-
-### What gets updated?
-
-Running `specify init --here --force` will update:
-
-- ✅ **Slash command files** (`.claude/commands/`, `.github/prompts/`, etc.)
-- ✅ **Script files** (`.specify/scripts/`) — **only with `--force`**; without it, only missing files are added
-- ✅ **Template files** (`.specify/templates/`) — **only with `--force`**; without it, only missing files are added
-- ✅ **Shared memory files** (`.specify/memory/`) - **⚠️ See warnings below**
-
-### What stays safe?
-
-These files are **never touched** by the upgrade—the template packages don't even contain them:
-
-- ✅ **Your specifications** (`specs/001-my-feature/spec.md`, etc.) - **CONFIRMED SAFE**
-- ✅ **Your implementation plans** (`specs/001-my-feature/plan.md`, `tasks.md`, etc.) - **CONFIRMED SAFE**
-- ✅ **Your source code** - **CONFIRMED SAFE**
-- ✅ **Your git history** - **CONFIRMED SAFE**
-
-The `specs/` directory is completely excluded from template packages and will never be modified during upgrades.
-
-### Update command
-
-Run this inside your project directory:
-
-```bash
-specify init --here --force --integration <your-agent>
-```
-
-Replace `<your-agent>` with your AI coding agent. Refer to this list of [Supported AI Coding Agent Integrations](reference/integrations.md)
-
-**Example:**
-
-```bash
-specify init --here --force --integration copilot
-```
-
-### Understanding the `--force` flag
-
-Without `--force`, the CLI warns you and asks for confirmation:
+Expected output includes:
 
 ```text
-Warning: Current directory is not empty (25 items)
-Template files will be merged with existing content and may overwrite existing files
-Proceed? [y/N]
+specify 0.12.5+teamwork.1
 ```
 
-With `--force`, it skips the confirmation and proceeds immediately. It also **overwrites shared infrastructure files** (`.specify/scripts/` and `.specify/templates/`) with the latest versions from the installed Spec Kit release.
+## Refresh Project Files
 
-Without `--force`, shared infrastructure files that already exist are skipped — the CLI will print a warning listing the skipped files so you know which ones were not updated.
+Installing the CLI does not silently replace a project's existing commands,
+templates, extensions, presets, or workflow state. From the project root,
+refresh only the integration and components the team has selected.
 
-**Important: Your `specs/` directory is always safe.** The `--force` flag only affects template files (commands, scripts, templates, memory). Your feature specifications, plans, and tasks in `specs/` are never included in upgrade packages and cannot be overwritten.
-
----
-
-## ⚠️ Important Warnings
-
-### 1. Constitution file will be overwritten
-
-**Known issue:** `specify init --here --force` currently overwrites `.specify/memory/constitution.md` with the default template, erasing any customizations you made.
-
-**Workaround:**
+Inspect the active setup first:
 
 ```bash
-# 1. Back up your constitution before upgrading
-cp .specify/memory/constitution.md .specify/memory/constitution-backup.md
-
-# 2. Run the upgrade
-specify init --here --force --integration copilot
-
-# 3. Restore your customized constitution
-mv .specify/memory/constitution-backup.md .specify/memory/constitution.md
+specify version --features
+specify integration list
+specify extension list
+specify preset list
+specify workflow list
 ```
 
-Or use git to restore it:
+Re-run project initialization only when the team has reviewed which managed
+files may be refreshed:
 
 ```bash
-# After upgrade, restore from git history
-git restore .specify/memory/constitution.md
+specify init --here --integration <your-agent>
 ```
 
-### 2. Custom script or template modifications
-
-If you customized files in `.specify/scripts/` or `.specify/templates/`, the `--force` flag will overwrite them. Back them up first:
-
-```bash
-# Back up custom templates and scripts
-cp -r .specify/templates .specify/templates-backup
-cp -r .specify/scripts .specify/scripts-backup
-
-# After upgrade, merge your changes back manually
-```
-
-### 3. Duplicate slash commands (IDE-based agents)
-
-Some IDE-based agents (like Kilo Code, Cline) may show **duplicate slash commands** after upgrading—both old and new versions appear.
-
-**Solution:** Manually delete the old command files from your agent's folder.
-
-**Example for Kilo Code:**
-
-```bash
-# Navigate to the agent's commands folder
-cd .kilocode/workflows/
-
-# List files and identify duplicates
-ls -la
-
-# Delete old versions (example filenames - yours may differ)
-rm speckit.specify-old.md
-rm speckit.plan-v1.md
-```
-
-Restart your IDE to refresh the command list.
-
----
-
-## Common Scenarios
-
-### Scenario 1: "I just want new slash commands"
-
-```bash
-# Upgrade CLI (auto-detects uv tool vs pipx install)
-specify self upgrade
-
-# Update project files to get new commands
-specify init --here --force --integration copilot
-
-# Restore your constitution if customized
-git restore .specify/memory/constitution.md
-```
-
-### Scenario 2: "I customized templates and constitution"
-
-```bash
-# 1. Back up customizations
-cp .specify/memory/constitution.md /tmp/constitution-backup.md
-cp -r .specify/templates /tmp/templates-backup
-
-# 2. Upgrade CLI
-specify self upgrade
-
-# 3. Update project
-specify init --here --force --integration copilot
-
-# 4. Restore customizations
-mv /tmp/constitution-backup.md .specify/memory/constitution.md
-# Manually merge template changes if needed
-```
-
-### Scenario 3: "I see duplicate slash commands in my IDE"
-
-This happens with IDE-based agents (Kilo Code, Cline, etc.).
-
-```bash
-# Find the agent folder (example: .kilocode/workflows/)
-cd .kilocode/workflows/
-
-# List all files
-ls -la
-
-# Delete old command files
-rm speckit.old-command-name.md
-
-# Restart your IDE
-```
-
-### Scenario 4: "I don't want the git extension"
-
-The git extension is now opt-in, so upgrades do not install it unless you add it explicitly.
-
-```bash
-# Manually back up files you customized
-cp .specify/memory/constitution.md .specify/memory/constitution.backup.md
-
-# Run upgrade
-specify init --here --force --integration copilot
-
-# Restore customizations
-mv .specify/memory/constitution.backup.md .specify/memory/constitution.md
-```
-
-If you later decide you want the git extension's commands and hooks, install it explicitly:
-
-```bash
-specify extension add git
-```
-
-Projects that do not use Git can still work with Spec Kit by setting `SPECIFY_FEATURE_DIRECTORY` to the feature directory path before planning commands:
-
-```bash
-# Bash/Zsh
-export SPECIFY_FEATURE_DIRECTORY="specs/001-my-feature"
-
-# PowerShell
-$env:SPECIFY_FEATURE_DIRECTORY = "specs/001-my-feature"
-```
-
-Alternatively, run the `/speckit.specify` command which creates `.specify/feature.json` automatically.
-
----
-
-## Troubleshooting
-
-### "Slash commands not showing up after upgrade"
-
-**Cause:** Agent didn't reload the command files.
-
-**Fix:**
-
-1. **Restart your IDE/editor** completely (not just reload window)
-2. **For CLI-based agents**, verify files exist:
-
-   ```bash
-   ls -la .claude/commands/      # Claude Code
-   ls -la .gemini/commands/      # Gemini
-   ls -la .cursor/skills/      # Cursor
-   ls -la .pi/prompts/           # Pi Coding Agent
-   ls -la .omp/commands/         # Oh My Pi
-   ```
-
-3. **Check agent-specific setup:**
-   - Codex requires `CODEX_HOME` environment variable
-   - Some agents need workspace restart or cache clearing
-
-### "I lost my constitution customizations"
-
-**Fix:** Restore from git or backup:
-
-```bash
-# If you committed before upgrading
-git restore .specify/memory/constitution.md
-
-# If you backed up manually
-cp /tmp/constitution-backup.md .specify/memory/constitution.md
-```
-
-**Prevention:** Always commit or back up `constitution.md` before upgrading.
-
-### "Warning: Current directory is not empty"
-
-**Full warning message:**
-
-```text
-Warning: Current directory is not empty (25 items)
-Template files will be merged with existing content and may overwrite existing files
-Do you want to continue? [y/N]
-```
-
-**What this means:**
-
-This warning appears when you run `specify init --here` (or `specify init .`) in a directory that already has files. It's telling you:
-
-1. **The directory has existing content** - In the example, 25 files/folders
-2. **Files will be merged** - New template files will be added alongside your existing files
-3. **Some files may be overwritten** - If you already have Spec Kit files (`.claude/`, `.specify/`, etc.), they'll be replaced with the new versions
-
-**What gets overwritten:**
-
-Only Spec Kit infrastructure files:
-
-- Agent command files (`.claude/commands/`, `.github/prompts/`, etc.)
-- Scripts in `.specify/scripts/`
-- Templates in `.specify/templates/`
-- Memory files in `.specify/memory/` (including constitution)
-
-**What stays untouched:**
-
-- Your `specs/` directory (specifications, plans, tasks)
-- Your source code files
-- Your `.git/` directory and git history
-- Any other files not part of Spec Kit templates
-
-**How to respond:**
-
-- **Type `y` and press Enter** - Proceed with the merge (recommended if upgrading)
-- **Type `n` and press Enter** - Cancel the operation
-- **Use `--force` flag** - Skip this confirmation entirely:
-
-  ```bash
-  specify init --here --force --integration copilot
-  ```
-
-**When you see this warning:**
-
-- ✅ **Expected** when upgrading an existing Spec Kit project
-- ✅ **Expected** when adding Spec Kit to an existing codebase
-- ⚠️ **Unexpected** if you thought you were creating a new project in an empty directory
-
-**Prevention tip:** Before upgrading, commit or back up your `.specify/memory/constitution.md` if you customized it.
-
-### "CLI upgrade doesn't seem to work"
-
-If a command behaves like an older Spec Kit version, first ask the CLI itself:
-
-```bash
-# Read-only — prints "Up to date: X.Y.Z" or "Update available: X.Y.Z → vY.Z.W"
-specify self check
-
-# Preview the install method, current version, and target tag the upgrade would use
-specify self upgrade --dry-run
-```
-
-`specify check` is an offline environment scan; `specify self check` is the CLI version lookup.
-
-If `self check` shows the wrong version, verify the installation:
-
-```bash
-# Check installed tools
-uv tool list
-
-# Should show specify-cli
-
-# Verify path
-which specify
-
-# Should point to the uv tool installation directory
-```
-
-If not found, reinstall:
-
-```bash
-uv tool uninstall specify-cli
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
-```
-
-### "Do I need to run specify every time I open my project?"
-
-**Short answer:** No, you only run `specify init` once per project (or when upgrading).
-
-**Explanation:**
-
-The `specify` CLI tool is used for:
-
-- **Initial setup:** `specify init` to bootstrap Spec Kit in your project
-- **Upgrades:** `specify init --here --force` to update templates and commands
-- **Diagnostics:** `specify check` to verify tool installation
-
-Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/speckit.plan`, etc.) are **permanently installed** in your project's agent folder (`.claude/`, `.github/prompts/`, `.pi/prompts/`, `.omp/commands/`, etc.). Your AI coding agent reads these command files directly—no need to run `specify` again.
-
-**If your agent isn't recognizing slash commands:**
-
-1. **Verify command files exist:**
-
-   ```bash
-   # For GitHub Copilot
-   ls -la .github/prompts/
-
-   # For Claude
-   ls -la .claude/commands/
-
-   # For Pi
-   ls -la .pi/prompts/
-
-   # For Oh My Pi
-   ls -la .omp/commands/
-   ```
-
-2. **Restart your IDE/editor completely** (not just reload window)
-
-3. **Check you're in the correct directory** where you ran `specify init`
-
-4. **For some agents**, you may need to reload the workspace or clear cache
-
-**Related issue:** If Copilot can't open local files or uses PowerShell commands unexpectedly, this is typically an IDE context issue, not related to `specify`. Try:
-
-- Restarting VS Code
-- Checking file permissions
-- Ensuring the workspace folder is properly opened
-
----
-
-## Version Compatibility
-
-Spec Kit follows semantic versioning for major releases. The CLI and project files are designed to be compatible within the same major version.
-
-**Best practice:** Keep both CLI and project files in sync by upgrading both together during major version changes.
-
----
-
-## Next Steps
-
-After upgrading:
-
-- **Test new slash commands:** Run `/speckit.constitution` or another command to verify everything works
-- **Review release notes:** Check [GitHub Releases](https://github.com/github/spec-kit/releases) for new features and breaking changes
-- **Update workflows:** If new commands were added, update your team's development workflows
-- **Check documentation:** Visit [github.io/spec-kit](https://github.github.io/spec-kit/) for updated guides
+Do not use `--force` casually in an established project. Preserve customized
+project files and review the generated diff before committing.
+
+## Moving To A Future Teamwork Release
+
+A future release must publish a new reviewed tag and update the pinned version
+in this guide. Do not follow the latest upstream Spec Kit release implicitly;
+the AI Team distribution remains locked until maintainers approve a new
+one-time baseline or Teamwork release.

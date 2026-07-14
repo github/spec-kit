@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/github/spec-kit/releases/latest"><img src="https://img.shields.io/github/v/release/github/spec-kit" alt="Latest Release"/></a>
-    <a href="https://github.com/github/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/github/spec-kit?style=social" alt="GitHub stars"/></a>
-    <a href="https://github.com/github/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/github/spec-kit" alt="License"/></a>
+    <a href="https://github.com/EuphoriaYan/spec-kit/tree/v0.12.5%2Bteamwork.1"><img src="https://img.shields.io/badge/release-v0.12.5%2Bteamwork.1-blue" alt="AI Team Release"/></a>
+    <a href="https://github.com/EuphoriaYan/spec-kit/stargazers"><img src="https://img.shields.io/github/stars/EuphoriaYan/spec-kit?style=social" alt="GitHub stars"/></a>
+    <a href="https://github.com/EuphoriaYan/spec-kit/blob/main/LICENSE"><img src="https://img.shields.io/github/license/EuphoriaYan/spec-kit" alt="License"/></a>
     <a href="https://github.github.io/spec-kit/"><img src="https://img.shields.io/badge/docs-GitHub_Pages-blue" alt="Documentation"/></a>
 </p>
 
@@ -29,6 +29,13 @@ The upstream base is locked to `github/spec-kit` release `v0.12.5`
 `upstream` remote or periodically rebase/merge from `github/spec-kit` unless
 the AI Team maintainers explicitly decide to perform a new one-time baseline
 alignment.
+
+The current pinned AI Team release is **`v0.12.5+teamwork.1`**. The
+`+teamwork.1` suffix identifies the first Teamwork distribution built on that
+upstream base. Install and update from this exact tag; automatic
+`specify self check/upgrade` is not part of this pinned distribution.
+See the [release notes](docs/releases/v0.12.5-teamwork.1.md) for its capability
+and compatibility boundary.
 
 Upstream Spec Kit documentation remains as reference until a local AI Team page
 replaces it. When commands or links disagree, prefer this repository's AI Team
@@ -89,7 +96,7 @@ Install this distribution, then bootstrap each coding repository with the
 `bundle install` — not separate primitive commands).
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 cd your-coding-repo
 
 # 1. Spec Kit project + agent integration
@@ -116,6 +123,7 @@ is the catalog content, not automatic CLI configuration.
 **Alternative: manual install** (same components, separate commands):
 
 ```bash
+uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 specify init . --integration cursor-agent
 specify extension add ai-team
 specify extension add bug
@@ -273,10 +281,10 @@ Spec-Driven Development **flips the script** on traditional software development
 
 ### 1. Install Specify CLI
 
-Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). Replace `vX.Y.Z` with the tag or branch used by this independent distribution:
+Requires **[uv](https://docs.astral.sh/uv/)** ([install uv](./docs/install/uv.md)). This distribution is pinned to `v0.12.5+teamwork.1`:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 ```
 
 See the [Installation Guide](./docs/installation.md) for alternative methods, verification, upgrade, and troubleshooting.
@@ -288,23 +296,16 @@ specify init my-project --integration copilot
 cd my-project
 ```
 
-To check for updates or upgrade the installed CLI, use the self-management commands. See the [Upgrade Guide](./docs/upgrade.md) for detailed scenarios and customization options.
+Automatic self-management is disabled for this pinned distribution. Reinstall
+the same tag when repairing or standardizing a workstation:
 
 ```bash
-# Check whether a newer release is available (read-only — does not modify anything)
-specify self check
-
-# Preview what would run, without actually upgrading
-specify self upgrade --dry-run
-
-# Upgrade in place to the latest stable release (auto-detects uv tool vs pipx install)
-specify self upgrade
-
-# Or pin a specific release tag (replace vX.Y.Z[suffix] with your desired release tag)
-specify self upgrade --tag vX.Y.Z[suffix]
+uv tool install specify-cli --force \
+  --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 ```
 
-Bare `specify self upgrade` executes immediately, matching the no-prompt behavior of commands like `pip install -U` and `npm update`. For `uv tool` installs, it runs `uv tool install specify-cli --force --from <git ref>` under the hood so pinned release tags work, including dev, alpha/beta/rc, or build metadata suffixes. `uvx` (ephemeral) runs and source checkouts are detected and produce path-specific guidance instead of running an installer. Set `SPECIFY_UPGRADE_TIMEOUT_SECS` to cap how long the installer subprocess may run (default: no timeout — interrupt with `Ctrl+C` if needed).
+See the [Upgrade Guide](./docs/upgrade.md) for the fixed-version policy and
+project-file refresh procedure.
 
 ### 3. Establish project principles
 

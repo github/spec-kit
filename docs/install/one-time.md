@@ -8,17 +8,14 @@ If you want to try Spec Kit without installing it permanently, use `uvx` to run 
 ## Run Specify CLI
 
 ```bash
-# Create a new project (latest from main)
-uvx --from git+https://github.com/github/spec-kit.git specify init <PROJECT_NAME>
-
-# Or target a specific release (replace vX.Y.Z with a tag from Releases)
-uvx --from git+https://github.com/github/spec-kit.git@vX.Y.Z specify init <PROJECT_NAME>
+# Create a new project with the pinned AI Team release
+uvx --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1 specify init <PROJECT_NAME>
 
 # Initialize in the current directory
-uvx --from git+https://github.com/github/spec-kit.git specify init . --integration copilot
+uvx --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1 specify init . --integration copilot
 
 # Or use the --here flag
-uvx --from git+https://github.com/github/spec-kit.git specify init --here --integration copilot
+uvx --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1 specify init --here --integration copilot
 ```
 
 ## When to use persistent installation instead

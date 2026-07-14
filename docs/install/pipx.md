@@ -4,14 +4,10 @@
 
 ## Install Specify CLI
 
-Pin a specific release tag for stability (check [Releases](https://github.com/github/spec-kit/releases) for the latest):
+Install the pinned AI Team release:
 
 ```bash
-# Install a specific stable release (recommended — replace vX.Y.Z with the latest tag)
-pipx install git+https://github.com/github/spec-kit.git@vX.Y.Z
-
-# Or install latest from main (may include unreleased changes)
-pipx install git+https://github.com/github/spec-kit.git
+pipx install git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 ```
 
 ## Verify
@@ -23,7 +19,7 @@ specify version
 ## Upgrade
 
 ```bash
-pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
+pipx install --force git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 ```
 
 ## Uninstall

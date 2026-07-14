@@ -66,7 +66,9 @@ specify check
 
 Checks that CLI-based AI coding agents are available on your system. IDE-based agents are skipped since they don't require a CLI tool.
 
-This command stays offline. If a command behaves like an older Spec Kit version or an expected CLI feature is missing, run `specify self check` to check whether your local CLI is behind the latest release.
+This command stays offline. If expected AI Team capabilities are missing,
+reinstall the pinned distribution version from the Installation Guide and then
+refresh the project integration.
 
 ## Version Information
 

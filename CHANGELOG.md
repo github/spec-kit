@@ -2,6 +2,20 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.5+teamwork.1] - 2026-07-13
+
+### Added
+
+- AI Team Intake, bug-fix, feature, Compact, and new-project SDD workflows.
+- Work Context, permission, Code Graph impact, evidence, memory consolidation,
+  and release archive contracts for enterprise team collaboration.
+- Codex, Claude Code, Cursor Agent, and Trae chat-first integration guidance.
+
+### Changed
+
+- Pin the independent AI Team distribution to upstream Spec Kit `v0.12.5`.
+- Use fixed-tag installation instead of advertising automatic self-update.
+
 ## [0.12.5] - 2026-07-06
 
 ### Changed

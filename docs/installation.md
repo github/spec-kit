@@ -11,17 +11,24 @@
 ## Installation
 
 > [!IMPORTANT]
-> The only official, maintained packages for Spec Kit come from the [github/spec-kit](https://github.com/github/spec-kit) GitHub repository. Any packages with the same name available on PyPI (e.g. `specify-cli` on pypi.org) are **not** affiliated with this project and are not maintained by the Spec Kit maintainers. For normal installs, use the GitHub-based commands shown below. For offline or air-gapped environments, locally built wheels created from this repository are also valid.
+> This repository is the independent AI Team distribution. Install the pinned
+> `v0.12.5+teamwork.1` tag from `EuphoriaYan/spec-kit`; do not substitute the
+> upstream `github/spec-kit` URL when setting up an AI Team workspace.
+
+> [!WARNING]
+> Packages named `specify-cli` on PyPI are not this distribution. Use the
+> pinned GitHub command below, or a wheel built directly from this tagged
+> repository for offline and air-gapped environments.
 
 ### Persistent Installation (Recommended)
 
-Install once and use everywhere. Replace `vX.Y.Z` with a tag from [Releases](https://github.com/github/spec-kit/releases):
+Install the pinned AI Team release once and use it everywhere:
 
 > [!NOTE]
 > The command below requires **[uv](https://docs.astral.sh/uv/)**. If you see `command not found: uv`, [install uv first](./install/uv.md).
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+uv tool install specify-cli --from git+https://github.com/EuphoriaYan/spec-kit.git@v0.12.5+teamwork.1
 ```
 
 Then initialize a project:
@@ -89,7 +96,9 @@ specify version
 
 This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
 
-**Stay current:** Run `specify self check` periodically to learn whether a newer release is available — it is read-only and never modifies your installation. When you are ready to upgrade, follow the [Upgrade Guide](./upgrade.md).
+**Stay consistent:** this distribution does not advertise automatic self-update.
+Use the fixed-tag command in the [Upgrade Guide](./upgrade.md) to repair or
+standardize an installation.
 
 After initialization, you should see the following commands available in your coding agent:
 

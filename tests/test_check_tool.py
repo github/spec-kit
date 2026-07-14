@@ -131,7 +131,7 @@ class TestCheckTip:
         output = strip_ansi(result.output)
         assert result.exit_code == 0
         assert (
-            "Tip: Run 'specify self check' to verify you have the latest CLI version"
+            "AI Team distribution: pinned to v0.12.5+teamwork.1"
             in output
         )
 
