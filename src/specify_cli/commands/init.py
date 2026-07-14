@@ -220,16 +220,45 @@ def register(app: typer.Typer) -> None:
                 console.print(
                     f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)"
                 )
-                console.print(
-                    "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
-                )
                 if force:
+                    # Proceeding: the merge/overwrite warning is accurate here.
+                    console.print(
+                        "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
+                    )
                     console.print(
                         "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                     )
                 else:
-                    response = typer.confirm("Do you want to continue?")
-                    if not response:
+                    # Fold the merge risk into the confirmation prompt rather than
+                    # printing it unconditionally first: on the EOF/no-input path
+                    # below the command exits without changing anything, so a
+                    # standalone "will be merged" line would mislead. Interactive
+                    # users still see the risk as part of the question.
+                    #
+                    # Call typer.confirm normally so piped y/n is honored — e.g.
+                    # `echo y | specify init --here` keeps reaching the
+                    # non-destructive preserve-merge path.
+                    try:
+                        proceed = typer.confirm(
+                            "Template files will be merged with existing content "
+                            "and may overwrite existing files. Do you want to continue?"
+                        )
+                    except (typer.Abort, EOFError):
+                        # typer.confirm raises Abort for BOTH an interactive Ctrl+C
+                        # and an EOF on closed/empty stdin. Distinguish them: a real
+                        # TTY cancellation is a normal exit (0, "cancelled"), while a
+                        # missing-input EOF (non-interactive) becomes an actionable
+                        # error pointing at --force.
+                        if _stdin_is_interactive():
+                            console.print("[yellow]Operation cancelled[/yellow]")
+                            raise typer.Exit(0) from None
+                        console.print(
+                            "[red]Error:[/red] Current directory is not empty and no "
+                            "confirmation input is available. Re-run with "
+                            "[bold]--force[/bold] to merge into it."
+                        )
+                        raise typer.Exit(1) from None
+                    if not proceed:
                         console.print("[yellow]Operation cancelled[/yellow]")
                         raise typer.Exit(0)
         else:
