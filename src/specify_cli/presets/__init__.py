@@ -1962,22 +1962,14 @@ class PresetManager:
                     dir_core_ext_names, skills_dir, dir_agent
                 )
 
-            for skill_name, cmd_name, top_layer in override_skills:
-                if not any(
-                    name in dir_managed_names
+            for _skill_name, cmd_name, top_layer in override_skills:
+                target_skill_names = [
+                    name
                     for name in self._skill_names_for_command(cmd_name)
-                ):
+                    if name in dir_managed_names
+                ]
+                if not target_skill_names:
                     continue
-                skill_subdir = skills_dir / skill_name
-                # Same symlink guard as _register_skills's registration path
-                # (#2948): mkdir(exist_ok=True) alone would silently follow
-                # an existing symlinked subdirectory before writing SKILL.md
-                # through it.
-                if not self._validate_skill_subdir(
-                    skill_subdir, create=True, skills_root=skills_dir
-                ):
-                    continue
-                skill_file = skill_subdir / "SKILL.md"
                 try:
                     from ..agents import CommandRegistrar
                     from .. import SKILL_DESCRIPTIONS
@@ -2001,22 +1993,51 @@ class PresetManager:
                         )
                     from ..integrations import get_integration
                     integration = get_integration(selected_ai) if selected_ai else None
-                    fm_data = registrar.build_skill_frontmatter(
-                        selected_ai, skill_name, desc,
-                        f"override:{cmd_name}",
-                    )
-                    registrar.apply_argument_hint(fm, fm_data, integration)
-                    fm_text = dump_frontmatter(fm_data)
                     skill_title = self._skill_title_from_command(cmd_name)
-                    skill_content = (
-                        f"---\n{fm_text}\n---\n\n"
-                        f"# Speckit {skill_title} Skill\n\n{body}\n"
-                    )
-                    # Apply integration post-processing (e.g. Claude flags)
-                    if integration is not None and hasattr(integration, "post_process_skill_content"):
-                        skill_content = integration.post_process_skill_content(skill_content)
-                    skill_file.write_text(skill_content, encoding="utf-8")
-                    if target_agent is None or dir_agent == target_agent:
+                    wrote_override = False
+                    for target_skill_name in target_skill_names:
+                        skill_subdir = skills_dir / target_skill_name
+                        # Same symlink guard as _register_skills's
+                        # registration path (#2948).
+                        if not self._validate_skill_subdir(
+                            skill_subdir,
+                            create=True,
+                            skills_root=skills_dir,
+                        ):
+                            continue
+                        fm_data = registrar.build_skill_frontmatter(
+                            selected_ai,
+                            target_skill_name,
+                            desc,
+                            f"override:{cmd_name}",
+                        )
+                        registrar.apply_argument_hint(
+                            fm, fm_data, integration
+                        )
+                        fm_text = dump_frontmatter(fm_data)
+                        skill_content = (
+                            f"---\n{fm_text}\n---\n\n"
+                            f"# Speckit {skill_title} Skill\n\n{body}\n"
+                        )
+                        if integration is not None and hasattr(
+                            integration, "post_process_skill_content"
+                        ):
+                            skill_content = (
+                                integration.post_process_skill_content(
+                                    skill_content
+                                )
+                            )
+                        (skill_subdir / "SKILL.md").write_text(
+                            skill_content, encoding="utf-8"
+                        )
+                        wrote_override = True
+                    if (
+                        wrote_override
+                        and (
+                            target_agent is None
+                            or dir_agent == target_agent
+                        )
+                    ):
                         reconciled_skill_commands.add(cmd_name)
                 except Exception:
                     pass  # best-effort override skill restoration

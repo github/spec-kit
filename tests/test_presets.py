@@ -4279,6 +4279,51 @@ class TestPresetSkills:
             "recorded legacy dotted skill directory"
         )
 
+    def test_kimi_legacy_dotted_skill_receives_project_override(
+        self, project_dir, temp_dir
+    ):
+        """Project overrides must update the recorded legacy path in place."""
+        self._write_init_options(project_dir, ai="kimi")
+        skills_dir = project_dir / ".kimi-code" / "skills"
+        self._create_skill(skills_dir, "speckit.specify", body="untouched")
+        (project_dir / ".kimi-code" / "commands").mkdir(
+            parents=True, exist_ok=True
+        )
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "kimi-override-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        manager.registry.update(
+            "kimi-override-preset",
+            {"registered_skills": {"kimi": ["speckit.specify"]}},
+        )
+        modern_skill_dir = skills_dir / "speckit-specify"
+        if modern_skill_dir.exists():
+            shutil.rmtree(modern_skill_dir)
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+
+        manager._reconcile_skills(["speckit.specify"])
+
+        legacy_file = skills_dir / "speckit.specify" / "SKILL.md"
+        assert "Override body" in legacy_file.read_text(encoding="utf-8")
+        assert not modern_skill_dir.exists(), (
+            "legacy-only ownership must not create an untracked modern path"
+        )
+
     def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi presets should still propagate command overrides to existing skills."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
