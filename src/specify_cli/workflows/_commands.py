@@ -1262,14 +1262,18 @@ def workflow_status(
     engine = WorkflowEngine(project_root)
 
     if run_id:
+        # Route errors to stderr under --json so the stdout JSON stream stays
+        # parseable (mirrors `workflow run`/`workflow resume`); both handlers
+        # fire before the json_output branch below.
+        err = _error_console(json_output)
         try:
             from .engine import RunState
             state = RunState.load(run_id, project_root)
         except FileNotFoundError:
-            console.print(f"[red]Error:[/red] Run not found: {run_id}")
+            err.print(f"[red]Error:[/red] Run not found: {run_id}")
             raise typer.Exit(1)
         except ValueError as exc:
-            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1)
 
         if json_output:
