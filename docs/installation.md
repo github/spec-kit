@@ -11,7 +11,7 @@
 ## Installation
 
 > [!IMPORTANT]
-> Spec Kit is distributed through two official channels, both published and maintained by the Spec Kit maintainers: the [github/spec-kit](https://github.com/github/spec-kit) GitHub repository (source installs) and the [`specify-cli`](https://pypi.org/project/specify-cli/) package on [PyPI](https://pypi.org/project/specify-cli/). Either route is supported for normal installs — use the commands shown below. After installing, confirm you are running the official build with `specify version`. For offline or air-gapped environments, locally built wheels created from this repository are also valid.
+> Spec Kit is distributed through two official channels, both published and maintained by the Spec Kit maintainers: the [github/spec-kit](https://github.com/github/spec-kit) GitHub repository (source installs) and the [`specify-cli`](https://pypi.org/project/specify-cli/) package on [PyPI](https://pypi.org/project/specify-cli/). Either route is supported for normal installs — use the commands shown below. After installing, run `specify version` to confirm that the `specify` command is available and to check the installed version. For offline or air-gapped environments, locally built wheels created from this repository are also valid.
 
 Spec Kit supports two install routes:
 
@@ -110,7 +110,7 @@ After installation, run the following command to confirm the correct version is 
 specify version
 ```
 
-This helps verify you are running an official Spec Kit build — whether installed from the GitHub source or the `specify-cli` package on PyPI.
+This helps confirm that the `specify` command is available and reporting the expected version.
 
 **Stay current:** Run `specify self check` periodically to learn whether a newer release is available — it is read-only and never modifies your installation. When you are ready to upgrade, follow the [Upgrade Guide](./upgrade.md).
 

@@ -1,9 +1,9 @@
 # Installing from PyPI
 
-Spec Kit is published to PyPI as [`specify-cli`](https://pypi.org/project/specify-cli/), maintained by the Spec Kit maintainers. Installing from PyPI is the second supported install route alongside installing from the [GitHub source](../installation.md#install-from-source--persistent-installation-recommended). Use whichever fits your workflow — both provide the same official `specify` CLI.
+Spec Kit is published to PyPI as [`specify-cli`](https://pypi.org/project/specify-cli/), maintained by the Spec Kit maintainers. Installing from PyPI is the second supported install route alongside installing from the [GitHub source](../installation.md#install-from-source--persistent-installation-recommended). Use whichever fits your workflow — both provide the same `specify` CLI.
 
 > [!NOTE]
-> The PyPI release version tracks the GitHub release tags (for example, PyPI `0.12.11` corresponds to the `v0.12.11` tag). Confirm what you installed with `specify version`.
+> The PyPI release version tracks the GitHub release tags (for example, PyPI `0.12.11` corresponds to the `v0.12.11` tag). Use `specify version` as a local sanity check, and inspect your package manager's record (for example `uv tool list`, `pipx list`, or `pip show specify-cli`) if you need to confirm the installed package source.
 
 ## Install Specify CLI
 
@@ -49,21 +49,21 @@ specify init <PROJECT_NAME> --integration copilot
 
 ## Upgrade
 
-Upgrade with the same tool you installed with:
+Upgrade by reinstalling the package through the same tool you used for the original install. If you want to move to the newest PyPI release, use an unpinned install command so you do not keep the existing version pin:
 
 ```bash
 # Using uv
-uv tool upgrade specify-cli
+uv tool install --force specify-cli
 
 # Or using pipx
-pipx upgrade specify-cli
+pipx install --force specify-cli
 
 # Or using pip
 pip install --upgrade specify-cli
 ```
 
 > [!NOTE]
-> `specify self upgrade` automatically manages `uv tool` and `pipx` installs. A plain `pip install specify-cli` is treated as an unmanaged install — upgrade it with `pip install --upgrade specify-cli`. See the [Upgrade Guide](../upgrade.md) for details.
+> `specify self upgrade` currently rebuilds `uv tool` and `pipx` installs from the GitHub source release URL rather than preserving a PyPI-based installation. If you want to stay on the PyPI route, use the package-manager commands above. A plain `pip install specify-cli` is treated as an unmanaged install — upgrade it with `pip install --upgrade specify-cli`. See the [Upgrade Guide](../upgrade.md) for details.
 
 ## Uninstall
 
