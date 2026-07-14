@@ -2260,6 +2260,47 @@ class TestWhileStep:
         assert result.output["condition_result"] is False
         assert result.next_steps == []
 
+    @pytest.mark.parametrize("bad_steps", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_steps_fails_loudly(self, bad_steps):
+        """A non-list ``steps`` reached at runtime must fail the step, not crash.
+
+        ``validate`` rejects a non-list ``steps``, but the engine does not
+        auto-validate (see ``WorkflowEngine.load_workflow``) and feeds
+        ``next_steps`` straight into ``_execute_steps``, which iterates them as
+        step mappings. The while body only dispatches when the condition is
+        truthy, so a non-list ``steps`` reaches ``next_steps`` and would crash
+        the engine's step iteration on an unvalidated run. Mirrors the
+        if/switch/fan-out non-list handling.
+        """
+        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = WhileStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "retry", "condition": "true", "steps": bad_steps}, ctx
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'steps' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+
+    @pytest.mark.parametrize("bad_steps", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_steps_ok_when_condition_false(self, bad_steps):
+        """A false condition never dispatches the body, so a non-list ``steps``
+        stays benign — the step completes without touching ``next_steps``.
+        """
+        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = WhileStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "retry", "condition": "false", "steps": bad_steps}, ctx
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["condition_result"] is False
+        assert result.next_steps == []
+
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.while_loop import WhileStep
 
@@ -2349,6 +2390,30 @@ class TestDoWhileStep:
         result = step.execute(config, ctx)
         assert result.next_steps == []
         assert result.status.value == "completed"
+
+    @pytest.mark.parametrize("bad_steps", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_steps_fails_loudly(self, bad_steps):
+        """A non-list ``steps`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-list ``steps``, but the engine does not
+        auto-validate (see ``WorkflowEngine.load_workflow``) and feeds
+        ``next_steps`` straight into ``_execute_steps``, which iterates them as
+        step mappings. The do-while body always dispatches on the first call
+        regardless of condition, so a non-list ``steps`` always reaches
+        ``next_steps`` and would crash the engine's step iteration on an
+        unvalidated run. Mirrors the if/switch/fan-out non-list handling.
+        """
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = DoWhileStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "cycle", "condition": "false", "steps": bad_steps}, ctx
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'steps' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
 
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.do_while import DoWhileStep
