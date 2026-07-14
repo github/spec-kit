@@ -3,7 +3,7 @@
 Spec Kit is published to PyPI as [`specify-cli`](https://pypi.org/project/specify-cli/), maintained by the Spec Kit maintainers. Installing from PyPI is the second supported install route alongside installing from the [GitHub source](../installation.md#install-from-source--persistent-installation-recommended). Use whichever fits your workflow — both provide the same `specify` CLI.
 
 > [!NOTE]
-> The PyPI release version tracks the GitHub release tags (for example, PyPI `0.12.11` corresponds to the `v0.12.11` tag). Use `specify version` as a local sanity check, and inspect your package manager's record (for example `uv tool list`, `pipx list`, or `pip show specify-cli`) if you need to confirm the installed package source.
+> The PyPI release version tracks the GitHub release tags (for example, PyPI `0.12.11` corresponds to the `v0.12.11` tag). Use `specify version` as a local version/runtime sanity check. It does not prove whether the `specify` executable came from PyPI or GitHub; inspect your package manager's record (for example `uv tool list`, `pipx list`, or `pip show specify-cli`) if you need to confirm the installed package source.
 
 ## Install Specify CLI
 
@@ -49,7 +49,7 @@ specify init <PROJECT_NAME> --integration copilot
 
 ## Upgrade
 
-Upgrade by reinstalling the package through the same tool you used for the original install. If you want to move to the newest PyPI release, use an unpinned install command so you do not keep the existing version pin:
+Upgrade by reinstalling the package through the same tool you used for the original install. If you originally pinned a version, note that `uv tool upgrade` preserves that pin; to move to the newest PyPI release, use an unpinned install command so you do not keep the existing version pin:
 
 ```bash
 # Using uv
