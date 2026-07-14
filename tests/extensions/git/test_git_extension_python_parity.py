@@ -99,7 +99,12 @@ def _assert_parity(
     if stdout:
         assert py_result.stdout == bash_result.stdout
     if stderr:
-        assert py_result.stderr == bash_result.stderr
+        py_stderr = py_result.stderr
+        bash_stderr = bash_result.stderr
+        if os.name == "nt":
+            py_stderr = _without_persist_hint(py_stderr)
+            bash_stderr = _without_persist_hint(bash_stderr)
+        assert py_stderr == bash_stderr
 
 
 def _without_persist_hint(stderr: str) -> str:
@@ -266,11 +271,7 @@ class TestCreateFeatureBranchParity:
             "desc word",
             env_extra=env,
         )
-        _assert_parity(b, p, stderr=os.name != "nt")
-        if os.name == "nt":
-            assert _without_persist_hint(p.stderr) == _without_persist_hint(
-                b.stderr
-            )
+        _assert_parity(b, p)
 
     def test_long_branch_name_truncated_to_244_bytes(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
@@ -356,6 +357,25 @@ class TestCreateFeatureBranchParity:
         assert _without_persist_hint(bash_stderr) == _without_persist_hint(
             windows_stderr
         )
+
+    def test_assert_parity_ignores_windows_persist_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(os, "name", "nt")
+        bash_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=(
+                "[specify] Warning\n"
+                "# To persist: export SPECIFY_FEATURE=feature/name\n"
+            )
+        )
+        py_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=(
+                "[specify] Warning\n"
+                "# To persist: $env:SPECIFY_FEATURE = 'feature/name'\n"
+            )
+        )
+
+        _assert_parity(bash_result, py_result)
 
     def test_empty_description_errors(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
