@@ -62,12 +62,11 @@ def _constitution_is_generated(
         try:
             metadata = json.loads(provenance.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
-            metadata = {}
-        if (
+            return False
+        return (
             isinstance(metadata, dict)
             and metadata.get("sha256") == _content_sha256(content)
-        ):
-            return True
+        )
 
     # Older projects have no provenance sidecar. Only the immutable bundled or
     # source-checkout core template is safe to treat as generated.

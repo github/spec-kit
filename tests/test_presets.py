@@ -2860,6 +2860,36 @@ class TestSelfTestPreset:
         assert "preset:self-test" in content, "placeholder constitution was not re-seeded"
         assert "[PROJECT_NAME]" not in content
 
+    @pytest.mark.parametrize(
+        "provenance_content",
+        [
+            '{"sha256": "does-not-match", "source": "old-preset"}\n',
+            "{not valid json",
+        ],
+        ids=["hash-mismatch", "malformed"],
+    )
+    def test_self_test_preserves_core_content_with_existing_invalid_provenance(
+        self, project_dir, provenance_content
+    ):
+        """A present invalid sidecar disables legacy core-template migration."""
+        resolver = PresetResolver(project_dir)
+        bundled_core = resolver._find_bundled_core(
+            "constitution-template", "template", ".md"
+        )
+        assert bundled_core is not None
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_bytes(bundled_core.read_bytes())
+        (memory.parent / ".constitution-template.json").write_text(
+            provenance_content
+        )
+        original = memory.read_bytes()
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_bytes() == original
+
     def test_self_test_preserves_mutable_project_core_copy(self, project_dir):
         """A project template copy does not establish generated provenance."""
         authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
