@@ -1525,7 +1525,14 @@ class ExtensionManager:
                     # Create the staging file with mode 0600 before writing so
                     # the preserved bytes are never transiently readable by other
                     # local users, even on a umask that would produce 0644.
-                    fd = os.open(str(staged), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    # O_BINARY (0 on POSIX) is required so Windows does not open
+                    # the descriptor in text mode and translate the preserved
+                    # bytes' "\n" into "\r\n" as they are written.
+                    fd = os.open(
+                        str(staged),
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                        0o600,
+                    )
                     try:
                         # os.write() may write fewer bytes than requested, so
                         # loop until the whole buffer is on disk — a truncated
