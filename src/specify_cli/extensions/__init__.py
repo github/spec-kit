@@ -1415,14 +1415,24 @@ class ExtensionManager:
         stranded_configs: dict[str, tuple[bytes, int]] = {}
         rescue_staging_dir = self.extensions_dir / f".rescue-staging-{manifest.id}"
 
-        if rescue_staging_dir.is_dir() and not self.registry.is_installed(manifest.id):
+        if (
+            rescue_staging_dir.is_dir()
+            and not rescue_staging_dir.is_symlink()
+            and not self.registry.is_installed(manifest.id)
+        ):
             # A previous install attempt staged the configs but never
             # completed cleanly.  Reload from the durable backup so the
             # original bytes are used on retry rather than whatever
             # mixture of packaged defaults and partial restores remains
-            # on disk.
+            # on disk.  Only load non-symlinked files whose names match
+            # the two recognised config suffixes so a tampered staging
+            # directory cannot inject arbitrary files.
             for staged_file in sorted(rescue_staging_dir.iterdir()):
-                if staged_file.is_file():
+                if (
+                    staged_file.is_file()
+                    and not staged_file.is_symlink()
+                    and staged_file.name.endswith(("-config.yml", "-config.local.yml"))
+                ):
                     stranded_configs[staged_file.name] = (
                         staged_file.read_bytes(),
                         staged_file.stat().st_mode,
@@ -1447,12 +1457,19 @@ class ExtensionManager:
                 rescue_staging_dir.mkdir(parents=True, exist_ok=True)
                 for filename, (content, mode) in stranded_configs.items():
                     staged = rescue_staging_dir / filename
-                    staged.write_bytes(content)
+                    # Create the staging file with mode 0600 before writing so
+                    # the preserved bytes are never transiently readable by other
+                    # local users, even on a umask that would produce 0644.
+                    fd = os.open(str(staged), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                    try:
+                        os.write(fd, content)
+                    finally:
+                        os.close(fd)
                     try:
                         staged.chmod(mode)
                     except (NotImplementedError, OSError):
-                        pass
-            except BaseException:
+                        pass  # Best-effort; chmod may not be supported on all platforms.
+            except Exception:
                 # Staging failed — clean up any partial marker dir and
                 # fall back to in-memory protection only (same as the
                 # pre-staging behaviour).
@@ -1503,9 +1520,11 @@ class ExtensionManager:
             _restore_stranded_config_file(target, content, mode)
 
         # Every stranded config has been restored successfully — the
-        # durable staging backup is no longer needed.
+        # durable staging backup is no longer needed.  Raise on failure so
+        # the install is not reported as successful while a stale backup
+        # that could be misread on the next retry remains on disk.
         if rescue_staging_dir.is_dir():
-            shutil.rmtree(rescue_staging_dir, ignore_errors=True)
+            shutil.rmtree(rescue_staging_dir)
 
         # Register commands with AI agents
         registered_commands = {}
