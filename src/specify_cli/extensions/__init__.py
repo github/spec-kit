@@ -1415,12 +1415,20 @@ class ExtensionManager:
         # restored.
         stranded_configs: dict[str, tuple[bytes, int]] = {}
         rescue_staging_dir = self.extensions_dir / f".rescue-staging-{manifest.id}"
-
-        if (
+        # A staging directory is trusted only when this completion marker is
+        # present.  The marker is written after every staged file is complete
+        # and removed before the non-atomic cleanup, so a crash mid-staging or
+        # mid-cleanup can never leave a partial directory that a retry mistakes
+        # for a complete durable backup.
+        rescue_complete_marker = rescue_staging_dir / ".rescue-complete"
+        staging_is_complete = (
             rescue_staging_dir.is_dir()
             and not rescue_staging_dir.is_symlink()
-            and not self.registry.is_installed(manifest.id)
-        ):
+            and rescue_complete_marker.is_file()
+            and not rescue_complete_marker.is_symlink()
+        )
+
+        if staging_is_complete and not self.registry.is_installed(manifest.id):
             # A previous install attempt staged the configs but never
             # completed cleanly.  Reload from the durable backup so the
             # original bytes are used on retry rather than whatever
@@ -1449,11 +1457,21 @@ class ExtensionManager:
                         cfg_file.stat().st_mode,
                     )
 
-        if stranded_configs and not rescue_staging_dir.is_dir():
+        if stranded_configs and not staging_is_complete:
             # Write a durable backup outside dest_dir before any
             # destructive operation so the original bytes survive a
             # crash or partial failure at any later step.  The staging
             # dir is cleaned up only after every restore succeeds.
+            #
+            # Any pre-existing staging dir here lacks the completion marker
+            # (staging_is_complete is False), so it is a stale partial from an
+            # interrupted attempt — remove it first for a clean write.
+            if rescue_staging_dir.is_symlink():
+                rescue_staging_dir.unlink()
+            elif rescue_staging_dir.is_dir():
+                shutil.rmtree(rescue_staging_dir)
+            elif rescue_staging_dir.exists():
+                rescue_staging_dir.unlink()
             try:
                 rescue_staging_dir.mkdir(parents=True, exist_ok=True)
                 for filename, (content, mode) in stranded_configs.items():
@@ -1463,18 +1481,38 @@ class ExtensionManager:
                     # local users, even on a umask that would produce 0644.
                     fd = os.open(str(staged), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                     try:
-                        os.write(fd, content)
+                        # os.write() may write fewer bytes than requested, so
+                        # loop until the whole buffer is on disk — a truncated
+                        # "durable" backup would be trusted over the intact
+                        # config on a retry and cause silent data loss.
+                        view = memoryview(content)
+                        written = 0
+                        while written < len(view):
+                            written += os.write(fd, view[written:])
                     finally:
                         os.close(fd)
                     try:
                         staged.chmod(stat.S_IMODE(mode))
                     except (NotImplementedError, OSError):
                         pass  # Best-effort; chmod may not be supported on all platforms.
-            except Exception:
-                # Staging failed — clean up any partial marker dir and
-                # fall back to in-memory protection only (same as the
-                # pre-staging behaviour).
+                # Write the completion marker only after every staged file is
+                # fully written so a retry trusts staging only when it is whole.
+                marker_fd = os.open(
+                    str(rescue_complete_marker),
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                )
+                os.close(marker_fd)
+            except BaseException:
+                # Durable staging failed (or was interrupted).  Continuing with
+                # only the in-memory copy would reintroduce the permanent-loss
+                # path this staging exists to close: the rmtree below could
+                # delete the originals and a later restore failure would leave
+                # no on-disk copy.  dest_dir is still untouched here, so clean
+                # up the partial staging dir and abort the install instead of
+                # proceeding destructively.
                 shutil.rmtree(rescue_staging_dir, ignore_errors=True)
+                raise
 
         # Install extension (dest_dir computed above during self-install guard)
         if dest_dir.exists():
@@ -1528,6 +1566,10 @@ class ExtensionManager:
         # the install is not reported as successful while a stale backup
         # that could be misread on the next retry remains on disk.
         if rescue_staging_dir.is_dir() and not rescue_staging_dir.is_symlink():
+            # Remove the completion marker before the non-atomic rmtree so a
+            # crash mid-cleanup cannot leave a staging dir that a retry would
+            # wrongly trust as a complete durable backup.
+            rescue_complete_marker.unlink(missing_ok=True)
             shutil.rmtree(rescue_staging_dir)
 
         # Register commands with AI agents
