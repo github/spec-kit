@@ -282,6 +282,8 @@ Steps can reference inputs and previous step outputs using `{{ expression }}` sy
 | `inputs.spec`                  | Workflow input values                |
 | `steps.specify.output.file`    | Output from a previous step          |
 | `item`                         | Current item in a fan-out iteration  |
+| `context.run_id`               | Current workflow run ID              |
+| `context.workflow_dir`         | Resolved absolute path to the workflow source directory. Empty string for string-loaded workflows. |
 
 Available filters: `default`, `join`, `contains`, `map`, `from_json`.
 
@@ -292,6 +294,14 @@ condition: "{{ steps.test.output.exit_code == 0 }}"
 args: "{{ inputs.spec }}"
 message: "{{ status | default('pending') }}"
 ```
+
+## Shell Step Environment Variables
+
+Shell steps automatically receive the following environment variables:
+
+| Variable | Description |
+| -------- | ----------- |
+| `SPECKIT_WORKFLOW_DIR` | Resolved absolute path to the workflow source directory (same value as `{{ context.workflow_dir }}`). Not set when the workflow has no source path. |
 
 ## Input Types
 
