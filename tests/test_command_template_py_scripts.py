@@ -10,6 +10,7 @@ and ``process_template`` turns them into a valid Python invocation
 existence check below enforces that ordering.
 """
 
+import os
 import re
 from pathlib import Path
 
@@ -102,6 +103,9 @@ def test_install_shared_infra_copies_python_scripts(tmp_path):
         console=Console(quiet=True),
         force=False,
     )
-    dest = tmp_path / ".specify" / "scripts" / "python"
-    assert (dest / "check_prerequisites.py").is_file()
-    assert not (tmp_path / ".specify" / "scripts" / "powershell").exists()
+    scripts_dir = tmp_path / ".specify" / "scripts"
+    assert (scripts_dir / "python" / "check_prerequisites.py").is_file()
+    shell_variant = "powershell" if os.name == "nt" else "bash"
+    other_variant = "bash" if os.name == "nt" else "powershell"
+    assert (scripts_dir / shell_variant).is_dir()
+    assert not (scripts_dir / other_variant).exists()

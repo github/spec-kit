@@ -19,6 +19,10 @@ def _resolve(tmp_path: Path, script: str | None, monkeypatch) -> str:
         "specify_cli.integrations.base.shutil.which",
         lambda name: "/usr/bin/python3" if name == "python3" else None,
     )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.IntegrationBase._interpreter_runs",
+        staticmethod(lambda path: True),
+    )
     if script:
         save_init_options(tmp_path, {"script": script})
     return CommandRegistrar.resolve_skill_placeholders(
