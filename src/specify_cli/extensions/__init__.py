@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -1466,7 +1467,7 @@ class ExtensionManager:
                     finally:
                         os.close(fd)
                     try:
-                        staged.chmod(mode)
+                        staged.chmod(stat.S_IMODE(mode))
                     except (NotImplementedError, OSError):
                         pass  # Best-effort; chmod may not be supported on all platforms.
             except Exception:
@@ -1494,7 +1495,10 @@ class ExtensionManager:
                 ) as tmp:
                     tmp_path = Path(tmp.name)
                     tmp.write(content)
-                tmp_path.chmod(preserved_mode)
+                try:
+                    tmp_path.chmod(stat.S_IMODE(preserved_mode))
+                except (NotImplementedError, OSError):
+                    pass  # Best-effort; chmod may not be supported on all platforms.
                 os.replace(tmp_path, target)
             except BaseException:
                 if tmp_path is not None and tmp_path.exists():
@@ -1523,7 +1527,7 @@ class ExtensionManager:
         # durable staging backup is no longer needed.  Raise on failure so
         # the install is not reported as successful while a stale backup
         # that could be misread on the next retry remains on disk.
-        if rescue_staging_dir.is_dir():
+        if rescue_staging_dir.is_dir() and not rescue_staging_dir.is_symlink():
             shutil.rmtree(rescue_staging_dir)
 
         # Register commands with AI agents
