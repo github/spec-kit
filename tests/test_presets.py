@@ -2597,6 +2597,40 @@ def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1
         return manager.install_from_directory(SELF_TEST_PRESET_DIR, speckit_version)
 
 
+def _make_convention_constitution_preset(temp_dir: Path) -> Path:
+    """Create a preset whose constitution is found by convention, not its manifest."""
+    preset_dir = temp_dir / "convention-constitution"
+    (preset_dir / "templates").mkdir(parents=True)
+    (preset_dir / "templates" / "constitution-template.md").write_text(
+        "# Convention Constitution\n"
+    )
+    (preset_dir / "templates" / "spec-template.md").write_text("# Spec\n")
+    (preset_dir / "preset.yml").write_text(
+        yaml.dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "convention-constitution",
+                    "name": "Convention Constitution",
+                    "version": "1.0.0",
+                    "description": "Convention-based constitution for testing",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "template",
+                            "name": "spec-template",
+                            "file": "templates/spec-template.md",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    return preset_dir
+
+
 class TestSelfTestPreset:
     """Tests using the self-test preset that ships with the repo.
 
@@ -2809,13 +2843,15 @@ class TestSelfTestPreset:
 
     def test_self_test_reseeds_exact_core_constitution(self, project_dir):
         """An unchanged core constitution is re-seeded from the preset template."""
-        core = "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n"
-        (project_dir / ".specify" / "templates" / "constitution-template.md").write_text(
-            core
+        resolver = PresetResolver(project_dir)
+        bundled_core = resolver._find_bundled_core(
+            "constitution-template", "template", ".md"
         )
+        assert bundled_core is not None
+        core = bundled_core.read_bytes()
         memory = project_dir / ".specify" / "memory" / "constitution.md"
         memory.parent.mkdir(parents=True, exist_ok=True)
-        memory.write_text(core)
+        memory.write_bytes(core)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -2823,6 +2859,69 @@ class TestSelfTestPreset:
         content = memory.read_text()
         assert "preset:self-test" in content, "placeholder constitution was not re-seeded"
         assert "[PROJECT_NAME]" not in content
+
+    def test_self_test_preserves_mutable_project_core_copy(self, project_dir):
+        """A project template copy does not establish generated provenance."""
+        authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
+        project_template = (
+            project_dir / ".specify" / "templates" / "constitution-template.md"
+        )
+        project_template.write_text(authored)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+        assert not (memory.parent / ".constitution-template.json").exists()
+
+    def test_core_prefixed_preset_does_not_establish_generated_provenance(
+        self, project_dir, temp_dir
+    ):
+        """A preset ID beginning with core is not an immutable core source."""
+        authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text(authored)
+
+        preset_dir = temp_dir / "core-company"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(authored)
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "core-company",
+                        "name": "Core Company",
+                        "version": "1.0.0",
+                        "description": "Company constitution preset",
+                        "author": "Test Author",
+                        "repository": "https://github.com/test/core-company",
+                        "license": "MIT",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "description": "Company constitution",
+                                "replaces": "constitution-template",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        PresetManager(project_dir).install_from_directory(preset_dir, "0.1.5")
+
+        assert memory.read_text() == authored
+        assert not (memory.parent / ".constitution-template.json").exists()
 
     def test_self_test_preserves_authored_constitution_with_placeholder(
         self, project_dir
@@ -2957,6 +3056,48 @@ class TestSelfTestPreset:
         manager.remove("higher-priority")
 
         assert "preset:self-test" in memory.read_text()
+
+    def test_convention_constitution_removal_restores_remaining_layer(
+        self, project_dir, temp_dir
+    ):
+        """Removing a convention layer rematerializes the remaining resolver layer."""
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=1
+        )
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.unlink()
+        ensure_constitution_from_template(project_dir)
+        assert memory.read_text() == "# Convention Constitution\n"
+
+        manager.remove("convention-constitution")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_convention_constitution_removal_preserves_edited_content(
+        self, project_dir, temp_dir
+    ):
+        """Removing a convention layer does not overwrite edited generated content."""
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5"
+        )
+        ensure_constitution_from_template(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        edited = memory.read_text() + "\n## Authored amendment\n"
+        memory.write_text(edited)
+
+        manager.remove("convention-constitution")
+
+        assert memory.read_text() == edited
 
     def test_constitution_seed_rejects_symlinked_memory_directory(
         self, project_dir, temp_dir

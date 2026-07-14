@@ -50,7 +50,7 @@ def _content_sha256(content: bytes) -> str:
 def _constitution_is_generated(
     project_root: Path,
     memory_constitution: Path,
-    layers: list[dict[str, Any]],
+    resolver: "PresetResolver",
 ) -> bool:
     """Return whether the live constitution is an unchanged generated file."""
     _ensure_safe_shared_destination(project_root, memory_constitution)
@@ -69,12 +69,12 @@ def _constitution_is_generated(
         ):
             return True
 
-    # Older projects have no provenance sidecar. Only the exact known core
-    # template is safe to treat as generated; placeholder substrings are not.
-    for layer in layers:
-        if layer["source"].startswith("core") and layer["path"].read_bytes() == content:
-            return True
-    return False
+    # Older projects have no provenance sidecar. Only the immutable bundled or
+    # source-checkout core template is safe to treat as generated.
+    core = resolver._find_bundled_core(
+        "constitution-template", "template", ".md"
+    )
+    return core is not None and core.read_bytes() == content
 
 
 def _materialize_constitution_template(
@@ -1745,9 +1745,8 @@ class PresetManager:
             self.project_root / ".specify" / "memory" / "constitution.md"
         )
         resolver = PresetResolver(self.project_root)
-        layers = resolver.collect_all_layers("constitution-template", "template")
         if memory_constitution.exists() and not _constitution_is_generated(
-            self.project_root, memory_constitution, layers
+            self.project_root, memory_constitution, resolver
         ):
             return
         _materialize_constitution_template(self.project_root, memory_constitution)
@@ -1831,7 +1830,13 @@ class PresetManager:
         # Also include aliases from the manifest as a safety net for registries
         # populated by older versions that may not track aliases.
         removed_cmd_names = set()
-        removed_constitution = False
+        removed_constitution = any(
+            path.exists()
+            for path in (
+                pack_dir / "templates" / "constitution-template.md",
+                pack_dir / "constitution-template.md",
+            )
+        )
         for cmd_names in registered_commands.values():
             removed_cmd_names.update(cmd_names)
         manifest_path = pack_dir / "preset.yml"
