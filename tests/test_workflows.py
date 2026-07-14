@@ -5097,6 +5097,58 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="malformed"):
             catalog._validate_catalog_url(url)
 
+    def test_fetch_malformed_redirect_target_raises_catalog_error(
+        self, project_dir, monkeypatch
+    ):
+        """A malformed post-redirect URL must raise WorkflowCatalogError, not a
+        raw ValueError.
+
+        The fetch path re-validates ``resp.geturl()`` after following redirects,
+        so a hostile/broken redirect to a malformed authority
+        (``https://[::1``) hits ``urlparse``/``.hostname`` and raises
+        ``ValueError``. Without the guard that ValueError is re-wrapped by the
+        broad ``except`` as ``Failed to fetch catalog ...: Invalid IPv6 URL``;
+        the guard turns it into a clean ``... malformed URL ...`` refusal. The
+        initial ``entry.url`` is valid so validation only trips on the redirect
+        target. Mirrors specify_cli.catalogs (#3435).
+        """
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"{}"
+
+            def geturl(self):
+                # A redirect landing on a malformed IPv6 authority.
+                return "https://[::1"
+
+        monkeypatch.setattr(
+            auth_http, "open_url", lambda url, timeout=30: _FakeResponse()
+        )
+
+        catalog = WorkflowCatalog(project_dir)
+        entry = WorkflowCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+        # A fresh project_dir has no cache to fall back to, so the error
+        # propagates instead of being masked by a stale-cache read.
+        with pytest.raises(WorkflowCatalogError, match="malformed"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
     def test_add_catalog(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
 
@@ -5560,6 +5612,57 @@ class TestStepCatalog:
         catalog = StepCatalog(project_dir)
         with pytest.raises(StepValidationError, match="malformed"):
             catalog._validate_catalog_url(url)
+
+    def test_fetch_malformed_redirect_target_raises_catalog_error(
+        self, project_dir, monkeypatch
+    ):
+        """A malformed post-redirect URL must raise StepCatalogError, not a raw
+        ValueError.
+
+        The fetch path re-validates ``resp.geturl()`` after redirects, so a
+        broken redirect to a bracketed non-IP host (``https://[not-an-ip]/x``)
+        makes ``urlparse``/``.hostname`` raise ``ValueError``. Without the guard
+        that leaks out as ``... Invalid IPv6 URL`` re-wrapping; the guard turns
+        it into a clean ``... malformed URL ...`` refusal. The initial
+        ``entry.url`` is valid so validation only trips on the redirect target.
+        Mirrors specify_cli.catalogs (#3435).
+        """
+        from specify_cli.workflows.catalog import (
+            StepCatalog,
+            StepCatalogEntry,
+            StepCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"{}"
+
+            def geturl(self):
+                # A redirect landing on a bracketed non-IP authority.
+                return "https://[not-an-ip]/x"
+
+        monkeypatch.setattr(
+            auth_http, "open_url", lambda url, timeout=30: _FakeResponse()
+        )
+
+        catalog = StepCatalog(project_dir)
+        entry = StepCatalogEntry(
+            url="https://example.com/steps.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+        # A fresh project_dir has no cache to fall back to, so the error
+        # propagates instead of being masked by a stale-cache read.
+        with pytest.raises(StepCatalogError, match="malformed"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
 
     def test_add_catalog(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog
