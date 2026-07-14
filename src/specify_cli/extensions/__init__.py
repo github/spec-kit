@@ -1580,11 +1580,15 @@ class ExtensionManager:
                 shutil.rmtree(rescue_staging_dir, ignore_errors=True)
                 raise
 
+        # Load and validate .extensionignore BEFORE deleting dest_dir. The
+        # loader can raise ValidationError (invalid UTF-8) or OSError; doing it
+        # first means such a failure leaves the kept config untouched in its
+        # documented location rather than only in the hidden staging directory.
+        ignore_fn = self._load_extensionignore(source_dir)
+
         # Install extension (dest_dir computed above during self-install guard)
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
-
-        ignore_fn = self._load_extensionignore(source_dir)
 
         def _restore_stranded_config_file(
             target: Path, content: bytes, preserved_mode: int

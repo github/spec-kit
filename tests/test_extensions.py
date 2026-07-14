@@ -1354,6 +1354,48 @@ class TestExtensionManager:
         # The extension must remain unregistered after the failed install.
         assert not manager.registry.is_installed("test-ext")
 
+    def test_extensionignore_load_failure_preserves_kept_config(
+        self, extension_dir, project_dir
+    ):
+        """An .extensionignore load failure must not lose a preserved config.
+
+        `.extensionignore` is loaded/validated before dest_dir is deleted, so a
+        ValidationError raised for invalid UTF-8 must abort the reinstall while
+        leaving the kept config untouched in its documented location rather than
+        only in the hidden staging directory.
+        """
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        original_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        # Author an .extensionignore that is not valid UTF-8 so the loader
+        # raises before dest_dir would be deleted.
+        (extension_dir / ".extensionignore").write_bytes(b"\xff\xfe invalid\n")
+
+        with pytest.raises(ValidationError, match="not valid UTF-8"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # The kept config must remain in its documented location, untouched.
+        assert config_file.exists(), "config must survive the ignore-load failure"
+        assert config_file.read_bytes() == original_bytes
+        assert not manager.registry.is_installed("test-ext")
+
     def test_retry_after_staging_backup_restores_stranded_config(
         self, extension_dir, project_dir, monkeypatch
     ):
