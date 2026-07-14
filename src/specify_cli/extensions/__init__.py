@@ -102,15 +102,6 @@ def _load_core_command_names() -> frozenset[str]:
 CORE_COMMAND_NAMES = _load_core_command_names()
 
 
-def _fsync_file(path: Path) -> None:
-    """Best-effort fsync for a regular file."""
-    try:
-        with open(path, "rb") as handle:
-            os.fsync(handle.fileno())
-    except (AttributeError, OSError, NotImplementedError):
-        pass
-
-
 def _fsync_directory(path: Path) -> None:
     """Best-effort fsync for a directory path."""
     if not path.exists():

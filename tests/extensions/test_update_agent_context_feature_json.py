@@ -11,7 +11,6 @@ import pytest
 
 from tests.conftest import requires_bash
 from tests.extensions.test_extension_agent_context import (
-    BASH,
     POWERSHELL,
     _bash_posix_path,
     _run_bash_agent_context_script,
