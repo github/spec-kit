@@ -13,6 +13,8 @@
       href: upgrade.md
     - name: Install uv
       href: install/uv.md
+    - name: Install from PyPI
+      href: install/pypi.md
     - name: Install with pipx
       href: install/pipx.md
     - name: One-time Usage (uvx)
