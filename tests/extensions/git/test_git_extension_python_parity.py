@@ -239,6 +239,27 @@ class TestCreateFeatureBranchParity:
         _assert_parity(b, p)
         assert json.loads(p.stdout) == {"BRANCH_NAME": "team/042-exact-name", "FEATURE_NUM": "042"}
 
+    def test_git_branch_name_override_persist_hint_matches_bash(
+        self, tmp_path: Path
+    ):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        env = {"GIT_BRANCH_NAME": "feature/$value's-\"quoted\""}
+        b = _run_bash(
+            "create-new-feature-branch.sh",
+            bash_proj,
+            "--json",
+            "desc word",
+            env_extra=env,
+        )
+        p = _run_py(
+            "create-new-feature-branch",
+            py_proj,
+            "--json",
+            "desc word",
+            env_extra=env,
+        )
+        _assert_parity(b, p)
+
     def test_long_branch_name_truncated_to_244_bytes(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
         long_name = "-".join(["word"] * 60)

@@ -15,7 +15,6 @@ import importlib.util
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -73,7 +72,8 @@ def _persist_hint(var_name: str, value: str) -> str:
     if os.name == "nt":
         escaped_value = value.replace("'", "''")
         return f"$env:{var_name} = '{escaped_value}'"
-    return f"export {var_name}={shlex.quote(value)}"
+    escaped_value = re.sub(r"([^\w@%+=:,./-])", r"\\\1", value)
+    return f"export {var_name}={escaped_value}"
 
 
 @dataclass
