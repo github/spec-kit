@@ -1388,14 +1388,15 @@ class TestExtensionManager:
         original_copytree = shutil.copytree
         copytree_calls = 0
 
-        def flaky_copytree(src, dst, **kwargs):
+        def flaky_copytree(*args, **kwargs):
             nonlocal copytree_calls
             copytree_calls += 1
             if copytree_calls == 1:
+                dst = args[1]
                 Path(dst).mkdir(parents=True, exist_ok=True)
                 (Path(dst) / "_partial.txt").write_text("partial")
                 raise OSError("simulated disk full")
-            return original_copytree(src, dst, **kwargs)
+            return original_copytree(*args, **kwargs)
 
         monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
 
