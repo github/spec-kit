@@ -1407,10 +1407,27 @@ class ExtensionManager:
         # the registry but its config files remain in dest_dir.  A subsequent
         # plain (non-force) install would delete that directory unconditionally,
         # silently discarding the preserved config.  We read those files into
-        # memory now and write them back after copytree so the user's values
-        # always win over the packaged defaults.
+        # memory and also write a durable staging copy outside dest_dir so
+        # that a partial rmtree, failed copytree, or partial restore cannot
+        # permanently discard the user's original bytes on a retry.  The
+        # staging dir is removed only after every config has been successfully
+        # restored.
         stranded_configs: dict[str, tuple[bytes, int]] = {}
-        if dest_dir.exists() and not self.registry.is_installed(manifest.id):
+        rescue_staging_dir = self.extensions_dir / f".rescue-staging-{manifest.id}"
+
+        if rescue_staging_dir.is_dir() and not self.registry.is_installed(manifest.id):
+            # A previous install attempt staged the configs but never
+            # completed cleanly.  Reload from the durable backup so the
+            # original bytes are used on retry rather than whatever
+            # mixture of packaged defaults and partial restores remains
+            # on disk.
+            for staged_file in sorted(rescue_staging_dir.iterdir()):
+                if staged_file.is_file():
+                    stranded_configs[staged_file.name] = (
+                        staged_file.read_bytes(),
+                        staged_file.stat().st_mode,
+                    )
+        elif dest_dir.exists() and not self.registry.is_installed(manifest.id):
             for cfg_file in (
                 list(dest_dir.glob("*-config.yml"))
                 + list(dest_dir.glob("*-config.local.yml"))
@@ -1420,6 +1437,26 @@ class ExtensionManager:
                         cfg_file.read_bytes(),
                         cfg_file.stat().st_mode,
                     )
+
+        if stranded_configs and not rescue_staging_dir.is_dir():
+            # Write a durable backup outside dest_dir before any
+            # destructive operation so the original bytes survive a
+            # crash or partial failure at any later step.  The staging
+            # dir is cleaned up only after every restore succeeds.
+            try:
+                rescue_staging_dir.mkdir(parents=True, exist_ok=True)
+                for filename, (content, mode) in stranded_configs.items():
+                    staged = rescue_staging_dir / filename
+                    staged.write_bytes(content)
+                    try:
+                        staged.chmod(mode)
+                    except (NotImplementedError, OSError):
+                        pass
+            except BaseException:
+                # Staging failed — clean up any partial marker dir and
+                # fall back to in-memory protection only (same as the
+                # pre-staging behaviour).
+                shutil.rmtree(rescue_staging_dir, ignore_errors=True)
 
         # Install extension (dest_dir computed above during self-install guard)
         if dest_dir.exists():
@@ -1464,6 +1501,11 @@ class ExtensionManager:
         for filename, (content, mode) in stranded_configs.items():
             target = dest_dir / filename
             _restore_stranded_config_file(target, content, mode)
+
+        # Every stranded config has been restored successfully — the
+        # durable staging backup is no longer needed.
+        if rescue_staging_dir.is_dir():
+            shutil.rmtree(rescue_staging_dir, ignore_errors=True)
 
         # Register commands with AI agents
         registered_commands = {}
