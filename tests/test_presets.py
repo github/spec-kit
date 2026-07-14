@@ -5016,26 +5016,13 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
+                return io.BytesIO(json.dumps({
                     "assets": [{"name": "preset.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
                 }).encode())
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -5074,22 +5061,9 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -5131,26 +5105,13 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
+                return io.BytesIO(json.dumps({
                     "assets": [{"name": "preset.zip", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
                 }).encode())
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \

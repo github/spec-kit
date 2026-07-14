@@ -6,6 +6,7 @@ contracts/cli-commands.md (offline, discovery-only refusal, not-a-project error)
 """
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -468,24 +469,15 @@ def test_install_integration_override_cannot_bypass_clash_guard(project: Path):
 # ===== Private GitHub release asset URL resolution =====
 
 
-class FakeBundleResponse:
+class FakeBundleResponse(io.BytesIO):
     """Minimal context-manager response stub for open_url fakes."""
 
     def __init__(self, data: bytes, url: str = "https://api.github.com/repos/org/repo/releases/assets/99"):
-        self._data = data
+        super().__init__(data)
         self._url = url
-
-    def read(self) -> bytes:
-        return self._data
 
     def geturl(self) -> str:
         return self._url
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        return False
 
 
 def _make_catalog_config(catalog_path: Path, project: Path) -> None:

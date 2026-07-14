@@ -1612,7 +1612,11 @@ def workflow_add(
 
         _wf_url_extra_headers = None
         _resolved_wf_url = _resolve_gh_asset(
-            download_url, _open_url, timeout=30, github_hosts=_github_provider_hosts()
+            download_url,
+            _open_url,
+            timeout=30,
+            github_hosts=_github_provider_hosts(),
+            redirect_validator=_reject_insecure_download_redirect,
         )
         if _resolved_wf_url:
             download_url = _resolved_wf_url
@@ -1825,7 +1829,11 @@ def _install_workflow_from_catalog(
 
         _wf_cat_extra_headers = None
         _resolved_workflow_url = _resolve_gh_asset(
-            workflow_url, _open_url, timeout=30, github_hosts=_github_provider_hosts()
+            workflow_url,
+            _open_url,
+            timeout=30,
+            github_hosts=_github_provider_hosts(),
+            redirect_validator=_reject_insecure_download_redirect,
         )
         if _resolved_workflow_url:
             workflow_url = _resolved_workflow_url

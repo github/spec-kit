@@ -3376,6 +3376,38 @@ steps:
         assert state.step_results["step-one"]["output"]["command"] == "speckit.specify"
         assert state.step_results["step-one"]["output"]["input"]["args"] == "login"
 
+    def test_execute_rejects_invalid_origin_before_creating_run_state(
+        self, project_dir
+    ):
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "simple"
+  name: "Simple"
+  version: "1.0.0"
+steps: []
+""")
+        engine = WorkflowEngine(project_dir)
+
+        with pytest.raises(ValueError, match="installed_registry_root"):
+            engine.execute(
+                definition,
+                run_id="invalid-origin",
+                installed_workflow_id="simple",
+                installed_registry_root=Path("relative-owner"),
+            )
+
+        run_dir = (
+            project_dir
+            / ".specify"
+            / "workflows"
+            / "runs"
+            / "invalid-origin"
+        )
+        assert not run_dir.exists()
+
     def test_execute_with_gate_pauses(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
         from specify_cli.workflows.base import RunStatus
@@ -4784,6 +4816,39 @@ class TestRunState:
 
         with pytest.raises(FileNotFoundError):
             RunState.load("nonexistent", project_dir)
+
+    @pytest.mark.parametrize(
+        ("installed_workflow_id", "installed_registry_root"),
+        [
+            ("", None),
+            ("gated-wf\n", None),
+            ("gated-wf", "relative-owner"),
+        ],
+    )
+    def test_init_rejects_invalid_installed_origin(
+        self, installed_workflow_id, installed_registry_root
+    ):
+        from specify_cli.workflows.engine import RunState
+
+        with pytest.raises(ValueError, match="Invalid run state"):
+            RunState(
+                run_id="test-run",
+                workflow_id="test-workflow",
+                installed_workflow_id=installed_workflow_id,
+                installed_registry_root=installed_registry_root,
+            )
+
+    def test_init_rejects_registry_root_without_workflow_id(
+        self, project_dir
+    ):
+        from specify_cli.workflows.engine import RunState
+
+        with pytest.raises(ValueError, match="requires"):
+            RunState(
+                run_id="test-run",
+                workflow_id="test-workflow",
+                installed_registry_root=str(project_dir),
+            )
 
     @pytest.mark.parametrize(
         "malicious_run_id",
@@ -7175,7 +7240,9 @@ steps:
                 return False
 
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-            captured_urls.append((url, extra_headers, timeout))
+            captured_urls.append(
+                (url, extra_headers, timeout, redirect_validator)
+            )
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
                     "assets": [{"name": "workflow.yml", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
@@ -7193,11 +7260,20 @@ steps:
         assert result.exit_code == 0, result.output
         assert "Test Workflow" in result.output
         # First call resolves the release tag with timeout=30
-        tag_calls = [(url, h, t) for url, h, t in captured_urls if "releases/tags/" in url]
+        tag_calls = [
+            (url, headers, timeout, validator)
+            for url, headers, timeout, validator in captured_urls
+            if "releases/tags/" in url
+        ]
         assert len(tag_calls) == 1
         assert tag_calls[0][2] == 30  # timeout matches download timeout
+        assert tag_calls[0][3] is not None
         # Second call downloads from the resolved asset URL with octet-stream
-        asset_calls = [(url, h, t) for url, h, t in captured_urls if "releases/assets/" in url]
+        asset_calls = [
+            (url, headers, timeout, validator)
+            for url, headers, timeout, validator in captured_urls
+            if "releases/assets/" in url
+        ]
         assert len(asset_calls) >= 1
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
@@ -7286,7 +7362,7 @@ steps:
                 return False
 
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
-            captured_urls.append((url, extra_headers))
+            captured_urls.append((url, extra_headers, redirect_validator))
             if "releases/tags/" in url:
                 return FakeResponse(json.dumps({
                     "assets": [{"name": "workflow.yml", "url": "https://api.github.com/repos/org/repo/releases/assets/55"}]
@@ -7322,11 +7398,20 @@ steps:
 
         assert result.exit_code == 0, result.output
         # Should resolve via releases/tags API
-        tag_calls = [url for url, _ in captured_urls if "releases/tags/" in url]
+        tag_calls = [
+            (url, validator)
+            for url, _, validator in captured_urls
+            if "releases/tags/" in url
+        ]
         assert len(tag_calls) == 1
-        assert "releases/tags/v2.0" in tag_calls[0]
+        assert "releases/tags/v2.0" in tag_calls[0][0]
+        assert tag_calls[0][1] is not None
         # Should download from resolved asset URL with octet-stream
-        asset_calls = [(url, h) for url, h in captured_urls if "releases/assets/" in url]
+        asset_calls = [
+            (url, headers)
+            for url, headers, _ in captured_urls
+            if "releases/assets/" in url
+        ]
         assert len(asset_calls) >= 1
         assert asset_calls[0][1] == {"Accept": "application/octet-stream"}
 
