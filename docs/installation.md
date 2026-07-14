@@ -81,13 +81,13 @@ specify init <project_name> --integration claude --ignore-agent-tools
 
 ## Verification
 
-After installation, run the following command to confirm the correct version is installed:
+After installation, run the following command to check the installed CLI version and runtime:
 
 ```bash
 specify version
 ```
 
-This helps verify you are running the official Spec Kit build from GitHub, not an unrelated package with the same name.
+This is a version/runtime check. It helps confirm the installed Spec Kit CLI version and environment, but it does not prove the executable came from the official GitHub release source or another install source. If you need to confirm install provenance, inspect the package manager's stored install metadata (for example, `uv tool list` or `pipx list`, depending on how you installed Spec Kit).
 
 **Stay current:** Run `specify self check` periodically to learn whether a newer release is available — it is read-only and never modifies your installation. When you are ready to upgrade, follow the [Upgrade Guide](./upgrade.md).
 

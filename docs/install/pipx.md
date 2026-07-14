@@ -21,11 +21,15 @@ pipx install git+https://github.com/github/spec-kit.git
 specify version
 ```
 
+`specify version` reports the installed Spec Kit CLI version and runtime details. It is a useful version/runtime check, but it does not prove whether the executable came from a Git source, a PyPI package, or another location. If you need to confirm installation provenance, inspect the package manager's stored install metadata (for example, `pipx list` for `pipx`-managed installs).
+
 ## Upgrade
 
 ```bash
 pipx install --force git+https://github.com/github/spec-kit.git@vX.Y.Z
 ```
+
+If you want to move to the latest release instead of a pinned tag, omit the `@vX.Y.Z` suffix from the install command above.
 
 ## Uninstall
 
