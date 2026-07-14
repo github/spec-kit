@@ -1044,12 +1044,15 @@ class PresetManager:
         # winners are materialized first, and so cleanup runs last instead of
         # being undone by skill reconciliation.
         reconciled_commands: set[str] = set()
+        reconciled_skills: set[str] = set()
         if affected_cmd_names:
             try:
                 reconciled_commands = self._reconcile_composed_commands(
                     list(affected_cmd_names), target_agent=agent_name
                 )
-                self._reconcile_skills(list(affected_cmd_names))
+                reconciled_skills = self._reconcile_skills(
+                    list(affected_cmd_names), target_agent=agent_name
+                )
             except Exception as exc:
                 import warnings
 
@@ -1065,9 +1068,19 @@ class PresetManager:
             command_name
             for command_name, winning_pack_id in winning_pack_by_command.items()
             if command_name not in project_override_commands
-            and (winning_pack_id, command_name)
-            in successful_skill_replacements
+            and (
+                (winning_pack_id, command_name)
+                in successful_skill_replacements
+                or (
+                    command_name in reconciled_skills
+                    and command_name in winning_source_by_command
+                    and winning_source_by_command[command_name].is_file()
+                )
+            )
         }
+        successfully_replaced_winners.update(
+            project_override_commands & reconciled_skills
+        )
 
         for (
             pack_id,
@@ -1819,7 +1832,8 @@ class PresetManager:
         extra_skills_dirs: Optional[
             Dict[Path, tuple[Optional[str], List[str]]]
         ] = None,
-    ) -> None:
+        target_agent: Optional[str] = None,
+    ) -> Set[str]:
         """Re-register skills for commands whose winning layer changed.
 
         After a preset is removed, finds the next preset in the priority
@@ -1832,9 +1846,14 @@ class PresetManager:
                 ``{skills_dir: (renderer_agent, managed_skill_names)}``
                 entries restored by ``_unregister_skills``. Reconciliation
                 is limited to the names actually managed in each directory.
+            target_agent: If set, report only command names written for this
+                agent. Other callers receive the union of all written names.
+
+        Returns:
+            Command names whose skill output was successfully written.
         """
         if not command_names:
-            return
+            return set()
 
         resolver = PresetResolver(self.project_root)
         active_skills_dir = self._get_skills_dir()
@@ -1857,13 +1876,17 @@ class PresetManager:
         preset_cmds: Dict[str, List[str]] = {}
         non_preset_skills: List[tuple] = []
         managed_skill_names: set = set()
+        reconciled_skill_commands: set[str] = set()
 
         for cmd_name in command_names:
             layers = resolver.collect_all_layers(cmd_name, "command")
             if not layers:
                 continue
 
-            skill_name, _ = self._skill_names_for_command(cmd_name)
+            skill_name, legacy_skill_name = self._skill_names_for_command(
+                cmd_name
+            )
+            candidate_skill_names = {skill_name, legacy_skill_name}
             # Track whether any preset previously registered this skill
             # (i.e., it was actively managed), so a not-yet-existing skill
             # dir can be re-created per affected directory below.
@@ -1872,16 +1895,21 @@ class PresetManager:
                     continue
                 recorded = meta.get("registered_skills", [])
                 if isinstance(recorded, dict):
-                    in_any_agent = any(
-                        skill_name in names
+                    recorded_names = {
+                        name
                         for names in recorded.values()
                         if isinstance(names, list)
-                    )
+                        for name in names
+                    }
+                elif isinstance(recorded, list):
+                    recorded_names = set(recorded)
                 else:
-                    in_any_agent = skill_name in recorded
-                if in_any_agent:
-                    managed_skill_names.add(skill_name)
-                    break
+                    recorded_names = set()
+                recorded_candidates = (
+                    candidate_skill_names & recorded_names
+                )
+                if recorded_candidates:
+                    managed_skill_names.update(recorded_candidates)
 
             top_path = layers[0]["path"]
             # Find the preset that owns the winning layer
@@ -1988,6 +2016,8 @@ class PresetManager:
                     if integration is not None and hasattr(integration, "post_process_skill_content"):
                         skill_content = integration.post_process_skill_content(skill_content)
                     skill_file.write_text(skill_content, encoding="utf-8")
+                    if target_agent is None or dir_agent == target_agent:
+                        reconciled_skill_commands.add(cmd_name)
                 except Exception:
                     pass  # best-effort override skill restoration
 
@@ -2025,6 +2055,19 @@ class PresetManager:
                         filtered_manifest, pack_dir,
                         target_dir=skills_dir, target_agent=dir_agent or "",
                     )
+                if target_agent is None:
+                    written_names = {
+                        name
+                        for names in written.values()
+                        for name in names
+                    }
+                else:
+                    written_names = set(written.get(target_agent, []))
+                for cmd_name in dir_cmds:
+                    if written_names.intersection(
+                        self._skill_names_for_command(cmd_name)
+                    ):
+                        reconciled_skill_commands.add(cmd_name)
                 # The winning preset may not have previously written to
                 # this directory's agent (most notably a historical agent
                 # reconciliation just restored content into via
@@ -2056,6 +2099,8 @@ class PresetManager:
                 is_active=False,
                 managed_names=set(extra_names),
             )
+
+        return reconciled_skill_commands
 
     def _resolve_agent_skills_dir(self, agent_name: str) -> Path:
         """Resolve the real skill output directory for an integration."""
@@ -2415,6 +2460,9 @@ class PresetManager:
                 skill_file = skill_subdir / "SKILL.md"
                 skill_file.write_text(skill_content, encoding="utf-8")
                 written.append(target_skill_name)
+                self._merge_pack_registered_skills(
+                    manifest.id, {selected_ai: [target_skill_name]}
+                )
 
         return {selected_ai: written} if written else {}
 

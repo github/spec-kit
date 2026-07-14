@@ -4233,6 +4233,52 @@ class TestPresetSkills:
         metadata = manager.registry.get("self-test")
         assert "speckit.specify" in metadata.get("registered_skills", {}).get("kimi", [])
 
+    def test_kimi_legacy_dotted_skill_reconciles_priority_winner(
+        self, project_dir, temp_dir
+    ):
+        """Reconciliation must carry forward recorded legacy skill names."""
+        self._write_init_options(project_dir, ai="kimi")
+        skills_dir = project_dir / ".kimi-code" / "skills"
+        self._create_skill(skills_dir, "speckit.specify", body="untouched")
+        (project_dir / ".kimi-code" / "commands").mkdir(
+            parents=True, exist_ok=True
+        )
+
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "higher-kimi-preset",
+            "speckit.specify",
+            "Higher preset",
+            "Higher body",
+        )
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "lower-kimi-preset",
+            "speckit.specify",
+            "Lower preset",
+            "Lower body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+
+        skill_file = skills_dir / "speckit.specify" / "SKILL.md"
+        for preset_id in ("higher-kimi-preset", "lower-kimi-preset"):
+            manager.registry.update(
+                preset_id,
+                {"registered_skills": {"kimi": ["speckit.specify"]}},
+            )
+        skill_file.write_text(
+            "---\nname: speckit.specify\n---\n\nLower body\n",
+            encoding="utf-8",
+        )
+        manager._reconcile_skills(["speckit.specify"])
+
+        assert "Higher body" in skill_file.read_text(encoding="utf-8"), (
+            "reconciliation must replace lower-priority raw content in a "
+            "recorded legacy dotted skill directory"
+        )
+
     def test_kimi_skill_updated_even_when_ai_skills_disabled(self, project_dir, temp_dir):
         """Kimi presets should still propagate command overrides to existing skills."""
         self._write_init_options(project_dir, ai="kimi", ai_skills=False)
@@ -5317,6 +5363,113 @@ class TestPresetSkills:
         )
         metadata = manager.registry.get("override-toggle-preset")
         assert not metadata["registered_skills"].get("copilot")
+
+    def test_project_override_skill_retires_stale_preset_command(
+        self, project_dir, temp_dir
+    ):
+        """A reconciled override skill may retire a stale preset command."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "override-skill-toggle-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        command_file = commands_dir / "speckit.specify.agent.md"
+        assert command_file.exists()
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        manager.registry.update(
+            "override-skill-toggle-preset",
+            {"registered_skills": {"copilot": ["speckit-specify"]}},
+        )
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+        (
+            manager.presets_dir
+            / "override-skill-toggle-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "Override body" in skill_file.read_text(encoding="utf-8")
+        assert not command_file.exists(), (
+            "the stale preset command must be retired after the project "
+            "override skill is successfully reconciled"
+        )
+        metadata = manager.registry.get("override-skill-toggle-preset")
+        assert not metadata["registered_commands"].get("copilot")
+
+    def test_partial_skill_registration_is_persisted_before_later_failure(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """A successful earlier skill write remains tracked if a later read fails."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_multi_command_preset(
+            temp_dir,
+            "partial-skill-failure-preset",
+            ["speckit.specify", "speckit.plan"],
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        original_read_text = Path.read_text
+
+        def fail_plan_source(path, *args, **kwargs):
+            if (
+                path.name == "speckit.plan.md"
+                and path.parent.name == "commands"
+                and "partial-skill-failure-preset" in path.parts
+            ):
+                raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", fail_plan_source)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("partial-skill-failure-preset")
+        assert "speckit-specify" in metadata["registered_skills"].get(
+            "copilot", []
+        ), (
+            "the first successful write must be persisted before the later "
+            "template failure aborts the registration call"
+        )
+        monkeypatch.setattr(Path, "read_text", original_read_text)
+        assert manager.remove("partial-skill-failure-preset") is True
+        remaining_skill = (
+            project_dir
+            / ".github"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert (
+            not remaining_skill.exists()
+            or "preset:partial-skill-failure-preset"
+            not in remaining_skill.read_text(encoding="utf-8")
+        ), "persisted partial ownership must remain removable"
 
     def test_toggle_skills_to_command_empty_result_preserves_old_skill(
         self, project_dir, temp_dir
