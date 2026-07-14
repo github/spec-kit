@@ -982,11 +982,11 @@ class WorkflowEngine:
                     from .expressions import evaluate_condition
 
                     max_iters = step_config.get("max_iterations")
-                    # bool is an int subclass, so `max_iterations: true` would
-                    # otherwise pass isinstance(..., int) and silently cap the
-                    # loop at a single iteration (True - 1 == 0 re-iterations).
-                    # Reject it explicitly and fall back to the safe default,
-                    # matching While/DoWhileStep.validate() for unvalidated runs.
+                    # A bool is an int in Python (isinstance(True, int) is True
+                    # and True == 1), so a bool max_iterations would slip past
+                    # the int check and cap the loop at range(0)==1 iteration
+                    # instead of the default. Exclude bools, mirroring the
+                    # while/do-while validators and the continue_on_error guard.
                     if (
                         isinstance(max_iters, bool)
                         or not isinstance(max_iters, int)

@@ -112,7 +112,13 @@ Run a shell command and capture output:
 - id: run-tests
   type: shell
   run: "cd {{ inputs.project_dir }} && npm test"
+  timeout: 1800   # Optional: max seconds before the command is killed (default 300)
 ```
+
+`timeout` is the maximum time in seconds the command may run before it is
+killed and the step fails; it must be a positive number and defaults to
+`300` (five minutes) when omitted. Raise it for long-running gates such as
+full builds, linter aggregators, or integration-test targets.
 
 ### Init Steps
 

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-08T00:00:00Z",
+  "updated_at": "2026-07-13T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1427,6 +1427,57 @@
       "created_at": "2026-05-06T00:00:00Z",
       "updated_at": "2026-05-06T00:00:00Z"
     },
+    "gates": {
+      "name": "Quality Gates (Enforcement Layer)",
+      "id": "gates",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries — agent hooks, git pre-commit, CI — with one policy file and provable enforcement (attestations, canaries, verified parity).",
+      "author": "schwichtgit",
+      "version": "0.1.0",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.1.0/gates-0.1.0.zip",
+      "repository": "https://github.com/schwichtgit/spec-gates",
+      "homepage": "https://github.com/schwichtgit/spec-gates",
+      "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "jq",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "node",
+            "required": false
+          },
+          {
+            "name": "shellcheck",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 1
+      },
+      "tags": [
+        "quality",
+        "enforcement",
+        "hooks",
+        "ci",
+        "governance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-09T00:00:00Z",
+      "updated_at": "2026-07-13T00:00:00Z"
+    },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
       "id": "github-issues",
@@ -2216,6 +2267,42 @@
       "stars": 0,
       "created_at": "2026-05-08T00:00:00Z",
       "updated_at": "2026-05-08T00:00:00Z"
+    },
+    "memory": {
+      "name": "Spec Kit Memory",
+      "id": "memory",
+      "description": "Recalls prior specs and decisions from configurable memory tools (e.g. memsearch) before SDLC stages, so planning and specification start from what the project already knows.",
+      "author": "Andrey Zaytsev",
+      "version": "0.3.0",
+      "download_url": "https://github.com/zaytsevand/spec-kit-memory/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/zaytsevand/spec-kit-memory",
+      "homepage": "https://github.com/zaytsevand/spec-kit-memory",
+      "documentation": "https://github.com/zaytsevand/spec-kit-memory/blob/main/README.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          { "name": "memsearch", "required": false }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 3
+      },
+      "tags": [
+        "memory",
+        "recall",
+        "research",
+        "memsearch"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-10T00:00:00Z",
+      "updated_at": "2026-07-10T00:00:00Z"
     },
     "memory-loader": {
       "name": "Memory Loader",
@@ -4355,6 +4442,40 @@
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "verify-review-ship": {
+      "name": "Verify Review Ship",
+      "id": "verify-review-ship",
+      "description": "Adds post-implementation verify, review, and ship readiness gates to Spec Kit workflows.",
+      "author": "Carlos Eduardo Gevaerd Araujo",
+      "version": "0.1.0",
+      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.1.0.zip",
+      "repository": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
+      "homepage": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
+      "documentation": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/README.md",
+      "changelog": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-only",
+      "requires": {
+        "speckit_version": ">=0.1.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 1
+      },
+      "tags": [
+        "quality",
+        "review",
+        "shipping",
+        "workflow",
+        "testing"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-10T00:00:00Z",
+      "updated_at": "2026-07-10T00:00:00Z"
     },
     "verify-tasks": {
       "name": "Verify Tasks Extension",
