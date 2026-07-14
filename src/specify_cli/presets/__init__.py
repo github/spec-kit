@@ -2588,6 +2588,39 @@ class PresetResolver:
                 self._manifest_cache[key] = None
         return self._manifest_cache[key]
 
+    def _manifest_declared_template(
+        self, pack_dir: Path, template_name: str, template_type: str
+    ) -> tuple[dict | None, Path | None]:
+        """Resolve a preset's manifest-declared template entry and usable file.
+
+        Returns ``(entry, candidate)``:
+        - ``entry`` is the matching ``provides.templates`` mapping, or ``None`` if
+          the manifest is absent or does not list this ``(name, type)``.
+        - ``candidate`` is the declared ``file:`` resolved under ``pack_dir`` IFF
+          it is a regular file (``is_file()``); ``None`` otherwise — a missing,
+          empty, or non-file (e.g. directory) declaration yields ``(entry, None)``.
+
+        The manifest is authoritative: when it declares a template (``entry`` is
+        not ``None``) but the file is unusable (``candidate`` is ``None``),
+        callers must NOT fall back to the convention lookup — that would mask a
+        typo or pick up an undeclared file. Shared by ``resolve()`` and
+        ``collect_all_layers()`` so their manifest-first resolution cannot
+        silently diverge again (the divergence this fix addressed).
+        """
+        manifest = self._get_manifest(pack_dir)
+        if not manifest:
+            return None, None
+        for tmpl in manifest.templates:
+            if tmpl.get("name") == template_name and tmpl.get("type") == template_type:
+                file_path = tmpl.get("file")
+                if file_path:
+                    manifest_candidate = pack_dir / file_path
+                    return tmpl, (
+                        manifest_candidate if manifest_candidate.is_file() else None
+                    )
+                return tmpl, None
+        return None, None
+
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
 
@@ -2690,6 +2723,27 @@ class PresetResolver:
             registry = PresetRegistry(self.presets_dir)
             for pack_id, _metadata in registry.list_by_priority():
                 pack_dir = self.presets_dir / pack_id
+                # The preset manifest is authoritative: if it declares this
+                # template with an explicit ``file:``, resolve to that path —
+                # and do NOT fall back to convention when it's missing, to
+                # avoid masking typos or picking up an undeclared file. Only
+                # when the manifest is absent or doesn't list this template do
+                # we use the convention-based subdir lookup. Mirrors
+                # collect_all_layers()/resolve_content() so resolve() and
+                # resolve_with_source() agree with them instead of returning
+                # the core template (or a stray convention file).
+                entry, manifest_candidate = self._manifest_declared_template(
+                    pack_dir, template_name, template_type
+                )
+                if manifest_candidate is not None:
+                    return manifest_candidate
+                if entry is not None:
+                    # Manifest declares this template but the file is missing,
+                    # non-file (e.g. a directory), or an empty/falsey ``file``
+                    # value. The manifest is authoritative, so skip this pack's
+                    # convention fallback rather than mask a typo — mirrors
+                    # collect_all_layers().
+                    continue
                 for subdir in subdirs:
                     if subdir:
                         candidate = pack_dir / subdir / f"{template_name}{ext}"
@@ -2957,31 +3011,22 @@ class PresetResolver:
                 pack_dir = self.presets_dir / pack_id
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"
-                manifest_file_path = None
                 manifest_has_strategy = False
-                manifest_found_entry = False
-                manifest = self._get_manifest(pack_dir)
-                if manifest:
-                    for tmpl in manifest.templates:
-                        if (tmpl.get("name") == template_name
-                                and tmpl.get("type") == template_type):
-                            strategy = tmpl.get("strategy", "replace")
-                            manifest_has_strategy = "strategy" in tmpl
-                            manifest_file_path = tmpl.get("file")
-                            manifest_found_entry = True
-                            break
-                # Use manifest file path if specified, otherwise convention-based
-                # lookup — but only when the manifest doesn't exist or doesn't
-                # list this template, so preset.yml stays authoritative.
+                entry, manifest_candidate = self._manifest_declared_template(
+                    pack_dir, template_name, template_type
+                )
+                if entry is not None:
+                    strategy = entry.get("strategy", "replace")
+                    manifest_has_strategy = "strategy" in entry
+                # Use the manifest's declared file when it's a usable regular file;
+                # only fall back to convention-based lookup when the manifest
+                # doesn't list this template at all, so preset.yml stays
+                # authoritative (a declared-but-unusable file skips convention —
+                # parity with resolve()).
                 candidate = None
-                if manifest_file_path:
-                    manifest_candidate = pack_dir / manifest_file_path
-                    if manifest_candidate.exists():
-                        candidate = manifest_candidate
-                    # Explicit file path that doesn't exist: skip convention
-                    # fallback to avoid masking typos or picking up unintended files.
-                elif not manifest_found_entry:
-                    # Manifest doesn't list this template — check convention paths
+                if manifest_candidate is not None:
+                    candidate = manifest_candidate
+                elif entry is None:
                     candidate = _find_in_subdirs(pack_dir)
                 if candidate:
                     # Legacy fallback: if manifest doesn't explicitly declare a

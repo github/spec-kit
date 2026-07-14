@@ -115,6 +115,63 @@ class TestInitIntegrationFlag:
         data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
+    def test_init_here_nonempty_noninteractive_errors_with_force_guidance(self, tmp_path):
+        """`init --here` on a non-empty directory with no confirmation input (empty
+        stdin) must fail fast with guidance to use --force, instead of the bare
+        'Aborted.' from an EOF on typer.confirm. CliRunner with no `input=` provides
+        empty stdin, so typer.confirm raises Abort, which the command converts to the
+        actionable error."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        project = tmp_path / "nonempty-here"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 1, result.output
+        assert "--force" in result.output
+        # Aborted before scaffolding: the pre-existing file is untouched.
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
+    def test_init_here_interactive_cancel_exits_zero(self, tmp_path, monkeypatch):
+        """An interactive Ctrl+C at the merge confirmation (typer.Abort on a TTY)
+        is a normal cancellation — exit 0, "cancelled" — NOT the missing-input
+        --force error, which is reserved for non-interactive EOF. Guards the
+        regression where Abort was caught unconditionally and every cancel became
+        an exit-1 --force error."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        import specify_cli.commands.init as init_mod
+
+        # Simulate an interactive terminal so the Abort is treated as a cancel.
+        monkeypatch.setattr(init_mod, "_stdin_is_interactive", lambda: True)
+
+        project = tmp_path / "cancel-here"
+        project.mkdir()
+        (project / "existing.txt").write_text("keep me", encoding="utf-8")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            # No input → typer.confirm raises Abort (stands in for Ctrl+C).
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, result.output
+        assert "cancelled" in result.output.lower()
+        assert "--force" not in result.output  # not the missing-input error
+        assert (project / "existing.txt").read_text(encoding="utf-8") == "keep me"
+
     def test_integration_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
@@ -835,7 +892,8 @@ class TestInitIntegrationFlag:
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
 
     def test_init_here_without_force_preserves_shared_infra(self, tmp_path):
-        """E2E: specify init --here (no --force) preserves existing shared infra files."""
+        """E2E: confirming the merge with piped "y" (no --force) preserves
+        existing shared infra files (unlike --force, which overwrites them)."""
         from typer.testing import CliRunner
         from specify_cli import app
 
