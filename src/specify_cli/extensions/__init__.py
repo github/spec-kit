@@ -102,6 +102,34 @@ def _load_core_command_names() -> frozenset[str]:
 CORE_COMMAND_NAMES = _load_core_command_names()
 
 
+def _fsync_file(path: Path) -> None:
+    """Best-effort fsync for a regular file."""
+    try:
+        with open(path, "rb") as handle:
+            os.fsync(handle.fileno())
+    except (AttributeError, OSError, NotImplementedError):
+        pass
+
+
+def _fsync_directory(path: Path) -> None:
+    """Best-effort fsync for a directory path."""
+    if not path.exists():
+        return
+    try:
+        dir_fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except (AttributeError, OSError, NotImplementedError):
+        try:
+            dir_fd = os.open(str(path), os.O_RDONLY)
+        except (AttributeError, OSError, NotImplementedError):
+            return
+    try:
+        os.fsync(dir_fd)
+    except (AttributeError, OSError, NotImplementedError):
+        pass
+    finally:
+        os.close(dir_fd)
+
+
 class ExtensionError(Exception):
     """Base exception for extension-related errors."""
 
@@ -1489,12 +1517,19 @@ class ExtensionManager:
                         written = 0
                         while written < len(view):
                             written += os.write(fd, view[written:])
+                        try:
+                            os.fchmod(fd, stat.S_IMODE(mode))
+                        except (AttributeError, NotImplementedError, OSError):
+                            try:
+                                staged.chmod(stat.S_IMODE(mode))
+                            except (NotImplementedError, OSError):
+                                pass  # Best-effort; chmod may not be supported on all platforms.
+                        try:
+                            os.fsync(fd)
+                        except (AttributeError, OSError, NotImplementedError):
+                            pass
                     finally:
                         os.close(fd)
-                    try:
-                        staged.chmod(stat.S_IMODE(mode))
-                    except (NotImplementedError, OSError):
-                        pass  # Best-effort; chmod may not be supported on all platforms.
                 # Write the completion marker only after every staged file is
                 # fully written so a retry trusts staging only when it is whole.
                 marker_fd = os.open(
@@ -1502,7 +1537,14 @@ class ExtensionManager:
                     os.O_WRONLY | os.O_CREAT | os.O_EXCL,
                     0o600,
                 )
-                os.close(marker_fd)
+                try:
+                    os.fsync(marker_fd)
+                except (AttributeError, OSError, NotImplementedError):
+                    pass
+                finally:
+                    os.close(marker_fd)
+                _fsync_directory(rescue_staging_dir)
+                _fsync_directory(rescue_staging_dir.parent)
             except BaseException:
                 # Durable staging failed (or was interrupted).  Continuing with
                 # only the in-memory copy would reintroduce the permanent-loss
