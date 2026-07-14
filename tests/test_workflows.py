@@ -2662,8 +2662,13 @@ class TestFanOutConcurrency:
         results, _ = self._run(tmp_path, list(range(n)), n, on_item)
         assert results == [{"seen": i} for i in range(n)]
 
-    @pytest.mark.parametrize("bad", [0, -1, None, "abc", 1.0])
+    @pytest.mark.parametrize(
+        "bad", [0, -1, None, "abc", 1.0, float("inf"), float("nan")]
+    )
     def test_invalid_max_concurrency_coerces_to_sequential(self, tmp_path, bad):
+        # float("inf") -> int() raises OverflowError (not TypeError/ValueError);
+        # it must fall back to sequential like any other uncoercible value, not
+        # crash the run.
         results, _ = self._run(tmp_path, list(range(4)), bad)
         assert results == [{"seen": i} for i in range(4)]
 

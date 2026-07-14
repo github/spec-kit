@@ -1197,9 +1197,9 @@ class WorkflowEngine:
         already flipped), so the prefix never drops the actual halting item.
 
         ``max_concurrency`` is coerced with ``int()``; a value that cannot be
-        coerced (``None``, a non-numeric string, …) or that coerces to <= 1 runs
-        sequentially, while a numeric string like ``"4"`` or a float like ``4.0``
-        is honored.
+        coerced (``None``, a non-numeric string, ``.inf``/``.nan``, …) or that
+        coerces to <= 1 runs sequentially, while a numeric string like ``"4"`` or
+        a float like ``4.0`` is honored.
         """
         if not items:
             return []
@@ -1207,7 +1207,9 @@ class WorkflowEngine:
         halting = (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED)
         try:
             workers = max(1, int(max_concurrency))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: int(float("inf")) — a YAML ``max_concurrency: .inf``
+            # would otherwise crash the whole run instead of falling back.
             workers = 1
         # Never spin up more workers than there is work — bounds a user-controlled
         # max_concurrency from over-allocating threads.
