@@ -1498,42 +1498,57 @@ class ExtensionManager:
                     )
 
         # Install extension (dest_dir computed above during self-install guard).
-        # rmtree removes the only on-disk copy of the preserved configs; the sole
-        # remaining copy is in `preserved_configs` (in memory). If copytree then
-        # fails (permissions, disk full, a bad source entry), write the configs
-        # back into a clean dest_dir before re-raising so a failed reinstall never
-        # loses the user's config.
-        if dest_dir.exists():
-            shutil.rmtree(dest_dir)
-
+        # Preserved configs are the ONLY surviving copy once the old extension dir
+        # is removed, so guard the whole destructive reinstall against loss at any
+        # step (a malformed source ignore file, the rmtree, copytree, or a
+        # restore):
+        #   1. Validate the source ignore file BEFORE deleting anything — it can
+        #      raise on a malformed file, and nothing is destroyed yet if it does.
+        #   2. Stage a durable on-disk backup of the configs.
+        #   3. Run the destructive rmtree + copytree + restore inside one block;
+        #      on ANY failure, roll the configs back into a clean dest_dir and
+        #      re-raise. The backup is removed only once the configs are provably
+        #      in place (normal success OR a completed rollback) — otherwise it is
+        #      left on disk so nothing is ever lost, even on a rollback failure.
+        # Each config write is atomic (temp file + os.replace) so it never follows
+        # a symlink that may occupy the path (see _atomic_restore_config).
         ignore_fn = self._load_extensionignore(source_dir)
-        try:
-            shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
-        except Exception:
-            if preserved_configs:
-                if dest_dir.exists():
-                    shutil.rmtree(dest_dir, ignore_errors=True)
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                for name, (data, mode, atime, mtime) in preserved_configs.items():
-                    try:
-                        self._atomic_restore_config(
-                            dest_dir / name, data, mode, atime, mtime
-                        )
-                    except OSError:
-                        pass
-            raise
 
-        # Restore configs preserved from a keep-config leftover (see above),
-        # preserving the original file mode and timestamps. The --force
-        # backup-restore below (did_remove) still takes precedence for that
-        # path, which uses .backup/ rather than an in-place leftover. Each write
-        # is atomic (temp file + os.replace) so it never follows a symlink that
-        # may occupy the path (see _atomic_restore_config).
-        for name, (data, mode, atime, mtime) in preserved_configs.items():
-            try:
+        backup_dir: Path | None = None
+        if preserved_configs:
+            backup_dir = Path(
+                tempfile.mkdtemp(prefix=f".{dest_dir.name}.cfgbak-", dir=dest_dir.parent)
+            )
+            for name, (data, mode, atime, mtime) in preserved_configs.items():
+                self._atomic_restore_config(backup_dir / name, data, mode, atime, mtime)
+
+        restored_ok = not preserved_configs
+        try:
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir)
+            shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+            # Restore every preserved config. A failure here is NOT swallowed: a
+            # config we promised to preserve but could not restore must fail the
+            # reinstall, not report success with the config silently missing.
+            for name, (data, mode, atime, mtime) in preserved_configs.items():
                 self._atomic_restore_config(dest_dir / name, data, mode, atime, mtime)
-            except OSError:
-                continue  # can't safely restore this one — skip rather than clobber
+            restored_ok = True
+        except Exception:
+            # Roll the configs back into a clean dest_dir from the durable backup
+            # so a failed reinstall leaves them intact, then re-raise the original.
+            if backup_dir is not None:
+                try:
+                    if dest_dir.exists():
+                        shutil.rmtree(dest_dir, ignore_errors=True)
+                    shutil.copytree(backup_dir, dest_dir, dirs_exist_ok=True)
+                    restored_ok = True
+                except OSError:
+                    restored_ok = False  # keep the backup below for recovery
+            raise
+        finally:
+            # Drop the backup only when the configs are provably in dest_dir.
+            if backup_dir is not None and restored_ok and backup_dir.exists():
+                shutil.rmtree(backup_dir, ignore_errors=True)
 
         # Register commands with AI agents
         registered_commands = {}

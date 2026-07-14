@@ -1698,9 +1698,16 @@ class TestExtensionManager:
         config_file.chmod(0o600)
         assert manager.remove("test-ext", keep_config=True) is True
 
-        # Simulate a mid-reinstall failure after the old dir was removed.
+        # Fail the source→dest copytree (after the old dir is removed) but let the
+        # rollback copytree (backup→dest) succeed, so recovery can be observed.
+        real_copytree = shutil.copytree
+        calls = {"n": 0}
+
         def boom(src, dst, *args, **kwargs):
-            raise OSError("simulated disk-full during copytree")
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("simulated disk-full during copytree")
+            return real_copytree(src, dst, *args, **kwargs)
 
         monkeypatch.setattr(shutil, "copytree", boom)
 
@@ -1714,6 +1721,70 @@ class TestExtensionManager:
         assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
         if platform.system() != "Windows":
             assert config_file.stat().st_mode & 0o777 == 0o600
+
+    def test_reinstall_validates_ignore_before_deleting_config(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A malformed source ignore file must be detected BEFORE the destructive
+        rmtree, so a reinstall that fails on it leaves the preserved config
+        untouched (it used to be loaded only after rmtree had run)."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("api_key: MY-CUSTOMIZED-VALUE")
+        assert manager.remove("test-ext", keep_config=True) is True
+
+        def bad_ignore(src):
+            raise ValueError("malformed .extensionignore")
+
+        monkeypatch.setattr(manager, "_load_extensionignore", bad_ignore)
+
+        with pytest.raises(ValueError):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Nothing was deleted — the leftover config is still in place.
+        assert config_file.is_file()
+        assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
+
+    def test_reinstall_failed_config_restore_is_not_silent(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A restore failure after copytree must NOT be silently skipped and
+        reported as a successful install — it fails loudly, and the config is
+        rolled back from the durable backup rather than left missing."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("api_key: MY-CUSTOMIZED-VALUE")
+        assert manager.remove("test-ext", keep_config=True) is True
+
+        # Fail the live restore into the extension dir, but let the durable-backup
+        # staging (a ".cfgbak-" temp dir) succeed so rollback can recover.
+        real_restore = ExtensionManager._atomic_restore_config
+
+        def flaky_restore(dest, data, mode, atime, mtime):
+            if "cfgbak" not in dest.parent.name:
+                raise OSError("simulated restore failure")
+            return real_restore(dest, data, mode, atime, mtime)
+
+        monkeypatch.setattr(
+            ExtensionManager, "_atomic_restore_config", staticmethod(flaky_restore)
+        )
+
+        with pytest.raises(OSError):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Not a silent success: the config was rolled back, not lost.
+        assert config_file.is_file()
+        assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
 
 
 # ===== CommandRegistrar Tests =====
