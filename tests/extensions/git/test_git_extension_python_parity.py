@@ -438,6 +438,17 @@ class TestAutoCommitParity:
         _assert_parity(b, p)
         assert self._last_message(py_proj) == "seed"
 
+    def test_ignores_unterminated_final_config_line(self, tmp_path: Path):
+        bash_proj, py_proj = _twin_projects(tmp_path)
+        config = "auto_commit:\n  after_specify:\n    enabled: true"
+        for proj in (bash_proj, py_proj):
+            _write_config(proj, config)
+            self._dirty(proj)
+        b = _run_bash("auto-commit.sh", bash_proj, "after_specify")
+        p = _run_py("auto-commit", py_proj, "after_specify")
+        _assert_parity(b, p)
+        assert self._last_message(py_proj) == "seed"
+
     def test_enabled_per_command_with_custom_message(self, tmp_path: Path):
         bash_proj, py_proj = _twin_projects(tmp_path)
         config = (

@@ -58,7 +58,10 @@ def _parse_auto_commit_config(
         # Unreadable or non-UTF-8 config is treated like a missing one:
         # auto-commit stays disabled instead of crashing with a traceback.
         return False, ""
-    for line in content.splitlines():
+    for record in content.splitlines(keepends=True):
+        if not record.endswith("\n"):
+            break
+        line = record[:-1]
         if line.startswith("auto_commit:"):
             in_auto_commit = True
             in_event = False
