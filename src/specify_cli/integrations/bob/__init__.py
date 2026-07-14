@@ -1,14 +1,14 @@
 """IBM Bob integration.
 
-Bob 2.0 supports the ``.bob/skills/speckit-<name>/SKILL.md`` layout.
-The legacy ``.bob/commands/*.md`` layout (Bob 1.x) remains the default
-for this release and will be deprecated in a future Spec Kit release.
+Bob 2.0 uses the ``.bob/skills/speckit-<name>/SKILL.md`` layout.
+The legacy ``.bob/commands/*.md`` layout (Bob 1.x) is available as an
+opt-in for projects that have not yet migrated, via
+``--integration-options "--legacy-commands"``.
 
 Deprecation cycle:
-  This release:  Markdown layout is default; skills layout is opt-in via
-                 ``--integration-options "--skills"``.
-  Next cycle:    Skills layout becomes default; markdown remains opt-in.
-  Cycle after:   Markdown layout removed.
+  This release:  Skills layout is the default; legacy ``.bob/commands/``
+                 is opt-in via ``--legacy-commands``.
+  Next cycle:    ``--legacy-commands`` flag removed.
 """
 
 from __future__ import annotations
@@ -17,52 +17,26 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-from ..base import IntegrationBase, IntegrationOption, SkillsIntegration
+from ..base import IntegrationOption, MarkdownIntegration, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
-def _warn_legacy_markdown_default() -> None:
-    """Warn that Bob's default markdown scaffold is being phased out."""
+def _warn_legacy_commands_deprecated() -> None:
+    """Warn that Bob's legacy markdown layout is being phased out."""
     warnings.warn(
-        "Bob legacy markdown mode (.bob/commands/) is deprecated and will stop "
-        "being the default in a future Spec Kit release; pass "
-        '--integration-options "--skills" to opt in to Bob skills mode now.',
+        "Bob legacy commands mode (.bob/commands/) is deprecated and will be "
+        "removed in a future Spec Kit release. Omit --legacy-commands to use "
+        "the default skills layout (.bob/skills/).",
         UserWarning,
         stacklevel=3,
     )
 
 
-class _BobSkillsHelper(SkillsIntegration):
-    """Internal helper used when Bob is scaffolded in skills mode.
+class _BobMarkdownHelper(MarkdownIntegration):
+    """Internal helper used when Bob is scaffolded in legacy commands mode.
 
     Not registered in the integration registry — only used as a delegate
-    by ``BobIntegration`` when ``--skills`` is passed.
-    """
-
-    key = "bob"
-    config = {
-        "name": "IBM Bob",
-        "folder": ".bob/",
-        "commands_subdir": "skills",
-        "install_url": None,
-        "requires_cli": False,
-    }
-    registrar_config = {
-        "dir": ".bob/skills",
-        "format": "markdown",
-        "args": "$ARGUMENTS",
-        "extension": "/SKILL.md",
-    }
-
-
-class BobIntegration(IntegrationBase):
-    """Integration for IBM Bob IDE.
-
-    Default mode: installs ``.bob/commands/speckit.<name>.md`` files
-    (Bob 1.x markdown layout — legacy, will be deprecated).
-
-    Skills mode (``--skills``): installs
-    ``.bob/skills/speckit-<name>/SKILL.md`` files (Bob 2.0 layout).
+    by ``BobIntegration`` when ``--legacy-commands`` is passed.
     """
 
     key = "bob"
@@ -80,30 +54,48 @@ class BobIntegration(IntegrationBase):
         "extension": ".md",
     }
 
-    # Mutable flag set by setup() — indicates the active scaffolding mode.
-    _skills_mode: bool = False
 
-    def effective_invoke_separator(
-        self, parsed_options: dict[str, Any] | None = None
-    ) -> str:
-        """Return ``"-"`` when skills mode is requested, ``"."`` otherwise."""
-        if parsed_options and parsed_options.get("skills"):
-            return "-"
-        if self._skills_mode:
-            return "-"
-        return self.invoke_separator
+class BobIntegration(SkillsIntegration):
+    """Integration for IBM Bob IDE.
+
+    Default mode: installs ``.bob/skills/speckit-<name>/SKILL.md`` files
+    (Bob 2.0 skills layout).
+
+    Legacy mode (``--legacy-commands``): installs
+    ``.bob/commands/speckit.<name>.md`` files (Bob 1.x layout — deprecated).
+
+    Inheriting ``SkillsIntegration`` ensures ``invoke_separator = "-"`` is
+    set at the class level so ``CommandRegistrar.AGENT_CONFIGS`` (which reads
+    the class attribute directly) generates correct hyphenated
+    ``/speckit-<name>`` references for skills.
+    """
+
+    key = "bob"
+    config = {
+        "name": "IBM Bob",
+        "folder": ".bob/",
+        "commands_subdir": "skills",
+        "install_url": None,
+        "requires_cli": False,
+    }
+    registrar_config = {
+        "dir": ".bob/skills",
+        "format": "markdown",
+        "args": "$ARGUMENTS",
+        "extension": "/SKILL.md",
+    }
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [
             IntegrationOption(
-                "--skills",
+                "--legacy-commands",
                 is_flag=True,
                 default=False,
                 help=(
-                    "Scaffold commands as agent skills "
-                    "(.bob/skills/speckit-<name>/SKILL.md) instead of "
-                    "the legacy .bob/commands/*.md layout"
+                    "Scaffold commands as legacy .bob/commands/*.md files "
+                    "(Bob 1.x layout, deprecated) instead of the default "
+                    "skills layout"
                 ),
             ),
         ]
@@ -117,42 +109,23 @@ class BobIntegration(IntegrationBase):
     ) -> list[Path]:
         """Install Bob commands.
 
-        When ``parsed_options["skills"]`` is truthy, delegates to skills
-        scaffolding (``.bob/skills/speckit-<name>/SKILL.md``).
-        Otherwise uses the default ``.bob/commands/speckit.<name>.md`` layout
-        and emits a deprecation warning.
+        Default: skills layout (``.bob/skills/speckit-<name>/SKILL.md``).
+        When ``parsed_options["legacy_commands"]`` is truthy, falls back to
+        the deprecated ``.bob/commands/speckit.<name>.md`` layout.
         """
         parsed_options = parsed_options or {}
-        self._skills_mode = bool(parsed_options.get("skills"))
-        if self._skills_mode:
-            return self._setup_skills(project_root, manifest, parsed_options, **opts)
-        if "skills" not in parsed_options:
-            _warn_legacy_markdown_default()
-        return self._setup_default(project_root, manifest, parsed_options, **opts)
+        if parsed_options.get("legacy_commands"):
+            _warn_legacy_commands_deprecated()
+            return self._setup_legacy(project_root, manifest, parsed_options, **opts)
+        return SkillsIntegration.setup(self, project_root, manifest, parsed_options, **opts)
 
-    def _setup_default(
+    def _setup_legacy(
         self,
         project_root: Path,
         manifest: IntegrationManifest,
         parsed_options: dict[str, Any] | None = None,
         **opts: Any,
     ) -> list[Path]:
-        """Default mode: ``.bob/commands/speckit.<name>.md`` layout."""
-        from ..base import MarkdownIntegration
-
-        return MarkdownIntegration.setup(self, project_root, manifest, parsed_options, **opts)
-
-    def _setup_skills(
-        self,
-        project_root: Path,
-        manifest: IntegrationManifest,
-        parsed_options: dict[str, Any] | None = None,
-        **opts: Any,
-    ) -> list[Path]:
-        """Skills mode: delegate to ``_BobSkillsHelper``."""
-        helper = _BobSkillsHelper()
-        return SkillsIntegration.setup(helper, project_root, manifest, parsed_options, **opts)
-
-    def post_process_skill_content(self, content: str) -> str:
-        """Apply shared skills post-processing to externally generated skills."""
-        return _BobSkillsHelper().post_process_skill_content(content)
+        """Legacy mode: ``.bob/commands/speckit.<name>.md`` layout."""
+        helper = _BobMarkdownHelper()
+        return MarkdownIntegration.setup(helper, project_root, manifest, parsed_options, **opts)
