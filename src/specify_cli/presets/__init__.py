@@ -1709,32 +1709,46 @@ class PresetManager:
         # constitution) must be propagated here. Guard against clobbering an
         # already-authored constitution by only replacing a file whose recorded
         # hash (or exact legacy core-template content) proves it was generated.
-        self._seed_constitution_from_preset(manifest)
+        self._seed_constitution_from_preset(manifest, dest_dir)
 
         return manifest
 
-    def _seed_constitution_from_preset(self, manifest: PresetManifest) -> None:
+    def _seed_constitution_from_preset(
+        self, manifest: PresetManifest, preset_dir: Path
+    ) -> None:
         """Seed memory/constitution.md from a preset constitution-template.
 
         Only runs when the preset declares a ``type: template`` entry named
-        ``constitution-template`` and the live memory file is either missing or
-        is an unchanged generated file. Authored constitutions are never
-        overwritten.
+        ``constitution-template`` or provides one at a convention path, and the
+        live memory file is either missing or is an unchanged generated file.
+        Authored constitutions are never overwritten.
         """
         provides_constitution = any(
             t.get("type") == "template" and t.get("name") == "constitution-template"
             for t in manifest.templates
+        ) or any(
+            (preset_dir / relative_path).is_file()
+            for relative_path in (
+                "templates/constitution-template.md",
+                "constitution-template.md",
+            )
         )
         if not provides_constitution:
             return
 
+        self.reconcile_constitution(
+            f"Failed to seed constitution from preset {manifest.id}"
+        )
+
+    def reconcile_constitution(self, failure_context: str) -> None:
+        """Reconcile generated constitution content without failing a persisted change."""
         try:
             self._reconcile_constitution()
         except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
             import warnings
 
             warnings.warn(
-                f"Failed to seed constitution from preset {manifest.id}: {exc}.",
+                f"{failure_context}: {exc}.",
                 stacklevel=2,
             )
 

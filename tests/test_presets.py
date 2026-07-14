@@ -3091,8 +3091,6 @@ class TestSelfTestPreset:
         self, project_dir, temp_dir
     ):
         """Removing a convention layer rematerializes the remaining resolver layer."""
-        from specify_cli.commands.init import ensure_constitution_from_template
-
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
         manager.install_from_directory(
@@ -3100,8 +3098,6 @@ class TestSelfTestPreset:
         )
 
         memory = project_dir / ".specify" / "memory" / "constitution.md"
-        memory.unlink()
-        ensure_constitution_from_template(project_dir)
         assert memory.read_text() == "# Convention Constitution\n"
 
         manager.remove("convention-constitution")
@@ -4473,6 +4469,31 @@ class TestPresetSetPriority:
         manager2 = PresetManager(project_dir)
         assert manager2.registry.get("test-pack")["priority"] == 5
 
+    def test_set_priority_reconciles_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """Changing priority rematerializes an unchanged generated constitution."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=20
+        )
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert "preset:self-test" in memory.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app,
+                ["preset", "set-priority", "convention-constitution", "1"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert memory.read_text() == "# Convention Constitution\n"
+
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""
         from typer.testing import CliRunner
@@ -4692,6 +4713,39 @@ class TestPresetEnableDisable:
         # Reload registry to see updated value
         manager2 = PresetManager(project_dir)
         assert manager2.registry.get("test-pack")["enabled"] is True
+
+    def test_enable_disable_reconciles_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """Enable and disable rematerialize the winning constitution layer."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=1
+        )
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Convention Constitution\n"
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            disabled = runner.invoke(
+                app, ["preset", "disable", "convention-constitution"]
+            )
+
+        assert disabled.exit_code == 0, disabled.output
+        assert "preset:self-test" in memory.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            enabled = runner.invoke(
+                app, ["preset", "enable", "convention-constitution"]
+            )
+
+        assert enabled.exit_code == 0, enabled.output
+        assert memory.read_text() == "# Convention Constitution\n"
 
     def test_disable_already_disabled(self, project_dir, pack_dir):
         """Test disable on already disabled preset shows warning."""

@@ -484,6 +484,9 @@ def preset_set_priority(
 
     # Update priority
     manager.registry.update(preset_id, {"priority": priority})
+    manager.reconcile_constitution(
+        f"Failed to reconcile constitution after changing priority for preset {preset_id}"
+    )
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}")
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
@@ -517,6 +520,9 @@ def preset_enable(
 
     # Enable the preset
     manager.registry.update(preset_id, {"enabled": True})
+    manager.reconcile_constitution(
+        f"Failed to reconcile constitution after enabling preset {preset_id}"
+    )
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' enabled")
     console.print("\nTemplates from this preset will now be included in resolution.")
@@ -551,6 +557,9 @@ def preset_disable(
 
     # Disable the preset
     manager.registry.update(preset_id, {"enabled": False})
+    manager.reconcile_constitution(
+        f"Failed to reconcile constitution after disabling preset {preset_id}"
+    )
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' disabled")
     console.print("\nTemplates from this preset will be skipped during resolution.")
