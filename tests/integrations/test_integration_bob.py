@@ -16,9 +16,19 @@ class TestBobIntegrationRegistration:
         assert "bob" in INTEGRATION_REGISTRY
         assert get_integration("bob") is not None
 
-    def test_is_skills_integration(self):
-        """BobIntegration is a SkillsIntegration — skills are the default."""
-        assert isinstance(get_integration("bob"), SkillsIntegration)
+    def test_is_integration_base_not_skills_integration(self):
+        """BobIntegration extends IntegrationBase directly — not SkillsIntegration.
+
+        It must NOT be an instance of SkillsIntegration so that consumers
+        such as _update_init_options_for_integration and the init next-steps
+        builder derive the effective mode from _skills_mode rather than the
+        class hierarchy.  invoke_separator='-' is set explicitly on the class.
+        """
+        from specify_cli.integrations.base import IntegrationBase
+        bob = get_integration("bob")
+        assert isinstance(bob, IntegrationBase)
+        assert not isinstance(bob, SkillsIntegration)
+        assert bob.invoke_separator == "-"
 
     def test_key_and_config(self):
         bob = get_integration("bob")

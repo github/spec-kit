@@ -17,7 +17,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-from ..base import IntegrationOption, MarkdownIntegration, SkillsIntegration
+from ..base import IntegrationBase, IntegrationOption, MarkdownIntegration, SkillsIntegration
 from ..manifest import IntegrationManifest
 
 
@@ -55,19 +55,11 @@ class _BobMarkdownHelper(MarkdownIntegration):
     }
 
 
-class BobIntegration(SkillsIntegration):
-    """Integration for IBM Bob IDE.
+class _BobSkillsHelper(SkillsIntegration):
+    """Internal helper used when Bob is scaffolded in skills mode.
 
-    Default mode: installs ``.bob/skills/speckit-<name>/SKILL.md`` files
-    (Bob 2.0 skills layout).
-
-    Legacy mode (``--legacy-commands``): installs
-    ``.bob/commands/speckit.<name>.md`` files (Bob 1.x layout — deprecated).
-
-    Inheriting ``SkillsIntegration`` ensures ``invoke_separator = "-"`` is
-    set at the class level so ``CommandRegistrar.AGENT_CONFIGS`` (which reads
-    the class attribute directly) generates correct hyphenated
-    ``/speckit-<name>`` references for skills.
+    Not registered in the integration registry — only used as a delegate
+    by ``BobIntegration`` for skills-mode setup.
     """
 
     key = "bob"
@@ -84,6 +76,45 @@ class BobIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
+
+
+class BobIntegration(IntegrationBase):
+    """Integration for IBM Bob IDE.
+
+    Default mode: installs ``.bob/skills/speckit-<name>/SKILL.md`` files
+    (Bob 2.0 skills layout).
+
+    Legacy mode (``--legacy-commands``): installs
+    ``.bob/commands/speckit.<name>.md`` files (Bob 1.x layout — deprecated).
+
+    Extends ``IntegrationBase`` directly so that ``isinstance(integration,
+    SkillsIntegration)`` is ``False`` and consumers such as
+    ``_update_init_options_for_integration`` and the ``specify init``
+    next-steps builder derive the effective mode from ``_skills_mode``
+    rather than the class hierarchy.  ``invoke_separator = "-"`` is set
+    explicitly to match the skills-default behaviour expected by
+    ``CommandRegistrar.AGENT_CONFIGS``.
+    """
+
+    key = "bob"
+    invoke_separator = "-"
+    config = {
+        "name": "IBM Bob",
+        "folder": ".bob/",
+        "commands_subdir": "skills",
+        "install_url": None,
+        "requires_cli": False,
+    }
+    registrar_config = {
+        "dir": ".bob/skills",
+        "format": "markdown",
+        "args": "$ARGUMENTS",
+        "extension": "/SKILL.md",
+    }
+
+    # Set by setup() to reflect the active mode; read by _helpers.py and
+    # init.py via getattr(integration, "_skills_mode", False).
+    _skills_mode: bool = False
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -115,9 +146,13 @@ class BobIntegration(SkillsIntegration):
         """
         parsed_options = parsed_options or {}
         if parsed_options.get("legacy_commands"):
+            self._skills_mode = False
             _warn_legacy_commands_deprecated()
             return self._setup_legacy(project_root, manifest, parsed_options, **opts)
-        return SkillsIntegration.setup(self, project_root, manifest, parsed_options, **opts)
+        self._skills_mode = True
+        return SkillsIntegration.setup(
+            _BobSkillsHelper(), project_root, manifest, parsed_options, **opts
+        )
 
     def _setup_legacy(
         self,
