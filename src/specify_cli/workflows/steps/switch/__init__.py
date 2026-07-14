@@ -54,7 +54,9 @@ class SwitchStep(StepBase):
 
         # Default fallback
         default_steps = config.get("default", [])
-        if not isinstance(default_steps, list):
+        if default_steps is None:
+            default_steps = []
+        elif not isinstance(default_steps, list):
             return self._non_list_branch_failure(
                 config, "'default'", default_steps, value
             )
