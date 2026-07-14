@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
-from specify_cli import extensions as _ext_module
+import specify_cli.extensions as _ext_module
 
 from tests.conftest import strip_ansi
 from specify_cli.extensions import (
