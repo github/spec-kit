@@ -9,6 +9,7 @@ without bloating the core framework.
 from __future__ import annotations
 
 import copy
+import errno
 import hashlib
 import json
 import os
@@ -102,23 +103,46 @@ def _load_core_command_names() -> frozenset[str]:
 CORE_COMMAND_NAMES = _load_core_command_names()
 
 
+def _fsync_fd(fd: int) -> None:
+    """Sync a file descriptor, raising on real storage errors."""
+    try:
+        os.fsync(fd)
+    except AttributeError:
+        return
+    except NotImplementedError:
+        return
+    except OSError as exc:
+        if exc.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.EBADF}:
+            return
+        raise
+
+
 def _fsync_directory(path: Path) -> None:
-    """Best-effort fsync for a directory path."""
+    """Sync a directory when the platform supports it."""
     if not path.exists():
         return
     try:
         dir_fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    except (AttributeError, OSError, NotImplementedError):
+    except (AttributeError, NotImplementedError):
+        return
+    except OSError as exc:
+        if exc.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.EBADF}:
+            return
         try:
             dir_fd = os.open(str(path), os.O_RDONLY)
-        except (AttributeError, OSError, NotImplementedError):
+        except (AttributeError, NotImplementedError):
             return
+        except OSError as exc2:
+            if exc2.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.EBADF}:
+                return
+            raise
     try:
-        os.fsync(dir_fd)
-    except (AttributeError, OSError, NotImplementedError):
-        pass
+        _fsync_fd(dir_fd)
     finally:
-        os.close(dir_fd)
+        try:
+            os.close(dir_fd)
+        except OSError:
+            pass
 
 
 class ExtensionError(Exception):
@@ -1515,10 +1539,7 @@ class ExtensionManager:
                                 staged.chmod(stat.S_IMODE(mode))
                             except (NotImplementedError, OSError):
                                 pass  # Best-effort; chmod may not be supported on all platforms.
-                        try:
-                            os.fsync(fd)
-                        except (AttributeError, OSError, NotImplementedError):
-                            pass
+                        _fsync_fd(fd)
                     finally:
                         os.close(fd)
                 # Write the completion marker only after every staged file is
@@ -1529,9 +1550,7 @@ class ExtensionManager:
                     0o600,
                 )
                 try:
-                    os.fsync(marker_fd)
-                except (AttributeError, OSError, NotImplementedError):
-                    pass
+                    _fsync_fd(marker_fd)
                 finally:
                     os.close(marker_fd)
                 _fsync_directory(rescue_staging_dir)
@@ -1566,11 +1585,27 @@ class ExtensionManager:
                 ) as tmp:
                     tmp_path = Path(tmp.name)
                     tmp.write(content)
+                    tmp.flush()
+                    _fsync_fd(tmp.fileno())
                 try:
                     tmp_path.chmod(stat.S_IMODE(preserved_mode))
                 except (NotImplementedError, OSError):
                     pass  # Best-effort; chmod may not be supported on all platforms.
                 os.replace(tmp_path, target)
+                try:
+                    target_fd = os.open(str(target), os.O_RDONLY)
+                except (AttributeError, OSError, NotImplementedError):
+                    target_fd = None
+                try:
+                    if target_fd is not None:
+                        _fsync_fd(target_fd)
+                finally:
+                    if target_fd is not None:
+                        try:
+                            os.close(target_fd)
+                        except OSError:
+                            pass
+                _fsync_directory(target.parent)
             except BaseException:
                 if tmp_path is not None and tmp_path.exists():
                     tmp_path.unlink()

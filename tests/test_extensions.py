@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from tests.conftest import strip_ansi
+import specify_cli.extensions as _ext_module
 from specify_cli.extensions import (
     CatalogEntry,
     CORE_COMMAND_NAMES,
@@ -1407,6 +1408,12 @@ class TestExtensionManager:
         assert staging_dir.exists()
         assert (staging_dir / ".rescue-complete").exists()
         assert (staging_dir / "test-ext-config.yml").exists()
+
+        # Corrupt the rollback-restored copy to prove the next retry must rely
+        # on the durable staging backup, not whatever was written to dest_dir
+        # by the earlier failed install attempt.
+        config_file.write_text("model: wrong-model\n", encoding="utf-8")
+        assert config_file.read_bytes() != original_bytes
 
         manifest = manager.install_from_directory(
             extension_dir, "0.1.0", register_commands=False
