@@ -1729,23 +1729,8 @@ class PresetManager:
         if not provides_constitution:
             return
 
-        memory_constitution = (
-            self.project_root / ".specify" / "memory" / "constitution.md"
-        )
         try:
-            resolver = PresetResolver(self.project_root)
-            layers = resolver.collect_all_layers(
-                "constitution-template", "template"
-            )
-            if memory_constitution.exists() and not _constitution_is_generated(
-                self.project_root, memory_constitution, layers
-            ):
-                return
-            result = _materialize_constitution_template(
-                self.project_root, memory_constitution
-            )
-            if result is None:
-                return
+            self._reconcile_constitution()
         except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
             import warnings
 
@@ -1753,6 +1738,19 @@ class PresetManager:
                 f"Failed to seed constitution from preset {manifest.id}: {exc}.",
                 stacklevel=2,
             )
+
+    def _reconcile_constitution(self) -> None:
+        """Materialize the winning constitution layer when the live file is generated."""
+        memory_constitution = (
+            self.project_root / ".specify" / "memory" / "constitution.md"
+        )
+        resolver = PresetResolver(self.project_root)
+        layers = resolver.collect_all_layers("constitution-template", "template")
+        if memory_constitution.exists() and not _constitution_is_generated(
+            self.project_root, memory_constitution, layers
+        ):
+            return
+        _materialize_constitution_template(self.project_root, memory_constitution)
 
     def install_from_zip(
         self,
@@ -1833,6 +1831,7 @@ class PresetManager:
         # Also include aliases from the manifest as a safety net for registries
         # populated by older versions that may not track aliases.
         removed_cmd_names = set()
+        removed_constitution = False
         for cmd_names in registered_commands.values():
             removed_cmd_names.update(cmd_names)
         manifest_path = pack_dir / "preset.yml"
@@ -1840,6 +1839,11 @@ class PresetManager:
             try:
                 manifest = PresetManifest(manifest_path)
                 for tmpl in manifest.templates:
+                    if (
+                        tmpl.get("type") == "template"
+                        and tmpl.get("name") == "constitution-template"
+                    ):
+                        removed_constitution = True
                     if tmpl.get("type") == "command":
                         for alias in tmpl.get("aliases", []):
                             if isinstance(alias, str):
@@ -1883,6 +1887,18 @@ class PresetManager:
                     f"Post-removal reconciliation failed for {pack_id}: {exc}. "
                     f"Agent command files may be stale; reinstall affected presets "
                     f"or run 'specify preset add' to refresh.",
+                    stacklevel=2,
+                )
+
+        if removed_constitution:
+            try:
+                self._reconcile_constitution()
+            except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Post-removal constitution reconciliation failed for {pack_id}: "
+                    f"{exc}. The live constitution may be stale.",
                     stacklevel=2,
                 )
 

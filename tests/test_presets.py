@@ -2704,6 +2704,24 @@ class TestSelfTestPreset:
             assert result is not None
             assert result["source"] == "core"
 
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Core constitution-template\n"
+
+    def test_self_test_removal_preserves_edited_constitution(self, project_dir):
+        """Removing a preset does not overwrite an edited generated constitution."""
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        edited = memory.read_text() + "\n## Authored amendment\n"
+        memory.write_text(edited)
+
+        manager.remove("self-test")
+
+        assert memory.read_text() == edited
+
     def test_self_test_not_in_catalog(self):
         """Verify the self-test preset is NOT in the catalog (it's local-only)."""
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
@@ -2893,10 +2911,10 @@ class TestSelfTestPreset:
         assert "# Wrapper Constitution" in content
         assert "## Core Principle" in content
 
-    def test_higher_priority_preset_reseeds_unchanged_generated_constitution(
+    def test_constitution_follows_priority_when_winning_preset_removed(
         self, project_dir, temp_dir
     ):
-        """An unchanged generated constitution follows resolver priority."""
+        """An unchanged generated constitution follows priority and fallback layers."""
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
 
@@ -2935,6 +2953,10 @@ class TestSelfTestPreset:
 
         memory = project_dir / ".specify" / "memory" / "constitution.md"
         assert memory.read_text() == "# Higher Priority Constitution\n"
+
+        manager.remove("higher-priority")
+
+        assert "preset:self-test" in memory.read_text()
 
     def test_constitution_seed_rejects_symlinked_memory_directory(
         self, project_dir, temp_dir
