@@ -40,7 +40,7 @@ def _setup_py_project(tmp_path: Path, *, git: bool = True) -> Path:
     """Twin of _setup_project that also installs the Python scripts."""
     project = _setup_project(tmp_path, git=git)
 
-    py_core = project / "scripts" / "python"
+    py_core = project / ".specify" / "scripts" / "python"
     py_core.mkdir(parents=True, exist_ok=True)
     shutil.copy(CORE_COMMON_PY, py_core / "common.py")
 
@@ -389,7 +389,9 @@ class TestCreateFeatureBranchParity:
 
     def test_specify_init_dir_without_core_errors(self, tmp_path: Path):
         _, py_proj = _twin_projects(tmp_path)
-        (py_proj / "scripts" / "python" / "common.py").unlink()
+        (
+            py_proj / ".specify" / "scripts" / "python" / "common.py"
+        ).unlink()
         p = _run_py(
             "create-new-feature-branch", py_proj,
             "--json", "desc word",

@@ -257,6 +257,18 @@ class TestInitIntegrationFlag:
         assert (scripts_dir / "setup-plan.sh").exists()
         assert (templates_dir / "plan-template.md").exists()
 
+    def test_shared_infra_installs_python_scripts_for_py(self, tmp_path):
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "python-scripts"
+        project.mkdir()
+
+        _install_shared_infra(project, "py")
+
+        assert (
+            project / ".specify" / "scripts" / "python" / "common.py"
+        ).exists()
+
     def test_shared_infra_removes_stale_managed_script(self, tmp_path):
         """A managed script the core no longer ships (e.g. the legacy
         update-agent-context.sh, superseded by the agent-context extension) is

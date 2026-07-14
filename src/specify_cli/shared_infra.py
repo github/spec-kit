@@ -400,7 +400,7 @@ def install_shared_infra(
     # manifest entries the core no longer ships (stale-script cleanup, #3076).
     seen_rels: set[str] = set()
     scripts_scanned = False
-    variant_dir = "bash" if script_type == "sh" else "powershell"
+    variant_dir = {"sh": "bash", "py": "python"}.get(script_type, "powershell")
 
     def _decide_overwrite(rel: str, dst: Path) -> tuple[bool, str | None]:
         """Return (write, bucket) where bucket is 'skip', 'preserved', or None."""
