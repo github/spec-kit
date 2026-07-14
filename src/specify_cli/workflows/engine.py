@@ -570,6 +570,27 @@ class RunState:
 
         with open(state_path, encoding="utf-8") as f:
             state_data = json.load(f)
+        if not isinstance(state_data, dict):
+            raise ValueError("Invalid run state: expected a JSON object")
+        missing_fields = [
+            field
+            for field in ("run_id", "workflow_id", "status")
+            if field not in state_data
+        ]
+        if missing_fields:
+            raise ValueError(
+                "Invalid run state: missing required field(s): "
+                + ", ".join(missing_fields)
+            )
+
+        workflow_id = state_data["workflow_id"]
+        if not isinstance(workflow_id, str) or not _ID_PATTERN.fullmatch(
+            workflow_id
+        ):
+            raise ValueError(
+                "Invalid run state: 'workflow_id' must be a lowercase "
+                "alphanumeric workflow ID with hyphens"
+            )
 
         has_installed_workflow_id = "installed_workflow_id" in state_data
         has_installed_registry_root = "installed_registry_root" in state_data
@@ -613,7 +634,7 @@ class RunState:
 
         state = cls(
             run_id=state_data["run_id"],
-            workflow_id=state_data["workflow_id"],
+            workflow_id=workflow_id,
             project_root=project_root,
             installed_workflow_id=installed_workflow_id,
             installed_registry_root=installed_registry_root,
@@ -630,7 +651,16 @@ class RunState:
         if inputs_path.exists():
             with open(inputs_path, encoding="utf-8") as f:
                 inputs_data = json.load(f)
-            state.inputs = inputs_data.get("inputs", {})
+            if not isinstance(inputs_data, dict):
+                raise ValueError(
+                    "Invalid run inputs: expected a JSON object"
+                )
+            inputs = inputs_data.get("inputs", {})
+            if not isinstance(inputs, dict):
+                raise ValueError(
+                    "Invalid run inputs: 'inputs' must be a JSON object"
+                )
+            state.inputs = inputs
 
         return state
 

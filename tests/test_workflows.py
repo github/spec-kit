@@ -11849,6 +11849,33 @@ steps:
         assert "Resume failed" in result.output
         assert "permission [denied]" in result.output
 
+    @pytest.mark.parametrize("malformation", ["non-object", "missing-run-id"])
+    def test_resume_preload_rejects_malformed_state_cleanly(
+        self, project_dir, monkeypatch, malformation
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(project_dir)
+        runner = CliRunner()
+        run_id = self._install_and_run_gated(runner, app, project_dir)
+        state_path = (
+            project_dir / ".specify" / "workflows" / "runs" / run_id / "state.json"
+        )
+
+        if malformation == "non-object":
+            state_path.write_text("[]", encoding="utf-8")
+        else:
+            data = json.loads(state_path.read_text(encoding="utf-8"))
+            data.pop("run_id")
+            state_path.write_text(json.dumps(data), encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "resume", run_id])
+
+        assert result.exit_code != 0
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Invalid run state" in result.output
+
     def test_resume_legacy_run_respects_current_disabled_state(
         self, project_dir, monkeypatch
     ):
