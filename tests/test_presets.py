@@ -3125,6 +3125,56 @@ class TestSelfTestPreset:
 
         assert memory.read_text() == edited
 
+    def test_custom_constitution_removal_recovers_with_invalid_manifest(
+        self, project_dir, temp_dir
+    ):
+        """Provenance triggers fallback when a custom-path manifest is invalid."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        preset_dir = temp_dir / "custom-constitution"
+        (preset_dir / "policy").mkdir(parents=True)
+        (preset_dir / "policy" / "charter.md").write_text("# Custom Constitution\n")
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "custom-constitution",
+                        "name": "Custom Constitution",
+                        "version": "1.0.0",
+                        "description": "Custom-path constitution for testing",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "policy/charter.md",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        manager.install_from_directory(preset_dir, "0.1.5", priority=1)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Custom Constitution\n"
+
+        installed_manifest = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "custom-constitution"
+            / "preset.yml"
+        )
+        installed_manifest.write_text("invalid: [")
+
+        manager.remove("custom-constitution")
+
+        assert "preset:self-test" in memory.read_text()
+
     def test_constitution_seed_rejects_symlinked_memory_directory(
         self, project_dir, temp_dir
     ):
@@ -4746,6 +4796,28 @@ class TestPresetEnableDisable:
 
         assert enabled.exit_code == 0, enabled.output
         assert memory.read_text() == "# Convention Constitution\n"
+
+    def test_stack_changes_do_not_create_missing_constitution(
+        self, project_dir, pack_dir
+    ):
+        """Stack changes for non-providers do not seed a missing constitution."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        runner = CliRunner()
+
+        for args in (
+            ["preset", "set-priority", "test-pack", "5"],
+            ["preset", "disable", "test-pack"],
+            ["preset", "enable", "test-pack"],
+        ):
+            with patch.object(Path, "cwd", return_value=project_dir):
+                result = runner.invoke(app, args)
+            assert result.exit_code == 0, result.output
+            assert not memory.exists()
 
     def test_disable_already_disabled(self, project_dir, pack_dir):
         """Test disable on already disabled preset shows warning."""

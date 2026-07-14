@@ -76,6 +76,29 @@ def _constitution_is_generated(
     return core is not None and core.read_bytes() == content
 
 
+def _constitution_provenance_matches_preset(
+    project_root: Path,
+    memory_constitution: Path,
+    pack_id: str,
+    pack_version: str,
+) -> bool:
+    """Return whether provenance identifies a preset as the materialized source."""
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    if not provenance.parent.exists():
+        return False
+    _ensure_safe_shared_destination(project_root, provenance)
+    if not provenance.exists():
+        return False
+    try:
+        metadata = json.loads(provenance.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("source") == f"{pack_id} v{pack_version}"
+    )
+
+
 def _materialize_constitution_template(
     project_root: Path,
     memory_constitution: Path,
@@ -1737,13 +1760,16 @@ class PresetManager:
             return
 
         self.reconcile_constitution(
-            f"Failed to seed constitution from preset {manifest.id}"
+            f"Failed to seed constitution from preset {manifest.id}",
+            create_if_missing=True,
         )
 
-    def reconcile_constitution(self, failure_context: str) -> None:
+    def reconcile_constitution(
+        self, failure_context: str, *, create_if_missing: bool = False
+    ) -> None:
         """Reconcile generated constitution content without failing a persisted change."""
         try:
-            self._reconcile_constitution()
+            self._reconcile_constitution(create_if_missing=create_if_missing)
         except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
             import warnings
 
@@ -1752,11 +1778,13 @@ class PresetManager:
                 stacklevel=2,
             )
 
-    def _reconcile_constitution(self) -> None:
+    def _reconcile_constitution(self, *, create_if_missing: bool = False) -> None:
         """Materialize the winning constitution layer when the live file is generated."""
         memory_constitution = (
             self.project_root / ".specify" / "memory" / "constitution.md"
         )
+        if not memory_constitution.exists() and not create_if_missing:
+            return
         resolver = PresetResolver(self.project_root)
         if memory_constitution.exists() and not _constitution_is_generated(
             self.project_root, memory_constitution, resolver
@@ -1850,6 +1878,18 @@ class PresetManager:
                 pack_dir / "constitution-template.md",
             )
         )
+        if metadata and isinstance(metadata.get("version"), str):
+            memory_constitution = (
+                self.project_root / ".specify" / "memory" / "constitution.md"
+            )
+            removed_constitution = removed_constitution or (
+                _constitution_provenance_matches_preset(
+                    self.project_root,
+                    memory_constitution,
+                    pack_id,
+                    metadata["version"],
+                )
+            )
         for cmd_names in registered_commands.values():
             removed_cmd_names.update(cmd_names)
         manifest_path = pack_dir / "preset.yml"
