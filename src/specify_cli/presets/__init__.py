@@ -772,7 +772,34 @@ class PresetManager:
 
         resolver = PresetResolver(self.project_root)
         affected_cmd_names: set = set()
-        for pack_id, metadata in reversed(self.registry.list_by_priority()):
+        presets_by_priority = list(self.registry.list_by_priority())
+        winning_pack_by_command: Dict[str, str] = {}
+        for candidate_pack_id, _candidate_metadata in presets_by_priority:
+            candidate_manifest = resolver._get_manifest(
+                self.presets_dir / candidate_pack_id
+            )
+            if candidate_manifest is None:
+                continue
+            for template in candidate_manifest.templates:
+                command_name = template.get("name")
+                if (
+                    template.get("type") == "command"
+                    and isinstance(command_name, str)
+                ):
+                    winning_pack_by_command.setdefault(
+                        command_name, candidate_pack_id
+                    )
+
+        pending_command_cleanups: List[
+            tuple[
+                str,
+                Dict[str, List[str]],
+                List[str],
+                Dict[str, str],
+            ]
+        ] = []
+        successful_skill_replacements: set[tuple[str, str]] = set()
+        for pack_id, metadata in reversed(presets_by_priority):
             pack_dir = self.presets_dir / pack_id
             manifest = resolver._get_manifest(pack_dir)
             if manifest is None:
@@ -826,6 +853,23 @@ class PresetManager:
                     self.registry.update(pack_id, {"registered_commands": merged_commands})
 
                 registered_skills = self._register_skills(manifest, pack_dir)
+                replaced_skill_names = set(registered_skills.get(agent_name) or [])
+                for tmpl in manifest.templates:
+                    if tmpl.get("type") != "command":
+                        continue
+                    primary_name = tmpl.get("name")
+                    if not isinstance(primary_name, str):
+                        continue
+                    modern_name, legacy_name = self._skill_names_for_command(
+                        primary_name
+                    )
+                    if (
+                        modern_name in replaced_skill_names
+                        or legacy_name in replaced_skill_names
+                    ):
+                        successful_skill_replacements.add(
+                            (pack_id, primary_name)
+                        )
                 raw_existing_skills = metadata.get("registered_skills")
                 if isinstance(raw_existing_skills, list) and raw_existing_skills:
                     # Legacy flat-list value: don't assume agent_name wrote
@@ -907,7 +951,6 @@ class PresetManager:
                 # skill name was actually returned for this agent; anything
                 # unreplaced stays tracked and on disk (#2948).
                 if stale_command_names:
-                    replaced_skill_names = set(registered_skills.get(agent_name) or [])
                     # Commands may carry aliases (CommandRegistrar.register_
                     # commands() tracks and returns primary + alias names
                     # flattened together into one list), but _register_
@@ -932,32 +975,14 @@ class PresetManager:
                             if isinstance(alias, str):
                                 alias_to_primary[alias] = primary_name
 
-                    group_fully_replaced: Dict[str, bool] = {}
-                    for cmd_name in stale_command_names:
-                        primary_name = alias_to_primary.get(cmd_name, cmd_name)
-                        if primary_name in group_fully_replaced:
-                            continue
-                        modern_name, legacy_name = self._skill_names_for_command(primary_name)
-                        group_fully_replaced[primary_name] = (
-                            modern_name in replaced_skill_names
-                            or legacy_name in replaced_skill_names
+                    pending_command_cleanups.append(
+                        (
+                            pack_id,
+                            merged_commands,
+                            stale_command_names,
+                            alias_to_primary,
                         )
-
-                    fully_replaced = []
-                    remaining_stale = []
-                    for cmd_name in stale_command_names:
-                        primary_name = alias_to_primary.get(cmd_name, cmd_name)
-                        if group_fully_replaced.get(primary_name, False):
-                            fully_replaced.append(cmd_name)
-                        else:
-                            remaining_stale.append(cmd_name)
-                    if fully_replaced:
-                        self._unregister_commands({agent_name: fully_replaced})
-                        if remaining_stale:
-                            merged_commands[agent_name] = remaining_stale
-                        else:
-                            merged_commands.pop(agent_name, None)
-                        self.registry.update(pack_id, {"registered_commands": merged_commands})
+                    )
             except Exception as pack_err:
                 from .. import _print_cli_warning
 
@@ -969,6 +994,40 @@ class PresetManager:
                     continuing="Continuing with the remaining presets.",
                 )
                 continue
+
+        successfully_replaced_winners = {
+            command_name
+            for command_name, winning_pack_id in winning_pack_by_command.items()
+            if (winning_pack_id, command_name) in successful_skill_replacements
+        }
+
+        for (
+            pack_id,
+            merged_commands,
+            stale_command_names,
+            alias_to_primary,
+        ) in pending_command_cleanups:
+            fully_replaced = [
+                command_name
+                for command_name in stale_command_names
+                if alias_to_primary.get(command_name, command_name)
+                in successfully_replaced_winners
+            ]
+            if not fully_replaced:
+                continue
+            remaining_stale = [
+                command_name
+                for command_name in stale_command_names
+                if command_name not in fully_replaced
+            ]
+            self._unregister_commands({agent_name: fully_replaced})
+            if remaining_stale:
+                merged_commands[agent_name] = remaining_stale
+            else:
+                merged_commands.pop(agent_name, None)
+            self.registry.update(
+                pack_id, {"registered_commands": merged_commands}
+            )
 
         # _register_commands/_register_skills write each preset's own
         # content directly and rely on reconciliation to resolve the final

@@ -1235,6 +1235,50 @@ class ExtensionManager:
         except OSError:
             return False
 
+    def _extension_skill_trusted_root(self, candidate: Path) -> Optional[Path]:
+        """Return the project or home root allowed to contain *candidate*."""
+        candidate = Path(os.path.abspath(candidate))
+        for root in (
+            Path(os.path.abspath(self.project_root)),
+            Path(os.path.abspath(Path.home())),
+        ):
+            if candidate.is_relative_to(root):
+                return root
+        return None
+
+    def _extension_skill_candidate_dirs(self) -> Dict[Path, Path]:
+        """Return every configured skill output and its trusted root."""
+        from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+        from ..agents import CommandRegistrar
+
+        candidates: Dict[Path, Path] = {}
+
+        def add_candidate(candidate: Path) -> None:
+            candidate = Path(os.path.abspath(candidate))
+            trusted_root = self._extension_skill_trusted_root(candidate)
+            if trusted_root is not None:
+                candidates[candidate] = trusted_root
+
+        for cfg in AGENT_CONFIG.values():
+            folder = cfg.get("folder", "")
+            if folder:
+                add_candidate(
+                    self.project_root / folder.rstrip("/") / "skills"
+                )
+        add_candidate(self.project_root / DEFAULT_SKILLS_DIR)
+
+        registrar = CommandRegistrar()
+        for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
+            if agent_config.get("extension") != "/SKILL.md":
+                continue
+            add_candidate(
+                registrar._resolve_agent_dir(
+                    agent_name, agent_config, self.project_root
+                )
+            )
+
+        return candidates
+
     def _unregister_extension_skills(
         self,
         skill_names: List[str],
@@ -1275,15 +1319,19 @@ class ExtensionManager:
         if skills_dir:
             # Reject the candidate directory itself (any path component,
             # including the final one) if it's a symlink escaping the
-            # project root, before probing or deleting anything inside it.
+            # trusted project/home root, before probing or deleting anything
+            # inside it.
             # A caller-supplied skills_dir (e.g. a specific agent's
             # directory resolved without side effects) could have been
             # replaced with a symlink between registration and removal;
             # resolving it and only checking children relative to the
             # already-resolved candidate (the previous approach) would
             # silently follow the symlink instead of rejecting it.
+            trusted_root = self._extension_skill_trusted_root(skills_dir)
+            if trusted_root is None:
+                return
             try:
-                _validate_safe_shared_directory(self.project_root, skills_dir)
+                _validate_safe_shared_directory(trusted_root, skills_dir)
             except (ValueError, OSError):
                 return
 
@@ -1306,7 +1354,7 @@ class ExtensionManager:
                 # following it, even when the target is otherwise
                 # in-bounds (#2948).
                 try:
-                    _validate_safe_shared_directory(self.project_root, skill_subdir)
+                    _validate_safe_shared_directory(trusted_root, skill_subdir)
                 except (ValueError, OSError):
                     continue
                 if not skill_subdir.is_dir():
@@ -1339,18 +1387,10 @@ class ExtensionManager:
                 shutil.rmtree(skill_subdir)
         else:
             # Fallback: scan all possible agent skills directories
-            from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
-
-            candidate_dirs: set[Path] = set()
-            for cfg in AGENT_CONFIG.values():
-                folder = cfg.get("folder", "")
-                if folder:
-                    candidate_dirs.add(
-                        self.project_root / folder.rstrip("/") / "skills"
-                    )
-            candidate_dirs.add(self.project_root / DEFAULT_SKILLS_DIR)
-
-            for skills_candidate in candidate_dirs:
+            for (
+                skills_candidate,
+                trusted_root,
+            ) in self._extension_skill_candidate_dirs().items():
                 if not skills_candidate.is_dir():
                     continue
                 # Reject the candidate directory itself (any path
@@ -1359,7 +1399,7 @@ class ExtensionManager:
                 # same guard as the fast path above.
                 try:
                     _validate_safe_shared_directory(
-                        self.project_root, skills_candidate
+                        trusted_root, skills_candidate
                     )
                 except (ValueError, OSError):
                     continue
@@ -1378,7 +1418,7 @@ class ExtensionManager:
                     # alone would not catch (#2948).
                     try:
                         _validate_safe_shared_directory(
-                            self.project_root, skill_subdir
+                            trusted_root, skill_subdir
                         )
                     except (ValueError, OSError):
                         continue
@@ -1443,19 +1483,14 @@ class ExtensionManager:
         if not skill_names:
             return []
 
-        from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
         from ..shared_infra import _validate_safe_shared_directory
-
-        candidate_dirs: set[Path] = set()
-        for cfg in AGENT_CONFIG.values():
-            folder = cfg.get("folder", "")
-            if folder:
-                candidate_dirs.add(self.project_root / folder.rstrip("/") / "skills")
-        candidate_dirs.add(self.project_root / DEFAULT_SKILLS_DIR)
 
         marker = f"extension:{extension_id}"
         owned: set = set()
-        for skills_candidate in candidate_dirs:
+        for (
+            skills_candidate,
+            trusted_root,
+        ) in self._extension_skill_candidate_dirs().items():
             if len(owned) == len(skill_names):
                 break  # every name already confirmed owned somewhere
             if not skills_candidate.is_dir():
@@ -1468,7 +1503,7 @@ class ExtensionManager:
             # rejecting it, letting a marker-matching SKILL.md outside the
             # project be falsely attributed.
             try:
-                _validate_safe_shared_directory(self.project_root, skills_candidate)
+                _validate_safe_shared_directory(trusted_root, skills_candidate)
             except (ValueError, OSError):
                 continue
             for skill_name in skill_names:
@@ -1486,7 +1521,7 @@ class ExtensionManager:
                 # resolve()+relative_to() containment check alone would
                 # not catch (#2948).
                 try:
-                    _validate_safe_shared_directory(self.project_root, skill_subdir)
+                    _validate_safe_shared_directory(trusted_root, skill_subdir)
                 except (ValueError, OSError):
                     continue
                 if not skill_subdir.is_dir():

@@ -2023,6 +2023,31 @@ class TestExtensionSkillRegistration:
             "directory (#2948)"
         )
 
+    def test_unscoped_cleanup_removes_hermes_home_skill(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        """Fallback cleanup must include configured home-relative outputs."""
+        home = temp_dir / "home"
+        monkeypatch.setattr(Path, "home", lambda: home)
+        skill_name = "speckit-hermes-cleanup-hello"
+        skill_dir = home / ".hermes" / "skills" / skill_name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "name: speckit-hermes-cleanup-hello\n"
+            "metadata:\n"
+            "  source: extension:hermes-cleanup\n"
+            "---\n",
+            encoding="utf-8",
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager._unregister_extension_skills(
+            [skill_name], "hermes-cleanup"
+        )
+
+        assert not skill_dir.exists()
+
     def test_unregister_agent_artifacts_stays_scoped_when_agent_dir_absent(
         self, project_dir, temp_dir
     ):

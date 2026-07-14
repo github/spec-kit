@@ -5090,6 +5090,111 @@ class TestPresetSkills:
             "source was missing"
         )
 
+    def test_lower_priority_skill_does_not_remove_failed_winner_command(
+        self, project_dir, temp_dir
+    ):
+        """Only a successfully rendered winning layer may retire a command."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "lower-toggle-preset",
+            "speckit.specify",
+            "Lower preset",
+            "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "higher-toggle-preset",
+            "speckit.specify",
+            "Higher preset",
+            "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+
+        command_file = commands_dir / "speckit.specify.agent.md"
+        assert "Higher body" in command_file.read_text(encoding="utf-8")
+
+        higher_source = (
+            manager.presets_dir
+            / "higher-toggle-preset"
+            / "commands"
+            / "speckit.specify.md"
+        )
+        higher_source.unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert command_file.exists(), (
+            "a lower-priority skill replacement must not remove the existing "
+            "higher-priority command when the winning layer did not render"
+        )
+        assert "Higher body" in command_file.read_text(encoding="utf-8")
+
+        higher_source.write_text(
+            "---\ndescription: Higher preset\n---\n\nHigher body\n",
+            encoding="utf-8",
+        )
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not command_file.exists(), (
+            "the old command should be retired after the winning skill "
+            "layer renders successfully"
+        )
+        for preset_id in ("lower-toggle-preset", "higher-toggle-preset"):
+            metadata = manager.registry.get(preset_id)
+            assert not metadata["registered_commands"].get("copilot"), (
+                "all layers sharing the retired command output must drop "
+                "their stale command tracking"
+            )
+
+    def test_successful_winner_without_stale_tracking_retires_lower_command(
+        self, project_dir, temp_dir
+    ):
+        """Winner success is independent of whether that layer tracked a command."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "lower-command-preset",
+            "speckit.specify",
+            "Lower preset",
+            "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "higher-skill-preset",
+            "speckit.specify",
+            "Higher preset",
+            "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+
+        command_file = commands_dir / "speckit.specify.agent.md"
+        assert command_file.exists()
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+        higher_metadata = manager.registry.get("higher-skill-preset")
+        assert not higher_metadata["registered_commands"].get("copilot")
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not command_file.exists(), (
+            "a successfully rendered winning skill must retire a lower "
+            "layer's stale command even when the winner never tracked one"
+        )
+        lower_metadata = manager.registry.get("lower-command-preset")
+        assert not lower_metadata["registered_commands"].get("copilot")
+
     def test_toggle_skills_to_command_empty_result_preserves_old_skill(
         self, project_dir, temp_dir
     ):
