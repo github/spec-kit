@@ -2405,6 +2405,16 @@ class PresetCatalog:
 
         try:
             with self._open_url(entry.url, timeout=10) as response:
+                # Re-validate the URL after any redirects: _open_url follows
+                # redirects (stripping auth only on an HTTPS->HTTP downgrade), so
+                # without this an https:// catalog entry that 30x-redirects to
+                # http://attacker/... would be fetched and trusted. The catalog
+                # payload supplies each preset's download_url + sha256, so a
+                # redirected payload defeats verify_archive_sha256. Mirrors the
+                # integrations/workflows catalog fetchers.
+                final_url = response.geturl()
+                if final_url != entry.url:
+                    self._validate_catalog_url(final_url)
                 catalog_data = json.loads(response.read())
 
             self._validate_catalog_payload(catalog_data, entry.url)

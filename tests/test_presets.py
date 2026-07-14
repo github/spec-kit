@@ -1766,6 +1766,39 @@ class TestPresetCatalog:
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
+    def test_fetch_single_catalog_revalidates_redirected_url(self, project_dir):
+        """An HTTPS catalog URL that redirects to http:// must be rejected AFTER
+        the redirect. _open_url follows redirects (auth stripped on downgrade),
+        so without re-validating response.geturl() the http payload would still
+        be fetched and trusted — and it supplies each preset's download_url +
+        sha256, defeating verify_archive_sha256. Parity with the
+        integrations/workflows catalog fetchers."""
+        catalog = PresetCatalog(project_dir)
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"schema_version": "1.0", "presets": {}}).encode()
+
+            def geturl(self):
+                return "http://evil.test/catalog.json"  # downgraded via redirect
+
+        catalog._open_url = lambda url, timeout=None: _Resp()
+
+        entry = PresetCatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(PresetValidationError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
     @pytest.mark.parametrize(
         "payload",
         [
@@ -1799,6 +1832,9 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        # A real urllib response reports the final URL (== request URL with no
+        # redirect); the fetcher re-validates it after redirects.
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = PresetCatalogEntry(
             url="https://example.com/catalog.json",
@@ -1868,6 +1904,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
 
         entry = PresetCatalogEntry(
             url=catalog.DEFAULT_CATALOG_URL,
@@ -2113,6 +2150,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -2165,6 +2203,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = PresetCatalogEntry(
             url="https://example.com/catalog.json",
