@@ -498,9 +498,13 @@ def register(app: typer.Typer) -> None:
                 }
                 from ..integrations.base import SkillsIntegration as _SkillsPersist
 
-                if isinstance(resolved_integration, _SkillsPersist) or getattr(
-                    resolved_integration, "_skills_mode", False
-                ):
+                _legacy_commands = bool(
+                    (integration_parsed_options or {}).get("legacy_commands")
+                )
+                if (
+                    isinstance(resolved_integration, _SkillsPersist)
+                    or getattr(resolved_integration, "_skills_mode", False)
+                ) and not _legacy_commands:
                     init_opts["ai_skills"] = True
                 save_init_options(project_path, init_opts)
 
