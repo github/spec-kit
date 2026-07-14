@@ -774,6 +774,8 @@ class PresetManager:
         affected_cmd_names: set = set()
         presets_by_priority = list(self.registry.list_by_priority())
         winning_pack_by_command: Dict[str, str] = {}
+        winning_source_by_command: Dict[str, Path] = {}
+        project_override_commands: set[str] = set()
         for candidate_pack_id, _candidate_metadata in presets_by_priority:
             candidate_manifest = resolver._get_manifest(
                 self.presets_dir / candidate_pack_id
@@ -786,9 +788,21 @@ class PresetManager:
                     template.get("type") == "command"
                     and isinstance(command_name, str)
                 ):
+                    if (
+                        resolver.overrides_dir / f"{command_name}.md"
+                    ).is_file():
+                        project_override_commands.add(command_name)
                     winning_pack_by_command.setdefault(
                         command_name, candidate_pack_id
                     )
+                    source_file = template.get("file")
+                    if isinstance(source_file, str):
+                        winning_source_by_command.setdefault(
+                            command_name,
+                            self.presets_dir
+                            / candidate_pack_id
+                            / source_file,
+                        )
 
         pending_command_cleanups: List[
             tuple[
@@ -799,6 +813,16 @@ class PresetManager:
             ]
         ] = []
         successful_skill_replacements: set[tuple[str, str]] = set()
+        pending_skill_cleanups: List[
+            tuple[
+                str,
+                Path,
+                Dict[str, List[str]],
+                List[str],
+                Dict[str, str],
+            ]
+        ] = []
+        successful_command_replacements: set[tuple[str, str]] = set()
         for pack_id, metadata in reversed(presets_by_priority):
             pack_dir = self.presets_dir / pack_id
             manifest = resolver._get_manifest(pack_dir)
@@ -817,6 +841,20 @@ class PresetManager:
             # must not abort registration of the remaining enabled presets.
             try:
                 registered_commands = self._register_commands(manifest, pack_dir)
+                registered_command_names = set(
+                    registered_commands.get(agent_name) or []
+                )
+                for tmpl in manifest.templates:
+                    if tmpl.get("type") != "command":
+                        continue
+                    primary_name = tmpl.get("name")
+                    if (
+                        isinstance(primary_name, str)
+                        and primary_name in registered_command_names
+                    ):
+                        successful_command_replacements.add(
+                            (pack_id, primary_name)
+                        )
                 existing_commands = metadata.get("registered_commands", {})
                 if not isinstance(existing_commands, dict):
                     existing_commands = {}
@@ -911,21 +949,27 @@ class PresetManager:
                     # command name was actually returned for this agent;
                     # anything unreplaced stays tracked and on disk (#2948).
                     stale_skill_names = merged_skills[agent_name]
-                    replaced_skill_names: set = set()
-                    for cmd_name in registered_commands.get(agent_name) or []:
-                        modern_name, legacy_name = self._skill_names_for_command(cmd_name)
-                        replaced_skill_names.add(modern_name)
-                        replaced_skill_names.add(legacy_name)
-                    to_remove = [n for n in stale_skill_names if n in replaced_skill_names]
-                    remaining_stale = [
-                        n for n in stale_skill_names if n not in replaced_skill_names
-                    ]
-                    if to_remove:
-                        self._unregister_skills({agent_name: to_remove}, pack_dir)
-                    if remaining_stale:
-                        merged_skills[agent_name] = remaining_stale
-                    else:
-                        merged_skills.pop(agent_name, None)
+                    skill_to_primary: Dict[str, str] = {}
+                    for tmpl in manifest.templates:
+                        if tmpl.get("type") != "command":
+                            continue
+                        primary_name = tmpl.get("name")
+                        if not isinstance(primary_name, str):
+                            continue
+                        modern_name, legacy_name = self._skill_names_for_command(
+                            primary_name
+                        )
+                        skill_to_primary[modern_name] = primary_name
+                        skill_to_primary[legacy_name] = primary_name
+                    pending_skill_cleanups.append(
+                        (
+                            pack_id,
+                            pack_dir,
+                            merged_skills,
+                            stale_skill_names,
+                            skill_to_primary,
+                        )
+                    )
                 # A legacy flat-list registered_skills value (predating
                 # per-agent provenance) must migrate to the dict format on
                 # disk even when the rescaffolded names are unchanged from
@@ -995,10 +1039,34 @@ class PresetManager:
                 )
                 continue
 
+        # Registration writes each preset's raw layer. Reconcile before
+        # retiring opposite-mode artifacts so project overrides and composed
+        # winners are materialized first, and so cleanup runs last instead of
+        # being undone by skill reconciliation.
+        reconciled_commands: set[str] = set()
+        if affected_cmd_names:
+            try:
+                reconciled_commands = self._reconcile_composed_commands(
+                    list(affected_cmd_names), target_agent=agent_name
+                )
+                self._reconcile_skills(list(affected_cmd_names))
+            except Exception as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Post-rescaffold reconciliation failed for '{agent_name}': "
+                    f"{exc}. Agent command files may be stale; re-run "
+                    f"'specify integration use {agent_name}' or reinstall "
+                    f"affected presets to refresh.",
+                    stacklevel=2,
+                )
+
         successfully_replaced_winners = {
             command_name
             for command_name, winning_pack_id in winning_pack_by_command.items()
-            if (winning_pack_id, command_name) in successful_skill_replacements
+            if command_name not in project_override_commands
+            and (winning_pack_id, command_name)
+            in successful_skill_replacements
         }
 
         for (
@@ -1029,28 +1097,56 @@ class PresetManager:
                 pack_id, {"registered_commands": merged_commands}
             )
 
-        # _register_commands/_register_skills write each preset's own
-        # content directly and rely on reconciliation to resolve the final
-        # winner across the *entire* priority stack (including project
-        # overrides, which always outrank presets). install/remove already
-        # call this; without it here, rescaffolding on `integration use` /
-        # `switch` could leave the highest-precedence preset's raw content
-        # in place even when a project override or a higher-precedence
-        # preset should win (#2948).
-        if affected_cmd_names:
-            try:
-                self._reconcile_composed_commands(list(affected_cmd_names))
-                self._reconcile_skills(list(affected_cmd_names))
-            except Exception as exc:
-                import warnings
-
-                warnings.warn(
-                    f"Post-rescaffold reconciliation failed for '{agent_name}': "
-                    f"{exc}. Agent command files may be stale; re-run "
-                    f"'specify integration use {agent_name}' or reinstall "
-                    f"affected presets to refresh.",
-                    stacklevel=2,
+        successfully_replaced_command_winners = {
+            command_name
+            for command_name, winning_pack_id in winning_pack_by_command.items()
+            if command_name not in project_override_commands
+            and (
+                (winning_pack_id, command_name)
+                in successful_command_replacements
+                or (
+                    command_name in reconciled_commands
+                    and command_name in winning_source_by_command
+                    and winning_source_by_command[command_name].is_file()
                 )
+            )
+        }
+        successfully_replaced_command_winners.update(
+            project_override_commands & reconciled_commands
+        )
+
+        # Skill restoration walks the priority stack, so retire stale layers
+        # from highest to lowest. The last cleanup then restores the true
+        # non-preset fallback (or removes the skill) rather than cycling back
+        # to a lower-priority preset.
+        for (
+            pack_id,
+            pack_dir,
+            merged_skills,
+            stale_skill_names,
+            skill_to_primary,
+        ) in reversed(pending_skill_cleanups):
+            fully_replaced = [
+                skill_name
+                for skill_name in stale_skill_names
+                if skill_to_primary.get(skill_name)
+                in successfully_replaced_command_winners
+            ]
+            if not fully_replaced:
+                continue
+            remaining_stale = [
+                skill_name
+                for skill_name in stale_skill_names
+                if skill_name not in fully_replaced
+            ]
+            self._unregister_skills({agent_name: fully_replaced}, pack_dir)
+            if remaining_stale:
+                merged_skills[agent_name] = remaining_stale
+            else:
+                merged_skills.pop(agent_name, None)
+            self.registry.update(
+                pack_id, {"registered_skills": merged_skills}
+            )
 
     def unregister_agent_artifacts(self, agent_name: str) -> None:
         """Remove ``agent_name``'s tracked preset command/skill artifacts.
@@ -1278,8 +1374,11 @@ class PresetManager:
             registry.update(extension_id, {"registered_commands": merged_commands})
 
     def _reconcile_composed_commands(
-        self, command_names: List[str], extra_agents: Optional[Set[str]] = None
-    ) -> None:
+        self,
+        command_names: List[str],
+        extra_agents: Optional[Set[str]] = None,
+        target_agent: Optional[str] = None,
+    ) -> Set[str]:
         """Re-resolve and re-register composed commands from the full stack.
 
         After install or remove, recompute the effective content for each
@@ -1306,17 +1405,30 @@ class PresetManager:
                 lower-priority preset's content is restored there too — not
                 only for the currently active agent (#2948). Install/use
                 callers omit this, preserving pure active-only behavior.
+            target_agent: If set, report only command names written for this
+                agent. Other callers receive the union of all written names.
+
+        Returns:
+            Command names successfully written by this reconciliation pass.
         """
         if not command_names:
-            return
+            return set()
 
         try:
             from ..agents import CommandRegistrar
         except ImportError:
-            return
+            return set()
 
         resolver = PresetResolver(self.project_root)
         registrar = CommandRegistrar()
+        reconciled_commands: set[str] = set()
+
+        def record_written(written: Dict[str, List[str]]) -> None:
+            if target_agent is not None:
+                reconciled_commands.update(written.get(target_agent, []))
+            else:
+                for names in written.values():
+                    reconciled_commands.update(names)
 
         # Resolve the active-only restriction once. MISSING_INIT_OPTIONS_FILE
         # (legacy pre-init-options project) keeps the pre-#2948 fallback of
@@ -1374,6 +1486,7 @@ class PresetManager:
                                         registrar, [tmpl], manifest.id, pack_dir,
                                         only_agent=only_agent, extra_agents=extra_agents,
                                     )
+                                    record_written(written)
                                     self._merge_pack_registered_commands(manifest.id, written)
                                     registered = True
                                     break
@@ -1409,6 +1522,7 @@ class PresetManager:
                                         only_agent=only_agent,
                                         extra_agents=extra_agents,
                                     )
+                                    record_written(written)
                                     registered = True
                             except Exception:
                                 # Extension registration failed; fall back to
@@ -1421,6 +1535,7 @@ class PresetManager:
                             source_id=source_id,
                             only_agent=only_agent, extra_agents=extra_agents,
                         )
+                        record_written(written)
                     if extension_id:
                         self._merge_extension_registered_commands(
                             extension_id, written
@@ -1489,6 +1604,7 @@ class PresetManager:
                                 manifest.id, pack_dir,
                                 only_agent=only_agent, extra_agents=extra_agents,
                             )
+                            record_written(written)
                             self._merge_pack_registered_commands(manifest.id, written)
                             registered = True
                             break
@@ -1512,10 +1628,13 @@ class PresetManager:
                         source_id=source_id,
                         only_agent=only_agent, extra_agents=extra_agents,
                     )
+                    record_written(written)
                     if source.startswith("extension:"):
                         self._merge_extension_registered_commands(
                             source_id, written
                         )
+
+        return reconciled_commands
 
     def _register_command_from_path(
         self,

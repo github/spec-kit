@@ -5195,6 +5195,129 @@ class TestPresetSkills:
         lower_metadata = manager.registry.get("lower-command-preset")
         assert not lower_metadata["registered_commands"].get("copilot")
 
+    def test_lower_priority_command_does_not_remove_failed_winner_skill(
+        self, project_dir, temp_dir
+    ):
+        """Only a successfully rendered winning command may retire a skill."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "lower-skill-preset",
+            "speckit.specify",
+            "Lower preset",
+            "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "higher-command-preset",
+            "speckit.specify",
+            "Higher preset",
+            "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+
+        skill_file = (
+            project_dir
+            / ".github"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert "Higher body" in skill_file.read_text(encoding="utf-8")
+
+        higher_source = (
+            manager.presets_dir
+            / "higher-command-preset"
+            / "commands"
+            / "speckit.specify.md"
+        )
+        higher_source.unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert skill_file.exists(), (
+            "a lower-priority command replacement must not remove the "
+            "existing higher-priority skill when the winner did not render"
+        )
+        assert "Higher body" in skill_file.read_text(encoding="utf-8")
+
+        higher_source.write_text(
+            "---\ndescription: Higher preset\n---\n\nHigher body\n",
+            encoding="utf-8",
+        )
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not skill_file.exists(), (
+            "the old skill should be retired after the winning command "
+            "layer renders successfully"
+        )
+        for preset_id in ("lower-skill-preset", "higher-command-preset"):
+            metadata = manager.registry.get(preset_id)
+            assert not metadata["registered_skills"].get("copilot"), (
+                "all layers sharing the retired skill output must drop "
+                "their stale skill tracking"
+            )
+
+    def test_project_override_command_retires_stale_preset_skill(
+        self, project_dir, temp_dir
+    ):
+        """A reconciled project override can replace a stale preset skill."""
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "override-toggle-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = (
+            project_dir
+            / ".github"
+            / "skills"
+            / "speckit-specify"
+            / "SKILL.md"
+        )
+        assert skill_file.exists()
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+        (
+            manager.presets_dir
+            / "override-toggle-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        command_file = commands_dir / "speckit.specify.agent.md"
+        assert "Override body" in command_file.read_text(encoding="utf-8")
+        assert not skill_file.exists(), (
+            "the stale preset skill must be retired once the project "
+            "override command is successfully reconciled"
+        )
+        metadata = manager.registry.get("override-toggle-preset")
+        assert not metadata["registered_skills"].get("copilot")
+
     def test_toggle_skills_to_command_empty_result_preserves_old_skill(
         self, project_dir, temp_dir
     ):
