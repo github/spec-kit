@@ -416,12 +416,12 @@ class TestAlquimiaArgumentHints:
 
     def test_inject_argument_hint_only_in_frontmatter(self):
         """inject_argument_hint must not modify description: lines in the body."""
-        from specify_cli.integrations.alquimia import AlquimiaIntegration
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
 
         content = (
             "---\ndescription: My command\n---\n\ndescription: this is body text\n"
         )
-        result = AlquimiaIntegration.inject_argument_hint(content, "Test hint")
+        result = AlquimiaAIIntegration.inject_argument_hint(content, "Test hint")
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1, (
@@ -430,7 +430,7 @@ class TestAlquimiaArgumentHints:
 
     def test_inject_argument_hint_skips_if_already_present(self):
         """inject_argument_hint must not duplicate if argument-hint already exists."""
-        from specify_cli.integrations.alquimia import AlquimiaIntegration
+        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
 
         content = (
             "---\n"
@@ -440,7 +440,7 @@ class TestAlquimiaArgumentHints:
             "\n"
             "Body text\n"
         )
-        result = AlquimiaIntegration.inject_argument_hint(content, "New hint")
+        result = AlquimiaAIIntegration.inject_argument_hint(content, "New hint")
         assert result == content, "Content should be unchanged when hint already exists"
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
