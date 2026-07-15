@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-15T00:00:00Z",
+  "updated_at": "2026-07-15T14:10:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -394,6 +394,40 @@
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
+    },
+    "bdd": {
+      "name": "Spec-Kit BDD",
+      "id": "bdd",
+      "description": "ATDD/BDD extension: convert specs to Gherkin scenarios, scaffold step definitions, and verify acceptance test coverage.",
+      "author": "RSginer",
+      "version": "1.0.2",
+      "download_url": "https://github.com/RSginer/spec-kit-bdd/archive/refs/tags/v1.0.2.zip",
+      "repository": "https://github.com/RSginer/spec-kit-bdd",
+      "homepage": "https://github.com/RSginer/spec-kit-bdd",
+      "documentation": "https://github.com/RSginer/spec-kit-bdd/blob/main/docs/usage.md",
+      "changelog": "https://github.com/RSginer/spec-kit-bdd/releases",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 2
+      },
+      "tags": [
+        "bdd",
+        "gherkin",
+        "atdd",
+        "acceptance-testing",
+        "tdd"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-15T00:00:00Z",
+      "updated_at": "2026-07-15T00:00:00Z"
     },
     "blueprint": {
       "name": "Blueprint",
