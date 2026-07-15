@@ -24,6 +24,24 @@ class FanInStep(StepBase):
         if not isinstance(output_config, dict):
             output_config = {}
 
+        # The engine does not auto-validate step config, so an unvalidated run
+        # with a non-list ``wait_for`` reaches here raw. Iterating it then
+        # either crashes the whole run (a scalar like an int or None raises
+        # TypeError) or, worse, silently iterates a string's characters and
+        # yields a bogus join of empty results with a COMPLETED status — the
+        # exact "silent empty result + COMPLETED" wiring bug the engine's
+        # fan-in validation guards against. Fail this step loudly instead,
+        # mirroring the fan-out step's non-list ``items`` handling.
+        if not isinstance(wait_for, list):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Fan-in step {config.get('id', '?')!r}: 'wait_for' must be "
+                    f"a list of step IDs, got {type(wait_for).__name__}."
+                ),
+                output={"results": []},
+            )
+
         # Collect results from referenced steps
         results = []
         for step_id in wait_for:
@@ -57,5 +75,14 @@ class FanInStep(StepBase):
             errors.append(
                 f"Fan-in step {config.get('id', '?')!r}: "
                 f"'wait_for' must be a non-empty list of step IDs."
+            )
+        output = config.get("output")
+        if output is not None and not isinstance(output, dict):
+            # execute() silently coerces a non-mapping output to {}, so the
+            # author's declared aggregation keys would vanish with no error.
+            # Reject at validation, mirroring the command-step (#3262) fix.
+            errors.append(
+                f"Fan-in step {config.get('id', '?')!r}: 'output' must be a "
+                f"mapping of key -> expression, got {type(output).__name__}."
             )
         return errors

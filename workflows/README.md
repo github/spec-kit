@@ -112,7 +112,13 @@ Run a shell command and capture output:
 - id: run-tests
   type: shell
   run: "cd {{ inputs.project_dir }} && npm test"
+  timeout: 1800   # Optional: max seconds before the command is killed (default 300)
 ```
+
+`timeout` is the maximum time in seconds the command may run before it is
+killed and the step fails; it must be a positive number and defaults to
+`300` (five minutes) when omitted. Raise it for long-running gates such as
+full builds, linter aggregators, or integration-test targets.
 
 ### Init Steps
 
@@ -342,6 +348,7 @@ current run:
 | Variable | Description |
 |----------|-------------|
 | `context.run_id` | The current workflow run id (the same value Spec Kit prints as `Run ID:` at the end of `workflow run`). Auto-generated runs are 8-character hex from `uuid4`; operator-supplied ids may be any alphanumeric string with hyphens or underscores. Empty string outside a run context. |
+| `context.workflow_dir` | The resolved absolute path to the directory containing the workflow source file. For file-loaded workflows this is the parent directory of the YAML file; for installed-by-ID workflows it is the absolute path to the installation directory (e.g. `<project>/.specify/workflows/<id>/`); for string-loaded workflows it is an empty string. On resume the original source directory is preserved from the first execution. |
 
 ```yaml
 # Stamp telemetry events with the run id for cross-system join.
@@ -359,6 +366,11 @@ current run:
   command: speckit.specify
   input:
     args: "{{ context.run_id }}"
+
+# Reference a sibling file shipped alongside the workflow definition.
+- id: apply-config
+  type: shell
+  run: 'cp "{{ context.workflow_dir }}/defaults.yml" ./config.yml'
 ```
 
 ## Input Types
@@ -439,6 +451,7 @@ specify workflow catalog remove <index>
 | Variable | Description |
 |----------|-------------|
 | `SPECKIT_WORKFLOW_CATALOG_URL` | Override the catalog URL (replaces all defaults) |
+| `SPECKIT_WORKFLOW_DIR` | Set automatically for shell steps; contains the resolved absolute path to the workflow source directory (same value as `{{ context.workflow_dir }}`). Not set when the workflow has no source path (string-loaded workflows). |
 
 ## Configuration Files
 

@@ -26,6 +26,32 @@ class WhileStep(StepBase):
         nested_steps = config.get("steps", [])
 
         result = evaluate_condition(condition, context)
+
+        # The engine does not auto-validate step config (see
+        # ``WorkflowEngine.load_workflow``) and feeds ``next_steps`` straight
+        # into ``_execute_steps``, which iterates them as step mappings. A
+        # non-list ``steps`` (a single mapping or scalar authoring mistake)
+        # would otherwise be iterated element-wise — a dict yields its string
+        # keys, a str its characters — and crash the whole run with
+        # AttributeError on ``.get()``. ``validate`` already rejects a non-list
+        # ``steps``; fail this step loudly on an unvalidated run instead,
+        # mirroring the if/switch/fan-out steps. The guard fires only when the
+        # body would actually be dispatched (condition truthy). The condition is
+        # still evaluated first, so its result is surfaced for downstream context.
+        if result and not isinstance(nested_steps, list):
+            return StepResult(
+                status=StepStatus.FAILED,
+                output={
+                    "condition_result": True,
+                    "max_iterations": max_iterations,
+                    "loop_type": "while",
+                },
+                error=(
+                    f"While step {config.get('id', '?')!r}: 'steps' must be a "
+                    f"list of steps, got {type(nested_steps).__name__}."
+                ),
+            )
+
         if result:
             return StepResult(
                 status=StepStatus.COMPLETED,

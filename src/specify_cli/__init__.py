@@ -46,6 +46,7 @@ from ._console import (
     BannerGroup,
     StepTracker,
     console,
+    err_console,
     get_key as get_key,
     select_with_arrows as select_with_arrows,
     show_banner,
@@ -140,8 +141,9 @@ def _install_shared_infra(
 
     Copies ``.specify/scripts/<variant>/`` and ``.specify/templates/`` from
     the bundled core_pack or source checkout, where ``<variant>`` is
-    ``bash`` when *script_type* is ``"sh"`` and ``powershell`` when it is
-    ``"ps"``.  Tracks all installed files in ``speckit.manifest.json``.
+    ``bash`` when *script_type* is ``"sh"``, ``python`` when it is ``"py"``,
+    and ``powershell`` when it is ``"ps"``.  Tracks all installed files in
+    ``speckit.manifest.json``.
 
     Shared scripts and page templates are processed to resolve
     ``__SPECKIT_COMMAND_<NAME>__`` placeholders using *invoke_separator*
@@ -507,20 +509,35 @@ _register_extension_cmds(app)
 from .integrations._commands import register as _register_integration_cmds  # noqa: E402
 _register_integration_cmds(app)
 
-# Re-exported from integrations/_helpers.py to preserve the public import surface.
+# Re-export selected helpers to preserve the public import surface.
 from .integrations._helpers import (  # noqa: E402
     _clear_init_options_for_integration as _clear_init_options_for_integration,
     _update_init_options_for_integration as _update_init_options_for_integration,
 )
+from ._project import _resolve_init_dir_override as _resolve_init_dir_override  # noqa: E402
 
 
 def _require_specify_project() -> Path:
-    """Return the current project root if it is a spec-kit project, else exit."""
+    """Return the project root if it is a spec-kit project, else exit.
+
+    Honors the ``SPECIFY_INIT_DIR`` override (same validation rules as the shell
+    scripts) so a member project can be targeted from a monorepo root without
+    ``cd``. This is the resolution chokepoint for *every* project-scoped
+    subcommand — ``integration``, ``extension``, ``workflow``, ``preset``, and the
+    rest that operate on an existing ``.specify/`` project — so the override
+    applies to all of them uniformly. When the override is unset, the project is
+    the current directory, as before.
+    """
+    override = _resolve_init_dir_override()
+    if override is not None:
+        return override
     project_root = Path.cwd()
     if (project_root / ".specify").is_dir():
         return project_root
-    console.print("[red]Error:[/red] Not a spec-kit project (no .specify/ directory)")
-    console.print("Run this command from a spec-kit project root")
+    err_console.print("[red]Error:[/red] Not a Spec Kit project (no .specify/ directory)")
+    err_console.print(
+        "Run this command from a Spec Kit project root or set SPECIFY_INIT_DIR to one."
+    )
     raise typer.Exit(1)
 
 

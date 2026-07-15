@@ -84,6 +84,20 @@ class TestCatalogURLValidation:
         with pytest.raises(IntegrationCatalogError, match="valid URL"):
             IntegrationCatalog._validate_catalog_url(url)
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://[::1",                 # unclosed ipv6 bracket
+            "https://[not-an-ip]/c.json",   # bracketed non-ip host
+        ],
+    )
+    def test_malformed_url_rejected_cleanly(self, url):
+        # A malformed authority makes urlparse/hostname raise ValueError. The
+        # validator must turn that into its normal catalog error, not leak a
+        # raw ValueError to the caller.
+        with pytest.raises(IntegrationCatalogError, match="malformed"):
+            IntegrationCatalog._validate_catalog_url(url)
+
 
 # ---------------------------------------------------------------------------
 # IntegrationCatalog — active catalogs
@@ -590,7 +604,7 @@ class TestIntegrationUpgrade:
         finally:
             os.chdir(old)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_upgrade_no_integration_installed(self, tmp_path):
         from typer.testing import CliRunner

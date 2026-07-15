@@ -97,7 +97,7 @@ class TestIntegrationList:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_list_shows_installed(self, tmp_path):
         project = _init_project(tmp_path, "copilot")
@@ -167,7 +167,7 @@ class TestIntegrationStatus:
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(app, ["integration", "status"])
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_status_reports_healthy_project(self, copilot_project):
         result = _run_in_project(copilot_project, ["integration", "status"])
@@ -988,7 +988,7 @@ class TestIntegrationInstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_install_unknown_integration(self, tmp_path):
         project = _init_project(tmp_path)
@@ -1384,7 +1384,7 @@ class TestIntegrationUninstall:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_uninstall_no_integration(self, tmp_path):
         project = tmp_path / "proj"
@@ -1687,7 +1687,7 @@ class TestIntegrationSwitch:
         finally:
             os.chdir(old_cwd)
         assert result.exit_code != 0
-        assert "Not a spec-kit project" in result.output
+        assert "Not a Spec Kit project" in result.output
 
     def test_switch_unknown_target(self, tmp_path):
         project = _init_project(tmp_path)
@@ -2674,6 +2674,27 @@ class TestParseIntegrationOptionsEqualsForm:
         assert result_equals is not None
         assert result_space["commands_dir"] == "./mydir"
         assert result_equals["commands_dir"] == "./mydir"
+
+    def test_unbalanced_quote_exits_cleanly(self, capsys):
+        """An unbalanced quote must exit(1) with a message, not a raw ValueError.
+
+        shlex.split() raises ValueError("No closing quotation") on an unbalanced
+        quote; the parser must translate that into the same clean typer.Exit(1)
+        UX as unknown-option / missing-value, rather than letting the traceback
+        escape (issue #3457).
+        """
+        import typer
+
+        from specify_cli.integrations._commands import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        with pytest.raises(typer.Exit) as excinfo:
+            _parse_integration_options(integration, '--commands-dir "foo')
+        assert excinfo.value.exit_code == 1
+        assert "Error: Could not parse integration options: No closing quotation." in capsys.readouterr().out
 
 
 class TestUninstallNoManifestClearsInitOptions:

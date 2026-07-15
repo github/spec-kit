@@ -631,6 +631,14 @@ def catalog_remove(
     console.print(f"[green]✓[/green] Removed catalog source '{removed}'.")
 
 
+# ZIP magic-byte signatures used to detect .zip payloads from REST API asset
+# URLs, which carry no file extension.  The three signatures cover all valid
+# ZIP variants (PK\x03\x04 = local file header, PK\x05\x06 = empty archive,
+# PK\x07\x08 = spanning marker) without the false-positive risk of checking
+# only the 2-byte "PK" prefix.
+_ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
+
+
 # ===== internal helpers =====
 
 
@@ -738,11 +746,16 @@ def _resolve_manifest_path(path: Path | None) -> Path:
 def _download_manifest(resolved, *, offline: bool):
     """Resolve a bundle's manifest from its catalog ``download_url``.
 
-    Local/``file://`` URLs always work offline and may point at a ``.zip``
-    artifact, a bundle directory, or a ``bundle.yml`` (handled by
-    :func:`_local_manifest_source`). Remote ``https://`` URLs are fetched with
-    the shared authenticated, redirect-validated HTTP client, and only when not
-    ``--offline``.
+    Catalog ``download_url``s are HTTPS-only (``http`` allowed for localhost),
+    matching the extensions/presets/workflows catalog systems. Remote URLs are
+    fetched with the shared authenticated, redirect-validated HTTP client, and
+    only when not ``--offline``.
+
+    Local and ``file://`` sources are intentionally not resolved here: to
+    install a bundle from disk, pass the path positionally
+    (``specify bundle install ./path/to/bundle.yml`` — a bundle directory or a
+    ``.zip`` artifact also works), which :func:`_local_manifest_source` handles
+    before catalog resolution and which never touches ``download_url``.
     """
     from urllib.parse import urlparse
 
@@ -755,26 +768,35 @@ def _download_manifest(resolved, *, offline: bool):
     parsed = urlparse(url)
     scheme = parsed.scheme.lower()
 
-    # On Windows an absolute path like ``C:\bundle.yml`` parses with a
-    # single-letter ``scheme``; treat it as a local file, not a URL scheme.
+    # ``file://`` URLs and bare filesystem paths (including Windows drive paths
+    # like ``C:\bundle.yml``, which urlparse reads as a single-letter scheme)
+    # are not valid catalog download URLs. Catalog URLs are HTTPS-only across
+    # every catalog system; installing from disk is done by passing the path
+    # positionally, which never reaches URL resolution. Give an actionable
+    # error rather than accepting a scheme the rest of the codebase rejects.
     if scheme in ("", "file") or re.match(r"^[A-Za-z]:[\\/]", url):
-        local = Path(parsed.path if scheme == "file" else url)
-        manifest = _local_manifest_source(str(local))
-        if manifest is None:
-            raise BundlerError(f"Bundle manifest not found: {local}")
-        return manifest
+        raise BundlerError(
+            f"Catalog entry '{resolved.entry.id}' has a non-HTTP(S) download_url "
+            f"({url}); catalog download URLs must be HTTPS (http for localhost) — "
+            "a file:// URL, a local filesystem path, or a scheme-less value "
+            "(e.g. 'example.com/bundle.zip') is not accepted. "
+            "To install a bundle from disk, pass the path directly: "
+            "'specify bundle install <path-to-bundle.yml | bundle-dir | .zip>'."
+        )
 
-    if scheme in ("http", "https"):
-        if offline:
-            raise BundlerError(
-                f"Network access disabled; cannot download bundle '{resolved.entry.id}' "
-                f"from {url}."
-            )
-        return _download_remote_manifest(resolved.entry.id, url)
+    # Validate the scheme/host *before* the offline gate so an invalid or
+    # non-HTTPS download_url reports the real problem in every mode, rather
+    # than a misleading "Network access disabled" under --offline.
+    # (_download_remote_manifest re-checks this, but only once network access
+    # is permitted.) HTTPS-only, http allowed for localhost.
+    _require_https(f"bundle '{resolved.entry.id}'", url)
 
-    raise BundlerError(
-        f"Unsupported download_url scheme for bundle '{resolved.entry.id}': {url}"
-    )
+    if offline:
+        raise BundlerError(
+            f"Network access disabled; cannot download bundle '{resolved.entry.id}' "
+            f"from {url}."
+        )
+    return _download_remote_manifest(resolved.entry.id, url)
 
 
 def _require_https(label: str, url: str) -> None:
@@ -794,41 +816,110 @@ def _download_remote_manifest(entry_id: str, url: str):
     """Fetch a remote bundle artifact over HTTPS and extract its manifest."""
     import io
     import tempfile
+    from pathlib import PurePosixPath
+    from urllib.parse import urlparse as _urlparse
 
-    from ...authentication.http import open_url
+    import yaml as _yaml
+
+    from ...authentication.http import github_provider_hosts, open_url
+    from ..._github_http import resolve_github_release_asset_api_url
+    from ...bundler.models.manifest import BundleManifest
 
     def _validate_redirect(old_url: str, new_url: str) -> None:
         _require_https(f"bundle '{entry_id}'", new_url)
 
     _require_https(f"bundle '{entry_id}'", url)
+
+    # For private/SSO-protected GitHub repos, browser release download URLs
+    # (https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>)
+    # redirect to an HTML/SSO page instead of delivering the asset.  Resolve
+    # such URLs to the GitHub REST API asset URL so the authenticated client
+    # can download the actual file.
+    extra_headers = None
+    effective_url = url
+    resolved = resolve_github_release_asset_api_url(
+        url, open_url, timeout=30, github_hosts=github_provider_hosts()
+    )
+    if resolved:
+        effective_url = resolved
+        _require_https(f"bundle '{entry_id}'", effective_url)
+        extra_headers = {"Accept": "application/octet-stream"}
+
+    # Human-readable description of where the bytes came from, reused across
+    # all post-download error messages so failures point at the catalog URL
+    # (and resolved API URL, if any) instead of an opaque temp path.
+    if effective_url != url:
+        _source_desc = f"{url} (resolved to {effective_url})"
+    else:
+        _source_desc = url
+
     try:
-        with open_url(url, timeout=30, redirect_validator=_validate_redirect) as resp:
+        with open_url(
+            effective_url,
+            timeout=30,
+            redirect_validator=_validate_redirect,
+            extra_headers=extra_headers,
+        ) as resp:
             _require_https(f"bundle '{entry_id}'", resp.geturl())
             raw = resp.read()
     except BundlerError:
         raise
     except Exception as exc:  # noqa: BLE001
-        raise BundlerError(f"Failed to download bundle '{entry_id}' from {url}: {exc}") from exc
+        # Report the original catalog URL so users know which entry to fix,
+        # and include the resolved URL when it differs for easier debugging.
+        raise BundlerError(
+            f"Failed to download bundle '{entry_id}' from {_source_desc}: {exc}"
+        ) from exc
 
     # A .zip artifact is written to a temp file and parsed via the local-source
     # path (which extracts bundle.yml); any other payload is treated as YAML.
-    if url.lower().endswith(".zip"):
-        with tempfile.TemporaryDirectory() as tmp:
-            artifact = Path(tmp) / "bundle.zip"
-            artifact.write_bytes(raw)
-            manifest = _local_manifest_source(str(artifact))
-            if manifest is None:
-                raise BundlerError(
-                    f"Downloaded artifact for bundle '{entry_id}' is not a valid bundle."
-                )
-            return manifest
+    # Detection uses the path component of the original catalog URL (via
+    # PurePosixPath so query strings and fragments are ignored, and URL paths
+    # are always treated as POSIX regardless of host OS), falling back to the
+    # module-level _ZIP_SIGNATURES magic-byte check for direct REST API asset
+    # URLs which carry no file extension.
+    _url_ext = PurePosixPath(_urlparse(url).path).suffix.lower()
+    try:
+        if _url_ext == ".zip" or raw[:4] in _ZIP_SIGNATURES:
+            with tempfile.TemporaryDirectory() as tmp:
+                artifact = Path(tmp) / "bundle.zip"
+                artifact.write_bytes(raw)
+                # Wrap ZIP parsing so any failure (BadZipFile, missing
+                # bundle.yml, etc.) references the source URL rather than the
+                # opaque temporary path, consistent with the download-error
+                # handling above.
+                try:
+                    manifest = _local_manifest_source(str(artifact))
+                except Exception as exc:  # noqa: BLE001
+                    raise BundlerError(
+                        f"Downloaded artifact for bundle '{entry_id}' from "
+                        f"{_source_desc} is not a valid bundle: {exc}"
+                    ) from exc
+                # _local_manifest_source returns None only when the file does
+                # not exist; since we just wrote *artifact* that cannot happen
+                # here.  The explicit guard ensures callers never receive None
+                # and silently degrade instead of raising a clear error.
+                if manifest is None:
+                    raise BundlerError(
+                        f"Downloaded artifact for bundle '{entry_id}' from "
+                        f"{_source_desc} is not a valid bundle."
+                    )
+                return manifest
 
-    import yaml as _yaml
-
-    from ...bundler.models.manifest import BundleManifest
-
-    data = _yaml.safe_load(io.BytesIO(raw))
-    return BundleManifest.from_dict(data)
+        data = _yaml.safe_load(io.BytesIO(raw))
+        return BundleManifest.from_dict(data)
+    except BundlerError:
+        raise
+    except _yaml.YAMLError as exc:
+        raise BundlerError(
+            f"Downloaded content for bundle '{entry_id}' from {_source_desc} "
+            f"is not valid YAML: {exc}"
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise BundlerError(
+            f"Failed to parse downloaded bundle '{entry_id}' from "
+            f"{_source_desc}: {exc}"
+        ) from exc
 
 
 def register(app: typer.Typer) -> None:

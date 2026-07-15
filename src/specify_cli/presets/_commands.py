@@ -104,7 +104,13 @@ def preset_add(
             from ipaddress import ip_address
             from urllib.parse import urlparse as _urlparse
 
-            _parsed = _urlparse(from_url)
+            try:
+                _parsed = _urlparse(from_url)
+            except ValueError:
+                from rich.markup import escape as _escape_markup
+
+                console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
+                raise typer.Exit(1)
 
             def _is_allowed_download_url(parsed_url):
                 host = parsed_url.hostname
@@ -135,7 +141,9 @@ def preset_add(
                 )
                 raise typer.Exit(1)
 
-            console.print(f"Installing preset from [cyan]{from_url}[/cyan]...")
+            from rich.markup import escape as _esc
+
+            console.print(f"Installing preset from [cyan]{_esc(from_url)}[/cyan]...")
             import urllib.error
             import tempfile
             import shutil
@@ -461,7 +469,14 @@ def preset_set_priority(
     raw_priority = metadata.get("priority")
     # Only skip if the stored value is already a valid int equal to requested priority
     # This ensures corrupted values (e.g., "high") get repaired even when setting to default (10)
-    if isinstance(raw_priority, int) and raw_priority == priority:
+    # A bool is an int in Python (isinstance(True, int) is True), so exclude it explicitly —
+    # mirroring normalize_priority's bool guard — otherwise a corrupted True/False priority
+    # equals 1/0 here and is never repaired.
+    if (
+        isinstance(raw_priority, int)
+        and not isinstance(raw_priority, bool)
+        and raw_priority == priority
+    ):
         console.print(f"[yellow]Preset '{preset_id}' already has priority {priority}[/yellow]")
         raise typer.Exit(0)
 
@@ -469,6 +484,9 @@ def preset_set_priority(
 
     # Update priority
     manager.registry.update(preset_id, {"priority": priority})
+    manager.reconcile_constitution(
+        f"Failed to reconcile constitution after changing priority for preset {preset_id}"
+    )
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' priority changed: {old_priority} → {priority}")
     console.print("\n[dim]Lower priority = higher precedence in template resolution[/dim]")
@@ -502,6 +520,9 @@ def preset_enable(
 
     # Enable the preset
     manager.registry.update(preset_id, {"enabled": True})
+    manager.reconcile_constitution(
+        f"Failed to reconcile constitution after enabling preset {preset_id}"
+    )
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' enabled")
     console.print("\nTemplates from this preset will now be included in resolution.")
@@ -536,6 +557,9 @@ def preset_disable(
 
     # Disable the preset
     manager.registry.update(preset_id, {"enabled": False})
+    manager.reconcile_constitution(
+        f"Failed to reconcile constitution after disabling preset {preset_id}"
+    )
 
     console.print(f"[green]✓[/green] Preset '{preset_id}' disabled")
     console.print("\nTemplates from this preset will be skipped during resolution.")

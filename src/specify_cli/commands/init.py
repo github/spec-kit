@@ -24,7 +24,6 @@ from .._assets import (
 )
 from .._console import StepTracker, console, select_with_arrows, show_banner
 from .._utils import check_tool
-from ..shared_infra import _ensure_safe_shared_directory, _write_shared_text
 
 
 def _stdin_is_interactive() -> bool:
@@ -34,11 +33,16 @@ def _stdin_is_interactive() -> bool:
 def ensure_constitution_from_template(
     project_path: Path, tracker: StepTracker | None = None
 ) -> None:
-    """Copy constitution template to memory if it doesn't exist.
+    """Materialize the resolved constitution template to memory if missing.
 
-    Resolves the template through the preset priority stack so that a preset's
-    replacement constitution-template is used instead of the generic core file.
+    Resolution walks the full priority stack (project overrides → installed
+    presets → extensions → core) via :class:`PresetResolver`, so a preset that
+    ships a ``constitution-template`` (e.g. ``strategy: replace`` with a ratified
+    constitution) can seed the memory file. When nothing overrides it, the
+    resolver falls through to the core template.
     """
+    from ..presets import _materialize_constitution_template
+
     memory_constitution = project_path / ".specify" / "memory" / "constitution.md"
 
     if memory_constitution.exists():
@@ -47,38 +51,21 @@ def ensure_constitution_from_template(
             tracker.skip("constitution", "existing file preserved")
         return
 
-    from ..presets import PresetResolver
-
     try:
-        constitution_content = PresetResolver(project_path).resolve_content(
-            "constitution-template", "template"
+        materialization = _materialize_constitution_template(
+            project_path, memory_constitution
         )
-    except (OSError, UnicodeError, ValueError) as exc:
+        if materialization is None:
+            if tracker:
+                tracker.add("constitution", "Constitution setup")
+                tracker.error("constitution", "template not found")
+            return
         if tracker:
             tracker.add("constitution", "Constitution setup")
-            tracker.error("constitution", str(exc))
-        else:
-            console.print(
-                f"[yellow]Warning: Could not resolve constitution template: {exc}[/yellow]"
-            )
-        return
-
-    if constitution_content is None:
-        if tracker:
-            tracker.add("constitution", "Constitution setup")
-            tracker.error("constitution", "template not found")
-        return
-
-    try:
-        _ensure_safe_shared_directory(
-            project_path,
-            memory_constitution.parent,
-            context="constitution memory directory",
-        )
-        _write_shared_text(project_path, memory_constitution, constitution_content)
-        if tracker:
-            tracker.add("constitution", "Constitution setup")
-            tracker.complete("constitution", "copied from template")
+            if materialization == "copied":
+                tracker.complete("constitution", "copied from template")
+            else:
+                tracker.complete("constitution", "composed from template")
         else:
             console.print("[cyan]Initialized constitution from template[/cyan]")
     except Exception as e:
@@ -242,16 +229,45 @@ def register(app: typer.Typer) -> None:
                 console.print(
                     f"[yellow]Warning:[/yellow] Current directory is not empty ({len(existing_items)} items)"
                 )
-                console.print(
-                    "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
-                )
                 if force:
+                    # Proceeding: the merge/overwrite warning is accurate here.
+                    console.print(
+                        "[yellow]Template files will be merged with existing content and may overwrite existing files[/yellow]"
+                    )
                     console.print(
                         "[cyan]--force supplied: skipping confirmation and proceeding with merge[/cyan]"
                     )
                 else:
-                    response = typer.confirm("Do you want to continue?")
-                    if not response:
+                    # Fold the merge risk into the confirmation prompt rather than
+                    # printing it unconditionally first: on the EOF/no-input path
+                    # below the command exits without changing anything, so a
+                    # standalone "will be merged" line would mislead. Interactive
+                    # users still see the risk as part of the question.
+                    #
+                    # Call typer.confirm normally so piped y/n is honored — e.g.
+                    # `echo y | specify init --here` keeps reaching the
+                    # non-destructive preserve-merge path.
+                    try:
+                        proceed = typer.confirm(
+                            "Template files will be merged with existing content "
+                            "and may overwrite existing files. Do you want to continue?"
+                        )
+                    except (typer.Abort, EOFError):
+                        # typer.confirm raises Abort for BOTH an interactive Ctrl+C
+                        # and an EOF on closed/empty stdin. Distinguish them: a real
+                        # TTY cancellation is a normal exit (0, "cancelled"), while a
+                        # missing-input EOF (non-interactive) becomes an actionable
+                        # error pointing at --force.
+                        if _stdin_is_interactive():
+                            console.print("[yellow]Operation cancelled[/yellow]")
+                            raise typer.Exit(0) from None
+                        console.print(
+                            "[red]Error:[/red] Current directory is not empty and no "
+                            "confirmation input is available. Re-run with "
+                            "[bold]--force[/bold] to merge into it."
+                        )
+                        raise typer.Exit(1) from None
+                    if not proceed:
                         console.print("[yellow]Operation cancelled[/yellow]")
                         raise typer.Exit(0)
         else:
@@ -596,6 +612,9 @@ def register(app: typer.Typer) -> None:
                             continuing="Continuing without the optional preset.",
                         )
 
+                # Seed the constitution AFTER preset installation so that a
+                # preset-provided constitution-template (resolved via the
+                # priority stack) wins over the core template.
                 ensure_constitution_from_template(project_path, tracker=tracker)
 
                 tracker.complete("final", "project ready")

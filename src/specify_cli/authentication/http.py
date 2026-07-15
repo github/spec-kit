@@ -73,6 +73,13 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         self._redirect_validator = redirect_validator
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            new_parsed = urlparse(newurl)
+        except ValueError as exc:
+            # Malformed redirect target (e.g. unterminated IPv6 bracket).
+            # Surface as URLError so callers' download error handling applies.
+            raise urllib.error.URLError(f"malformed redirect URL: {exc}") from exc
+
         if self._redirect_validator is not None:
             self._redirect_validator(req.full_url, newurl)
 
@@ -83,7 +90,6 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
         if new_req is not None:
             old_scheme = urlparse(req.full_url).scheme
-            new_parsed = urlparse(newurl)
             hostname = (new_parsed.hostname or "").lower()
             is_https_downgrade = old_scheme == "https" and new_parsed.scheme != "https"
             if _hostname_in_hosts(hostname, self._hosts) and not is_https_downgrade:

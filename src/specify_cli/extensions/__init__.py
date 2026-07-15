@@ -26,6 +26,7 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
+from .._assets import _locate_core_pack, _repo_root
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
@@ -62,14 +63,28 @@ def _load_core_command_names() -> frozenset[str]:
     Prefer the wheel-time ``core_pack`` bundle when present, and fall back to
     the source checkout when running from the repository. If neither is
     available, use the baked-in fallback set so validation still works.
+
+    Path resolution is delegated to the canonical ``_assets`` resolvers
+    (``_locate_core_pack`` / ``_repo_root``) — the same ones the presets and
+    bundle loaders use — rather than bespoke ``Path(__file__)`` arithmetic.
+    Hand-counted ``.parent`` chains silently broke discovery once already: the
+    #3014 move of this module from ``specify_cli/extensions.py`` to
+    ``specify_cli/extensions/__init__.py`` pushed the file one directory deeper
+    without updating the counts, so both candidates resolved to non-existent
+    paths and every call fell through to the fallback (#3274). The shared
+    resolvers are anchored to the package root, so discovery survives future
+    module moves.
     """
+    core_pack = _locate_core_pack()
     candidate_dirs = [
-        Path(__file__).parent / "core_pack" / "commands",
-        Path(__file__).resolve().parent.parent.parent / "templates" / "commands",
+        # Wheel install: force-include maps templates/commands → core_pack/commands.
+        core_pack / "commands" if core_pack is not None else None,
+        # Source checkout / editable install: repo-root templates/commands.
+        _repo_root() / "templates" / "commands",
     ]
 
     for commands_dir in candidate_dirs:
-        if not commands_dir.is_dir():
+        if commands_dir is None or not commands_dir.is_dir():
             continue
 
         command_names = {
@@ -1060,9 +1075,16 @@ class ExtensionManager:
                         pass  # best-effort cleanup
                 continue
             frontmatter, body = registrar.parse_frontmatter(content)
-            frontmatter = registrar._adjust_script_paths(frontmatter)
+            frontmatter = registrar._adjust_script_paths(
+                frontmatter, extension_id=manifest.id
+            )
+            # Mirror the register_commands() rewrite (#2101): resolve
+            # extension-relative subdir references (agents/, knowledge-base/,
+            # etc.) to their installed .specify/extensions/<id>/ location
+            # before the generic placeholder/path resolution below.
+            body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
             body = registrar.resolve_skill_placeholders(
-                selected_ai, frontmatter, body, self.project_root
+                selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
 
             original_desc = frontmatter.get("description", "")
@@ -1943,6 +1965,7 @@ class CommandRegistrar:
             project_root,
             context_note=context_note,
             link_outputs=link_outputs,
+            extension_id=manifest.id,
         )
 
     def register_commands_for_all_agents(
@@ -1963,6 +1986,7 @@ class CommandRegistrar:
             context_note=context_note,
             link_outputs=link_outputs,
             create_missing_active_skills_dir=create_missing_active_skills_dir,
+            extension_id=manifest.id,
         )
 
     def unregister_commands(
@@ -2673,7 +2697,12 @@ class ConfigManager:
             return {}
 
         try:
-            return yaml.safe_load(file_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+            # Coerce a non-mapping root (list/scalar, or None for an empty
+            # file) to {} so callers that iterate/merge the result — e.g.
+            # _merge_configs' .items() — never crash. Mirrors the same
+            # non-dict-root guard in get_project_config().
+            return data if isinstance(data, dict) else {}
         except (yaml.YAMLError, OSError, UnicodeError):
             return {}
 
@@ -2708,6 +2737,36 @@ class ConfigManager:
         config_file = self.extension_dir / "local-config.yml"
         return self._load_yaml_config(config_file)
 
+    def _sibling_extension_ids(self) -> list[str]:
+        """Return IDs of other extensions installed alongside this one.
+
+        Sourced from ``ExtensionRegistry`` (``.specify/extensions/.registry``)
+        rather than a directory scan: ``ExtensionManager.remove(...,
+        keep_config=True)`` deliberately preserves the extension directory
+        while dropping the registry entry, so a directory scan would treat
+        that config-only leftover as an installed sibling and keep silently
+        absorbing its ``SPECKIT_<sibling>_*`` env vars into no one. The
+        registry is the source of truth for "installed".
+
+        Returns an empty list if the registry is missing or corrupted
+        (fresh project, ad-hoc test harness) so ``_get_env_config`` degrades
+        to its pre-fix behaviour rather than crashing. ``UnicodeError`` is
+        caught alongside ``OSError`` because ``ExtensionRegistry._load()``
+        opens the file in text mode and only handles ``JSONDecodeError`` /
+        ``FileNotFoundError``, so a registry file with non-UTF-8 bytes would
+        otherwise surface a ``UnicodeDecodeError`` here and break *every*
+        config read instead of degrading gracefully.
+
+        Used by ``_get_env_config`` to detect env vars whose remainder claims
+        a longer, sibling-owned prefix (e.g. ``SPECKIT_GIT_HOOKS_URL`` is
+        owned by ``git-hooks`` when it is co-installed with ``git``).
+        """
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        try:
+            return list(ExtensionRegistry(extensions_dir).keys())
+        except (OSError, UnicodeError):
+            return []
+
     def _get_env_config(self) -> Dict[str, Any]:
         """Get configuration from environment variables.
 
@@ -2727,22 +2786,70 @@ class ConfigManager:
         ext_id_upper = self.extension_id.replace("-", "_").upper()
         prefix = f"SPECKIT_{ext_id_upper}_"
 
+        # Cross-extension prefix collision: because ``_`` doubles as both the
+        # separator between the extension ID and the config path *and* the
+        # substitute for ``-`` inside an extension ID, an env var like
+        # ``SPECKIT_GIT_HOOKS_URL`` begins with *both* the ``SPECKIT_GIT_``
+        # prefix of the ``git`` extension and the ``SPECKIT_GIT_HOOKS_`` prefix
+        # of a co-installed ``git-hooks`` extension. It logically belongs to
+        # the extension whose normalized ID is the longer, more specific match
+        # — otherwise config intended for one extension silently surfaces
+        # inside another and can drive hooks that only inspect
+        # ``config.<field> is set``. Build the list of sibling-owned
+        # remainder-prefixes here so a later env var can be skipped if it
+        # matches one.
+        sibling_prefixes: list[str] = []
+        for sibling_id in self._sibling_extension_ids():
+            if sibling_id == self.extension_id:
+                continue
+            sib_upper = sibling_id.replace("-", "_").upper()
+            # A sibling collides only when its normalized ID *extends* our own
+            # (i.e. starts with ``<US>_``). ``git`` vs ``not-git`` is not a
+            # collision; ``git`` vs ``git-hooks`` is.
+            if sib_upper.startswith(ext_id_upper + "_"):
+                # The portion of the env-var *remainder* the sibling claims,
+                # including the trailing ``_`` so a shorter ID that shares a
+                # non-boundary prefix cannot false-positive (e.g. sibling
+                # ``hook`` would not eat env vars under key ``hooks``).
+                sibling_prefixes.append(sib_upper[len(ext_id_upper) + 1 :] + "_")
+
         for key, value in os.environ.items():
             if not key.startswith(prefix):
                 continue
 
-            # Remove prefix and split into parts
-            config_path = key[len(prefix) :].lower().split("_")
+            remainder = key[len(prefix) :]
+            # Skip when a longer sibling ID claims this var — see the block
+            # above. Keeps ``SPECKIT_GIT_HOOKS_URL`` out of the ``git``
+            # extension's config when ``git-hooks`` is co-installed.
+            if any(remainder.startswith(sp) for sp in sibling_prefixes):
+                continue
 
-            # Build nested dict
+            # Remove prefix and split into parts. Drop empty components from a
+            # malformed name (e.g. ``SPECKIT_<EXT>_`` with no key, or
+            # consecutive underscores ``SPECKIT_X__Y``) so we never create an
+            # entry under an empty key.
+            config_path = [p for p in remainder.lower().split("_") if p]
+            if not config_path:
+                continue
+
+            # Build nested dict. Two env vars can collide on a prefix, e.g.
+            # SPECKIT_X_CONNECTION=a and SPECKIT_X_CONNECTION_URL=b. Guard the
+            # walk so a colliding scalar is replaced by a dict (deeper/more
+            # specific vars win) instead of being indexed into — which raised
+            # TypeError ('str' object does not support item assignment) — and
+            # guard the leaf so a scalar processed after the nested var does
+            # not clobber the nested dict. Order-independent: both insertion
+            # orders yield {'connection': {'url': ...}}. Nested-wins mirrors
+            # _merge_configs' dict-preserving semantics.
             current = env_config
             for part in config_path[:-1]:
-                if part not in current:
+                if not isinstance(current.get(part), dict):
                     current[part] = {}
                 current = current[part]
 
-            # Set the final value
-            current[config_path[-1]] = value
+            # Set the final value, unless a nested dict already occupies it.
+            if not isinstance(current.get(config_path[-1]), dict):
+                current[config_path[-1]] = value
 
         return env_config
 

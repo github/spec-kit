@@ -69,3 +69,48 @@ def test_http_fetch_rejects_non_https_final_url(monkeypatch):
     fetcher = adapters.make_catalog_fetcher(allow_network=True)
     with pytest.raises(BundlerError, match="must use HTTPS"):
         fetcher(_source("https://example.com/c.json"))
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://:8080",          # port only, no host
+        "https://:0",
+        "https://user@",          # userinfo only, no host
+        "https://user:pw@",
+        "https://:8080/catalog.json",
+    ],
+)
+def test_validate_remote_url_rejects_host_less_urls(url):
+    """A URL with a truthy netloc but no host (``https://:8080``,
+    ``https://user@``) must be rejected.
+
+    ``urlparse`` gives these a non-empty ``netloc`` but ``hostname is None``,
+    so a ``netloc`` check would wrongly accept them. This mirrors the fix in
+    ``specify_cli.catalogs`` (#3210), which the docstring says this validator
+    mirrors."""
+    with pytest.raises(BundlerError, match="valid URL with a host"):
+        adapters._validate_remote_url("team", url)
+
+
+def test_validate_remote_url_accepts_normal_https_url():
+    # Sanity: a real host with a port still passes.
+    adapters._validate_remote_url("team", "https://example.com:8080/c.json")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://[::1",  # unclosed IPv6 bracket
+        "https://[not-an-ip]/c.json",
+    ],
+)
+def test_validate_remote_url_rejects_malformed_url_cleanly(url):
+    """A malformed URL must raise BundlerError, not a raw ValueError.
+
+    ``urlparse``/``hostname`` raise ``ValueError`` on a malformed authority
+    (e.g. an unclosed IPv6 bracket). The validator's contract is to raise
+    BundlerError for any bad URL, so the raw ValueError must not escape to the
+    caller. Bundler sibling of #3369."""
+    with pytest.raises(BundlerError):
+        adapters._validate_remote_url("team", url)

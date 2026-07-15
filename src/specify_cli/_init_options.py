@@ -14,7 +14,7 @@ def save_init_options(project_path: Path, options: dict[str, Any]) -> None:
     dest = project_path / INIT_OPTIONS_FILE
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(
-        json.dumps(options, indent=2, sort_keys=True, ensure_ascii=False),
+        json.dumps(options, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 

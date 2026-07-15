@@ -33,9 +33,115 @@ from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import (
     _ensure_safe_shared_destination,
+    _ensure_safe_shared_directory,
+    _write_shared_bytes,
     _write_shared_text,
     verify_archive_sha256,
 )
+
+
+_CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
+
+
+def _content_sha256(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _constitution_is_generated(
+    project_root: Path,
+    memory_constitution: Path,
+    resolver: "PresetResolver",
+) -> bool:
+    """Return whether the live constitution is an unchanged generated file."""
+    _ensure_safe_shared_destination(project_root, memory_constitution)
+    content = memory_constitution.read_bytes()
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    _ensure_safe_shared_destination(project_root, provenance)
+
+    if provenance.exists():
+        try:
+            metadata = json.loads(provenance.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return False
+        return (
+            isinstance(metadata, dict)
+            and metadata.get("sha256") == _content_sha256(content)
+        )
+
+    # Older projects have no provenance sidecar. Only the immutable bundled or
+    # source-checkout core template is safe to treat as generated.
+    core = resolver._find_bundled_core(
+        "constitution-template", "template", ".md"
+    )
+    return core is not None and core.read_bytes() == content
+
+
+def _constitution_provenance_matches_preset(
+    project_root: Path,
+    memory_constitution: Path,
+    pack_id: str,
+    pack_version: str,
+) -> bool:
+    """Return whether provenance identifies a preset as the materialized source."""
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    if not provenance.parent.exists():
+        return False
+    _ensure_safe_shared_destination(project_root, provenance)
+    if not provenance.exists():
+        return False
+    try:
+        metadata = json.loads(provenance.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("source") == f"{pack_id} v{pack_version}"
+    )
+
+
+def _materialize_constitution_template(
+    project_root: Path,
+    memory_constitution: Path,
+) -> str | None:
+    """Materialize constitution-template content into memory/constitution.md.
+
+    Returns:
+        "copied" when the winning layer is ``replace`` and the source file is
+        copied verbatim; "composed" when a composing strategy is materialized
+        via ``resolve_content``; ``None`` when no constitution template resolves.
+    """
+    resolver = PresetResolver(project_root)
+    layers = resolver.collect_all_layers("constitution-template", "template")
+    if not layers:
+        return None
+
+    top_layer = layers[0]
+    if top_layer["strategy"] == "replace":
+        content = top_layer["path"].read_bytes()
+        result = "copied"
+    else:
+        composed_content = resolver.resolve_content("constitution-template", "template")
+        if composed_content is None:
+            return None
+        content = composed_content.encode("utf-8")
+        result = "composed"
+
+    _ensure_safe_shared_directory(project_root, memory_constitution.parent)
+    _write_shared_bytes(project_root, memory_constitution, content)
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    _write_shared_text(
+        project_root,
+        provenance,
+        json.dumps(
+            {
+                "sha256": _content_sha256(content),
+                "source": top_layer["source"],
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    return result
 
 
 def _substitute_core_template(
@@ -782,6 +888,7 @@ class PresetManager:
                                         matching_cmds, ext_id, ext_dir,
                                         self.project_root,
                                         context_note=f"\n<!-- Extension: {ext_id} -->\n<!-- Config: .specify/extensions/{ext_id}/ -->\n",
+                                        extension_id=ext_id,
                                     )
                                     registered = True
                             except Exception:
@@ -1203,6 +1310,8 @@ class PresetManager:
                     "command_name": cmd_name,
                     "source_file": source_file,
                     "source": f"extension:{manifest.id}",
+                    "extension_id": manifest.id,
+                    "extension_dir": ext_root,
                 }
                 modern_skill_name, legacy_skill_name = self._skill_names_for_command(cmd_name)
                 restore_index.setdefault(modern_skill_name, restore_info)
@@ -1467,6 +1576,17 @@ class PresetManager:
             if extension_restore:
                 content = extension_restore["source_file"].read_text(encoding="utf-8")
                 frontmatter, body = registrar.parse_frontmatter(content)
+                # Mirror the register-time rewrite (#2101): resolve
+                # extension-relative subdir references (agents/,
+                # knowledge-base/, etc.) to their installed location before
+                # the generic placeholder resolution below, otherwise
+                # restoring after a preset override removal would leave
+                # bare, unresolvable paths in the skill body.
+                body = registrar.rewrite_extension_paths(
+                    body,
+                    extension_restore["extension_id"],
+                    extension_restore["extension_dir"],
+                )
                 if isinstance(selected_ai, str):
                     body = registrar.resolve_skill_placeholders(
                         selected_ai, frontmatter, body, self.project_root
@@ -1619,120 +1739,72 @@ class PresetManager:
                     stacklevel=2,
                 )
 
-        # Re-seed constitution memory if the preset provides a replacement
-        # constitution-template and the existing memory file is still a generic placeholder.
-        self._maybe_reseed_constitution(manifest)
+        # Seed/re-seed memory/constitution.md from a preset-provided
+        # constitution-template. The constitution is the only template that is
+        # materialized to a live file rather than resolved on demand, so a
+        # preset that ships one (e.g. strategy: replace with a ratified
+        # constitution) must be propagated here. Guard against clobbering an
+        # already-authored constitution by only replacing a file whose recorded
+        # hash (or exact legacy core-template content) proves it was generated.
+        self._seed_constitution_from_preset(manifest, dest_dir)
 
         return manifest
 
-    def _maybe_reseed_constitution(self, manifest: "PresetManifest") -> None:
-        """Re-seed .specify/memory/constitution.md from a preset's constitution-template.
+    def _seed_constitution_from_preset(
+        self, manifest: PresetManifest, preset_dir: Path
+    ) -> None:
+        """Seed memory/constitution.md from a preset constitution-template.
 
-        Only re-seeds when:
-        1. The preset provides a ``constitution-template`` template entry.
-        2. The memory file exists and still contains generic placeholder tokens
-           (``[PROJECT_NAME]`` or ``[PRINCIPLE_1_NAME]``), meaning it has not
-           been legitimately authored yet.
-
-        This handles ``specify preset add`` on an existing project so the
-        preset's ratified constitution lands in memory without requiring
-        ``ensure_constitution_from_template`` to run again.
+        Only runs when the preset declares a ``type: template`` entry named
+        ``constitution-template`` or provides one at a convention path, and the
+        live memory file is either missing or is an unchanged generated file.
+        Authored constitutions are never overwritten.
         """
-        has_constitution_template = any(
+        provides_constitution = any(
             t.get("type") == "template" and t.get("name") == "constitution-template"
             for t in manifest.templates
+        ) or any(
+            (preset_dir / relative_path).is_file()
+            for relative_path in (
+                "templates/constitution-template.md",
+                "constitution-template.md",
+            )
         )
-        if not has_constitution_template:
+        if not provides_constitution:
             return
 
-        memory_constitution = self.project_root / ".specify" / "memory" / "constitution.md"
-        try:
-            _ensure_safe_shared_destination(
-                self.project_root,
-                memory_constitution,
-                parent_must_exist=False,
-            )
-        except ValueError as exc:
-            import warnings
-            warnings.warn(
-                f"Could not inspect constitution after installing {manifest.id}: "
-                f"{exc}. The existing constitution was preserved.",
-                stacklevel=2,
-            )
-            return
-
-        if not memory_constitution.exists():
-            # Will be seeded by ensure_constitution_from_template later; nothing to do here.
-            return
-
-        try:
-            content = memory_constitution.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            import warnings
-            warnings.warn(
-                f"Could not inspect constitution after installing {manifest.id}: "
-                f"{exc}. The existing constitution was preserved.",
-                stacklevel=2,
-            )
-            return
-
-        # A remaining placeholder can occur in partially authored content, so only
-        # replace a file that still exactly matches the installed generic template.
-        if "[PROJECT_NAME]" not in content and "[PRINCIPLE_1_NAME]" not in content:
-            return
-
-        core_constitution = (
-            self.project_root / ".specify" / "templates" / "constitution-template.md"
+        self.reconcile_constitution(
+            f"Failed to seed constitution from preset {manifest.id}",
+            create_if_missing=True,
         )
+
+    def reconcile_constitution(
+        self, failure_context: str, *, create_if_missing: bool = False
+    ) -> None:
+        """Reconcile generated constitution content without failing a persisted change."""
         try:
-            _ensure_safe_shared_destination(
-                self.project_root, core_constitution
-            )
-            core_content = core_constitution.read_text(encoding="utf-8")
-        except (OSError, UnicodeError, ValueError) as exc:
+            self._reconcile_constitution(create_if_missing=create_if_missing)
+        except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
             import warnings
+
             warnings.warn(
-                f"Could not inspect core constitution after installing {manifest.id}: "
-                f"{exc}. The existing constitution was preserved.",
+                f"{failure_context}: {exc}.",
                 stacklevel=2,
             )
-            return
 
-        if content != core_content:
+    def _reconcile_constitution(self, *, create_if_missing: bool = False) -> None:
+        """Materialize the winning constitution layer when the live file is generated."""
+        memory_constitution = (
+            self.project_root / ".specify" / "memory" / "constitution.md"
+        )
+        if not memory_constitution.exists() and not create_if_missing:
             return
-
-        try:
-            resolved_content = PresetResolver(self.project_root).resolve_content(
-                "constitution-template", "template"
-            )
-        except (
-            OSError,
-            UnicodeError,
-            ValueError,
-            PresetValidationError,
-        ) as exc:
-            import warnings
-            warnings.warn(
-                f"Could not resolve constitution template after installing {manifest.id}: "
-                f"{exc}. The existing constitution was preserved.",
-                stacklevel=2,
-            )
+        resolver = PresetResolver(self.project_root)
+        if memory_constitution.exists() and not _constitution_is_generated(
+            self.project_root, memory_constitution, resolver
+        ):
             return
-
-        if resolved_content is None:
-            return
-
-        try:
-            _write_shared_text(
-                self.project_root, memory_constitution, resolved_content
-            )
-        except (OSError, ValueError) as exc:
-            import warnings
-            warnings.warn(
-                f"Could not re-seed constitution after installing {manifest.id}: "
-                f"{exc}. The existing constitution was preserved.",
-                stacklevel=2,
-            )
+        _materialize_constitution_template(self.project_root, memory_constitution)
 
     def install_from_zip(
         self,
@@ -1813,6 +1885,25 @@ class PresetManager:
         # Also include aliases from the manifest as a safety net for registries
         # populated by older versions that may not track aliases.
         removed_cmd_names = set()
+        removed_constitution = any(
+            path.exists()
+            for path in (
+                pack_dir / "templates" / "constitution-template.md",
+                pack_dir / "constitution-template.md",
+            )
+        )
+        if metadata and isinstance(metadata.get("version"), str):
+            memory_constitution = (
+                self.project_root / ".specify" / "memory" / "constitution.md"
+            )
+            removed_constitution = removed_constitution or (
+                _constitution_provenance_matches_preset(
+                    self.project_root,
+                    memory_constitution,
+                    pack_id,
+                    metadata["version"],
+                )
+            )
         for cmd_names in registered_commands.values():
             removed_cmd_names.update(cmd_names)
         manifest_path = pack_dir / "preset.yml"
@@ -1820,6 +1911,11 @@ class PresetManager:
             try:
                 manifest = PresetManifest(manifest_path)
                 for tmpl in manifest.templates:
+                    if (
+                        tmpl.get("type") == "template"
+                        and tmpl.get("name") == "constitution-template"
+                    ):
+                        removed_constitution = True
                     if tmpl.get("type") == "command":
                         for alias in tmpl.get("aliases", []):
                             if isinstance(alias, str):
@@ -1863,6 +1959,18 @@ class PresetManager:
                     f"Post-removal reconciliation failed for {pack_id}: {exc}. "
                     f"Agent command files may be stale; reinstall affected presets "
                     f"or run 'specify preset add' to refresh.",
+                    stacklevel=2,
+                )
+
+        if removed_constitution:
+            try:
+                self._reconcile_constitution()
+            except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Post-removal constitution reconciliation failed for {pack_id}: "
+                    f"{exc}. The live constitution may be stale.",
                     stacklevel=2,
                 )
 
@@ -2691,6 +2799,39 @@ class PresetResolver:
                 self._manifest_cache[key] = None
         return self._manifest_cache[key]
 
+    def _manifest_declared_template(
+        self, pack_dir: Path, template_name: str, template_type: str
+    ) -> tuple[dict | None, Path | None]:
+        """Resolve a preset's manifest-declared template entry and usable file.
+
+        Returns ``(entry, candidate)``:
+        - ``entry`` is the matching ``provides.templates`` mapping, or ``None`` if
+          the manifest is absent or does not list this ``(name, type)``.
+        - ``candidate`` is the declared ``file:`` resolved under ``pack_dir`` IFF
+          it is a regular file (``is_file()``); ``None`` otherwise — a missing,
+          empty, or non-file (e.g. directory) declaration yields ``(entry, None)``.
+
+        The manifest is authoritative: when it declares a template (``entry`` is
+        not ``None``) but the file is unusable (``candidate`` is ``None``),
+        callers must NOT fall back to the convention lookup — that would mask a
+        typo or pick up an undeclared file. Shared by ``resolve()`` and
+        ``collect_all_layers()`` so their manifest-first resolution cannot
+        silently diverge again (the divergence this fix addressed).
+        """
+        manifest = self._get_manifest(pack_dir)
+        if not manifest:
+            return None, None
+        for tmpl in manifest.templates:
+            if tmpl.get("name") == template_name and tmpl.get("type") == template_type:
+                file_path = tmpl.get("file")
+                if file_path:
+                    manifest_candidate = pack_dir / file_path
+                    return tmpl, (
+                        manifest_candidate if manifest_candidate.is_file() else None
+                    )
+                return tmpl, None
+        return None, None
+
     def _get_all_extensions_by_priority(self) -> list[tuple[int, str, dict | None]]:
         """Build unified list of registered and unregistered extensions sorted by priority.
 
@@ -2793,6 +2934,27 @@ class PresetResolver:
             registry = PresetRegistry(self.presets_dir)
             for pack_id, _metadata in registry.list_by_priority():
                 pack_dir = self.presets_dir / pack_id
+                # The preset manifest is authoritative: if it declares this
+                # template with an explicit ``file:``, resolve to that path —
+                # and do NOT fall back to convention when it's missing, to
+                # avoid masking typos or picking up an undeclared file. Only
+                # when the manifest is absent or doesn't list this template do
+                # we use the convention-based subdir lookup. Mirrors
+                # collect_all_layers()/resolve_content() so resolve() and
+                # resolve_with_source() agree with them instead of returning
+                # the core template (or a stray convention file).
+                entry, manifest_candidate = self._manifest_declared_template(
+                    pack_dir, template_name, template_type
+                )
+                if manifest_candidate is not None:
+                    return manifest_candidate
+                if entry is not None:
+                    # Manifest declares this template but the file is missing,
+                    # non-file (e.g. a directory), or an empty/falsey ``file``
+                    # value. The manifest is authoritative, so skip this pack's
+                    # convention fallback rather than mask a typo — mirrors
+                    # collect_all_layers().
+                    continue
                 for subdir in subdirs:
                     if subdir:
                         candidate = pack_dir / subdir / f"{template_name}{ext}"
@@ -3060,31 +3222,22 @@ class PresetResolver:
                 pack_dir = self.presets_dir / pack_id
                 # Read strategy and manifest file path from preset manifest
                 strategy = "replace"
-                manifest_file_path = None
                 manifest_has_strategy = False
-                manifest_found_entry = False
-                manifest = self._get_manifest(pack_dir)
-                if manifest:
-                    for tmpl in manifest.templates:
-                        if (tmpl.get("name") == template_name
-                                and tmpl.get("type") == template_type):
-                            strategy = tmpl.get("strategy", "replace")
-                            manifest_has_strategy = "strategy" in tmpl
-                            manifest_file_path = tmpl.get("file")
-                            manifest_found_entry = True
-                            break
-                # Use manifest file path if specified, otherwise convention-based
-                # lookup — but only when the manifest doesn't exist or doesn't
-                # list this template, so preset.yml stays authoritative.
+                entry, manifest_candidate = self._manifest_declared_template(
+                    pack_dir, template_name, template_type
+                )
+                if entry is not None:
+                    strategy = entry.get("strategy", "replace")
+                    manifest_has_strategy = "strategy" in entry
+                # Use the manifest's declared file when it's a usable regular file;
+                # only fall back to convention-based lookup when the manifest
+                # doesn't list this template at all, so preset.yml stays
+                # authoritative (a declared-but-unusable file skips convention —
+                # parity with resolve()).
                 candidate = None
-                if manifest_file_path:
-                    manifest_candidate = pack_dir / manifest_file_path
-                    if manifest_candidate.exists():
-                        candidate = manifest_candidate
-                    # Explicit file path that doesn't exist: skip convention
-                    # fallback to avoid masking typos or picking up unintended files.
-                elif not manifest_found_entry:
-                    # Manifest doesn't list this template — check convention paths
+                if manifest_candidate is not None:
+                    candidate = manifest_candidate
+                elif entry is None:
                     candidate = _find_in_subdirs(pack_dir)
                 if candidate:
                     # Legacy fallback: if manifest doesn't explicitly declare a
@@ -3155,6 +3308,8 @@ class PresetResolver:
                     "path": candidate,
                     "source": source,
                     "strategy": "replace",
+                    "extension_id": ext_id,
+                    "extension_dir": ext_dir,
                 })
 
         # Priority 4: Core templates (always "replace")
@@ -3274,10 +3429,32 @@ class PresetResolver:
         if not layers:
             return None
 
+        def _read_layer_content(layer: Dict[str, Any]) -> str:
+            """Read a layer's raw text, rewriting extension-relative subdir
+            references (agents/, knowledge-base/, etc.) to their installed
+            location when the layer is extension-provided (#2101).
+
+            Extension layers are always inserted with strategy "replace"
+            (see collect_all_layers), so a layer only ever needs this
+            rewrite when it wins outright above or serves as the
+            composition base below — never as a mid-stack composing
+            (append/prepend/wrap) layer.
+            """
+            text = layer["path"].read_text(encoding="utf-8")
+            extension_id = layer.get("extension_id")
+            extension_dir = layer.get("extension_dir")
+            if extension_id and extension_dir:
+                from ..agents import CommandRegistrar
+
+                text = CommandRegistrar.rewrite_extension_paths(
+                    text, extension_id, extension_dir
+                )
+            return text
+
         # If the top (highest-priority) layer is replace, it wins entirely —
         # lower layers are irrelevant regardless of their strategies.
         if layers[0]["strategy"] == "replace":
-            return layers[0]["path"].read_text(encoding="utf-8")
+            return _read_layer_content(layers[0])
 
         # Composition: build content bottom-up from the effective base.
         # The base is the nearest replace layer scanning from highest priority
@@ -3300,7 +3477,7 @@ class PresetResolver:
 
         # Convert to reversed_layers index
         base_reversed_idx = len(layers) - 1 - base_layer_idx
-        content = layers[base_layer_idx]["path"].read_text(encoding="utf-8")
+        content = _read_layer_content(layers[base_layer_idx])
         # Compose only the layers above the base (higher priority = lower index in layers,
         # higher index in reversed_layers). Process bottom-up from base+1.
         start_idx = base_reversed_idx + 1
