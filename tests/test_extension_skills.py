@@ -970,10 +970,21 @@ class TestExtensionSkillRegistration:
         assert "Read agents/control" not in content
         assert "and knowledge-base/" not in content
 
-    def test_skill_registration_resolves_command_ref_tokens(self, project_dir, temp_dir):
+    @pytest.mark.parametrize(
+        ("ai", "expected_invocation"),
+        [
+            ("claude", "/speckit-plan"),
+            ("codex", "$speckit-plan"),
+            ("kimi", "/skill:speckit-plan"),
+            ("zcode", "$speckit-plan"),
+        ],
+    )
+    def test_skill_registration_resolves_command_ref_tokens(
+        self, project_dir, temp_dir, ai, expected_invocation
+    ):
         """Auto-registered skills should resolve explicit command ref tokens."""
-        _create_init_options(project_dir, ai="claude", ai_skills=True)
-        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
 
         ext_dir = temp_dir / "command-ref-ext"
         ext_dir.mkdir()
@@ -1012,14 +1023,14 @@ class TestExtensionSkillRegistration:
 
         content = (skills_dir / "speckit-command-ref-ext-run" / "SKILL.md").read_text()
         assert "__SPECKIT_COMMAND_PLAN__" not in content
-        assert "/speckit-plan" in content
+        assert expected_invocation in content
 
     def test_skill_registration_does_not_rewrite_literal_speckit_text(
         self, project_dir, temp_dir
     ):
         """Auto-registered skills should leave literal speckit text untouched."""
-        _create_init_options(project_dir, ai="claude", ai_skills=True)
-        skills_dir = _create_skills_dir(project_dir, ai="claude")
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
 
         ext_dir = temp_dir / "literal-ref-ext"
         ext_dir.mkdir()
@@ -1051,6 +1062,7 @@ class TestExtensionSkillRegistration:
             "description: Run command\n"
             "---\n\n"
             "Literal slash form: /speckit.foo.bar\n"
+            "Literal skill form: /speckit-plan\n"
             "Literal bare form: speckit.foo.bar\n"
         )
 
@@ -1059,8 +1071,10 @@ class TestExtensionSkillRegistration:
 
         content = (skills_dir / "speckit-literal-ref-ext-run" / "SKILL.md").read_text()
         assert "/speckit.foo.bar" in content
+        assert "/speckit-plan" in content
         assert "speckit.foo.bar" in content
         assert "/speckit-foo-bar" not in content
+        assert "$speckit-plan" not in content
 
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""
