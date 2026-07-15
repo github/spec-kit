@@ -2130,6 +2130,30 @@ class TestIfThenStep:
         assert result.output["condition_result"] is False
         assert result.next_steps[0]["id"] == "b"
 
+    @pytest.mark.parametrize("bad_branch", ["oops", {"a": 1}, 42])
+    def test_execute_rejects_non_list_branch(self, bad_branch):
+        """execute() fails cleanly on a non-list then/else branch. The engine
+        doesn't auto-validate step config, so a non-iterable next_steps would
+        otherwise crash the run — completing the while/do-while guard (#3519) for
+        the if step (mirrors the switch step's 'cases' guard)."""
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        cond = "{{ inputs.scope == 'full' }}"
+        res_then = step.execute(
+            {"id": "i", "condition": cond, "then": bad_branch},
+            StepContext(inputs={"scope": "full"}),
+        )
+        assert res_then.status is StepStatus.FAILED
+        assert "'then' must be a list" in (res_then.error or "")
+        res_else = step.execute(
+            {"id": "i", "condition": cond, "then": [], "else": bad_branch},
+            StepContext(inputs={"scope": "backend"}),
+        )
+        assert res_else.status is StepStatus.FAILED
+        assert "'else' must be a list" in (res_else.error or "")
+
     def test_validate_missing_condition(self):
         from specify_cli.workflows.steps.if_then import IfThenStep
 
