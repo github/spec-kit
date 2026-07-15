@@ -252,6 +252,7 @@ def _update_init_options_for_integration(
     project_root: Path,
     integration: Any,
     script_type: str | None = None,
+    parsed_options: dict[str, Any] | None = None,
 ) -> None:
     """Update init-options.json to reflect *integration* as the active one.
 
@@ -270,7 +271,12 @@ def _update_init_options_for_integration(
     opts["speckit_version"] = _get_speckit_version()
     if script_type:
         opts["script"] = script_type
-    if isinstance(integration, SkillsIntegration) or getattr(integration, "_skills_mode", False):
+    _skills_mode_attr = getattr(integration, "_skills_mode", None)
+    if callable(_skills_mode_attr):
+        is_skills = _skills_mode_attr(parsed_options)
+    else:
+        is_skills = bool(_skills_mode_attr) or isinstance(integration, SkillsIntegration)
+    if is_skills:
         opts["ai_skills"] = True
     else:
         opts.pop("ai_skills", None)
@@ -326,7 +332,9 @@ def _set_default_integration(
             ) from exc
 
     _write_integration_json(project_root, key, installed_keys, settings)
-    _update_init_options_for_integration(project_root, integration, script_type=resolved_script)
+    _update_init_options_for_integration(
+        project_root, integration, script_type=resolved_script, parsed_options=parsed_options
+    )
 
 
 def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:

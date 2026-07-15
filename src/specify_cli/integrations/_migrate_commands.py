@@ -463,7 +463,9 @@ def integration_upgrade(
         new_manifest.save()
         _write_integration_json(project_root, installed_key, installed_keys, settings)
         if installed_key == key:
-            _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+            _update_init_options_for_integration(
+                project_root, integration, script_type=selected_script, parsed_options=parsed_options
+            )
         else:
             _refresh_init_options_speckit_version(project_root)
     except Exception as exc:

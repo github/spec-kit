@@ -501,10 +501,13 @@ def register(app: typer.Typer) -> None:
                 _legacy_commands = bool(
                     (integration_parsed_options or {}).get("legacy_commands")
                 )
-                if (
+                _skills_mode_attr = getattr(resolved_integration, "_skills_mode", None)
+                _is_skills = (
                     isinstance(resolved_integration, _SkillsPersist)
-                    or getattr(resolved_integration, "_skills_mode", False)
-                ) and not _legacy_commands:
+                    or (callable(_skills_mode_attr) and _skills_mode_attr(integration_parsed_options))
+                    or (not callable(_skills_mode_attr) and bool(_skills_mode_attr))
+                )
+                if _is_skills and not _legacy_commands:
                     init_opts["ai_skills"] = True
                 save_init_options(project_path, init_opts)
 
@@ -648,9 +651,12 @@ def register(app: typer.Typer) -> None:
 
         from ..integrations.base import SkillsIntegration as _SkillsInt
 
-        _is_skills_integration = isinstance(
-            resolved_integration, _SkillsInt
-        ) or getattr(resolved_integration, "_skills_mode", False)
+        _skills_mode_attr = getattr(resolved_integration, "_skills_mode", None)
+        _is_skills_integration = (
+            isinstance(resolved_integration, _SkillsInt)
+            or (callable(_skills_mode_attr) and _skills_mode_attr(integration_parsed_options))
+            or (not callable(_skills_mode_attr) and bool(_skills_mode_attr))
+        )
 
         codex_skill_mode = selected_ai == "codex" and _is_skills_integration
         zcode_skill_mode = selected_ai == "zcode" and _is_skills_integration

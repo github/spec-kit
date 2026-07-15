@@ -77,6 +77,10 @@ class _BobSkillsHelper(SkillsIntegration):
         "extension": "/SKILL.md",
     }
 
+    def post_process_skill_content(self, content: str) -> str:
+        """Bob skills are intent-activated; no slash-command note is needed."""
+        return content
+
 
 class BobIntegration(IntegrationBase):
     """Integration for IBM Bob IDE.
@@ -121,17 +125,16 @@ class BobIntegration(IntegrationBase):
         "extension": "/SKILL.md",
     }
 
-    @property
-    def _skills_mode(self) -> bool:
+    def _skills_mode(self, parsed_options: dict[str, Any] | None = None) -> bool:
         """True when the instance is configured in skills (default) mode.
 
-        Derived from the current ``registrar_config`` so that the value
-        reflects whichever mode ``setup()`` last activated, without relying
-        on mutable instance state that is unavailable in a fresh process
-        (e.g. ``specify integration use bob`` or ``_set_default_integration``).
+        Derived from *parsed_options* so that the value is correct both
+        during ``setup()`` and in fresh-process contexts where ``setup()``
+        has not been called (e.g. ``specify integration use bob``).
         """
-        rc = self.registrar_config or {}
-        return rc.get("extension") == "/SKILL.md"
+        if parsed_options is None:
+            parsed_options = {}
+        return not parsed_options.get("legacy_commands", False)
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -163,13 +166,9 @@ class BobIntegration(IntegrationBase):
         """
         parsed_options = parsed_options or {}
         if parsed_options.get("legacy_commands"):
-            self.registrar_config = dict(_BobMarkdownHelper.registrar_config)
             _warn_legacy_commands_deprecated()
             return self._setup_legacy(project_root, manifest, parsed_options, **opts)
-        self.registrar_config = dict(_BobSkillsHelper.registrar_config)
-        return SkillsIntegration.setup(
-            _BobSkillsHelper(), project_root, manifest, parsed_options, **opts
-        )
+        return _BobSkillsHelper().setup(project_root, manifest, parsed_options, **opts)
 
     def _setup_legacy(
         self,
