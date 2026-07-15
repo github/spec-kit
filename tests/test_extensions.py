@@ -1421,7 +1421,12 @@ class TestExtensionManager:
     def test_retry_after_staging_backup_restores_stranded_config(
         self, extension_dir, project_dir, monkeypatch
     ):
-        """A retry after an interrupted install should restore the rescued config from staging."""
+        """A retry after an interrupted install restores the rescued config.
+
+        When the live config is unchanged since the interrupted attempt (it
+        still matches the staged backup), the retry proceeds and yields the
+        preserved bytes, and the staging directory is cleaned up on success.
+        """
         import stat
 
         manager = ExtensionManager(project_dir)
@@ -1446,7 +1451,7 @@ class TestExtensionManager:
         assert not manager.registry.is_installed("test-ext")
         assert config_file.exists()
 
-        staging_dir = manager.extensions_dir / ".rescue-staging-test-ext"
+        staging_dir = manager._rescue_staging_dir("test-ext")
         assert not staging_dir.exists()
 
         original_copytree = shutil.copytree
@@ -1473,11 +1478,9 @@ class TestExtensionManager:
         assert (staging_dir / ".rescue-complete").exists()
         assert (staging_dir / "test-ext-config.yml").exists()
 
-        # Corrupt the rollback-restored copy to prove the next retry must rely
-        # on the durable staging backup, not whatever was written to dest_dir
-        # by the earlier failed install attempt.
-        config_file.write_text("model: wrong-model\n", encoding="utf-8")
-        assert config_file.read_bytes() != original_bytes
+        # The rollback restored the preserved bytes to the live config, so it
+        # still agrees with the staged backup — the retry proceeds normally.
+        assert config_file.read_bytes() == original_bytes
 
         manifest = manager.install_from_directory(
             extension_dir, "0.1.0", register_commands=False
@@ -1492,6 +1495,95 @@ class TestExtensionManager:
         if platform.system() != "Windows":
             restored_mode = config_file.stat().st_mode
             assert stat.S_IMODE(restored_mode) == stat.S_IMODE(original_mode)
+
+    def test_retry_with_edited_live_config_aborts_and_preserves_both(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A retry must not silently overwrite a config edited after a crash.
+
+        A complete staging directory proves only that staging finished, not
+        that dest_dir was modified. If the user edits the live kept config
+        before retrying, the retry must detect the divergence, preserve both
+        copies, and abort rather than blindly restoring the older staged bytes.
+        """
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        staged_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+
+        # Simulate the user editing the live config before retrying so it now
+        # diverges from the staged backup.
+        config_file.write_text("model: newer-edited-model\n")
+        edited_bytes = config_file.read_bytes()
+        assert edited_bytes != staged_bytes
+
+        with pytest.raises(ValidationError, match="Preserved extension config conflict"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Both copies must survive: the edited live config and the staged backup.
+        assert config_file.read_bytes() == edited_bytes
+        assert staging_dir.exists()
+        assert (staging_dir / "test-ext-config.yml").read_bytes() == staged_bytes
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_rescue_staging_dir_is_fixed_length_for_long_ids(self, project_dir):
+        """The rescue staging component length must not grow with the ID length.
+
+        Manifest validation caps the ID character set but not its length, so a
+        very long (but valid) ID must not lengthen the single staging path
+        component past a filesystem's per-component byte limit.
+        """
+        manager = ExtensionManager(project_dir)
+
+        short_dir = manager._rescue_staging_dir("a")
+        long_id = "a" * 250
+        long_dir = manager._rescue_staging_dir(long_id)
+
+        # Same fixed component length regardless of ID length.
+        assert len(short_dir.name) == len(long_dir.name)
+        # Comfortably within the common 255-byte component limit.
+        assert len(long_dir.name.encode("utf-8")) <= 255
+        # Distinct IDs still map to distinct staging directories.
+        assert manager._rescue_staging_dir("b") != short_dir
 
     def test_install_force_without_existing(self, extension_dir, project_dir):
         """Test force-install when extension is NOT already installed (works normally)."""

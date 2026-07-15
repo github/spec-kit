@@ -746,6 +746,20 @@ class ExtensionManager:
         self.extensions_dir = project_root / ".specify" / "extensions"
         self.registry = ExtensionRegistry(self.extensions_dir)
 
+    def _rescue_staging_dir(self, extension_id: str) -> Path:
+        """Fixed-length staging directory path for a preserved-config rescue.
+
+        The extension ID can be arbitrarily long (manifest validation caps only
+        the character set, not the length), so embedding it verbatim in a single
+        path component could push the ``.rescue-staging-<id>`` directory past a
+        filesystem's per-component byte limit and make every reinstall after
+        ``--keep-config`` fail with ``ENAMETOOLONG`` even though the extension
+        installs fine at ``dest_dir``. Hash the ID to a fixed-length suffix so
+        the component length is bounded regardless of ID length.
+        """
+        digest = hashlib.sha256(extension_id.encode("utf-8")).hexdigest()[:16]
+        return self.extensions_dir / f".rescue-staging-{digest}"
+
     @staticmethod
     def _collect_manifest_command_names(manifest: ExtensionManifest) -> Dict[str, str]:
         """Collect command and alias names declared by a manifest.
@@ -1470,7 +1484,7 @@ class ExtensionManager:
         # staging dir is removed only after every config has been successfully
         # restored.
         stranded_configs: dict[str, tuple[bytes, int]] = {}
-        rescue_staging_dir = self.extensions_dir / f".rescue-staging-{manifest.id}"
+        rescue_staging_dir = self._rescue_staging_dir(manifest.id)
         # A staging directory is trusted only when this completion marker is
         # present.  The marker is written after every staged file is complete
         # and removed before the non-atomic cleanup, so a crash mid-staging or
@@ -1492,16 +1506,49 @@ class ExtensionManager:
             # on disk.  Only load non-symlinked files whose names match
             # the two recognised config suffixes so a tampered staging
             # directory cannot inject arbitrary files.
+            #
+            # A complete staging directory proves only that staging finished,
+            # not that dest_dir was ever modified: a crash after staging was
+            # synced but before the rmtree below leaves the live kept config
+            # intact. If the user then edits that live config before retrying,
+            # blindly preferring the staged bytes would silently overwrite the
+            # newer config. The staged and live copies are indistinguishable
+            # in provenance from disk alone (a genuine post-crash edit vs. a
+            # packaged default written by a partially-completed copytree), so
+            # when a live config disagrees with its staged copy we must not
+            # silently pick either — preserve both and abort, letting the user
+            # resolve it. dest_dir is still untouched here, so raising is safe.
+            conflicting: list[str] = []
             for staged_file in sorted(rescue_staging_dir.iterdir()):
                 if (
                     staged_file.is_file()
                     and not staged_file.is_symlink()
                     and staged_file.name.endswith(("-config.yml", "-config.local.yml"))
                 ):
+                    staged_bytes = staged_file.read_bytes()
+                    live_file = dest_dir / staged_file.name
+                    if live_file.is_file() and not live_file.is_symlink():
+                        try:
+                            live_bytes = live_file.read_bytes()
+                        except OSError:
+                            live_bytes = None
+                        if live_bytes is not None and live_bytes != staged_bytes:
+                            conflicting.append(staged_file.name)
                     stranded_configs[staged_file.name] = (
-                        staged_file.read_bytes(),
+                        staged_bytes,
                         staged_file.stat().st_mode,
                     )
+            if conflicting:
+                names = ", ".join(sorted(conflicting))
+                raise ValidationError(
+                    "Preserved extension config conflict for "
+                    f"'{manifest.id}': the current config file(s) ({names}) in "
+                    f"{dest_dir} differ from the rescued backup left by an "
+                    f"interrupted install in {rescue_staging_dir}. Both copies "
+                    "have been preserved. Resolve manually — keep the current "
+                    f"file and delete {rescue_staging_dir}, or restore the "
+                    "backup over the current file — then reinstall."
+                )
         elif dest_dir.exists() and not self.registry.is_installed(manifest.id):
             for cfg_file in (
                 list(dest_dir.glob("*-config.yml"))
@@ -1599,10 +1646,16 @@ class ExtensionManager:
         ) -> None:
             tmp_path: Path | None = None
             try:
+                # A short fixed prefix, not f".{target.name}.": the preserved
+                # config filename may itself already be near the filesystem's
+                # per-component byte limit, and NamedTemporaryFile appends a
+                # random suffix to the prefix — reusing the full name would push
+                # the temp file past the limit and raise ENAMETOOLONG on every
+                # retry. tempfile already guarantees collision avoidance.
                 with tempfile.NamedTemporaryFile(
                     mode="wb",
                     dir=target.parent,
-                    prefix=f".{target.name}.",
+                    prefix=".cfg-restore.",
                     delete=False,
                 ) as tmp:
                     tmp_path = Path(tmp.name)
