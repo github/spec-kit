@@ -263,13 +263,14 @@ def _update_init_options_for_integration(
         load_init_options,
         save_init_options,
     )
+    from .base import SkillsIntegration
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
     opts["speckit_version"] = _get_speckit_version()
     if script_type:
         opts["script"] = script_type
-    if getattr(integration, "_skills_mode", False):
+    if isinstance(integration, SkillsIntegration) or getattr(integration, "_skills_mode", False):
         opts["ai_skills"] = True
     else:
         opts.pop("ai_skills", None)

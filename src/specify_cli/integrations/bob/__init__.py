@@ -106,6 +106,7 @@ class BobIntegration(IntegrationBase):
         if parsed_options and parsed_options.get("legacy_commands"):
             return "."
         return "-"
+
     config = {
         "name": "IBM Bob",
         "folder": ".bob/",
@@ -120,9 +121,17 @@ class BobIntegration(IntegrationBase):
         "extension": "/SKILL.md",
     }
 
-    # Set by setup() to reflect the active mode; read by _helpers.py and
-    # init.py via getattr(integration, "_skills_mode", False).
-    _skills_mode: bool = False
+    @property
+    def _skills_mode(self) -> bool:
+        """True when the instance is configured in skills (default) mode.
+
+        Derived from the current ``registrar_config`` so that the value
+        reflects whichever mode ``setup()`` last activated, without relying
+        on mutable instance state that is unavailable in a fresh process
+        (e.g. ``specify integration use bob`` or ``_set_default_integration``).
+        """
+        rc = self.registrar_config or {}
+        return rc.get("extension") == "/SKILL.md"
 
     @classmethod
     def options(cls) -> list[IntegrationOption]:
@@ -154,10 +163,10 @@ class BobIntegration(IntegrationBase):
         """
         parsed_options = parsed_options or {}
         if parsed_options.get("legacy_commands"):
-            self._skills_mode = False
+            self.registrar_config = dict(_BobMarkdownHelper.registrar_config)
             _warn_legacy_commands_deprecated()
             return self._setup_legacy(project_root, manifest, parsed_options, **opts)
-        self._skills_mode = True
+        self.registrar_config = dict(_BobSkillsHelper.registrar_config)
         return SkillsIntegration.setup(
             _BobSkillsHelper(), project_root, manifest, parsed_options, **opts
         )

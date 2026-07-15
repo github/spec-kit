@@ -658,6 +658,7 @@ def register(app: typer.Typer) -> None:
         kimi_skill_mode = selected_ai == "kimi"
         agy_skill_mode = selected_ai == "agy" and _is_skills_integration
         trae_skill_mode = selected_ai == "trae"
+        bob_skill_mode = selected_ai == "bob" and _is_skills_integration
         cursor_agent_skill_mode = (
             selected_ai == "cursor-agent" and _is_skills_integration
         )
@@ -672,6 +673,7 @@ def register(app: typer.Typer) -> None:
             or kimi_skill_mode
             or agy_skill_mode
             or trae_skill_mode
+            or bob_skill_mode
             or cursor_agent_skill_mode
             or copilot_skill_mode
             or devin_skill_mode
