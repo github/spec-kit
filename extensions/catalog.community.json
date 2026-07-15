@@ -1295,6 +1295,43 @@
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
     },
+    "figma-starter": {
+      "name": "Figma Starter",
+      "id": "figma-starter",
+      "description": "Turns a Figma section's screens into per-screen spec.md files, an app-level user-stories.md, and a build-order.md, then hands off to /speckit.specify.",
+      "author": "WaveMaker",
+      "version": "1.0.0",
+      "download_url": "https://github.com/wavemaker/spec-kit-figma-starter/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/wavemaker/spec-kit-figma-starter",
+      "homepage": "https://github.com/wavemaker/spec-kit-figma-starter",
+      "documentation": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/README.md",
+      "changelog": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "python3", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "figma",
+        "design",
+        "design-to-spec",
+        "ui",
+        "frontend"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-15T00:00:00Z",
+      "updated_at": "2026-07-15T00:00:00Z"
+    },
     "fix-findings": {
       "name": "Fix Findings",
       "id": "fix-findings",
