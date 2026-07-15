@@ -54,6 +54,7 @@ class TestGrokInitFlow:
                 "--script",
                 "sh",
             ],
+            catch_exceptions=False,
         )
 
         assert result.exit_code == 0, f"init --integration grok failed: {result.output}"
@@ -84,3 +85,42 @@ class TestGrokInitFlow:
         assert "grok-build" in args
         assert "--output-format" in args
         assert "json" in args
+
+
+class TestGrokNextSteps:
+    """CLI output tests for Grok next-steps display."""
+
+    def test_init_next_steps_show_grok_skill_guidance(self, tmp_path):
+        """init --integration grok should guide users to .grok/skills and /speckit-*."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        runner = CliRunner()
+        target = tmp_path / "grok-next-steps"
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                str(target),
+                "--integration",
+                "grok",
+                "--ignore-agent-tools",
+                "--script",
+                "sh",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, f"init --integration grok failed: {result.output}"
+        assert "Start Grok Build" in result.output, (
+            f"Expected Grok start guidance in next steps but got:\n{result.output}"
+        )
+        assert ".grok/skills" in result.output, (
+            f"Expected .grok/skills install path in next steps but got:\n{result.output}"
+        )
+        assert "/speckit-plan" in result.output, (
+            f"Expected /speckit-plan in next steps but got:\n{result.output}"
+        )
+        assert "/speckit.plan" not in result.output, (
+            f"Should not show /speckit.plan for Grok skills mode:\n{result.output}"
+        )

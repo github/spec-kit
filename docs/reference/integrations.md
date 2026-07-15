@@ -250,7 +250,11 @@ Spec Kit tracks one default integration in `.specify/integration.json` with `def
 
 ### Which integrations are multi-install safe?
 
-An integration is multi-install safe when it uses isolated agent directories, a dedicated context file that does not collide with another safe integration, stable command invocation settings, and a separate install manifest. Shared Spec Kit templates remain aligned to the single default integration.
+An integration is multi-install safe when it uses a static, unique agent root and command directory, stable command invocation settings, and a separate install manifest whose managed files do not overlap another safe integration. Registry tests enforce those path and manifest invariants. Shared Spec Kit templates remain aligned to the single default integration.
+
+The Isolation column below lists paths Spec Kit manages for that integration (skills/commands roots and any integration-owned rule files). It is not a full inventory of every file an agent may read.
+
+**Agent-context defaults are separate.** The optional agent-context extension maps each integration to a default context file in `extensions/agent-context/agent-context-defaults.json`. Those defaults are independent of multi-install safety: several agents may share a root file such as `AGENTS.md` when the extension is enabled. Multi-install safety does not require a unique context file per safe integration.
 
 The currently declared multi-install safe integrations are:
 
@@ -274,7 +278,7 @@ The currently declared multi-install safe integrations are:
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
 | `zcode` | `.zcode/skills`, `ZCODE.md` |
 
-Integrations that share a context file or command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
+Integrations that share a command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
 
 ### What happens to my changes when I uninstall or switch?
 
