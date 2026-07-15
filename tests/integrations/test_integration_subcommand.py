@@ -1566,6 +1566,43 @@ class TestIntegrationUse:
         assert opts["integration"] == "codex"
         assert opts["ai"] == "codex"
 
+    def test_use_preserves_copilot_skills_mode(self, tmp_path):
+        """`use` on a skills-mode Copilot keeps ``ai_skills`` (issue #3550).
+
+        Re-selecting the same skills-mode Copilot must not drop ``ai_skills``
+        from init-options.json nor regenerate extension commands in the legacy
+        ``.agent.md``/``.prompt.md`` layout.
+        """
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts.get("ai_skills") is True, "precondition: init recorded skills mode"
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        # Simulate a fresh process: `use` in real life runs in its own process
+        # where the registry's Copilot instance has _skills_mode == False (it is
+        # only set during setup()). In-process test invocations otherwise reuse
+        # the singleton left in skills mode by init, masking the bug (#3550).
+        from specify_cli.integrations import get_integration
+
+        get_integration("copilot")._skills_mode = False
+
+        result = _run_in_project(project, ["integration", "use", "copilot"])
+        assert result.exit_code == 0, result.output
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts.get("ai_skills") is True, "ai_skills must survive `use copilot`"
+
+        # No legacy command-layout files should be regenerated for the
+        # skills-mode agent.
+        assert not (project / ".github" / "agents" / "speckit.git.feature.agent.md").exists()
+        assert not (project / ".github" / "prompts" / "speckit.git.feature.prompt.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
     def test_use_requires_installed_integration(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()
