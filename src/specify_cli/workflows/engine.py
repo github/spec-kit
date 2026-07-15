@@ -193,6 +193,20 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
                     f"Must be 'string', 'number', or 'boolean'."
                 )
 
+            # ``enum`` must be a list. Checked here — not only via the
+            # ``_coerce_input`` call below — because that call is reached only
+            # when a ``default`` is present, and the ``integration: auto`` case
+            # strips ``enum`` before coercing; a scalar/string ``enum`` on an
+            # input with no default (or the auto-integration default) would
+            # otherwise slip through here and then crash ``_resolve_inputs`` with
+            # a raw ``TypeError`` at run time. ``None`` means "no enum".
+            enum_values = input_def.get("enum")
+            if enum_values is not None and not isinstance(enum_values, list):
+                errors.append(
+                    f"Input {input_name!r} has invalid 'enum': must be a list, "
+                    f"got {type(enum_values).__name__}."
+                )
+
             # Validate the default eagerly so authoring mistakes (e.g. a
             # default not in the declared enum, or a non-numeric default for
             # a number input) surface at install/validation time instead of
@@ -201,7 +215,13 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             # enum-membership check is exempted for that exact case — the
             # declared type is still enforced (e.g. ``type: number`` paired
             # with ``default: "auto"`` is still rejected).
-            if "default" in input_def:
+            # A malformed (non-list) ``enum`` is already reported above; skip
+            # the default check when it is, so ``_coerce_input`` doesn't re-raise
+            # the same enum error re-framed as an "invalid default" (a confusing
+            # duplicate). The type/coercion of the default is still meaningfully
+            # checkable, but reporting one clear enum error is better than two.
+            enum_is_valid = enum_values is None or isinstance(enum_values, list)
+            if "default" in input_def and enum_is_valid:
                 default_value = input_def["default"]
                 is_auto_integration = (
                     input_name == "integration" and default_value == "auto"
@@ -1417,6 +1437,22 @@ class WorkflowEngine:
         """Coerce a provided input value to the declared type."""
         input_type = input_def.get("type", "string")
         enum_values = input_def.get("enum")
+
+        # ``enum`` must be a list. A scalar (``enum: 5``, ``enum: true``) makes
+        # the ``value not in enum_values`` membership test below raise a raw
+        # ``TypeError`` ("argument of type 'int' is not ... iterable"), which
+        # escapes ``validate_workflow``'s ``except ValueError`` and breaks its
+        # "return errors, never raise" contract — and crashes ``_resolve_inputs``
+        # outright at run time. A bare string is just as wrong: ``value in "abc"``
+        # is a silent substring/character test, not enum membership. Require a
+        # list so both forms fail fast with a clear message. ``None`` means "no
+        # enum" and is left alone.
+        if enum_values is not None and not isinstance(enum_values, list):
+            msg = (
+                f"Input {name!r} has invalid 'enum': must be a list, got "
+                f"{type(enum_values).__name__}."
+            )
+            raise ValueError(msg)
 
         if input_type == "number":
             # Reject bools explicitly: ``bool`` is a subclass of ``int`` so

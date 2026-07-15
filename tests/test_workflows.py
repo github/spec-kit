@@ -3950,6 +3950,106 @@ steps:
         errors = validate_workflow(definition)
         assert any("invalid default" in e for e in errors), errors
 
+    def test_validate_workflow_rejects_scalar_enum(self):
+        """A non-list ``enum`` (``enum: 5``) must be reported as a validation
+        error, not crash ``validate_workflow`` with a raw ``TypeError`` from the
+        ``value not in enum_values`` membership test."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "scalar-enum"
+  name: "Scalar Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    enum: 5
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid 'enum'" in e and "must be a list" in e for e in errors), errors
+
+    def test_validate_workflow_rejects_string_enum(self):
+        """A bare-string ``enum`` (``enum: abc``) must be rejected too — otherwise
+        ``value in "abc"`` is a silent substring/character test, not enum
+        membership."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "string-enum"
+  name: "String Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    default: "a"
+    enum: "abc"
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid 'enum'" in e and "must be a list" in e for e in errors), errors
+        # The malformed enum is reported once — not re-framed a second time as an
+        # "invalid default" by the default-coercion path.
+        assert sum("invalid 'enum'" in e for e in errors) == 1, errors
+
+    def test_resolve_inputs_rejects_scalar_enum_at_runtime(self, project_dir):
+        """A non-list ``enum`` must raise a clean ``ValueError`` (not a raw
+        ``TypeError``) when a provided value is coerced at run time, since
+        ``execute`` does not auto-validate the definition first."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "runtime-scalar-enum"
+  name: "Runtime Scalar Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    enum: 5
+""")
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="invalid 'enum'"):
+            engine._resolve_inputs(definition, {"scope": "bar"})
+
+    def test_validate_workflow_accepts_list_enum(self):
+        """A well-formed list ``enum`` must still validate cleanly and continue to
+        check the default against enum membership."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "list-enum"
+  name: "List Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    default: "full"
+    enum: ["full", "backend-only"]
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert not any("enum" in e for e in errors), errors
+
     def test_while_loop_condition_reads_latest_iteration(self, project_dir):
         """Regression: while-loop condition must see updated step output
         from the most recent iteration, not stale iteration-0 data.
