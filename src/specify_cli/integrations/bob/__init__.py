@@ -96,8 +96,18 @@ class BobIntegration(IntegrationBase):
     ``_update_init_options_for_integration`` and the ``specify init``
     next-steps builder derive the effective mode from ``_skills_mode``
     rather than the class hierarchy.  ``invoke_separator = "-"`` is set
-    explicitly to match the skills-default behaviour expected by
-    ``CommandRegistrar.AGENT_CONFIGS``.
+    explicitly so that ``effective_invoke_separator()`` returns ``"-"``
+    for skills-mode invocations.
+
+    ``registrar_config`` intentionally mirrors the legacy commands layout
+    (``extension: ".md"``, ``dir: ".bob/commands"``) so that
+    ``CommandRegistrar.AGENT_CONFIGS["bob"]`` follows the same pattern as
+    Copilot: extension/preset registration writes to ``.bob/commands/``
+    for legacy-mode projects, and is transparently skipped for skills-mode
+    projects (``skills_mode_active`` becomes ``True`` because
+    ``ai_skills=True`` and ``extension != "/SKILL.md"``).  The
+    ``_BobSkillsHelper`` class owns the SKILL.md layout used exclusively
+    during ``setup()`` (``specify init`` / ``specify integration install``).
     """
 
     key = "bob"
@@ -114,15 +124,18 @@ class BobIntegration(IntegrationBase):
     config = {
         "name": "IBM Bob",
         "folder": ".bob/",
-        "commands_subdir": "skills",
+        "commands_subdir": "commands",
         "install_url": None,
         "requires_cli": False,
     }
     registrar_config = {
-        "dir": ".bob/skills",
+        "dir": ".bob/commands",
         "format": "markdown",
         "args": "$ARGUMENTS",
-        "extension": "/SKILL.md",
+        "extension": ".md",
+        # Legacy commands use dot-notation (/speckit.plan); the class-level
+        # invoke_separator="-" applies to skills-mode invocations only.
+        "invoke_separator": ".",
     }
 
     def _skills_mode(self, parsed_options: dict[str, Any] | None = None) -> bool:

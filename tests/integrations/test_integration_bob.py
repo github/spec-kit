@@ -34,9 +34,13 @@ class TestBobIntegrationRegistration:
         bob = get_integration("bob")
         assert bob.key == "bob"
         assert bob.config["folder"] == ".bob/"
-        assert bob.config["commands_subdir"] == "skills"
-        assert bob.registrar_config["dir"] == ".bob/skills"
-        assert bob.registrar_config["extension"] == "/SKILL.md"
+        # registrar_config mirrors the legacy commands layout so that
+        # CommandRegistrar.AGENT_CONFIGS["bob"] follows the Copilot pattern:
+        # extension registration writes to .bob/commands/ for legacy-mode
+        # projects and is skipped for skills-mode projects (skills_mode_active).
+        assert bob.config["commands_subdir"] == "commands"
+        assert bob.registrar_config["dir"] == ".bob/commands"
+        assert bob.registrar_config["extension"] == ".md"
 
     def test_invoke_separator_is_hyphen(self):
         """Class-level invoke_separator must be '-' so CommandRegistrar.AGENT_CONFIGS
@@ -295,3 +299,77 @@ class TestBobInitFlowLegacy:
         assert result.exit_code == 0, f"init --integration bob --legacy-commands failed: {result.output}"
         assert (target / ".bob" / "commands" / "speckit.plan.md").exists()
         assert not (target / ".bob" / "skills").exists()
+
+
+class TestBobRegistrarConfig:
+    """Verify AGENT_CONFIGS["bob"] follows the Copilot pattern for extension registration."""
+
+    def test_registrar_config_uses_commands_layout(self):
+        """AGENT_CONFIGS["bob"] must use the legacy .md layout (not /SKILL.md).
+
+        This mirrors Copilot: the static registrar config targets the non-skills
+        format so that:
+        - skills_mode_active becomes True when ai_skills=True, preventing
+          extension registration from writing SKILL.md files into .bob/skills/
+          on projects that never asked for legacy files.
+        - legacy-mode projects receive extension .md files in .bob/commands/.
+        """
+        from specify_cli.agents import CommandRegistrar
+        registrar = CommandRegistrar()
+        bob_cfg = registrar.AGENT_CONFIGS.get("bob")
+        assert bob_cfg is not None, "bob must be in AGENT_CONFIGS"
+        assert bob_cfg["extension"] == ".md", (
+            "AGENT_CONFIGS['bob']['extension'] must be '.md' so that "
+            "skills_mode_active=True suppresses extension registration on "
+            "skills-mode projects (mirrors the Copilot pattern)"
+        )
+        assert bob_cfg["dir"] == ".bob/commands"
+
+    def test_skills_mode_project_extension_registration_skipped(self, tmp_path):
+        """Extension registrar skips Bob on skills-mode projects (no .bob/commands dir)."""
+        from specify_cli.agents import CommandRegistrar
+        # Simulate a skills-mode Bob project: .bob/skills exists, .bob/commands does not
+        (tmp_path / ".bob" / "skills").mkdir(parents=True)
+
+        registrar = CommandRegistrar()
+        results = registrar.register_commands_for_all_agents(
+            commands=[{"name": "speckit.test-cmd", "file": "test.md"}],
+            source_id="test",
+            source_dir=tmp_path,
+            project_root=tmp_path,
+        )
+        # Bob must not appear in results — .bob/commands doesn't exist
+        assert "bob" not in results
+
+    def test_legacy_mode_project_extension_registration_runs(self, tmp_path):
+        """Extension registrar writes to .bob/commands/ for legacy-mode projects."""
+        import textwrap
+        from specify_cli.agents import CommandRegistrar
+
+        # Simulate a legacy-mode Bob project: .bob/commands exists, .bob/skills does not
+        commands_dir = tmp_path / ".bob" / "commands"
+        commands_dir.mkdir(parents=True)
+
+        # Provide a minimal command source file
+        cmd_file = tmp_path / "test.md"
+        cmd_file.write_text(
+            textwrap.dedent("""\
+                ---
+                description: "Test command"
+                ---
+                Test body.
+            """),
+            encoding="utf-8",
+        )
+
+        registrar = CommandRegistrar()
+        results = registrar.register_commands_for_all_agents(
+            commands=[{"name": "speckit.test-cmd", "file": "test.md"}],
+            source_id="test",
+            source_dir=tmp_path,
+            project_root=tmp_path,
+        )
+        assert "bob" in results, "bob must appear in results for legacy-mode project"
+        registered_file = commands_dir / "speckit.test-cmd.md"
+        assert registered_file.exists(), f"Expected {registered_file} to be written"
+
