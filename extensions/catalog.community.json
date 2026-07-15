@@ -410,7 +410,33 @@
       "category": "process",
       "effect": "read-write",
       "requires": {
-        "speckit_version": ">=0.2.0"
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "pytest-bdd",
+            "required": false
+          },
+          {
+            "name": "behave",
+            "required": false
+          },
+          {
+            "name": "@cucumber/cucumber",
+            "required": false
+          },
+          {
+            "name": "cucumber",
+            "required": false
+          },
+          {
+            "name": "io.cucumber",
+            "required": false
+          },
+          {
+            "name": "SpecFlow",
+            "required": false
+          }
+        ]
       },
       "provides": {
         "commands": 3,
