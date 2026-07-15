@@ -120,7 +120,7 @@ class TestAlquimiaAIIntegration:
         assert b"<!-- SPECKIT" not in remaining
         assert b"# ALQUIMIA.md" in remaining
 
-    def test_ai_flag_auto_promotes_and_enables_skills(self, tmp_path):
+    def test_integration_flag_sets_ai_and_enables_skills(self, tmp_path):
         from specify_cli import app
         from typer.testing import CliRunner
 
