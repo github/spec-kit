@@ -4492,7 +4492,7 @@ workflow:
 steps:
   - id: print-env
     type: shell
-    run: '{python} -c "import os; print(os.environ.get(''SPECKIT_WORKFLOW_DIR'', ''UNSET''))"'
+    run: '"{python}" -c "import os; print(os.environ.get(''SPECKIT_WORKFLOW_DIR'', ''UNSET''))"'
 """)
         definition = WorkflowDefinition.from_yaml(wf_file)
         engine = WorkflowEngine(project_dir)
@@ -4518,7 +4518,7 @@ workflow:
 steps:
   - id: check-env
     type: shell
-    run: '{python} -c "import os; print(os.environ.get(''SPECKIT_WORKFLOW_DIR'', ''UNSET''))"'
+    run: '"{python}" -c "import os; print(os.environ.get(''SPECKIT_WORKFLOW_DIR'', ''UNSET''))"'
 """)
         engine = WorkflowEngine(project_dir)
         state = engine.execute(definition)
