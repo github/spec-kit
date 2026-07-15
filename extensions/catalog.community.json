@@ -1445,6 +1445,7 @@
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
+      "changelog": "https://github.com/schwichtgit/spec-gates/releases",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
@@ -1484,8 +1485,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-07-15T00:00:00Z",
-      "changelog": "https://github.com/schwichtgit/spec-gates/releases"
+      "updated_at": "2026-07-15T00:00:00Z"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
