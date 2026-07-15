@@ -200,63 +200,30 @@ if ($null -eq $Options) {
 
 if ($null -eq $Options) {
     # ConvertFrom-Yaml/Json unavailable or failed; fall back to Python+PyYAML.
-    $pythonCmd = $null
+    # Combine verification and parsing into one Python invocation: a single process
+    # launch instead of two (verify then run a temp script file).  On Windows
+    # PowerShell 5.1 each Python startup—plus any AV scan of a freshly-created temp
+    # file—can take several seconds, making two launches easy to exceed a 30 s
+    # test timeout.  The -c one-liner avoids the temp file entirely.
     $pythonCandidates = @()
     if ($env:SPECKIT_PYTHON) {
         $pythonCandidates += $env:SPECKIT_PYTHON
     }
     $pythonCandidates += @('python3', 'python')
+    $pyOneLiner = "import sys,json,yaml; d=yaml.safe_load(open(sys.argv[1],'r',encoding='utf-8').read()); d=d if isinstance(d,dict) else {}; print(json.dumps(d))"
     foreach ($candidate in $pythonCandidates) {
         if (Get-Command $candidate -ErrorAction SilentlyContinue) {
-            # Verify it is Python 3 with PyYAML available.
-            $null = & $candidate -c "import sys; import yaml; sys.exit(0 if sys.version_info[0] == 3 else 1)" 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                $pythonCmd = $candidate
-                break
-            }
-        }
-    }
-
-    if ($pythonCmd) {
-        $pyScript = $null
-        try {
-            $pyScript = [System.IO.Path]::GetTempFileName()
-            Set-Content -LiteralPath $pyScript -Encoding UTF8 -Value @'
-import json
-import sys
-try:
-    import yaml
-except ImportError:
-    print(
-        "agent-context: PyYAML is required to parse extension config; cannot update context.",
-        file=sys.stderr,
-    )
-    sys.exit(2)
-
-try:
-    with open(sys.argv[1], "r", encoding="utf-8") as fh:
-        data = yaml.safe_load(fh)
-except Exception as exc:
-    print(
-        f"agent-context: unable to parse {sys.argv[1]} ({exc}); cannot update context.",
-        file=sys.stderr,
-    )
-    sys.exit(2)
-
-if not isinstance(data, dict):
-    data = {}
-
-print(json.dumps(data))
-'@
-            $jsonOut = & $pythonCmd $pyScript $ExtConfig
-            if ($LASTEXITCODE -eq 0 -and $jsonOut) {
-                $Options = $jsonOut | ConvertFrom-Json -ErrorAction Stop
-            }
-        } catch {
-            $Options = $null
-        } finally {
-            if ($pyScript -and (Test-Path -LiteralPath $pyScript)) {
-                Remove-Item -LiteralPath $pyScript -Force -ErrorAction SilentlyContinue
+            try {
+                $jsonOut = & $candidate -c $pyOneLiner $ExtConfig 2>$null
+                if ($LASTEXITCODE -eq 0 -and $jsonOut) {
+                    $parsed = $jsonOut | ConvertFrom-Json -ErrorAction Stop
+                    if (Test-ConfigObject -Object $parsed) {
+                        $Options = $parsed
+                        break
+                    }
+                }
+            } catch {
+                # ConvertFrom-Json failed; try next candidate.
             }
         }
     }
