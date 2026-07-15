@@ -31,7 +31,11 @@ from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priorit
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
-from ..shared_infra import verify_archive_sha256
+from ..shared_infra import (
+    _ensure_safe_shared_destination,
+    _write_shared_text,
+    verify_archive_sha256,
+)
 
 
 def _substitute_core_template(
@@ -1642,28 +1646,93 @@ class PresetManager:
             return
 
         memory_constitution = self.project_root / ".specify" / "memory" / "constitution.md"
+        try:
+            _ensure_safe_shared_destination(
+                self.project_root,
+                memory_constitution,
+                parent_must_exist=False,
+            )
+        except ValueError as exc:
+            import warnings
+            warnings.warn(
+                f"Could not inspect constitution after installing {manifest.id}: "
+                f"{exc}. The existing constitution was preserved.",
+                stacklevel=2,
+            )
+            return
+
         if not memory_constitution.exists():
             # Will be seeded by ensure_constitution_from_template later; nothing to do here.
             return
 
         try:
             content = memory_constitution.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeError) as exc:
+            import warnings
+            warnings.warn(
+                f"Could not inspect constitution after installing {manifest.id}: "
+                f"{exc}. The existing constitution was preserved.",
+                stacklevel=2,
+            )
             return
 
-        # Skip re-seed if the file has been legitimately authored (no placeholder tokens).
+        # A remaining placeholder can occur in partially authored content, so only
+        # replace a file that still exactly matches the installed generic template.
         if "[PROJECT_NAME]" not in content and "[PRINCIPLE_1_NAME]" not in content:
             return
 
-        resolver = PresetResolver(self.project_root)
-        resolved = resolver.resolve("constitution-template", "template")
-        if resolved is None or not resolved.exists():
+        core_constitution = (
+            self.project_root / ".specify" / "templates" / "constitution-template.md"
+        )
+        try:
+            _ensure_safe_shared_destination(
+                self.project_root, core_constitution
+            )
+            core_content = core_constitution.read_text(encoding="utf-8")
+        except (OSError, UnicodeError, ValueError) as exc:
+            import warnings
+            warnings.warn(
+                f"Could not inspect core constitution after installing {manifest.id}: "
+                f"{exc}. The existing constitution was preserved.",
+                stacklevel=2,
+            )
+            return
+
+        if content != core_content:
             return
 
         try:
-            shutil.copy2(resolved, memory_constitution)
-        except OSError:
-            pass  # best-effort; don't fail preset installation for this
+            resolved_content = PresetResolver(self.project_root).resolve_content(
+                "constitution-template", "template"
+            )
+        except (
+            OSError,
+            UnicodeError,
+            ValueError,
+            PresetValidationError,
+        ) as exc:
+            import warnings
+            warnings.warn(
+                f"Could not resolve constitution template after installing {manifest.id}: "
+                f"{exc}. The existing constitution was preserved.",
+                stacklevel=2,
+            )
+            return
+
+        if resolved_content is None:
+            return
+
+        try:
+            _write_shared_text(
+                self.project_root, memory_constitution, resolved_content
+            )
+        except (OSError, ValueError) as exc:
+            import warnings
+            warnings.warn(
+                f"Could not re-seed constitution after installing {manifest.id}: "
+                f"{exc}. The existing constitution was preserved.",
+                stacklevel=2,
+            )
 
     def install_from_zip(
         self,

@@ -6168,13 +6168,17 @@ class TestConstitutionReseedOnPresetInstall:
         """install_from_directory re-seeds memory/constitution.md when it still
         contains the generic [PROJECT_NAME] placeholder and the preset provides a
         constitution-template replacement."""
-        memory_dir = project_dir / ".specify" / "memory"
-        memory_dir.mkdir(parents=True, exist_ok=True)
-        memory_constitution = memory_dir / "constitution.md"
-        memory_constitution.write_text(
+        generic_content = (
             "# [PROJECT_NAME] Constitution\n\n## Core Principles\n\n"
             "### [PRINCIPLE_1_NAME]\n[PRINCIPLE_1_DESCRIPTION]\n"
         )
+        (
+            project_dir / ".specify" / "templates" / "constitution-template.md"
+        ).write_text(generic_content)
+        memory_dir = project_dir / ".specify" / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        memory_constitution = memory_dir / "constitution.md"
+        memory_constitution.write_text(generic_content)
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
@@ -6183,20 +6187,23 @@ class TestConstitutionReseedOnPresetInstall:
         assert "preset:self-test" in result, "Expected preset's constitution content after re-seed"
         assert "[PROJECT_NAME]" not in result
 
-    def test_install_reseeds_on_principle_placeholder(self, project_dir):
-        """Re-seeds when [PRINCIPLE_1_NAME] is present even if [PROJECT_NAME] is absent."""
+    def test_install_preserves_partially_authored_constitution(self, project_dir):
+        """A remaining placeholder does not make partially authored content generic."""
         memory_dir = project_dir / ".specify" / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
         memory_constitution = memory_dir / "constitution.md"
-        memory_constitution.write_text(
+        partial_content = (
             "# My Company Constitution\n\n### [PRINCIPLE_1_NAME]\n[PRINCIPLE_1_DESCRIPTION]\n"
         )
+        memory_constitution.write_text(partial_content)
+        (
+            project_dir / ".specify" / "templates" / "constitution-template.md"
+        ).write_text("# [PROJECT_NAME] Constitution\n")
 
         manager = PresetManager(project_dir)
         install_self_test_preset(manager)
 
-        result = memory_constitution.read_text()
-        assert "preset:self-test" in result
+        assert memory_constitution.read_text() == partial_content
 
     def test_install_does_not_overwrite_authored_constitution(self, project_dir):
         """install_from_directory must NOT overwrite a legitimately authored
@@ -6269,6 +6276,119 @@ class TestConstitutionReseedOnPresetInstall:
         assert not memory_constitution.exists(), (
             "install_from_directory must not create memory/constitution.md"
         )
+
+    def test_install_composes_constitution_strategy(self, project_dir, temp_dir):
+        """Re-seeding uses the effective composed template, not a raw preset fragment."""
+        core_content = "# [PROJECT_NAME] Constitution\n"
+        (project_dir / ".specify" / "templates" / "constitution-template.md").write_text(
+            core_content
+        )
+        memory_constitution = project_dir / ".specify" / "memory" / "constitution.md"
+        memory_constitution.parent.mkdir(parents=True)
+        memory_constitution.write_text(core_content)
+
+        pack_dir = temp_dir / "append-constitution"
+        (pack_dir / "fragments").mkdir(parents=True)
+        (pack_dir / "fragments" / "governance.md").write_text("\n## Governance\nBe clear.\n")
+        (pack_dir / "preset.yml").write_text(
+            yaml.safe_dump({
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "append-constitution",
+                    "name": "Append Constitution",
+                    "version": "1.0.0",
+                    "description": "Appends governance rules",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [{
+                        "type": "template",
+                        "name": "constitution-template",
+                        "file": "fragments/governance.md",
+                        "strategy": "append",
+                    }]
+                },
+            })
+        )
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+
+        composed = memory_constitution.read_text()
+        assert composed.startswith(core_content)
+        assert composed.index("## Governance") > composed.index("[PROJECT_NAME]")
+        assert "Be clear." in composed
+
+    def test_install_preserves_symlinked_constitution(self, project_dir):
+        """Re-seeding must not follow a memory-file symlink outside the project."""
+        outside = project_dir.parent / "outside-constitution.md"
+        original = "# [PROJECT_NAME] Outside\n"
+        outside.write_text(original)
+        memory_constitution = project_dir / ".specify" / "memory" / "constitution.md"
+        memory_constitution.parent.mkdir(parents=True)
+        memory_constitution.symlink_to(outside)
+
+        with pytest.warns(UserWarning, match="Could not inspect constitution"):
+            install_self_test_preset(PresetManager(project_dir))
+
+        assert outside.read_text() == original
+        assert memory_constitution.is_symlink()
+
+    def test_install_preserves_non_utf8_constitution(self, project_dir):
+        """A decoding failure must not turn a completed preset install into an error."""
+        memory_constitution = project_dir / ".specify" / "memory" / "constitution.md"
+        memory_constitution.parent.mkdir(parents=True)
+        original = b"\xff\xfe"
+        memory_constitution.write_bytes(original)
+
+        with pytest.warns(UserWarning, match="Could not inspect constitution"):
+            manifest = install_self_test_preset(PresetManager(project_dir))
+
+        assert manifest.id == "self-test"
+        assert memory_constitution.read_bytes() == original
+
+    def test_install_warns_when_constitution_composition_is_invalid(
+        self, project_dir, temp_dir
+    ):
+        """Invalid composition does not turn a completed preset install into failure."""
+        generic_content = "# [PROJECT_NAME] Constitution\n"
+        (
+            project_dir / ".specify" / "templates" / "constitution-template.md"
+        ).write_text(generic_content)
+        memory_constitution = project_dir / ".specify" / "memory" / "constitution.md"
+        memory_constitution.parent.mkdir(parents=True)
+        memory_constitution.write_text(generic_content)
+
+        pack_dir = temp_dir / "invalid-wrap"
+        (pack_dir / "templates").mkdir(parents=True)
+        (pack_dir / "templates" / "wrapper.md").write_text("# Missing placeholder\n")
+        (pack_dir / "preset.yml").write_text(
+            yaml.safe_dump({
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "invalid-wrap",
+                    "name": "Invalid Wrap",
+                    "version": "1.0.0",
+                    "description": "Invalid constitution wrapper",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [{
+                        "type": "template",
+                        "name": "constitution-template",
+                        "file": "templates/wrapper.md",
+                        "strategy": "wrap",
+                    }]
+                },
+            })
+        )
+
+        with pytest.warns(UserWarning, match="Could not resolve constitution template"):
+            manifest = PresetManager(project_dir).install_from_directory(
+                pack_dir, "0.1.5"
+            )
+
+        assert manifest.id == "invalid-wrap"
+        assert memory_constitution.read_text() == generic_content
 
 
 class TestEnsureConstitutionFromTemplate:

@@ -24,6 +24,7 @@ from .._assets import (
 )
 from .._console import StepTracker, console, select_with_arrows, show_banner
 from .._utils import check_tool
+from ..shared_infra import _ensure_safe_shared_directory, _write_shared_text
 
 
 def _stdin_is_interactive() -> bool:
@@ -46,30 +47,35 @@ def ensure_constitution_from_template(
             tracker.skip("constitution", "existing file preserved")
         return
 
-    # Resolve through the preset priority stack so preset replacements are honoured.
-    template_constitution: Path | None = None
+    from ..presets import PresetResolver
+
     try:
-        from ..presets import PresetResolver as _PresetResolver
-        template_constitution = _PresetResolver(project_path).resolve(
+        constitution_content = PresetResolver(project_path).resolve_content(
             "constitution-template", "template"
         )
-    except Exception:
-        template_constitution = None
+    except (OSError, UnicodeError, ValueError) as exc:
+        if tracker:
+            tracker.add("constitution", "Constitution setup")
+            tracker.error("constitution", str(exc))
+        else:
+            console.print(
+                f"[yellow]Warning: Could not resolve constitution template: {exc}[/yellow]"
+            )
+        return
 
-    if template_constitution is None:
-        template_constitution = (
-            project_path / ".specify" / "templates" / "constitution-template.md"
-        )
-
-    if not template_constitution.exists():
+    if constitution_content is None:
         if tracker:
             tracker.add("constitution", "Constitution setup")
             tracker.error("constitution", "template not found")
         return
 
     try:
-        memory_constitution.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(template_constitution, memory_constitution)
+        _ensure_safe_shared_directory(
+            project_path,
+            memory_constitution.parent,
+            context="constitution memory directory",
+        )
+        _write_shared_text(project_path, memory_constitution, constitution_content)
         if tracker:
             tracker.add("constitution", "Constitution setup")
             tracker.complete("constitution", "copied from template")
