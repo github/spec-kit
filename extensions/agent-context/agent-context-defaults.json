@@ -17,6 +17,7 @@
     "gemini": "GEMINI.md",
     "generic": "AGENTS.md",
     "goose": "AGENTS.md",
+    "grok": "AGENTS.md",
     "hermes": "AGENTS.md",
     "junie": ".junie/AGENTS.md",
     "kilocode": ".kilocode/rules/specify-rules.md",

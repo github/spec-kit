@@ -154,6 +154,8 @@ class TestSlashSkillsSets:
             ("copilot", False, "/speckit.plan"),
             ("cursor-agent", True, "/speckit-plan"),
             ("cursor-agent", False, "/speckit.plan"),
+            ("grok", True, "/speckit-plan"),
+            ("grok", False, "/speckit.plan"),
         ],
     )
     def test_hook_invocation_format(self, tmp_path, ai, ai_skills, expected):

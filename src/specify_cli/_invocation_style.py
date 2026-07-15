@@ -21,6 +21,7 @@ CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
         "claude",
         "copilot",
         "cursor-agent",
+        "grok",
         "hermes",
         "lingma",
         "rovodev",
