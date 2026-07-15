@@ -56,7 +56,16 @@ _commit_style="fixed"
 if [ -f "$_config_file" ]; then
     # Top-level scalar key: commit_style (fixed | conventional)
     _style_val=$(grep '^commit_style:' "$_config_file" 2>/dev/null | sed 's/^commit_style:[[:space:]]*//' | sed 's/[[:space:]]\{1,\}#.*$//' | sed 's/[[:space:]]*$//' | sed 's/^["'\'']//' | sed 's/["'\'']*$//' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
-    [ -n "$_style_val" ] && _commit_style="$_style_val"
+    if [ -n "$_style_val" ]; then
+        case "$_style_val" in
+            fixed|conventional)
+                _commit_style="$_style_val"
+                ;;
+            *)
+                echo "[specify] Warning: unknown commit_style '$_style_val' in git-config.yml (expected 'fixed' or 'conventional'); defaulting to 'fixed'" >&2
+                ;;
+        esac
+    fi
 
     # Parse the auto_commit section for this event.
     # Look for auto_commit.<event_name>.enabled and .message
@@ -139,7 +148,7 @@ if [ "$_commit_style" = "conventional" ]; then
     if [ -n "$GENERATED_MESSAGE" ]; then
         _commit_msg="$GENERATED_MESSAGE"
     else
-        echo "[specify] Error: commit_style is 'conventional' but no generated commit message was supplied; skipped auto-commit" >&2
+        echo "[specify] Error: commit_style is 'conventional' but no generated commit message was supplied; aborting auto-commit (pass the generated message as arg 2, or set commit_style: fixed)" >&2
         exit 1
     fi
 fi

@@ -67,7 +67,14 @@ if (Test-Path $configFile) {
     foreach ($line in Get-Content $configFile) {
         if ($line -match '^commit_style:\s*(.+)$') {
             $styleVal = (($matches[1] -replace '\s+#.*$', '').Trim()) -replace '^["'']' -replace '["'']$'
-            if ($styleVal) { $commitStyle = $styleVal.ToLower() }
+            if ($styleVal) {
+                $styleVal = $styleVal.ToLower()
+                if ($styleVal -eq 'fixed' -or $styleVal -eq 'conventional') {
+                    $commitStyle = $styleVal
+                } else {
+                    Write-Warning "[specify] Warning: unknown commit_style '$styleVal' in git-config.yml (expected 'fixed' or 'conventional'); defaulting to 'fixed'"
+                }
+            }
             break
         }
     }
@@ -161,7 +168,7 @@ if ($commitStyle -eq 'conventional') {
     if ($GeneratedMessage) {
         $commitMsg = $GeneratedMessage
     } else {
-        Write-Warning "[specify] Error: commit_style is 'conventional' but no generated commit message was supplied; skipped auto-commit"
+        Write-Warning "[specify] Error: commit_style is 'conventional' but no generated commit message was supplied; aborting auto-commit (pass the generated message as arg 2, or set commit_style: fixed)"
         exit 1
     }
 }

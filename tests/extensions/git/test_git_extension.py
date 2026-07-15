@@ -1200,6 +1200,28 @@ class TestAutoCommitBashCommitStyle:
         assert "feat: add OAuth specification" in log.stdout
         assert "[Spec Kit] Add specification" not in log.stdout
 
+    def test_unknown_commit_style_defaults_to_fixed(self, tmp_path: Path):
+        """An unrecognized commit_style value falls back to 'fixed' with a warning,
+        instead of silently mis-parsing or crashing."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventonal\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash("auto-commit.sh", project, "after_specify")
+        assert result.returncode == 0
+        assert "unknown commit_style" in result.stderr.lower()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestAutoCommitPowerShell:
@@ -1373,6 +1395,29 @@ class TestAutoCommitPowerShellCommitStyle:
         )
         assert "feat: add OAuth specification" in log.stdout
         assert "[Spec Kit] Add specification" not in log.stdout
+
+    def test_unknown_commit_style_defaults_to_fixed(self, tmp_path: Path):
+        """An unrecognized commit_style value falls back to 'fixed' with a warning,
+        instead of silently mis-parsing or crashing."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventonal\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh("auto-commit.ps1", project, "after_specify")
+        assert result.returncode == 0
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "unknown commit_style" in combined.lower()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
 
 
 # ── auto-commit.ps1 CRLF warning tests (issue #2253) ────────────────────────
