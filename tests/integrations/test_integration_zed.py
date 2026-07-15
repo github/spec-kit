@@ -141,6 +141,8 @@ class TestSlashSkillsSets:
             # ALWAYS_SLASH_AGENTS — unconditional on ai_skills
             ("devin", True, "/speckit-plan"),
             ("devin", False, "/speckit-plan"),
+            ("grok", True, "/speckit-plan"),
+            ("grok", False, "/speckit-plan"),
             ("trae", True, "/speckit-plan"),
             ("trae", False, "/speckit-plan"),
             ("zed", True, "/speckit-plan"),
@@ -154,8 +156,6 @@ class TestSlashSkillsSets:
             ("copilot", False, "/speckit.plan"),
             ("cursor-agent", True, "/speckit-plan"),
             ("cursor-agent", False, "/speckit.plan"),
-            ("grok", True, "/speckit-plan"),
-            ("grok", False, "/speckit.plan"),
         ],
     )
     def test_hook_invocation_format(self, tmp_path, ai, ai_skills, expected):

@@ -1,5 +1,7 @@
 """Tests for GrokIntegration."""
 
+import json
+
 import pytest
 
 from specify_cli.integrations import get_integration
@@ -125,3 +127,61 @@ class TestGrokNextSteps:
         assert "/speckit.plan" not in result.output, (
             f"Should not show /speckit.plan for Grok skills mode:\n{result.output}"
         )
+
+
+class TestGrokInitOptions:
+    """Init-options persistence for always-skills Grok."""
+
+    def test_init_persists_ai_skills_for_grok(self, tmp_path, monkeypatch):
+        """specify init --integration grok must persist ai_skills: true,
+        so HookExecutor renders slash-skill invocations without manual
+        init-options manipulation.
+        """
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+        from specify_cli.extensions import HookExecutor
+
+        project = tmp_path / "grok-init-test"
+        project.mkdir()
+        monkeypatch.chdir(project)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "init",
+                "--here",
+                "--integration",
+                "grok",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        opts_path = project / ".specify" / "init-options.json"
+        assert opts_path.exists()
+        opts = json.loads(opts_path.read_text(encoding="utf-8"))
+        assert opts.get("ai") == "grok"
+        assert opts.get("ai_skills") is True, (
+            f"init must persist ai_skills=true for Grok, got: {opts.get('ai_skills')}"
+        )
+
+        hook_executor = HookExecutor(project)
+        message = hook_executor.format_hook_message(
+            "before_plan",
+            [
+                {
+                    "extension": "test-ext",
+                    "command": "speckit.plan",
+                    "optional": False,
+                }
+            ],
+        )
+        assert "Executing: `/speckit-plan`" in message, (
+            "Hook rendering must produce /speckit-plan for Grok without hint injection"
+        )
+        assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
