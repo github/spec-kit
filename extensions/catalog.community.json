@@ -6,7 +6,7 @@
     "aide": {
       "name": "AI-Driven Engineering (AIDE)",
       "id": "aide",
-      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants — from vision through implementation.",
+      "description": "A structured 7-step workflow for building new projects from scratch with AI assistants \u2014 from vision through implementation.",
       "author": "mnriem",
       "version": "1.0.0",
       "download_url": "https://github.com/mnriem/spec-kit-extensions/releases/download/aide-v1.0.0/aide.zip",
@@ -182,7 +182,7 @@
     "api-evolve": {
       "name": "API Evolve",
       "id": "api-evolve",
-      "description": "Managed API contract evolution — breaking-change detection, semver enforcement, deprecation orchestration, and lifecycle gates across REST, GraphQL, and gRPC.",
+      "description": "Managed API contract evolution \u2014 breaking-change detection, semver enforcement, deprecation orchestration, and lifecycle gates across REST, GraphQL, and gRPC.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-api-evolve/archive/refs/tags/v1.0.0.zip",
@@ -466,7 +466,7 @@
     "brownfield": {
       "name": "Brownfield Bootstrap",
       "id": "brownfield",
-      "description": "Bootstrap spec-kit for existing codebases — auto-discover architecture and adopt SDD incrementally.",
+      "description": "Bootstrap spec-kit for existing codebases \u2014 auto-discover architecture and adopt SDD incrementally.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-brownfield/archive/refs/tags/v1.0.0.zip",
@@ -498,7 +498,7 @@
       "updated_at": "2026-04-10T00:00:00Z"
     },
     "brownkit": {
-      "name": "BrownKit — Brownfield Discovery for Spec-Kit",
+      "name": "BrownKit \u2014 Brownfield Discovery for Spec-Kit",
       "id": "brownkit",
       "description": "Evidence-driven capability discovery, security and QA risk assessment for existing codebases.",
       "author": "Maksim Shautsou",
@@ -534,7 +534,7 @@
     "bugfix": {
       "name": "Bugfix Workflow",
       "id": "bugfix",
-      "description": "Structured bugfix workflow — capture bugs, trace to spec artifacts, and patch specs surgically.",
+      "description": "Structured bugfix workflow \u2014 capture bugs, trace to spec artifacts, and patch specs surgically.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-bugfix/archive/refs/tags/v1.0.0.zip",
@@ -605,7 +605,7 @@
     "catalog-ci": {
       "name": "Catalog CI",
       "id": "catalog-ci",
-      "description": "Automated validation for spec-kit community catalog entries — structure, URLs, diffs, and linting.",
+      "description": "Automated validation for spec-kit community catalog entries \u2014 structure, URLs, diffs, and linting.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-catalog-ci/archive/refs/tags/v1.0.0.zip",
@@ -707,7 +707,7 @@
     "ci-guard": {
       "name": "CI Guard",
       "id": "ci-guard",
-      "description": "Spec compliance gates for CI/CD — verify specs exist, check drift, and block merges on gaps.",
+      "description": "Spec compliance gates for CI/CD \u2014 verify specs exist, check drift, and block merges on gaps.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-ci-guard/archive/refs/tags/v1.0.0.zip",
@@ -840,7 +840,7 @@
     "companion": {
       "name": "SpecKit Companion",
       "id": "companion",
-      "description": "Live spec-driven progress for SpecKit Companion — lifecycle capture, status, resume, and composable commands you can customize with hooks and recipes.",
+      "description": "Live spec-driven progress for SpecKit Companion \u2014 lifecycle capture, status, resume, and composable commands you can customize with hooks and recipes.",
       "author": "alfredoperez",
       "version": "0.11.0",
       "download_url": "https://github.com/alfredoperez/speckit-companion/releases/download/speckit-ext-v0.11.0/companion-0.11.0.zip",
@@ -854,7 +854,10 @@
       "requires": {
         "speckit_version": ">=0.9.5",
         "tools": [
-          { "name": "python3", "required": false }
+          {
+            "name": "python3",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -972,7 +975,7 @@
     "cost": {
       "name": "Cost Tracker",
       "id": "cost",
-      "description": "Track real LLM dollar cost across SDD workflows — per-feature budgets, per-integration comparison, and finance-ready exports.",
+      "description": "Track real LLM dollar cost across SDD workflows \u2014 per-feature budgets, per-integration comparison, and finance-ready exports.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-cost/archive/refs/tags/v1.0.0.zip",
@@ -1104,9 +1107,9 @@
       "updated_at": "2026-06-23T00:00:00Z"
     },
     "docguard": {
-      "name": "DocGuard — CDD Enforcement",
+      "name": "DocGuard \u2014 CDD Enforcement",
       "id": "docguard",
-      "description": "Doc-integrity engine with MCP server, SARIF output, and zero-LLM core. Validates, scores, and traces documentation against code — 24 validators, stable finding codes, spec-kit hooks. Pure Node.js.",
+      "description": "Doc-integrity engine with MCP server, SARIF output, and zero-LLM core. Validates, scores, and traces documentation against code \u2014 24 validators, stable finding codes, spec-kit hooks. Pure Node.js.",
       "author": "raccioly",
       "version": "0.32.0",
       "download_url": "https://github.com/raccioly/docguard/releases/download/v0.32.0/spec-kit-docguard-v0.32.0.zip",
@@ -1257,7 +1260,7 @@
     "figma": {
       "name": "Spec Kit Figma",
       "id": "figma",
-      "description": "Agent-agnostic SpecKit extension that grounds spec, plan & task generation in Figma design context — REST + optional MCP, single/mono/multi-repo, macOS/Linux/Windows.",
+      "description": "Agent-agnostic SpecKit extension that grounds spec, plan & task generation in Figma design context \u2014 REST + optional MCP, single/mono/multi-repo, macOS/Linux/Windows.",
       "author": "Fyloss",
       "version": "1.6.0",
       "download_url": "https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip",
@@ -1271,11 +1274,26 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "git", "required": true },
-          { "name": "bash", "required": false },
-          { "name": "curl", "required": false },
-          { "name": "jq", "required": false },
-          { "name": "pwsh", "required": false }
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "bash",
+            "required": false
+          },
+          {
+            "name": "curl",
+            "required": false
+          },
+          {
+            "name": "jq",
+            "required": false
+          },
+          {
+            "name": "pwsh",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -1438,10 +1456,10 @@
     "gates": {
       "name": "Quality Gates (Enforcement Layer)",
       "id": "gates",
-      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries — agent hooks, git pre-commit, CI — with one policy file and provable enforcement (attestations, canaries, verified parity).",
+      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries: the agent boundary (Claude Code PreToolUse/PostToolUse/Stop hooks), the git boundary (pre-commit / commit-msg), and the CI boundary (projected GitHub Actions / GitLab CI / Jenkins pipelines). One policy file, one verify entrypoint, identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.1.0",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.1.0/gates-0.1.0.zip",
+      "version": "0.3.2",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.2/gates-0.3.2.zip",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
@@ -1457,7 +1475,7 @@
           },
           {
             "name": "git",
-            "required": true
+            "required": false
           },
           {
             "name": "node",
@@ -1470,8 +1488,8 @@
         ]
       },
       "provides": {
-        "commands": 5,
-        "hooks": 1
+        "commands": 8,
+        "hooks": 2
       },
       "tags": [
         "quality",
@@ -1484,7 +1502,8 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-07-13T00:00:00Z"
+      "updated_at": "2026-07-15T00:00:00Z",
+      "changelog": "https://github.com/schwichtgit/spec-gates/releases"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
@@ -1718,7 +1737,7 @@
     "iterate": {
       "name": "Iterate",
       "id": "iterate",
-      "description": "Iterate on spec documents with a two-phase define-and-apply workflow — refine specs mid-implementation and go straight back to building",
+      "description": "Iterate on spec documents with a two-phase define-and-apply workflow \u2014 refine specs mid-implementation and go straight back to building",
       "author": "Vianca Martinez",
       "version": "2.0.0",
       "download_url": "https://github.com/imviancagrace/spec-kit-iterate/archive/refs/tags/v2.0.0.zip",
@@ -1797,12 +1816,31 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "bash", "version": ">=4.4", "required": true },
-          { "name": "git", "required": true },
-          { "name": "curl", "required": true },
-          { "name": "jq", "required": true },
-          { "name": "gitleaks", "required": false },
-          { "name": "trufflehog", "required": false }
+          {
+            "name": "bash",
+            "version": ">=4.4",
+            "required": true
+          },
+          {
+            "name": "git",
+            "required": true
+          },
+          {
+            "name": "curl",
+            "required": true
+          },
+          {
+            "name": "jq",
+            "required": true
+          },
+          {
+            "name": "gitleaks",
+            "required": false
+          },
+          {
+            "name": "trufflehog",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -1858,7 +1896,7 @@
     "linear": {
       "name": "Linear Integration",
       "id": "linear",
-      "description": "Mirror spec-kit feature directories into Linear (filesystem → Linear, reconcile-based, unidirectional).",
+      "description": "Mirror spec-kit feature directories into Linear (filesystem \u2192 Linear, reconcile-based, unidirectional).",
       "author": "Ash Brener",
       "version": "0.7.0",
       "download_url": "https://github.com/ashbrener/spec-kit-linear-sync/archive/refs/tags/v0.7.0.zip",
@@ -1965,9 +2003,9 @@
       "updated_at": "2026-04-28T00:00:00Z"
     },
     "maqa": {
-      "name": "MAQA — Multi-Agent & Quality Assurance",
+      "name": "MAQA \u2014 Multi-Agent & Quality Assurance",
       "id": "maqa",
-      "description": "Coordinator → feature → QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
+      "description": "Coordinator \u2192 feature \u2192 QA agent workflow with parallel worktree-based implementation. Language-agnostic. Auto-detects installed board plugins (Trello, Linear, GitHub Projects, Jira, Azure DevOps). Optional CI gate.",
       "author": "GenieRobot",
       "version": "0.1.3",
       "download_url": "https://github.com/GenieRobot/spec-kit-maqa-ext/releases/download/maqa-v0.1.3/maqa.zip",
@@ -2293,7 +2331,10 @@
       "requires": {
         "speckit_version": ">=0.2.0",
         "tools": [
-          { "name": "memsearch", "required": false }
+          {
+            "name": "memsearch",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -2646,7 +2687,7 @@
     "orchestrator": {
       "name": "Spec Orchestrator",
       "id": "orchestrator",
-      "description": "Cross-feature orchestration — track state, select tasks, and detect conflicts across parallel specs.",
+      "description": "Cross-feature orchestration \u2014 track state, select tasks, and detect conflicts across parallel specs.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-orchestrator/archive/refs/tags/v1.0.0.zip",
@@ -2898,7 +2939,7 @@
     "product-forge": {
       "name": "Product Forge",
       "id": "product-forge",
-      "description": "Full product-lifecycle orchestrator for Spec Kit: research → product-spec → plan → tasks → implement → verify → test → release-readiness, across express/lite/standard/v-model modes with human-in-the-loop gates.",
+      "description": "Full product-lifecycle orchestrator for Spec Kit: research \u2192 product-spec \u2192 plan \u2192 tasks \u2192 implement \u2192 verify \u2192 test \u2192 release-readiness, across express/lite/standard/v-model modes with human-in-the-loop gates.",
       "author": "Valentin Yakovlev",
       "version": "1.7.0",
       "download_url": "https://github.com/VaiYav/speckit-product-forge/archive/refs/tags/v1.7.0.zip",
@@ -3373,7 +3414,7 @@
     "ripple": {
       "name": "Ripple",
       "id": "ripple",
-      "description": "Detect side effects that tests can't catch after implementation — surface hidden ripple effects across 9 analysis categories",
+      "description": "Detect side effects that tests can't catch after implementation \u2014 surface hidden ripple effects across 9 analysis categories",
       "author": "chordpli",
       "version": "1.1.0",
       "download_url": "https://github.com/chordpli/spec-kit-ripple/archive/refs/tags/v1.1.0.zip",
@@ -3445,10 +3486,10 @@
       "updated_at": "2026-06-24T00:00:00Z"
     },
     "schedule": {
-      "name": "Spec Kit Schedule — CP-SAT Agent Orchestrator",
+      "name": "Spec Kit Schedule \u2014 CP-SAT Agent Orchestrator",
       "id": "schedule",
       "description": "Optimal multi-agent task scheduling via CP-SAT solver with DAG precedence, hallucination-aware caps, file-conflict avoidance, stochastic durations, replanning, and interactive HTML output",
-      "author": "Julio César Franco Ardila",
+      "author": "Julio C\u00e9sar Franco Ardila",
       "version": "0.6.2",
       "download_url": "https://github.com/jfranc38/spec-kit-schedule/archive/refs/tags/v0.6.2.zip",
       "repository": "https://github.com/jfranc38/spec-kit-schedule",
@@ -3481,7 +3522,7 @@
     "scope": {
       "name": "Spec Scope",
       "id": "scope",
-      "description": "Effort estimation and scope tracking — estimate work, detect creep, and budget time per phase.",
+      "description": "Effort estimation and scope tracking \u2014 estimate work, detect creep, and budget time per phase.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-scope-/archive/refs/tags/v1.0.0.zip",
@@ -3548,7 +3589,7 @@
       "updated_at": "2026-06-08T00:00:00Z"
     },
     "sf": {
-      "name": "SFSpeckit — Salesforce Spec-Driven Development",
+      "name": "SFSpeckit \u2014 Salesforce Spec-Driven Development",
       "id": "sf",
       "description": "Enterprise-Grade Spec-Driven Development (SDD) Framework for Salesforce.",
       "author": "Sumanth Yanamala",
@@ -3661,7 +3702,7 @@
     "spec-validate": {
       "name": "Spec Validate",
       "id": "spec-validate",
-      "description": "Comprehension validation, review gating, and approval state for spec-kit artifacts — staged-reveal quizzes, peer review SLA, and a hard gate before /speckit.implement.",
+      "description": "Comprehension validation, review gating, and approval state for spec-kit artifacts \u2014 staged-reveal quizzes, peer review SLA, and a hard gate before /speckit.implement.",
       "author": "Ahmed Eltayeb",
       "version": "1.0.1",
       "download_url": "https://github.com/aeltayeb/spec-kit-spec-validate/archive/refs/tags/v1.0.1.zip",
@@ -3695,7 +3736,7 @@
     "spec2cloud": {
       "name": "Spec2Cloud",
       "id": "spec2cloud",
-      "description": "Spec-driven workflow tuned for shipping to Azure: spec → plan → tasks → implement → deploy.",
+      "description": "Spec-driven workflow tuned for shipping to Azure: spec \u2192 plan \u2192 tasks \u2192 implement \u2192 deploy.",
       "author": "Azure Samples",
       "version": "1.1.0",
       "download_url": "https://github.com/Azure-Samples/Spec2Cloud/releases/download/spec-kit-spec2cloud-v1.1.0/extension.zip",
@@ -3922,7 +3963,7 @@
     "status": {
       "name": "Project Status",
       "id": "status",
-      "description": "Show current SDD workflow progress — active feature, artifact status, task completion, workflow phase, and extensions summary.",
+      "description": "Show current SDD workflow progress \u2014 active feature, artifact status, task completion, workflow phase, and extensions summary.",
       "author": "KhawarHabibKhan",
       "version": "1.0.0",
       "download_url": "https://github.com/KhawarHabibKhan/spec-kit-status/archive/refs/tags/v1.0.0.zip",
@@ -4115,8 +4156,14 @@
       "requires": {
         "speckit_version": ">=0.2.0",
         "tools": [
-          { "name": "gh", "required": true },
-          { "name": "python3", "required": true }
+          {
+            "name": "gh",
+            "required": true
+          },
+          {
+            "name": "python3",
+            "required": true
+          }
         ]
       },
       "provides": {
@@ -4172,7 +4219,7 @@
     "time-machine": {
       "name": "Time Machine",
       "id": "time-machine",
-      "description": "Retroactively apply the full SDD workflow to existing codebases — analyse, spec, and ship feature-by-feature",
+      "description": "Retroactively apply the full SDD workflow to existing codebases \u2014 analyse, spec, and ship feature-by-feature",
       "author": "te3yo",
       "version": "1.1.0",
       "download_url": "https://github.com/teeyo/spec-kit-time-machine/archive/refs/tags/v1.1.0.zip",
@@ -4211,7 +4258,7 @@
     "tinyspec": {
       "name": "TinySpec",
       "id": "tinyspec",
-      "description": "Lightweight single-file workflow for small tasks — skip the heavy multi-step SDD process.",
+      "description": "Lightweight single-file workflow for small tasks \u2014 skip the heavy multi-step SDD process.",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-tinyspec/archive/refs/tags/v1.0.0.zip",
@@ -4410,11 +4457,27 @@
       "requires": {
         "speckit_version": ">=0.10.0",
         "tools": [
-          { "name": "rtk", "required": false },
-          { "name": "headroom", "required": false },
-          { "name": "token-router", "required": false },
-          { "name": "ollama", "required": false },
-          { "name": "python", "version": ">=3.10", "required": false }
+          {
+            "name": "rtk",
+            "required": false
+          },
+          {
+            "name": "headroom",
+            "required": false
+          },
+          {
+            "name": "token-router",
+            "required": false
+          },
+          {
+            "name": "ollama",
+            "required": false
+          },
+          {
+            "name": "python",
+            "version": ">=3.10",
+            "required": false
+          }
         ]
       },
       "provides": {
@@ -4436,7 +4499,7 @@
     "trace": {
       "name": "Spec Trace",
       "id": "trace",
-      "description": "Build a requirement → test traceability matrix from spec.md and the test suite — surface untested requirements and orphan tests",
+      "description": "Build a requirement \u2192 test traceability matrix from spec.md and the test suite \u2014 surface untested requirements and orphan tests",
       "author": "Quratulain-bilal",
       "version": "1.0.0",
       "download_url": "https://github.com/Quratulain-bilal/spec-kit-trace/archive/refs/tags/v1.0.0.zip",
@@ -4817,7 +4880,7 @@
     "worktrees": {
       "name": "Worktrees",
       "id": "worktrees",
-      "description": "Default-on worktree isolation for parallel agents — sibling or nested layout",
+      "description": "Default-on worktree isolation for parallel agents \u2014 sibling or nested layout",
       "author": "dango85",
       "version": "1.0.0",
       "download_url": "https://github.com/dango85/spec-kit-worktree-parallel/archive/refs/tags/v1.0.0.zip",
