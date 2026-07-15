@@ -1344,23 +1344,56 @@ class ExtensionManager:
         return True
 
     @staticmethod
-    def _atomic_restore_config(
-        dest: Path, data: bytes, mode: int, atime: float, mtime: float
-    ) -> None:
-        """Restore a preserved config to *dest* atomically (temp file + os.replace).
+    def _reset_dir(path: Path) -> None:
+        """Remove whatever occupies *path* so a fresh directory can take its place.
 
-        Writes to a sibling temp file, then ``os.replace()`` swaps it into place.
-        ``os.replace`` operates on the directory entry, so it (a) never follows a
-        symlink that may occupy *dest* — closing the check-then-use race where a
-        racing process swaps in a symlink to overwrite an external target — and
-        (b) leaves either the old file or the fully-written new one, never a
-        partial write. Mirrors ``shared_infra._write_shared_bytes``. Mode and
-        timestamps are set on the temp file (independently — either can succeed
-        on its own) so the installed file carries them from the first moment.
+        A symlink is unlinked (never followed); a real directory is rmtree'd; any
+        other entry is unlinked. Unlike ``rmtree(..., ignore_errors=True)`` this
+        surfaces failures so a caller never merges into a partially-removed or
+        still-symlinked path.
         """
+        if path.is_symlink():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+
+    def _atomic_restore_config(
+        self, dest: Path, data: bytes, mode: int, atime: float, mtime: float
+    ) -> None:
+        """Restore a preserved config to *dest* atomically and symlink-safely.
+
+        Two guards, both required because *dest*'s parent is a fresh copytree
+        output that a racing process could swap for a symlink:
+
+        1. Reject a symlinked ancestor of *dest* (``dest.parent`` and up, under
+           the project root) via the repo's shared safe-write guard
+           (``shared_infra._ensure_safe_shared_directory``). Without this,
+           ``mkstemp(dir=dest.parent)`` + ``os.replace`` would create and install
+           the config (possibly secrets) *inside a symlinked external target*.
+        2. Write to a sibling temp file, then ``os.replace`` swaps it into the
+           directory entry — never following a symlink that occupies the leaf
+           *dest*, and never leaving a partial write.
+
+        Mode/timestamps are set on the temp file (independently — either can
+        succeed alone) so the installed file carries them from the first moment.
+        """
+        from ..shared_infra import _ensure_safe_shared_directory
+
+        # (1) Refuse a symlinked ancestor of the destination. dest.parent must
+        # already exist (a fresh copytree dir, the backup dir, or a rollback dir
+        # recreated safely just above the call).
+        _ensure_safe_shared_directory(
+            self.project_root,
+            dest.parent,
+            create=False,
+            context="extension config directory",
+        )
+
         # os.replace cannot replace a directory with a file; clear a stray
-        # (non-symlink) directory at the path first. A symlink is handled by
-        # os.replace itself (it swaps the link entry without following it).
+        # (non-symlink) directory at the leaf first. A symlink at the leaf is
+        # handled by os.replace itself (it swaps the link entry, never follows).
         if dest.is_dir() and not dest.is_symlink():
             shutil.rmtree(dest, ignore_errors=True)
         fd, temp_name = tempfile.mkstemp(prefix=f".{dest.name}.", dir=dest.parent)
@@ -1448,6 +1481,13 @@ class ExtensionManager:
                 f"extension. Install from a copy in a different location instead."
             )
 
+        # Validate the source ignore file BEFORE any destructive step. It can
+        # raise on a malformed/invalid-UTF-8 file, and neither the --force
+        # self.remove() below nor the later rmtree must run if it does — otherwise
+        # a bad ignore file would uninstall a working extension (and drop its
+        # registry entry) before validation fails. Reused as-is at the copytree.
+        ignore_fn = self._load_extensionignore(source_dir)
+
         # Remove existing installation AFTER all validations pass so that a
         # validation failure doesn't leave the user with a half-uninstalled
         # extension (configs stranded in .backup/).
@@ -1499,21 +1539,18 @@ class ExtensionManager:
 
         # Install extension (dest_dir computed above during self-install guard).
         # Preserved configs are the ONLY surviving copy once the old extension dir
-        # is removed, so guard the whole destructive reinstall against loss at any
-        # step (a malformed source ignore file, the rmtree, copytree, or a
-        # restore):
-        #   1. Validate the source ignore file BEFORE deleting anything — it can
-        #      raise on a malformed file, and nothing is destroyed yet if it does.
+        # is removed, so guard the whole destructive reinstall against loss:
+        #   1. The source ignore file is already validated above (before any
+        #      destructive step), so a malformed one never reaches here.
         #   2. Stage a durable on-disk backup of the configs.
         #   3. Run the destructive rmtree + copytree + restore inside one block;
-        #      on ANY failure, roll the configs back into a clean dest_dir and
-        #      re-raise. The backup is removed only once the configs are provably
-        #      in place (normal success OR a completed rollback) — otherwise it is
-        #      left on disk so nothing is ever lost, even on a rollback failure.
-        # Each config write is atomic (temp file + os.replace) so it never follows
-        # a symlink that may occupy the path (see _atomic_restore_config).
-        ignore_fn = self._load_extensionignore(source_dir)
-
+        #      on ANY failure, reset dest_dir to a clean, symlink-safe directory
+        #      and roll the configs back, then re-raise. The backup is removed
+        #      only once the configs are provably in place (normal success OR a
+        #      completed rollback) — otherwise it is left on disk so nothing is
+        #      ever lost, even on a rollback failure.
+        # Each config write is atomic (temp file + os.replace) AND refuses a
+        # symlinked ancestor of the destination (see _atomic_restore_config).
         backup_dir: Path | None = None
         if preserved_configs:
             backup_dir = Path(
@@ -1534,16 +1571,29 @@ class ExtensionManager:
                 self._atomic_restore_config(dest_dir / name, data, mode, atime, mtime)
             restored_ok = True
         except Exception:
-            # Roll the configs back into a clean dest_dir from the durable backup
-            # so a failed reinstall leaves them intact, then re-raise the original.
+            # Roll the configs back into a clean, symlink-safe dest_dir from the
+            # durable backup so a failed reinstall leaves them intact, then
+            # re-raise the original error. Reset dest_dir (unlink a symlink /
+            # rmtree a real dir — surfacing failures, never ignore_errors) and
+            # recreate it under a verified non-symlink ancestor chain BEFORE
+            # copying, so recovery can never merge through a symlinked or
+            # partially-removed directory into an external target.
             if backup_dir is not None:
                 try:
-                    if dest_dir.exists():
-                        shutil.rmtree(dest_dir, ignore_errors=True)
+                    from ..shared_infra import _ensure_safe_shared_directory
+                    self._reset_dir(dest_dir)
+                    _ensure_safe_shared_directory(
+                        self.project_root,
+                        dest_dir,
+                        create=True,
+                        context="extension directory",
+                    )
                     shutil.copytree(backup_dir, dest_dir, dirs_exist_ok=True)
                     restored_ok = True
-                except OSError:
-                    restored_ok = False  # keep the backup below for recovery
+                except (OSError, ValueError):
+                    # ValueError covers SymlinkedSharedPathError (a symlinked
+                    # ancestor): leave the durable backup on disk for recovery.
+                    restored_ok = False
             raise
         finally:
             # Drop the backup only when the configs are provably in dest_dir.

@@ -1768,13 +1768,13 @@ class TestExtensionManager:
         # staging (a ".cfgbak-" temp dir) succeed so rollback can recover.
         real_restore = ExtensionManager._atomic_restore_config
 
-        def flaky_restore(dest, data, mode, atime, mtime):
+        def flaky_restore(self, dest, data, mode, atime, mtime):
             if "cfgbak" not in dest.parent.name:
                 raise OSError("simulated restore failure")
-            return real_restore(dest, data, mode, atime, mtime)
+            return real_restore(self, dest, data, mode, atime, mtime)
 
         monkeypatch.setattr(
-            ExtensionManager, "_atomic_restore_config", staticmethod(flaky_restore)
+            ExtensionManager, "_atomic_restore_config", flaky_restore
         )
 
         with pytest.raises(OSError):
@@ -1785,6 +1785,90 @@ class TestExtensionManager:
         # Not a silent success: the config was rolled back, not lost.
         assert config_file.is_file()
         assert "MY-CUSTOMIZED-VALUE" in config_file.read_text()
+
+    def test_reinstall_force_validates_ignore_before_removal(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A --force reinstall must validate the source ignore file BEFORE
+        self.remove() runs. Otherwise a malformed ignore file uninstalls a
+        working extension (dropping its files and registry entry) before the
+        validation raises. (The leftover-path test covers the non-force case.)"""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        assert manager.registry.is_installed("test-ext")
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        manifest_file = ext_dir / "extension.yml"
+        assert manifest_file.is_file()
+
+        def bad_ignore(src):
+            raise ValueError("malformed .extensionignore")
+
+        monkeypatch.setattr(manager, "_load_extensionignore", bad_ignore)
+
+        with pytest.raises(ValueError):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False, force=True
+            )
+
+        # The working extension was NOT removed by the failed --force reinstall.
+        assert manager.registry.is_installed("test-ext")
+        assert manifest_file.is_file()
+
+    def test_reinstall_refuses_symlinked_dest_dir(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """If dest_dir is swapped to a symlink after copytree, the config restore
+        must NOT create bytes (potential secrets) inside the symlinked external
+        target — the repo's ancestor guard rejects it, and rollback recreates a
+        real directory. Guards the symlinked-parent gap (leaf-only guards miss
+        it). Skipped where symlinks need privilege; runs on Linux CI."""
+        probe_t = project_dir / "_pt"
+        probe_l = project_dir / "_pl"
+        try:
+            probe_t.mkdir()
+            probe_l.symlink_to(probe_t, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not supported in this environment")
+        finally:
+            if probe_l.is_symlink():
+                probe_l.unlink()
+            if probe_t.exists():
+                shutil.rmtree(probe_t, ignore_errors=True)
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("api_key: SECRET-VALUE")
+        assert manager.remove("test-ext", keep_config=True) is True
+
+        victim = project_dir / "victim_target"
+        victim.mkdir()
+
+        real_copytree = shutil.copytree
+        calls = {"n": 0}
+
+        def copytree_symlinks_destdir_first(src, dst, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                # Simulate a racing swap: dest_dir is a symlink to an external dir.
+                Path(dst).symlink_to(victim, target_is_directory=True)
+                return dst
+            return real_copytree(src, dst, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "copytree", copytree_symlinks_destdir_first)
+
+        with pytest.raises(Exception):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Secrets never landed in the external target.
+        assert list(victim.iterdir()) == []
+        # dest_dir is a real directory again (rollback), with the config recovered.
+        assert not ext_dir.is_symlink()
+        assert config_file.is_file()
+        assert "SECRET-VALUE" in config_file.read_text()
 
 
 # ===== CommandRegistrar Tests =====
