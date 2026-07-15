@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-14T00:00:00Z",
+  "updated_at": "2026-07-15T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -809,8 +809,8 @@
       "id": "coding-standards-drift-control",
       "description": "Generate coding-standards drift reports and remediation tasks for active Spec Kit features",
       "author": "Igor Benicio de Mesquita",
-      "version": "0.3.1",
-      "download_url": "https://github.com/benizzio/spec-kit-coding-standards-drift-control/archive/refs/tags/v0.3.1.zip",
+      "version": "0.4.0",
+      "download_url": "https://github.com/benizzio/spec-kit-coding-standards-drift-control/archive/refs/tags/v0.4.0.zip",
       "repository": "https://github.com/benizzio/spec-kit-coding-standards-drift-control",
       "homepage": "https://github.com/benizzio/spec-kit-coding-standards-drift-control",
       "documentation": "https://github.com/benizzio/spec-kit-coding-standards-drift-control#readme",
@@ -835,7 +835,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-06-11T00:00:00Z"
+      "updated_at": "2026-07-15T00:00:00Z"
     },
     "companion": {
       "name": "SpecKit Companion",
