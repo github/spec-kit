@@ -1312,7 +1312,7 @@
       "requires": {
         "speckit_version": ">=0.1.0",
         "tools": [
-          { "name": "python3", "required": true }
+          { "name": "python3", "version": ">=3.8", "required": true }
         ]
       },
       "provides": {
