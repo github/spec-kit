@@ -1359,10 +1359,13 @@ class TestExtensionManager:
     ):
         """An .extensionignore load failure must not lose a preserved config.
 
-        `.extensionignore` is loaded/validated before dest_dir is deleted, so a
+        `.extensionignore` is loaded/validated before the rescue staging
+        directory is read or created (and thus before dest_dir is deleted), so a
         ValidationError raised for invalid UTF-8 must abort the reinstall while
-        leaving the kept config untouched in its documented location rather than
-        only in the hidden staging directory.
+        leaving the kept config authoritative in its documented location. It must
+        NOT publish a stale staging copy that a later retry — after the user
+        fixes the ignore file and edits the kept config — would reload and use to
+        silently overwrite the newer bytes.
         """
         manager = ExtensionManager(project_dir)
 
@@ -1383,7 +1386,7 @@ class TestExtensionManager:
         assert config_file.exists()
 
         # Author an .extensionignore that is not valid UTF-8 so the loader
-        # raises before dest_dir would be deleted.
+        # raises before rescue staging is read or created.
         (extension_dir / ".extensionignore").write_bytes(b"\xff\xfe invalid\n")
 
         with pytest.raises(ValidationError, match="not valid UTF-8"):
@@ -1395,6 +1398,25 @@ class TestExtensionManager:
         assert config_file.exists(), "config must survive the ignore-load failure"
         assert config_file.read_bytes() == original_bytes
         assert not manager.registry.is_installed("test-ext")
+
+        # No rescue staging may have been published, so a later retry reads the
+        # live (possibly newly edited) config rather than stale staged bytes.
+        staging_dir = manager.extensions_dir / ".rescue-staging-test-ext"
+        assert not staging_dir.exists()
+
+        # Simulate the user fixing the ignore file and editing the kept config,
+        # then retrying: the retry must adopt the newer bytes, never a stale
+        # staged copy.
+        (extension_dir / ".extensionignore").write_text("*.log\n")
+        config_file.write_text("model: newer-model\n")
+        newer_bytes = config_file.read_bytes()
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert manager.registry.is_installed("test-ext")
+        assert config_file.read_bytes() == newer_bytes
 
     def test_retry_after_staging_backup_restores_stranded_config(
         self, extension_dir, project_dir, monkeypatch

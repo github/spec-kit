@@ -1449,6 +1449,16 @@ class ExtensionManager:
                 backup_config_dir.unlink()
             did_remove = self.remove(manifest.id)
 
+        # Load and validate .extensionignore BEFORE reading/creating the rescue
+        # staging directory (and thus before deleting dest_dir). The loader can
+        # raise ValidationError (invalid UTF-8) or OSError; doing it first means
+        # such a failure aborts while the kept config is still authoritative in
+        # its documented location, rather than leaving a freshly published
+        # staging copy that a later retry (after the user edits the kept config)
+        # would reload and use to overwrite the newer bytes. Any staging left by
+        # an earlier destructive attempt is intentionally left intact here.
+        ignore_fn = self._load_extensionignore(source_dir)
+
         # Rescue any config files left behind by a prior `remove --keep-config`.
         # When an extension is removed with --keep-config, it is no longer in
         # the registry but its config files remain in dest_dir.  A subsequent
@@ -1579,12 +1589,6 @@ class ExtensionManager:
                 # proceeding destructively.
                 shutil.rmtree(rescue_staging_dir, ignore_errors=True)
                 raise
-
-        # Load and validate .extensionignore BEFORE deleting dest_dir. The
-        # loader can raise ValidationError (invalid UTF-8) or OSError; doing it
-        # first means such a failure leaves the kept config untouched in its
-        # documented location rather than only in the hidden staging directory.
-        ignore_fn = self._load_extensionignore(source_dir)
 
         # Install extension (dest_dir computed above during self-install guard)
         if dest_dir.exists():
