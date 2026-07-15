@@ -1004,6 +1004,7 @@ class ExtensionManager:
         from .. import load_init_options
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
+        from ..integrations.base import IntegrationBase
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -1085,6 +1086,9 @@ class ExtensionManager:
             body = registrar.rewrite_extension_paths(body, manifest.id, extension_dir)
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
+            )
+            body = IntegrationBase.resolve_command_refs(
+                body, agent_config.get("invoke_separator", ".")
             )
 
             original_desc = frontmatter.get("description", "")
