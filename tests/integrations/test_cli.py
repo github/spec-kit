@@ -224,9 +224,18 @@ class TestInitIntegrationFlag:
         assert "Continuing without the optional preset" in normalized
         assert "Project ready" in normalized
 
-    def test_init_with_local_preset_seeds_manifest_constitution(self, tmp_path):
+    def test_init_with_local_preset_seeds_manifest_constitution(
+        self, tmp_path, monkeypatch
+    ):
         from typer.testing import CliRunner
         from specify_cli import app
+        from specify_cli.presets import PresetManager
+
+        monkeypatch.setattr(
+            PresetManager,
+            "_seed_constitution_from_preset",
+            lambda *_args, **_kwargs: None,
+        )
 
         preset_dir = tmp_path / "constitution-preset"
         (preset_dir / "organization").mkdir(parents=True)
