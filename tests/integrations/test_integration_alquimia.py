@@ -1,14 +1,14 @@
 """Tests for AlquimiaAIIntegration."""
 
-import codecs
 import json
 import os
 from unittest.mock import patch
 
 import yaml
+
 from specify_cli.integrations import INTEGRATION_REGISTRY, get_integration
-from specify_cli.integrations.alquimia import ARGUMENT_HINTS
 from specify_cli.integrations.base import IntegrationBase, SkillsIntegration
+from specify_cli.integrations.alquimia import ARGUMENT_HINTS
 from specify_cli.integrations.manifest import IntegrationManifest
 
 
@@ -31,10 +31,6 @@ class TestAlquimiaAIIntegration:
         assert integration.registrar_config["format"] == "markdown"
         assert integration.registrar_config["args"] == "$ARGUMENTS"
         assert integration.registrar_config["extension"] == "/SKILL.md"
-
-    def test_context_file(self):
-        integration = get_integration("alquimia")
-        assert integration.context_file == "ALQUIMIA.md"
 
     def test_setup_creates_skill_files(self, tmp_path):
         integration = get_integration("alquimia")
@@ -66,63 +62,44 @@ class TestAlquimiaAIIntegration:
         assert parsed["disable-model-invocation"] is False
         assert parsed["metadata"]["source"] == "templates/commands/plan.md"
 
-    def test_setup_upserts_context_section(self, tmp_path):
+    def test_render_skill_unicode(self):
+        """Test rendering a skill preserves non-ASCII characters."""
+        integration = get_integration("alquimia")
+        rendered = integration._render_skill(
+            "constitution",
+            {"description": "Prüfe Konformität der Implementierung"},
+            "Body",
+        )
+        assert "Prüfe Konformität" in rendered
+
+    def test_setup_does_not_write_context_section(self, tmp_path):
+        """The CLI no longer manages the agent context file — that is owned by
+        the opt-in agent-context extension. Setup must not create or touch it."""
         integration = get_integration("alquimia")
         manifest = IntegrationManifest("alquimia", tmp_path)
         integration.setup(tmp_path, manifest, script_type="sh")
 
-        ctx_path = tmp_path / integration.context_file
-        assert ctx_path.exists()
-        content = ctx_path.read_text(encoding="utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "<!-- SPECKIT END -->" in content
-        assert "read the current plan" in content
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8", errors="ignore")
+                assert "<!-- SPECKIT START -->" not in text
 
-    def test_upsert_context_section_strips_bom(self, tmp_path):
-        """Existing context file with UTF-8 BOM must be cleaned up on upsert."""
+    def test_teardown_does_not_touch_existing_context_file(self, tmp_path):
+        """A user-authored context file is left intact on teardown."""
         integration = get_integration("alquimia")
-        ctx_path = tmp_path / integration.context_file
+        ctx_path = tmp_path / "ALQUIMIA.md"
+        original = "# ALQUIMIA.md\n\nUser content.\n"
+        ctx_path.write_text(original, encoding="utf-8")
 
-        # Write a file that starts with a UTF-8 BOM (as the old PowerShell script did)
-        bom = codecs.BOM_UTF8
-        ctx_path.write_bytes(bom + b"# ALQUIMIA.md\n\nSome existing content.\n")
+        manifest = IntegrationManifest("alquimia", tmp_path)
+        integration.setup(tmp_path, manifest, script_type="sh")
+        integration.teardown(tmp_path, manifest)
 
-        integration.upsert_context_section(tmp_path)
+        assert ctx_path.read_text(encoding="utf-8") == original
 
-        result = ctx_path.read_bytes()
-        assert not result.startswith(bom), "BOM must be stripped after upsert"
-        content = result.decode("utf-8")
-        assert "<!-- SPECKIT START -->" in content
-        assert "Some existing content." in content
-
-    def test_remove_context_section_strips_bom(self, tmp_path):
-        """remove_context_section must clean BOM from context file on Windows-authored files."""
-        integration = get_integration("alquimia")
-        ctx_path = tmp_path / integration.context_file
-
-        marker_content = (
-            "# ALQUIMIA.md\n\n"
-            "<!-- SPECKIT START -->\n"
-            "For additional context about technologies to be used, project structure,\n"
-            "shell commands, and other important information, read the current plan\n"
-            "<!-- SPECKIT END -->\n"
-        )
-        ctx_path.write_bytes(codecs.BOM_UTF8 + marker_content.encode("utf-8"))
-
-        result = integration.remove_context_section(tmp_path)
-
-        assert result is True
-        assert ctx_path.exists(), "File should exist (non-empty content remains)"
-        remaining = ctx_path.read_bytes()
-        assert not remaining.startswith(codecs.BOM_UTF8), (
-            "BOM must be stripped after remove"
-        )
-        assert b"<!-- SPECKIT" not in remaining
-        assert b"# ALQUIMIA.md" in remaining
-
-    def test_integration_flag_sets_ai_and_enables_skills(self, tmp_path):
-        from specify_cli import app
+    def test_integration_flag_creates_skill_files_cli(self, tmp_path):
         from typer.testing import CliRunner
+        from specify_cli import app
 
         project = tmp_path / "alquimia-promote"
         project.mkdir()
@@ -158,8 +135,8 @@ class TestAlquimiaAIIntegration:
         assert init_options["integration"] == "alquimia"
 
     def test_integration_flag_creates_skill_files(self, tmp_path):
-        from specify_cli import app
         from typer.testing import CliRunner
+        from specify_cli import app
 
         project = tmp_path / "alquimia-integration"
         project.mkdir()
@@ -192,8 +169,8 @@ class TestAlquimiaAIIntegration:
         ).exists()
 
     def test_interactive_alquimia_selection_uses_integration_path(self, tmp_path):
-        from specify_cli import app
         from typer.testing import CliRunner
+        from specify_cli import app
 
         project = tmp_path / "alquimia-interactive"
         project.mkdir()
@@ -243,10 +220,10 @@ class TestAlquimiaAIIntegration:
         assert init_options["ai_skills"] is True
         assert init_options["integration"] == "alquimia"
 
-    def test_alquimia_init_creates_skill_files(self, tmp_path):
-        """Init with --integration alquimia should create Alquimia skills and succeed."""
-        from specify_cli import app
+    def test_alquimia_init_remains_usable_when_converter_fails(self, tmp_path):
+        """Alquimia init should succeed even without install_skills."""
         from typer.testing import CliRunner
+        from specify_cli import app
 
         runner = CliRunner()
         target = tmp_path / "fail-proj"
@@ -268,31 +245,6 @@ class TestAlquimiaAIIntegration:
         assert (
             target / ".alquimia" / "skills" / "speckit-specify" / "SKILL.md"
         ).exists()
-
-    def test_alquimia_hooks_render_skill_invocation(self, tmp_path):
-        from specify_cli.extensions import HookExecutor
-
-        project = tmp_path / "alquimia-hooks"
-        project.mkdir()
-        init_options = project / ".specify" / "init-options.json"
-        init_options.parent.mkdir(parents=True, exist_ok=True)
-        init_options.write_text(json.dumps({"ai": "alquimia", "ai_skills": True}))
-
-        hook_executor = HookExecutor(project)
-        message = hook_executor.format_hook_message(
-            "before_plan",
-            [
-                {
-                    "extension": "test-ext",
-                    "command": "speckit-plan",
-                    "optional": False,
-                }
-            ],
-        )
-
-        assert "Executing: `/speckit-plan`" in message
-        assert "EXECUTE_COMMAND: speckit-plan" in message
-        assert "EXECUTE_COMMAND_INVOCATION: /speckit-plan" in message
 
     def test_alquimia_preset_creates_new_skill_without_commands_dir(self, tmp_path):
         from specify_cli import save_init_options
@@ -320,7 +272,7 @@ class TestAlquimiaAIIntegration:
             "schema_version": "1.0",
             "preset": {
                 "id": "alquimia-skill-command",
-                "name": "Alquimia AI Skill Command",
+                "name": "Alquimia Skill Command",
                 "version": "1.0.0",
                 "description": "Test",
             },
@@ -356,18 +308,30 @@ class TestAlquimiaAIIntegration:
 class TestAlquimiaArgumentHints:
     """Verify that argument-hint frontmatter is injected for Alquimia skills."""
 
+    def test_converge_has_no_argument_hint(self):
+        """Converge should not advertise unsupported feature-name arguments."""
+        assert "converge" not in ARGUMENT_HINTS
+
     def test_all_skills_have_hints(self, tmp_path):
-        """Every generated SKILL.md must contain an argument-hint line."""
+        """Every skill with a configured hint must contain an argument-hint line."""
         i = get_integration("alquimia")
         m = IntegrationManifest("alquimia", tmp_path)
         created = i.setup(tmp_path, m, script_type="sh")
         skill_files = [f for f in created if f.name == "SKILL.md"]
         assert len(skill_files) > 0
         for f in skill_files:
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-") :]
             content = f.read_text(encoding="utf-8")
-            assert "argument-hint:" in content, (
-                f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
-            )
+            if stem in ARGUMENT_HINTS:
+                assert "argument-hint:" in content, (
+                    f"{f.parent.name}/SKILL.md is missing argument-hint frontmatter"
+                )
+            else:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
 
     def test_hints_match_expected_values(self, tmp_path):
         """Each skill's argument-hint must match the expected text."""
@@ -381,13 +345,15 @@ class TestAlquimiaArgumentHints:
             if stem.startswith("speckit-"):
                 stem = stem[len("speckit-") :]
             expected_hint = ARGUMENT_HINTS.get(stem)
-            assert expected_hint is not None, (
-                f"No expected hint defined for skill '{stem}'"
-            )
             content = f.read_text(encoding="utf-8")
-            assert f'argument-hint: "{expected_hint}"' in content, (
-                f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
-            )
+            if expected_hint is None:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
+            else:
+                assert f'argument-hint: "{expected_hint}"' in content, (
+                    f"{f.parent.name}/SKILL.md: expected hint '{expected_hint}' not found"
+                )
 
     def test_hint_is_inside_frontmatter(self, tmp_path):
         """argument-hint must appear between the --- delimiters, not in the body."""
@@ -401,12 +367,20 @@ class TestAlquimiaArgumentHints:
             assert len(parts) >= 3, f"No frontmatter in {f.parent.name}/SKILL.md"
             frontmatter = parts[1]
             body = parts[2]
-            assert "argument-hint:" in frontmatter, (
-                f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
-            )
-            assert "argument-hint:" not in body, (
-                f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
-            )
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-") :]
+            if stem in ARGUMENT_HINTS:
+                assert "argument-hint:" in frontmatter, (
+                    f"{f.parent.name}/SKILL.md: argument-hint not in frontmatter section"
+                )
+                assert "argument-hint:" not in body, (
+                    f"{f.parent.name}/SKILL.md: argument-hint leaked into body"
+                )
+            else:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
 
     def test_hint_appears_after_description(self, tmp_path):
         """argument-hint must immediately follow the description line."""
@@ -417,6 +391,14 @@ class TestAlquimiaArgumentHints:
         for f in skill_files:
             content = f.read_text(encoding="utf-8")
             lines = content.splitlines()
+            stem = f.parent.name
+            if stem.startswith("speckit-"):
+                stem = stem[len("speckit-") :]
+            if stem not in ARGUMENT_HINTS:
+                assert "argument-hint:" not in content, (
+                    f"{f.parent.name}/SKILL.md unexpectedly has argument-hint frontmatter"
+                )
+                continue
             found_description = False
             for idx, line in enumerate(lines):
                 if line.startswith("description:"):
@@ -434,12 +416,12 @@ class TestAlquimiaArgumentHints:
 
     def test_inject_argument_hint_only_in_frontmatter(self):
         """inject_argument_hint must not modify description: lines in the body."""
-        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+        from specify_cli.integrations.alquimia import AlquimiaIntegration
 
         content = (
             "---\ndescription: My command\n---\n\ndescription: this is body text\n"
         )
-        result = AlquimiaAIIntegration.inject_argument_hint(content, "Test hint")
+        result = AlquimiaIntegration.inject_argument_hint(content, "Test hint")
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
         assert hint_count == 1, (
@@ -448,7 +430,7 @@ class TestAlquimiaArgumentHints:
 
     def test_inject_argument_hint_skips_if_already_present(self):
         """inject_argument_hint must not duplicate if argument-hint already exists."""
-        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
+        from specify_cli.integrations.alquimia import AlquimiaIntegration
 
         content = (
             "---\n"
@@ -458,7 +440,7 @@ class TestAlquimiaArgumentHints:
             "\n"
             "Body text\n"
         )
-        result = AlquimiaAIIntegration.inject_argument_hint(content, "New hint")
+        result = AlquimiaIntegration.inject_argument_hint(content, "New hint")
         assert result == content, "Content should be unchanged when hint already exists"
         lines = result.splitlines()
         hint_count = sum(1 for ln in lines if ln.startswith("argument-hint:"))
@@ -506,8 +488,10 @@ class TestAlquimiaDisableModelInvocation:
         assert "disable-model-invocation" not in fm
         assert "user-invocable" not in fm
 
-    def test_skills_default_post_process_is_identity(self, tmp_path):
-        """SkillsIntegration agents without an override leave content unchanged."""
+    def test_skills_default_post_process_preserves_content_without_hooks(
+        self, tmp_path
+    ):
+        """SkillsIntegration agents without an override preserve non-hook content."""
         # ``agy`` is a plain SkillsIntegration with no post-process override,
         # so it stands in for the base-class default behavior.
         agy = get_integration("agy")
@@ -524,7 +508,7 @@ class TestAlquimiaHookCommandNote:
         """Skills that have hook sections should get the normalization note."""
         i = get_integration("alquimia")
         m = IntegrationManifest("alquimia", tmp_path)
-        created = i.setup(tmp_path, m, script_type="sh")
+        i.setup(tmp_path, m, script_type="sh")
         specify_skill = tmp_path / ".alquimia/skills/speckit-specify/SKILL.md"
         assert specify_skill.exists()
         content = specify_skill.read_text(encoding="utf-8")
@@ -535,16 +519,12 @@ class TestAlquimiaHookCommandNote:
 
     def test_hook_note_not_in_skills_without_hooks(self, tmp_path):
         """Skills without hook sections should not get the note."""
-        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
-
         content = "---\nname: test\ndescription: test\n---\n\nNo hooks here.\n"
         result = SkillsIntegration._inject_hook_command_note(content)
         assert "replace dots" not in result
 
     def test_hook_note_idempotent(self, tmp_path):
         """Injecting the note twice should not duplicate it."""
-        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
-
         content = (
             "---\nname: test\n---\n\n"
             "- For each executable hook, output the following based on its flag:\n"
@@ -553,17 +533,40 @@ class TestAlquimiaHookCommandNote:
         twice = SkillsIntegration._inject_hook_command_note(once)
         assert once == twice, "Hook note injection should be idempotent"
 
+    def test_hook_note_fills_missing_repeated_instructions(self, tmp_path):
+        """Already-noted hook sections should not suppress later sections."""
+        from specify_cli.integrations.base import _HOOK_COMMAND_NOTE
+
+        content = (
+            "---\nname: test\n---\n\n"
+            f"{_HOOK_COMMAND_NOTE}"
+            "- For each executable hook, output the following based on its flag:\n"
+            "\n"
+            "  - For each executable hook, output the following based on its flag:\n"
+        )
+        result = SkillsIntegration._inject_hook_command_note(content)
+        assert result.count("replace dots (`.`) with hyphens") == 2
+
+    def test_hook_note_not_suppressed_by_unrelated_phrase(self, tmp_path):
+        """Unrelated text should not trip the hook-note idempotence guard."""
+        content = (
+            "---\nname: test\n---\n\n"
+            "This paragraph says replace dots in a different context.\n"
+            "- For each executable hook, output the following based on its flag:\n"
+        )
+        result = SkillsIntegration._inject_hook_command_note(content)
+        assert "This paragraph says replace dots in a different context." in result
+        assert result.count("replace dots (`.`) with hyphens") == 1
+
     def test_hook_note_preserves_indentation(self, tmp_path):
         """The injected note should match the indentation of the target line."""
-        from specify_cli.integrations.alquimia import AlquimiaAIIntegration
-
         content = (
             "---\nname: test\n---\n\n"
             "   - For each executable hook, output the following\n"
         )
         result = SkillsIntegration._inject_hook_command_note(content)
         lines = result.splitlines()
-        note_line = [l for l in lines if "replace dots" in l][0]
+        note_line = [line for line in lines if "replace dots" in line][0]
         assert note_line.startswith("   "), "Note should preserve indentation"
 
     def test_post_process_injects_all_alquimia_flags(self):

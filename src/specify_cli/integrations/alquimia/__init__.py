@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..._utils import dump_frontmatter
 from ..base import SkillsIntegration
 from ..manifest import IntegrationManifest
 
@@ -42,6 +43,28 @@ class AlquimiaAIIntegration(SkillsIntegration):
     }
     context_file = "ALQUIMIA.md"
     multi_install_safe = True
+
+    def _render_skill(
+        self, template_name: str, frontmatter: dict[str, Any], body: str
+    ) -> str:
+        """Render a processed command template as an Alquimia skill."""
+        skill_name = f"speckit-{template_name.replace('.', '-')}"
+        description = frontmatter.get(
+            "description",
+            f"Spec-kit workflow command: {template_name}",
+        )
+        skill_frontmatter = self._build_skill_fm(
+            skill_name, description, f"templates/commands/{template_name}.md"
+        )
+        frontmatter_text = dump_frontmatter(skill_frontmatter)
+        return f"---\n{frontmatter_text}\n---\n\n{body.strip()}\n"
+
+    def _build_skill_fm(self, name: str, description: str, source: str) -> dict:
+        from specify_cli.agents import CommandRegistrar
+
+        return CommandRegistrar.build_skill_frontmatter(
+            self.key, name, description, source
+        )
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
@@ -132,7 +155,9 @@ class AlquimiaAIIntegration(SkillsIntegration):
         """Inject Alquimia-specific frontmatter flags and hook notes."""
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
-        updated = self._inject_frontmatter_flag(updated, "disable-model-invocation", "false")
+        updated = self._inject_frontmatter_flag(
+            updated, "disable-model-invocation", "false"
+        )
         return updated
 
     def setup(
