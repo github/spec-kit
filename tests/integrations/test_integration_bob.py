@@ -372,4 +372,3 @@ class TestBobRegistrarConfig:
         assert "bob" in results, "bob must appear in results for legacy-mode project"
         registered_file = commands_dir / "speckit.test-cmd.md"
         assert registered_file.exists(), f"Expected {registered_file} to be written"
-
