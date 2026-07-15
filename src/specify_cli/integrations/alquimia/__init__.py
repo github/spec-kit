@@ -151,12 +151,19 @@ class AlquimiaAIIntegration(SkillsIntegration):
         return "".join(out)
 
     def post_process_skill_content(self, content: str) -> str:
-        """Inject Alquimia-specific frontmatter flags and hook notes."""
+        """Inject Alquimia-specific frontmatter flags, hints and hook notes."""
         updated = super().post_process_skill_content(content)
         updated = self._inject_frontmatter_flag(updated, "user-invocable")
         updated = self._inject_frontmatter_flag(
             updated, "disable-model-invocation", "false"
         )
+        for line in updated.splitlines():
+            if line.startswith("name:"):
+                name = line.removeprefix("name:").strip().strip("\"'")
+                hint = ARGUMENT_HINTS.get(name.removeprefix("speckit-"))
+                if hint:
+                    updated = self.inject_argument_hint(updated, hint)
+                break
         return updated
 
     def setup(
