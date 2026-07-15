@@ -2426,6 +2426,36 @@ class TestFanOutStep:
         assert result.status == StepStatus.COMPLETED
         assert result.output["item_count"] == 0
 
+    def test_execute_non_dict_step_fails_loudly(self):
+        """A truthy non-mapping ``step`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-dict ``step``, but the engine's ``execute()``
+        does not auto-validate (see ``WorkflowEngine.load_workflow``). On a
+        COMPLETED fan-out the engine reads ``step_template`` back out and, when
+        it is truthy, calls ``template.get("id", ...)`` in ``_run_fan_out``. A
+        truthy non-mapping ``step`` (a scalar or list authoring mistake) raised
+        AttributeError there and took down the whole run. Mirrors the fan-out
+        non-list ``items`` guard and the switch non-dict ``cases`` guard.
+        """
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanOutStep()
+        ctx = StepContext(steps={"tasks": {"output": {"task_list": [1, 2]}}})
+        for bad_step in (["impl"], "impl", 5):
+            result = step.execute(
+                {
+                    "id": "parallel",
+                    "items": "{{ steps.tasks.output.task_list }}",
+                    "step": bad_step,
+                },
+                ctx,
+            )
+            assert result.status == StepStatus.FAILED
+            assert "'step' must be a" in (result.error or "")
+            assert result.output["item_count"] == 0
+            assert result.output["step_template"] == {}
+
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
 
