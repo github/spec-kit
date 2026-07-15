@@ -28,3 +28,33 @@ class GrokIntegration(SkillsIntegration):
         "extension": "/SKILL.md",
     }
     multi_install_safe = True
+
+    def build_exec_args(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        output_json: bool = True,
+    ) -> list[str] | None:
+        """Build CLI arguments for non-interactive ``grok`` execution.
+
+        Mandatory headless flag:
+
+        * ``--always-approve`` — auto-approve tool executions so workflow
+          dispatch and ``dispatch_command()`` are not blocked at permission
+          gates (same role as Cursor's ``--force`` / Copilot's ``--yolo``).
+        """
+        if not self.config or not self.config.get("requires_cli"):
+            return None
+        args = [
+            self._resolve_executable(),
+            "-p",
+            prompt,
+            "--always-approve",
+        ]
+        self._apply_extra_args_env_var(args)
+        if model:
+            args.extend(["--model", model])
+        if output_json:
+            args.extend(["--output-format", "json"])
+        return args

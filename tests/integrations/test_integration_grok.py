@@ -81,6 +81,7 @@ class TestGrokInitFlow:
         assert args[0] == "grok" or args[0].endswith("/grok")
         assert "-p" in args
         assert "hello" in args
+        assert "--always-approve" in args
         assert "--model" in args
         assert "grok-build" in args
         assert "--output-format" in args
