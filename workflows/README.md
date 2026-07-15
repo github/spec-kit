@@ -370,7 +370,7 @@ current run:
 # Reference a sibling file shipped alongside the workflow definition.
 - id: apply-config
   type: shell
-  run: 'cp {{ context.workflow_dir }}/defaults.yml ./config.yml'
+  run: 'cp "{{ context.workflow_dir }}/defaults.yml" ./config.yml'
 ```
 
 ## Input Types
