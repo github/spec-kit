@@ -26,10 +26,7 @@ class TestCliDiagnosticFormatting:
     def test_cli_error_detail_flattens_newlines(self):
         import specify_cli
 
-        assert (
-            specify_cli._cli_error_detail(RuntimeError("line one\nline two"))
-            == "line one line two"
-        )
+        assert specify_cli._cli_error_detail(RuntimeError("line one\nline two")) == "line one line two"
 
     def test_cli_error_detail_handles_empty_message(self):
         import specify_cli
@@ -49,42 +46,25 @@ class TestInitIntegrationFlag:
     def test_unknown_integration_rejected(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
-
         runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "init",
-                str(tmp_path / "test-project"),
-                "--integration",
-                "nonexistent",
-            ],
-        )
+        result = runner.invoke(app, [
+            "init", str(tmp_path / "test-project"), "--integration", "nonexistent",
+        ])
         assert result.exit_code != 0
         assert "Unknown integration" in result.output
 
     def test_integration_copilot_creates_files(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
-
         runner = CliRunner()
         project = tmp_path / "int-test"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "copilot",
-                    "--script",
-                    "sh",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0, f"init failed: {result.output}"
@@ -92,40 +72,24 @@ class TestInitIntegrationFlag:
         assert (project / ".github" / "prompts" / "speckit.plan.prompt.md").exists()
         assert (project / ".specify" / "scripts" / "bash" / "common.sh").exists()
 
-        data = json.loads(
-            (project / ".specify" / "integration.json").read_text(encoding="utf-8")
-        )
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == "copilot"
 
-        opts = json.loads(
-            (project / ".specify" / "init-options.json").read_text(encoding="utf-8")
-        )
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
         assert opts["integration"] == "copilot"
         # init must not leave any legacy agent-context keys in init-options.json
         assert "context_file" not in opts
 
         # agent-context is fully opt-in: init must not install it or write its config
-        ext_cfg_path = (
-            project
-            / ".specify"
-            / "extensions"
-            / "agent-context"
-            / "agent-context-config.yml"
-        )
-        assert not ext_cfg_path.exists(), (
-            "init must not create the agent-context extension config"
-        )
+        ext_cfg_path = project / ".specify" / "extensions" / "agent-context" / "agent-context-config.yml"
+        assert not ext_cfg_path.exists(), "init must not create the agent-context extension config"
 
-        assert (
-            project / ".specify" / "integrations" / "copilot.manifest.json"
-        ).exists()
+        assert (project / ".specify" / "integrations" / "copilot.manifest.json").exists()
 
         # init must not create or manage the agent context file
         assert not (project / ".github" / "copilot-instructions.md").exists()
 
-        shared_manifest = (
-            project / ".specify" / "integrations" / "speckit.manifest.json"
-        )
+        shared_manifest = project / ".specify" / "integrations" / "speckit.manifest.json"
         assert shared_manifest.exists()
 
     def test_noninteractive_init_defaults_to_copilot(self, tmp_path, monkeypatch):
@@ -134,40 +98,24 @@ class TestInitIntegrationFlag:
         import specify_cli
 
         def fail_select(*_args, **_kwargs):
-            raise AssertionError(
-                "non-interactive init should not open the integration picker"
-            )
+            raise AssertionError("non-interactive init should not open the integration picker")
 
         monkeypatch.setattr(specify_cli, "select_with_arrows", fail_select)
 
         runner = CliRunner()
         project = tmp_path / "noninteractive"
-        result = runner.invoke(
-            app,
-            [
-                "init",
-                str(project),
-                "--script",
-                "sh",
-                "--ignore-agent-tools",
-            ],
-            catch_exceptions=False,
-        )
+        result = runner.invoke(app, [
+            "init", str(project), "--script", "sh", "--ignore-agent-tools",
+        ], catch_exceptions=False)
 
         assert result.exit_code == 0, result.output
-        assert (
-            f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
-        )
+        assert f"defaulting to '{specify_cli.DEFAULT_INIT_INTEGRATION}'" in result.output
         assert (project / ".github" / "agents" / "speckit.plan.agent.md").exists()
 
-        data = json.loads(
-            (project / ".specify" / "integration.json").read_text(encoding="utf-8")
-        )
+        data = json.loads((project / ".specify" / "integration.json").read_text(encoding="utf-8"))
         assert data["integration"] == specify_cli.DEFAULT_INIT_INTEGRATION
 
-    def test_init_here_nonempty_noninteractive_errors_with_force_guidance(
-        self, tmp_path
-    ):
+    def test_init_here_nonempty_noninteractive_errors_with_force_guidance(self, tmp_path):
         """`init --here` on a non-empty directory with no confirmation input (empty
         stdin) must fail fast with guidance to use --force, instead of the bare
         'Aborted.' from an EOF on typer.confirm. CliRunner with no `input=` provides
@@ -182,19 +130,9 @@ class TestInitIntegrationFlag:
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
-            result = CliRunner().invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "copilot",
-                    "--script",
-                    "sh",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -223,19 +161,9 @@ class TestInitIntegrationFlag:
         try:
             os.chdir(project)
             # No input → typer.confirm raises Abort (stands in for Ctrl+C).
-            result = CliRunner().invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "copilot",
-                    "--script",
-                    "sh",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
+            result = CliRunner().invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -247,25 +175,15 @@ class TestInitIntegrationFlag:
     def test_integration_copilot_auto_promotes(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app
-
         project = tmp_path / "promote-test"
         project.mkdir()
         old_cwd = os.getcwd()
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "copilot",
-                    "--script",
-                    "sh",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", "--here", "--integration", "copilot", "--script", "sh",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
         assert result.exit_code == 0
@@ -315,28 +233,24 @@ class TestInitIntegrationFlag:
         preset_content = "# Ratified Organization Constitution\n"
         (preset_dir / "organization" / "ratified.md").write_text(preset_content)
         (preset_dir / "preset.yml").write_text(
-            yaml.safe_dump(
-                {
-                    "schema_version": "1.0",
-                    "preset": {
-                        "id": "constitution-preset",
-                        "name": "Constitution Preset",
-                        "version": "1.0.0",
-                        "description": "Provides a ratified constitution",
-                    },
-                    "requires": {"speckit_version": ">=0.1.0"},
-                    "provides": {
-                        "templates": [
-                            {
-                                "type": "template",
-                                "name": "constitution-template",
-                                "file": "organization/ratified.md",
-                                "strategy": "replace",
-                            }
-                        ]
-                    },
-                }
-            )
+            yaml.safe_dump({
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "constitution-preset",
+                    "name": "Constitution Preset",
+                    "version": "1.0.0",
+                    "description": "Provides a ratified constitution",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [{
+                        "type": "template",
+                        "name": "constitution-template",
+                        "file": "organization/ratified.md",
+                        "strategy": "replace",
+                    }]
+                },
+            })
         )
         project = tmp_path / "init-with-preset"
 
@@ -378,20 +292,9 @@ class TestInitIntegrationFlag:
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--force",
-                    "--integration",
-                    "claude",
-                    "--script",
-                    "sh",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", "--here", "--force", "--integration", "claude", "--script", "sh", "--ignore-agent-tools",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -420,17 +323,13 @@ class TestInitIntegrationFlag:
         templates_dir = project / ".specify" / "templates"
         templates_dir.mkdir(parents=True)
         custom_template = "# user-modified spec-template\n"
-        (templates_dir / "spec-template.md").write_text(
-            custom_template, encoding="utf-8"
-        )
+        (templates_dir / "spec-template.md").write_text(custom_template, encoding="utf-8")
 
         _install_shared_infra(project, "sh", force=False)
 
         # User's files should be preserved (not overwritten)
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") == custom_content
-        assert (templates_dir / "spec-template.md").read_text(
-            encoding="utf-8"
-        ) == custom_template
+        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") == custom_template
 
         # Other shared files should still be installed
         assert (scripts_dir / "setup-plan.sh").exists()
@@ -454,17 +353,13 @@ class TestInitIntegrationFlag:
         templates_dir = project / ".specify" / "templates"
         templates_dir.mkdir(parents=True)
         custom_template = "# user-modified spec-template\n"
-        (templates_dir / "spec-template.md").write_text(
-            custom_template, encoding="utf-8"
-        )
+        (templates_dir / "spec-template.md").write_text(custom_template, encoding="utf-8")
 
         _install_shared_infra(project, "sh", force=True)
 
         # Files should be overwritten with bundled versions
         assert (scripts_dir / "common.sh").read_text(encoding="utf-8") != custom_content
-        assert (templates_dir / "spec-template.md").read_text(
-            encoding="utf-8"
-        ) != custom_template
+        assert (templates_dir / "spec-template.md").read_text(encoding="utf-8") != custom_template
 
         # Other shared files should also be installed
         assert (scripts_dir / "setup-plan.sh").exists()
@@ -478,7 +373,9 @@ class TestInitIntegrationFlag:
 
         _install_shared_infra(project, "py")
 
-        assert (project / ".specify" / "scripts" / "python" / "common.py").exists()
+        assert (
+            project / ".specify" / "scripts" / "python" / "common.py"
+        ).exists()
 
     def test_shared_infra_removes_stale_managed_script(self, tmp_path):
         """A managed script the core no longer ships (e.g. the legacy
@@ -496,9 +393,7 @@ class TestInitIntegrationFlag:
         # Legacy orphan the current bundle no longer ships, recorded in the
         # manifest as a managed file (hash matches on disk) — a pre-refactor install.
         stale_rel = ".specify/scripts/bash/update-agent-context.sh"
-        (scripts_dir / "update-agent-context.sh").write_text(
-            "# legacy orphan\n", encoding="utf-8"
-        )
+        (scripts_dir / "update-agent-context.sh").write_text("# legacy orphan\n", encoding="utf-8")
         manifest = IntegrationManifest("speckit", project, version="test")
         manifest.record_existing(stale_rel)
         manifest.save()
@@ -566,9 +461,7 @@ class TestInitIntegrationFlag:
         refreshed = IntegrationManifest.load("speckit", project)
         assert stale_rel not in refreshed.files
 
-    def test_shared_infra_empty_script_source_keeps_tracked_scripts(
-        self, tmp_path, monkeypatch
-    ):
+    def test_shared_infra_empty_script_source_keeps_tracked_scripts(self, tmp_path, monkeypatch):
         """If the bundle's script source dir exists but is empty, stale-cleanup
         must NOT run (no source files seen → can't tell what's obsolete): a
         previously-tracked script is preserved, never mass-deleted (#3076 review)."""
@@ -578,9 +471,7 @@ class TestInitIntegrationFlag:
         # Point the script source at an empty ``bash/`` directory.
         empty_src = tmp_path / "empty-bundle" / "scripts"
         (empty_src / "bash").mkdir(parents=True)
-        monkeypatch.setattr(
-            shared_infra, "shared_scripts_source", lambda **kw: empty_src
-        )
+        monkeypatch.setattr(shared_infra, "shared_scripts_source", lambda **kw: empty_src)
 
         project = tmp_path / "empty-source"
         project.mkdir()
@@ -625,13 +516,11 @@ class TestInitIntegrationFlag:
         # — stale-cleanup would consider it managed and unlink the target.
         traversal_key = ".specify/scripts/bash/../keep-me.sh"
         (manifest_dir / "speckit.manifest.json").write_text(
-            json.dumps(
-                {
-                    "integration": "speckit",
-                    "version": "test",
-                    "files": {traversal_key: hashlib.sha256(victim_bytes).hexdigest()},
-                }
-            ),
+            json.dumps({
+                "integration": "speckit",
+                "version": "test",
+                "files": {traversal_key: hashlib.sha256(victim_bytes).hexdigest()},
+            }),
             encoding="utf-8",
         )
 
@@ -767,9 +656,7 @@ class TestInitIntegrationFlag:
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_buckets_symlinked_template_destination(
-        self, tmp_path, capsys
-    ):
+    def test_shared_infra_buckets_symlinked_template_destination(self, tmp_path, capsys):
         """Symlinked template destinations are bucketed with a warning; the symlink target is preserved."""
         from specify_cli import _install_shared_infra
 
@@ -810,9 +697,7 @@ class TestInitIntegrationFlag:
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_refuses_symlinked_specify_directory_before_mkdir(
-        self, tmp_path
-    ):
+    def test_shared_infra_refuses_symlinked_specify_directory_before_mkdir(self, tmp_path):
         """Shared infra installs must not follow a symlinked .specify directory."""
         from specify_cli import _install_shared_infra
 
@@ -899,9 +784,7 @@ class TestInitIntegrationFlag:
         assert outside.read_text(encoding="utf-8") == "# outside\n"
 
     @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks are unavailable")
-    def test_shared_infra_install_buckets_unsafe_destinations_and_continues(
-        self, tmp_path
-    ):
+    def test_shared_infra_install_buckets_unsafe_destinations_and_continues(self, tmp_path):
         """Symlinked destinations are bucketed with a warning; safe destinations in the same install still complete."""
         from specify_cli.shared_infra import install_shared_infra
 
@@ -973,9 +856,7 @@ class TestInitIntegrationFlag:
 
         templates_dest = project / ".specify" / "templates"
         templates_dest.mkdir(parents=True)
-        (templates_dest / "plan-template.md").write_text(
-            "# existing template\n", encoding="utf-8"
-        )
+        (templates_dest / "plan-template.md").write_text("# existing template\n", encoding="utf-8")
 
         core_pack = tmp_path / "core-pack"
         nested_src = core_pack / "scripts" / "bash" / "nested"
@@ -984,9 +865,7 @@ class TestInitIntegrationFlag:
 
         templates_src = core_pack / "templates"
         templates_src.mkdir(parents=True)
-        (templates_src / "plan-template.md").write_text(
-            "# bundled template\n", encoding="utf-8"
-        )
+        (templates_src / "plan-template.md").write_text("# bundled template\n", encoding="utf-8")
 
         buffer = io.StringIO()
         install_shared_infra(
@@ -1003,9 +882,7 @@ class TestInitIntegrationFlag:
         assert ".specify/scripts/bash/nested/deep.sh" in output
         assert ".specify/templates/plan-template.md" in output
 
-    @pytest.mark.skipif(
-        os.name == "nt", reason="POSIX mode bits are not stable on Windows"
-    )
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits are not stable on Windows")
     def test_shared_template_writes_are_not_world_writable(self, tmp_path):
         """Shared template writes use a safe default mode instead of chmod 666."""
         from specify_cli.shared_infra import install_shared_infra
@@ -1065,19 +942,11 @@ class TestInitIntegrationFlag:
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--force",
-                    "--integration",
-                    "copilot",
-                    "--script",
-                    "sh",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", "--here", "--force",
+                "--integration", "copilot",
+                "--script", "sh",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -1103,19 +972,11 @@ class TestInitIntegrationFlag:
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "copilot",
-                    "--script",
-                    "sh",
-                ],
-                input="y\n",
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", "--here",
+                "--integration", "copilot",
+                "--script", "sh",
+            ], input="y\n", catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -1141,19 +1002,10 @@ class TestForceExistingDirectory:
         marker.write_text("keep me", encoding="utf-8")
 
         runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "init",
-                str(target),
-                "--integration",
-                "copilot",
-                "--force",
-                "--script",
-                "sh",
-            ],
-            catch_exceptions=False,
-        )
+        result = runner.invoke(app, [
+            "init", str(target), "--integration", "copilot", "--force",
+            "--script", "sh",
+        ], catch_exceptions=False)
 
         assert result.exit_code == 0, f"init --force failed: {result.output}"
 
@@ -1173,18 +1025,10 @@ class TestForceExistingDirectory:
         target.mkdir()
 
         runner = CliRunner()
-        result = runner.invoke(
-            app,
-            [
-                "init",
-                str(target),
-                "--integration",
-                "copilot",
-                "--script",
-                "sh",
-            ],
-            catch_exceptions=False,
-        )
+        result = runner.invoke(app, [
+            "init", str(target), "--integration", "copilot",
+            "--script", "sh",
+        ], catch_exceptions=False)
 
         assert result.exit_code == 1
         assert "already exists" in _normalize_cli_output(result.output)
@@ -1204,19 +1048,10 @@ class TestGitExtensionOptIn:
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "claude",
-                    "--script",
-                    "sh",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", "--here", "--integration", "claude", "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -1237,27 +1072,15 @@ class TestGitExtensionOptIn:
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "claude",
-                    "--script",
-                    "sh",
-                    "--no-git",
-                    "--ignore-agent-tools",
-                ],
-            )
+            result = runner.invoke(app, [
+                "init", "--here", "--integration", "claude", "--script", "sh",
+                "--no-git", "--ignore-agent-tools",
+            ])
         finally:
             os.chdir(old_cwd)
 
         assert result.exit_code != 0, "--no-git should be rejected as an unknown option"
-        assert (
-            "No such option" in result.output
-            or "no such option" in result.output.lower()
-        )
+        assert "No such option" in result.output or "no such option" in result.output.lower()
 
     def test_git_extension_commands_not_registered_by_default(self, tmp_path):
         """Git extension commands are NOT registered with the agent during default init."""
@@ -1270,19 +1093,10 @@ class TestGitExtensionOptIn:
         try:
             os.chdir(project)
             runner = CliRunner()
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    "--here",
-                    "--integration",
-                    "claude",
-                    "--script",
-                    "sh",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", "--here", "--integration", "claude", "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -1291,12 +1105,8 @@ class TestGitExtensionOptIn:
         # Git extension skill commands should NOT be present
         claude_skills = project / ".claude" / "skills"
         assert claude_skills.exists(), "Claude skills directory was not created"
-        git_skills = [
-            f for f in claude_skills.iterdir() if f.name.startswith("speckit-git-")
-        ]
-        assert len(git_skills) == 0, (
-            "git extension commands should not be registered by default"
-        )
+        git_skills = [f for f in claude_skills.iterdir() if f.name.startswith("speckit-git-")]
+        assert len(git_skills) == 0, "git extension commands should not be registered by default"
 
 
 class TestSharedInfraCommandRefs:
@@ -1331,9 +1141,7 @@ class TestSharedInfraCommandRefs:
         plan = project / ".specify" / "templates" / "plan-template.md"
         assert plan.exists()
         content = plan.read_text(encoding="utf-8")
-        assert "__SPECKIT_COMMAND_" not in content, (
-            "unresolved placeholder in plan-template.md"
-        )
+        assert "__SPECKIT_COMMAND_" not in content, "unresolved placeholder in plan-template.md"
         assert "/speckit.plan" in content
 
         checklist = project / ".specify" / "templates" / "checklist-template.md"
@@ -1354,13 +1162,9 @@ class TestSharedInfraCommandRefs:
         plan = project / ".specify" / "templates" / "plan-template.md"
         assert plan.exists()
         content = plan.read_text(encoding="utf-8")
-        assert "__SPECKIT_COMMAND_" not in content, (
-            "unresolved placeholder in plan-template.md"
-        )
+        assert "__SPECKIT_COMMAND_" not in content, "unresolved placeholder in plan-template.md"
         assert "/speckit-plan" in content
-        assert "/speckit.plan" not in content, (
-            "dot-notation leaked into skills page template"
-        )
+        assert "/speckit.plan" not in content, "dot-notation leaked into skills page template"
 
         tasks = project / ".specify" / "templates" / "tasks-template.md"
         content = tasks.read_text(encoding="utf-8")
@@ -1417,19 +1221,12 @@ class TestSharedInfraCommandRefs:
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    str(project),
-                    "--integration",
-                    "claude",
-                    "--script",
-                    "sh",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", str(project),
+                "--integration", "claude",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -1454,19 +1251,12 @@ class TestSharedInfraCommandRefs:
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    str(project),
-                    "--integration",
-                    "copilot",
-                    "--script",
-                    "sh",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", str(project),
+                "--integration", "copilot",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -1491,21 +1281,13 @@ class TestSharedInfraCommandRefs:
         old_cwd = os.getcwd()
         try:
             os.chdir(tmp_path)
-            result = runner.invoke(
-                app,
-                [
-                    "init",
-                    str(project),
-                    "--integration",
-                    "copilot",
-                    "--integration-options",
-                    "--skills",
-                    "--script",
-                    "sh",
-                    "--ignore-agent-tools",
-                ],
-                catch_exceptions=False,
-            )
+            result = runner.invoke(app, [
+                "init", str(project),
+                "--integration", "copilot",
+                "--integration-options", "--skills",
+                "--script", "sh",
+                "--ignore-agent-tools",
+            ], catch_exceptions=False)
         finally:
             os.chdir(old_cwd)
 
@@ -1514,9 +1296,7 @@ class TestSharedInfraCommandRefs:
         plan = project / ".specify" / "templates" / "plan-template.md"
         content = plan.read_text(encoding="utf-8")
         assert "/speckit-plan" in content, "Copilot --skills should use /speckit-plan"
-        assert "/speckit.plan" not in content, (
-            "dot-notation leaked into Copilot skills page template"
-        )
+        assert "/speckit.plan" not in content, "dot-notation leaked into Copilot skills page template"
         assert "__SPECKIT_COMMAND_" not in content
 
         script_content = self._combined_script_content(project, "sh")
@@ -1565,9 +1345,7 @@ class TestIntegrationCatalogDiscoveryCLI:
         """Return a stubbed `_get_merged_integrations` that yields *integrations*."""
         from specify_cli.integrations.catalog import IntegrationCatalog
 
-        data = list(
-            integrations if integrations is not None else self.FAKE_INTEGRATIONS
-        )
+        data = list(integrations if integrations is not None else self.FAKE_INTEGRATIONS)
 
         def fake_merged(self, force_refresh=False):
             return data
@@ -1712,18 +1490,13 @@ class TestIntegrationCatalogDiscoveryCLI:
         def fail_cleanup(self, integration_key):
             raise OSError("cleanup exploded")
 
-        monkeypatch.setattr(
-            ExtensionManager, "unregister_agent_artifacts", fail_cleanup
-        )
+        monkeypatch.setattr(ExtensionManager, "unregister_agent_artifacts", fail_cleanup)
 
         result = self._invoke(["integration", "switch", "claude"], project)
         normalized = _normalize_cli_output(result.output)
 
         assert result.exit_code == 0, result.output
-        assert (
-            "Failed to clean up extension artifacts for integration 'copilot'"
-            in normalized
-        )
+        assert "Failed to clean up extension artifacts for integration 'copilot'" in normalized
         assert "cleanup exploded" in normalized
         assert "Switched to integration" in normalized
 
@@ -1757,7 +1530,9 @@ class TestIntegrationCatalogDiscoveryCLI:
 
         for command in commands:
             result = self._invoke(command, project)
-            failure_context = f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
+            failure_context = (
+                f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
+            )
             assert result.exit_code == 1, failure_context
             assert "Not a Spec Kit project" in result.output, failure_context
 
@@ -1792,14 +1567,7 @@ class TestIntegrationCatalogDiscoveryCLI:
             ["preset", "enable", "demo"],
             ["preset", "disable", "demo"],
             ["preset", "catalog", "list"],
-            [
-                "preset",
-                "catalog",
-                "add",
-                "https://example.com/catalog.yml",
-                "--name",
-                "demo",
-            ],
+            ["preset", "catalog", "add", "https://example.com/catalog.yml", "--name", "demo"],
             ["preset", "catalog", "remove", "demo"],
             ["extension", "list"],
             ["extension", "add", "demo"],
@@ -1811,14 +1579,7 @@ class TestIntegrationCatalogDiscoveryCLI:
             ["extension", "disable", "demo"],
             ["extension", "set-priority", "demo", "5"],
             ["extension", "catalog", "list"],
-            [
-                "extension",
-                "catalog",
-                "add",
-                "https://example.com/catalog.yml",
-                "--name",
-                "demo",
-            ],
+            ["extension", "catalog", "add", "https://example.com/catalog.yml", "--name", "demo"],
             ["extension", "catalog", "remove", "demo"],
             ["workflow", "run", "demo"],
             ["workflow", "resume", "demo"],
@@ -1835,24 +1596,20 @@ class TestIntegrationCatalogDiscoveryCLI:
 
         for command in commands:
             result = self._invoke(command, project)
-            failure_context = f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
+            failure_context = (
+                f"command={command!r}, exit_code={result.exit_code}, output={result.output!r}"
+            )
             assert result.exit_code == 1, failure_context
             assert "Not a Spec Kit project" in result.output, failure_context
 
     def test_catalog_config_output_uses_posix_paths(self, tmp_path):
         project = self._make_project(tmp_path)
 
-        preset_add = self._invoke(
-            [
-                "preset",
-                "catalog",
-                "add",
-                "https://example.com/preset-catalog.yml",
-                "--name",
-                "demo-presets",
-            ],
-            project,
-        )
+        preset_add = self._invoke([
+            "preset", "catalog", "add",
+            "https://example.com/preset-catalog.yml",
+            "--name", "demo-presets",
+        ], project)
         assert preset_add.exit_code == 0, preset_add.output
         assert "Config saved to .specify/preset-catalogs.yml" in preset_add.output
 
@@ -1860,17 +1617,11 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert preset_list.exit_code == 0, preset_list.output
         assert "Config: .specify/preset-catalogs.yml" in preset_list.output
 
-        extension_add = self._invoke(
-            [
-                "extension",
-                "catalog",
-                "add",
-                "https://example.com/extension-catalog.yml",
-                "--name",
-                "demo-extensions",
-            ],
-            project,
-        )
+        extension_add = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", "demo-extensions",
+        ], project)
         assert extension_add.exit_code == 0, extension_add.output
         assert "Config saved to .specify/extension-catalogs.yml" in extension_add.output
 
@@ -1883,17 +1634,11 @@ class TestIntegrationCatalogDiscoveryCLI:
         cfg_path = project / ".specify" / "extension-catalogs.yml"
         cfg_path.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
 
-        result = self._invoke(
-            [
-                "extension",
-                "catalog",
-                "add",
-                "https://example.com/extension-catalog.yml",
-                "--name",
-                "demo-extensions",
-            ],
-            project,
-        )
+        result = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", "demo-extensions",
+        ], project)
 
         assert result.exit_code == 1, result.output
         output = _normalize_cli_output(result.output)
@@ -1918,17 +1663,11 @@ class TestIntegrationCatalogDiscoveryCLI:
         project = self._make_project(tmp_path)
         catalog_name = "[red]demo[/red]"
 
-        result = self._invoke(
-            [
-                "extension",
-                "catalog",
-                "add",
-                "https://example.com/extension-catalog.yml",
-                "--name",
-                catalog_name,
-            ],
-            project,
-        )
+        result = self._invoke([
+            "extension", "catalog", "add",
+            "https://example.com/extension-catalog.yml",
+            "--name", catalog_name,
+        ], project)
 
         assert result.exit_code == 0, result.output
         output = _normalize_cli_output(result.output)
@@ -2043,7 +1782,9 @@ class TestIntegrationCatalogDiscoveryCLI:
     def test_search_no_match_hint(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         self._patch_catalog(monkeypatch)
-        result = self._invoke(["integration", "search", "--tag", "nope"], project)
+        result = self._invoke(
+            ["integration", "search", "--tag", "nope"], project
+        )
         assert result.exit_code == 0, result.output
         assert "No integrations found" in result.output
         assert "specify integration search" in result.output
@@ -2061,7 +1802,9 @@ class TestIntegrationCatalogDiscoveryCLI:
     def test_info_found(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         self._patch_catalog(monkeypatch)
-        result = self._invoke(["integration", "info", "stellar-agent"], project)
+        result = self._invoke(
+            ["integration", "info", "stellar-agent"], project
+        )
         assert result.exit_code == 0, result.output
         assert "Stellar Agent" in result.output
         assert "stellar-agent" in result.output
@@ -2070,7 +1813,9 @@ class TestIntegrationCatalogDiscoveryCLI:
     def test_info_not_found(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         self._patch_catalog(monkeypatch)
-        result = self._invoke(["integration", "info", "does-not-exist"], project)
+        result = self._invoke(
+            ["integration", "info", "does-not-exist"], project
+        )
         assert result.exit_code == 1
         assert "not found" in result.output
 
@@ -2106,7 +1851,9 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert "~/.specify/integration-catalogs.yml" in normalized_output
         assert "temporarily unavailable" not in normalized_output
 
-    def test_search_invalid_env_catalog_url_shows_env_tip(self, tmp_path, monkeypatch):
+    def test_search_invalid_env_catalog_url_shows_env_tip(
+        self, tmp_path, monkeypatch
+    ):
         project = self._make_project(tmp_path)
         monkeypatch.setenv(
             "SPECKIT_INTEGRATION_CATALOG_URL",
@@ -2116,9 +1863,7 @@ class TestIntegrationCatalogDiscoveryCLI:
         result = self._invoke(["integration", "search"], project)
         normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 1, result.output
-        assert (
-            "SPECKIT_INTEGRATION_CATALOG_URL environment variable" in normalized_output
-        )
+        assert "SPECKIT_INTEGRATION_CATALOG_URL environment variable" in normalized_output
         assert "unset it to use the configured catalog files" in normalized_output
         assert ".specify/integration-catalogs.yml" in normalized_output
         assert "~/.specify/integration-catalogs.yml" in normalized_output
@@ -2162,7 +1907,9 @@ class TestIntegrationCatalogDiscoveryCLI:
         invalid_yaml = "catalogs:\n  - [bad\n"
         cfg.write_text(invalid_yaml, encoding="utf-8")
 
-        result = self._invoke(["integration", "info", "definitely-not-real"], project)
+        result = self._invoke(
+            ["integration", "info", "definitely-not-real"], project
+        )
         normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 1, result.output
         assert "configuration file path shown above" in normalized_output
@@ -2179,7 +1926,9 @@ class TestIntegrationCatalogDiscoveryCLI:
             "http://insecure.example.com/catalog.json",
         )
 
-        result = self._invoke(["integration", "info", "definitely-not-real"], project)
+        result = self._invoke(
+            ["integration", "info", "definitely-not-real"], project
+        )
         normalized_output = _normalize_cli_output(result.output)
         assert result.exit_code == 1, result.output
         assert "SPECKIT_INTEGRATION_CATALOG_URL" in normalized_output
@@ -2236,7 +1985,9 @@ class TestIntegrationCatalogDiscoveryCLI:
         assert "default" not in list_result.output
         assert "community" not in list_result.output
 
-        remove_result = self._invoke(["integration", "catalog", "remove", "0"], project)
+        remove_result = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
         assert remove_result.exit_code == 0, remove_result.output
         assert "'mine' removed" in remove_result.output
 
@@ -2340,7 +2091,6 @@ class TestIntegrationCatalogDiscoveryCLI:
 
         cfg_path = project / ".specify" / "integration-catalogs.yml"
         import yaml as _yaml
-
         data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
         urls = [c["url"] for c in data["catalogs"]]
         assert clean_url in urls
@@ -2363,9 +2113,13 @@ class TestIntegrationCatalogDiscoveryCLI:
     def test_catalog_add_rejects_duplicate(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
         url = "https://dup.example.com/catalog.json"
-        first = self._invoke(["integration", "catalog", "add", url], project)
+        first = self._invoke(
+            ["integration", "catalog", "add", url], project
+        )
         assert first.exit_code == 0, first.output
-        second = self._invoke(["integration", "catalog", "add", url], project)
+        second = self._invoke(
+            ["integration", "catalog", "add", url], project
+        )
         assert second.exit_code == 1
         assert "already configured" in second.output
 
@@ -2381,17 +2135,23 @@ class TestIntegrationCatalogDiscoveryCLI:
             ],
             project,
         )
-        result = self._invoke(["integration", "catalog", "remove", "9"], project)
+        result = self._invoke(
+            ["integration", "catalog", "remove", "9"], project
+        )
         assert result.exit_code == 1
         assert "out of range" in result.output
 
     def test_catalog_remove_without_config(self, tmp_path, monkeypatch):
         project = self._make_project(tmp_path)
-        result = self._invoke(["integration", "catalog", "remove", "0"], project)
+        result = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
         assert result.exit_code == 1
         assert "No catalog config" in result.output
 
-    def test_catalog_remove_final_entry_restores_defaults(self, tmp_path, monkeypatch):
+    def test_catalog_remove_final_entry_restores_defaults(
+        self, tmp_path, monkeypatch
+    ):
         """End-to-end: add → remove-last-entry → list should not error.
 
         Regression for the flow where a user adds a catalog, removes it, then
@@ -2417,7 +2177,9 @@ class TestIntegrationCatalogDiscoveryCLI:
         )
         assert add.exit_code == 0, add.output
 
-        remove = self._invoke(["integration", "catalog", "remove", "0"], project)
+        remove = self._invoke(
+            ["integration", "catalog", "remove", "0"], project
+        )
         assert remove.exit_code == 0, remove.output
         assert "'only' removed" in remove.output
 
