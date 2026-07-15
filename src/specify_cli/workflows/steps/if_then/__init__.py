@@ -37,7 +37,9 @@ class IfThenStep(StepBase):
         # ``.get()``. ``validate`` already rejects a non-list branch; fail this
         # step loudly on an unvalidated run instead, mirroring the switch/fan-out
         # steps. A missing ``else`` defaults to ``[]`` and stays valid.
-        if not isinstance(branch, list):
+if branch is None and branch_name == "else":
+            branch = []
+        elif not isinstance(branch, list):
             return StepResult(
                 status=StepStatus.FAILED,
                 output={"condition_result": result},
