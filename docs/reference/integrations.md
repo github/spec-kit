@@ -268,7 +268,7 @@ The currently declared multi-install safe integrations are:
 | `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
 | `firebender` | `.firebender/commands`, `.firebender/rules/specify-rules.mdc` |
 | `gemini` | `.gemini/commands`, `GEMINI.md` |
-| `grok` | `.grok/skills`, `.grok/rules` |
+| `grok` | `.grok/skills` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |
 | `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
 | `qodercli` | `.qoder/commands`, `QODER.md` |
