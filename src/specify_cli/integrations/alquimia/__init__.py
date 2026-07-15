@@ -33,7 +33,7 @@ class AlquimiaAIIntegration(SkillsIntegration):
         "folder": ".alquimia/",
         "commands_subdir": "skills",
         "install_url": "https://docs.alquimia.ai",
-        "requires_cli": False,
+        "requires_cli": True,
     }
     registrar_config = {
         "dir": ".alquimia/skills",
@@ -41,7 +41,6 @@ class AlquimiaAIIntegration(SkillsIntegration):
         "args": "$ARGUMENTS",
         "extension": "/SKILL.md",
     }
-    context_file = "ALQUIMIA.md"
     multi_install_safe = True
 
     def _render_skill(
