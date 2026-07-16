@@ -133,9 +133,6 @@ class BobIntegration(IntegrationBase):
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": ".md",
-        # Legacy commands use dot-notation (/speckit.plan); the class-level
-        # invoke_separator="-" applies to skills-mode invocations only.
-        "invoke_separator": ".",
     }
 
     def _skills_mode(self, parsed_options: dict[str, Any] | None = None) -> bool:
