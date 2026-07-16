@@ -2,9 +2,9 @@
 
 # GitHub Spec Kit
 
-**Spec-Driven Development or your own process — with any AI coding agent.**
+**Spec-Driven Development or your own process — step by step or as an automated workflow.**
 
-Spec Kit is an extensible, knowledge-driven toolkit for AI-assisted software development. Use it for [Spec-Driven Development](concepts/sdd.md) (SDD) — describing _what_ to build and refining it through structured phases — or shape a process that fits how your team works, with intent at the center.
+Spec Kit is an extensible, intent-driven harness that pushes any coding agent beyond code, guiding it across your SDLC or any business process. Use it for [Spec-Driven Development](concepts/sdd.md) (SDD), where you describe _what_ to build and refine it through structured phases. Run it step by step, automate it end to end, or shape a process of your own, keeping intent at the center.
 
 <a href="installation.md" class="btn btn-primary btn-lg">Install Spec Kit</a>&nbsp;
 <a href="quickstart.md" class="btn btn-outline-primary btn-lg">Quick Start</a>
@@ -43,15 +43,16 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">138 community extensions</span> (70+ authors), <span class="pillar-stat">25 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely.
+<span class="pillar-stat">138 community extensions</span> (70+ authors), <span class="pillar-stat">25 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely. The process itself lives in these building blocks, so you're never locked to SDD, or even to software.
 
-Including entirely different SDD processes:
+Including entirely different processes:
 
 - **AIDE** — 7-step AI-driven engineering lifecycle
 - **Canon** — baseline-driven workflows (spec-first, code-first, spec-drift)
 - **Product Forge** — product-management-oriented SDD
 - **FX→.NET** — end-to-end .NET Framework migration across 7 phases
 - **MAQA** — multi-agent orchestration with quality assurance gates
+- **Fiction Book Writing** — novels and long-form fiction, from story bible to submission
 
 <a href="reference/presets.md" class="pillar-link">Presets →</a>&nbsp;&nbsp;
 <a href="reference/extensions.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
@@ -81,7 +82,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 
 ## Built by the community
 
-**240+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new development processes. Anyone can create and publish an extension, preset, or workflow.
+**240+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new processes. Anyone can create and publish an extension, preset, or workflow.
 
 <div class="stats-grid">
   <div class="stat-item">
