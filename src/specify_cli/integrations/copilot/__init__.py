@@ -122,7 +122,9 @@ class CopilotIntegration(IntegrationBase):
     _skills_mode: bool = False
 
     def effective_invoke_separator(
-        self, parsed_options: dict[str, Any] | None = None
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> str:
         """Return ``"-"`` when skills mode is requested, ``"."`` otherwise."""
         if parsed_options and parsed_options.get("skills"):

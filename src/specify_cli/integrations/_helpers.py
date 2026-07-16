@@ -320,6 +320,7 @@ def _set_default_integration(
         script_type=resolved_script,
         raw_options=raw_options,
         parsed_options=parsed_options,
+        project_root=project_root,
     )
 
     if refresh_templates:
@@ -328,7 +329,8 @@ def _set_default_integration(
                 project_root,
                 resolved_script,
                 invoke_separator=_invoke_separator_for_integration(
-                    integration, {"integration_settings": settings}, key, parsed_options
+                    integration, {"integration_settings": settings}, key, parsed_options,
+                    project_root=project_root,
                 ),
                 force=refresh_templates_force,
                 refresh_managed=True,

@@ -171,10 +171,19 @@ class BobIntegration(IntegrationBase):
         return True
 
     def effective_invoke_separator(
-        self, parsed_options: dict[str, Any] | None = None
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> str:
-        """``"."`` for the legacy commands layout, ``"-"`` for skills."""
-        return "-" if self.is_skills_mode(parsed_options) else "."
+        """``"."`` for the legacy commands layout, ``"-"`` for skills.
+
+        *project_root* lets the ``use`` / ``switch`` / ``upgrade`` path — which
+        refreshes shared infrastructure *before* persisting init-options —
+        detect an already-installed legacy layout, so core command references
+        are rendered with the correct separator instead of defaulting to the
+        skills ``-``.
+        """
+        return "-" if self.is_skills_mode(parsed_options, project_root) else "."
 
     def invoke_separator_for_mode(self, skills_enabled: bool) -> str:
         """Resolve the command-ref separator from a project's persisted mode.

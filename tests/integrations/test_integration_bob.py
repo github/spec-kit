@@ -545,3 +545,80 @@ class TestBobUseFlowPreservesLegacyLayout:
 
         opts = load_init_options(tmp_path)
         assert opts.get("ai_skills") is True
+
+    def test_with_integration_setting_stores_dot_separator_for_legacy(self, tmp_path):
+        """Regression (review #3415): shared-infra refresh on the use/switch
+        path resolves the command-ref separator *before* init-options are
+        rewritten, via ``effective_invoke_separator``.  For an existing
+        ``.bob/commands`` project with no stored options this must resolve to
+        ``"."`` (project-aware), not the skills-layout ``"-"``; otherwise core
+        command references get rewritten to ``/speckit-*``.
+        """
+        from specify_cli.integration_runtime import with_integration_setting
+
+        (tmp_path / ".bob" / "commands").mkdir(parents=True)
+        bob = get_integration("bob")
+
+        # Simulate the use/switch path: no parsed options stored.
+        settings = with_integration_setting(
+            {}, "bob", bob, parsed_options=None, project_root=tmp_path
+        )
+        assert settings["bob"]["invoke_separator"] == ".", (
+            "legacy .bob/commands project must persist the dot separator so "
+            "shared templates render Bob 1.x /speckit.<cmd> references"
+        )
+
+    def test_use_force_keeps_legacy_command_refs_in_shared_templates(self, tmp_path):
+        """End-to-end (review #3415): ``integration use bob --force`` on an
+        existing Bob 1.x project (legacy layout on disk, stored options
+        stripped as a pre-PR install would be) must re-render shared templates
+        with ``/speckit.<cmd>`` (dot), not ``/speckit-<cmd>``.
+        """
+        import json
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        # Create a real legacy Bob project (renders shared templates).
+        target = tmp_path / "proj"
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "init", str(target), "--integration", "bob",
+            "--integration-options", "--legacy-commands",
+            "--ignore-agent-tools", "--script", "sh",
+        ])
+        assert result.exit_code == 0, f"init failed: {result.output}"
+
+        template = target / ".specify" / "templates" / "plan-template.md"
+        assert template.is_file(), "expected a rendered shared plan template"
+        assert "/speckit.plan" in template.read_text(encoding="utf-8")
+
+        # Simulate a pre-PR Bob 1.x install: no stored options/separator.
+        integ_json = target / ".specify" / "integration.json"
+        data = json.loads(integ_json.read_text(encoding="utf-8"))
+        bob_settings = data["integration_settings"]["bob"]
+        for stale in ("raw_options", "parsed_options", "invoke_separator"):
+            bob_settings.pop(stale, None)
+        integ_json.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+        # Re-activate with --force so shared templates are re-rendered.
+        import os
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(target)
+            result = runner.invoke(
+                app, ["integration", "use", "bob", "--force"]
+            )
+        finally:
+            os.chdir(old_cwd)
+        assert result.exit_code == 0, f"use failed: {result.output}"
+
+        rendered = template.read_text(encoding="utf-8")
+        assert "/speckit.plan" in rendered, (
+            "legacy Bob project must keep /speckit.plan (dot) after refresh"
+        )
+        assert "/speckit-plan" not in rendered, (
+            "shared templates must not be rewritten to the skills /speckit-plan"
+        )
+        # And the persisted separator must reflect the legacy layout.
+        data = json.loads(integ_json.read_text(encoding="utf-8"))
+        assert data["integration_settings"]["bob"].get("invoke_separator") == "."

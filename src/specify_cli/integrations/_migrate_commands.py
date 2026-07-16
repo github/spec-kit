@@ -236,7 +236,8 @@ def integration_switch(
         force=refresh_shared_infra,
         refresh_managed=True,
         invoke_separator=_invoke_separator_for_integration(
-            target_integration, current, target, parsed_options
+            target_integration, current, target, parsed_options,
+            project_root=project_root,
         ),
         refresh_hint=(
             "To overwrite customizations, re-run with "
@@ -415,7 +416,8 @@ def integration_upgrade(
         selected_script,
         force=force,
         invoke_separator=_invoke_separator_for_integration(
-            infra_integration, current, infra_key, infra_parsed
+            infra_integration, current, infra_key, infra_parsed,
+            project_root=project_root,
         ),
     )
     if os.name != "nt":
@@ -441,6 +443,7 @@ def integration_upgrade(
             script_type=selected_script,
             raw_options=raw_options,
             parsed_options=parsed_options,
+            project_root=project_root,
         )
         if installed_key == key:
             try:
@@ -448,7 +451,8 @@ def integration_upgrade(
                     project_root,
                     selected_script,
                     invoke_separator=_invoke_separator_for_integration(
-                        integration, {"integration_settings": settings}, key, parsed_options
+                        integration, {"integration_settings": settings}, key, parsed_options,
+                        project_root=project_root,
                     ),
                     force=force,
                     refresh_managed=True,

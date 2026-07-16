@@ -458,6 +458,7 @@ def register(app: typer.Typer) -> None:
                     script_type=selected_script,
                     raw_options=integration_options,
                     parsed_options=integration_parsed_options or None,
+                    project_root=project_path,
                 )
                 _write_integration_json(
                     project_path,
@@ -478,7 +479,7 @@ def register(app: typer.Typer) -> None:
                     tracker=tracker,
                     force=force,
                     invoke_separator=resolved_integration.effective_invoke_separator(
-                        integration_parsed_options
+                        integration_parsed_options, project_root=project_path
                     ),
                 )
                 tracker.complete(

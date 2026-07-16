@@ -127,7 +127,8 @@ def integration_install(
         project_root,
         selected_script,
         invoke_separator=_invoke_separator_for_integration(
-            infra_integration, current, infra_key, infra_parsed
+            infra_integration, current, infra_key, infra_parsed,
+            project_root=project_root,
         ),
     )
     if os.name != "nt":
@@ -155,6 +156,7 @@ def integration_install(
             script_type=selected_script,
             raw_options=raw_options,
             parsed_options=parsed_options,
+            project_root=project_root,
         )
         _write_integration_json(project_root, new_default, new_installed, settings)
         if new_default == integration.key:

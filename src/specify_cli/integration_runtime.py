@@ -46,6 +46,7 @@ def with_integration_setting(
     script_type: str | None = None,
     raw_options: str | None = None,
     parsed_options: dict[str, Any] | None = None,
+    project_root: Any = None,
 ) -> dict[str, dict[str, Any]]:
     """Return integration settings with *key* updated."""
     settings = integration_settings(state)
@@ -63,7 +64,9 @@ def with_integration_setting(
     elif raw_options is not None:
         current.pop("parsed_options", None)
 
-    current["invoke_separator"] = integration.effective_invoke_separator(parsed_options)
+    current["invoke_separator"] = integration.effective_invoke_separator(
+        parsed_options, project_root
+    )
     settings[key] = current
     return settings
 
@@ -73,10 +76,11 @@ def invoke_separator_for_integration(
     state: dict[str, Any],
     key: str,
     parsed_options: dict[str, Any] | None = None,
+    project_root: Any = None,
 ) -> str:
     """Resolve the invocation separator for stored/default integration state."""
     if parsed_options is not None:
-        return integration.effective_invoke_separator(parsed_options)
+        return integration.effective_invoke_separator(parsed_options, project_root)
 
     setting = integration_setting(state, key)
     stored_separator = setting.get("invoke_separator")
@@ -85,6 +89,6 @@ def invoke_separator_for_integration(
 
     stored_parsed = setting.get("parsed_options")
     if isinstance(stored_parsed, dict):
-        return integration.effective_invoke_separator(stored_parsed)
+        return integration.effective_invoke_separator(stored_parsed, project_root)
 
-    return integration.effective_invoke_separator(None)
+    return integration.effective_invoke_separator(None, project_root)
