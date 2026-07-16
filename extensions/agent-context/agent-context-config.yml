@@ -5,7 +5,7 @@
 # EXAMPLE: context_file: CLAUDE.md
 context_file: ""
 
-# WHAT: List of project relative paths to the coding agent context files. If you have both `context_file` and `context_files` filled, then this(`context_files`) takes precedence.
+# WHAT: List of project relative paths to the coding agent context files. If you have both `context_file` and `context_files` filled, then this (`context_files`) takes precedence.
 # REQUIREMENT: OPTIONAL. Use this if your project requires you to keep multiple agent context files in sync.
 # EXAMPLE:
 # context_files:

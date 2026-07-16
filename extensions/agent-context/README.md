@@ -11,7 +11,7 @@ It owns the lifecycle of the managed section delimited by the configurable start
 Not every Spec Kit user wants Spec Kit to write into the coding agent's context file. Keeping this behavior in a dedicated, **opt-in** extension lets users:
 
 - **Choose whether to install it at all** - `specify init` does **NOT** install it. Add it explicitly when you want Spec Kit to manage the agent context file; if it is absent or disabled, Spec Kit never creates or modifies that file (the AI context file).
-- **Customize the markers** by editing [agent-context-config.yml](./agent-context-config.yml) - the bundled scripts honor the `context_markers` value.
+- **Customize the markers** by editing `.specify/extensions/agent-context/agent-context-config.yml` ([agent-context-config.yml](./agent-context-config.yml) in this repo) - the bundled scripts honor the `context_markers` value.
 - **Synchronize multiple agent anchors** by setting `context_files` when a project intentionally uses more than one coding agent context file, such as `AGENTS.md` and `CLAUDE.md`.
 - **Refresh on demand** by running the `speckit.agent-context.update` command in your agent, or automatically through the hooks declared in [extension.yml](./extension.yml) (`after_specify`, `after_plan`).
 
@@ -44,28 +44,7 @@ While this extension is disabled (or not installed), nothing in Spec Kit creates
 
 ## Configuration
 
-All configuration flows through the extension's own config file at
-[agent-context-config.yml](./agent-context-config.yml):
-
-```yaml
-# Path to the coding agent context file managed by this extension
-context_file: CLAUDE.md
-
-# Optional list of coding agent context files to manage together.
-# When non-empty, this takes precedence over context_file.
-context_files:
-  - AGENTS.md
-  - CLAUDE.md
-
-# Delimiters for the managed Spec Kit section
-context_markers:
-  start: "<!-- SPECKIT START -->"
-  end: "<!-- SPECKIT END -->"
-```
-
-- `context_file` - the project-relative path to the coding agent context file. When empty, the bundled update scripts self-seed it by looking up the active integration's key in this extension's own `agent-context-defaults.json` map. The Specify CLI is never consulted.
-- `context_files` - optional project-relative paths to multiple coding agent context files. When non-empty, the list takes precedence over `context_file`. Absolute paths, backslash separators, and `..` path segments are rejected.
-- `context_markers.start` / `.end` - the delimiters around the managed section. Edit these to use custom markers.
+All configuration flows through the extension's own config file at [agent-context-config.yml](./agent-context-config.yml).
 
 ## Requirements
 
