@@ -14,7 +14,7 @@ context_file: ""
 context_files: []
 
 # WHAT: Markers (Delimiters) for the managed Spec Kit section. All information injected by this extension will only be done in between these markers.
-# REQUIREMENT: REQUIRED. Only change if you wish to have a custom marker name.
+# REQUIREMENT: OPTIONAL. Only change if you wish to have a custom marker name.
 # EXAMPLE:
 # context_markers:
 #   start: "<!-- AGENT SPEC KIT CONTEXT START -->"

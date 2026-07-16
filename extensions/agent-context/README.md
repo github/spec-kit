@@ -17,7 +17,7 @@ Not every Spec Kit user wants Spec Kit to write into the coding agent's context 
 
 ## Installation
 
-To install the extension, run the following command after installing Spec Kit.
+To install the extension, from the root of an initialized Spec Kit project, run:
 
 ```bash
 specify extension add agent-context
