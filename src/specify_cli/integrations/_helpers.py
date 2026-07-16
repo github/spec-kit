@@ -276,6 +276,14 @@ def _update_init_options_for_integration(
         is_skills = _skills_mode_attr(parsed_options)
     else:
         is_skills = bool(_skills_mode_attr) or isinstance(integration, SkillsIntegration)
+
+    if (
+        integration.key == "bob"
+        and parsed_options is None
+        and (project_root / ".bob" / "commands").exists()
+        and not (project_root / ".bob" / "skills").exists()
+    ):
+        is_skills = False
     if is_skills:
         opts["ai_skills"] = True
     else:
