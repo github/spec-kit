@@ -279,14 +279,18 @@ def _update_init_options_for_integration(
     opts["speckit_version"] = _get_speckit_version()
     if script_type:
         opts["script"] = script_type
-    # Skills mode is either intrinsic (SkillsIntegration), set on the instance
-    # during setup() (_skills_mode), or requested via parsed options (e.g.
-    # Copilot's --skills, persisted as parsed_options["skills"]). The latter is
-    # the only signal available on the `use` path, where no setup() runs and a
-    # fresh integration instance has _skills_mode == False (issue #3550).
+    # Skills mode is either intrinsic (SkillsIntegration), derived from
+    # parsed_options via a callable _skills_mode method (e.g. Bob), set on
+    # the instance during setup() as a bool attribute (e.g. Copilot), or
+    # requested via parsed options (e.g. Copilot's --skills, persisted as
+    # parsed_options["skills"]). The latter is the only signal available on
+    # the `use` path, where no setup() runs and a fresh integration instance
+    # has _skills_mode == False (issue #3550).
+    _skills_mode_attr = getattr(integration, "_skills_mode", None)
     skills_mode = (
         isinstance(integration, SkillsIntegration)
-        or getattr(integration, "_skills_mode", False)
+        or (callable(_skills_mode_attr) and _skills_mode_attr(parsed_options))
+        or (not callable(_skills_mode_attr) and bool(_skills_mode_attr))
         or bool((parsed_options or {}).get("skills"))
     )
     if skills_mode:

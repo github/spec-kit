@@ -300,6 +300,30 @@ class TestBobInitFlowLegacy:
         assert (target / ".bob" / "commands" / "speckit.plan.md").exists()
         assert not (target / ".bob" / "skills").exists()
 
+    def test_init_legacy_does_not_set_ai_skills(self, tmp_path):
+        """Legacy install must NOT write ai_skills=True to init-options.json.
+
+        Regression test: _update_init_options_for_integration previously called
+        getattr(integration, "_skills_mode", False) which returned the bound method
+        object (always truthy) instead of calling it, so legacy projects incorrectly
+        got ai_skills=True and used hyphenated skill invocations.
+        """
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli import load_init_options
+
+        target = tmp_path / "test-proj"
+        result = CliRunner().invoke(app, [
+            "init", str(target), "--integration", "bob",
+            "--integration-options", "--legacy-commands",
+            "--ignore-agent-tools", "--script", "sh",
+        ])
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        init_opts = load_init_options(target)
+        assert init_opts.get("ai_skills") is not True, (
+            "Legacy Bob project must not have ai_skills=True in init-options.json"
+        )
+
 
 class TestBobRegistrarConfig:
     """Verify AGENT_CONFIGS["bob"] follows the Copilot pattern for extension registration."""
