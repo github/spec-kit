@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.16] - 2026-07-15
+
+### Changed
+
+- fix(workflows): raise a clear error, not a cryptic crash, on non-string filter args (#3522)
+- feat(workflows): expose workflow source directory to steps (#3469)
+- fix(workflows): fan-out max_concurrency .inf falls back to sequential, not crash (#3521)
+- Update Coding Standards Drift Control extension to v0.4.0 (#3540)
+- fix(presets): seed constitution from preset constitution-template (#3272) (#3276)
+- docs: add PyPI as second supported install route (#3425) (#3516)
+- fix(workflows): fail while/do-while steps on non-list steps instead of crashing (#3519)
+- Add PatchWarden Evidence Pack extension to community catalog (#3514)
+- feat(extensions): port git extension scripts to Python (#3400)
+- chore: release 0.12.15, begin 0.12.16.dev0 development (#3513)
+
 ## [0.12.15] - 2026-07-14
 
 ### Changed

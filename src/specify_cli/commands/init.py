@@ -701,6 +701,7 @@ def register(app: typer.Typer) -> None:
         copilot_skill_mode = selected_ai == "copilot" and _is_skills_integration
         devin_skill_mode = selected_ai == "devin"
         zed_skill_mode = selected_ai == "zed" and _is_skills_integration
+        grok_skill_mode = selected_ai == "grok" and _is_skills_integration
         cline_skill_mode = selected_ai == "cline"
         native_skill_mode = (
             codex_skill_mode
@@ -713,6 +714,7 @@ def register(app: typer.Typer) -> None:
             or copilot_skill_mode
             or devin_skill_mode
             or zed_skill_mode
+            or grok_skill_mode
         )
 
         if codex_skill_mode:
@@ -743,6 +745,11 @@ def register(app: typer.Typer) -> None:
         if zed_skill_mode:
             steps_lines.append(
                 f"{step_num}. Start Zed in this project directory; spec-kit skills were installed to [cyan].agents/skills[/cyan]"
+            )
+            step_num += 1
+        if grok_skill_mode:
+            steps_lines.append(
+                f"{step_num}. Start Grok Build in this project directory; spec-kit skills were installed to [cyan].grok/skills[/cyan]"
             )
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"

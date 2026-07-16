@@ -53,9 +53,10 @@ docs/dev
 
 # The following directories/file are intentionally ignored so that they are not accidentally
 # committed to the repository. They contain the scaffolding `specify init --integration copilot`
-# does and they are meant for dogfooding Spec Kit during its own feature development.
+# (or other agents) does and they are meant for dogfooding Spec Kit during its own feature development.
 .github/agents/
 .github/prompts/
 .github/copilot-instructions.md
+.grok/
 .specify/
 specs/

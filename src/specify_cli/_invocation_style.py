@@ -12,7 +12,7 @@ from __future__ import annotations
 DOLLAR_SKILLS_AGENTS: frozenset[str] = frozenset({"codex", "zcode"})
 
 # Agents that always render /speckit-<name>, regardless of ai_skills.
-ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset({"devin", "trae", "zed"})
+ALWAYS_SLASH_AGENTS: frozenset[str] = frozenset({"devin", "grok", "trae", "zed"})
 
 # Agents that render /speckit-<name> only when ai_skills is enabled.
 CONDITIONAL_SLASH_AGENTS: frozenset[str] = frozenset(
