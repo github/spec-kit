@@ -2,6 +2,9 @@
 
 The **bug** extension adds a three-step bug triage process — assess, fix, and validate — that your coding agent runs alongside the core [Agentic SDD](agentic-sdd.md) process. Each bug lives in its own directory under `.specify/bugs/<slug>/`, with one Markdown report per stage.
 
+> [!NOTE]
+> Commands are written in `/speckit.bug.*` form throughout this page. The exact invocation depends on your agent — some skills-based agents use `$speckit-bug-*` (e.g. Codex, ZCode) or `/skill:speckit-bug-*` (e.g. Kimi). Substitute the form your agent exposes.
+
 The bug extension is a bundled, opt-in extension. Install it before using these commands:
 
 ```bash

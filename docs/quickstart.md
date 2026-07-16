@@ -11,7 +11,7 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 ## Recommended Process
 
 > [!TIP]
-> **Context Awareness**: Spec Kit tracks the active feature through the feature directory it creates (recorded in `.specify/feature.json`), so commands know which specification you're working on — no Git required. Want numbered feature branches? Install the opt-in **git** extension: creating a branch (e.g. `001-feature-name`) also sets that branch's feature as active. Note that resolution reads `.specify/feature.json` / the `SPECIFY_FEATURE` variable, not the checked-out branch — so to switch back to another feature, set `SPECIFY_FEATURE` (or its state file) explicitly rather than relying on `git checkout` alone.
+> **Context Awareness**: Spec Kit tracks the active feature by the feature directory recorded in `.specify/feature.json` (overridable with the `SPECIFY_FEATURE_DIRECTORY` environment variable). Commands resolve the feature from that state, **not** from the checked-out Git branch — no Git required. The opt-in **git** extension adds numbered feature branches (e.g. `001-feature-name`) for organizing work in version control, but the active feature is still whichever directory that state points to; `git checkout` alone does not change it. To point commands at a different feature, update `.specify/feature.json` (or set `SPECIFY_FEATURE_DIRECTORY`).
 
 After installing Spec Kit, each command below is a step in the process. Two paths are common:
 
