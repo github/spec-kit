@@ -62,6 +62,7 @@ body:
       label: AI Agent
       description: Which AI agent are you using?
       options:
+        - Alquimia AI
         - Amp
         - Antigravity
         - Auggie CLI
