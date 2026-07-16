@@ -86,7 +86,195 @@ Lists workflows installed in the current project.
 specify workflow add <source>
 ```
 
-Installs a workflow from the catalog, a URL (HTTPS required), or a local file path.
+Installs a workflow from the catalog, a URL (HTTPS required), a local YAML file, or a local directory containing `workflow.yml`.  Local workflow directories may include an optional `overlays/` subdirectory, which is installed alongside the workflow as shipped overlays.
+
+## Workflow Overlays
+
+Workflow overlays let a project extend or override an installed workflow without editing the installed `workflow.yml`.  This keeps local customizations safe across `specify bundle update` or `specify workflow add` upgrades.
+
+When `specify workflow run <workflow-id>` loads a workflow, the engine composes the base workflow with all enabled overlays for that workflow id.  The result is validated like any other workflow definition.
+
+### How Overlays Work
+
+An overlay is a YAML file that declares a set of edit operations against the step list of a base workflow.  Overlays are applied in priority order (lowest first, highest last); at the same priority, installed overlays are applied before project overlays, so project overlays win ties.
+
+Overlay files live in two locations:
+
+| Location | Purpose | Tier |
+| --- | --- | --- |
+| `.specify/workflows/<id>/overlays/*.yml` | Shipped with the installed workflow | `installed-overlay` |
+| `.specify/workflows/overlays/<id>/*.yml` | Project-local customizations | `project-overlay` |
+
+Project overlays always take precedence over installed overlays at the same priority.
+
+### Overlay File Format
+
+The recommended edit format uses the operation name as the key and the anchor step id as the value:
+
+```yaml
+id: "my-overlay"
+extends: "speckit"
+priority: 10
+enabled: true
+edits:
+  - insert_after: implement
+    step:
+      id: run-lint
+      type: shell
+      run: "ruff check src/"
+
+  - replace: review-spec
+    step:
+      id: review-spec
+      type: gate
+      message: "Review the generated spec (overlay override)."
+      options: [approve, reject]
+      on_reject: abort
+```
+
+The explicit form is also supported:
+
+```yaml
+edits:
+  - operation: insert_after
+    anchor: implement
+    step:
+      id: run-lint
+      type: shell
+      run: "ruff check src/"
+```
+
+#### Fields
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `id` | yes | Identifier for this overlay. Used in `specify workflow overlay *` commands. Must be lowercase letters, digits, and hyphens only; no dots, underscores, path separators, or `overlays`. |
+| `extends` | yes | The workflow id this overlay applies to. Uses the same safe-id format as `id`; `overlays` is reserved. |
+| `priority` | yes | Integer `>= 1`. Higher priority overlays are applied later and win conflicts. |
+| `enabled` | no | Boolean. Defaults to `true`. Disabled overlays are ignored. |
+| `edits` | yes | Non-empty list of edit operations. |
+
+#### Edit Operations
+
+| Operation | `step` required | Effect |
+| --- | --- | --- |
+| `insert_after` | yes | Insert `step` immediately after the anchor step. |
+| `insert_before` | yes | Insert `step` immediately before the anchor step. |
+| `replace` | yes | Replace the anchor step with `step`. |
+| `remove` | no | Remove the anchor step from the list. |
+
+The `anchor` is the `id` of a step in the base workflow.  Anchors are resolved recursively inside `then`, `else`, `steps`, `cases.*`, and `default` blocks, so nested base steps can also be targeted.  Fan-out templates (`step` inside a `fan-out` step) are **not** valid anchors.
+
+Step ids must not contain `:` — that character is reserved for engine-generated nested ids.
+
+### Overlay CLI Commands
+
+#### Add a Project Overlay
+
+```bash
+specify workflow overlay add <path-to-overlay.yml> --priority <n>
+```
+
+Validates the overlay file and copies it to `.specify/workflows/overlays/<extends>/<id>.yml`.  `--priority` overrides the `priority` field in the file.
+
+#### List Overlays
+
+```bash
+specify workflow overlay list <workflow-id>
+```
+
+Shows enabled overlays for the workflow, ordered by resolver precedence.  Disabled overlays are ignored by the resolver and are not listed.
+
+#### Change Priority
+
+```bash
+specify workflow overlay set-priority <workflow-id> <overlay-id> <n>
+```
+
+#### Enable or Disable
+
+```bash
+specify workflow overlay disable <workflow-id> <overlay-id>
+specify workflow overlay enable <workflow-id> <overlay-id>
+```
+
+#### Remove
+
+```bash
+specify workflow overlay remove <workflow-id> <overlay-id>
+```
+
+Removes the project overlay file.  Installed overlays shipped with a workflow are removed by `specify workflow remove <workflow-id>`, which deletes the entire workflow directory.
+
+#### Inspect the Composed Workflow
+
+```bash
+specify workflow resolve <workflow-id>
+```
+
+Prints the layer stack (base + overlays) and the source attribution for each step after composition.  Useful for debugging which overlay contributed or overrode a step.
+
+### Example: Adding Automated Linting after Implementation
+
+Given the built-in `speckit` workflow, create `project-overlay.yml`:
+
+```yaml
+id: "add-lint"
+extends: "speckit"
+priority: 10
+edits:
+  - insert_after: implement
+    step:
+      id: run-lint
+      type: shell
+      run: "ruff check src/"
+```
+
+Install it:
+
+```bash
+specify workflow overlay add project-overlay.yml --priority 10
+```
+
+Run the workflow:
+
+```bash
+specify workflow run speckit -i spec="Build a kanban board"
+```
+
+The composed workflow will now run the full SDD cycle and execute `ruff check src/` automatically after the `implement` step.
+
+### Example: Replacing a Gate
+
+```yaml
+id: "skip-plan-review"
+extends: "speckit"
+priority: 20
+edits:
+  - replace: review-plan
+    step:
+      id: review-plan
+      type: command
+      command: speckit.plan
+      input:
+        args: "{{ inputs.spec }}"
+```
+
+Higher priority (`20`) means this overlay is applied after the `add-lint` overlay above.  It replaces the `review-plan` gate with a non-interactive command.
+
+### Interaction with Bundles and Updates
+
+`specify workflow add <local-directory>` copies `workflow.yml` and an optional `overlays/` subdirectory into `.specify/workflows/<id>/`.  Overlays shipped this way are discovered automatically as `installed-overlay` layers.
+
+When an installed workflow is refreshed or reinstalled, project overlays in `.specify/workflows/overlays/<id>/` are preserved because they live outside the installed workflow directory.
+
+### Limitations
+
+- Overlays operate on the step list only.  They cannot change workflow metadata (name, description, inputs, `requires`) or expression logic.
+- Fan-out templates cannot be used as anchors.
+- An overlay that targets a step id that does not exist in the base workflow will raise a validation error when the workflow is resolved.
+- Overlays cannot target steps added by other overlays.
+- Overlays cannot add new inputs or change the input schema of the base workflow.
 
 ## Remove a Workflow
 

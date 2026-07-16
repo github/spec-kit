@@ -625,13 +625,24 @@ class WorkflowEngine:
         ValueError:
             If the workflow YAML is invalid.
         """
+        from .overlays import WorkflowResolver
+
         path = Path(source).expanduser()
 
         # Try as a direct file path first
         if path.suffix.lower() in (".yml", ".yaml") and path.is_file():
             return WorkflowDefinition.from_yaml(path)
 
-        # Try as an installed workflow ID
+        # Try as an installed workflow ID, resolving any overlays.
+        resolver = WorkflowResolver(self.project_root)
+        try:
+            return resolver.resolve(str(source))
+        except FileNotFoundError:
+            # Fall back to the direct workflow.yml path so callers still get
+            # the original error when the workflow id is not installed.
+            pass
+
+        # Legacy direct path check for workflows installed without registry entries.
         installed_path = (
             self.project_root
             / ".specify"
