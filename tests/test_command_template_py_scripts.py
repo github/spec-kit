@@ -12,6 +12,7 @@ existence check below enforces that ordering.
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -83,12 +84,14 @@ def test_template_renders_python_invocation(name: str):
 
 
 def test_spaced_python_interpreter_uses_powershell_call_operator(monkeypatch):
+    interpreter = r"C:\Program Files\Py$thon's\python.exe"
+    quoted_interpreter = interpreter.replace("'", "''")
     monkeypatch.setattr(
         "specify_cli.integrations.base.shutil.which", lambda name: None
     )
     monkeypatch.setattr(
         "specify_cli.integrations.base.sys.executable",
-        r"C:\Program Files\Python\python.exe",
+        interpreter,
     )
     monkeypatch.setattr(
         "specify_cli.integrations.base.os", SimpleNamespace(name="nt")
@@ -98,7 +101,29 @@ def test_spaced_python_interpreter_uses_powershell_call_operator(monkeypatch):
     result = IntegrationBase.process_template(content, "agent", "py")
 
     assert (
-        '& "C:\\Program Files\\Python\\python.exe" '
+        f"& '{quoted_interpreter}' "
+        ".specify/scripts/python/setup_plan.py --json"
+    ) in result
+
+
+def test_spaced_python_interpreter_uses_posix_shell_quoting(monkeypatch):
+    interpreter = "/opt/Python $HOME's/bin/python"
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.shutil.which", lambda name: None
+    )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.sys.executable",
+        interpreter,
+    )
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.os", SimpleNamespace(name="posix")
+    )
+
+    content = "---\nscripts:\n  py: scripts/python/setup_plan.py --json\n---\n{SCRIPT}\n"
+    result = IntegrationBase.process_template(content, "agent", "py")
+
+    assert (
+        f"{shlex.quote(interpreter)} "
         ".specify/scripts/python/setup_plan.py --json"
     ) in result
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.python.common import persist_feature_json
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
@@ -336,6 +337,22 @@ def test_python_persists_relative_feature_json(repo: Path) -> None:
     branch = json_stdout(py)["BRANCH_NAME"]
     feature_json = (repo / ".specify" / "feature.json").read_text(encoding="utf-8")
     assert feature_json == f'{{"feature_directory":"specs/{branch}"}}\n'
+
+
+def test_persist_feature_json_avoids_platform_newline_translation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def windows_write_text(path: Path, data: str, **kwargs) -> int:
+        encoding = kwargs.get("encoding") or "utf-8"
+        return path.write_bytes(data.replace("\n", "\r\n").encode(encoding))
+
+    monkeypatch.setattr(Path, "write_text", windows_write_text)
+
+    persist_feature_json(tmp_path, "specs/001-test")
+
+    assert (tmp_path / ".specify" / "feature.json").read_bytes() == (
+        b'{"feature_directory":"specs/001-test"}\n'
+    )
 
 
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")

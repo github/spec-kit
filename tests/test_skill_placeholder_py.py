@@ -46,12 +46,14 @@ def test_sh_variant_is_not_prefixed(tmp_path, monkeypatch):
 def test_py_interpreter_with_spaces_uses_powershell_call_operator(
     tmp_path, monkeypatch
 ):
+    interpreter = r"C:\Program Files\Py$thon's\python.exe"
+    quoted_interpreter = interpreter.replace("'", "''")
     monkeypatch.setattr(
         "specify_cli.integrations.base.shutil.which", lambda name: None
     )
     monkeypatch.setattr(
         "specify_cli.integrations.base.sys.executable",
-        r"C:\Program Files\Python\python.exe",
+        interpreter,
     )
     monkeypatch.setattr(
         "specify_cli.integrations.base.os", SimpleNamespace(name="nt")
@@ -60,7 +62,7 @@ def test_py_interpreter_with_spaces_uses_powershell_call_operator(
     body = CommandRegistrar.resolve_skill_placeholders(
         "codex", FRONTMATTER, "Run {SCRIPT} now.", tmp_path
     )
-    assert '& "C:\\Program Files\\Python\\python.exe" ' in body
+    assert f"& '{quoted_interpreter}' " in body
 
 
 def test_missing_py_variant_falls_back_to_available_script(tmp_path, monkeypatch):

@@ -625,10 +625,11 @@ class IntegrationBase(ABC):
     ) -> str:
         """Build a Python script command for the current platform shell."""
         interpreter = IntegrationBase.resolve_python_interpreter(project_root)
-        if any(ch.isspace() for ch in interpreter):
-            interpreter = f'"{interpreter}"'
-            if os.name == "nt":
-                interpreter = f"& {interpreter}"
+        if os.name == "nt" and not re.fullmatch(r"[A-Za-z0-9_./:\\-]+", interpreter):
+            quoted_interpreter = interpreter.replace("'", "''")
+            interpreter = f"& '{quoted_interpreter}'"
+        elif os.name != "nt":
+            interpreter = shlex.quote(interpreter)
         return f"{interpreter} {script_command}"
 
     @staticmethod

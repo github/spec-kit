@@ -112,9 +112,8 @@ def persist_feature_json(repo_root: Path, feature_dir_value: str) -> None:
 
     specify_dir = repo_root / ".specify"
     specify_dir.mkdir(parents=True, exist_ok=True)
-    (specify_dir / "feature.json").write_text(
-        _json_dump({"feature_directory": value}),
-        encoding="utf-8",
+    (specify_dir / "feature.json").write_bytes(
+        _json_dump({"feature_directory": value}).encode("utf-8")
     )
 
 
