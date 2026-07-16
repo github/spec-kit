@@ -202,3 +202,87 @@ class TestOverlayPathTraversal:
         result = runner.invoke(app, ["workflow", "overlay", "enable", "wf", "../other"])
         assert result.exit_code != 0, result.output
         assert "invalid" in result.output.lower() or "traversal" in result.output.lower()
+
+    def test_overlay_rejects_symlinked_overlays_dir(self, project_dir, monkeypatch, tmp_path):
+        """Overlay commands must reject a symlinked .specify/workflows/overlays directory."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+
+        # Create a symlinked overlays directory pointing outside the project
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        overlays_dir = project_dir / ".specify" / "workflows" / "overlays"
+        overlays_dir.symlink_to(outside_dir)
+
+        result = runner.invoke(app, ["workflow", "overlay", "list", "wf"])
+        assert result.exit_code != 0, result.output
+        assert "symlink" in result.output.lower()
+
+    def test_overlay_list_rejects_symlinked_per_workflow_dir(self, project_dir, monkeypatch, tmp_path):
+        """Overlay list must reject a symlinked per-workflow overlay directory."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+
+        # Create a real overlay directory outside the project.
+        outside_dir = tmp_path / "outside_wf"
+        outside_dir.mkdir()
+        outside_dir.joinpath("evil.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "id": "evil",
+                    "extends": "wf",
+                    "priority": 100,
+                    "edits": [
+                        {
+                            "operation": "insert_after",
+                            "anchor": "a",
+                            "step": {"id": "evil-step", "type": "command", "command": "echo"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Symlink the per-workflow overlay directory to the outside location.
+        overlays_root = project_dir / ".specify" / "workflows" / "overlays"
+        overlays_root.mkdir(parents=True, exist_ok=True)
+        symlink_dir = overlays_root / "wf"
+        symlink_dir.symlink_to(outside_dir)
+
+        result = runner.invoke(app, ["workflow", "overlay", "list", "wf"])
+        assert result.exit_code != 0, result.output
+        assert "symlink" in result.output.lower()
+
+    def test_overlay_list_rejects_symlinked_installed_overlays_dir(self, project_dir, monkeypatch, tmp_path):
+        """Overlay list must reject a symlinked installed overlays directory."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+
+        # Create a real overlays directory outside the project.
+        outside_dir = tmp_path / "outside_installed"
+        outside_dir.mkdir()
+        outside_dir.joinpath("evil.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "id": "evil",
+                    "extends": "wf",
+                    "priority": 100,
+                    "edits": [
+                        {
+                            "operation": "insert_after",
+                            "anchor": "a",
+                            "step": {"id": "evil-step", "type": "command", "command": "echo"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Create a workflow directory and symlink its overlays/ to the outside.
+        wf_dir = project_dir / ".specify" / "workflows" / "wf"
+        wf_dir.mkdir(parents=True, exist_ok=True)
+        symlink_dir = wf_dir / "overlays"
+        symlink_dir.symlink_to(outside_dir)
+
+        result = runner.invoke(app, ["workflow", "overlay", "list", "wf"])
+        assert result.exit_code != 0, result.output
+        assert "symlink" in result.output.lower()

@@ -284,14 +284,18 @@ def workflow_overlay_remove(
     return True
 
 
-def workflow_overlay_list(project_root: Path, workflow_id: str) -> list[dict[str, Any]]:
+def workflow_overlay_list(project_root: Path, workflow_id: str) -> list[dict[str, Any]] | None:
     """List all overlays for a workflow and print a summary table.
 
-    Returns the raw list data for machine-readable callers.
+    Returns the raw list data for machine-readable callers, or None on error.
     """
     _validate_workflow_id_or_exit(workflow_id)
     resolver = WorkflowResolver(project_root)
-    layers = resolver.collect_all_layers(workflow_id)
+    try:
+        layers = resolver.collect_all_layers(workflow_id)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        return None
     overlays = [layer for layer in layers if layer.tier != "base"]
 
     if not overlays:

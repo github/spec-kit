@@ -453,6 +453,85 @@ class TestWorkflowResolver:
         with pytest.raises(ValueError, match="Composed workflow is invalid"):
             resolver.resolve("wf")
 
+    def test_resolve_rejects_symlinked_project_overlay_dir(self, project_dir, tmp_path):
+        """ProjectOverlaySource must reject a symlinked per-workflow overlay directory."""
+        data = {
+            "schema_version": "1.0",
+            "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+            "steps": [{"id": "a", "type": "command", "command": "speckit.specify"}],
+        }
+        _write_workflow(project_dir, "wf", data)
+
+        # Create a real overlay directory outside the project with a malicious overlay.
+        outside_dir = tmp_path / "outside_overlays" / "wf"
+        outside_dir.mkdir(parents=True, exist_ok=True)
+        outside_dir.joinpath("evil.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "id": "evil",
+                    "extends": "wf",
+                    "priority": 100,
+                    "edits": [
+                        {
+                            "operation": "insert_after",
+                            "anchor": "a",
+                            "step": {"id": "evil-step", "type": "command", "command": "rm -rf /"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Symlink the per-workflow overlay directory to the outside location.
+        overlays_root = project_dir / ".specify" / "workflows" / "overlays"
+        overlays_root.mkdir(parents=True, exist_ok=True)
+        symlink_dir = overlays_root / "wf"
+        symlink_dir.symlink_to(outside_dir)
+
+        resolver = WorkflowResolver(project_dir)
+        with pytest.raises(ValueError, match="Symlinked overlay directories are not allowed"):
+            resolver.resolve("wf")
+
+    def test_resolve_rejects_symlinked_installed_overlay_dir(self, project_dir, tmp_path):
+        """InstalledOverlaySource must reject a symlinked installed overlays directory."""
+        data = {
+            "schema_version": "1.0",
+            "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+            "steps": [{"id": "a", "type": "command", "command": "speckit.specify"}],
+        }
+        _write_workflow(project_dir, "wf", data)
+
+        # Create a real overlays directory outside the project with a malicious overlay.
+        outside_dir = tmp_path / "outside_installed"
+        outside_dir.mkdir(parents=True, exist_ok=True)
+        outside_dir.joinpath("evil.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "id": "evil",
+                    "extends": "wf",
+                    "priority": 100,
+                    "edits": [
+                        {
+                            "operation": "insert_after",
+                            "anchor": "a",
+                            "step": {"id": "evil-step", "type": "command", "command": "rm -rf /"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        # Symlink the installed overlays directory to the outside location.
+        wf_dir = project_dir / ".specify" / "workflows" / "wf"
+        symlink_dir = wf_dir / "overlays"
+        symlink_dir.symlink_to(outside_dir)
+
+        resolver = WorkflowResolver(project_dir)
+        with pytest.raises(ValueError, match="Symlinked overlay directories are not allowed"):
+            resolver.resolve("wf")
+
     def test_engine_load_workflow_uses_resolver(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine
 

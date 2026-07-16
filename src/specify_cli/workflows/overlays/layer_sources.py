@@ -42,6 +42,11 @@ class ProjectOverlaySource:
     def collect(self, workflow_id: str) -> list[Layer]:
         """Collect all project-local overlays for the given workflow id."""
         workflow_overlay_dir = self.overlays_dir / workflow_id
+        if workflow_overlay_dir.is_symlink():
+            raise OverlayLoadError(
+                workflow_overlay_dir,
+                ["Symlinked overlay directories are not allowed"],
+            )
         if not workflow_overlay_dir.is_dir():
             return []
         layers: list[Layer] = []
@@ -82,6 +87,11 @@ class InstalledOverlaySource:
     def collect(self, workflow_id: str) -> list[Layer]:
         """Collect all installed overlays shipped with the given workflow."""
         installed_overlay_dir = self.workflows_dir / workflow_id / "overlays"
+        if installed_overlay_dir.is_symlink():
+            raise OverlayLoadError(
+                installed_overlay_dir,
+                ["Symlinked overlay directories are not allowed"],
+            )
         if not installed_overlay_dir.is_dir():
             return []
         layers: list[Layer] = []

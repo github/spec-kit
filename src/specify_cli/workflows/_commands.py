@@ -109,6 +109,10 @@ def _reject_unsafe_workflow_storage(project_root: Path) -> None:
         project_root / ".specify" / "workflows" / "runs",
         ".specify/workflows/runs",
     )
+    _reject_unsafe_dir(
+        project_root / ".specify" / "workflows" / "overlays",
+        ".specify/workflows/overlays",
+    )
 
 
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
@@ -1818,7 +1822,8 @@ def workflow_overlay_list_cmd(
     from .overlays._commands import workflow_overlay_list
 
     project_root = _require_specify_project()
-    workflow_overlay_list(project_root, workflow_id)
+    if workflow_overlay_list(project_root, workflow_id) is None:
+        raise typer.Exit(1)
 
 
 @workflow_app.command("resolve")
