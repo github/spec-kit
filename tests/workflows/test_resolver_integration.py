@@ -532,6 +532,46 @@ class TestWorkflowResolver:
         with pytest.raises(ValueError, match="Symlinked overlay directories are not allowed"):
             resolver.resolve("wf")
 
+    def test_resolve_attribution_for_inserted_composite_step(self, project_dir):
+        """Inserted composite steps must attribute nested children to the overlay source."""
+        data = {
+            "schema_version": "1.0",
+            "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+            "steps": [{"id": "a", "type": "command", "command": "speckit.specify"}],
+        }
+        _write_workflow(project_dir, "wf", data)
+        _write_overlay(
+            project_dir,
+            "wf",
+            "ov1",
+            {
+                "id": "ov1",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [
+                    {
+                        "operation": "insert_after",
+                        "anchor": "a",
+                        "step": {
+                            "id": "if-1",
+                            "type": "if",
+                            "condition": "true",
+                            "then": [{"id": "then-x", "type": "command", "command": "echo"}],
+                            "else": [{"id": "else-y", "type": "command", "command": "echo"}],
+                        },
+                    }
+                ],
+            },
+        )
+
+        resolver = WorkflowResolver(project_dir)
+        _definition, _layers, attribution = resolver.resolve_with_layers("wf")
+        sources = {c.step_id: c.source for c in attribution}
+        assert sources["a"] == "base"
+        assert sources["if-1"] == "project:ov1"
+        assert sources["then-x"] == "project:ov1"
+        assert sources["else-y"] == "project:ov1"
+
     def test_engine_load_workflow_uses_resolver(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine
 

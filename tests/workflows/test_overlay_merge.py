@@ -364,6 +364,60 @@ class TestMergeSteps:
             for composed in attribution
         )
 
+    def test_merge_steps_insert_after_then_replace_same_anchor_id_change(self):
+        """Inserts must be applied before the winning replace so the anchor still exists.
+
+        Regression: when a replace changes the step ID, applying it before inserts
+        causes ``find_step`` to fail on the now-gone original anchor.
+        """
+        base = [_step("build")]
+        low = Overlay(
+            id="low",
+            extends="wf",
+            priority=5,
+            edits=[OverlayEdit("insert_after", "build", _step("test"))],
+        )
+        high = Overlay(
+            id="high",
+            extends="wf",
+            priority=10,
+            edits=[OverlayEdit("replace", "build", _step("compile"))],
+        )
+        steps, attribution = merge_steps(
+            base, [_layer(low, "project:low"), _layer(high, "project:high")]
+        )
+        # The insert should land after the original anchor position, then the
+        # anchor is replaced.  Final order: ["compile", "test"].
+        assert [s["id"] for s in steps] == ["compile", "test"]
+        assert attribution == [
+            ComposedStep("compile", "project:high"),
+            ComposedStep("test", "project:low"),
+        ]
+
+    def test_merge_steps_insert_before_then_replace_same_anchor_id_change(self):
+        """Same as above but with insert_before — anchor must still be findable."""
+        base = [_step("build")]
+        low = Overlay(
+            id="low",
+            extends="wf",
+            priority=5,
+            edits=[OverlayEdit("insert_before", "build", _step("lint"))],
+        )
+        high = Overlay(
+            id="high",
+            extends="wf",
+            priority=10,
+            edits=[OverlayEdit("replace", "build", _step("compile"))],
+        )
+        steps, attribution = merge_steps(
+            base, [_layer(low, "project:low"), _layer(high, "project:high")]
+        )
+        assert [s["id"] for s in steps] == ["lint", "compile"]
+        assert attribution == [
+            ComposedStep("lint", "project:low"),
+            ComposedStep("compile", "project:high"),
+        ]
+
     def test_merge_steps_unknown_anchor_still_raises(self):
         base = [_step("a")]
         overlay = Overlay(
@@ -374,6 +428,130 @@ class TestMergeSteps:
         )
         with pytest.raises(ValueError, match="Anchor 'missing' not found"):
             merge_steps(base, [_layer(overlay, "project:ov")])
+
+    # ── composite step attribution ───────────────────────────────────────
+
+    def test_merge_insert_composite_if_attribution(self):
+        """Nested then/else children of an inserted 'if' step get the overlay source."""
+        base = [_step("a")]
+        composite = {
+            "id": "if-1",
+            "type": "if",
+            "condition": "true",
+            "then": [_step("then-a")],
+            "else": [_step("else-b")],
+        }
+        overlay = Overlay(
+            id="ov", extends="wf", priority=10,
+            edits=[OverlayEdit("insert_after", "a", composite)],
+        )
+        _steps, attribution = merge_steps(
+            base, [_layer(overlay, "project:ov")]
+        )
+        assert attribution == [
+            ComposedStep("a", "base"),
+            ComposedStep("if-1", "project:ov"),
+            ComposedStep("then-a", "project:ov"),
+            ComposedStep("else-b", "project:ov"),
+        ]
+
+    def test_merge_insert_composite_switch_attribution(self):
+        """Nested cases/default children of an inserted 'switch' step get the overlay source."""
+        base = [_step("a")]
+        composite = {
+            "id": "switch-1",
+            "type": "switch",
+            "expression": "{{inputs.x}}",
+            "cases": {"one": [_step("case-one")], "two": [_step("case-two")]},
+            "default": [_step("default-z")],
+        }
+        overlay = Overlay(
+            id="ov", extends="wf", priority=10,
+            edits=[OverlayEdit("insert_before", "a", composite)],
+        )
+        _steps, attribution = merge_steps(
+            base, [_layer(overlay, "project:ov")]
+        )
+        assert attribution == [
+            ComposedStep("switch-1", "project:ov"),
+            ComposedStep("default-z", "project:ov"),
+            ComposedStep("case-one", "project:ov"),
+            ComposedStep("case-two", "project:ov"),
+            ComposedStep("a", "base"),
+        ]
+
+    def test_merge_replace_flat_with_composite_attribution(self):
+        """Replacing a flat step with a composite step attributes all nested children."""
+        base = [_step("a")]
+        composite = {
+            "id": "if-1",
+            "type": "if",
+            "condition": "true",
+            "then": [_step("inner-x"), _step("inner-y")],
+        }
+        overlay = Overlay(
+            id="ov", extends="wf", priority=10,
+            edits=[OverlayEdit("replace", "a", composite)],
+        )
+        _steps, attribution = merge_steps(
+            base, [_layer(overlay, "project:ov")]
+        )
+        assert attribution == [
+            ComposedStep("if-1", "project:ov"),
+            ComposedStep("inner-x", "project:ov"),
+            ComposedStep("inner-y", "project:ov"),
+        ]
+
+    def test_merge_remove_composite_step_cleans_nested_sources(self):
+        """Removing a composite step also cleans its nested children from sources."""
+        base = [
+            {
+                "id": "if-1",
+                "type": "if",
+                "condition": "true",
+                "then": [_step("then-a")],
+                "else": [_step("else-b")],
+            },
+            _step("a"),
+        ]
+        overlay = Overlay(
+            id="ov", extends="wf", priority=10,
+            edits=[OverlayEdit("remove", "if-1")],
+        )
+        steps, attribution = merge_steps(
+            base, [_layer(overlay, "project:ov")]
+        )
+        assert [s["id"] for s in steps] == ["a"]
+        assert attribution == [ComposedStep("a", "base")]
+
+    def test_merge_insert_deeply_nested_composite_attribution(self):
+        """Deep nesting (if inside while) gets the overlay source at every level."""
+        base = [_step("a")]
+        inner_if = {
+            "id": "inner-if",
+            "type": "if",
+            "condition": "true",
+            "then": [_step("deep-x")],
+        }
+        composite = {
+            "id": "while-1",
+            "type": "while",
+            "condition": "true",
+            "steps": [inner_if],
+        }
+        overlay = Overlay(
+            id="ov", extends="wf", priority=10,
+            edits=[OverlayEdit("insert_after", "a", composite)],
+        )
+        _steps, attribution = merge_steps(
+            base, [_layer(overlay, "project:ov")]
+        )
+        assert attribution == [
+            ComposedStep("a", "base"),
+            ComposedStep("while-1", "project:ov"),
+            ComposedStep("inner-if", "project:ov"),
+            ComposedStep("deep-x", "project:ov"),
+        ]
 
 
 class TestValidateEdits:

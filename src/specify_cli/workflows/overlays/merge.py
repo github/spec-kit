@@ -102,6 +102,61 @@ def _init_sources_recursively(
                     _init_sources_recursively(case_steps, sources)
 
 
+def _record_sources_recursively(
+    step: dict[str, Any],
+    source: str,
+    sources: dict[str, str],
+) -> None:
+    """Record *source* for a step and all its nested child steps.
+
+    Traverses ``then``, ``else``, ``steps``, ``default``, and ``cases.*``
+    so that ``workflow resolve`` attributes every step inside a composite
+    insert or replacement to the correct overlay layer.
+    """
+    step_id = step.get("id")
+    if isinstance(step_id, str):
+        sources[step_id] = source
+    for key in _NESTED_LIST_KEYS:
+        nested = step.get(key)
+        if isinstance(nested, list):
+            for child in nested:
+                if isinstance(child, dict):
+                    _record_sources_recursively(child, source, sources)
+    cases = step.get("cases")
+    if isinstance(cases, dict):
+        for case_steps in cases.values():
+            if isinstance(case_steps, list):
+                for child in case_steps:
+                    if isinstance(child, dict):
+                        _record_sources_recursively(child, source, sources)
+
+
+def _remove_sources_recursively(
+    step: dict[str, Any],
+    sources: dict[str, str],
+) -> None:
+    """Remove source entries for a step and all its nested child steps.
+
+    Traverses the same nesting keys as ``_record_sources_recursively``.
+    """
+    step_id = step.get("id")
+    if isinstance(step_id, str):
+        sources.pop(step_id, None)
+    for key in _NESTED_LIST_KEYS:
+        nested = step.get(key)
+        if isinstance(nested, list):
+            for child in nested:
+                if isinstance(child, dict):
+                    _remove_sources_recursively(child, sources)
+    cases = step.get("cases")
+    if isinstance(cases, dict):
+        for case_steps in cases.values():
+            if isinstance(case_steps, list):
+                for child in case_steps:
+                    if isinstance(child, dict):
+                        _remove_sources_recursively(child, sources)
+
+
 def apply_edit(
     steps: list[dict[str, Any]],
     edit: OverlayEdit,
@@ -207,30 +262,33 @@ def merge_steps(
             if location is not None:
                 parent_list, index = location
                 removed_step = parent_list[index]
-                removed_id = removed_step.get("id") if isinstance(removed_step, dict) else None
                 del parent_list[index]
-                if isinstance(removed_id, str):
-                    sources.pop(removed_id, None)
+                if isinstance(removed_step, dict):
+                    _remove_sources_recursively(removed_step, sources)
             continue
 
         # For replace/insert_*, the anchor survives. Only the highest-priority
         # replace is applied; lower-priority replaces on the same anchor are
         # skipped. Inserts are applied in merge order.
-        if winning_edit.operation == "replace":
-            winning_layer, _ = edits[-1]
-            steps, composed, replaced_id = apply_edit(steps, winning_edit, winning_layer.source)
-            if isinstance(replaced_id, str):
-                sources.pop(replaced_id, None)
-            if composed is not None:
-                sources[composed.step_id] = composed.source
-
+        #
+        # Inserts must be applied *before* the winning replace: if the replace
+        # changes the step ID, ``find_step`` can no longer locate the original
+        # anchor and the inserts would raise.
         for layer, edit in edits:
             if edit.operation in ("insert_after", "insert_before"):
                 steps, composed, replaced_id = apply_edit(steps, edit, layer.source)
                 if replaced_id is not None:
                     sources.pop(replaced_id, None)
                 if composed is not None:
-                    sources[composed.step_id] = composed.source
+                    _record_sources_recursively(edit.step, composed.source, sources)
+
+        if winning_edit.operation == "replace":
+            winning_layer, _ = edits[-1]
+            steps, composed, replaced_id = apply_edit(steps, winning_edit, winning_layer.source)
+            if isinstance(replaced_id, str):
+                sources.pop(replaced_id, None)
+            if composed is not None:
+                _record_sources_recursively(winning_edit.step, composed.source, sources)
 
     attribution = _build_attribution(steps, sources)
     return steps, attribution
