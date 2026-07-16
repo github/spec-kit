@@ -6369,6 +6369,22 @@ class TestPresetSkills:
             "side effect of probing for provenance (#2948)"
         )
 
+    def test_infer_legacy_skill_provenance_skips_invalid_utf8(
+        self, project_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skill_dir = (
+            project_dir / ".claude" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(b"\xff")
+
+        manager = PresetManager(project_dir)
+
+        assert manager._infer_legacy_skill_provenance(
+            ["speckit-specify"], "some-pack", "claude"
+        ) == {"claude": ["speckit-specify"]}
+
     def test_remove_infers_legacy_flat_list_provenance_without_prior_rescaffold(
         self, project_dir, temp_dir
     ):
@@ -7285,6 +7301,33 @@ class TestPresetSkills:
         assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
         assert (skill_dir / "SKILL.md").is_symlink()
 
+    def test_symlinked_skill_file_rejected_on_restore(
+        self, project_dir, temp_dir
+    ):
+        """Restoration must not follow a symlinked SKILL.md destination."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        (core_commands / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+        skill_dir = (
+            project_dir / ".claude" / "skills" / "speckit-specify"
+        )
+        skill_dir.mkdir(parents=True)
+        outside_file = temp_dir / "outside-restoration.md"
+        outside_file.write_text("do-not-touch", encoding="utf-8")
+        (skill_dir / "SKILL.md").symlink_to(outside_file)
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(ValueError):
+            manager._unregister_skills_in_dir(
+                ["speckit-specify"], skill_dir.parent, "claude"
+            )
+
+        assert outside_file.read_text(encoding="utf-8") == "do-not-touch"
+        assert (skill_dir / "SKILL.md").is_symlink()
+
     def test_symlinked_skill_file_rejected_on_override_reconcile(
         self, project_dir, temp_dir
     ):
@@ -7364,6 +7407,29 @@ class TestPresetSkills:
         assert is_safe("foo/bar") is False
         assert is_safe("foo/..") is False
         assert is_safe("../foo") is False
+
+    def test_unregister_skills_rejects_unknown_agent_provenance(
+        self, project_dir
+    ):
+        """Unknown registry agent keys must not fall back to shared skills."""
+        shared_skills_dir = project_dir / ".agents" / "skills"
+        skill_dir = self._create_skill(
+            shared_skills_dir, "speckit-specify", "user-owned content"
+        )
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        (core_commands / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+
+        manager = PresetManager(project_dir)
+        manager._unregister_skills(
+            {"unknown": ["speckit-specify"]}, project_dir
+        )
+
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\nuser-owned content\n"
+        )
 
     def test_unregister_skills_in_dir_rejects_absolute_registry_name(
         self, project_dir

@@ -2580,7 +2580,7 @@ class PresetManager:
                     continue
                 try:
                     content = skill_file.read_text(encoding="utf-8")
-                except OSError:
+                except (OSError, UnicodeDecodeError):
                     continue
                 frontmatter, _ = registrar.parse_frontmatter(content)
                 skill_metadata = frontmatter.get("metadata")
@@ -2645,8 +2645,11 @@ class PresetManager:
         touched; directories that don't exist or fail validation are
         skipped rather than raising.
         """
+        from ..agents import CommandRegistrar
         from ..shared_infra import _ensure_safe_shared_directory
 
+        if agent_name not in CommandRegistrar.AGENT_CONFIGS:
+            return None
         skills_dir = self._resolve_agent_skills_dir(agent_name)
         validation_root = self._skills_validation_root(skills_dir)
         if validation_root is None:
@@ -2885,6 +2888,7 @@ class PresetManager:
         from .. import SKILL_DESCRIPTIONS
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
+        from ..shared_infra import _write_shared_text
 
         # Locate core command templates from the project's installed templates
         core_templates_dir = self.project_root / ".specify" / "templates" / "commands"
@@ -2973,7 +2977,7 @@ class PresetManager:
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )
-                skill_file.write_text(skill_content, encoding="utf-8")
+                _write_shared_text(skills_dir, skill_file, skill_content)
                 continue
 
             extension_restore = extension_restore_index.get(skill_name)
@@ -3021,7 +3025,7 @@ class PresetManager:
                     skill_content = integration.post_process_skill_content(
                         skill_content
                     )
-                skill_file.write_text(skill_content, encoding="utf-8")
+                _write_shared_text(skills_dir, skill_file, skill_content)
             else:
                 # No core or extension template — remove the skill entirely
                 shutil.rmtree(skill_subdir)
