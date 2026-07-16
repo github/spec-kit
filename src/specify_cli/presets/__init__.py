@@ -2738,7 +2738,7 @@ class PresetManager:
     def _unregister_skills(
         self,
         registered_skills: Union[Dict[str, List[str]], List[str]],
-        preset_dir: Path,
+        preset_dir: Union[Path, str],
     ) -> Dict[Path, tuple[Optional[str], List[str]]]:
         """Restore original SKILL.md files after a preset is removed.
 
@@ -2767,6 +2767,8 @@ class PresetManager:
         """
         if not registered_skills:
             return {}
+
+        pack_id = preset_dir if isinstance(preset_dir, str) else preset_dir.name
 
         if isinstance(registered_skills, dict):
             from .. import load_init_options
@@ -2809,7 +2811,12 @@ class PresetManager:
                 renderer_agent = (
                     active_agent if active_agent in agents else sorted(agents)[0]
                 )
-                self._unregister_skills_in_dir(group["names"], skills_dir, renderer_agent)
+                self._unregister_skills_in_dir(
+                    group["names"],
+                    skills_dir,
+                    renderer_agent,
+                    pack_id=pack_id,
+                )
                 restored[skills_dir] = (
                     renderer_agent,
                     list(group["names"]),
@@ -2834,7 +2841,12 @@ class PresetManager:
             for name in registered_skills
             if self._is_safe_registry_skill_name(name)
         ]
-        self._unregister_skills_in_dir(safe_names, skills_dir, selected_ai)
+        self._unregister_skills_in_dir(
+            safe_names,
+            skills_dir,
+            selected_ai,
+            pack_id=pack_id,
+        )
         return {skills_dir: (selected_ai, safe_names)}
 
     def _delete_agent_preset_skills(
@@ -2875,7 +2887,12 @@ class PresetManager:
                 shutil.rmtree(skill_subdir)
 
     def _unregister_skills_in_dir(
-        self, skill_names: List[str], skills_dir: Path, selected_ai: Optional[str]
+        self,
+        skill_names: List[str],
+        skills_dir: Path,
+        selected_ai: Optional[str],
+        *,
+        pack_id: Optional[str] = None,
     ) -> None:
         """Restore original SKILL.md files within a single skills directory.
 
@@ -2933,6 +2950,20 @@ class PresetManager:
             if not skill_file.is_file():
                 # Only manage directories that contain the expected skill entrypoint.
                 continue
+            if pack_id is not None:
+                try:
+                    current_content = skill_file.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                current_frontmatter, _ = registrar.parse_frontmatter(current_content)
+                current_metadata = current_frontmatter.get("metadata")
+                current_source = (
+                    current_metadata.get("source")
+                    if isinstance(current_metadata, dict)
+                    else None
+                )
+                if current_source != f"preset:{pack_id}":
+                    continue
 
             # Try to find the core command template
             core_file = core_templates_dir / f"{short_name}.md" if core_templates_dir.exists() else None

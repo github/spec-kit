@@ -7431,6 +7431,30 @@ class TestPresetSkills:
             "---\nname: speckit-specify\n---\n\nuser-owned content\n"
         )
 
+    def test_unregister_legacy_fallback_skips_non_owned_skill(
+        self, project_dir
+    ):
+        """Legacy fallback provenance must not overwrite a user-owned skill."""
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skill_dir = self._create_skill(
+            skills_dir, "speckit-specify", "user-owned content"
+        )
+        core_commands = project_dir / ".specify" / "templates" / "commands"
+        (core_commands / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+
+        manager = PresetManager(project_dir)
+        manager._unregister_skills(
+            ["speckit-specify"], "removed-preset"
+        )
+
+        assert (skill_dir / "SKILL.md").read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\nuser-owned content\n"
+        )
+
     def test_unregister_skills_in_dir_rejects_absolute_registry_name(
         self, project_dir
     ):
