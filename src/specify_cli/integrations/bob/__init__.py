@@ -144,9 +144,31 @@ class BobIntegration(IntegrationBase):
             ),
         ]
 
-    def is_skills_mode(self, parsed_options: dict[str, Any] | None = None) -> bool:
-        """Bob is skills-first; ``--legacy-commands`` opts out."""
-        return not (parsed_options or {}).get("legacy_commands", False)
+    def is_skills_mode(
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> bool:
+        """Bob is skills-first; ``--legacy-commands`` opts out.
+
+        On ``use`` / ``switch`` / ``upgrade`` no ``setup()`` runs and
+        *parsed_options* is typically empty (existing Bob 1.x installs never
+        stored ``legacy_commands``).  Defaulting to skills there would rewrite
+        such a project's ``ai_skills`` flag to ``True`` even though it still
+        only contains ``.bob/commands/`` — silently switching its extension /
+        command-reference handling to the skills layout.  So when a
+        *project_root* is supplied, an already-installed legacy layout
+        (``.bob/commands/`` present, ``.bob/skills/`` absent) is preserved
+        until an explicit upgrade actually creates ``.bob/skills/``.  A fresh
+        project (no ``.bob/`` layout yet) still defaults to skills.
+        """
+        if (parsed_options or {}).get("legacy_commands", False):
+            return False
+        if project_root is not None:
+            bob_dir = Path(project_root) / ".bob"
+            if (bob_dir / "commands").is_dir() and not (bob_dir / "skills").is_dir():
+                return False
+        return True
 
     def effective_invoke_separator(
         self, parsed_options: dict[str, Any] | None = None

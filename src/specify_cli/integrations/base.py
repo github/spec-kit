@@ -191,7 +191,11 @@ class IntegrationBase(ABC):
         cfg = self.registrar_config or {}
         return cfg.get("invoke_separator", self.invoke_separator)
 
-    def is_skills_mode(self, parsed_options: dict[str, Any] | None = None) -> bool:
+    def is_skills_mode(
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> bool:
         """Return whether this integration scaffolds skills for these options.
 
         This is the single, well-defined hook the shared init/install/upgrade
@@ -199,6 +203,12 @@ class IntegrationBase(ABC):
         render skill invocations.  It replaces ad-hoc ``isinstance`` /
         ``getattr(self, "_skills_mode", ...)`` probing so an integration's
         internal representation never has to leak into shared dispatch code.
+
+        *project_root* is optional context for the ``use`` / ``switch`` /
+        ``upgrade`` path, where no ``setup()`` runs and *parsed_options* may be
+        empty: dual-mode integrations can consult the already-installed
+        on-disk layout to avoid silently migrating an existing project to a
+        different mode.  The default ignores it.
 
         The default (command-first integrations, e.g. Copilot's default
         layout) is skills mode only when ``--skills`` was requested.
@@ -1413,7 +1423,11 @@ class SkillsIntegration(IntegrationBase):
 
     invoke_separator = "-"
 
-    def is_skills_mode(self, parsed_options: dict[str, Any] | None = None) -> bool:
+    def is_skills_mode(
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> bool:
         """Skills-native integrations scaffold skills unconditionally."""
         return True
 

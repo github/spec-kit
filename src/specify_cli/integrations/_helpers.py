@@ -284,7 +284,7 @@ def _update_init_options_for_integration(
     # opt-out such as Bob override it). This keeps shared code free of
     # ``isinstance`` / ``_skills_mode`` probing. Passing parsed_options lets it
     # work on the ``use``/``install`` path where no setup() runs (issue #3550).
-    if integration.is_skills_mode(parsed_options):
+    if integration.is_skills_mode(parsed_options, project_root=project_root):
         opts["ai_skills"] = True
     else:
         opts.pop("ai_skills", None)

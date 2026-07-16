@@ -533,7 +533,7 @@ def register(app: typer.Typer) -> None:
                     "speckit_version": get_speckit_version(),
                 }
                 if resolved_integration.is_skills_mode(
-                    integration_parsed_options or None
+                    integration_parsed_options or None, project_root=project_path
                 ):
                     init_opts["ai_skills"] = True
                 save_init_options(project_path, init_opts)
@@ -682,7 +682,7 @@ def register(app: typer.Typer) -> None:
             step_num = 2
 
         _is_skills_integration = resolved_integration.is_skills_mode(
-            integration_parsed_options or None
+            integration_parsed_options or None, project_root=project_path
         )
 
         codex_skill_mode = selected_ai == "codex" and _is_skills_integration

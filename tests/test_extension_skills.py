@@ -978,6 +978,7 @@ class TestExtensionSkillRegistration:
             ("codex", "$speckit-plan"),
             ("kimi", "/skill:speckit-plan"),
             ("zcode", "$speckit-plan"),
+            ("bob", "/speckit-plan"),
         ],
     )
     def test_skill_registration_resolves_command_ref_tokens(

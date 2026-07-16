@@ -84,6 +84,38 @@ class TestBobIsSkillsModeHook:
         bob = get_integration("bob")
         assert bob.is_skills_mode({"legacy_commands": True}) is False
 
+    def test_existing_commands_layout_preserved_on_use(self, tmp_path):
+        """Regression (review #3415): an existing Bob 1.x project (only
+        ``.bob/commands/`` on disk, no stored ``legacy_commands``) must NOT be
+        treated as skills mode when re-resolved with a project_root, so
+        ``use``/``switch``/``upgrade`` never silently migrate it to skills.
+        """
+        bob = get_integration("bob")
+        (tmp_path / ".bob" / "commands").mkdir(parents=True)
+        # No parsed options at all — the pre-existing-install scenario.
+        assert bob.is_skills_mode(None, project_root=tmp_path) is False
+        assert bob.is_skills_mode({}, project_root=tmp_path) is False
+
+    def test_existing_skills_layout_stays_skills_on_use(self, tmp_path):
+        """A ``.bob/skills/`` project resolves to skills mode."""
+        bob = get_integration("bob")
+        (tmp_path / ".bob" / "skills").mkdir(parents=True)
+        assert bob.is_skills_mode(None, project_root=tmp_path) is True
+
+    def test_fresh_project_defaults_to_skills_with_project_root(self, tmp_path):
+        """A project with no ``.bob/`` layout yet still defaults to skills."""
+        bob = get_integration("bob")
+        assert bob.is_skills_mode(None, project_root=tmp_path) is True
+
+    def test_explicit_legacy_flag_wins_over_disk_layout(self, tmp_path):
+        """An explicit ``--legacy-commands`` overrides on-disk detection."""
+        bob = get_integration("bob")
+        (tmp_path / ".bob" / "skills").mkdir(parents=True)
+        assert (
+            bob.is_skills_mode({"legacy_commands": True}, project_root=tmp_path)
+            is False
+        )
+
     def test_effective_invoke_separator_tracks_mode(self):
         bob = get_integration("bob")
         assert bob.effective_invoke_separator(None) == "-"
@@ -470,3 +502,46 @@ class TestBobRegistrarConfig:
             "legacy Bob extension commands must render /speckit.specify (dot)"
         )
         assert "/speckit-specify" not in rendered
+
+
+class TestBobUseFlowPreservesLegacyLayout:
+    """Regression (review #3415): re-activating an existing Bob 1.x project
+    must not silently migrate it to the skills layout.
+    """
+
+    def test_update_init_options_preserves_legacy_commands_project(self, tmp_path):
+        """``use``/``switch``/``upgrade`` on a ``.bob/commands``-only project
+        (no stored ``legacy_commands``) must not write ``ai_skills=True``.
+        """
+        from specify_cli.integrations._helpers import (
+            _update_init_options_for_integration,
+        )
+        from specify_cli import load_init_options
+
+        # Existing Bob 1.x project: legacy commands dir on disk, no ai_skills.
+        (tmp_path / ".bob" / "commands").mkdir(parents=True)
+        bob = get_integration("bob")
+
+        # Simulate the use/switch path: no parsed options were stored.
+        _update_init_options_for_integration(tmp_path, bob, parsed_options=None)
+
+        opts = load_init_options(tmp_path)
+        assert opts.get("ai") == "bob"
+        assert opts.get("ai_skills") is not True, (
+            "an existing .bob/commands project must stay legacy on re-activation"
+        )
+
+    def test_update_init_options_keeps_skills_project_as_skills(self, tmp_path):
+        """A ``.bob/skills`` project stays skills on re-activation."""
+        from specify_cli.integrations._helpers import (
+            _update_init_options_for_integration,
+        )
+        from specify_cli import load_init_options
+
+        (tmp_path / ".bob" / "skills").mkdir(parents=True)
+        bob = get_integration("bob")
+
+        _update_init_options_for_integration(tmp_path, bob, parsed_options=None)
+
+        opts = load_init_options(tmp_path)
+        assert opts.get("ai_skills") is True
