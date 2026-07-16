@@ -13,6 +13,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,48 +73,180 @@ class WorkflowRegistry:
         self.registry_path = self.workflows_dir / self.REGISTRY_FILE
         self.data = self._load()
 
+    def _has_symlinked_parent(self) -> bool:
+        """Return True if any directory under .specify/workflows is a symlink."""
+        current = self.project_root
+        for part in (".specify", "workflows"):
+            current = current / part
+            if current.is_symlink():
+                return True
+        return False
+
     def _load(self) -> dict[str, Any]:
         """Load registry from disk or create default."""
+        default_registry: dict[str, Any] = {
+            "schema_version": self.SCHEMA_VERSION,
+            "workflows": {},
+        }
+        # Defense-in-depth: refuse to read through symlinked parents or a
+        # symlinked registry file. Unlike StepRegistry (read-only best-effort
+        # elsewhere), a fabricated empty registry here is not safe: read-only
+        # callers (notably the bundler's remove path) query is_installed()
+        # before ever writing, and would otherwise conclude an installed
+        # workflow is absent, skip removing it, then delete the bundle
+        # record -- leaving the workflow untracked but still on disk. Fail
+        # closed here just like the unreadable-file case below.
+        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+            raise OSError(
+                f"Refusing to read workflow registry at {self.registry_path}: "
+                "a parent directory or the registry file itself is a symlink"
+            )
         if self.registry_path.exists():
             try:
                 with open(self.registry_path, encoding="utf-8") as f:
                     data = json.load(f)
-                # Validate shape: must be a dict with a dict "workflows" field,
-                # otherwise every method that indexes data["workflows"] crashes.
-                # Mirrors StepRegistry._load.
-                if not isinstance(data, dict):
-                    return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
-                if not isinstance(data.get("workflows"), dict):
-                    data["workflows"] = {}
-                return data
-            except (json.JSONDecodeError, ValueError, OSError, UnicodeError):
-                # Corrupted registry file — reset to default
-                return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
-        return {"schema_version": self.SCHEMA_VERSION, "workflows": {}}
+            except OSError as exc:
+                # The real data may still be intact on disk. Fail closed at
+                # construction rather than fabricating an empty registry that
+                # a read-only caller could mistake for "nothing installed."
+                raise OSError(
+                    f"Failed to read workflow registry at {self.registry_path}: {exc}"
+                ) from exc
+            except (
+                json.JSONDecodeError,
+                ValueError,
+                UnicodeError,
+            ) as exc:
+                raise OSError(
+                    f"Workflow registry at {self.registry_path} is corrupted: "
+                    f"{exc}"
+                ) from exc
+            # Validate shape: must be a dict with a dict "workflows" field.
+            if not isinstance(data, dict):
+                raise OSError(
+                    f"Workflow registry at {self.registry_path} is corrupted: "
+                    "top-level value must be an object"
+                )
+            if not isinstance(data.get("workflows"), dict):
+                raise OSError(
+                    f"Workflow registry at {self.registry_path} is corrupted: "
+                    "'workflows' must be an object"
+                )
+            return data
+        return default_registry
 
     def save(self) -> None:
-        """Persist registry to disk."""
+        """Persist registry to disk atomically."""
+        # Refuse to write through symlinked parents (mirrors StepRegistry.save
+        # and the CLI-level _reject_unsafe_dir guard).
+        if self._has_symlinked_parent() or self.registry_path.is_symlink():
+            raise OSError(
+                "Refusing to write workflow registry through a symlinked path."
+            )
         self.workflows_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        # Unique, exclusive temp then replace: a failed dump cannot truncate
+        # the registry, a pre-created symlink cannot redirect the write, and
+        # concurrent CLI processes cannot collide on the same temp path.
+        fd, tmp = tempfile.mkstemp(
+            dir=str(self.registry_path.parent),
+            prefix=f".{self.registry_path.name}.",
+            suffix=".tmp",
+        )
+        try:
+            # Write through a duplicate so the exclusive mkstemp descriptor
+            # stays open for fd-based metadata updates and inode verification.
+            with os.fdopen(os.dup(fd), "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2)
+            # mkstemp creates the temp file at 0600. A pre-existing registry
+            # may be shared more permissively (e.g. 0640/0644); preserve its
+            # mode across the replace so a save doesn't silently lock other
+            # project users out. A brand-new registry has no prior mode to
+            # preserve, so mkstemp's secure 0600 default stands. Mirrors
+            # _utils.py's atomic_write_json (best-effort; data safety over
+            # metadata preservation).
+            try:
+                if self.registry_path.exists():
+                    existing_stat = self.registry_path.stat(
+                        follow_symlinks=False
+                    )
+                    if stat.S_ISREG(existing_stat.st_mode) and hasattr(
+                        os, "fchmod"
+                    ):
+                        os.fchmod(fd, stat.S_IMODE(existing_stat.st_mode))
+                    if stat.S_ISREG(existing_stat.st_mode) and hasattr(
+                        os, "fchown"
+                    ):
+                        try:
+                            os.fchown(
+                                fd, existing_stat.st_uid, existing_stat.st_gid
+                            )
+                        except PermissionError:
+                            pass
+            except OSError:
+                pass
+            staged_stat = os.stat(tmp, follow_symlinks=False)
+            open_stat = os.fstat(fd)
+            if (
+                not stat.S_ISREG(staged_stat.st_mode)
+                or staged_stat.st_dev != open_stat.st_dev
+                or staged_stat.st_ino != open_stat.st_ino
+            ):
+                raise OSError(
+                    "Refusing to replace workflow registry: "
+                    "staged file changed before commit"
+                )
+            os.close(fd)
+            fd = -1
+            os.replace(tmp, self.registry_path)
+        except BaseException:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def add(self, workflow_id: str, metadata: dict[str, Any]) -> None:
         """Add or update an installed workflow entry."""
         from datetime import datetime, timezone
 
-        existing = self.data["workflows"].get(workflow_id, {})
+        raw_existing = self.data["workflows"].get(workflow_id)
+        had_entry = workflow_id in self.data["workflows"]
+        # Corrupted-but-parseable registries may hold non-dict entries.
+        existing = raw_existing if isinstance(raw_existing, dict) else {}
         metadata["installed_at"] = existing.get(
             "installed_at", datetime.now(timezone.utc).isoformat()
         )
         metadata["updated_at"] = datetime.now(timezone.utc).isoformat()
         self.data["workflows"][workflow_id] = metadata
-        self.save()
+        try:
+            self.save()
+        except (OSError, TypeError, ValueError):
+            # Roll back the in-memory mutation so a later successful save
+            # cannot persist metadata for a write that failed.
+            if had_entry:
+                self.data["workflows"][workflow_id] = raw_existing
+            else:
+                del self.data["workflows"][workflow_id]
+            raise
 
     def remove(self, workflow_id: str) -> bool:
         """Remove an installed workflow entry. Returns True if found."""
         if workflow_id in self.data["workflows"]:
+            removed_entry = self.data["workflows"][workflow_id]
             del self.data["workflows"][workflow_id]
-            self.save()
+            try:
+                self.save()
+            except (OSError, TypeError, ValueError):
+                # Roll back the in-memory deletion so a save failure can't
+                # desync this instance from the untouched file on disk,
+                # mirroring add()'s rollback-on-save-failure.
+                self.data["workflows"][workflow_id] = removed_entry
+                raise
             return True
         return False
 
@@ -165,8 +299,20 @@ class WorkflowCatalog:
         """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
         from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # "https://[::1") makes urlparse / hostname access raise ValueError.
+        # This validator's contract is to raise WorkflowValidationError for a
+        # bad URL, so surface that rather than leaking a raw ValueError past the
+        # command handler (which only catches WorkflowValidationError). Mirrors
+        # specify_cli.catalogs (#3435).
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise WorkflowValidationError(
+                f"Catalog URL is malformed: {url}"
+            ) from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
@@ -174,7 +320,7 @@ class WorkflowCatalog:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.hostname:
+        if not hostname:
             raise WorkflowValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -340,15 +486,26 @@ class WorkflowCatalog:
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_catalog_url(url: str) -> None:
-            parsed = urlparse(url)
-            is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            # A malformed authority (e.g. "https://[::1") makes urlparse /
+            # hostname access raise ValueError; treat it as a refused fetch
+            # rather than leaking a raw ValueError (this also validates the
+            # post-redirect resp.geturl(), so a hostile redirect target cannot
+            # crash the fetch either).
+            try:
+                parsed = urlparse(url)
+                hostname = parsed.hostname
+            except ValueError:
+                raise WorkflowCatalogError(
+                    f"Refusing to fetch catalog from malformed URL: {url}"
+                ) from None
+            is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
             if parsed.scheme != "https" and not (
                 parsed.scheme == "http" and is_localhost
             ):
                 raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
-            if not parsed.hostname:
+            if not hostname:
                 raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )
@@ -435,6 +592,7 @@ class WorkflowCatalog:
         self,
         query: str | None = None,
         tag: str | None = None,
+        author: str | None = None,
     ) -> list[dict[str, Any]]:
         """Search workflows across all configured catalogs."""
         merged = self._get_merged_workflows()
@@ -458,6 +616,10 @@ class WorkflowCatalog:
                 tags = raw_tags if isinstance(raw_tags, list) else []
                 normalized_tags = [t.lower() for t in tags if isinstance(t, str)]
                 if tag.lower() not in normalized_tags:
+                    continue
+            if author:
+                wf_author = wf_data.get("author", "")
+                if not isinstance(wf_author, str) or wf_author.lower() != author.lower():
                     continue
             results.append(wf_data)
         return results
@@ -782,8 +944,20 @@ class StepCatalog:
         """Validate that a catalog URL uses HTTPS (localhost HTTP allowed)."""
         from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # "https://[::1") makes urlparse / hostname access raise ValueError.
+        # This validator's contract is to raise StepValidationError for a bad
+        # URL, so surface that rather than leaking a raw ValueError past the
+        # command handler (which only catches StepValidationError). Mirrors
+        # specify_cli.catalogs (#3435).
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise StepValidationError(
+                f"Catalog URL is malformed: {url}"
+            ) from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
@@ -791,7 +965,7 @@ class StepCatalog:
                 f"Catalog URL must use HTTPS (got {parsed.scheme}://). "
                 "HTTP is only allowed for localhost."
             )
-        if not parsed.hostname:
+        if not hostname:
             raise StepValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -957,15 +1131,26 @@ class StepCatalog:
         from specify_cli.authentication.http import open_url as _open_url
 
         def _validate_url(url: str) -> None:
-            parsed = urlparse(url)
-            is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+            # A malformed authority (e.g. "https://[::1") makes urlparse /
+            # hostname access raise ValueError; treat it as a refused fetch
+            # rather than leaking a raw ValueError (this also validates the
+            # post-redirect resp.geturl(), so a hostile redirect target cannot
+            # crash the fetch either).
+            try:
+                parsed = urlparse(url)
+                hostname = parsed.hostname
+            except ValueError:
+                raise StepCatalogError(
+                    f"Refusing to fetch catalog from malformed URL: {url}"
+                ) from None
+            is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
             if parsed.scheme != "https" and not (
                 parsed.scheme == "http" and is_localhost
             ):
                 raise StepCatalogError(
                     f"Refusing to fetch catalog from non-HTTPS URL: {url}"
                 )
-            if not parsed.hostname:
+            if not hostname:
                 raise StepCatalogError(
                     f"Refusing to fetch catalog from URL with no hostname: {url}"
                 )

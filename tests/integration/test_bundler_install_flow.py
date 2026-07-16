@@ -11,7 +11,7 @@ import pytest
 
 from specify_cli.bundler import BundlerError
 from specify_cli.bundler.models.manifest import BundleManifest
-from specify_cli.bundler.models.records import load_records
+from specify_cli.bundler.models.records import load_records, records_path
 from specify_cli.bundler.services.installer import install_bundle, remove_bundle
 from specify_cli.bundler.services.resolver import resolve_install_plan
 from tests.bundler_helpers import FakeInstaller, make_project, valid_manifest_dict
@@ -97,6 +97,212 @@ def test_remove_unknown_bundle_errors(tmp_path: Path):
         remove_bundle(tmp_path, "ghost", FakeInstaller())
 
 
+def test_remove_converts_raw_installer_exception_to_bundler_error(tmp_path: Path):
+    """A raw exception from a primitive installer (e.g. an OSError from an
+    unreadable workflow registry surfacing through _WorkflowKindManager's
+    fail-closed construction) must not propagate uncaught out of
+    remove_bundle: install_bundle already converts any non-BundlerError
+    exception into a clean BundlerError, but remove_bundle had no such
+    conversion, so the CLI's `bundle remove` (which only catches
+    BundlerError) would let a raw exception through with no clean message
+    and no removal side effects should occur either."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    def boom(project_root, component):
+        raise OSError("workflow registry unreadable")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "is_installed", boom)
+        with pytest.raises(BundlerError):
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    # No removal side effects: the bundle record must still be present.
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_partial_failure_message_reflects_partial_state(tmp_path: Path):
+    """A failure can occur after earlier components in the same bundle have
+    already been removed from disk. The bundle record is left unchanged
+    (save_records never runs on this path), so it still claims the bundle
+    fully installed -- but the message must not claim "No changes were
+    recorded" when components were, in fact, already removed."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    real_remove = installer.remove
+    calls = {"n": 0}
+
+    def remove_then_fail(project_root, component):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real_remove(project_root, component)
+        raise OSError("disk full")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "remove", remove_then_fail)
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no changes were recorded" not in message.lower()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_bundler_error_from_installer_after_partial_removal_reports_partial_state(
+    tmp_path: Path,
+):
+    """If the primitive installer itself raises BundlerError (not a raw/
+    unexpected exception) after an earlier component in the same bundle was
+    already removed, the surfaced message must still carry the same
+    partial-removal detail as the generic-exception path -- a bare
+    ``except BundlerError: raise`` would re-raise the installer's original
+    message verbatim with no mention that the project may now be partially
+    uninstalled."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    real_remove = installer.remove
+    calls = {"n": 0}
+
+    def remove_then_raise_bundler_error(project_root, component):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real_remove(project_root, component)
+        raise BundlerError("kind manager refused removal")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "remove", remove_then_raise_bundler_error)
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no changes were recorded" not in message.lower()
+    assert "kind manager refused removal" in message
+    assert "partially uninstalled" in message.lower()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_bundler_error_from_installer_with_zero_removed_reports_no_changes(
+    tmp_path: Path,
+):
+    """When the installer raises BundlerError before anything was actually
+    removed, the message should not misleadingly claim partial state."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    def boom(project_root, component):
+        raise BundlerError("kind manager unavailable")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "is_installed", boom)
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no components were removed" in message.lower()
+    assert "no removal was attempted" in message.lower()
+    assert "partially uninstalled" not in message.lower()
+    assert "kind manager unavailable" in message
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_zero_completed_removals_still_cautions_about_partial_changes(
+    tmp_path: Path,
+):
+    """`result.uninstalled` only records a component after its `remove()`
+    call returns successfully. If the very first `remove()` call itself
+    raises after already deleting some files, zero completed removals are
+    recorded even though the project may already be partially uninstalled --
+    the zero-count message must not claim "No components were removed" as
+    an unqualified fact; it must caution that the failing component may
+    have made partial changes before raising."""
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+
+    def boom(project_root, component):
+        # Simulates a remove() that deletes some files before raising --
+        # from the caller's perspective this component was never recorded
+        # as completed, but disk state may already be partially changed.
+        raise OSError("disk full partway through removal")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(installer, "remove", boom)
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no components were removed" in message.lower()
+    assert "partial" in message.lower()
+    assert "partially uninstalled" in message.lower()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_record_save_failure_reports_partial_state(tmp_path: Path):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    record_file = records_path(tmp_path)
+    original_record = record_file.read_bytes()
+
+    def fail_dump(_data, handle, *_args, **_kwargs):
+        handle.write('{"partial":')
+        handle.flush()
+        raise OSError("disk full")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "specify_cli.bundler.lib.yamlio.json.dump",
+            fail_dump,
+        )
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "disk full" in message
+    assert "partially uninstalled" in message.lower()
+    assert installer.installed == set()
+    assert record_file.read_bytes() == original_record
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
+def test_remove_record_save_failure_without_remove_attempt_is_not_partial(
+    tmp_path: Path,
+):
+    make_project(tmp_path)
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    installer = FakeInstaller()
+    install_bundle(tmp_path, _plan(manifest), installer, manifest=manifest)
+    installer.installed.clear()
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "specify_cli.bundler.services.installer.save_records",
+            fail_save,
+        )
+        with pytest.raises(BundlerError) as exc_info:
+            remove_bundle(tmp_path, "demo-bundle", installer)
+
+    message = str(exc_info.value)
+    assert "no removal was attempted" in message.lower()
+    assert "partially uninstalled" not in message.lower()
+    assert {r.bundle_id for r in load_records(tmp_path)} == {"demo-bundle"}
+
+
 def test_remove_reports_uninstalled_not_installed(tmp_path: Path):
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
@@ -128,7 +334,7 @@ def test_remove_counts_only_components_actually_removed(tmp_path: Path):
 
     assert len(result.uninstalled) == 3
     assert (gone.kind, gone.id) not in installer.remove_calls
-    assert gone in result.skipped
+    assert gone not in result.skipped
     make_project(tmp_path)
     manifest = BundleManifest.from_dict(valid_manifest_dict())
     installer = FakeInstaller()

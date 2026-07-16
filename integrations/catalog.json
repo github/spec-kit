@@ -282,6 +282,15 @@
       "repository": "https://github.com/github/spec-kit",
       "tags": ["cli"]
     },
+    "grok": {
+      "id": "grok",
+      "name": "Grok Build",
+      "version": "1.0.0",
+      "description": "xAI Grok Build CLI skills-based integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["cli", "skills", "xai"]
+    },
     "hermes": {
       "id": "hermes",
       "name": "Hermes Agent",

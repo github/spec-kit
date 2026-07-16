@@ -653,6 +653,19 @@ class TestCreateFeatureBash:
         assert data["BRANCH_NAME"] == "000-zero"
         assert data["FEATURE_NUM"] == "000"
 
+    def test_negative_number_rejected(self, tmp_path: Path):
+        """A negative --number is rejected. Pins the canonical behavior the
+        PowerShell twin must mirror; a negative value would otherwise format to
+        e.g. '-005' and produce a branch name starting with '-', which git
+        refuses (refs cannot begin with a dash)."""
+        project = _setup_project(tmp_path)
+        result = _run_bash(
+            "create-new-feature-branch.sh", project,
+            "--json", "--dry-run", "--number", "-5", "--short-name", "neg", "Negative feature",
+        )
+        assert result.returncode != 0
+        assert "--number must be a non-negative integer" in result.stderr
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestCreateFeaturePowerShell:
@@ -973,6 +986,21 @@ class TestCreateFeaturePowerShell:
         data = json.loads(json_line[-1])
         assert data["BRANCH_NAME"] == "000-zero"
         assert data["FEATURE_NUM"] == "000"
+
+    def test_negative_number_rejected(self, tmp_path: Path):
+        """A negative -Number is rejected, matching the bash/Python twins'
+        '--number must be a non-negative integer'. Regression guard: -Number is
+        [long], so PowerShell binds '-5' as -5 rather than rejecting it the way
+        the twins' `^[0-9]+$` check does; the value would then format via
+        '{0:000}' to '-005' and yield a branch name starting with '-', which
+        git refuses (refs cannot begin with a dash)."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-Json", "-DryRun", "-Number", "-5", "-ShortName", "neg", "Negative feature",
+        )
+        assert result.returncode != 0
+        assert "--number must be a non-negative integer" in result.stderr
 
 
 # ── auto-commit.sh Tests ─────────────────────────────────────────────────────

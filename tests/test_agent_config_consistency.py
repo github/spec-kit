@@ -25,6 +25,7 @@ ISSUE_TEMPLATE_AGENT_KEYS = [
     "gemini",
     "copilot",
     "goose",
+    "grok",
     "hermes",
     "bob",
     "junie",

@@ -58,6 +58,96 @@ def _error_console(json_output: bool):
     return err_console if json_output else console
 
 
+def _open_workflow_registry(project_root: Path, out=None):
+    """Construct a WorkflowRegistry, exiting cleanly on an unreadable file.
+
+    WorkflowRegistry fails closed (raises OSError) at construction when its
+    file can't be read, rather than falling back to an empty registry a
+    caller could mistake for "nothing installed". Every CLI command that
+    opens a registry needs this same clean-error boundary.
+    """
+    from .catalog import WorkflowRegistry
+
+    try:
+        return WorkflowRegistry(project_root)
+    except OSError as exc:
+        (out or console).print(
+            f"[red]Error:[/red] Failed to read workflow registry: {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+
+
+def _require_enabled_workflow(
+    registry_root: Path, workflow_id: str, out: Any
+) -> bool:
+    """Fail closed for corrupted or explicitly disabled registry entries."""
+    metadata = _open_workflow_registry(registry_root, out).get(workflow_id)
+    if metadata is not None and not isinstance(metadata, dict):
+        out.print(
+            f"[red]Error:[/red] Registry entry for "
+            f"'{_escape_markup(workflow_id)}' is corrupted"
+        )
+        raise typer.Exit(1)
+    if isinstance(metadata, dict) and not metadata.get("enabled", True):
+        out.print(
+            f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is disabled. "
+            f"Enable with: specify workflow enable {_escape_markup(workflow_id)}"
+        )
+        raise typer.Exit(1)
+    return metadata is not None
+
+
+def _path_has_symlink_component(path: Path) -> bool:
+    """Return whether any component of an absolute path is a symlink."""
+    absolute = Path(os.path.abspath(path))
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _same_existing_path(left: Path, right: Path) -> bool:
+    """Return whether two existing paths identify the same filesystem entry."""
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return left == right
+
+
+def _resolve_run_owner_root(
+    installed_registry_root: str | None, project_root: Path
+) -> Path:
+    """Determine which project's registry gates resuming a run.
+
+    ``installed_registry_root`` is only ever persisted when the run's
+    installed workflow genuinely belongs to a *different* project than the
+    one whose ``runs/`` directory holds this run's own state (a direct
+    external workflow-file invocation) -- see ``workflow_run``. The common
+    case (an installed workflow run from its own project) stores ``None``,
+    so a later project rename/move is transparently picked up here by
+    falling back to the *current* ``project_root`` instead of a stale
+    absolute path baked in at run start.
+
+    A persisted cross-project root that no longer exists cannot be safely
+    rediscovered and must fail closed instead of consulting the unrelated
+    project that happens to store the run state.
+    """
+    if installed_registry_root:
+        candidate = Path(installed_registry_root)
+        if (
+            candidate.is_absolute()
+            and not _path_has_symlink_component(candidate)
+            and candidate.is_dir()
+        ):
+            return candidate
+        raise ValueError(
+            "Installed workflow owner is unavailable; cannot safely resume"
+        )
+    return project_root
+
+
 def _parse_input_values(
     input_values: list[str] | None, *, json_output: bool = False
 ) -> dict[str, Any]:
@@ -104,15 +194,266 @@ def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     )
 
 
+def _scan_for_workflow_owner(parts: tuple[str, ...]) -> int | None:
+    """Find the *nearest* (innermost) ``.specify/workflows/<id>`` owner in
+    *parts*, scanning from the end of the path.
+
+    Scanning from the end (rather than stopping at the first match from the
+    start) matters for a project nested beneath an unrelated outer path that
+    happens to reuse the same ``.specify``/``workflows`` segment names: the
+    first-from-start match would pick the outer directory and the wrong
+    workflow ID, silently missing the real (inner) owner's disabled check.
+
+    Returns the index of the owning ``.specify`` segment, or ``None`` if no
+    owner segment is present.
+    """
+    for i in range(len(parts) - 3, -1, -1):
+        if (
+            parts[i].casefold() == ".specify"
+            and parts[i + 1].casefold() == "workflows"
+        ):
+            return i
+    return None
+
+
+def _expand_first_symlink_target(path: Path) -> Path | None:
+    """Expand one symlink component while preserving the remaining path."""
+    parts = path.parts
+    current = Path(path.anchor) if path.is_absolute() else Path()
+    start = 1 if path.is_absolute() else 0
+    for index in range(start, len(parts)):
+        current = current / parts[index]
+        if not current.is_symlink():
+            continue
+        try:
+            target = Path(os.readlink(current))
+        except OSError:
+            return None
+        if not target.is_absolute():
+            target = current.parent / target
+        expanded = target.joinpath(*parts[index + 1 :])
+        return Path(os.path.normpath(str(expanded.absolute())))
+    return None
+
+
+def _resolve_installed_workflow_ownership(
+    source_path: Path, err
+) -> tuple[Path | None, str | None]:
+    """Map a direct ``workflow.yml`` *source_path* back to the installed
+    workflow (``registry_root``, ``registered_id``) it belongs to, if any.
+
+    A registered path can point at installed storage three ways, all of
+    which must receive the same registry disabled-check:
+
+    1. Lexically: the path's own (symlink-preserving) segments identify
+       ``.specify/workflows/<id>`` -- collapsing ``..``/``.`` but
+       never resolving symlinks, so a symlinked ``workflow.yml`` leaf (or
+       symlinked ``<id>`` directory) inside the owned tree is caught by the
+       inward-symlink refusal below rather than silently followed.
+    2. Via an intermediate alias target whose lexical path identifies
+       ``.specify/workflows/<id>`` before a symlinked storage ancestor is
+       resolved away.
+    3. Via an outward-pointing alias whose fully resolved target lands
+       inside legitimate installed storage, even though the raw invocation
+       path has no ownership segments.
+
+    Returns ``(None, None)`` when neither applies -- a genuinely standalone
+    external workflow file, which is allowed to run unchecked.
+    """
+    def ownership_for(candidate: Path) -> tuple[Path, str] | None:
+        parts = candidate.parts
+        i = _scan_for_workflow_owner(parts)
+        if i is None:
+            return None
+        registry_root = (
+            Path(*parts[:i]) if i else Path(candidate.anchor or ".")
+        )
+        candidate_specify = Path(*parts[: i + 1])
+        candidate_workflows = Path(*parts[: i + 2])
+        candidate_id_dir = Path(*parts[: i + 3])
+        canonical_specify = registry_root / ".specify"
+        canonical_workflows = canonical_specify / "workflows"
+        # The path-derived registry_root here may differ from the cwd's
+        # project_root already checked by _reject_unsafe_workflow_storage
+        # (e.g. this path points into another project entirely, or this
+        # project's own .specify is itself a symlink to an
+        # attacker-controlled tree) -- check it explicitly rather than
+        # trusting that cwd-scoped guard, and don't rely on
+        # WorkflowRegistry's own symlinked-parent handling as the safety
+        # signal here: it fails closed by raising OSError at construction
+        # time (see catalog.py's _load), but that surfaces as an opaque
+        # exception rather than this guard's clean, specific CLI error for
+        # the actual owning project root.
+        _reject_unsafe_dir(canonical_specify, ".specify")
+        _reject_unsafe_dir(canonical_workflows, ".specify/workflows")
+        _reject_unsafe_dir(candidate_specify, ".specify")
+        _reject_unsafe_dir(candidate_workflows, ".specify/workflows")
+        try:
+            if not os.path.samefile(candidate_specify, canonical_specify):
+                return None
+            if not os.path.samefile(
+                candidate_workflows, canonical_workflows
+            ):
+                return None
+        except OSError:
+            return None
+        registry = _open_workflow_registry(registry_root, err)
+        registered_id = None
+        for workflow_id in registry.list():
+            if (
+                not isinstance(workflow_id, str)
+                or workflow_id in _RESERVED_WORKFLOW_IDS
+                or not _WORKFLOW_ID_PATTERN.fullmatch(workflow_id)
+            ):
+                continue
+            try:
+                if os.path.samefile(
+                    candidate_id_dir,
+                    canonical_workflows / workflow_id,
+                ):
+                    registered_id = workflow_id
+                    break
+            except OSError:
+                continue
+        if registered_id is None:
+            return None
+        # A legitimately installed workflow's own directory tree never
+        # contains a symlink (workflow add/remove both refuse one at
+        # install time); one appearing here means the file actually loaded
+        # below would not be the file this ownership match is based on, so
+        # refuse rather than silently mismatch.
+        for k in range(i + 2, len(parts) + 1):
+            if Path(*parts[:k]).is_symlink():
+                err.print(
+                    "[red]Error:[/red] Refusing to run: "
+                    f".specify/workflows/{_escape_markup(registered_id)} "
+                    "contains a symlinked path component"
+                )
+                raise typer.Exit(1)
+        return registry_root, registered_id
+
+    lexical = Path(os.path.normpath(str(source_path.absolute())))
+    ownership = ownership_for(lexical)
+    if ownership is not None:
+        return ownership
+
+    # Inspect each intermediate symlink target before fully resolving it.
+    # Full resolution can erase .specify/workflows ownership segments when
+    # one of those storage directories is itself a symlink.
+    candidate = lexical
+    seen = {candidate}
+    for _ in range(40):
+        expanded = _expand_first_symlink_target(candidate)
+        if expanded is None or expanded in seen:
+            break
+        ownership = ownership_for(expanded)
+        if ownership is not None:
+            return ownership
+        seen.add(expanded)
+        candidate = expanded
+
+    # A fully resolved target may still land in legitimate installed
+    # storage through an unrelated-looking alias.
+    try:
+        resolved = source_path.resolve(strict=False)
+    except (OSError, RuntimeError):
+        return None, None
+    if resolved == lexical:
+        # Nothing on this path is a symlink; already covered above.
+        return None, None
+    ownership = ownership_for(resolved)
+    return ownership if ownership is not None else (None, None)
+
+
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"runs", "steps"})
+
+
+def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
+    """Reject insecure redirects before they are followed."""
+    import urllib.error
+    from ipaddress import ip_address
+    from urllib.parse import urlparse
+
+    def _is_loopback_http(url: str) -> bool:
+        parsed = urlparse(url)
+        if parsed.scheme != "http":
+            return False
+        host = parsed.hostname or ""
+        if host == "localhost":
+            return True
+        try:
+            return ip_address(host).is_loopback
+        except ValueError:
+            return False
+
+    if urlparse(new_url).scheme == "https":
+        return
+    if _is_loopback_http(old_url) and _is_loopback_http(new_url):
+        return
+    raise urllib.error.URLError(
+        "redirect target must use HTTPS; loopback HTTP may only redirect from loopback HTTP"
+    )
+
+
+# Workflow YAML definitions are small step/metadata text, not binaries, so
+# this is generous headroom against a malicious or misbehaving server -- not
+# a ceiling any legitimate workflow definition should ever approach.
+_MAX_WORKFLOW_YAML_BYTES = 5 * 1024 * 1024  # 5 MiB
+_DOWNLOAD_CHUNK_SIZE = 65536
+
+
+def _read_response_within_limit(response, max_bytes: int | None = None) -> bytes:
+    """Read *response* fully, enforcing *max_bytes* via bounded streaming.
+
+    A ``Content-Length`` header is checked up front to fail fast, but it is
+    never trusted alone: the actual bytes read are also counted as they
+    stream in, so a chunked or ``Content-Length``-less response that lies
+    about (or omits) its size still cannot exceed the limit.
+
+    ``max_bytes`` defaults to ``None`` (resolved to the module-level
+    ``_MAX_WORKFLOW_YAML_BYTES`` at call time, not at function-definition
+    time) so tests can override the effective limit via monkeypatching the
+    module attribute.
+    """
+    if max_bytes is None:
+        max_bytes = _MAX_WORKFLOW_YAML_BYTES
+    content_length = None
+    getheader = getattr(response, "getheader", None)
+    if callable(getheader):
+        try:
+            raw_length = getheader("Content-Length")
+        except Exception:
+            raw_length = None
+        if raw_length is not None:
+            try:
+                content_length = int(raw_length)
+            except (TypeError, ValueError):
+                content_length = None
+    if content_length is not None and content_length > max_bytes:
+        raise ValueError(
+            f"response declared {content_length} bytes, exceeding the "
+            f"{max_bytes}-byte workflow size limit"
+        )
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = response.read(_DOWNLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError(f"response exceeds the {max_bytes}-byte workflow size limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _validate_workflow_id_or_exit(workflow_id: str) -> None:
     """Validate that ``workflow_id`` is a safe installed-workflow directory name."""
     if (
         workflow_id in _RESERVED_WORKFLOW_IDS
-        or not _WORKFLOW_ID_PATTERN.match(workflow_id)
+        or not _WORKFLOW_ID_PATTERN.fullmatch(workflow_id)
     ):
         console.print(
             f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
@@ -168,6 +509,368 @@ def _safe_workflow_id_dir(workflows_dir: Path, workflow_id: str) -> Path:
         )
         raise typer.Exit(1)
     return dest_dir
+
+
+class _StagedWorkflowFile:
+    """Exclusive staging inode kept open until its atomic commit."""
+
+    def __init__(self, path: Path, fd: int) -> None:
+        self.path = path
+        self.fd = fd
+
+    def _write(self, chunks) -> None:
+        os.lseek(self.fd, 0, os.SEEK_SET)
+        os.ftruncate(self.fd, 0)
+        for chunk in chunks:
+            view = memoryview(chunk)
+            while view:
+                written = os.write(self.fd, view)
+                if written <= 0:
+                    raise OSError("Failed to write staged workflow file")
+                view = view[written:]
+
+    def write_bytes(self, data: bytes) -> None:
+        self._write((data,))
+
+    def verify_path(self) -> None:
+        import stat
+
+        try:
+            path_stat = self.path.stat(follow_symlinks=False)
+            open_stat = os.fstat(self.fd)
+        except OSError as exc:
+            raise OSError(
+                "Staged workflow file changed before commit"
+            ) from exc
+        if (
+            not stat.S_ISREG(path_stat.st_mode)
+            or path_stat.st_dev != open_stat.st_dev
+            or path_stat.st_ino != open_stat.st_ino
+        ):
+            raise OSError("Staged workflow file changed before commit")
+
+    def set_mode(self, mode: int) -> None:
+        if hasattr(os, "fchmod"):
+            os.fchmod(self.fd, mode)
+
+    def close(self) -> None:
+        if self.fd < 0:
+            return
+        fd, self.fd = self.fd, -1
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _stage_workflow_file(
+    dest_dir: Path, *, use_project_file_mode: bool = False
+) -> _StagedWorkflowFile:
+    """Reserve a same-directory staging file so new/updated workflow.yml
+    content can be written and validated without ever touching (and risking
+    truncating) an existing destination file before the final atomic swap.
+    Shared by the local-install and catalog-install paths.
+
+    If dest_dir did not already exist, this call creates it; if mkstemp then
+    fails (disk full/EMFILE/quota), the freshly-created directory is removed
+    again via a guarded rmdir (never a broad rmtree, so any concurrently
+    written content is left untouched) before the original OSError is
+    re-raised unchanged. A pre-existing dest_dir (reinstall) is never
+    touched by this cleanup. For catalog-created files,
+    ``use_project_file_mode`` recreates the reserved path exclusively with
+    mode 0666 so the process umask supplies the normal project-file mode.
+    The final descriptor remains open so callers write to and verify the
+    reserved inode rather than reopening a replaceable pathname."""
+    import tempfile
+
+    created_dir = not dest_dir.exists()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    fd = -1
+    staged_file: Path | None = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=dest_dir, prefix=".workflow.yml.", suffix=".tmp")
+        staged_file = Path(tmp_name)
+        if use_project_file_mode:
+            os.close(fd)
+            fd = -1
+            staged_file.unlink()
+            flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(staged_file, flags, 0o666)
+    except OSError:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if staged_file is not None:
+            try:
+                staged_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if created_dir:
+            try:
+                dest_dir.rmdir()
+            except OSError as cleanup_exc:
+                console.print(
+                    "[yellow]Warning:[/yellow] Failed to remove incomplete "
+                    f"workflow directory: {_escape_markup(str(cleanup_exc))}"
+                )
+        raise
+    assert staged_file is not None
+    return _StagedWorkflowFile(staged_file, fd)
+
+
+@contextlib.contextmanager
+def _workflow_install_transaction(project_root: Path):
+    """Serialize workflow file swaps with their registry updates."""
+    from ..shared_infra import _ensure_safe_shared_directory
+
+    lock_dir = project_root / ".specify"
+    try:
+        _ensure_safe_shared_directory(
+            project_root, lock_dir, context="workflow install lock directory"
+        )
+    except ValueError as exc:
+        raise OSError(str(exc)) from exc
+    lock_file = lock_dir / ".workflow-install.lock"
+    if lock_file.is_symlink():
+        raise OSError(f"Refusing to use symlinked workflow install lock: {lock_file}")
+
+    flags = os.O_RDWR | os.O_CREAT
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(lock_file, flags, 0o600)
+    try:
+        if lock_file.is_symlink():
+            raise OSError(
+                f"Refusing to use symlinked workflow install lock: {lock_file}"
+            )
+        if os.name == "nt":
+            import errno
+            import msvcrt
+            import time
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            while True:
+                os.lseek(fd, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                        raise
+                    time.sleep(0.05)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def _commit_workflow_file(
+    staged_file: Path | _StagedWorkflowFile,
+    dest_file: Path,
+    existed_before: bool,
+) -> Path | None:
+    """Atomically swap ``staged_file`` onto ``dest_file``. If a prior file
+    existed, it is first renamed to a unique sibling (path returned) so a
+    later failure (e.g. registry.add()) can restore it via rename instead
+    of a content rewrite -- the destination is never truncated/overwritten
+    in place. If the second rename fails after the first succeeded, the
+    prior file is put back immediately so dest_file is never left simply
+    missing."""
+    staged_path = (
+        staged_file.path
+        if isinstance(staged_file, _StagedWorkflowFile)
+        else staged_file
+    )
+    if isinstance(staged_file, _StagedWorkflowFile):
+        staged_file.verify_path()
+    if existed_before and dest_file.exists():
+        import tempfile
+
+        dest_state = dest_file.stat(follow_symlinks=False)
+        mode = dest_state.st_mode & 0o7777
+        if isinstance(staged_file, _StagedWorkflowFile):
+            staged_file.set_mode(mode)
+        else:
+            staged_path.chmod(mode)
+        fd, backup_name = tempfile.mkstemp(
+            dir=dest_file.parent,
+            prefix=f".{dest_file.name}.",
+            suffix=".bak",
+        )
+        try:
+            placeholder_state = os.fstat(fd)
+        finally:
+            os.close(fd)
+        backup_file = Path(backup_name)
+        try:
+            os.replace(dest_file, backup_file)
+        except BaseException as move_exc:
+            backup_state = None
+            try:
+                backup_state = backup_file.stat(follow_symlinks=False)
+            except OSError:
+                pass
+            if (
+                backup_state is not None
+                and os.path.samestat(dest_state, backup_state)
+            ):
+                try:
+                    os.replace(backup_file, dest_file)
+                except OSError as restore_exc:
+                    raise OSError(
+                        f"Failed to stage prior workflow ({move_exc}); failed "
+                        f"to restore it from {backup_file} ({restore_exc}). "
+                        f"The prior workflow remains at {backup_file}."
+                    ) from restore_exc
+            elif (
+                backup_state is not None
+                and os.path.samestat(placeholder_state, backup_state)
+            ):
+                try:
+                    backup_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
+        try:
+            if isinstance(staged_file, _StagedWorkflowFile):
+                staged_file.verify_path()
+                # Windows cannot replace an open file. Verify through the
+                # exclusive descriptor, then close immediately before rename.
+                staged_file.close()
+            os.replace(staged_path, dest_file)
+        except BaseException as commit_exc:
+            try:
+                os.replace(backup_file, dest_file)
+            except OSError as restore_exc:
+                raise OSError(
+                    f"Failed to commit workflow file ({commit_exc}); failed "
+                    f"to restore the prior workflow from {backup_file} "
+                    f"({restore_exc}). The prior workflow remains at "
+                    f"{backup_file}."
+                ) from restore_exc
+            raise
+        return backup_file
+    if isinstance(staged_file, _StagedWorkflowFile):
+        staged_file.verify_path()
+        staged_file.close()
+    os.replace(staged_path, dest_file)
+    return None
+
+
+def _discard_staged_workflow_file(
+    staged_file: Path | _StagedWorkflowFile,
+    dest_dir: Path,
+    existed_before: bool,
+) -> None:
+    """Clean up after a pre-commit failure (staged_file was never swapped
+    onto dest_file): remove the staged file, and for a fresh install (no
+    prior directory) remove the now-orphaned dest_dir too. A genuine
+    removal failure must propagate (not be swallowed) so the safe wrapper
+    below can warn instead of silently leaving an orphan; a dest_dir
+    already absent is not itself an error."""
+    staged_path = (
+        staged_file.path
+        if isinstance(staged_file, _StagedWorkflowFile)
+        else staged_file
+    )
+    if isinstance(staged_file, _StagedWorkflowFile):
+        staged_file.close()
+    staged_path.unlink(missing_ok=True)
+    if not existed_before and dest_dir.exists():
+        import errno
+
+        try:
+            dest_dir.rmdir()
+        except OSError as exc:
+            # Another concurrent install may already have committed content
+            # into this once-fresh directory. Never recursively delete it.
+            if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                raise
+
+
+def _rollback_committed_workflow_file(
+    dest_file: Path, dest_dir: Path, existed_before: bool, backup_file: Path | None
+) -> None:
+    """Undo a successful _commit_workflow_file swap after a later failure
+    (registry.add()): restore the prior file via rename, remove the newly
+    committed file for a reinstall over a pre-existing empty directory
+    (no backup), or remove the new file and then its directory when empty
+    for a fresh install. A genuine removal failure must propagate (not be
+    swallowed) so the safe wrapper below can warn instead of silently
+    leaving an orphan; a dest_dir already absent is not itself an error."""
+    if backup_file is not None:
+        os.replace(backup_file, dest_file)
+    else:
+        dest_file.unlink(missing_ok=True)
+        if not existed_before and dest_dir.exists():
+            import errno
+
+            try:
+                dest_dir.rmdir()
+            except OSError as exc:
+                # Another installer may have staged a sibling before taking
+                # the transaction lock. Preserve it rather than recursively
+                # deleting the shared directory during this rollback.
+                if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                    raise
+
+
+def _safe_discard_staged_workflow_file(
+    staged_file: Path | _StagedWorkflowFile,
+    dest_dir: Path,
+    existed_before: bool,
+) -> None:
+    """Guarded wrapper: a cleanup failure must be reported, never crash or
+    silently mask the original install error that triggered it."""
+    try:
+        _discard_staged_workflow_file(staged_file, dest_dir, existed_before)
+    except OSError as exc:
+        console.print(
+            "[yellow]Warning:[/yellow] Failed to clean up incomplete workflow "
+            f"install: {_escape_markup(str(exc))}"
+        )
+
+
+def _safe_rollback_committed_workflow_file(
+    dest_file: Path, dest_dir: Path, existed_before: bool, backup_file: Path | None
+) -> None:
+    """Guarded wrapper: a rollback failure must be reported, never crash or
+    silently claim the prior workflow file was restored when it wasn't."""
+    try:
+        _rollback_committed_workflow_file(dest_file, dest_dir, existed_before, backup_file)
+    except OSError as exc:
+        console.print(
+            "[yellow]Warning:[/yellow] Failed to restore prior workflow file "
+            f"after registry update failure: {_escape_markup(str(exc))}"
+        )
+
+
+def _discard_committed_backup_file(backup_file: Path | None) -> None:
+    """Once registry.add()/registry.remove() has durably succeeded after a
+    _commit_workflow_file() swap, the renamed-aside prior file is no longer
+    needed for rollback -- it must be discarded, not left as a permanent
+    orphan sibling that every future reinstall would silently accumulate or
+    clobber. A cleanup failure here must not turn an already-successful
+    install into a reported failure; it's reported as a warning, consistent
+    with workflow_remove's post-commit cleanup semantics. A fresh install
+    (backup_file is None) is a no-op."""
+    if backup_file is None:
+        return
+    try:
+        backup_file.unlink(missing_ok=True)
+    except OSError as exc:
+        console.print(
+            "[yellow]Warning:[/yellow] Workflow installed, but its backup file "
+            f"could not be cleaned up: {_escape_markup(str(exc))}. Remove it "
+            f"manually: {_escape_markup(str(backup_file))}"
+        )
 
 
 # Root helper re-fetched at call time so test monkeypatching of
@@ -348,6 +1051,32 @@ def workflow_run(
         engine.on_step_start = lambda sid, label: console.print(f"  \u25b8 [{sid}] {label} \u2026")
 
     err = _error_console(json_output)
+
+    registered_id: str | None = None
+    registry_root = project_root
+    if not is_file_source:
+        # Reject path-equivalent spellings ("align-wf/", "align-wf/.") that
+        # would miss the registry lookup yet still load the installed file,
+        # bypassing the disabled check below.
+        if source in _RESERVED_WORKFLOW_IDS or not _WORKFLOW_ID_PATTERN.fullmatch(source):
+            err.print(
+                f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(source))}"
+            )
+            raise typer.Exit(1)
+        registered_id = source
+    else:
+        # A direct YAML path may still point at an installed workflow's own
+        # file (lexically, or via a symlinked alias pointing into installed
+        # storage); map it back to its owning project and ID so the
+        # disabled check below can't be silently bypassed.
+        owner_root, owner_id = _resolve_installed_workflow_ownership(source_path, err)
+        if owner_id is not None:
+            registry_root = owner_root
+            registered_id = owner_id
+
+    if registered_id is not None:
+        _require_enabled_workflow(registry_root, registered_id, err)
+
     try:
         definition = engine.load_workflow(source_path if is_file_source else source)
     except FileNotFoundError:
@@ -362,7 +1091,7 @@ def workflow_run(
     if errors:
         err.print("[red]Workflow validation failed:[/red]")
         for verr in errors:
-            err.print(f"  • {verr}")
+            err.print(f"  • {_escape_markup(str(verr))}")
         raise typer.Exit(1)
 
     # Parse inputs
@@ -374,7 +1103,26 @@ def workflow_run(
 
     try:
         with _stdout_to_stderr_when(json_output):
-            state = engine.execute(definition, inputs)
+            state = engine.execute(
+                definition,
+                inputs,
+                installed_workflow_id=registered_id,
+                # Only persist an explicit root when the installed workflow
+                # genuinely belongs to a *different* project than the one
+                # whose runs/ directory holds this run's own state (a
+                # direct external workflow-file invocation) -- the common
+                # case (an installed workflow run from its own project)
+                # leaves this None so resume re-derives the owning root
+                # from wherever the project currently is, transparently
+                # surviving a project rename/move instead of baking in a
+                # stale absolute path at run start.
+                installed_registry_root=(
+                    registry_root.resolve(strict=True)
+                    if registered_id
+                    and not _same_existing_path(registry_root, project_root)
+                    else None
+                ),
+            )
     except ValueError as exc:
         err.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
@@ -416,7 +1164,7 @@ def workflow_resume(
 ):
     """Resume a paused or failed workflow run."""
     from . import load_custom_steps
-    from .engine import WorkflowEngine
+    from .engine import RunState, WorkflowEngine
 
     project_root = _require_specify_project()
     load_custom_steps(project_root)
@@ -427,6 +1175,48 @@ def workflow_resume(
     inputs = _parse_input_values(input_values, json_output=json_output)
     err = _error_console(json_output)
 
+    # Pre-load the persisted run state so a run started from an installed
+    # workflow that has since been disabled cannot resume unchecked --
+    # engine.resume() replays the run directly from disk with no registry
+    # awareness at all, which would otherwise bypass the same disabled
+    # guard `workflow run` enforces. Runs without installed_workflow_id
+    # (a direct/non-installed source, or a run persisted before this field
+    # existed) are unaffected and resume exactly as before.
+    try:
+        pre_state = RunState.load(run_id, project_root)
+    except FileNotFoundError:
+        err.print(f"[red]Error:[/red] Run not found: {run_id}")
+        raise typer.Exit(1)
+    except ValueError as exc:
+        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1)
+    except OSError as exc:
+        err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
+        raise typer.Exit(1)
+
+    if pre_state.installed_workflow_id is not None:
+        try:
+            owner_root = _resolve_run_owner_root(
+                pre_state.installed_registry_root, project_root
+            )
+        except ValueError as exc:
+            err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
+        _require_enabled_workflow(
+            owner_root, pre_state.installed_workflow_id, err
+        )
+    elif not pre_state.installed_origin_tracked:
+        if _require_enabled_workflow(
+            project_root, pre_state.workflow_id, err
+        ):
+            pre_state.installed_workflow_id = pre_state.workflow_id
+        pre_state.installed_origin_tracked = True
+        try:
+            pre_state.save()
+        except OSError as exc:
+            err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
+
     try:
         with _stdout_to_stderr_when(json_output):
             state = engine.resume(run_id, inputs or None)
@@ -434,10 +1224,10 @@ def workflow_resume(
         err.print(f"[red]Error:[/red] Run not found: {run_id}")
         raise typer.Exit(1)
     except ValueError as exc:
-        err.print(f"[red]Error:[/red] {exc}")
+        err.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
     except Exception as exc:
-        err.print(f"[red]Resume failed:[/red] {exc}")
+        err.print(f"[red]Resume failed:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if json_output:
@@ -477,6 +1267,9 @@ def workflow_status(
             state = RunState.load(run_id, project_root)
         except FileNotFoundError:
             console.print(f"[red]Error:[/red] Run not found: {run_id}")
+            raise typer.Exit(1)
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
             raise typer.Exit(1)
 
         if json_output:
@@ -556,10 +1349,8 @@ def workflow_status(
 @workflow_app.command("list")
 def workflow_list():
     """List installed workflows."""
-    from .catalog import WorkflowRegistry
-
     project_root = _require_specify_project()
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
     installed = registry.list()
 
     if not installed:
@@ -570,36 +1361,61 @@ def workflow_list():
 
     console.print("\n[bold cyan]Installed Workflows:[/bold cyan]\n")
     for wf_id, wf_data in installed.items():
-        console.print(f"  [bold]{wf_data.get('name', wf_id)}[/bold] ({wf_id}) v{wf_data.get('version', '?')}")
+        safe_id = _escape_markup(wf_id)
+        if not isinstance(wf_data, dict):
+            console.print(f"  [yellow]Warning:[/yellow] Skipping corrupted registry entry '{safe_id}'.\n")
+            continue
+        marker = "" if wf_data.get("enabled", True) else " [red]\\[disabled][/red]"
+        name = _escape_markup(str(wf_data.get("name", wf_id)))
+        version = _escape_markup(str(wf_data.get("version", "?")))
+        console.print(f"  [bold]{name}[/bold] ({safe_id}) v{version}{marker}")
         desc = wf_data.get("description", "")
         if desc:
-            console.print(f"    {desc}")
+            console.print(f"    {_escape_markup(str(desc))}")
         console.print()
 
 
 @workflow_app.command("add")
 def workflow_add(
     source: str = typer.Argument(..., help="Workflow ID, URL, or local path"),
+    dev: bool = typer.Option(False, "--dev", help="Install from a local workflow YAML file or directory"),
+    from_url: str | None = typer.Option(None, "--from", help="Install from a custom URL"),
 ):
     """Install a workflow from catalog, URL, or local path."""
-    from .catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
     from .engine import WorkflowDefinition
 
     project_root = _require_specify_project()
-    registry = WorkflowRegistry(project_root)
+    _open_workflow_registry(project_root)
     workflows_dir = project_root / ".specify" / "workflows"
+    # With --from, source names the expected workflow ID: validate it up
+    # front so a URL/path/typo fails without a network fetch.
+    if from_url is not None and not dev:
+        _validate_workflow_id_or_exit(source)
     # Reject a symlinked .specify / .specify/workflows before any write so an
     # install can't escape the project root (covers the local, URL, and
     # catalog branches below — all write beneath workflows_dir).
     _reject_unsafe_dir(project_root / ".specify", ".specify")
     _reject_unsafe_dir(workflows_dir, ".specify/workflows")
 
-    def _validate_and_install_local(yaml_path: Path, source_label: str) -> None:
+    def _validate_and_install_local(
+        yaml_path: Path, source_label: str, expected_id: str | None = None
+    ) -> None:
         """Validate and install a workflow from a local YAML file."""
         try:
-            definition = WorkflowDefinition.from_yaml(yaml_path)
-        except (ValueError, yaml.YAMLError) as exc:
-            console.print(f"[red]Error:[/red] Invalid workflow YAML: {exc}")
+            with yaml_path.open("rb") as source_file:
+                source_mode = os.fstat(source_file.fileno()).st_mode & 0o7777
+                source_content = source_file.read()
+            definition = WorkflowDefinition.from_string(
+                source_content.decode("utf-8")
+            )
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to read workflow YAML: "
+                f"{_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+        except (UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
+            console.print(f"[red]Error:[/red] Invalid workflow YAML: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         # Non-string ids (e.g. unquoted ``id: 123`` or ``id: 0``) fall through
         # to validate_workflow below, which reports a typed error instead of
@@ -618,31 +1434,144 @@ def workflow_add(
         if errors:
             console.print("[red]Error:[/red] Workflow validation failed:")
             for err in errors:
-                console.print(f"  \u2022 {err}")
+                console.print(f"  \u2022 {_escape_markup(str(err))}")
+            raise typer.Exit(1)
+
+        if expected_id is not None and definition.id != expected_id:
+            console.print(
+                f"[red]Error:[/red] Workflow ID in YAML ({_escape_markup(repr(definition.id))}) "
+                f"does not match the requested workflow ID ({_escape_markup(repr(expected_id))})."
+            )
             raise typer.Exit(1)
 
         dest_dir = _safe_workflow_id_dir(workflows_dir, definition.id)
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        import shutil
-        shutil.copy2(yaml_path, dest_dir / "workflow.yml")
-        registry.add(definition.id, {
-            "name": definition.name,
-            "version": definition.version,
-            "description": definition.description,
-            "source": source_label,
-        })
-        console.print(f"[green]✓[/green] Workflow '{definition.name}' ({definition.id}) installed")
+        dest_file = dest_dir / "workflow.yml"
+        existed_before = dest_dir.is_dir()
 
-    # Try as URL (http/https)
-    if source.startswith("http://") or source.startswith("https://"):
+        try:
+            staged_file = _stage_workflow_file(dest_dir)
+        except OSError as exc:
+            console.print(
+                f"[red]Error:[/red] Failed to install workflow "
+                f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+
+        try:
+            # Write the exact bytes parsed above so a concurrent source edit
+            # cannot desynchronize installed content from validated metadata.
+            staged_file.write_bytes(source_content)
+            staged_file.set_mode(source_mode)
+        except OSError as exc:
+            _safe_discard_staged_workflow_file(staged_file, dest_dir, existed_before)
+            console.print(
+                f"[red]Error:[/red] Failed to install workflow "
+                f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+
+        try:
+            transaction = _workflow_install_transaction(project_root)
+            with transaction:
+                transaction_existed_before = existed_before or dest_file.exists()
+                transaction_registry = _open_workflow_registry(project_root)
+                # Commit the staged copy onto dest_file via an atomic swap. A
+                # prior file is renamed aside so registry failure can restore it.
+                try:
+                    backup_file = _commit_workflow_file(
+                        staged_file, dest_file, transaction_existed_before
+                    )
+                except OSError as exc:
+                    _safe_discard_staged_workflow_file(
+                        staged_file, dest_dir, existed_before
+                    )
+                    console.print(
+                        f"[red]Error:[/red] Failed to install workflow "
+                        f"'{_escape_markup(definition.id)}': "
+                        f"{_escape_markup(str(exc))}"
+                    )
+                    raise typer.Exit(1)
+                try:
+                    entry = {
+                        "name": definition.name,
+                        "version": definition.version,
+                        "description": definition.description,
+                        "source": source_label,
+                    }
+                    existing = transaction_registry.get(definition.id)
+                    if isinstance(existing, dict) and not existing.get(
+                        "enabled", True
+                    ):
+                        entry["enabled"] = False
+                    transaction_registry.add(definition.id, entry)
+                except (OSError, TypeError, ValueError) as exc:
+                    _safe_rollback_committed_workflow_file(
+                        dest_file,
+                        dest_dir,
+                        transaction_existed_before,
+                        backup_file,
+                    )
+                    console.print(
+                        f"[red]Error:[/red] Failed to update workflow registry for "
+                        f"'{_escape_markup(definition.id)}': "
+                        f"{_escape_markup(str(exc))}"
+                    )
+                    raise typer.Exit(1)
+                # Registry update succeeded while the transaction lock is held.
+                _discard_committed_backup_file(backup_file)
+        except typer.Exit:
+            _safe_discard_staged_workflow_file(
+                staged_file, dest_dir, existed_before
+            )
+            raise
+        except OSError as exc:
+            _safe_discard_staged_workflow_file(staged_file, dest_dir, existed_before)
+            console.print(
+                f"[red]Error:[/red] Failed to lock workflow install "
+                f"'{_escape_markup(definition.id)}': {_escape_markup(str(exc))}"
+            )
+            raise typer.Exit(1)
+        console.print(
+            f"[green]✓[/green] Workflow '{_escape_markup(definition.name)}' "
+            f"({_escape_markup(definition.id)}) installed"
+        )
+
+    # Explicit local install (mirrors `extension add --dev`). --dev takes
+    # precedence over --from so a URL that would be ignored is never fetched.
+    if dev:
+        dev_path = Path(source).expanduser()
+        if dev_path.is_file() and dev_path.suffix in (".yml", ".yaml"):
+            _validate_and_install_local(dev_path, str(dev_path))
+            return
+        if dev_path.is_dir():
+            dev_wf_file = dev_path / "workflow.yml"
+            if not dev_wf_file.is_file():
+                console.print(f"[red]Error:[/red] No workflow.yml found in {_escape_markup(source)}")
+                raise typer.Exit(1)
+            _validate_and_install_local(dev_wf_file, str(dev_path))
+            return
+        console.print(
+            "[red]Error:[/red] --dev source must be a workflow YAML file or a "
+            f"directory containing workflow.yml: {_escape_markup(source)}"
+        )
+        raise typer.Exit(1)
+
+    # Try as URL (http/https) — either the positional source is a URL, or an
+    # explicit --from URL names where to fetch it (mirrors `extension add --from`).
+    download_url = (
+        from_url
+        if from_url is not None
+        else (source if source.startswith(("http://", "https://")) else None)
+    )
+    if download_url is not None:
         from ipaddress import ip_address
         from urllib.parse import urlparse
         from specify_cli.authentication.http import open_url as _open_url
 
         try:
-            parsed_src = urlparse(source)
+            parsed_src = urlparse(download_url)
         except ValueError:
-            console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(source)}")
+            console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(download_url)}")
             raise typer.Exit(1)
         src_host = parsed_src.hostname or ""
         src_loopback = src_host == "localhost"
@@ -656,20 +1585,52 @@ def workflow_add(
             console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
             raise typer.Exit(1)
 
+        if from_url is not None:
+            from rich.panel import Panel
+
+            safe_url = _escape_markup(from_url)
+            console.print()
+            console.print(
+                Panel(
+                    "[bold]You are installing a workflow from an external URL "
+                    "that is not\nlisted in any of your configured workflow "
+                    "catalogs.[/bold]\n\n"
+                    f"URL: {safe_url}\n\n"
+                    "Only install workflows from sources you trust.",
+                    title="[bold yellow]⚠ Untrusted Source[/bold yellow]",
+                    border_style="yellow",
+                    padding=(1, 2),
+                )
+            )
+            console.print()
+            if not typer.confirm("Continue with installation?", default=False):
+                console.print("Cancelled")
+                raise typer.Exit(0)
+
         from specify_cli._github_http import resolve_github_release_asset_api_url as _resolve_gh_asset
         from specify_cli.authentication.http import github_provider_hosts as _github_provider_hosts
 
         _wf_url_extra_headers = None
         _resolved_wf_url = _resolve_gh_asset(
-            source, _open_url, timeout=30, github_hosts=_github_provider_hosts()
+            download_url,
+            _open_url,
+            timeout=30,
+            github_hosts=_github_provider_hosts(),
+            redirect_validator=_reject_insecure_download_redirect,
         )
         if _resolved_wf_url:
-            source = _resolved_wf_url
+            download_url = _resolved_wf_url
             _wf_url_extra_headers = {"Accept": "application/octet-stream"}
 
         import tempfile
+        tmp_path: Path | None = None
         try:
-            with _open_url(source, timeout=30, extra_headers=_wf_url_extra_headers) as resp:
+            with _open_url(
+                download_url,
+                timeout=30,
+                extra_headers=_wf_url_extra_headers,
+                redirect_validator=_reject_insecure_download_redirect,
+            ) as resp:
                 final_url = resp.geturl()
                 final_parsed = urlparse(final_url)
                 final_host = final_parsed.hostname or ""
@@ -681,20 +1642,58 @@ def workflow_add(
                         # Redirect host is not an IP literal; keep loopback as determined above.
                         pass
                 if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
-                    console.print(f"[red]Error:[/red] URL redirected to non-HTTPS: {final_url}")
+                    console.print(
+                        f"[red]Error:[/red] URL redirected to non-HTTPS: {_escape_markup(final_url)}"
+                    )
                     raise typer.Exit(1)
                 with tempfile.NamedTemporaryFile(suffix=".yml", delete=False) as tmp:
-                    tmp.write(resp.read())
+                    # Assign tmp_path immediately: NamedTemporaryFile(delete=False)
+                    # creates the file on disk right away, before any bytes are
+                    # written, so a failure in the size-limited read below must
+                    # still be able to find and remove it.
                     tmp_path = Path(tmp.name)
+                    tmp.write(_read_response_within_limit(resp))
         except typer.Exit:
             raise
         except Exception as exc:
-            console.print(f"[red]Error:[/red] Failed to download workflow: {exc}")
+            if tmp_path is not None:
+                # A cleanup failure here must never replace/mask the
+                # original download error below with a raw, unhandled
+                # OSError -- warn about it and keep going, exactly like the
+                # later post-install finally cleanup does.
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError as cleanup_exc:
+                    console.print(
+                        "[yellow]Warning:[/yellow] Could not remove temporary "
+                        f"download file {_escape_markup(str(tmp_path))}: "
+                        f"{_escape_markup(str(cleanup_exc))}"
+                    )
+            console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
         try:
-            _validate_and_install_local(tmp_path, source)
+            # When installed via --from, the positional argument names the
+            # workflow the user expects — enforce it like the catalog branch.
+            _validate_and_install_local(
+                tmp_path,
+                download_url,
+                expected_id=source if from_url else None,
+            )
         finally:
-            tmp_path.unlink(missing_ok=True)
+            # Best-effort: _validate_and_install_local may already have
+            # committed the file + registry entry (success) or already
+            # raised its own clean typer.Exit (failure) by this point --
+            # either way, a cleanup OSError here must never mask that
+            # outcome or surface as its own unhandled failure. Warn instead,
+            # same as the committed-backup cleanup above.
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError as exc:
+                console.print(
+                    "[yellow]Warning:[/yellow] Could not remove temporary "
+                    f"download file {_escape_markup(str(tmp_path))}: "
+                    f"{_escape_markup(str(exc))}"
+                )
         return
 
     # Try as a local file/directory
@@ -705,40 +1704,86 @@ def workflow_add(
             return
         elif source_path.is_dir():
             wf_file = source_path / "workflow.yml"
-            if not wf_file.exists():
-                console.print(f"[red]Error:[/red] No workflow.yml found in {source}")
+            if not wf_file.is_file():
+                console.print(f"[red]Error:[/red] No workflow.yml found in {_escape_markup(source)}")
                 raise typer.Exit(1)
             _validate_and_install_local(wf_file, str(source_path))
             return
 
     # Try from catalog
+    _install_workflow_from_catalog(project_root, workflows_dir, source)
+
+
+def _install_workflow_from_catalog(
+    project_root: Path,
+    workflows_dir: Path,
+    workflow_id: str,
+    expected_version: str | None = None,
+    expected_installed_version: str | None = None,
+) -> None:
+    """Download, validate, and register a catalog workflow.
+
+    Shared by ``workflow add`` and ``workflow update``. Raises ``typer.Exit``
+    on any failure; the registry entry is only written on full success.
+    ``expected_version``, when given, rejects a downloaded workflow whose
+    version does not match the catalog version that triggered the install.
+    ``expected_installed_version``, when given by ``workflow update``, aborts
+    if another process changes the installed source or version before commit.
+    """
+    from .catalog import WorkflowCatalog, WorkflowCatalogError
+    from .engine import WorkflowDefinition
+
+    def versions_match(actual: object, expected: str) -> bool:
+        from packaging import version as pkg_version
+
+        try:
+            return pkg_version.Version(str(actual)) == pkg_version.Version(
+                expected
+            )
+        except pkg_version.InvalidVersion:
+            return str(actual) == expected
+
+    safe_wf_id = _escape_markup(workflow_id)
+
     catalog = WorkflowCatalog(project_root)
     try:
-        info = catalog.get_workflow_info(source)
+        info = catalog.get_workflow_info(workflow_id)
     except WorkflowCatalogError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if not info:
-        console.print(f"[red]Error:[/red] Workflow '{source}' not found in catalog")
+        console.print(f"[red]Error:[/red] Workflow '{safe_wf_id}' not found in catalog")
         raise typer.Exit(1)
 
     if not info.get("_install_allowed", True):
-        console.print(f"[yellow]Warning:[/yellow] Workflow '{source}' is from a discovery-only catalog")
+        console.print(f"[yellow]Warning:[/yellow] Workflow '{safe_wf_id}' is from a discovery-only catalog")
         console.print("Direct installation is not enabled for this catalog source.")
         raise typer.Exit(1)
 
     workflow_url = info.get("url")
     if not workflow_url:
-        console.print(f"[red]Error:[/red] Workflow '{source}' does not have an install URL in the catalog")
+        console.print(f"[red]Error:[/red] Workflow '{safe_wf_id}' does not have an install URL in the catalog")
+        raise typer.Exit(1)
+    if not isinstance(workflow_url, str):
+        # Untrusted catalog payload; a non-string would crash urlparse below.
+        console.print(
+            f"[red]Error:[/red] Workflow '{safe_wf_id}' has a malformed install URL."
+        )
         raise typer.Exit(1)
 
     # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
     from ipaddress import ip_address
     from urllib.parse import urlparse
 
-    parsed_url = urlparse(workflow_url)
-    url_host = parsed_url.hostname or ""
+    try:
+        parsed_url = urlparse(workflow_url)
+        url_host = parsed_url.hostname or ""
+    except ValueError:
+        console.print(
+            f"[red]Error:[/red] Workflow '{safe_wf_id}' has a malformed install URL."
+        )
+        raise typer.Exit(1)
     is_loopback = False
     if url_host == "localhost":
         is_loopback = True
@@ -750,15 +1795,32 @@ def workflow_add(
             pass
     if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
         console.print(
-            f"[red]Error:[/red] Workflow '{source}' has an invalid install URL. "
+            f"[red]Error:[/red] Workflow '{safe_wf_id}' has an invalid install URL. "
             "Only HTTPS URLs are allowed, except HTTP for localhost/loopback."
         )
         raise typer.Exit(1)
 
     # Reject path traversal, symlinked <id>, and a symlinked workflow.yml leaf
     # before any mkdir/download writes beneath the install directory.
-    workflow_dir = _safe_workflow_id_dir(workflows_dir, source)
+    workflow_dir = _safe_workflow_id_dir(workflows_dir, workflow_id)
     workflow_file = workflow_dir / "workflow.yml"
+
+    # Captured before any mkdir/download writes so every failure branch below
+    # can tell a fresh install from a reinstall-over-an-existing-one,
+    # mirroring _validate_and_install_local's existed-before-aware cleanup.
+    existed_before = workflow_dir.is_dir()
+
+    try:
+        staged_file = _stage_workflow_file(
+            workflow_dir,
+            use_project_file_mode=not workflow_file.exists(),
+        )
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
 
     try:
         from specify_cli.authentication.http import open_url as _open_url
@@ -767,14 +1829,22 @@ def workflow_add(
 
         _wf_cat_extra_headers = None
         _resolved_workflow_url = _resolve_gh_asset(
-            workflow_url, _open_url, timeout=30, github_hosts=_github_provider_hosts()
+            workflow_url,
+            _open_url,
+            timeout=30,
+            github_hosts=_github_provider_hosts(),
+            redirect_validator=_reject_insecure_download_redirect,
         )
         if _resolved_workflow_url:
             workflow_url = _resolved_workflow_url
             _wf_cat_extra_headers = {"Accept": "application/octet-stream"}
 
-        workflow_dir.mkdir(parents=True, exist_ok=True)
-        with _open_url(workflow_url, timeout=30, extra_headers=_wf_cat_extra_headers) as response:
+        with _open_url(
+            workflow_url,
+            timeout=30,
+            extra_headers=_wf_cat_extra_headers,
+            redirect_validator=_reject_insecure_download_redirect,
+        ) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
             final_parsed = urlparse(final_url)
@@ -787,82 +1857,168 @@ def workflow_add(
                     # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
                     pass
             if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
-                if workflow_dir.exists():
-                    import shutil
-                    shutil.rmtree(workflow_dir, ignore_errors=True)
+                _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
                 console.print(
-                    f"[red]Error:[/red] Workflow '{source}' redirected to non-HTTPS URL: {final_url}"
+                    f"[red]Error:[/red] Workflow '{safe_wf_id}' redirected to non-HTTPS URL: {_escape_markup(final_url)}"
                 )
                 raise typer.Exit(1)
-            workflow_file.write_bytes(response.read())
+            # Written to the staging file, never workflow_file directly, so a
+            # reinstall's prior working copy is never touched until the
+            # atomic commit below runs.
+            downloaded_content = _read_response_within_limit(response)
+            staged_file.write_bytes(downloaded_content)
+    except typer.Exit:
+        raise
     except Exception as exc:
-        if workflow_dir.exists():
-            import shutil
-            shutil.rmtree(workflow_dir, ignore_errors=True)
-        console.print(f"[red]Error:[/red] Failed to install workflow '{source}' from catalog: {exc}")
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+        console.print(f"[red]Error:[/red] Failed to install workflow '{safe_wf_id}' from catalog: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
-    # Validate the downloaded workflow before registering
+    # Validate the downloaded workflow (still staged, not yet committed)
+    # before registering.
     try:
-        definition = WorkflowDefinition.from_yaml(workflow_file)
-    except (ValueError, yaml.YAMLError) as exc:
-        import shutil
-        shutil.rmtree(workflow_dir, ignore_errors=True)
-        console.print(f"[red]Error:[/red] Downloaded workflow is invalid: {exc}")
+        definition = WorkflowDefinition.from_string(
+            downloaded_content.decode("utf-8")
+        )
+    except (UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+        console.print(f"[red]Error:[/red] Downloaded workflow is invalid: {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     from .engine import validate_workflow
     errors = validate_workflow(definition)
     if errors:
-        import shutil
-        shutil.rmtree(workflow_dir, ignore_errors=True)
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print("[red]Error:[/red] Downloaded workflow validation failed:")
         for err in errors:
-            console.print(f"  \u2022 {err}")
+            console.print(f"  \u2022 {_escape_markup(str(err))}")
         raise typer.Exit(1)
 
     # Enforce that the workflow's internal ID matches the catalog key
-    if definition.id and definition.id != source:
-        import shutil
-        shutil.rmtree(workflow_dir, ignore_errors=True)
+    if definition.id and definition.id != workflow_id:
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
         console.print(
-            f"[red]Error:[/red] Workflow ID in YAML ({definition.id!r}) "
-            f"does not match catalog key ({source!r}). "
+            f"[red]Error:[/red] Workflow ID in YAML ({_escape_markup(repr(definition.id))}) "
+            f"does not match catalog key ({_escape_markup(repr(workflow_id))}). "
             f"The catalog entry may be misconfigured."
         )
         raise typer.Exit(1)
 
-    registry.add(source, {
-        "name": definition.name or info.get("name", source),
-        "version": definition.version or info.get("version", "0.0.0"),
-        "description": definition.description or info.get("description", ""),
-        "source": "catalog",
-        "catalog_name": info.get("_catalog_name", ""),
-        "url": workflow_url,
-    })
-    console.print(f"[green]✓[/green] Workflow '{info.get('name', source)}' installed from catalog")
+    # A stale or misconfigured URL can serve a different version than the
+    # catalog advertised; without this check `update` would report success
+    # while leaving the old version installed (or even downgrading).
+    if expected_version is not None:
+        if not versions_match(definition.version, expected_version):
+            _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+            console.print(
+                f"[red]Error:[/red] Downloaded workflow version ({_escape_markup(str(definition.version))}) "
+                f"does not match the catalog version ({_escape_markup(expected_version)}). "
+                f"The catalog entry may be stale or misconfigured."
+            )
+            raise typer.Exit(1)
+
+    try:
+        transaction = _workflow_install_transaction(project_root)
+        with transaction:
+            transaction_existed_before = (
+                existed_before or workflow_file.exists()
+            )
+            transaction_registry = _open_workflow_registry(project_root)
+            if expected_installed_version is not None:
+                current = transaction_registry.get(workflow_id)
+                if (
+                    not isinstance(current, dict)
+                    or current.get("source") != "catalog"
+                    or not versions_match(
+                        current.get("version"), expected_installed_version
+                    )
+                ):
+                    console.print(
+                        f"[yellow]Warning:[/yellow] Workflow '{safe_wf_id}' "
+                        "changed during update; rerun the command to use its "
+                        "current source and version."
+                    )
+                    raise typer.Exit(1)
+            # Commit the staged download onto workflow_file via an atomic
+            # swap. A prior file is renamed aside for registry rollback.
+            try:
+                backup_file = _commit_workflow_file(
+                    staged_file, workflow_file, transaction_existed_before
+                )
+            except OSError as exc:
+                _safe_discard_staged_workflow_file(
+                    staged_file, workflow_dir, existed_before
+                )
+                console.print(
+                    f"[red]Error:[/red] Failed to install workflow "
+                    f"'{safe_wf_id}' from catalog: {_escape_markup(str(exc))}"
+                )
+                raise typer.Exit(1)
+
+            entry = {
+                "name": definition.name or info.get("name", workflow_id),
+                "version": definition.version or info.get("version", "0.0.0"),
+                "description": definition.description
+                or info.get("description", ""),
+                "source": "catalog",
+                "catalog_name": info.get("_catalog_name", ""),
+                "url": workflow_url,
+            }
+            # Preserve a prior disabled state across updates/reinstalls.
+            existing = transaction_registry.get(workflow_id)
+            if isinstance(existing, dict) and not existing.get(
+                "enabled", True
+            ):
+                entry["enabled"] = False
+            try:
+                transaction_registry.add(workflow_id, entry)
+            except (OSError, TypeError, ValueError) as exc:
+                _safe_rollback_committed_workflow_file(
+                    workflow_file,
+                    workflow_dir,
+                    transaction_existed_before,
+                    backup_file,
+                )
+                console.print(
+                    f"[red]Error:[/red] Failed to update workflow registry for "
+                    f"'{_escape_markup(workflow_id)}': "
+                    f"{_escape_markup(str(exc))}"
+                )
+                raise typer.Exit(1)
+            # Registry update succeeded while the transaction lock is held.
+            _discard_committed_backup_file(backup_file)
+    except typer.Exit:
+        _safe_discard_staged_workflow_file(
+            staged_file, workflow_dir, existed_before
+        )
+        raise
+    except OSError as exc:
+        _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
+        console.print(
+            f"[red]Error:[/red] Failed to lock workflow install "
+            f"'{safe_wf_id}': "
+            f"{_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+    console.print(
+        f"[green]✓[/green] Workflow '{_escape_markup(str(info.get('name', workflow_id)))}' "
+        "installed from catalog"
+    )
 
 
-@workflow_app.command("remove")
-def workflow_remove(
-    workflow_id: str = typer.Argument(..., help="Workflow ID to uninstall"),
-):
-    """Uninstall a workflow."""
-    from .catalog import WorkflowRegistry
-
-    project_root = _require_specify_project()
-    workflows_dir = project_root / ".specify" / "workflows"
-    _validate_workflow_id_or_exit(workflow_id)
-
-    registry = WorkflowRegistry(project_root)
-
+def _remove_workflow_locked(
+    project_root: Path, workflows_dir: Path, workflow_id: str
+) -> Path | None:
+    """Stage a workflow directory and persist removal while locked."""
+    registry = _open_workflow_registry(project_root)
+    safe_id = _escape_markup(workflow_id)
     if not registry.is_installed(workflow_id):
-        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' is not installed")
+        console.print(
+            f"[red]Error:[/red] Workflow '{safe_id}' is not installed"
+        )
         raise typer.Exit(1)
 
-    # Remove workflow files
     workflow_dir_unresolved = workflows_dir / workflow_id
-    safe_id = _escape_markup(workflow_id)
     if workflow_dir_unresolved.is_symlink():
         console.print(
             f"[red]Error:[/red] Refusing to remove symlinked "
@@ -875,39 +2031,301 @@ def workflow_remove(
         rel_parts = workflow_dir.relative_to(workflows_dir.resolve()).parts
     except ValueError:
         console.print(
-            f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
+            f"[red]Error:[/red] Invalid workflow ID: "
+            f"{_escape_markup(repr(workflow_id))}"
         )
         raise typer.Exit(1)
     if rel_parts != (workflow_id,):
         console.print(
-            f"[red]Error:[/red] Invalid workflow ID: {_escape_markup(repr(workflow_id))}"
+            f"[red]Error:[/red] Invalid workflow ID: "
+            f"{_escape_markup(repr(workflow_id))}"
         )
         raise typer.Exit(1)
 
     if workflow_dir.exists() and not workflow_dir.is_dir():
         console.print(
-            f"[red]Error:[/red] .specify/workflows/{safe_id} exists but is not a directory"
+            f"[red]Error:[/red] .specify/workflows/{safe_id} exists "
+            "but is not a directory"
         )
         raise typer.Exit(1)
 
+    import tempfile
+
+    staged_dir: Path | None = None
     if workflow_dir.exists():
-        import shutil
         try:
-            shutil.rmtree(workflow_dir)
+            reserved = Path(
+                tempfile.mkdtemp(
+                    prefix=f".{workflow_id}.removing-", dir=workflows_dir
+                )
+            )
+            reserved.rmdir()
+            os.rename(workflow_dir, reserved)
+            staged_dir = reserved
         except OSError as exc:
             console.print(
-                f"[red]Error:[/red] Failed to remove workflow directory {workflow_dir}: {exc}"
+                f"[red]Error:[/red] Failed to stage workflow directory "
+                f"{_escape_markup(str(workflow_dir))} for removal: "
+                f"{_escape_markup(str(exc))}"
             )
             raise typer.Exit(1)
 
-    registry.remove(workflow_id)
+    try:
+        registry.remove(workflow_id)
+    except (OSError, TypeError, ValueError) as exc:
+        if staged_dir is not None:
+            try:
+                os.rename(staged_dir, workflow_dir)
+            except OSError as restore_exc:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Failed to restore workflow "
+                    "directory after registry update failure; it remains "
+                    f"staged at {_escape_markup(str(staged_dir))}: "
+                    f"{_escape_markup(str(restore_exc))}"
+                )
+        console.print(
+            f"[red]Error:[/red] Failed to update workflow registry for "
+            f"'{safe_id}': {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+    return staged_dir
+
+
+@workflow_app.command("remove")
+def workflow_remove(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to uninstall"),
+):
+    """Uninstall a workflow."""
+    project_root = _require_specify_project()
+    workflows_dir = project_root / ".specify" / "workflows"
+    _validate_workflow_id_or_exit(workflow_id)
+    safe_id = _escape_markup(workflow_id)
+    import shutil
+    try:
+        with _workflow_install_transaction(project_root):
+            staged_dir = _remove_workflow_locked(
+                project_root, workflows_dir, workflow_id
+            )
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to lock workflow removal "
+            f"'{safe_id}': {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+
     console.print(f"[green]✓[/green] Workflow '{workflow_id}' removed")
+
+    # The registry has already durably committed the removal at this point,
+    # so it must stand regardless of what happens below: deleting the staged
+    # directory is now just cleanup, not a data-integrity concern, and a
+    # failure here is reported as a warning (not an error) to avoid
+    # contradicting the registry state that already succeeded.
+    if staged_dir is not None:
+        try:
+            shutil.rmtree(staged_dir)
+        except OSError as exc:
+            console.print(
+                f"[yellow]Warning:[/yellow] Workflow '{safe_id}' was removed, but its "
+                f"staged directory could not be deleted: {_escape_markup(str(exc))}. "
+                f"Remove it manually: {_escape_markup(str(staged_dir))}"
+            )
+
+
+@workflow_app.command("update")
+def workflow_update(
+    workflow_id: str | None = typer.Argument(None, help="Workflow ID to update (default: all)"),
+):
+    """Update installed workflow(s) to the latest catalog version."""
+    from packaging import version as pkg_version
+
+    from .catalog import WorkflowCatalog, WorkflowCatalogError
+
+    project_root = _require_specify_project()
+    registry = _open_workflow_registry(project_root)
+    workflows_dir = project_root / ".specify" / "workflows"
+    _reject_unsafe_dir(project_root / ".specify", ".specify")
+    _reject_unsafe_dir(workflows_dir, ".specify/workflows")
+
+    installed = registry.list()
+    if workflow_id:
+        if not registry.is_installed(workflow_id):
+            console.print(f"[red]Error:[/red] Workflow '{_escape_markup(workflow_id)}' is not installed")
+            raise typer.Exit(1)
+        targets = [workflow_id]
+    else:
+        targets = list(installed)
+
+    if not targets:
+        console.print("[yellow]No workflows installed[/yellow]")
+        raise typer.Exit(0)
+
+    catalog = WorkflowCatalog(project_root)
+    console.print("🔄 Checking for updates...\n")
+
+    updates_available: list[dict[str, str]] = []
+    checked = 0
+    for wf_id in targets:
+        safe_id = _escape_markup(str(wf_id))
+        metadata = installed.get(wf_id)
+        if not isinstance(metadata, dict):
+            console.print(f"⚠  {safe_id}: Registry entry is corrupted (skipping)")
+            continue
+        if metadata.get("source") != "catalog":
+            console.print(f"⚠  {safe_id}: Not installed from a catalog — re-add to update (skipping)")
+            continue
+        try:
+            installed_version = pkg_version.Version(str(metadata.get("version")))
+        except pkg_version.InvalidVersion:
+            console.print(
+                f"⚠  {safe_id}: Invalid installed version '{_escape_markup(str(metadata.get('version')))}' in registry (skipping)"
+            )
+            continue
+        try:
+            info = catalog.get_workflow_info(wf_id)
+        except WorkflowCatalogError as exc:
+            console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
+            raise typer.Exit(1)
+        if not info:
+            console.print(f"⚠  {safe_id}: Not found in catalog (skipping)")
+            continue
+        if not info.get("_install_allowed", True):
+            console.print(
+                f"⚠  {safe_id}: Updates not allowed from '{_escape_markup(str(info.get('_catalog_name', 'catalog')))}' (skipping)"
+            )
+            continue
+        try:
+            catalog_version = pkg_version.Version(str(info.get("version")))
+        except pkg_version.InvalidVersion:
+            console.print(
+                f"⚠  {safe_id}: Invalid catalog version '{_escape_markup(str(info.get('version')))}' (skipping)"
+            )
+            continue
+        if catalog_version > installed_version:
+            checked += 1
+            updates_available.append(
+                {"id": wf_id, "installed": str(installed_version), "available": str(catalog_version)}
+            )
+        else:
+            checked += 1
+            console.print(f"✓ {safe_id}: Up to date (v{installed_version})")
+
+    if not updates_available:
+        if not checked:
+            console.print("\n[yellow]No workflows were eligible for update[/yellow]")
+        elif checked == len(targets):
+            console.print("\n[green]All workflows are up to date![/green]")
+        else:
+            console.print(
+                f"\n[green]All checked workflows are up to date[/green] "
+                f"[yellow]({len(targets) - checked} skipped)[/yellow]"
+            )
+        raise typer.Exit(0)
+
+    console.print("\n[bold]Updates available:[/bold]\n")
+    for update in updates_available:
+        console.print(
+            f"  • {_escape_markup(update['id'])}: {update['installed']} → {update['available']}"
+        )
+    console.print()
+    if not typer.confirm("Update these workflows?"):
+        console.print("Cancelled")
+        raise typer.Exit(0)
+
+    console.print()
+    failed: list[str] = []
+    for update in updates_available:
+        # _install_workflow_from_catalog is fully transactional (staged
+        # download, atomic commit, rename-based rollback on registry
+        # failure): it never leaves a partially-written workflow.yml, so
+        # this loop only needs to record success/failure, not perform its
+        # own backup/restore.
+        try:
+            _install_workflow_from_catalog(
+                project_root, workflows_dir, update["id"],
+                expected_version=update["available"],
+                expected_installed_version=update["installed"],
+            )
+        except (typer.Exit, OSError) as exc:
+            if isinstance(exc, OSError):
+                console.print(
+                    f"[red]Error:[/red] Filesystem error updating "
+                    f"'{_escape_markup(update['id'])}': {_escape_markup(str(exc))}"
+                )
+            failed.append(update["id"])
+
+    if failed:
+        console.print(
+            f"\n[red]Failed to update:[/red] {', '.join(_escape_markup(f) for f in failed)}"
+        )
+        raise typer.Exit(1)
+
+
+def _set_workflow_enabled(workflow_id: str, enabled: bool) -> None:
+    """Update enabled state from a fresh registry snapshot while locked."""
+    project_root = _require_specify_project()
+    safe_id = _escape_markup(workflow_id)
+    try:
+        with _workflow_install_transaction(project_root):
+            registry = _open_workflow_registry(project_root)
+            metadata = registry.get(workflow_id)
+            if metadata is None:
+                console.print(
+                    f"[red]Error:[/red] Workflow '{safe_id}' is not installed"
+                )
+                raise typer.Exit(1)
+            if not isinstance(metadata, dict):
+                console.print(
+                    f"[red]Error:[/red] Registry entry for '{safe_id}' "
+                    "is corrupted"
+                )
+                raise typer.Exit(1)
+            current = bool(metadata.get("enabled", True))
+            state = "enabled" if enabled else "disabled"
+            if current is enabled:
+                console.print(
+                    f"[yellow]Workflow '{safe_id}' is already {state}[/yellow]"
+                )
+                raise typer.Exit(0)
+            try:
+                registry.add(workflow_id, {**metadata, "enabled": enabled})
+            except OSError as exc:
+                console.print(
+                    f"[red]Error:[/red] Failed to update workflow registry "
+                    f"for '{safe_id}': {_escape_markup(str(exc))}"
+                )
+                raise typer.Exit(1)
+    except OSError as exc:
+        console.print(
+            f"[red]Error:[/red] Failed to lock workflow registry for "
+            f"'{safe_id}': {_escape_markup(str(exc))}"
+        )
+        raise typer.Exit(1)
+    state = "enabled" if enabled else "disabled"
+    console.print(f"[green]✓[/green] Workflow '{safe_id}' {state}")
+
+
+@workflow_app.command("enable")
+def workflow_enable(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to enable"),
+):
+    """Enable a disabled workflow."""
+    _set_workflow_enabled(workflow_id, True)
+
+
+@workflow_app.command("disable")
+def workflow_disable(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to disable"),
+):
+    """Disable a workflow without removing it."""
+    _set_workflow_enabled(workflow_id, False)
+    console.print(f"To re-enable: specify workflow enable {_escape_markup(workflow_id)}")
 
 
 @workflow_app.command("search")
 def workflow_search(
     query: str | None = typer.Argument(None, help="Search query"),
     tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
+    author: str | None = typer.Option(None, "--author", help="Filter by author"),
 ):
     """Search workflow catalogs."""
     from .catalog import WorkflowCatalog, WorkflowCatalogError
@@ -916,9 +2334,9 @@ def workflow_search(
     catalog = WorkflowCatalog(project_root)
 
     try:
-        results = catalog.search(query=query, tag=tag)
+        results = catalog.search(query=query, tag=tag, author=author)
     except WorkflowCatalogError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(exc))}")
         raise typer.Exit(1)
 
     if not results:
@@ -927,13 +2345,17 @@ def workflow_search(
 
     console.print(f"\n[bold cyan]Workflows ({len(results)}):[/bold cyan]\n")
     for wf in results:
-        console.print(f"  [bold]{wf.get('name', wf.get('id', '?'))}[/bold] ({wf.get('id', '?')}) v{wf.get('version', '?')}")
+        name = _escape_markup(str(wf.get("name", wf.get("id", "?"))))
+        wf_id = _escape_markup(str(wf.get("id", "?")))
+        version = _escape_markup(str(wf.get("version", "?")))
+        console.print(f"  [bold]{name}[/bold] ({wf_id}) v{version}")
         desc = wf.get("description", "")
         if desc:
-            console.print(f"    {desc}")
+            console.print(f"    {_escape_markup(str(desc))}")
         tags = wf.get("tags", [])
         if tags:
-            console.print(f"    [dim]Tags: {', '.join(tags)}[/dim]")
+            safe_tags = _escape_markup(", ".join(str(t) for t in tags))
+            console.print(f"    [dim]Tags: {safe_tags}[/dim]")
         console.print()
 
 
@@ -942,13 +2364,13 @@ def workflow_info(
     workflow_id: str = typer.Argument(..., help="Workflow ID"),
 ):
     """Show workflow details and step graph."""
-    from .catalog import WorkflowCatalog, WorkflowRegistry, WorkflowCatalogError
+    from .catalog import WorkflowCatalog, WorkflowCatalogError
     from .engine import WorkflowEngine
 
     project_root = _require_specify_project()
 
     # Check installed first
-    registry = WorkflowRegistry(project_root)
+    registry = _open_workflow_registry(project_root)
     installed = registry.get(workflow_id)
 
     engine = WorkflowEngine(project_root)
@@ -1264,7 +2686,9 @@ def workflow_step_add(
             raise ValueError(f"Refusing to fetch from non-HTTPS URL: {url}")
         if not parsed.hostname:
             raise ValueError(f"Refusing to fetch from URL with no hostname: {url}")
-        with _open_url(url, timeout=30) as resp:
+        with _open_url(
+            url, timeout=30, redirect_validator=_reject_insecure_download_redirect
+        ) as resp:
             final_url = resp.geturl()
             final_parsed = urlparse(final_url)
             final_is_localhost = final_parsed.hostname in ("localhost", "127.0.0.1", "::1")
@@ -1274,7 +2698,7 @@ def workflow_step_add(
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
             if not final_parsed.hostname:
                 raise ValueError(f"Redirect to URL with no hostname: {final_url}")
-            return resp.read()
+            return _read_response_within_limit(resp)
 
     _validate_step_id_or_exit(step_id)
 

@@ -884,6 +884,186 @@ class TestPresetResolver:
         assert result is not None
         assert "Custom Spec Template" in result.read_text()
 
+    def _install_pack_with_manifest_file(self, project_dir, *, extra_file=False):
+        """Create a pack whose manifest declares a NON-convention file: path.
+
+        Returns the pack dir under the project. The declared file lives at
+        custom/spec.md (not the convention templates/spec-template.md).
+        """
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        (pack_dir / "custom").mkdir(parents=True)
+        (pack_dir / "custom" / "spec.md").write_text(
+            "# Manifest-declared Spec\n", encoding="utf-8"
+        )
+        if extra_file:
+            # An undeclared convention-path file the manifest points away from.
+            (pack_dir / "templates").mkdir()
+            (pack_dir / "templates" / "spec-template.md").write_text(
+                "# Stray Convention Spec\n", encoding="utf-8"
+            )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a non-convention file path",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+        return pack_dir
+
+    def test_resolve_uses_manifest_declared_file_path(self, project_dir):
+        """resolve() must honor a manifest-declared non-convention file: path.
+
+        Previously the tier-2 loop was convention-only, so it returned the
+        core template and resolve_with_source() misattributed source='core',
+        diverging from collect_all_layers()/resolve_content().
+        """
+        pack_dir = self._install_pack_with_manifest_file(project_dir)
+        resolver = PresetResolver(project_dir)
+
+        result = resolver.resolve("spec-template")
+        assert result == pack_dir / "custom" / "spec.md"
+        assert "Manifest-declared Spec" in result.read_text()
+
+        sourced = resolver.resolve_with_source("spec-template")
+        assert sourced is not None
+        assert "mypack" in sourced["source"]
+        # resolve() must agree with collect_all_layers()'s top layer.
+        layers = resolver.collect_all_layers("spec-template")
+        assert Path(layers[0]["path"]) == pack_dir / "custom" / "spec.md"
+
+    def test_resolve_manifest_file_wins_over_undeclared_convention_file(
+        self, project_dir
+    ):
+        """A stray convention-path file must not shadow the manifest's file:."""
+        pack_dir = self._install_pack_with_manifest_file(
+            project_dir, extra_file=True
+        )
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result == pack_dir / "custom" / "spec.md"
+        assert "Manifest-declared Spec" in result.read_text()
+
+    def test_resolve_skips_convention_when_manifest_file_missing(self, project_dir):
+        """When the manifest declares a file: that does not exist, resolve()
+        must NOT fall back to a convention file in the same pack (that would
+        mask a typo) — it skips the pack and resolves core instead."""
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        # Manifest declares custom/spec.md (MISSING); a convention file exists
+        # in the pack and must NOT be used.
+        (pack_dir / "templates").mkdir(parents=True)
+        (pack_dir / "templates" / "spec-template.md").write_text(
+            "# Stray Convention Spec\n", encoding="utf-8"
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a missing file path",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result is not None
+        content = result.read_text()
+        assert "Stray Convention Spec" not in content  # pack convention skipped
+        assert "Core Spec Template" in content  # fell through to core
+
+    def test_resolve_skips_convention_when_manifest_file_is_directory(
+        self, project_dir
+    ):
+        """When the manifest's file: path resolves to a DIRECTORY (not a regular
+        file), resolve()/collect_all_layers() must treat it as missing — exists()
+        would accept it and downstream read_text() on a directory would crash.
+        The pack is skipped (no convention fallback), so core wins."""
+        presets_dir = project_dir / ".specify" / "presets"
+        pack_dir = presets_dir / "mypack"
+        # Declared file: custom/spec.md is created as a DIRECTORY.
+        (pack_dir / "custom" / "spec.md").mkdir(parents=True)
+        # A convention file also exists and must NOT be used.
+        (pack_dir / "templates").mkdir(parents=True)
+        (pack_dir / "templates" / "spec-template.md").write_text(
+            "# Stray Convention Spec\n", encoding="utf-8"
+        )
+        manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "mypack",
+                "name": "My Pack",
+                "version": "1.0.0",
+                "description": "declares a file: that is actually a directory",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "template",
+                        "name": "spec-template",
+                        "file": "custom/spec.md",
+                        "strategy": "replace",
+                    }
+                ]
+            },
+        }
+        with open(pack_dir / "preset.yml", "w") as f:
+            yaml.dump(manifest, f)
+        PresetRegistry(presets_dir).add(
+            "mypack", {"version": "1.0.0", "priority": 10}
+        )
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("spec-template")
+        assert result is not None
+        assert result.is_file()  # never a directory
+        content = result.read_text()
+        assert "Stray Convention Spec" not in content  # pack convention skipped
+        assert "Core Spec Template" in content  # fell through to core
+        # collect_all_layers() must agree: the directory is not a layer.
+        layers = resolver.collect_all_layers("spec-template")
+        assert all(Path(layer["path"]).is_file() for layer in layers)
+        assert all(
+            Path(layer["path"]) != pack_dir / "custom" / "spec.md"
+            for layer in layers
+        )
+
     def test_resolve_override_takes_priority_over_pack(self, project_dir, pack_dir):
         """Test that overrides take priority over installed packs."""
         # Install the pack
@@ -2597,6 +2777,40 @@ def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1
         return manager.install_from_directory(SELF_TEST_PRESET_DIR, speckit_version)
 
 
+def _make_convention_constitution_preset(temp_dir: Path) -> Path:
+    """Create a preset whose constitution is found by convention, not its manifest."""
+    preset_dir = temp_dir / "convention-constitution"
+    (preset_dir / "templates").mkdir(parents=True)
+    (preset_dir / "templates" / "constitution-template.md").write_text(
+        "# Convention Constitution\n"
+    )
+    (preset_dir / "templates" / "spec-template.md").write_text("# Spec\n")
+    (preset_dir / "preset.yml").write_text(
+        yaml.dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "convention-constitution",
+                    "name": "Convention Constitution",
+                    "version": "1.0.0",
+                    "description": "Convention-based constitution for testing",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "template",
+                            "name": "spec-template",
+                            "file": "templates/spec-template.md",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    return preset_dir
+
+
 class TestSelfTestPreset:
     """Tests using the self-test preset that ships with the repo.
 
@@ -2620,7 +2834,7 @@ class TestSelfTestPreset:
         assert manifest.id == "self-test"
         assert manifest.name == "Self-Test Preset"
         assert manifest.version == "1.0.0"
-        assert len(manifest.templates) == 8  # 6 templates + 2 commands
+        assert len(manifest.templates) == 7  # 5 templates + 2 commands
 
     def test_self_test_provides_all_core_templates(self):
         """Verify the self-test preset provides an override for every core template."""
@@ -2704,6 +2918,24 @@ class TestSelfTestPreset:
             assert result is not None
             assert result["source"] == "core"
 
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Core constitution-template\n"
+
+    def test_self_test_removal_preserves_edited_constitution(self, project_dir):
+        """Removing a preset does not overwrite an edited generated constitution."""
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        edited = memory.read_text() + "\n## Authored amendment\n"
+        memory.write_text(edited)
+
+        manager.remove("self-test")
+
+        assert memory.read_text() == edited
+
     def test_self_test_not_in_catalog(self):
         """Verify the self-test preset is NOT in the catalog (it's local-only)."""
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
@@ -2777,6 +3009,432 @@ class TestSelfTestPreset:
 
         metadata = manager.registry.get("self-test")
         assert metadata["registered_commands"] == {}
+
+    def test_self_test_seeds_constitution_when_memory_absent(self, project_dir):
+        """Installing a preset seeds memory/constitution.md from its template."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.exists(), "constitution.md was not seeded from the preset"
+        assert "preset:self-test" in memory.read_text(), (
+            "constitution.md was not seeded from the self-test preset template"
+        )
+
+    def test_self_test_reseeds_exact_core_constitution(self, project_dir):
+        """An unchanged core constitution is re-seeded from the preset template."""
+        resolver = PresetResolver(project_dir)
+        bundled_core = resolver._find_bundled_core(
+            "constitution-template", "template", ".md"
+        )
+        assert bundled_core is not None
+        core = bundled_core.read_bytes()
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_bytes(core)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        content = memory.read_text()
+        assert "preset:self-test" in content, "placeholder constitution was not re-seeded"
+        assert "[PROJECT_NAME]" not in content
+
+    @pytest.mark.parametrize(
+        "provenance_content",
+        [
+            '{"sha256": "does-not-match", "source": "old-preset"}\n',
+            "{not valid json",
+        ],
+        ids=["hash-mismatch", "malformed"],
+    )
+    def test_self_test_preserves_core_content_with_existing_invalid_provenance(
+        self, project_dir, provenance_content
+    ):
+        """A present invalid sidecar disables legacy core-template migration."""
+        resolver = PresetResolver(project_dir)
+        bundled_core = resolver._find_bundled_core(
+            "constitution-template", "template", ".md"
+        )
+        assert bundled_core is not None
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_bytes(bundled_core.read_bytes())
+        (memory.parent / ".constitution-template.json").write_text(
+            provenance_content
+        )
+        original = memory.read_bytes()
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_bytes() == original
+
+    def test_self_test_preserves_mutable_project_core_copy(self, project_dir):
+        """A project template copy does not establish generated provenance."""
+        authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
+        project_template = (
+            project_dir / ".specify" / "templates" / "constitution-template.md"
+        )
+        project_template.write_text(authored)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+        assert not (memory.parent / ".constitution-template.json").exists()
+
+    def test_core_prefixed_preset_does_not_establish_generated_provenance(
+        self, project_dir, temp_dir
+    ):
+        """A preset ID beginning with core is not an immutable core source."""
+        authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text(authored)
+
+        preset_dir = temp_dir / "core-company"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(authored)
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "core-company",
+                        "name": "Core Company",
+                        "version": "1.0.0",
+                        "description": "Company constitution preset",
+                        "author": "Test Author",
+                        "repository": "https://github.com/test/core-company",
+                        "license": "MIT",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "description": "Company constitution",
+                                "replaces": "constitution-template",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        PresetManager(project_dir).install_from_directory(preset_dir, "0.1.5")
+
+        assert memory.read_text() == authored
+        assert not (memory.parent / ".constitution-template.json").exists()
+
+    def test_self_test_preserves_authored_constitution_with_placeholder(
+        self, project_dir
+    ):
+        """A placeholder mention does not establish generated provenance."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\n\nGuidance for [PROJECT_NAME].\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+
+    def test_self_test_preserves_authored_constitution(self, project_dir):
+        """An authored (placeholder-free) constitution is never overwritten."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\n\n### I. Ship It\nAuthored by a human.\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored, "authored constitution was overwritten"
+
+    def test_self_test_override_resolves_constitution_template(self, project_dir):
+        """The preset override of constitution-template resolves to the preset file."""
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core constitution\n")
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("constitution-template", "template")
+        assert result is not None
+        assert "preset:self-test" in result.read_text()
+
+    def test_constitution_seed_composes_wrap_strategy(self, project_dir, temp_dir):
+        """Seeding memory composes wrap constitution-template layers."""
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# Core Constitution\n\n## Core Principle\n"
+        )
+
+        preset_dir = temp_dir / "constitution-wrap"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Wrapper Constitution\n\n{CORE_TEMPLATE}\n\n## Wrapper Footer\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "constitution-wrap",
+                        "name": "Constitution Wrap",
+                        "version": "1.0.0",
+                        "description": "Wrap constitution template for testing",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Wrapped constitution template",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        content = memory.read_text()
+        assert "{CORE_TEMPLATE}" not in content
+        assert "# Wrapper Constitution" in content
+        assert "## Core Principle" in content
+
+    def test_constitution_follows_priority_when_winning_preset_removed(
+        self, project_dir, temp_dir
+    ):
+        """An unchanged generated constitution follows priority and fallback layers."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        preset_dir = temp_dir / "higher-priority"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Higher Priority Constitution\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "higher-priority",
+                        "name": "Higher Priority",
+                        "version": "1.0.0",
+                        "description": "Higher-priority constitution",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "replace",
+                                "description": "Higher-priority constitution",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager.install_from_directory(preset_dir, "0.1.5", priority=1)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Higher Priority Constitution\n"
+
+        manager.remove("higher-priority")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_convention_constitution_removal_restores_remaining_layer(
+        self, project_dir, temp_dir
+    ):
+        """Removing a convention layer rematerializes the remaining resolver layer."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=1
+        )
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Convention Constitution\n"
+
+        manager.remove("convention-constitution")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_convention_constitution_removal_preserves_edited_content(
+        self, project_dir, temp_dir
+    ):
+        """Removing a convention layer does not overwrite edited generated content."""
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5"
+        )
+        ensure_constitution_from_template(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        edited = memory.read_text() + "\n## Authored amendment\n"
+        memory.write_text(edited)
+
+        manager.remove("convention-constitution")
+
+        assert memory.read_text() == edited
+
+    def test_custom_constitution_removal_recovers_with_invalid_manifest(
+        self, project_dir, temp_dir
+    ):
+        """Provenance triggers fallback when a custom-path manifest is invalid."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        preset_dir = temp_dir / "custom-constitution"
+        (preset_dir / "policy").mkdir(parents=True)
+        (preset_dir / "policy" / "charter.md").write_text("# Custom Constitution\n")
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "custom-constitution",
+                        "name": "Custom Constitution",
+                        "version": "1.0.0",
+                        "description": "Custom-path constitution for testing",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "policy/charter.md",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        manager.install_from_directory(preset_dir, "0.1.5", priority=1)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Custom Constitution\n"
+
+        installed_manifest = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "custom-constitution"
+            / "preset.yml"
+        )
+        installed_manifest.write_text("invalid: [")
+
+        manager.remove("custom-constitution")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_constitution_seed_rejects_symlinked_memory_directory(
+        self, project_dir, temp_dir
+    ):
+        """Preset installation cannot seed through a symlinked memory directory."""
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        try:
+            (project_dir / ".specify" / "memory").symlink_to(
+                outside, target_is_directory=True
+            )
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="symlinked"):
+            install_self_test_preset(manager)
+
+        assert manager.registry.is_installed("self-test")
+        assert not (outside / "constitution.md").exists()
+
+    def test_constitution_seed_rejects_dangling_destination_symlink(
+        self, project_dir, temp_dir
+    ):
+        """Preset installation cannot seed through a dangling destination symlink."""
+        memory = project_dir / ".specify" / "memory"
+        memory.mkdir(parents=True)
+        outside = temp_dir / "outside-constitution.md"
+        try:
+            (memory / "constitution.md").symlink_to(outside)
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="symlinked"):
+            install_self_test_preset(manager)
+
+        assert manager.registry.is_installed("self-test")
+        assert not outside.exists()
+
+    def test_constitution_materialization_error_is_nonfatal(
+        self, project_dir, temp_dir
+    ):
+        """An invalid wrap warns without reporting an uninstalled preset."""
+        preset_dir = temp_dir / "invalid-wrap"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Missing core placeholder\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "invalid-wrap",
+                        "name": "Invalid Wrap",
+                        "version": "1.0.0",
+                        "description": "Invalid wrapping constitution",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Invalid wrap",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="Failed to seed constitution"):
+            manifest = manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert manifest.id == "invalid-wrap"
+        assert manager.registry.is_installed("invalid-wrap")
 
     def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
         """Test that extension command overrides are skipped if the extension isn't installed."""
@@ -3663,6 +4321,8 @@ class TestPresetSkills:
 
         extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
         (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
         (extension_dir / "commands" / "cmd.md").write_text(
             "---\n"
             "description: Extension fakeext cmd\n"
@@ -3671,6 +4331,7 @@ class TestPresetSkills:
             "---\n\n"
             "extension:fakeext\n"
             "Run {SCRIPT}\n"
+            "Read agents/control/commander.md for context.\n"
         )
         extension_manifest = {
             "schema_version": "1.0",
@@ -3736,7 +4397,91 @@ class TestPresetSkills:
         assert "source: extension:fakeext" in content
         assert "extension:fakeext" in content
         assert '.specify/scripts/bash/setup-plan.sh --json "$ARGUMENTS"' in content
+        # Extension-relative subdir references must resolve to their
+        # installed location on restore too (#2101), not just on first
+        # registration.
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
         assert "# Fakeext Cmd Skill" in content
+
+    def test_skill_composed_over_extension_base_rewrites_subdir_paths(
+        self, project_dir, temp_dir
+    ):
+        """When a preset composes (append) over an extension-provided base
+        command, the resulting skill (read from the .composed output) must
+        still resolve the extension's own subdir references (#2101), not
+        just when the extension wins outright (replace)."""
+        self._write_init_options(project_dir, ai="codex")
+        skills_dir = project_dir / ".agents" / "skills"
+        self._create_skill(skills_dir, "speckit-fakeext-cmd", body="original extension skill")
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / "ext-base-append-skill"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Preset overlay\n---\n\n## Extra\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-base-append-skill",
+                "name": "Ext Base Append Skill",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": "append",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_file = skills_dir / "speckit-fakeext-cmd" / "SKILL.md"
+        content = skill_file.read_text()
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
 
     def test_preset_remove_skips_skill_dir_without_skill_file(self, project_dir, temp_dir):
         """Preset removal should not delete arbitrary directories missing SKILL.md."""
@@ -4041,6 +4786,31 @@ class TestPresetSetPriority:
         manager2 = PresetManager(project_dir)
         assert manager2.registry.get("test-pack")["priority"] == 5
 
+    def test_set_priority_reconciles_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """Changing priority rematerializes an unchanged generated constitution."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=20
+        )
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert "preset:self-test" in memory.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app,
+                ["preset", "set-priority", "convention-constitution", "1"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert memory.read_text() == "# Convention Constitution\n"
+
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""
         from typer.testing import CliRunner
@@ -4260,6 +5030,61 @@ class TestPresetEnableDisable:
         # Reload registry to see updated value
         manager2 = PresetManager(project_dir)
         assert manager2.registry.get("test-pack")["enabled"] is True
+
+    def test_enable_disable_reconciles_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """Enable and disable rematerialize the winning constitution layer."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=1
+        )
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Convention Constitution\n"
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            disabled = runner.invoke(
+                app, ["preset", "disable", "convention-constitution"]
+            )
+
+        assert disabled.exit_code == 0, disabled.output
+        assert "preset:self-test" in memory.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            enabled = runner.invoke(
+                app, ["preset", "enable", "convention-constitution"]
+            )
+
+        assert enabled.exit_code == 0, enabled.output
+        assert memory.read_text() == "# Convention Constitution\n"
+
+    def test_stack_changes_do_not_create_missing_constitution(
+        self, project_dir, pack_dir
+    ):
+        """Stack changes for non-providers do not seed a missing constitution."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        runner = CliRunner()
+
+        for args in (
+            ["preset", "set-priority", "test-pack", "5"],
+            ["preset", "disable", "test-pack"],
+            ["preset", "enable", "test-pack"],
+        ):
+            with patch.object(Path, "cwd", return_value=project_dir):
+                result = runner.invoke(app, args)
+            assert result.exit_code == 0, result.output
+            assert not memory.exists()
 
     def test_disable_already_disabled(self, project_dir, pack_dir):
         """Test disable on already disabled preset shows warning."""
@@ -4749,26 +5574,13 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
+                return io.BytesIO(json.dumps({
                     "assets": [{"name": "preset.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
                 }).encode())
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -4807,22 +5619,9 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -4864,26 +5663,13 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
+                return io.BytesIO(json.dumps({
                     "assets": [{"name": "preset.zip", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
                 }).encode())
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -5972,6 +6758,86 @@ class TestResolveContent:
         content = resolver.resolve_content("spec-template")
         assert content == "# Replaced content\n"
 
+    @pytest.mark.parametrize("strategy", ["append", "prepend", "wrap"])
+    def test_resolve_content_rewrites_extension_base_subdir_paths(
+        self, project_dir, temp_dir, strategy
+    ):
+        """Composing over an extension-provided base command must resolve the
+        extension's own subdir references (agents/, knowledge-base/) to their
+        installed location (#2101), not just when the extension wins outright.
+        """
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / f"ext-base-{strategy}"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        overlay_body = (
+            "{CORE_TEMPLATE}\n## Extra\n" if strategy == "wrap" else "## Extra\n"
+        )
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            f"---\ndescription: Preset overlay\n---\n\n{overlay_body}"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": f"ext-base-{strategy}",
+                "name": "Ext Base",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": strategy,
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        resolver = PresetResolver(project_dir)
+        content = resolver.resolve_content("speckit.fakeext.cmd", "command")
+        assert content is not None
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
+
 
 class TestCollectAllLayers:
     """Test PresetResolver.collect_all_layers() method."""
@@ -6051,6 +6917,172 @@ class TestCollectAllLayers:
 
 class TestRemoveReconciliation:
     """Test that removing a preset re-registers the next layer's command."""
+
+    def test_remove_restores_extension_command_subdir_paths_for_non_skill_agent(
+        self, project_dir, temp_dir
+    ):
+        """When a preset override of an extension command is removed, the
+        reconciled non-skill-agent command file should have the extension's
+        own subdir references rewritten to their installed location (#2101),
+        not left as bare, unresolvable paths."""
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        manager = PresetManager(project_dir)
+
+        preset_dir = temp_dir / "ext-cmd-override"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Override fakeext cmd\n---\n\npreset override content\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-cmd-override",
+                "name": "Ext Cmd Override",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should exist in gemini dir"
+        assert "preset override content" in cmd_files[0].read_text()
+
+        manager.remove("ext-cmd-override")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should still exist after removal"
+        content = cmd_files[0].read_text()
+        assert "preset override content" not in content
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+
+    def test_install_composes_extension_command_and_rewrites_subdir_paths_for_non_skill_agent(
+        self, project_dir, temp_dir
+    ):
+        """When a preset overlays (append) an extension-provided base command,
+        the initial composed non-skill-agent command file must have the
+        extension's own subdir references rewritten to their installed
+        location (#2101), matching the live repro: extension body
+        'Read agents/control/commander.md', preset appends to
+        speckit.fakeext.cmd, generated Gemini content retains the bare path."""
+        gemini_dir = project_dir / ".gemini" / "commands"
+        gemini_dir.mkdir(parents=True)
+
+        extension_dir = project_dir / ".specify" / "extensions" / "fakeext"
+        (extension_dir / "commands").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control").mkdir(parents=True, exist_ok=True)
+        (extension_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (extension_dir / "commands" / "cmd.md").write_text(
+            "---\ndescription: Extension fakeext cmd\n---\n\n"
+            "Read agents/control/commander.md for context.\n"
+        )
+        extension_manifest = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "fakeext",
+                "name": "Fake Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/cmd.md",
+                        "description": "Fake extension command",
+                    }
+                ]
+            },
+        }
+        with open(extension_dir / "extension.yml", "w") as f:
+            yaml.dump(extension_manifest, f)
+
+        preset_dir = temp_dir / "ext-cmd-append"
+        preset_dir.mkdir()
+        (preset_dir / "commands").mkdir()
+        (preset_dir / "commands" / "speckit.fakeext.cmd.md").write_text(
+            "---\ndescription: Append fakeext cmd\n---\n\n## Extra\n"
+        )
+        preset_manifest = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "ext-cmd-append",
+                "name": "Ext Cmd Append",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.fakeext.cmd",
+                        "file": "commands/speckit.fakeext.cmd.md",
+                        "strategy": "append",
+                    }
+                ]
+            },
+        }
+        with open(preset_dir / "preset.yml", "w") as f:
+            yaml.dump(preset_manifest, f)
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        cmd_files = list(gemini_dir.glob("*fakeext*"))
+        assert cmd_files, "Command file should exist in gemini dir"
+        content = cmd_files[0].read_text()
+        assert ".specify/extensions/fakeext/agents/control/commander.md" in content
+        assert "Read agents/control" not in content
+        assert "## Extra" in content
 
     def test_remove_restores_lower_priority_command(
         self, project_dir, temp_dir, valid_pack_data
@@ -6204,3 +7236,130 @@ def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monke
     )
     assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/9"
     assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v2"]
+
+
+# ===== ensure_constitution_from_template resolver-awareness =====
+
+
+class TestEnsureConstitutionResolverAware:
+    """`ensure_constitution_from_template` must resolve through PresetResolver.
+
+    The constitution is the only template materialized to a live file rather
+    than resolved on demand. These tests pin the regression from issue #3272:
+    a preset-provided ``constitution-template`` must seed memory, while the
+    core template is used when no preset overrides it.
+    """
+
+    def _core_constitution(self, project_dir):
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n"
+        )
+
+    def _wrap_constitution_preset(self, temp_dir):
+        preset_dir = temp_dir / "ensure-wrap-preset"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Ensure Wrapper\n\n{CORE_TEMPLATE}\n\n## Tail\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "ensure-wrap",
+                        "name": "Ensure Wrap",
+                        "version": "1.0.0",
+                        "description": "Wrap strategy for ensure() coverage",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Wrapped constitution",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        return preset_dir
+
+    def test_seeds_from_core_when_no_preset(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        ensure_constitution_from_template(project_dir)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.exists()
+        assert "[PROJECT_NAME]" in memory.read_text()
+        assert (memory.parent / ".constitution-template.json").exists()
+
+    def test_seeds_from_preset_when_installed(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        # Remove the memory file seeded during install to test ensure() in
+        # isolation; it must re-seed from the preset, not the core template.
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.unlink()
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory.exists()
+        content = memory.read_text()
+        assert "preset:self-test" in content
+        assert "[PROJECT_NAME]" not in content
+
+    def test_preserves_existing_memory(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\nAuthored.\n"
+        memory.write_text(authored)
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory.read_text() == authored
+
+    def test_preserves_edited_generated_memory(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        ensure_constitution_from_template(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        authored = memory.read_text() + "\nAuthored amendment.\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+
+    def test_composes_wrap_strategy_when_ensuring(self, project_dir, temp_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self._wrap_constitution_preset(temp_dir), "0.1.5")
+
+        # Ensure we validate ensure() behavior directly.
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.unlink()
+        ensure_constitution_from_template(project_dir)
+
+        content = memory.read_text()
+        assert "{CORE_TEMPLATE}" not in content
+        assert "# Ensure Wrapper" in content
+        assert "[PROJECT_NAME]" in content

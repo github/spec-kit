@@ -2376,6 +2376,185 @@ Run {SCRIPT}
         assert ".specify/scripts/powershell/setup-plan.ps1 -Json" in content
         assert ".specify/scripts/bash/setup-plan.sh" not in content
 
+    @staticmethod
+    def _make_subdir_extension(temp_dir, ext_id="echelon", aliases=None):
+        """Create an extension whose command body references bundled subdirs."""
+        import yaml
+
+        ext_dir = temp_dir / ext_id
+        ext_dir.mkdir()
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents" / "control").mkdir(parents=True)
+        (ext_dir / "knowledge-base").mkdir()
+        (ext_dir / "templates").mkdir()
+        (ext_dir / "specs" / "001-internal").mkdir(parents=True)
+
+        command = {
+            "name": f"speckit.{ext_id}.run",
+            "file": "commands/run.md",
+            "description": "Run",
+        }
+        if aliases:
+            command["aliases"] = aliases
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": ext_id,
+                "name": "Echelon",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {"commands": [command]},
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.dump(manifest_data, f)
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\ndescription: Run\n---\n\n"
+            "Read agents/control/commander.md for instructions.\n"
+            "Load knowledge-base/agent-scores.yaml for calibration.\n"
+            "Use templates/kill-report.md as output format.\n"
+            "Artifacts go to specs/001-internal/plan.md.\n"
+            "See commands/run.md for the source.\n"
+        )
+        return ext_dir
+
+    def test_codex_skill_registration_rewrites_extension_subdir_paths(
+        self, project_dir, temp_dir
+    ):
+        """Extension-relative subdir refs must point at the installed location."""
+        ext_dir = self._make_subdir_extension(temp_dir)
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        content = (skills_dir / "speckit-echelon-run" / "SKILL.md").read_text()
+        assert ".specify/extensions/echelon/agents/control/commander.md" in content
+        assert ".specify/extensions/echelon/knowledge-base/agent-scores.yaml" in content
+        assert ".specify/extensions/echelon/templates/kill-report.md" in content
+        assert "Read agents/" not in content
+        # specs/ refs point at the user's project artifacts, never the extension
+        assert "to specs/001-internal/plan.md" in content
+        assert ".specify/extensions/echelon/specs/" not in content
+        # commands/ refs are slash-command sources, not runtime reads
+        assert "See commands/run.md" in content
+
+    def test_skill_registration_rewrites_extension_subdir_paths_in_aliases(
+        self, project_dir, temp_dir
+    ):
+        """Alias skills reuse the rewritten body."""
+        ext_dir = self._make_subdir_extension(
+            temp_dir, ext_id="ext-alias-paths", aliases=["speckit.ext-alias-paths.go"]
+        )
+
+        skills_dir = project_dir / ".agents" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("codex", manifest, ext_dir, project_dir)
+
+        alias_content = (
+            skills_dir / "speckit-ext-alias-paths-go" / "SKILL.md"
+        ).read_text()
+        assert (
+            ".specify/extensions/ext-alias-paths/agents/control/commander.md"
+            in alias_content
+        )
+        assert "Read agents/" not in alias_content
+
+    def test_markdown_registration_rewrites_extension_subdir_paths(
+        self, project_dir, temp_dir
+    ):
+        """Markdown-format agents get the same rewrite via the shared path."""
+        ext_dir = self._make_subdir_extension(temp_dir, ext_id="ext-md-paths")
+
+        amp_dir = project_dir / ".agents" / "commands"
+        amp_dir.mkdir(parents=True)
+
+        manifest = ExtensionManifest(ext_dir / "extension.yml")
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_agent("amp", manifest, ext_dir, project_dir)
+
+        content = (amp_dir / "speckit.ext-md-paths.run.md").read_text()
+        assert ".specify/extensions/ext-md-paths/agents/control/commander.md" in content
+        assert "Read agents/" not in content
+
+    def test_rewrite_extension_paths_only_rewrites_existing_subdirs(self, temp_dir):
+        """Only directories present in the extension are rewritten."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        ext_dir = temp_dir / "ext-existing"
+        (ext_dir / "agents").mkdir(parents=True)
+        (ext_dir / ".hidden").mkdir()
+
+        text = (
+            "Read agents/one.md then knowledge-base/two.md.\n"
+            "Also ./agents/three.md but not /agents/abs.md.\n"
+            "Keep .hidden/secret.md alone.\n"
+        )
+        rewritten = AgentCommandRegistrar.rewrite_extension_paths(
+            text, "ext-existing", ext_dir
+        )
+
+        assert ".specify/extensions/ext-existing/agents/one.md" in rewritten
+        assert "Also .specify/extensions/ext-existing/agents/three.md" in rewritten
+        # absolute paths keep their meaning
+        assert "not /agents/abs.md" in rewritten
+        # knowledge-base/ does not exist in this extension: left untouched
+        assert "then knowledge-base/two.md" in rewritten
+        assert ".hidden/secret.md" in rewritten
+        assert ".specify/extensions/ext-existing/.hidden/" not in rewritten
+
+    def test_rewrite_extension_paths_handles_regex_special_replacement_text(
+        self, temp_dir
+    ):
+        """subdir/extension_id containing regex-replacement-special characters
+        (e.g. backslash / group references) must not raise or be misinterpreted
+        by re.sub's replacement template (#2101).
+
+        The subdir name uses brackets rather than a backslash: on Windows,
+        "\\" is a path separator, so a subdir literally named "assets\\q"
+        would create nested directories "assets/q" instead of a single
+        directory, and iterdir() would then only discover "assets" - never
+        exercising the intended replacement text. extension_id isn't used to
+        create a directory, so it's free to contain a real backslash/"\\1"
+        to verify the callable replacement treats it literally.
+        """
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        ext_dir = temp_dir / "ext-backslash"
+        weird_subdir = "assets[q]"
+        (ext_dir / weird_subdir).mkdir(parents=True)
+        # sanity-check the cross-platform assumption above
+        assert [p.name for p in ext_dir.iterdir()] == [weird_subdir]
+
+        text = f"Read {weird_subdir}/file.md but not /{weird_subdir}/abs.md.\n"
+        rewritten = AgentCommandRegistrar.rewrite_extension_paths(
+            text, "ext\\1", ext_dir
+        )
+
+        assert f".specify/extensions/ext\\1/{weird_subdir}/file.md" in rewritten
+        # absolute paths are still left untouched
+        assert f"/{weird_subdir}/abs.md" in rewritten
+
+    def test_rewrite_extension_paths_missing_dir_returns_text(self, temp_dir):
+        """A missing extension directory leaves the text unchanged."""
+        from specify_cli.agents import CommandRegistrar as AgentCommandRegistrar
+
+        text = "Read agents/one.md."
+        assert (
+            AgentCommandRegistrar.rewrite_extension_paths(
+                text, "gone", temp_dir / "does-not-exist"
+            )
+            == text
+        )
+
     def test_register_commands_for_copilot(self, extension_dir, project_dir):
         """Test registering commands for Copilot agent with .agent.md extension."""
         # Create .github/agents directory (Copilot project)
@@ -7717,3 +7896,135 @@ class TestConfigManagerEnvPrefixCollision:
         cfg = cm._get_env_config()
         assert "" not in cfg
         assert cfg == {"a": {"b": "z"}}
+
+
+class TestConfigManagerCrossExtensionEnvLeak:
+    """Cross-extension env-var leak: a longer, co-installed sibling ID must
+    own its own env vars instead of leaking them into a shorter-prefix sibling.
+
+    Before the fix, ``SPECKIT_GIT_HOOKS_URL`` (intended for a ``git-hooks``
+    extension) also surfaced inside the ``git`` extension's config as
+    ``{'hooks': {'url': ...}}`` because ``SPECKIT_GIT_`` is a strict prefix of
+    ``SPECKIT_GIT_HOOKS_``.
+    """
+
+    def _install(self, project_root, ext_id):
+        extensions_dir = project_root / ".specify" / "extensions"
+        (extensions_dir / ext_id).mkdir(parents=True)
+        # Register in the extension registry — the registry is the source of
+        # truth for "installed" (a bare directory can be a config-only leftover
+        # from ``ExtensionManager.remove(..., keep_config=True)``).
+        ExtensionRegistry(extensions_dir).add(ext_id, {})
+
+    def test_sibling_owns_longer_prefix_env(self, tmp_path, monkeypatch):
+        """SPECKIT_GIT_HOOKS_URL belongs to git-hooks when co-installed with git."""
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "git-hooks")
+        monkeypatch.setenv("SPECKIT_GIT_URL", "for_git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        git_cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        gh_cfg = ConfigManager(tmp_path, "git-hooks")._get_env_config()
+
+        # 'git' must NOT see the git-hooks var — no cross-extension leak.
+        assert git_cfg == {"url": "for_git"}
+        # 'git-hooks' still receives its own var (unchanged behaviour).
+        assert gh_cfg == {"url": "for_git_hooks"}
+
+    def test_no_sibling_installed_keeps_legacy_absorption(self, tmp_path, monkeypatch):
+        """Without a longer-prefix sibling installed, the legacy behaviour is
+        preserved: ``SPECKIT_GIT_HOOKS_URL`` is absorbed as a nested key of
+        the ``git`` extension. This keeps the fix strictly to the *collision*
+        case and avoids surprising users who deliberately set a nested key
+        via env with no sibling to disambiguate against.
+        """
+        self._install(tmp_path, "git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_hooks"}}
+
+    def test_non_prefix_sibling_ignored(self, tmp_path, monkeypatch):
+        """A sibling whose ID does not extend our own is not a collision.
+
+        e.g. current='git' and sibling='not-git' — 'not-git' normalized to
+        'NOT_GIT' does not start with 'GIT_', so its presence must not
+        influence git's env-var interpretation.
+        """
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "not-git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_hooks"}}
+
+    def test_boundary_prevents_false_positive(self, tmp_path, monkeypatch):
+        """Sibling ID 'hook' (not 'hooks') must NOT eat env keys starting
+        with 'hooks'. The trailing-underscore boundary in the sibling prefix
+        prevents this false positive.
+        """
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "git-hook")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_key_hooks")
+
+        # git-hook's prefix is 'HOOK_', which does not match 'HOOKS_URL',
+        # so 'git' keeps the env var (single-installed semantics).
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_key_hooks"}}
+
+    def test_missing_extensions_dir_does_not_crash(self, tmp_path, monkeypatch):
+        """A ConfigManager built against a project without ``.specify/extensions``
+        (fresh project, ad-hoc test harness) must still evaluate env config
+        rather than raising from the sibling scan.
+        """
+        # Note: no _install call — extensions dir intentionally absent.
+        monkeypatch.setenv("SPECKIT_TESTEXT_URL", "v")
+
+        cfg = ConfigManager(tmp_path, "testext")._get_env_config()
+        assert cfg == {"url": "v"}
+
+    def test_config_only_leftover_not_treated_as_sibling(self, tmp_path, monkeypatch):
+        """A directory left behind by ``remove(..., keep_config=True)`` must
+        NOT be treated as an installed sibling.
+
+        ``ExtensionManager.remove(keep_config=True)`` preserves the extension
+        directory (config files remain, dormant, for a possible reinstall) but
+        removes the registry entry. The sibling scan is sourced from the
+        registry, so a leftover ``git-hooks/`` directory without a registry
+        entry must not silently discard ``SPECKIT_GIT_HOOKS_*`` from ``git``.
+        """
+        self._install(tmp_path, "git")
+        # Simulate ``remove('git-hooks', keep_config=True)``: dir present,
+        # config file preserved, but no registry entry.
+        gh_dir = tmp_path / ".specify" / "extensions" / "git-hooks"
+        gh_dir.mkdir(parents=True)
+        (gh_dir / "git-hooks-config.yml").write_text("url: leftover\n")
+        # Sanity: git-hooks is NOT registered.
+        registry = ExtensionRegistry(tmp_path / ".specify" / "extensions")
+        assert "git-hooks" not in registry.keys()
+
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        # git absorbs the var (no registered sibling owns it).
+        assert cfg == {"hooks": {"url": "for_git"}}
+
+    def test_non_utf8_registry_does_not_crash(self, tmp_path, monkeypatch):
+        """A registry file with invalid text encoding must NOT propagate
+        ``UnicodeDecodeError`` out of the sibling scan and abort every
+        config read. ``ExtensionRegistry._load()`` catches ``JSONDecodeError``
+        / ``FileNotFoundError`` only, so ``_sibling_extension_ids`` must
+        additionally swallow ``UnicodeError`` and degrade to the documented
+        pre-fix behaviour.
+        """
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        # Write bytes that are not valid UTF-8 to the registry file.
+        (extensions_dir / ExtensionRegistry.REGISTRY_FILE).write_bytes(
+            b"\xff\xfe invalid utf-8 registry \xc3\x28"
+        )
+        monkeypatch.setenv("SPECKIT_TESTEXT_URL", "v")
+
+        # Must not raise; must fall back to the "no siblings" path.
+        cfg = ConfigManager(tmp_path, "testext")._get_env_config()
+        assert cfg == {"url": "v"}

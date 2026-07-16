@@ -152,6 +152,44 @@ class TestResolveGitHubReleaseAssetApiUrl:
         )
         assert result is None
 
+    def test_metadata_lookup_is_bounded_and_redirect_validated(self):
+        """Release metadata reads stay bounded and use the caller's policy."""
+        captured = {}
+
+        class OversizedResponse:
+            def read(self, amount=None):
+                captured["read_amount"] = amount
+                return b"x" * amount
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def redirect_validator(old_url, new_url):
+            return None
+
+        def fake_open(
+            url,
+            timeout=None,
+            extra_headers=None,
+            redirect_validator=None,
+        ):
+            captured["redirect_validator"] = redirect_validator
+            return OversizedResponse()
+
+        result = resolve_github_release_asset_api_url(
+            "https://github.com/org/repo/releases/download/v1/pack.zip",
+            fake_open,
+            redirect_validator=redirect_validator,
+            max_metadata_bytes=8,
+        )
+
+        assert result is None
+        assert captured["read_amount"] == 9
+        assert captured["redirect_validator"] is redirect_validator
+
     def test_tag_with_special_characters_is_url_encoded(self):
         """Tags with reserved characters (e.g. '/') are encoded in the API URL."""
         captured_urls = []

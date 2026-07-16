@@ -44,12 +44,6 @@ provides:
       description: "Self-test constitution template"
       replaces: "constitution-template"
 
-    - type: "template"
-      name: "agent-file-template"
-      file: "templates/agent-file-template.md"
-      description: "Self-test agent file template"
-      replaces: "agent-file-template"
-
     - type: "command"
       name: "speckit.specify"
       file: "commands/speckit.specify.md"

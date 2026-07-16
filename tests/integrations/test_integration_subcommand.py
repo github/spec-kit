@@ -1566,6 +1566,43 @@ class TestIntegrationUse:
         assert opts["integration"] == "codex"
         assert opts["ai"] == "codex"
 
+    def test_use_preserves_copilot_skills_mode(self, tmp_path):
+        """`use` on a skills-mode Copilot keeps ``ai_skills`` (issue #3550).
+
+        Re-selecting the same skills-mode Copilot must not drop ``ai_skills``
+        from init-options.json nor regenerate extension commands in the legacy
+        ``.agent.md``/``.prompt.md`` layout.
+        """
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts.get("ai_skills") is True, "precondition: init recorded skills mode"
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        # Simulate a fresh process: `use` in real life runs in its own process
+        # where the registry's Copilot instance has _skills_mode == False (it is
+        # only set during setup()). In-process test invocations otherwise reuse
+        # the singleton left in skills mode by init, masking the bug (#3550).
+        from specify_cli.integrations import get_integration
+
+        get_integration("copilot")._skills_mode = False
+
+        result = _run_in_project(project, ["integration", "use", "copilot"])
+        assert result.exit_code == 0, result.output
+
+        opts = json.loads((project / ".specify" / "init-options.json").read_text(encoding="utf-8"))
+        assert opts.get("ai_skills") is True, "ai_skills must survive `use copilot`"
+
+        # No legacy command-layout files should be regenerated for the
+        # skills-mode agent.
+        assert not (project / ".github" / "agents" / "speckit.git.feature.agent.md").exists()
+        assert not (project / ".github" / "prompts" / "speckit.git.feature.prompt.md").exists()
+        assert (
+            project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
     def test_use_requires_installed_integration(self, tmp_path):
         project = _init_project(tmp_path, "claude")
         old_cwd = os.getcwd()
@@ -2674,6 +2711,27 @@ class TestParseIntegrationOptionsEqualsForm:
         assert result_equals is not None
         assert result_space["commands_dir"] == "./mydir"
         assert result_equals["commands_dir"] == "./mydir"
+
+    def test_unbalanced_quote_exits_cleanly(self, capsys):
+        """An unbalanced quote must exit(1) with a message, not a raw ValueError.
+
+        shlex.split() raises ValueError("No closing quotation") on an unbalanced
+        quote; the parser must translate that into the same clean typer.Exit(1)
+        UX as unknown-option / missing-value, rather than letting the traceback
+        escape (issue #3457).
+        """
+        import typer
+
+        from specify_cli.integrations._commands import _parse_integration_options
+        from specify_cli.integrations import get_integration
+
+        integration = get_integration("generic")
+        assert integration is not None
+
+        with pytest.raises(typer.Exit) as excinfo:
+            _parse_integration_options(integration, '--commands-dir "foo')
+        assert excinfo.value.exit_code == 1
+        assert "Error: Could not parse integration options: No closing quotation." in capsys.readouterr().out
 
 
 class TestUninstallNoManifestClearsInitOptions:
