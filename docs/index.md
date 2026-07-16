@@ -2,9 +2,9 @@
 
 # GitHub Spec Kit
 
-**Define what to build before building it — with any AI coding agent.**
+**Spec-Driven Development or your own process — with any AI coding agent.**
 
-Spec Kit is a toolkit for [Spec-Driven Development](concepts/sdd.md) (SDD), a methodology that puts specifications at the center of AI-assisted software development. Instead of jumping straight to code, you describe _what_ to build, refine it through structured phases, and let your AI coding agent implement it.
+Spec Kit is an extensible, knowledge-driven toolkit for AI-assisted software development. Use it for [Spec-Driven Development](concepts/sdd.md) (SDD) — describing _what_ to build and refining it through structured phases — or shape a process that fits how your team works, with intent at the center.
 
 <a href="installation.md" class="btn btn-primary btn-lg">Install Spec Kit</a>&nbsp;
 <a href="quickstart.md" class="btn btn-outline-primary btn-lg">Quick Start</a>
@@ -33,7 +33,7 @@ Define what to build before building it. Rich templates, quality checklists, and
 
 <span class="pillar-stat">35 integrations</span> — Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
 
-Run `specify init` with your agent of choice and Spec Kit sets up the right command files, context rules, and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
+Run `specify init` with your agent of choice and Spec Kit sets up the right command files and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
 
 <a href="reference/integrations.md" class="pillar-link">See all integrations →</a>
 
@@ -43,7 +43,7 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">138 community extensions</span> (70+ authors), <span class="pillar-stat">25 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
+<span class="pillar-stat">138 community extensions</span> (70+ authors), <span class="pillar-stat">25 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, and package it all up as bundles you can share — or replace the process entirely.
 
 Including entirely different SDD processes:
 
@@ -53,7 +53,10 @@ Including entirely different SDD processes:
 - **FX→.NET** — end-to-end .NET Framework migration across 7 phases
 - **MAQA** — multi-agent orchestration with quality assurance gates
 
-<a href="community/presets.md" class="pillar-link">Browse community presets →</a>
+<a href="reference/presets.md" class="pillar-link">Presets →</a>&nbsp;&nbsp;
+<a href="reference/extensions.md" class="pillar-link">Extensions →</a>&nbsp;&nbsp;
+<a href="reference/workflows.md" class="pillar-link">Workflows →</a>&nbsp;&nbsp;
+<a href="reference/bundles.md" class="pillar-link">Bundles →</a>
 
 </div>
 
@@ -61,12 +64,12 @@ Including entirely different SDD processes:
 
 ### Integrate into your organization
 
-Works offline, behind firewalls, and on **Windows, macOS, and Linux**. Host your own extension and preset catalogs so your organization controls what gets installed.
+Works offline, behind firewalls, and on **Windows, macOS, and Linux**. Host your own catalogs so your organization controls what integrations, extensions, presets, workflows, and bundles get installed.
 
 Community extensions like CI Guard and Architecture Guard add compliance gates and governance that fit the way your team already works.
 
-<a href="installation.md" class="pillar-link">Installation guide →</a>&nbsp;&nbsp;
-<a href="reference/extensions.md" class="pillar-link">Extensions reference →</a>
+<a href="install/air-gapped.md" class="pillar-link">Enterprise / Air-Gapped →</a>&nbsp;&nbsp;
+<a href="reference/overview.md" class="pillar-link">CLI reference →</a>
 
 </div>
 
@@ -143,7 +146,7 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 <div class="footer-cta">
 
 ```bash
-uvx --from git+https://github.com/github/spec-kit.git
+uv tool install specify-cli
 specify init my-project --integration copilot
 ```
 

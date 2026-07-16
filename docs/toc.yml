@@ -39,6 +39,10 @@
       href: reference/workflows.md
     - name: Bundles
       href: reference/bundles.md
+    - name: Agentic SDD
+      href: reference/agentic-sdd.md
+    - name: Agentic Bug Fix
+      href: reference/agentic-bugfix.md
     - name: Authentication
       href: reference/authentication.md
 
