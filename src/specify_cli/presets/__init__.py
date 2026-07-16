@@ -1171,7 +1171,7 @@ class PresetManager:
                             selected_ai, fm, body, self.project_root
                         )
                         body = self._resolve_skill_command_refs(
-                            body, registrar, selected_ai
+                            body, registrar, selected_ai, self.project_root
                         )
                     from ..integrations import get_integration
                     integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
@@ -1252,7 +1252,10 @@ class PresetManager:
 
     @staticmethod
     def _resolve_skill_command_refs(
-        body: str, registrar: "CommandRegistrar", selected_ai: str
+        body: str,
+        registrar: "CommandRegistrar",
+        selected_ai: str,
+        project_root: "Path | None" = None,
     ) -> str:
         """Render ``__SPECKIT_COMMAND_*__`` tokens in a skill body as invocations.
 
@@ -1261,10 +1264,30 @@ class PresetManager:
         slash-command invocation — ``/speckit-<cmd>`` for a ``-`` separator,
         ``/speckit.<cmd>`` for ``.`` — the same rendering the command layer
         applies via ``CommandRegistrar.register_commands()``.
+
+        For dual-layout agents (e.g. Bob) the separator depends on the
+        project's persisted skills state, so — when *project_root* is provided
+        — the separator is resolved from the integration via
+        ``invoke_separator_for_mode`` rather than the single static
+        ``AGENT_CONFIGS`` value.
         """
-        separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
-            "invoke_separator", "."
-        )
+        separator = None
+        if project_root is not None and isinstance(selected_ai, str):
+            try:
+                from .. import load_init_options
+                from ..integrations import get_integration
+
+                integration = get_integration(selected_ai)
+                if integration is not None:
+                    separator = integration.invoke_separator_for_mode(
+                        is_ai_skills_enabled(load_init_options(project_root))
+                    )
+            except Exception:
+                separator = None
+        if separator is None:
+            separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
+                "invoke_separator", "."
+            )
         return IntegrationBase.resolve_command_refs(body, separator)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
@@ -1445,7 +1468,7 @@ class PresetManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )
-            body = self._resolve_skill_command_refs(body, registrar, selected_ai)
+            body = self._resolve_skill_command_refs(body, registrar, selected_ai, self.project_root)
 
             for target_skill_name in target_skill_names:
                 skill_subdir = skills_dir / target_skill_name
@@ -1540,7 +1563,7 @@ class PresetManager:
                         selected_ai, frontmatter, body, self.project_root
                     )
                     body = self._resolve_skill_command_refs(
-                        body, registrar, selected_ai
+                        body, registrar, selected_ai, self.project_root
                     )
 
                 original_desc = frontmatter.get("description", "")
@@ -1592,7 +1615,7 @@ class PresetManager:
                         selected_ai, frontmatter, body, self.project_root
                     )
                     body = self._resolve_skill_command_refs(
-                        body, registrar, selected_ai
+                        body, registrar, selected_ai, self.project_root
                     )
 
                 command_name = extension_restore["command_name"]

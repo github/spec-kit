@@ -637,6 +637,23 @@ class CommandRegistrar:
         is_cline_ext = agent_name == "cline" and source_id != "core"
         source_root = source_dir.resolve()
 
+        # Resolve the command-reference separator once for this agent/project.
+        # Dual-layout agents (e.g. Bob) use different separators for their
+        # skills vs command layouts, so we ask the integration to map the
+        # project's persisted skills state to the correct separator rather than
+        # relying on the single static AGENT_CONFIGS value.
+        _sep = agent_config.get("invoke_separator", ".")
+        try:
+            from specify_cli.integrations import get_integration  # noqa: PLC0415
+
+            _integ = get_integration(agent_name)
+            if _integ is not None:
+                _sep = _integ.invoke_separator_for_mode(
+                    is_ai_skills_enabled(load_init_options(project_root))
+                )
+        except Exception:
+            pass
+
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
             aliases = cmd_info.get("aliases", [])
@@ -709,13 +726,15 @@ class CommandRegistrar:
             )
 
             # Resolve __SPECKIT_COMMAND_*__ tokens using the agent's invoke separator.
-            # The separator is sourced from agent_config (populated by _build_agent_configs,
-            # which propagates each integration's invoke_separator class attribute).
+            # For dual-layout agents (e.g. Bob) the separator differs between the
+            # skills and command layouts, so a single static AGENT_CONFIGS value is
+            # insufficient. Resolve it from the integration using the project's
+            # persisted skills state; single-layout agents fall back to the static
+            # AGENT_CONFIGS value unchanged (invoke_separator_for_mode default).
             # Deferred import of IntegrationBase avoids a circular import at module load
             # (base.py itself imports CommandRegistrar lazily).
             from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
 
-            _sep = agent_config.get("invoke_separator", ".")
             body = IntegrationBase.resolve_command_refs(body, _sep)
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)

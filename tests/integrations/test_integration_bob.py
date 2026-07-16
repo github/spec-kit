@@ -19,10 +19,14 @@ class TestBobIntegrationRegistration:
     def test_is_integration_base_not_skills_integration(self):
         """BobIntegration extends IntegrationBase directly — not SkillsIntegration.
 
-        It must NOT be an instance of SkillsIntegration so that consumers
-        such as _update_init_options_for_integration and the init next-steps
-        builder derive the effective mode from _skills_mode rather than the
-        class hierarchy.  invoke_separator='-' is set explicitly on the class.
+        Bob is dual-mode (skills by default, legacy commands via
+        ``--legacy-commands``), so its skills-ness is a per-project config
+        decision resolved by the ``is_skills_mode`` hook — not a class-hierarchy
+        property.  It therefore must NOT be a ``SkillsIntegration`` (which is
+        reserved for statically skills-only agents); shared code consults
+        ``is_skills_mode(parsed_options)`` instead of ``isinstance``.
+        ``invoke_separator='-'`` is set explicitly on the class to match the
+        default (skills) layout.
         """
         from specify_cli.integrations.base import IntegrationBase
         bob = get_integration("bob")
@@ -66,6 +70,35 @@ class TestBobOptionsFlag:
         opts = bob.options()
         skills_opts = [o for o in opts if o.name == "--skills"]
         assert len(skills_opts) == 0
+
+
+class TestBobIsSkillsModeHook:
+    """The is_skills_mode hook is the single source of truth for the mode."""
+
+    def test_default_is_skills(self):
+        bob = get_integration("bob")
+        assert bob.is_skills_mode(None) is True
+        assert bob.is_skills_mode({}) is True
+
+    def test_legacy_commands_disables_skills(self):
+        bob = get_integration("bob")
+        assert bob.is_skills_mode({"legacy_commands": True}) is False
+
+    def test_effective_invoke_separator_tracks_mode(self):
+        bob = get_integration("bob")
+        assert bob.effective_invoke_separator(None) == "-"
+        assert bob.effective_invoke_separator({"legacy_commands": True}) == "."
+
+    def test_invoke_separator_for_mode_tracks_persisted_state(self):
+        """Registration paths resolve the separator from persisted ai_skills."""
+        bob = get_integration("bob")
+        assert bob.invoke_separator_for_mode(True) == "-"
+        assert bob.invoke_separator_for_mode(False) == "."
+
+    def test_no_skills_mode_method_leaks(self):
+        """The old callable _skills_mode method must be gone; consumers use the hook."""
+        bob = get_integration("bob")
+        assert not callable(getattr(bob, "_skills_mode", None))
 
 
 class TestBobDefaultSkillsMode:
@@ -303,10 +336,12 @@ class TestBobInitFlowLegacy:
     def test_init_legacy_does_not_set_ai_skills(self, tmp_path):
         """Legacy install must NOT write ai_skills=True to init-options.json.
 
-        Regression test: _update_init_options_for_integration previously called
-        getattr(integration, "_skills_mode", False) which returned the bound method
-        object (always truthy) instead of calling it, so legacy projects incorrectly
-        got ai_skills=True and used hyphenated skill invocations.
+        Behavioral guard for the dual-mode contract: with --legacy-commands,
+        BobIntegration.is_skills_mode(parsed_options) returns False, so
+        _update_init_options_for_integration must not persist ai_skills=True.
+        (Regression origin: shared code previously probed a bound _skills_mode
+        method object, which is always truthy, and wrongly enabled skills for
+        legacy projects.)
         """
         from typer.testing import CliRunner
         from specify_cli import app
@@ -396,3 +431,42 @@ class TestBobRegistrarConfig:
         assert "bob" in results, "bob must appear in results for legacy-mode project"
         registered_file = commands_dir / "speckit.test-cmd.md"
         assert registered_file.exists(), f"Expected {registered_file} to be written"
+
+    def test_legacy_extension_command_refs_use_dot_separator(self, tmp_path):
+        """Regression (review #3415): legacy .bob/commands/ extension commands must
+        render Bob 1.x ``/speckit.<cmd>`` refs, not the skills-layout ``/speckit-<cmd>``.
+
+        The single static AGENT_CONFIGS["bob"]["invoke_separator"] is "-" (the
+        default skills layout); register_commands must instead resolve the
+        separator from the project's persisted mode via
+        BobIntegration.invoke_separator_for_mode(False) -> ".".
+        """
+        import textwrap
+        from specify_cli.agents import CommandRegistrar
+
+        # Legacy-mode project: .bob/commands exists, ai_skills is NOT set.
+        commands_dir = tmp_path / ".bob" / "commands"
+        commands_dir.mkdir(parents=True)
+        cmd_file = tmp_path / "test.md"
+        cmd_file.write_text(
+            textwrap.dedent("""\
+                ---
+                description: "Test command"
+                ---
+                See __SPECKIT_COMMAND_SPECIFY__ for details.
+            """),
+            encoding="utf-8",
+        )
+
+        registrar = CommandRegistrar()
+        registrar.register_commands_for_all_agents(
+            commands=[{"name": "speckit.test-cmd", "file": "test.md"}],
+            source_id="test",
+            source_dir=tmp_path,
+            project_root=tmp_path,
+        )
+        rendered = (commands_dir / "speckit.test-cmd.md").read_text(encoding="utf-8")
+        assert "/speckit.specify" in rendered, (
+            "legacy Bob extension commands must render /speckit.specify (dot)"
+        )
+        assert "/speckit-specify" not in rendered

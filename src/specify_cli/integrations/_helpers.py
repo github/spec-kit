@@ -272,28 +272,19 @@ def _update_init_options_for_integration(
         load_init_options,
         save_init_options,
     )
-    from .base import SkillsIntegration
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
     opts["speckit_version"] = _get_speckit_version()
     if script_type:
         opts["script"] = script_type
-    # Skills mode is either intrinsic (SkillsIntegration), derived from
-    # parsed_options via a callable _skills_mode method (e.g. Bob), set on
-    # the instance during setup() as a bool attribute (e.g. Copilot), or
-    # requested via parsed options (e.g. Copilot's --skills, persisted as
-    # parsed_options["skills"]). The latter is the only signal available on
-    # the `use` path, where no setup() runs and a fresh integration instance
-    # has _skills_mode == False (issue #3550).
-    _skills_mode_attr = getattr(integration, "_skills_mode", None)
-    skills_mode = (
-        isinstance(integration, SkillsIntegration)
-        or (callable(_skills_mode_attr) and _skills_mode_attr(parsed_options))
-        or (not callable(_skills_mode_attr) and bool(_skills_mode_attr))
-        or bool((parsed_options or {}).get("skills"))
-    )
-    if skills_mode:
+    # Whether skills mode is active is owned by each integration via the
+    # ``is_skills_mode`` hook (base default honors ``--skills``;
+    # SkillsIntegration returns True; skills-first integrations with a legacy
+    # opt-out such as Bob override it). This keeps shared code free of
+    # ``isinstance`` / ``_skills_mode`` probing. Passing parsed_options lets it
+    # work on the ``use``/``install`` path where no setup() runs (issue #3550).
+    if integration.is_skills_mode(parsed_options):
         opts["ai_skills"] = True
     else:
         opts.pop("ai_skills", None)

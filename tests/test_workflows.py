@@ -8882,8 +8882,8 @@ steps:
         # Original download error remains present.
         assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
         # Cleanup failure is reported too, not silently swallowed / crashing.
-        assert "cleanup denied" in result.output
-        assert "Warning" in result.output
+        assert "cleanupdenied" in "".join(result.output.split())
+        assert "Warning" in "".join(result.output.split())
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
     def test_add_from_url_installs(self, project_dir, monkeypatch):

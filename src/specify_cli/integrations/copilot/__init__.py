@@ -131,6 +131,17 @@ class CopilotIntegration(IntegrationBase):
             return "-"
         return self.invoke_separator
 
+    def is_skills_mode(self, parsed_options: dict[str, Any] | None = None) -> bool:
+        """Copilot is skills mode when ``--skills`` was requested.
+
+        On the init path ``setup()`` has already recorded the choice in
+        ``self._skills_mode``; on the ``use``/``install`` path (where no
+        ``setup()`` runs) the signal comes from *parsed_options* (#3550).
+        """
+        if parsed_options and parsed_options.get("skills"):
+            return True
+        return self._skills_mode
+
     @classmethod
     def options(cls) -> list[IntegrationOption]:
         return [

@@ -532,18 +532,9 @@ def register(app: typer.Typer) -> None:
                     "feature_numbering": "sequential",
                     "speckit_version": get_speckit_version(),
                 }
-                from ..integrations.base import SkillsIntegration as _SkillsPersist
-
-                _legacy_commands = bool(
-                    (integration_parsed_options or {}).get("legacy_commands")
-                )
-                _skills_mode_attr = getattr(resolved_integration, "_skills_mode", None)
-                _is_skills = (
-                    isinstance(resolved_integration, _SkillsPersist)
-                    or (callable(_skills_mode_attr) and _skills_mode_attr(integration_parsed_options))
-                    or (not callable(_skills_mode_attr) and bool(_skills_mode_attr))
-                )
-                if _is_skills and not _legacy_commands:
+                if resolved_integration.is_skills_mode(
+                    integration_parsed_options or None
+                ):
                     init_opts["ai_skills"] = True
                 save_init_options(project_path, init_opts)
 
@@ -690,13 +681,8 @@ def register(app: typer.Typer) -> None:
             steps_lines.append("1. You're already in the project directory!")
             step_num = 2
 
-        from ..integrations.base import SkillsIntegration as _SkillsInt
-
-        _skills_mode_attr = getattr(resolved_integration, "_skills_mode", None)
-        _is_skills_integration = (
-            isinstance(resolved_integration, _SkillsInt)
-            or (callable(_skills_mode_attr) and _skills_mode_attr(integration_parsed_options))
-            or (not callable(_skills_mode_attr) and bool(_skills_mode_attr))
+        _is_skills_integration = resolved_integration.is_skills_mode(
+            integration_parsed_options or None
         )
 
         codex_skill_mode = selected_ai == "codex" and _is_skills_integration
@@ -705,7 +691,6 @@ def register(app: typer.Typer) -> None:
         kimi_skill_mode = selected_ai == "kimi"
         agy_skill_mode = selected_ai == "agy" and _is_skills_integration
         trae_skill_mode = selected_ai == "trae"
-        bob_skill_mode = selected_ai == "bob" and _is_skills_integration
         cursor_agent_skill_mode = (
             selected_ai == "cursor-agent" and _is_skills_integration
         )
@@ -714,6 +699,7 @@ def register(app: typer.Typer) -> None:
         zed_skill_mode = selected_ai == "zed" and _is_skills_integration
         grok_skill_mode = selected_ai == "grok" and _is_skills_integration
         cline_skill_mode = selected_ai == "cline"
+        bob_skill_mode = selected_ai == "bob" and _is_skills_integration
         native_skill_mode = (
             codex_skill_mode
             or zcode_skill_mode
@@ -721,12 +707,12 @@ def register(app: typer.Typer) -> None:
             or kimi_skill_mode
             or agy_skill_mode
             or trae_skill_mode
-            or bob_skill_mode
             or cursor_agent_skill_mode
             or copilot_skill_mode
             or devin_skill_mode
             or zed_skill_mode
             or grok_skill_mode
+            or bob_skill_mode
         )
 
         if codex_skill_mode:
@@ -762,6 +748,11 @@ def register(app: typer.Typer) -> None:
         if grok_skill_mode:
             steps_lines.append(
                 f"{step_num}. Start Grok Build in this project directory; spec-kit skills were installed to [cyan].grok/skills[/cyan]"
+            )
+            step_num += 1
+        if bob_skill_mode:
+            steps_lines.append(
+                f"{step_num}. Start Bob in this project directory; spec-kit skills were installed to [cyan].bob/skills[/cyan]"
             )
             step_num += 1
         usage_label = "skills" if native_skill_mode else "slash commands"
