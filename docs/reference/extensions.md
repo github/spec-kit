@@ -178,7 +178,7 @@ Spec Kit stores project-level extension registration and hook configuration in:
 ```text
 .specify/extensions.yml
 ```
-The file contains installed extensions, global settings, and hooks that run before or after Spec Kit commands.
+The file contains installed extensions, global settings, and hooks that are surfaced before or after Spec Kit commands.
 
 ```yaml
 installed:
@@ -220,8 +220,8 @@ Each hook entry supports the following fields:
 | `extension` | ID of the extension that registered the hook. |
 | `command` | Extension command associated with the hook. |
 | `enabled` | Whether the hook is active. Hooks with `enabled: false` are skipped. |
-| `optional` | Whether the hook is optional. Optional hooks may prompt the user before execution; non-optional hooks run as part of the hook workflow. |
-| `priority` | Execution order when multiple hooks are registered for the same event. Lower numbers run first. The default priority is `10`. |
+| `optional` | Whether the hook is optional. If `true`, the hook is presented with its `prompt` and can be skipped; if `false`, the hook is emitted as an automatic hook (includes `EXECUTE_COMMAND` markers). |
+| `priority` | Execution order when multiple hooks are registered for the same event. Lower numbers run first. Priority must be an integer >= 1; invalid values fall back to the default priority `10`. |
 | `prompt` | Message shown when asking whether to run an optional hook. |
 | `description` | Human-readable explanation of what the hook does. |
 | `condition` | Optional condition associated with the hook. |
