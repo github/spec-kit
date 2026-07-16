@@ -279,19 +279,6 @@ def _update_init_options_for_integration(
     opts["speckit_version"] = _get_speckit_version()
     if script_type:
         opts["script"] = script_type
-    _skills_mode_attr = getattr(integration, "_skills_mode", None)
-    if callable(_skills_mode_attr):
-        is_skills = _skills_mode_attr(parsed_options)
-    else:
-        is_skills = bool(_skills_mode_attr) or isinstance(integration, SkillsIntegration)
-
-    if (
-        integration.key == "bob"
-        and parsed_options is None
-        and (project_root / ".bob" / "commands").exists()
-        and not (project_root / ".bob" / "skills").exists()
-    ):
-        is_skills = False
     # Skills mode is either intrinsic (SkillsIntegration), set on the instance
     # during setup() (_skills_mode), or requested via parsed options (e.g.
     # Copilot's --skills, persisted as parsed_options["skills"]). The latter is
