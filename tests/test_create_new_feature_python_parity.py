@@ -382,3 +382,23 @@ def test_python_json_output_matches_powershell(
 
     assert py.returncode == ps.returncode == 0
     assert json_stdout(py) == json_stdout(ps)
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("number", ["-1", "+1"], ids=["negative", "positive_sign"])
+def test_all_variants_reject_signed_number(repo: Path, number: str) -> None:
+    bash = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "--number", number, "x"),
+        repo,
+    )
+    ps = run(
+        ps_cmd(repo, SCRIPT, "-Json", "-DryRun", "-Number", number, "x"),
+        repo,
+    )
+    py = run(
+        py_cmd(repo, SCRIPT, "--json", "--dry-run", "--number", number, "x"),
+        repo,
+    )
+
+    assert bash.returncode == ps.returncode == py.returncode == 1

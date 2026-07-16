@@ -7,7 +7,7 @@ param(
     [switch]$DryRun,
     [string]$ShortName,
     [Parameter()]
-    [long]$Number = 0,
+    [string]$Number = '',
     [switch]$Timestamp,
     [switch]$Help,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
@@ -147,7 +147,7 @@ if ($ShortName) {
 # `[ -n "$BRANCH_NUMBER" ]` check.
 if ($Timestamp -and $PSBoundParameters.ContainsKey('Number')) {
     Write-Warning "[specify] Warning: -Number is ignored when -Timestamp is used"
-    $Number = 0
+    $Number = ''
 }
 
 # Determine branch prefix
@@ -158,11 +158,15 @@ if ($Timestamp) {
     # Determine branch number from existing feature directories. Auto-detect only
     # when -Number was not supplied; an explicit value (including 0) is honored,
     # matching the bash twin's `[ -z "$BRANCH_NUMBER" ]` check.
+    [long]$resolvedNumber = 0
     if (-not $PSBoundParameters.ContainsKey('Number')) {
-        $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
+        $resolvedNumber = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
+    } elseif ($Number -notmatch '^[0-9]+$' -or -not [long]::TryParse($Number, [ref]$resolvedNumber)) {
+        Write-Error "Error: -Number must be an unsigned integer, got '$Number'"
+        exit 1
     }
 
-    $featureNum = ('{0:000}' -f $Number)
+    $featureNum = ('{0:000}' -f $resolvedNumber)
     $branchName = "$featureNum-$branchSuffix"
 }
 
