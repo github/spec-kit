@@ -1004,6 +1004,7 @@ class ExtensionManager:
         from .. import load_init_options
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
+        from ..integrations.base import IntegrationBase
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -1015,6 +1016,30 @@ class ExtensionManager:
         registrar = CommandRegistrar()
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         integration = get_integration(selected_ai)
+        ai_skills_enabled = is_ai_skills_enabled(opts)
+
+        def _resolve_command_ref_tokens(body: str) -> str:
+            """Resolve explicit command-ref tokens with the active skill style."""
+
+            def _replacement(match: re.Match[str]) -> str:
+                command_name = "speckit." + match.group(1).lower().replace("_", ".")
+                if is_dollar_skills_agent(selected_ai, ai_skills_enabled):
+                    return "$" + command_name.replace("speckit.", "speckit-").replace(
+                        ".", "-"
+                    )
+                if is_slash_skills_agent(selected_ai, ai_skills_enabled):
+                    return "/" + command_name.replace("speckit.", "speckit-").replace(
+                        ".", "-"
+                    )
+                if integration is not None:
+                    return integration.build_command_invocation(command_name)
+                return IntegrationBase.resolve_command_refs(
+                    match.group(0), agent_config.get("invoke_separator", ".")
+                )
+
+            return re.sub(
+                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__", _replacement, body
+            )
 
         for cmd_info in manifest.commands:
             cmd_name = cmd_info["name"]
@@ -1086,6 +1111,7 @@ class ExtensionManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
+            body = _resolve_command_ref_tokens(body)
 
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"

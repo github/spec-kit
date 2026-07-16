@@ -31,7 +31,7 @@ Define what to build before building it. Rich templates, quality checklists, and
 
 ### Use any coding agent
 
-<span class="pillar-stat">30+ integrations</span> — Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
+<span class="pillar-stat">35 integrations</span> — Copilot, Gemini, Codex, Kilo Code, Zed, Claude, Forge, Kiro, and more. Switch freely between agents with a single command. No lock-in.
 
 Run `specify init` with your agent of choice and Spec Kit sets up the right command files, context rules, and directory structures automatically. If your agent isn't listed, the `generic` integration is an escape hatch for any tool.
 
@@ -43,7 +43,7 @@ Run `specify init` with your agent of choice and Spec Kit sets up the right comm
 
 ### Make it your own
 
-<span class="pillar-stat">105 community extensions</span> (60+ authors), <span class="pillar-stat">22 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
+<span class="pillar-stat">138 community extensions</span> (70+ authors), <span class="pillar-stat">25 presets</span>, and growing. Tune the core process with presets, extend it with extensions, orchestrate it with workflows, or replace it entirely. Build and publish your own.
 
 Including entirely different SDD processes:
 
@@ -78,31 +78,31 @@ Community extensions like CI Guard and Architecture Guard add compliance gates a
 
 ## Built by the community
 
-**200+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new development processes. Anyone can create and publish an extension, preset, or workflow.
+**240+ contributors** power the Spec Kit ecosystem — from core integrations to entirely new development processes. Anyone can create and publish an extension, preset, or workflow.
 
 <div class="stats-grid">
   <div class="stat-item">
-    <span class="stat-number">106K+</span>
+    <span class="stat-number">121K+</span>
     <span class="stat-label">GitHub stars</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">200+</span>
+    <span class="stat-number">240+</span>
     <span class="stat-label">Contributors</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">30+</span>
+    <span class="stat-number">35</span>
     <span class="stat-label">Integrations</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">105</span>
+    <span class="stat-number">138</span>
     <span class="stat-label">Extensions</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">22</span>
+    <span class="stat-number">25</span>
     <span class="stat-label">Presets</span>
   </div>
   <div class="stat-item">
-    <span class="stat-number">4</span>
+    <span class="stat-number">6</span>
     <span class="stat-label">Friends projects</span>
   </div>
 </div>
@@ -151,4 +151,4 @@ Ready to start? Follow the [Quick Start Guide](quickstart.md).
 
 </div>
 
-<p class="text-end small text-body-secondary">Last updated: May 27, 2026</p>
+<p class="text-end small text-body-secondary">Last updated: July 16, 2026</p>

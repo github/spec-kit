@@ -2112,6 +2112,69 @@ class TestIfThenStep:
         errors = step.validate({"id": "test", "then": []})
         assert any("missing 'condition'" in e for e in errors)
 
+    @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_then_fails_loudly(self, bad_branch):
+        """A non-list ``then`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-list ``then``, but the engine does not
+        auto-validate (see ``WorkflowEngine.load_workflow``) and feeds
+        ``next_steps`` straight into ``_execute_steps``, which iterates them as
+        step mappings. Before the guard, a non-list ``then`` (a single mapping
+        or scalar authoring mistake) was iterated element-wise and raised
+        AttributeError on ``.get()``, taking down the whole run. Mirrors the
+        switch/fan-out non-list handling.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "branch", "condition": "true", "then": bad_branch}, ctx
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'then' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+
+    @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_else_fails_loudly(self, bad_branch):
+        """A non-list ``else`` selected at runtime must fail the step, not crash.
+
+        Same asymmetry as ``then``: the ``else`` branch is only reached when the
+        condition is false, so a non-list ``else`` reaches ``next_steps`` and
+        would crash the engine's step iteration on an unvalidated run.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "branch", "condition": "false", "then": [], "else": bad_branch},
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'else' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+
+    def test_execute_none_else_stays_empty(self):
+        """An explicit ``else: null`` selected at runtime stays an empty branch.
+
+        ``validate`` deliberately accepts ``else: None``; the execute guard must
+        normalize it to an empty branch (COMPLETED) rather than failing a
+        validator-approved workflow when the condition is false.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "branch", "condition": "false", "then": [], "else": None}, ctx
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.next_steps == []
+
     @pytest.mark.parametrize("bad_else", [False, 0, "", {}, 42])
     def test_validate_rejects_non_list_else(self, bad_else):
         """A non-list 'else' must be rejected even when it is falsy.
@@ -2244,6 +2307,91 @@ class TestSwitchStep:
             assert "'cases' must be a mapping" in (result.error or "")
             # expression is still evaluated, so its value is surfaced for context.
             assert result.output["expression_value"] == "approve"
+
+    @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_matched_case_fails_loudly(self, bad_branch):
+        """A matched case with a non-list body must fail the step, not crash.
+
+        ``validate`` rejects a non-list case body, but the engine does not
+        auto-validate (see ``WorkflowEngine.load_workflow``) and feeds the
+        selected branch straight into ``_execute_steps``, which iterates it as
+        step mappings. A non-list body (a single mapping or scalar authoring
+        mistake) would be iterated element-wise and raise AttributeError on
+        ``.get()``, taking down the whole run. Mirrors the non-mapping
+        ``cases`` guard.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = SwitchStep()
+        ctx = StepContext(steps={"review": {"output": {"choice": "approve"}}})
+        result = step.execute(
+            {
+                "id": "route",
+                "expression": "{{ steps.review.output.choice }}",
+                "cases": {"approve": bad_branch},
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "case 'approve' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+        # expression is still evaluated, so its value is surfaced for context.
+        assert result.output["expression_value"] == "approve"
+
+    @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_default_fails_loudly(self, bad_branch):
+        """A non-list ``default`` reached at runtime must fail, not crash.
+
+        Same asymmetry as the case body: ``default`` is only selected when no
+        case matches, so a non-list ``default`` reaches ``next_steps`` and would
+        crash the engine's step iteration on an unvalidated run.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = SwitchStep()
+        ctx = StepContext(steps={"review": {"output": {"choice": "other"}}})
+        result = step.execute(
+            {
+                "id": "route",
+                "expression": "{{ steps.review.output.choice }}",
+                "cases": {"approve": [{"id": "plan", "command": "speckit.plan"}]},
+                "default": bad_branch,
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'default' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+        # expression is still evaluated, so its value is surfaced for context.
+        assert result.output["expression_value"] == "other"
+
+    @pytest.mark.parametrize("ok_default", [None, [], [{"id": "x", "command": "/y"}]])
+    def test_execute_none_default_stays_empty(self, ok_default):
+        """An explicit ``default: null`` or a list default stays valid.
+
+        ``validate`` deliberately accepts ``default: None``; the execute guard
+        must normalize it to an empty branch (COMPLETED) rather than failing a
+        validator-approved workflow.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = SwitchStep()
+        ctx = StepContext(steps={"review": {"output": {"choice": "other"}}})
+        result = step.execute(
+            {
+                "id": "route",
+                "expression": "{{ steps.review.output.choice }}",
+                "cases": {"approve": [{"id": "plan", "command": "speckit.plan"}]},
+                "default": ok_default,
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["matched_case"] == "__default__"
+        assert result.next_steps == (ok_default or [])
 
     def test_validate_missing_expression(self):
         from specify_cli.workflows.steps.switch import SwitchStep

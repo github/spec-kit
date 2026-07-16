@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-15T14:10:00Z",
+  "updated_at": "2026-07-16T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -1166,10 +1166,10 @@
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
-      "description": "Doc-integrity engine with MCP server, SARIF output, and zero-LLM core. Validates, scores, and traces documentation against code — 24 validators, stable finding codes, spec-kit hooks. Pure Node.js.",
+      "description": "The only doc-integrity engine with an MCP server, SARIF/JUnit output, and a deterministic zero-LLM core. Validates, scores, and traces documentation against code — 27 validators, stable finding codes, adoption baseline for legacy repos, compliance-evidence reports, GitHub Action with PR annotations, spec-kit hooks. Pure Node.js, one pinned dep.",
       "author": "raccioly",
-      "version": "0.32.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.32.0/spec-kit-docguard-v0.32.0.zip",
+      "version": "0.33.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.33.0/spec-kit-docguard-v0.33.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1213,7 +1213,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-07-13T00:00:00Z"
+      "updated_at": "2026-07-16T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1247,6 +1247,47 @@
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
       "updated_at": "2026-03-13T00:00:00Z"
+    },
+    "dotdog": {
+      "name": "Dotdog",
+      "id": "dotdog",
+      "description": "Import GitHub Spec Kit artifacts into local knowledge graphs for validation, analysis, search, and MCP queries.",
+      "author": "specdog",
+      "version": "0.9.0",
+      "download_url": "https://github.com/specdog/dotdog/releases/download/v0.9.0/dotdog-spec-kit-extension-v0.9.0.zip",
+      "repository": "https://github.com/specdog/dotdog",
+      "homepage": "https://specdog.github.io/dotdog",
+      "documentation": "https://github.com/specdog/dotdog/blob/main/docs/spec-kit-extension.md",
+      "changelog": "https://github.com/specdog/dotdog/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "dotdog",
+            "version": ">=0.9.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "specification",
+        "knowledge-graph",
+        "validation",
+        "mcp",
+        "local-first"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-16T00:00:00Z",
+      "updated_at": "2026-07-16T00:00:00Z"
     },
     "ears": {
       "name": "EARS Requirements Syntax",
