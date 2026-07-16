@@ -9027,10 +9027,12 @@ steps:
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        # Original download error remains present.
-        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
+        # Original download error remains present. Normalize whitespace so the
+        # assertion is robust to Rich line-wrapping at narrow terminal widths.
+        normalized_output = "".join(result.output.split())
+        assert "exceedsthe100-byteworkflowsizelimit" in normalized_output
         # Cleanup failure is reported too, not silently swallowed / crashing.
-        assert "cleanup denied" in result.output
+        assert "cleanupdenied" in normalized_output
         assert "Warning" in result.output
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 

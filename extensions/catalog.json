@@ -17,6 +17,22 @@
         "core"
       ]
     },
+    "assess": {
+      "name": "Idea Assessment Pipeline",
+      "id": "assess",
+      "version": "1.0.0",
+      "description": "Assess any idea before Spec-Driven Development: run it through intake, research, define, shape, and decide, then hand a build/kill decision to /speckit.specify. Assessments stored under .specify/assessments/<slug>/",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "bundled": true,
+      "tags": [
+        "assessment",
+        "discovery",
+        "triage",
+        "product",
+        "workflow"
+      ]
+    },
     "bug": {
       "name": "Bug Triage Workflow",
       "id": "bug",

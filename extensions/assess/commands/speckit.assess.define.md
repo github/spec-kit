@@ -1,0 +1,82 @@
+---
+description: "Define the problem: who is affected, what hurts, goals, non-goals, and success metrics"
+---
+
+# Define the Problem
+
+Turn the intake and research into a crisp **problem definition** at `.specify/assessments/<slug>/problem.md`. This is the pivot of the pipeline: it converts a fuzzy idea into a sharply-stated *problem in the problem space* — who is affected, what hurts, and what success would look like — without proposing a solution.
+
+Define **frames the problem; it does not shape or choose a solution.** If the input arrived as a solution ("build X"), reverse-engineer the underlying problem X is meant to solve.
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+Resolve the slug: explicit `slug=…` → conversation context (a slug reported earlier this session, confirmed by an existing `.specify/assessments/<slug>/` directory) → ask (interactive) → single existing directory (automated) → otherwise stop and ask. Set `ASSESS_SLUG` and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>`.
+
+## Prerequisites
+
+- Read `ASSESS_DIR/intake.md` and `ASSESS_DIR/research.md` if they exist. Neither is strictly required — `define` is the minimum viable assessment stage and may be run directly on the user input — but if research exists, ground every claim in it and do not contradict it silently.
+- If `ASSESS_DIR/problem.md` already exists, ask whether to overwrite (interactive); in automated mode, refuse.
+- If `ASSESS_DIR` does not exist, create it and record that intake/research were skipped.
+
+## Execution
+
+1. **State the problem** in one or two sentences: who is affected, what hurts today, under what conditions, and why it matters now. Keep it in the *problem space* — no features, no architecture.
+2. **Identify users and stakeholders.** Users experience the problem; stakeholders decide, fund, or are impacted. Cite research where available; mark invented entries `[NEEDS CLARIFICATION: …]`.
+3. **Set goals** — the outcomes that would make solving this worthwhile.
+4. **Set non-goals** — what is explicitly out of scope, to bound the work and prevent creep.
+5. **Define success metrics** — how you would know it worked. Prefer measurable signals; use qualitative ones only when necessary, and label them as such.
+6. **Establish a baseline** — what happens if nothing is built (the cost of inaction). This is what `__SPECKIT_COMMAND_ASSESS_DECIDE__` weighs against.
+7. **Carry forward open questions** from intake/research that must be resolved before or during specification.
+
+Write `ASSESS_DIR/problem.md`:
+
+```markdown
+# Problem Definition: <short title>
+
+- **Slug**: <ASSESS_SLUG>
+- **Created**: <ISO 8601 date>
+- **Inputs used**: intake.md? | research.md? | user input only
+
+## Problem Statement
+
+<One or two sentences, in the problem space.>
+
+## Affected Users & Stakeholders
+
+- **Users**: <persona> — <how they are affected>
+- **Stakeholders**: <role> — <interest / decision power>
+
+## Goals
+
+- <outcome>
+
+## Non-Goals
+
+- <explicitly out of scope>
+
+## Success Metrics
+
+- <measurable signal> (baseline: <current value / unknown>)
+
+## Cost of Inaction
+
+<What happens if this is never built.>
+
+## Open Questions
+
+- [NEEDS CLARIFICATION: …]
+```
+
+**Report back** with the slug (own line), the path to `problem.md`, the count of open questions, and the next step: `__SPECKIT_COMMAND_ASSESS_SHAPE__ slug=<ASSESS_SLUG>`.
+
+## Guardrails
+
+- Never modify source files — read only, and write inside `.specify/assessments/<slug>/`.
+- Never slip into the solution space: no features, APIs, data models, or tasks.
+- Never invent users, metrics, or goals unsupported by intake/research — mark them `[NEEDS CLARIFICATION: …]`.
+- Never overwrite an existing `problem.md` without confirmation.
+- If the problem cannot be articulated at all, say so and recommend re-running `__SPECKIT_COMMAND_ASSESS_INTAKE__` or `__SPECKIT_COMMAND_ASSESS_RESEARCH__` rather than forcing a statement.
