@@ -17,8 +17,8 @@ context_files: []
 # REQUIREMENT: REQUIRED. Only change if you wish to have a custom marker name.
 # EXAMPLE:
 # context_markers:
-#  start: "<!-- AGENT SPEC KIT CONTEXT START -->"
-#  end: "<!-- AGENT SPEC KIT CONTEXT END -->"
+#   start: "<!-- AGENT SPEC KIT CONTEXT START -->"
+#   end: "<!-- AGENT SPEC KIT CONTEXT END -->"
 context_markers:
   start: "<!-- SPECKIT START -->"
   end: "<!-- SPECKIT END -->"
