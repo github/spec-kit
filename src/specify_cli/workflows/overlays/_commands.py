@@ -147,23 +147,18 @@ def workflow_overlay_add(
             err_console.print(f"[red]Error:[/red] {err}")
         return None
 
+    # Apply --priority override before validation so a valid CLI priority
+    # can fix a missing or invalid priority in the file.
+    if priority is not None:
+        _validate_priority(priority)
+        data["priority"] = priority
+
     overlay, validation_errors = validate_overlay_yaml(data)
     if overlay is None:
         err_console.print("[red]Error:[/red] Overlay validation failed:")
         for err in validation_errors:
             err_console.print(f"  \u2022 {err}")
         return None
-
-    if priority is not None:
-        _validate_priority(priority)
-        data["priority"] = priority
-        # Re-validate after mutation.
-        overlay, validation_errors = validate_overlay_yaml(data)
-        if overlay is None:
-            err_console.print("[red]Error:[/red] Overlay validation failed:")
-            for err in validation_errors:
-                err_console.print(f"  \u2022 {err}")
-            return None
 
     target_dir = _project_overlay_dir(project_root, overlay.extends)
     target_dir.mkdir(parents=True, exist_ok=True)

@@ -82,6 +82,48 @@ class TestOverlayCli:
         data = yaml.safe_load(installed.read_text(encoding="utf-8"))
         assert data["priority"] == 5
 
+    def test_overlay_add_with_priority_override_missing_in_file(self, project_dir, monkeypatch):
+        """--priority must fix a missing priority in the overlay file."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        # Overlay file has NO priority field
+        overlay_file = project_dir / "overlay.yml"
+        overlay_file.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "ov1",
+                    "extends": "wf",
+                    "edits": [
+                        {
+                            "operation": "insert_after",
+                            "anchor": "a",
+                            "step": {"id": "new", "type": "command", "command": "echo"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            app, ["workflow", "overlay", "add", str(overlay_file), "--priority", "5"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "Overlay 'ov1' added" in result.output
+
+        installed = project_dir / ".specify" / "workflows" / "overlays" / "wf" / "ov1.yml"
+        assert installed.is_file()
+        data = yaml.safe_load(installed.read_text(encoding="utf-8"))
+        assert data["priority"] == 5
+
     def test_overlay_set_priority(self, project_dir, monkeypatch):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         _write_workflow(
@@ -308,7 +350,9 @@ class TestOverlayCli:
 
         result = runner.invoke(app, ["workflow", "add", str(source_dir)])
         assert result.exit_code == 0, result.output
+        # Overlays in the source directory should NOT be copied — workflow add
+        # only installs the workflow.yml, not sibling overlays.
         installed_overlay = (
             project_dir / ".specify" / "workflows" / "wf" / "overlays" / "ov1.yml"
         )
-        assert installed_overlay.is_file()
+        assert not installed_overlay.exists()

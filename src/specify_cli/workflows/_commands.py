@@ -637,16 +637,6 @@ def workflow_add(
         import shutil
         shutil.copy2(yaml_path, dest_dir / "workflow.yml")
 
-        # If the source is a directory that also contains an overlays/ subdirectory,
-        # copy it alongside the workflow.yml so installed overlays are preserved.
-        source_dir = yaml_path.parent
-        source_overlays = source_dir / "overlays"
-        if source_overlays.is_dir() and not source_overlays.is_symlink():
-            dest_overlays = dest_dir / "overlays"
-            if dest_overlays.exists():
-                shutil.rmtree(dest_overlays)
-            shutil.copytree(source_overlays, dest_overlays)
-
         registry.add(definition.id, {
             "name": definition.name,
             "version": definition.version,

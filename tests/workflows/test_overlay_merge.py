@@ -336,31 +336,32 @@ class TestMergeSteps:
             ComposedStep("high-after", "project:high"),
         ]
 
-    def test_merge_steps_project_wins_tie_over_installed_same_anchor(self):
+    def test_merge_steps_later_overlay_wins_tie_same_anchor(self):
+        """When two overlays have the same priority, the one applied later wins."""
         base = [_step("a")]
-        installed = Overlay(
-            id="same",
+        first = Overlay(
+            id="first",
             extends="wf",
             priority=10,
-            edits=[OverlayEdit("replace", "a", _step("installed-replace"))],
+            edits=[OverlayEdit("replace", "a", _step("first-replace"))],
         )
-        project = Overlay(
-            id="same",
+        second = Overlay(
+            id="second",
             extends="wf",
             priority=10,
-            edits=[OverlayEdit("replace", "a", _step("project-replace"))],
+            edits=[OverlayEdit("replace", "a", _step("second-replace"))],
         )
-        # Merge order: installed first, then project (project wins tie).
+        # Merge order: first applied, then second wins tie.
         steps, attribution = merge_steps(
             base,
             [
-                _layer(installed, "installed:same"),
-                _layer(project, "project:same"),
+                _layer(first, "overlay:first"),
+                _layer(second, "overlay:second"),
             ],
         )
-        assert [s["id"] for s in steps] == ["project-replace"]
+        assert [s["id"] for s in steps] == ["second-replace"]
         assert any(
-            composed.step_id == "project-replace" and composed.source == "project:same"
+            composed.step_id == "second-replace" and composed.source == "overlay:second"
             for composed in attribution
         )
 

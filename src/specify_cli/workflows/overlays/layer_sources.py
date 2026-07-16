@@ -75,51 +75,6 @@ class ProjectOverlaySource:
         return layers
 
 
-class InstalledOverlaySource:
-    """Installed overlays: ``.specify/workflows/<id>/overlays/*.yml``."""
-
-    tier = "installed-overlay"
-
-    def __init__(self, project_root: Path) -> None:
-        self.project_root = project_root
-        self.workflows_dir = project_root / ".specify" / "workflows"
-
-    def collect(self, workflow_id: str) -> list[Layer]:
-        """Collect all installed overlays shipped with the given workflow."""
-        installed_overlay_dir = self.workflows_dir / workflow_id / "overlays"
-        if installed_overlay_dir.is_symlink():
-            raise OverlayLoadError(
-                installed_overlay_dir,
-                ["Symlinked overlay directories are not allowed"],
-            )
-        if not installed_overlay_dir.is_dir():
-            return []
-        layers: list[Layer] = []
-        for path in sorted(installed_overlay_dir.iterdir()):
-            if not path.is_file() or path.suffix not in (".yml", ".yaml"):
-                continue
-            if path.is_symlink():
-                raise OverlayLoadError(path, ["Symlinked overlay files are not allowed"])
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            overlay, errors = validate_overlay_yaml(data)
-            if overlay is None or errors:
-                raise OverlayLoadError(path, errors)
-            if not overlay.enabled:
-                continue
-            if overlay.extends != workflow_id:
-                continue
-            layers.append(
-                Layer(
-                    content=overlay,
-                    source=f"installed:{overlay.id}",
-                    tier=self.tier,
-                    priority=overlay.priority,
-                    path=path,
-                )
-            )
-        return layers
-
-
 class BaseWorkflowSource:
     """Base workflow layer: ``.specify/workflows/<id>/workflow.yml``."""
 
