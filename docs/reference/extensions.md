@@ -211,7 +211,7 @@ hooks:
 
 The top-level `installed` list records extensions installed in the project. The `settings` mapping stores project-wide extension settings, and `hooks` groups hook registrations by event.
 
-`auto_execute_hooks` is a project-level extension setting that defaults to `true`.
+`auto_execute_hooks` defaults to `true`, but is currently reserved and is not consulted when hooks are surfaced or invoked.
 
 Each hook entry supports the following fields:
 
