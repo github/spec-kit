@@ -1027,6 +1027,10 @@ class ExtensionManager:
                     return "$" + command_name.replace("speckit.", "speckit-").replace(
                         ".", "-"
                     )
+                if is_slash_skills_agent(selected_ai, ai_skills_enabled):
+                    return "/" + command_name.replace("speckit.", "speckit-").replace(
+                        ".", "-"
+                    )
                 if integration is not None:
                     return integration.build_command_invocation(command_name)
                 return IntegrationBase.resolve_command_refs(

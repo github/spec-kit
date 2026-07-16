@@ -974,6 +974,7 @@ class TestExtensionSkillRegistration:
         ("ai", "expected_invocation"),
         [
             ("claude", "/speckit-plan"),
+            ("copilot", "/speckit-plan"),
             ("codex", "$speckit-plan"),
             ("kimi", "/skill:speckit-plan"),
             ("zcode", "$speckit-plan"),
