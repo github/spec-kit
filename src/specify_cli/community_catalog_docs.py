@@ -18,18 +18,6 @@ ROOT_DIR = _repo_root()
 COMMUNITY_CATALOG_PATH = ROOT_DIR / "extensions" / "catalog.community.json"
 
 
-def _format_tags(tags: Any) -> str:
-    if not isinstance(tags, list) or not tags:
-        return "—"
-    # Clean first, then filter: a tag of "  |  " would pass str(tag).strip() but produce
-    # an empty backtick span after pipe removal, so filter on the cleaned value.
-    cleaned = [
-        f"`{c}`"
-        for tag in tags
-        if (c := str(tag).replace("|", "").replace("\r\n", " ").replace("\r", " ").replace("\n", " ").strip())
-    ]
-    return ", ".join(cleaned) if cleaned else "—"
-
 
 def list_community_extensions(
     path: Path = COMMUNITY_CATALOG_PATH,
@@ -63,15 +51,18 @@ def list_community_extensions(
                 "name": str(ext.get("name") or ext_id),
                 "id": str(ext.get("id") or ext_id),
                 "description": str(ext.get("description") or ""),
-                "tags": ext.get("tags") or [],
-                "verified": "Yes" if bool(ext.get("verified")) else "No",
+                "category": str(ext.get("category") or "").strip(),
+                "effect": str(ext.get("effect") or "").strip(),
                 "repository": str(ext.get("repository") or "").strip(),
             }
         )
 
     return sorted(
         rows,
-        key=lambda row: (row["name"].casefold(), row["id"].casefold()),
+        key=lambda row: (
+            row["name"].lstrip(". ").casefold(),
+            row["id"].casefold(),
+        ),
     )
 
 
@@ -85,24 +76,32 @@ def render_community_extensions_table(path: Path = COMMUNITY_CATALOG_PATH) -> st
     for row in rows:
         # Escape raw field values *before* composing Markdown syntax so that
         # a pipe inside a name or description doesn't break a link target.
-        safe_name = escape_markdown_link_text(render_cell(row["name"]))
+        safe_name = render_cell(row["name"])
+        safe_description = render_cell(row["description"])
+        category = render_cell(row["category"])
+        category_cell = f"`{category}`" if category else "—"
+        effect = {
+            "read-only": "Read-only",
+            "read-write": "Read+Write",
+        }.get(row["effect"], render_cell(row["effect"]) or "—")
         repository = row["repository"]
         if repository:
             safe_repo = escape_url_for_markdown_link(repository)
-            link = f"[{safe_name}]({safe_repo})"
+            safe_id = escape_markdown_link_text(render_cell(row["id"]))
+            link = f"[{safe_id}]({safe_repo})"
         else:
-            link = safe_name
+            link = render_cell(row["id"]) or "—"
         table_rows.append(
             [
+                safe_name,
+                safe_description,
+                category_cell,
+                effect,
                 link,
-                f"`{render_cell(row['id'])}`",
-                render_cell(row["description"]),
-                _format_tags(row["tags"]),
-                row["verified"],
             ]
         )
 
-    headers = ("Extension", "ID", "Description", "Tags", "Verified")
+    headers = ("Extension", "Purpose", "Category", "Effect", "URL")
 
     def render_row(values: list[str]) -> str:
         # Values are already escaped; do not re-apply render_cell here.

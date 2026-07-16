@@ -130,6 +130,52 @@ def test_escape_url_for_markdown_link():
     )
 
 
+def test_escape_url_for_markdown_link_removes_line_breaks():
+    assert escape_url_for_markdown_link("https://example.com/pa\r\nth\n") == (
+        "https://example.com/path"
+    )
+
+
+def test_missing_doc_url_falls_back_to_install_url():
+    fake_registry = {
+        "example": MagicMock(
+            config={
+                "name": "Example",
+                "install_url": "https://example.com/install",
+            }
+        ),
+    }
+    with _get_catalog_docs_patches(
+        fake_registry=fake_registry,
+        fake_doc_urls={},
+        fake_notes={},
+    ):
+        rows = list_integrations_for_docs()
+
+    assert rows == [
+        ("example", "Example", "https://example.com/install", ""),
+    ]
+
+
+def test_explicit_none_doc_url_suppresses_install_url():
+    fake_registry = {
+        "example": MagicMock(
+            config={
+                "name": "Example",
+                "install_url": "https://example.com/install",
+            }
+        ),
+    }
+    with _get_catalog_docs_patches(
+        fake_registry=fake_registry,
+        fake_doc_urls={"example": None},
+        fake_notes={},
+    ):
+        rows = list_integrations_for_docs()
+
+    assert rows == [("example", "Example", None, "")]
+
+
 def test_escape_markdown_link_text():
     assert escape_markdown_link_text("Code [Buddy]") == "Code \\[Buddy\\]"
 

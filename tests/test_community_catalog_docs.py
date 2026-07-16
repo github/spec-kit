@@ -27,10 +27,10 @@ def test_community_extensions_table_renders() -> None:
         )
     table = render_community_extensions_table()
     assert "| Extension" in table
-    assert "| ID" in table
-    assert "| Description" in table
-    assert "| Tags" in table
-    assert "| Verified" in table
+    assert "| Purpose" in table
+    assert "| Category" in table
+    assert "| Effect" in table
+    assert "| URL" in table
 
 
 def test_community_extensions_are_sorted_by_name() -> None:
@@ -42,7 +42,7 @@ def test_community_extensions_are_sorted_by_name() -> None:
         )
     rows = list_community_extensions()
     names = [row["name"] for row in rows]
-    assert names == sorted(names, key=str.casefold)
+    assert names == sorted(names, key=lambda name: name.lstrip(". ").casefold())
 
 
 def test_community_extensions_table_rows_are_rendered_in_sorted_order(tmp_path: Path) -> None:
@@ -81,7 +81,7 @@ def test_community_extensions_table_rows_are_rendered_in_sorted_order(tmp_path: 
     for line in table.splitlines():
         if not line.startswith("| "):
             continue
-        if line == "| Extension | ID | Description | Tags | Verified |":
+        if line == "| Extension | Purpose | Category | Effect | URL |":
             continue
         if line == "| --- | --- | --- | --- | --- |":
             continue
@@ -92,7 +92,7 @@ def test_community_extensions_table_rows_are_rendered_in_sorted_order(tmp_path: 
             extension_name = extension_cell[1:extension_cell.index("](")]
         else:
             extension_name = extension_cell
-        rendered_rows.append((extension_name, cells[1].strip("`")))
+        rendered_rows.append((extension_name, cells[4]))
 
     expected_rows = [("Alpha", "alpha"), ("Beta", "beta"), ("Gamma", "gamma")]
     assert rendered_rows == expected_rows
@@ -161,47 +161,6 @@ def test_whitespace_repository_is_treated_as_missing(tmp_path: Path) -> None:
     assert "[Foo](" not in table
 
 
-def test_tags_containing_pipe_do_not_break_table(tmp_path: Path) -> None:
-    f = _write_catalog(tmp_path, {
-        # No "id" field — exercises ext_id fallback; tag has pipe — exercises stripping
-        "foo": {"name": "Foo", "description": "", "tags": ["foo|bar"], "verified": False, "repository": ""},
-    })
-    table = render_community_extensions_table(path=f)
-    # pipe stripped from tag value
-    assert "`foobar`" in table
-    # id falls back to the dict key when "id" field is absent
-    assert "`foo`" in table
-    # row is well-formed: 5-column table has exactly 6 pipe separators per row
-    foo_row = next(line for line in table.split("\n") if line.startswith("| ") and "Foo" in line)
-    assert foo_row.count("|") == 6
-
-
-def test_tags_with_newlines_are_normalized(tmp_path: Path) -> None:
-    f = _write_catalog(tmp_path, {
-        "foo": {
-            "name": "Foo",
-            "description": "",
-            "tags": ["foo\nbar", "baz\r\nqux", "quux\rquuz"],
-            "verified": False,
-            "repository": "",
-        },
-    })
-    table = render_community_extensions_table(path=f)
-    assert "`foo bar`" in table
-    assert "`baz qux`" in table
-    assert "`quux quuz`" in table
-    foo_row = next(line for line in table.split("\n") if line.startswith("| ") and "Foo" in line)
-    assert foo_row.count("|") == 6
-
-
-def test_non_list_tags_renders_em_dash(tmp_path: Path) -> None:
-    f = _write_catalog(tmp_path, {
-        "foo": {"name": "Foo", "description": "", "tags": "not-a-list", "verified": False, "repository": ""},
-    })
-    table = render_community_extensions_table(path=f)
-    assert "—" in table
-
-
 def test_url_escaping_in_repository_links(tmp_path: Path) -> None:
     """Test that URLs with `)` and `|` are properly escaped in markdown links."""
     f = _write_catalog(tmp_path, {
@@ -215,13 +174,14 @@ def test_url_escaping_in_repository_links(tmp_path: Path) -> None:
     })
     table = render_community_extensions_table(path=f)
     # The URL should be escaped: ) → \) and | → \|
-    assert "[Foo](https://example.com/repo?x=1\\)&y=2\\|bad)" in table
+    assert r"[foo](https://example.com/repo?x=1\)&y=2\|bad)" in table
 
 
 def test_link_text_is_escaped(tmp_path: Path) -> None:
     f = _write_catalog(tmp_path, {
         "foo": {
-            "name": "Code [Buddy]",
+            "name": "Code Buddy",
+            "id": "code[buddy]",
             "description": "",
             "tags": [],
             "verified": False,
@@ -229,7 +189,7 @@ def test_link_text_is_escaped(tmp_path: Path) -> None:
         },
     })
     table = render_community_extensions_table(path=f)
-    assert "[Code \\[Buddy\\]](https://example.com/repo)" in table
+    assert r"[code\[buddy\]](https://example.com/repo)" in table
 
 
 def test_extension_id_is_sanitized(tmp_path: Path) -> None:
@@ -244,4 +204,4 @@ def test_extension_id_is_sanitized(tmp_path: Path) -> None:
         },
     })
     table = render_community_extensions_table(path=f)
-    assert "`foo\\|bar `" in table
+    assert "foo\\|bar " in table
