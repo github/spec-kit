@@ -171,6 +171,64 @@ To set up configuration for a newly installed extension, copy the template:
 cp .specify/extensions/<ext>/<ext>-config.template.yml \
    .specify/extensions/<ext>/<ext>-config.yml
 ```
+## Project Extension and Hook Configuration
+
+Spec Kit stores project-level extension registration and hook configuration in:
+
+```text
+.specify/extensions.yml
+```
+The file contains installed extensions, global settings, and hooks that run before or after Spec Kit commands.
+
+```yaml
+installed:
+  - git
+  - my-extension
+
+settings:
+  auto_execute_hooks: true
+
+hooks:
+  before_implement:
+    - extension: git
+      command: speckit.git.commit
+      enabled: true
+      optional: true
+      priority: 10
+      prompt: "Commit outstanding changes before implementation?"
+      description: "Auto-commit before implementation"
+
+  after_implement:
+    - extension: my-extension
+      command: speckit.my-extension.verify
+      enabled: true
+      optional: false
+      priority: 5
+      description: "Run verification after implementation"
+```
+
+### Configuration fields
+
+The top-level `installed` list records extensions installed in the project. The `settings` mapping stores project-wide extension settings, and `hooks` groups hook registrations by event.
+
+`auto_execute_hooks` is a project-level extension setting that defaults to `true`.
+
+Each hook entry supports the following fields:
+
+| Field | Description |
+| --- | --- |
+| `extension` | ID of the extension that registered the hook. |
+| `command` | Extension command associated with the hook. |
+| `enabled` | Whether the hook is active. Hooks with `enabled: false` are skipped. |
+| `optional` | Whether the hook is optional. Optional hooks may prompt the user before execution; non-optional hooks run as part of the hook workflow. |
+| `priority` | Execution order when multiple hooks are registered for the same event. Lower numbers run first. The default priority is `10`. |
+| `prompt` | Message shown when asking whether to run an optional hook. |
+| `description` | Human-readable explanation of what the hook does. |
+| `condition` | Optional condition associated with the hook. |
+
+Hook event names identify when a hook is invoked. They generally use `before_<command>` or `after_<command>`, such as `before_implement`, `after_implement`, `before_tasks`, and `after_tasks`.
+
+When multiple hooks are registered for the same event, they are ordered by `priority`, with lower values running first. Hooks without an explicit priority use the default priority of `10`.
 
 ## FAQ
 
