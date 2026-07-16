@@ -44,7 +44,7 @@ While this extension is disabled (or not installed), nothing in Spec Kit creates
 
 ## Configuration
 
-All configuration flows through the extension's own config file at [agent-context-config.yml](./agent-context-config.yml).
+All configuration flows through the extension's own config file at `.specify/extensions/agent-context/agent-context-config.yml` ([agent-context-config.yml](./agent-context-config.yml) in the repo).
 
 ## Requirements
 
