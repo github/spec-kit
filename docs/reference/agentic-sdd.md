@@ -89,17 +89,17 @@ For a small feature, run it once to build everything:
 /speckit.implement
 ```
 
-For a large feature, work in phases to avoid overwhelming the agent's context — scope each run with an argument, validate the result, then continue:
+For a large feature, work in stages to avoid overwhelming the agent's context — scope each run with an argument, validate the result, then continue:
 
 ```text
-/speckit.implement Implement Phase 1 only: the project and task data model plus basic CRUD. Stop before the UI.
+/speckit.implement Implement only the Setup and Foundational phases: project scaffolding and the project/task data model with basic CRUD. Stop before the user-story features.
 ```
 
 ```text
-/speckit.implement Now implement Phase 2: the Kanban board with drag-and-drop between columns.
+/speckit.implement Now implement the Kanban board user story: drag-and-drop between columns.
 ```
 
-Verify each phase works before moving to the next.
+Verify each stage works before moving to the next.
 
 ## `/speckit.converge`
 
