@@ -5,10 +5,13 @@ This guide will help you get started with Spec-Driven Development using Spec Kit
 > [!NOTE]
 > Automation scripts are provided as both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on your OS unless you pass `--script sh|ps`.
 
+> [!NOTE]
+> Commands are shown here in `/speckit.*` form, but the exact invocation depends on your agent. Some skills-based agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). Use whichever form your agent exposes — the steps are otherwise identical.
+
 ## Recommended Process
 
 > [!TIP]
-> **Context Awareness**: Spec Kit tracks the active feature through the feature directory it creates (recorded in `.specify/feature.json`), so commands know which specification you're working on — no Git required. Prefer a branch-per-feature process? Install the opt-in **git** extension to get feature branches (e.g. `001-feature-name`) and switch specifications by switching branches.
+> **Context Awareness**: Spec Kit tracks the active feature through the feature directory it creates (recorded in `.specify/feature.json`), so commands know which specification you're working on — no Git required. Want numbered feature branches? Install the opt-in **git** extension: creating a branch (e.g. `001-feature-name`) also sets that branch's feature as active. Note that resolution reads `.specify/feature.json` / the `SPECIFY_FEATURE` variable, not the checked-out branch — so to switch back to another feature, set `SPECIFY_FEATURE` (or its state file) explicitly rather than relying on `git checkout` alone.
 
 After installing Spec Kit, each command below is a step in the process. Two paths are common:
 

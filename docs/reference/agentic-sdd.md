@@ -4,6 +4,9 @@ The `/speckit.*` slash commands drive the core Spec-Driven Development (SDD) pro
 
 The commands are designed to run in order, but only `/speckit.specify` is strictly required before `/speckit.plan`. The clarify, checklist, and analyze commands are quality gates you add for anything with meaningful ambiguity.
 
+> [!NOTE]
+> Commands are written in `/speckit.*` form throughout this page. The exact invocation depends on your agent — some skills-based agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). Substitute the form your agent exposes.
+
 ```text
 /speckit.constitution -> /speckit.specify -> /speckit.clarify -> /speckit.plan -> /speckit.checklist -> /speckit.tasks -> /speckit.analyze -> /speckit.implement -> /speckit.converge
 ```
@@ -60,7 +63,7 @@ Review the generated checklist. If it surfaces gaps, loop back to `/speckit.clar
 
 ## `/speckit.tasks`
 
-Generates an actionable, dependency-ordered `tasks.md` from the design artifacts. Tasks are grouped into phases (setup, tests, core, integration, polish) and marked for parallel execution where possible.
+Generates an actionable, dependency-ordered `tasks.md` from the design artifacts. Tasks are organized into phases: **Setup**, **Foundational** (blocking prerequisites), then **one phase per user story** in priority order, and a final **Polish** phase for cross-cutting concerns. Tests are generated within a user story's phase when requested rather than as a separate phase, and tasks are marked for parallel execution where possible.
 
 ```text
 /speckit.tasks
