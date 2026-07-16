@@ -1943,9 +1943,13 @@ class PresetManager:
             # This avoids creating new skill dirs that _register_skills
             # would normally skip.
             for skill_name in dir_managed_names:
+                if not self._is_safe_registry_skill_name(skill_name):
+                    continue
                 skill_subdir = skills_dir / skill_name
-                if not skill_subdir.exists():
-                    skill_subdir.mkdir(parents=True, exist_ok=True)
+                if not self._validate_skill_subdir(
+                    skill_subdir, create=True, skills_root=skills_dir
+                ):
+                    continue
 
             # Restore skills for commands whose winner is non-preset.
             # _unregister_skills_in_dir can rmtree the skill dir, so

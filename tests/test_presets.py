@@ -7102,6 +7102,35 @@ class TestPresetSkills:
         assert not (claude_dir / "speckit-beta").exists()
         assert not (codex_dir / "speckit-alpha").exists()
 
+    def test_skill_reconciliation_rejects_unsafe_managed_names(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        skills_dir.mkdir(parents=True)
+        core_cmds = project_dir / ".specify" / "templates" / "commands"
+        core_cmds.mkdir(parents=True, exist_ok=True)
+        (core_cmds / "specify.md").write_text(
+            "---\ndescription: Core specify\n---\n\nCore body\n",
+            encoding="utf-8",
+        )
+        absolute_escape = temp_dir / "absolute-escape"
+        traversal_escape = project_dir / ".claude" / "traversal-escape"
+
+        manager = PresetManager(project_dir)
+        manager._reconcile_skills(
+            ["speckit.specify"],
+            extra_skills_dirs={
+                skills_dir: (
+                    "claude",
+                    [str(absolute_escape), "../traversal-escape"],
+                )
+            },
+        )
+
+        assert not absolute_escape.exists()
+        assert not traversal_escape.exists()
+
     def test_remove_reconciliation_tracks_new_historical_skill_agent_for_survivor(
         self, project_dir, temp_dir
     ):
