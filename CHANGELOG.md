@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.17] - 2026-07-16
+
+### Changed
+
+- fix(extensions): resolve __SPECKIT_COMMAND tokens in auto-registered skills (#3544)
+- fix(workflows): fail if/switch steps on non-list branch instead of crashing (#3515)
+- feat(integrations): add Grok Build skills-based integration (#3535)
+- fix(extensions/git): reject negative -Number in create-new-feature-branch.ps1 (#3538)
+- test: cover preset constitution seeding through init CLI (#3297)
+- fix(integration): preserve ai_skills on `use` for skills-mode Copilot (#3550) (#3551)
+- [extension] Add Figma Starter extension to community catalog (#3547)
+- [extension] Add Spec-Kit BDD extension to community catalog (#3548)
+- [extension] Update Quality Gates (Enforcement Layer) extension to v0.3.2 (#3542)
+- chore: release 0.12.16, begin 0.12.17.dev0 development (#3549)
+
 ## [0.12.16] - 2026-07-15
 
 ### Changed
