@@ -5898,6 +5898,31 @@ class TestWorkflowCatalog:
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-catalog.json"
 
+    def test_add_catalog_with_existing_inf_priority(self, project_dir):
+        """add_catalog() derives the new priority from existing ones via
+        _coerce_priority; an existing `priority: .inf` must not crash it
+        (int(float('inf')) is an OverflowError) — it is treated as 0 and the add
+        succeeds."""
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "existing",
+                "url": "https://a.example.com/c.json",
+                "priority": float("inf"),
+                "install_allowed": True,
+            }]
+        }))
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog("https://b.example.com/c.json", "new")
+
+        data = yaml.safe_load(config_path.read_text())
+        new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/c.json")
+        assert new["priority"] == 1  # max(inf coerced to 0) + 1
+
     def test_add_catalog_duplicate_rejected(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
@@ -6431,6 +6456,30 @@ class TestStepCatalog:
         data = yaml.safe_load(config_path.read_text())
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
+
+    def test_add_catalog_with_existing_inf_priority(self, project_dir):
+        """Step-catalog add_catalog() must not crash when an existing entry has a
+        `priority: .inf` (int(float('inf')) is an OverflowError) — _coerce_priority
+        treats it as 0 and the add succeeds."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "existing",
+                "url": "https://a.example.com/s.json",
+                "priority": float("inf"),
+                "install_allowed": True,
+            }]
+        }))
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://b.example.com/s.json", "new")
+
+        data = yaml.safe_load(config_path.read_text())
+        new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/s.json")
+        assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
     def test_add_catalog_empty_yaml_file(self, project_dir):
         """An empty YAML config file should be treated as empty, not corrupted."""
