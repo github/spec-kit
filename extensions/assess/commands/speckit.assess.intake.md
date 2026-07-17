@@ -109,7 +109,7 @@ Record in `intake.md`: the **sanitized URL** (strip any `user:password@` userinf
 
 ## Guardrails
 
-- Never modify source files — this command only reads and writes inside `.specify/assessments/<slug>/`.
+- **Writes** are limited to `.specify/assessments/<slug>/` — never modify source files or anything outside that directory. **Reads** may include the supplied sources: you may inspect the repository (for a codebase-pointer idea) and fetch an allowed URL (under the URL Trust Policy above) read-only to capture the idea.
 - Never evaluate, size, or solutionize the idea here — that is what the later stages do.
 - Never invent origin, ownership, or context the input does not support — mark it `[NEEDS CLARIFICATION: …]`.
 - Never overwrite an existing `intake.md` without confirmation.
