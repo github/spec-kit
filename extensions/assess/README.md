@@ -85,11 +85,9 @@ specify extension enable assess
 # → on "go", hand the decision.md handoff summary to /speckit.specify
 ```
 
-## Hooks
+## Handoff
 
-Registers one **optional** hook:
-
-- `before_specify` → prompts `speckit.assess.intake` — a nudge to assess an idea before committing it to a specification. It never runs automatically; the user chooses.
+`assess` is a **standalone pipeline you enter deliberately** — it registers no lifecycle hooks and never inserts itself into `/speckit.specify`. The only coupling runs forward and by choice: a `go` verdict from `/speckit.assess.decide` hands its `decision.md` summary to `/speckit.specify`. Discovery and specification stay separate processes.
 
 ## Guardrails
 

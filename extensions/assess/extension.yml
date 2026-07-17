@@ -32,13 +32,6 @@ provides:
       file: commands/speckit.assess.decide.md
       description: "Apply a go / needs-clarification / kill gate and hand survivors off to /speckit.specify"
 
-hooks:
-  before_specify:
-    command: speckit.assess.intake
-    optional: true
-    prompt: "Assess this idea before specifying?"
-    description: "Nudge to assess an idea before committing it to a specification"
-
 tags:
   - "assessment"
   - "discovery"

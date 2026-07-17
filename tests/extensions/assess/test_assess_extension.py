@@ -48,13 +48,15 @@ class TestExtensionLayout:
         commands = {c["name"] for c in manifest["provides"]["commands"]}
         assert commands == EXPECTED_COMMANDS
 
-    def test_before_specify_hook_is_optional(self):
+    def test_declares_no_hooks(self):
+        """assess is a standalone pipeline: it must not register lifecycle
+        hooks (e.g. before_specify). Discovery and specification stay
+        separate processes; the only coupling is the forward decide ->
+        /speckit.specify handoff described in the commands."""
         manifest = yaml.safe_load(
             (EXT_DIR / "extension.yml").read_text(encoding="utf-8")
         )
-        hook = manifest["hooks"]["before_specify"]
-        assert hook["optional"] is True
-        assert hook["command"] == "speckit.assess.intake"
+        assert "hooks" not in manifest or not manifest["hooks"]
 
     def test_readme_exists(self):
         readme = EXT_DIR / "README.md"
