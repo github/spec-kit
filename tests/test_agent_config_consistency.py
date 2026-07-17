@@ -11,6 +11,7 @@ from specify_cli.extensions import CommandRegistrar
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 ISSUE_TEMPLATE_AGENT_KEYS = [
+    "alquimia",
     "amp",
     "agy",
     "auggie",

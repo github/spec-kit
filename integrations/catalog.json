@@ -3,6 +3,15 @@
   "updated_at": "2026-07-15T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/integrations/catalog.json",
   "integrations": {
+    "alquimia": {
+      "id": "alquimia",
+      "name": "Alquimia AI",
+      "version": "1.0.0",
+      "description": "Alquimia AI CLI integration",
+      "author": "spec-kit-core",
+      "repository": "https://github.com/github/spec-kit",
+      "tags": ["alquimia"]
+    },
     "claude": {
       "id": "claude",
       "name": "Claude Code",

@@ -2,6 +2,7 @@
   "_comment": "Default coding agent context file per integration, owned by the agent-context extension. Used to self-seed agent-context-config.yml when it declares no context_file/context_files. Keyed by the Spec Kit integration key recorded in .specify/init-options.json. This mapping is independent of the Specify CLI by design.",
   "agents": {
     "agy": "AGENTS.md",
+    "alquimia": "ALQUIMIA.md",
     "amp": "AGENTS.md",
     "auggie": ".augment/rules/specify-rules.md",
     "bob": "AGENTS.md",
