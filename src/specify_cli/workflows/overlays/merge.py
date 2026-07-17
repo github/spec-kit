@@ -97,24 +97,29 @@ def _descendant_ids(step: dict[str, Any]) -> set[str]:
 
 
 def _check_anchor_conflicts(
-    anchors: set[str],
+    anchor_operations: dict[str, str],
     base_steps: list[dict[str, Any]],
 ) -> list[str]:
     """Return error messages for anchor pairs where one is an ancestor of the other.
 
-    When two targeted anchors share a parent/descendant relationship the edit
-    processing order determines success or failure, producing non-deterministic
-    results.  Callers should raise on any returned errors before mutating the
-    step tree.
+    Only flags conflicts where the ancestor's winning edit is ``replace`` or
+    ``remove`` — operations that destroy the subtree and make any descendant
+    anchor unresolvable.  Pure insert operations on an ancestor leave it intact,
+    so its descendants remain reachable regardless of processing order.
+
+    Callers should raise on any returned errors before mutating the step tree.
     """
     errors: list[str] = []
-    for anchor in sorted(anchors):  # sorted for deterministic error order
+    for anchor, operation in sorted(anchor_operations.items()):
+        if operation in ("insert_after", "insert_before"):
+            # Inserts leave the ancestor step intact; descendants are unaffected.
+            continue
         location = find_step(base_steps, anchor)
         if location is None:
             continue  # missing anchors are reported by validate_edits
         parent_list, idx = location
         step = parent_list[idx]
-        conflicting = anchors & _descendant_ids(step)
+        conflicting = set(anchor_operations.keys()) & _descendant_ids(step)
         for child_anchor in sorted(conflicting):
             errors.append(
                 f"Anchor conflict: '{anchor}' is an ancestor of '{child_anchor}'. "
@@ -200,51 +205,6 @@ def _remove_sources_recursively(
                         _remove_sources_recursively(child, sources)
 
 
-def apply_edit(
-    steps: list[dict[str, Any]],
-    edit: OverlayEdit,
-    source: str,
-) -> tuple[list[dict[str, Any]], ComposedStep | None, str | None]:
-    """Apply a single edit to a step list and return the mutated list.
-
-    The returned list is the same list object as *steps* but deep-copied first
-    so callers can avoid mutating the base.  Raises ``ValueError`` if the anchor
-    is not found.
-
-    Returns:
-        ``(steps, composed_step, replaced_or_removed_id)``.  *composed_step* is
-        ``None`` for ``remove`` operations; *replaced_or_removed_id* is the
-        previous step id for ``replace``/``remove`` operations, otherwise
-        ``None``.
-    """
-    location = find_step(steps, edit.anchor)
-    if location is None:
-        raise ValueError(f"Anchor '{edit.anchor}' not found in workflow steps.")
-
-    parent_list, index = location
-    old_step = parent_list[index]
-    old_step_id = old_step.get("id") if isinstance(old_step, dict) else None
-
-    if edit.operation == "insert_after":
-        new_step = copy.deepcopy(edit.step)
-        parent_list.insert(index + 1, new_step)
-        step_id = str(new_step.get("id")) if isinstance(new_step, dict) else ""
-        return steps, ComposedStep(step_id, source), None
-    if edit.operation == "insert_before":
-        new_step = copy.deepcopy(edit.step)
-        parent_list.insert(index, new_step)
-        step_id = str(new_step.get("id")) if isinstance(new_step, dict) else ""
-        return steps, ComposedStep(step_id, source), None
-    if edit.operation == "replace":
-        new_step = copy.deepcopy(edit.step)
-        parent_list[index] = new_step
-        step_id = str(new_step.get("id")) if isinstance(new_step, dict) else ""
-        return steps, ComposedStep(step_id, source), old_step_id
-    if edit.operation == "remove":
-        del parent_list[index]
-        return steps, None, old_step_id
-    raise ValueError(f"Unsupported edit operation: {edit.operation}")
-
 
 def _build_attribution(
     steps: list[dict[str, Any]],
@@ -267,6 +227,74 @@ def _build_attribution(
             for case_steps in cases.values():
                 if isinstance(case_steps, list):
                     result.extend(_build_attribution(case_steps, sources))
+    return result
+
+
+def _traverse_and_apply(
+    steps: list[dict[str, Any]],
+    edits_by_anchor: dict[str, list[tuple[OverlayLayer, OverlayEdit]]],
+    sources: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Walk the original step tree and apply overlay edits as each step is encountered.
+
+    Edits are always resolved against the *original* structure — this function
+    traverses the unmodified list passed in, so a replacement step's new ID can
+    never be mistaken for a base anchor.  Nested lists (``then``, ``else``, etc.)
+    are recursed into only for steps that survive the edit (not for replaced
+    steps).
+
+    *edits* are expected to be in merge order (lowest priority first, highest
+    priority last); the winning edit for each anchor is ``edits[-1]``.
+    """
+    result: list[dict[str, Any]] = []
+
+    for step in steps:
+        if not isinstance(step, dict):
+            result.append(step)
+            continue
+
+        step_id = step.get("id")
+        edits = edits_by_anchor.get(step_id, []) if isinstance(step_id, str) else []
+        winning_edit = edits[-1][1] if edits else None
+
+        if winning_edit is not None and winning_edit.operation == "remove":
+            # Winning edit removes this step; ignore all other edits on this anchor.
+            _remove_sources_recursively(step, sources)
+            continue
+
+        # Insert before (in merge order).
+        for layer, edit in edits:
+            if edit.operation == "insert_before":
+                new_step = copy.deepcopy(edit.step)
+                _record_sources_recursively(new_step, layer.source, sources)
+                result.append(new_step)
+
+        if winning_edit is not None and winning_edit.operation == "replace":
+            winning_layer = edits[-1][0]
+            new_step = copy.deepcopy(winning_edit.step)
+            _remove_sources_recursively(step, sources)
+            _record_sources_recursively(new_step, winning_layer.source, sources)
+            result.append(new_step)
+        else:
+            # No replacement: keep this step and recurse into its nested lists.
+            for key in _NESTED_LIST_KEYS:
+                nested = step.get(key)
+                if isinstance(nested, list):
+                    step[key] = _traverse_and_apply(nested, edits_by_anchor, sources)
+            cases = step.get("cases")
+            if isinstance(cases, dict):
+                for case_key, case_steps in cases.items():
+                    if isinstance(case_steps, list):
+                        cases[case_key] = _traverse_and_apply(case_steps, edits_by_anchor, sources)
+            result.append(step)
+
+        # Insert after (highest priority closest to anchor — reversed merge order).
+        for layer, edit in reversed(edits):
+            if edit.operation == "insert_after":
+                new_step = copy.deepcopy(edit.step)
+                _record_sources_recursively(new_step, layer.source, sources)
+                result.append(new_step)
+
     return result
 
 
@@ -295,54 +323,36 @@ def merge_steps(
         for edit in layer.overlay.edits:
             edits_by_anchor.setdefault(edit.anchor, []).append((layer, edit))
 
-    # Reject edits that target anchors with a parent/descendant relationship —
-    # processing such pairs independently produces order-dependent results.
-    anchor_conflicts = _check_anchor_conflicts(set(edits_by_anchor.keys()), base_steps)
+    # Raise early for non-remove edits that target anchors not present in the base.
+    # Overlays always apply to the original tree; they cannot target steps introduced
+    # by other overlays.
+    base_ids = _all_base_step_ids(base_steps)
+    for anchor, anchor_edits in edits_by_anchor.items():
+        winning_op = anchor_edits[-1][1].operation
+        if winning_op != "remove" and anchor not in base_ids:
+            raise ValueError(f"Anchor '{anchor}' not found in workflow steps.")
+
+    # Reject edits that target anchors with a parent/descendant relationship when
+    # the ancestor edit replaces or removes its subtree — those produce
+    # order-dependent results.  Pure insert edits on an ancestor are safe because
+    # the ancestor step (and its descendants) remain intact.
+    anchor_winning_ops = {
+        anchor: anchor_edits[-1][1].operation
+        for anchor, anchor_edits in edits_by_anchor.items()
+    }
+    anchor_conflicts = _check_anchor_conflicts(anchor_winning_ops, base_steps)
     if anchor_conflicts:
         raise ValueError(
             "Overlay anchor conflict(s) detected:\n  - " + "\n  - ".join(anchor_conflicts)
         )
 
-    for anchor, edits in edits_by_anchor.items():
-        # Highest-priority edit is last because *overlays* is already sorted.
-        _, winning_edit = edits[-1]
+    # Apply all overlay edits via a single-pass traversal of the original tree.
+    # Each edit is resolved against the original step structure, so a replacement
+    # step's new ID can never be mistaken for a base anchor in a later edit group.
+    result = _traverse_and_apply(steps, edits_by_anchor, sources)
 
-        if winning_edit.operation == "remove":
-            # Anchor is removed; ignore all other edits on this anchor.
-            location = find_step(steps, anchor)
-            if location is not None:
-                parent_list, index = location
-                removed_step = parent_list[index]
-                del parent_list[index]
-                if isinstance(removed_step, dict):
-                    _remove_sources_recursively(removed_step, sources)
-            continue
-
-        # For replace/insert_*, the anchor survives. Only the highest-priority
-        # replace is applied; lower-priority replaces on the same anchor are
-        # skipped. Inserts are applied in merge order.
-        #
-        # Inserts must be applied *before* the winning replace: if the replace
-        # changes the step ID, ``find_step`` can no longer locate the original
-        # anchor and the inserts would raise.
-        for layer, edit in edits:
-            if edit.operation in ("insert_after", "insert_before"):
-                steps, composed, replaced_id = apply_edit(steps, edit, layer.source)
-                if replaced_id is not None:
-                    sources.pop(replaced_id, None)
-                if composed is not None:
-                    _record_sources_recursively(edit.step, composed.source, sources)
-
-        if winning_edit.operation == "replace":
-            winning_layer, _ = edits[-1]
-            steps, composed, replaced_id = apply_edit(steps, winning_edit, winning_layer.source)
-            if isinstance(replaced_id, str):
-                sources.pop(replaced_id, None)
-            if composed is not None:
-                _record_sources_recursively(winning_edit.step, composed.source, sources)
-
-    attribution = _build_attribution(steps, sources)
-    return steps, attribution
+    attribution = _build_attribution(result, sources)
+    return result, attribution
 
 
 def validate_edits(

@@ -10,7 +10,6 @@ import pytest
 from specify_cli.workflows.overlays.merge import (
     ComposedStep,
     OverlayLayer,
-    apply_edit,
     find_step,
     merge_steps,
     validate_edits,
@@ -114,59 +113,6 @@ class TestFindStep:
         assert find_step(steps, "template-x") is None
 
 
-class TestApplyEdit:
-    """Single edit operations against a step list."""
-
-    def test_insert_after(self):
-        steps = [_step("a"), _step("b")]
-        new_step = _step("new")
-        result, composed, replaced = apply_edit(steps, OverlayEdit("insert_after", "a", new_step), "project")
-        assert [s["id"] for s in result] == ["a", "new", "b"]
-        assert composed == ComposedStep("new", "project")
-        assert replaced is None
-
-    def test_insert_before(self):
-        steps = [_step("a"), _step("b")]
-        new_step = _step("new")
-        result, composed, replaced = apply_edit(steps, OverlayEdit("insert_before", "b", new_step), "project")
-        assert [s["id"] for s in result] == ["a", "new", "b"]
-        assert replaced is None
-
-    def test_replace(self):
-        steps = [_step("a"), _step("b")]
-        new_step = _step("replaced")
-        result, composed, replaced = apply_edit(steps, OverlayEdit("replace", "b", new_step), "installed:x")
-        assert [s["id"] for s in result] == ["a", "replaced"]
-        assert composed == ComposedStep("replaced", "installed:x")
-        assert replaced == "b"
-
-    def test_remove(self):
-        steps = [_step("a"), _step("b"), _step("c")]
-        result, composed, replaced = apply_edit(steps, OverlayEdit("remove", "b"), "project")
-        assert [s["id"] for s in result] == ["a", "c"]
-        assert composed is None
-        assert replaced == "b"
-
-    def test_apply_edit_anchors_nested(self):
-        steps = [
-            {
-                "id": "if-1",
-                "type": "if",
-                "condition": "true",
-                "then": [_step("then-a")],
-            },
-        ]
-        new_step = _step("new")
-        result, _, _ = apply_edit(steps, OverlayEdit("insert_after", "then-a", new_step), "project")
-        assert [s["id"] for s in result[0]["then"]] == ["then-a", "new"]
-
-    def test_apply_edit_missing_anchor(self):
-        steps = [_step("a")]
-        new_step = _step("new")
-        with pytest.raises(ValueError, match="Anchor 'missing' not found"):
-            apply_edit(steps, OverlayEdit("insert_after", "missing", new_step), "project")
-
-
 class TestMergeSteps:
     """Composition of multiple overlays in merge order."""
 
@@ -217,6 +163,7 @@ class TestMergeSteps:
         ]
 
     def test_merge_steps_replace_wins_over_insert(self):
+        """Overlays apply to the original tree only; targeting an overlay-introduced step raises."""
         base = [_step("a")]
         insert = Overlay(
             id="insert",
@@ -230,8 +177,9 @@ class TestMergeSteps:
             priority=10,
             edits=[OverlayEdit("replace", "inserted", _step("replaced"))],
         )
-        steps, _ = merge_steps(base, [_layer(insert, "project:insert"), _layer(replace, "project:replace")])
-        assert [s["id"] for s in steps] == ["a", "replaced"]
+        # "inserted" is not a base step — overlays cannot target each other's steps.
+        with pytest.raises(ValueError, match="Anchor 'inserted' not found"):
+            merge_steps(base, [_layer(insert, "project:insert"), _layer(replace, "project:replace")])
 
     def test_merge_steps_does_not_mutate_base(self):
         base = [_step("a")]
@@ -707,3 +655,56 @@ class TestMergeStepsAncestorConflicts:
         steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
         assert [s["id"] for s in steps] == ["other", "new-step"]
 
+    def test_insert_only_on_ancestor_and_descendant_not_conflicting(self):
+        """insert_after on both a parent and its nested child is valid and order-independent."""
+        parent_id = "if-step"
+        child_id = "then-child"
+        base = [self._if_step(parent_id, child_id)]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("insert_after", parent_id, _step("after-parent")),
+                OverlayEdit("insert_after", child_id, _step("after-child")),
+            ],
+        )
+        # Should not raise — inserts leave the ancestor intact.
+        steps, attribution = merge_steps(base, [_layer(overlay, "project:ov")])
+        # "after-parent" is inserted at the top level after the if-step.
+        assert [s["id"] for s in steps] == [parent_id, "after-parent"]
+        # "after-child" is inserted inside the then list.
+        then_ids = [s["id"] for s in steps[0]["then"]]
+        assert then_ids == [child_id, "after-child"]
+
+
+class TestMergeStepsIdCollision:
+    """merge_steps is deterministic when a replacement reuses a base step ID."""
+
+    def test_replace_with_reused_id_does_not_affect_original(self):
+        """Replacing A with new_step(id=B) must not interfere with editing original B.
+
+        Before the fix, the remove-B anchor group would find the replacement step
+        (which now has id='b') instead of the original 'b' step, producing a
+        different result depending on dict iteration order.
+        """
+        base = [_step("a"), _step("b"), _step("c")]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                # Replace "a" with a new step that reuses id "b".
+                OverlayEdit("replace", "a", {**_step("b"), "command": "speckit.replaced"}),
+                # Remove the original "b".
+                OverlayEdit("remove", "b"),
+            ],
+        )
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+        # The original "b" is removed; the replacement (also id="b") survives.
+        # "c" is untouched.
+        assert len(steps) == 2
+        remaining_ids = [s["id"] for s in steps]
+        assert remaining_ids == ["b", "c"]
+        # The surviving "b" step is the replacement (has the custom command).
+        assert steps[0]["command"] == "speckit.replaced"
