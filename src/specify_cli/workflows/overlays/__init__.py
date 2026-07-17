@@ -36,16 +36,20 @@ class WorkflowResolver:
     def collect_all_layers(self, workflow_id: str) -> list[Layer]:
         """Collect all layers sorted by resolver precedence.
 
-        Higher priority wins. Ties are broken alphabetically by source.
+        Higher priority wins. Ties are broken so the actual winner appears first:
+        the composer applies equal-priority sources ascending (last wins), so we
+        reverse source ordering here to show the winner at the top of the list.
+        Two stable passes: source descending, then priority descending.
         """
         all_layers: list[Layer] = []
         for source in self._sources:
             all_layers.extend(source.collect(workflow_id))
 
-        return sorted(
-            all_layers,
-            key=lambda layer: (-layer.priority, layer.source),
-        )
+        # Pass 1: source descending — within each priority group the winning
+        # source (alphabetically last = applied last by the composer) rises first.
+        by_source = sorted(all_layers, key=lambda layer: layer.source, reverse=True)
+        # Pass 2: priority descending — overall ordering by precedence.
+        return sorted(by_source, key=lambda layer: layer.priority, reverse=True)
 
     def resolve(self, workflow_id: str) -> WorkflowDefinition:
         """Resolve a workflow ID to its composed definition.

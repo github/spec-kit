@@ -98,8 +98,8 @@ class ProjectOverlaySource:
                 raise OverlayLoadError(path, ["Symlinked overlay files are not allowed"])
             try:
                 data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except yaml.YAMLError as exc:
-                raise OverlayLoadError(path, [f"Invalid YAML: {exc}"]) from exc
+            except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
+                raise OverlayLoadError(path, [f"Cannot load overlay: {exc}"]) from exc
             overlay, errors = validate_overlay_yaml(data)
             if overlay is None or errors:
                 raise OverlayLoadError(path, errors)

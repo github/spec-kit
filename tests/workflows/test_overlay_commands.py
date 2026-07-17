@@ -366,6 +366,64 @@ class TestOverlayCli:
         assert "project:ov1" in result.output
         assert "new" in result.output
 
+    def test_workflow_resolve_equal_priority_winner_shown_first(self, project_dir, monkeypatch):
+        """Equal-priority overlays must be displayed with the actual winner (last applied) first."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        # "zzz" sorts last alphabetically, so the composer applies it last → it wins.
+        # "aaa" sorts first, so it is applied first → it loses.
+        # The display must show the winner ("project:zzz") before the loser ("project:aaa").
+        _write_overlay(
+            project_dir,
+            "wf",
+            "aaa",
+            {
+                "id": "aaa",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [
+                    {
+                        "operation": "insert_after",
+                        "anchor": "a",
+                        "step": {"id": "aaa-step", "type": "command", "command": "echo"},
+                    }
+                ],
+            },
+        )
+        _write_overlay(
+            project_dir,
+            "wf",
+            "zzz",
+            {
+                "id": "zzz",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [
+                    {
+                        "operation": "insert_after",
+                        "anchor": "a",
+                        "step": {"id": "zzz-step", "type": "command", "command": "echo"},
+                    }
+                ],
+            },
+        )
+
+        result = runner.invoke(app, ["workflow", "resolve", "wf"])
+        assert result.exit_code == 0, result.output
+        zzz_pos = result.output.index("project:zzz")
+        aaa_pos = result.output.index("project:aaa")
+        assert zzz_pos < aaa_pos, (
+            "project:zzz (the winning source) should appear before project:aaa in the output"
+        )
+
     def test_workflow_add_copies_overlays(self, project_dir, monkeypatch, tmp_path):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         source_dir = tmp_path / "source-wf"
