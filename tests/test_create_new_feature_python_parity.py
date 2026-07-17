@@ -270,14 +270,27 @@ def test_all_variants_oversized_number_fails_cleanly(
 
 
 @requires_bash
-def test_python_branch_truncation_matches_bash(repo: Path) -> None:
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_branch_truncation_match(repo: Path) -> None:
     args = ("--json", "--dry-run", "--short-name", "a" * 300, "x")
     bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    ps = run(
+        ps_cmd(
+            repo,
+            SCRIPT,
+            "-Json",
+            "-DryRun",
+            "-ShortName",
+            "a" * 300,
+            "x",
+        ),
+        repo,
+    )
     py = run(py_cmd(repo, SCRIPT, *args), repo)
 
-    assert py.returncode == bash.returncode == 0
-    assert py.stderr == bash.stderr
-    assert json_stdout(py) == json_stdout(bash)
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert bash.stderr == ps.stderr == py.stderr
+    assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
     assert len(json_stdout(py)["BRANCH_NAME"]) == 244
 
 

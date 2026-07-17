@@ -196,9 +196,9 @@ if ($branchName.Length -gt $maxBranchLength) {
     $originalBranchName = $branchName
     $branchName = "$featureNum-$truncatedSuffix"
 
-    Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
-    Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
-    Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
+    [Console]::Error.WriteLine("[specify] Warning: Branch name exceeded GitHub's 244-byte limit")
+    [Console]::Error.WriteLine("[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)")
+    [Console]::Error.WriteLine("[specify] Truncated to: $branchName ($($branchName.Length) bytes)")
 }
 
 $featureDir = Join-Path $specsDir $branchName
