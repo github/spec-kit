@@ -73,4 +73,3 @@ class WorkflowResolver:
         if definition is None:
             raise FileNotFoundError(f"Workflow not found: {workflow_id}")
         return definition, layers, attribution
-
