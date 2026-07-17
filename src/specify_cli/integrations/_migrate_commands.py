@@ -40,6 +40,19 @@ from ._helpers import (
 )
 
 
+def _manifest_tracks_skill_layout(manifest) -> bool:
+    """Return True when *manifest* tracks any skills-layout artifact.
+
+    A skill scaffold is written as ``.../speckit-<name>/SKILL.md``, so a
+    manifest whose tracked files include a ``/SKILL.md`` key is in the skills
+    layout; otherwise it is in the command layout. Used by ``upgrade`` to
+    detect a dual-mode agent (e.g. Bob) flipping between the legacy commands
+    layout and the skills layout so orphaned extension artifacts from the old
+    layout can be reconciled.
+    """
+    return any(str(rel).endswith("/SKILL.md") for rel in manifest.files)
+
+
 @integration_app.command("switch")
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
@@ -514,6 +527,39 @@ def integration_upgrade(
     # Done after the upgrade has fully settled (Phase 2 included) and outside
     # the try/except above so this best-effort step cannot affect upgrade
     # success.
+    #
+    # Layout-change reconciliation: a dual-mode agent (e.g. Bob) can flip
+    # between the legacy commands layout and the skills layout across an
+    # upgrade (``upgrade bob --integration-options "--skills"`` / reverse
+    # ``--legacy-commands``). Phase 2 above only removes stale files tracked by
+    # the *integration* manifest (core commands); extension artifacts are
+    # tracked separately in the extension registry, so the old layout's
+    # extension command/skill files would otherwise linger as orphans. When the
+    # layout actually changed, first unregister the agent's extension artifacts
+    # (removing old-layout files and clearing per-agent registry entries) so the
+    # re-registration below recreates them in the new layout. ``upgrade``s that
+    # don't change layout skip this to avoid needless remove/re-add churn.
+    #
+    # Known limitation: preset command/skill artifacts are NOT reconciled on a
+    # layout change. There is no agent-scoped preset re-registration mechanism
+    # anywhere in the CLI — ``use`` / ``switch`` / ``upgrade`` never reconcile
+    # presets for any agent (presets are only (un)registered at preset
+    # install/remove time). Reconciling them here would require a new
+    # cross-cutting PresetManager subsystem affecting every dual-layout agent,
+    # which is out of scope for this Bob migration. A project that changes Bob's
+    # layout while a preset override is installed should re-run
+    # ``preset remove``/``preset install`` to refresh those artifacts.
+    if _manifest_tracks_skill_layout(old_manifest) != _manifest_tracks_skill_layout(
+        new_manifest
+    ):
+        _unregister_extensions_for_agent(
+            project_root,
+            key,
+            continuing=(
+                "The integration layout changed, but old-layout extension "
+                "artifacts may need manual cleanup."
+            ),
+        )
     _register_extensions_for_agent(
         project_root,
         key,

@@ -2530,6 +2530,82 @@ class TestIntegrationUpgrade:
             f"migrated project must remain upgradeable: {reupgrade.output}"
         )
 
+    def test_upgrade_bob_layout_change_reconciles_extension_artifacts(self, tmp_path):
+        """Regression (review #3415, 4725829110).
+
+        When a dual-mode agent (Bob) flips layout across an upgrade, the old
+        layout's *extension* artifacts must be reconciled — not left orphaned.
+        A legacy Bob install renders enabled extensions as ``.bob/commands/``
+        command files; migrating to skills via ``--skills`` must remove those
+        command files, recreate the extension as ``.bob/skills/`` skills, and
+        update the extension registry accordingly (and vice-versa for the
+        reverse ``--legacy-commands`` migration).
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+        registry_path = project / ".specify" / "extensions" / ".registry"
+
+        def _git_registry():
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            g = data["extensions"]["git"]
+            return list(g.get("registered_commands", {})), g.get(
+                "registered_skills", []
+            )
+
+        # Legacy precondition: git renders as command files under .bob/commands.
+        assert sorted(commands.glob("speckit.git.*.md")), (
+            "legacy Bob should render the git extension as command files"
+        )
+        assert not list(skills.glob("speckit-git-*")) if skills.exists() else True
+        cmds_agents, skill_names = _git_registry()
+        assert "bob" in cmds_agents and not skill_names
+
+        # Migrate legacy -> skills.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, f"--skills migration failed: {result.output}"
+
+        # Old-layout git command files removed; skills recreated.
+        assert not sorted(commands.glob("speckit.git.*.md")), (
+            "git extension command files must be removed after --skills migration"
+        )
+        assert sorted(skills.glob("speckit-git-*")), (
+            "git extension must be recreated as skills after --skills migration"
+        )
+        cmds_agents, skill_names = _git_registry()
+        assert "bob" not in cmds_agents, (
+            "extension registry must drop the stale bob command entry"
+        )
+        assert skill_names, "extension registry must record the migrated skills"
+
+        # Migrate skills -> legacy: the reverse reconciliation must also hold.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--legacy-commands",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"--legacy-commands migration failed: {result.output}"
+        )
+        assert not sorted(skills.glob("speckit-git-*")), (
+            "git extension skills must be removed after --legacy-commands migration"
+        )
+        assert sorted(commands.glob("speckit.git.*.md")), (
+            "git extension command files must be recreated in legacy layout"
+        )
+        cmds_agents, skill_names = _git_registry()
+        assert "bob" in cmds_agents and not skill_names
+
     def test_upgrade_preserves_existing_vscode_settings(self, tmp_path):
         """Regression: copilot upgrade must not stale-delete .vscode/settings.json.
 
