@@ -1401,7 +1401,7 @@ class TestExtensionManager:
 
         # No rescue staging may have been published, so a later retry reads the
         # live (possibly newly edited) config rather than stale staged bytes.
-        staging_dir = manager.extensions_dir / ".rescue-staging-test-ext"
+        staging_dir = manager._rescue_staging_dir("test-ext")
         assert not staging_dir.exists()
 
         # Simulate the user fixing the ignore file and editing the kept config,

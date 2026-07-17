@@ -1518,26 +1518,56 @@ class ExtensionManager:
             # when a live config disagrees with its staged copy we must not
             # silently pick either — preserve both and abort, letting the user
             # resolve it. dest_dir is still untouched here, so raising is safe.
-            conflicting: list[str] = []
-            for staged_file in sorted(rescue_staging_dir.iterdir()):
-                if (
-                    staged_file.is_file()
-                    and not staged_file.is_symlink()
-                    and staged_file.name.endswith(("-config.yml", "-config.local.yml"))
-                ):
-                    staged_bytes = staged_file.read_bytes()
-                    live_file = dest_dir / staged_file.name
-                    if live_file.is_file() and not live_file.is_symlink():
-                        try:
-                            live_bytes = live_file.read_bytes()
-                        except OSError:
-                            live_bytes = None
-                        if live_bytes is not None and live_bytes != staged_bytes:
-                            conflicting.append(staged_file.name)
-                    stranded_configs[staged_file.name] = (
-                        staged_bytes,
-                        staged_file.stat().st_mode,
-                    )
+            def _recognized_config_names(directory: Path) -> set[str]:
+                names: set[str] = set()
+                if not directory.is_dir():
+                    return names
+                for entry in directory.iterdir():
+                    if (
+                        entry.is_file()
+                        and not entry.is_symlink()
+                        and entry.name.endswith(
+                            ("-config.yml", "-config.local.yml")
+                        )
+                    ):
+                        names.add(entry.name)
+                return names
+
+            conflicting: set[str] = set()
+            staged_names = _recognized_config_names(rescue_staging_dir)
+            live_names = _recognized_config_names(dest_dir)
+            # A live-only config created after the interrupted attempt is not
+            # enumerated by staging, so without this it would be silently
+            # deleted by the rmtree below and its bytes lost. Treat it as a
+            # conflict so both locations are preserved and the user resolves it.
+            conflicting.update(live_names - staged_names)
+            for staged_name in sorted(staged_names):
+                staged_file = rescue_staging_dir / staged_name
+                staged_stat = staged_file.stat()
+                staged_bytes = staged_file.read_bytes()
+                live_file = dest_dir / staged_name
+                if live_file.is_file() and not live_file.is_symlink():
+                    # A live config that cannot be read or stat'ed must not be
+                    # treated as non-conflicting: the rmtree below would delete
+                    # it and restore the stale staged copy. Abort while dest_dir
+                    # is untouched so no newer or permission-restricted config is
+                    # lost. Divergence also includes permission-only edits (for
+                    # example tightening a secret-bearing config from 0644 to
+                    # 0600), which byte equality alone would miss and then revert.
+                    try:
+                        live_stat = live_file.stat()
+                        live_bytes = live_file.read_bytes()
+                    except OSError:
+                        conflicting.add(staged_name)
+                    else:
+                        if live_bytes != staged_bytes or stat.S_IMODE(
+                            live_stat.st_mode
+                        ) != stat.S_IMODE(staged_stat.st_mode):
+                            conflicting.add(staged_name)
+                stranded_configs[staged_name] = (
+                    staged_bytes,
+                    staged_stat.st_mode,
+                )
             if conflicting:
                 names = ", ".join(sorted(conflicting))
                 raise ValidationError(
