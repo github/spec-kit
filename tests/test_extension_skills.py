@@ -2023,10 +2023,10 @@ class TestExtensionSkillRegistration:
             "directory (#2948)"
         )
 
-    def test_unscoped_cleanup_removes_hermes_home_skill(
+    def test_unscoped_cleanup_preserves_unqualified_hermes_home_skill(
         self, project_dir, temp_dir, monkeypatch
     ):
-        """Fallback cleanup must include configured home-relative outputs."""
+        """Flat registry provenance cannot own another project's home output."""
         home = temp_dir / "home"
         monkeypatch.setattr(Path, "home", lambda: home)
         skill_name = "speckit-hermes-cleanup-hello"
@@ -2046,7 +2046,7 @@ class TestExtensionSkillRegistration:
             [skill_name], "hermes-cleanup"
         )
 
-        assert not skill_dir.exists()
+        assert skill_dir.exists()
 
     def test_unregister_agent_artifacts_stays_scoped_when_agent_dir_absent(
         self, project_dir, temp_dir

@@ -6438,6 +6438,30 @@ class TestPresetSkills:
             ["speckit-specify"], "some-pack", "claude"
         ) == {"claude": ["speckit-specify"]}
 
+    def test_infer_legacy_skill_provenance_excludes_home_outputs(
+        self, project_dir, temp_dir, monkeypatch
+    ):
+        home = temp_dir / "home"
+        monkeypatch.setattr(Path, "home", lambda: home)
+        skill_dir = home / ".hermes" / "skills" / "speckit-specify"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "metadata:\n"
+            "  source: preset:some-pack\n"
+            "---\n\n"
+            "Other project\n",
+            encoding="utf-8",
+        )
+
+        manager = PresetManager(project_dir)
+        inferred = manager._infer_legacy_skill_provenance(
+            ["speckit-specify"], "some-pack", "claude"
+        )
+
+        assert inferred == {"claude": ["speckit-specify"]}
+        assert skill_dir.exists()
+
     def test_remove_infers_legacy_flat_list_provenance_without_prior_rescaffold(
         self, project_dir, temp_dir
     ):

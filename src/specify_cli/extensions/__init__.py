@@ -1290,15 +1290,10 @@ class ExtensionManager:
         Called during extension removal to clean up skill files that
         were created by ``_register_extension_skills()``.
 
-        When *skills_dir* is omitted, this is a genuinely unscoped removal
-        (e.g. full extension removal): ``registered_skills`` is a single
-        flat list covering mirrors created under *every* agent this
-        extension was ever activated under, not just the currently active
-        one, so we always scan all known agent skills directories rather
-        than narrowing to whichever agent happens to be active right now.
-        Each candidate directory is verified against the SKILL.md
-        ``metadata.source`` field before removal to avoid accidentally
-        deleting user-created skills with the same name.
+        When *skills_dir* is omitted, project-local agent skill directories
+        are scanned. Home-scoped outputs require explicit agent provenance:
+        the legacy flat registry and ``metadata.source`` marker do not
+        identify which project created a global skill.
 
         Args:
             skill_names: List of skill names to remove.
@@ -1391,6 +1386,10 @@ class ExtensionManager:
                 skills_candidate,
                 trusted_root,
             ) in self._extension_skill_candidate_dirs().items():
+                # ponytail: flat provenance cannot safely own global output;
+                # include home paths once registry entries identify project/agent.
+                if trusted_root != Path(os.path.abspath(self.project_root)):
+                    continue
                 if not skills_candidate.is_dir():
                     continue
                 # Reject the candidate directory itself (any path

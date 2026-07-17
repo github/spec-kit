@@ -2523,7 +2523,7 @@ class PresetManager:
         Copilot — permanently orphaning Copilot's override on later
         removal.
 
-        Every *configured* integration's skills directory is probed (via
+        Every project-local configured integration's skills directory is probed (via
         the same safe, symlink-validated helpers used for
         restore/removal), not only agents whose registrar config is
         statically ``/SKILL.md``-only: a command-backed agent (e.g.
@@ -2568,6 +2568,12 @@ class PresetManager:
         for agent_name in candidate_agents:
             skills_dir = self._safe_skills_dir_for_agent(agent_name)
             if skills_dir is None:
+                continue
+            # ponytail: legacy markers lack project ownership for global
+            # outputs; include home paths once provenance records the project.
+            if not Path(os.path.abspath(skills_dir)).is_relative_to(
+                Path(os.path.abspath(self.project_root))
+            ):
                 continue
             dir_to_agents.setdefault(skills_dir, []).append(agent_name)
 
