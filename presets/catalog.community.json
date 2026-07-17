@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-14T00:00:00Z",
+  "updated_at": "2026-07-17T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -134,31 +134,31 @@
     "autonomous-run-governance": {
       "name": "Autonomous Run Governance",
       "id": "autonomous-run-governance",
-      "version": "0.1.4",
-      "description": "Adds permission-bounded, evidence-first governance for autonomous Spec Kit delivery, convergence, resume, closeout, and retrospective learning.",
+      "version": "0.2.2",
+      "description": "Adds permission-bounded, evidence-first governance for autonomous Spec Kit delivery with validated status, stop, resume, exact-head proof, closeout, and learner guidance.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/archive/refs/tags/v0.1.4.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/archive/refs/tags/v0.2.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/blob/v0.1.4/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/blob/v0.2.2/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
       },
       "provides": {
-        "templates": 12,
-        "commands": 2,
-        "scripts": 2
+        "templates": 13,
+        "commands": 5,
+        "scripts": 4
       },
       "tags": [
         "autonomous",
         "governance",
         "evidence",
         "permissions",
-        "retrospective"
+        "resume"
       ],
       "created_at": "2026-07-13T00:00:00Z",
-      "updated_at": "2026-07-14T00:00:00Z"
+      "updated_at": "2026-07-17T00:00:00Z"
     },
     "canon-core": {
       "name": "Canon Core",

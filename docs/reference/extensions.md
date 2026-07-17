@@ -171,6 +171,63 @@ To set up configuration for a newly installed extension, copy the template:
 cp .specify/extensions/<ext>/<ext>-config.template.yml \
    .specify/extensions/<ext>/<ext>-config.yml
 ```
+## Project Extension and Hook Configuration
+
+Spec Kit stores project-level extension registration and hook configuration in:
+
+```text
+.specify/extensions.yml
+```
+The file contains installed extensions, global settings, and hooks that are surfaced before or after Spec Kit commands.
+
+```yaml
+installed:
+  - git
+  - my-extension
+
+settings:
+  auto_execute_hooks: true
+
+hooks:
+  before_implement:
+    - extension: git
+      command: speckit.git.commit
+      enabled: true
+      optional: true
+      priority: 10
+      prompt: "Commit outstanding changes before implementation?"
+      description: "Auto-commit before implementation"
+
+  after_implement:
+    - extension: my-extension
+      command: speckit.my-extension.verify
+      enabled: true
+      optional: false
+      priority: 5
+      description: "Run verification after implementation"
+```
+
+### Configuration fields
+
+The top-level `installed` list records extensions installed in the project. The `settings` mapping stores project-wide extension settings, and `hooks` groups hook registrations by event.
+
+`auto_execute_hooks` defaults to `true`, but is currently reserved and is not consulted when hooks are surfaced or invoked.
+
+Each hook entry supports the following fields:
+
+| Field | Description |
+| --- | --- |
+| `extension` | ID of the extension that registered the hook. |
+| `command` | Extension command associated with the hook. |
+| `enabled` | Whether the hook is active. Hooks with `enabled: false` are skipped. |
+| `optional` | Whether the hook is optional. If `true`, the hook is presented with its `prompt` and can be skipped; if `false`, the hook is emitted as an automatic hook (includes `EXECUTE_COMMAND` markers). |
+| `priority` | Priority metadata for the hook. Values must be integers >= 1; invalid values fall back to the default priority `10`. Current command templates surface hooks in their configured YAML order and do not sort them by `priority`. |
+| `prompt` | Message shown when asking whether to run an optional hook. |
+| `description` | Human-readable explanation of what the hook does. |
+| `condition` | Optional expression evaluated by `HookExecutor` (using `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`). Current command templates do not evaluate conditions and skip hooks with a non-empty condition. |
+Hook event names identify when a hook is invoked. They generally use `before_<command>` or `after_<command>`, such as `before_implement`, `after_implement`, `before_tasks`, and `after_tasks`.
+
+`HookExecutor.get_hooks_for_event()` returns hooks ordered by `priority`, with lower values first. However, current command templates read hook lists directly and surface them in their configured YAML order rather than using priority ordering.
 
 ## FAQ
 
