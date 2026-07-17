@@ -25,6 +25,8 @@ If the input is empty, ask the user for the idea (interactive), or stop with a n
 
 ## Slug Resolution
 
+**Ancestor path safety (do this before any filesystem lookup in this section)**: verify that `.specify` and `.specify/assessments` are real directories — not symlinks — that resolve inside the project root, and refuse and report if either is a symlink or escapes the root. Only then run any existence check or directory enumeration below.
+
 Each idea gets its own directory under `.specify/assessments/<slug>/`. Resolve the slug in this order:
 
 1. **User-provided slug**: If the user explicitly passes a slug (e.g., `slug=offline-mode`, `--slug offline-mode`, or an obvious slug-like token), normalize it: lowercase; convert runs of whitespace/underscores to `-`; keep only lowercase letters `a–z`, digits `0–9`, and `-`; drop every other character (including `.`, `/`, `\`); collapse repeated `-`; strip leading/trailing `-`. Do not append timestamps or numbers.
