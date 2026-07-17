@@ -1632,7 +1632,12 @@ class ExtensionManager:
                     " then reinstall."
                 )
                 raise ValidationError(" ".join(msg_parts))
-        elif dest_dir.exists() and not self.registry.is_installed(manifest.id):
+        elif (
+            dest_dir.exists()
+            and not self.registry.is_installed(manifest.id)
+            and (dest_dir / ".keep-config").is_file()
+            and not (dest_dir / ".keep-config").is_symlink()
+        ):
             for cfg_file in (
                 list(dest_dir.glob("*-config.yml"))
                 + list(dest_dir.glob("*-config.local.yml"))
@@ -2015,6 +2020,11 @@ class ExtensionManager:
                         shutil.rmtree(child)
                     else:
                         child.unlink()
+                # Write a provenance marker so install_from_directory can
+                # distinguish this --keep-config leftover from a directory left
+                # by a partially-failed install (which must not have its
+                # packaged default configs treated as user-preserved data).
+                (extension_dir / ".keep-config").write_text("")
         else:
             # Backup config files before deleting
             if extension_dir.exists():

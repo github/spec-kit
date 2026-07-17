@@ -1865,6 +1865,52 @@ class TestExtensionManager:
         # Distinct IDs still map to distinct staging directories.
         assert manager._rescue_staging_dir("b") != short_dir
 
+    def test_failed_install_without_keep_config_does_not_rescue_defaults(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A dir left by a partially-failed install must not trigger the rescue path.
+
+        Any install that copies files but then fails during command, skill, or
+        hook registration also leaves a complete dest_dir with no registry entry.
+        On a later retry from an updated package this branch must not treat the
+        previous package's default config as user-preserved data and restore it
+        over the new defaults.  Only directories explicitly left by
+        ``remove --keep-config`` (which writes a ``.keep-config`` marker) should
+        trigger the rescue path.
+        """
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+
+        # Simulate a partially-failed install: the extension directory is present
+        # with the packaged default config but there is no .keep-config marker and
+        # the extension is not in the registry.  This matches what happens when
+        # copytree succeeds but command/hook registration raises afterwards.
+        manager.registry.remove("test-ext")
+        assert not manager.registry.is_installed("test-ext")
+        assert ext_dir.exists()
+        assert not (ext_dir / ".keep-config").exists()
+
+        # Update the packaged config so a retry with the new package would use
+        # different defaults — the old defaults must NOT be rescued.
+        packaged_config.write_text("model: updated-default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert manager.registry.is_installed("test-ext")
+        # The new packaged default must win; the old default was not user data.
+        assert config_file.read_text() == "model: updated-default-model\n"
+
     def test_install_force_without_existing(self, extension_dir, project_dir):
         """Test force-install when extension is NOT already installed (works normally)."""
         manager = ExtensionManager(project_dir)
