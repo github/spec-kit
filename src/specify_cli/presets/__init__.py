@@ -2886,6 +2886,23 @@ class PresetManager:
 
         registrar = CommandRegistrar()
         marker = f"preset:{pack_id}"
+        override_sources: Dict[str, str] = {}
+        manifest = PresetResolver(self.project_root)._get_manifest(
+            self.presets_dir / pack_id
+        )
+        if manifest is not None:
+            for template in manifest.templates:
+                command_name = template.get("name")
+                if (
+                    template.get("type") == "command"
+                    and isinstance(command_name, str)
+                ):
+                    for skill_name in self._skill_names_for_command(
+                        command_name
+                    ):
+                        override_sources[skill_name] = (
+                            f"override:{command_name}"
+                        )
         for skill_name in skill_names:
             if not self._is_safe_registry_skill_name(skill_name):
                 continue
@@ -2908,7 +2925,11 @@ class PresetManager:
                 if isinstance(metadata, dict)
                 else None
             )
-            if source == marker:
+            owned_sources = {marker}
+            override_source = override_sources.get(skill_name)
+            if override_source:
+                owned_sources.add(override_source)
+            if source in owned_sources:
                 shutil.rmtree(skill_subdir)
 
     def _unregister_skills_in_dir(

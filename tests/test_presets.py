@@ -7820,6 +7820,49 @@ class TestPresetSkills:
 
         assert not skill_dir.exists()
 
+    def test_unregister_agent_artifacts_deletes_reconciled_override_skill(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "deactivated-override-preset",
+            "speckit.specify",
+            "Deactivation override cleanup",
+            "preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+        (
+            manager.presets_dir
+            / "deactivated-override-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).unlink()
+        manager.register_enabled_presets_for_agent("copilot")
+
+        skill_dir = skills_dir / "speckit-specify"
+        assert "override:speckit.specify" in (
+            skill_dir / "SKILL.md"
+        ).read_text(encoding="utf-8")
+
+        manager.unregister_agent_artifacts("copilot")
+
+        assert not skill_dir.exists()
+        metadata = manager.registry.get("deactivated-override-preset")
+        assert "copilot" not in metadata.get("registered_skills", {})
+
     def test_unregister_native_agent_persists_skills_metadata_pop(
         self, project_dir, temp_dir
     ):
