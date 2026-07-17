@@ -53,6 +53,42 @@ def _manifest_tracks_skill_layout(manifest) -> bool:
     return any(str(rel).endswith("/SKILL.md") for rel in manifest.files)
 
 
+def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str]:
+    """Return IDs of installed presets with artifacts registered for *agent_key*.
+
+    Presets register command overrides for every detected agent and mirror
+    skills for the active skills agent, tracking the result in each preset's
+    ``registered_commands`` / ``registered_skills`` metadata. There is no
+    agent-scoped preset re-registration mechanism, so a command↔skills *layout
+    change* cannot reconcile those artifacts (see ``integration_upgrade``).
+    Callers use this to detect the unsafe case and reject the migration rather
+    than silently orphaning preset files / leaving stale registry entries.
+
+    Best-effort: any error resolving preset state yields an empty list so a
+    broken/absent preset registry never blocks an otherwise-valid upgrade.
+    """
+    try:
+        from ..presets import PresetManager
+
+        presets = PresetManager(project_root).registry.list()
+    except Exception:
+        return []
+
+    affected: list[str] = []
+    for preset_id, meta in presets.items():
+        if not isinstance(meta, dict):
+            continue
+        registered_commands = meta.get("registered_commands", {})
+        has_commands = (
+            isinstance(registered_commands, dict)
+            and bool(registered_commands.get(agent_key))
+        )
+        has_skills = bool(meta.get("registered_skills"))
+        if has_commands or has_skills:
+            affected.append(preset_id)
+    return affected
+
+
 @integration_app.command("switch")
 def integration_switch(
     target: str = typer.Argument(help="Integration key to switch to"),
@@ -412,6 +448,42 @@ def integration_upgrade(
         integration, current, key, integration_options
     )
 
+    # Guard: reject a command↔skills layout change while preset overrides are
+    # installed for this agent (review #3415).  A dual-mode agent (e.g. Bob)
+    # can flip layout across an upgrade (``--skills`` / ``--legacy-commands``).
+    # Extension artifacts are reconciled after the flip (see below), but preset
+    # artifacts cannot be: there is no agent-scoped preset re-registration
+    # anywhere in the CLI, so migrating would delete a preset's old-layout
+    # files without recreating them in the new layout and leave the preset
+    # registry claiming artifacts that no longer exist.  Detect the intended
+    # layout (``is_skills_mode`` reflects the resolved flags/disk state, so a
+    # plain same-layout upgrade is unaffected) and bail out *before* any
+    # mutation with an actionable error so the project is never left in a
+    # half-migrated, inconsistent state.
+    if _manifest_tracks_skill_layout(old_manifest) != integration.is_skills_mode(
+        parsed_options, project_root
+    ):
+        affected_presets = _installed_presets_affecting_agent(project_root, key)
+        if affected_presets:
+            preset_list = ", ".join(sorted(affected_presets))
+            console.print(
+                f"[red]Error:[/red] Cannot change '{key}' command layout while "
+                f"preset override(s) are installed: [bold]{preset_list}[/bold]."
+            )
+            console.print(
+                "Preset artifacts cannot yet be reconciled across a command↔skills "
+                "layout change, so the migration would orphan their files and leave "
+                "the preset registry inconsistent."
+            )
+            console.print(
+                "Remove the preset(s), run the upgrade, then reinstall them:\n"
+                f"  [cyan]specify preset remove <id>[/cyan]\n"
+                f"  [cyan]specify integration upgrade {key} "
+                f"--integration-options \"...\"[/cyan]\n"
+                f"  [cyan]specify preset add <id>[/cyan]"
+            )
+            raise typer.Exit(1)
+
     # Ensure shared infrastructure is up to date; --force overwrites existing files.
     infra_integration = integration
     infra_key = key
@@ -544,11 +616,12 @@ def integration_upgrade(
     # layout change. There is no agent-scoped preset re-registration mechanism
     # anywhere in the CLI — ``use`` / ``switch`` / ``upgrade`` never reconcile
     # presets for any agent (presets are only (un)registered at preset
-    # install/remove time). Reconciling them here would require a new
-    # cross-cutting PresetManager subsystem affecting every dual-layout agent,
-    # which is out of scope for this Bob migration. A project that changes Bob's
-    # layout while a preset override is installed should re-run
-    # ``preset remove``/``preset install`` to refresh those artifacts.
+    # install/remove time). Rather than silently orphan them, the guard near
+    # the top of this function rejects a layout-changing upgrade while preset
+    # overrides are installed, so control only reaches here (with a changed
+    # layout) when no preset artifacts are at stake. Full preset reconciliation
+    # would require a new cross-cutting PresetManager subsystem affecting every
+    # dual-layout agent, which is out of scope for this Bob migration.
     if _manifest_tracks_skill_layout(old_manifest) != _manifest_tracks_skill_layout(
         new_manifest
     ):

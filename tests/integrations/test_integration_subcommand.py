@@ -2606,6 +2606,62 @@ class TestIntegrationUpgrade:
         cmds_agents, skill_names = _git_registry()
         assert "bob" in cmds_agents and not skill_names
 
+    def test_upgrade_bob_layout_change_rejected_with_presets_installed(self, tmp_path):
+        """Regression (review #3415, 4726193915).
+
+        A command↔skills layout change cannot reconcile preset artifacts (no
+        agent-scoped preset re-registration exists). Rather than silently
+        orphaning preset files / leaving the registry inconsistent, a
+        layout-changing ``upgrade`` must reject the migration with an
+        actionable error *before any mutation* when preset overrides are
+        installed for the agent. A same-layout upgrade must still succeed.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+        assert sorted(commands.glob("speckit.*.md"))
+
+        # Simulate an installed preset that registered command overrides for bob.
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True, exist_ok=True)
+        (presets_dir / ".registry").write_text(
+            json.dumps({
+                "presets": {
+                    "my-preset": {
+                        "version": "1.0.0",
+                        "enabled": True,
+                        "registered_commands": {"bob": ["speckit.plan"]},
+                        "registered_skills": [],
+                    }
+                }
+            }),
+            encoding="utf-8",
+        )
+
+        # Layout-changing upgrade is rejected, and nothing is mutated.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code != 0, "layout change with presets must be rejected"
+        assert "preset" in result.output.lower()
+        assert "my-preset" in result.output
+        assert not skills.exists(), "no skills layout must be scaffolded on rejection"
+        assert sorted(commands.glob("speckit.*.md")), (
+            "legacy command files must be left untouched on rejection"
+        )
+
+        # A same-layout upgrade (no flag) must still succeed with presets present.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob", "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"same-layout upgrade must not be blocked by presets: {result.output}"
+        )
+
     def test_upgrade_preserves_existing_vscode_settings(self, tmp_path):
         """Regression: copilot upgrade must not stale-delete .vscode/settings.json.
 
