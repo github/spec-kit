@@ -462,3 +462,16 @@ def test_all_variants_share_int64_number_range(
         assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
     else:
         assert bash.stdout == ps.stdout == py.stdout == ""
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_reject_exhausted_auto_number_range(repo: Path) -> None:
+    (repo / "specs" / f"{2**63 - 1}-existing").mkdir(parents=True)
+
+    bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", "x"), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", "x"), repo)
+    py = run(py_cmd(repo, SCRIPT, "--json", "--dry-run", "x"), repo)
+
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""

@@ -220,15 +220,16 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 1
             number = int(normalized_number, 10)
-            if number > _MAX_FEATURE_NUMBER:
-                print(
-                    "Error: --number must be between 0 and "
-                    f"{_MAX_FEATURE_NUMBER}, got '{branch_number}'",
-                    file=sys.stderr,
-                )
-                return 1
         else:
             number = _get_highest_from_specs(specs_dir) + 1
+        if number > _MAX_FEATURE_NUMBER:
+            rejected_number = branch_number or str(number)
+            print(
+                "Error: feature number must be between 0 and "
+                f"{_MAX_FEATURE_NUMBER}, got '{rejected_number}'",
+                file=sys.stderr,
+            )
+            return 1
         feature_num = f"{number:03d}"
 
     max_suffix_length = _MAX_BRANCH_LENGTH - (len(feature_num) + 1)
