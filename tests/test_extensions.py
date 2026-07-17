@@ -3679,6 +3679,48 @@ class TestExtensionCatalog:
             with pytest.raises(ExtensionError, match="HTTPS"):
                 catalog._fetch_single_catalog(entry, force_refresh=True)
 
+    def test_fetch_single_catalog_validates_every_redirect_hop(self, temp_dir):
+        """A redirect_validator is passed to _open_url and rejects a non-HTTPS
+        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
+        terminal-URL-only check would miss."""
+        catalog = self._make_catalog(temp_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator("https://good.example/catalog.json", "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        entry = CatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(ExtensionError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+        assert captured["rv"] is not None
+
+    def test_fetch_catalog_legacy_revalidates_redirected_url(self, temp_dir):
+        """The legacy single-catalog fetch_catalog() path also rejects an
+        HTTPS -> http redirected payload (final geturl() check) — it previously
+        parsed the body with no redirect check."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(
+            {"schema_version": "1.0", "extensions": {}}
+        ).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "http://evil.test/catalog.json"
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="HTTPS"):
+                catalog.fetch_catalog(force_refresh=True)
+
     @pytest.mark.parametrize(
         "payload",
         [
