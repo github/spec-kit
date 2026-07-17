@@ -137,7 +137,7 @@ def _read_overlay(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
     """Read and parse an overlay YAML file, returning (data, errors)."""
     try:
         content = path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         return None, [f"Failed to read {path}: {exc}"]
     try:
         data = yaml.safe_load(content)

@@ -91,7 +91,13 @@ class ProjectOverlaySource:
         if not workflow_overlay_dir.is_dir():
             return []
         layers: list[Layer] = []
-        for path in sorted(workflow_overlay_dir.iterdir()):
+        try:
+            entries = sorted(workflow_overlay_dir.iterdir())
+        except OSError as exc:
+            raise OverlayLoadError(
+                workflow_overlay_dir, [f"Cannot enumerate overlays: {exc}"]
+            ) from exc
+        for path in entries:
             if not path.is_file() or path.suffix not in (".yml", ".yaml"):
                 continue
             if path.is_symlink():
