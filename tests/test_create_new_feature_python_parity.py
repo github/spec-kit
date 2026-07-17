@@ -158,17 +158,30 @@ def test_python_timestamp_number_warning_matches_bash(repo: Path) -> None:
     )
 
 
-def test_python_invalid_number_fails_cleanly(repo: Path) -> None:
-    # Deliberate deviation from bash: the bash twin dies with an arithmetic
-    # expansion error for a non-integer --number, while the Python port
-    # reports a clean error. Pin exit code and message so the intended
-    # non-parity behavior can't regress silently.
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_invalid_number_fails_cleanly(repo: Path) -> None:
     args = ("--json", "--dry-run", "--number", "abc", "add rate limiting")
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    ps = run(
+        ps_cmd(
+            repo,
+            SCRIPT,
+            "-Json",
+            "-DryRun",
+            "-Number",
+            "abc",
+            "add rate limiting",
+        ),
+        repo,
+    )
     py = run(py_cmd(repo, SCRIPT, *args), repo)
 
-    assert py.returncode == 1
-    assert py.stdout == ""
-    assert py.stderr == "Error: --number must be an unsigned integer, got 'abc'\n"
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""
+    expected = "Error: --number must be an unsigned integer, got 'abc'"
+    for result in (bash, ps, py):
+        assert expected in _normalized_error_text(result.stderr, repo)
 
 
 def test_python_negative_number_fails_cleanly(repo: Path) -> None:
@@ -182,9 +195,37 @@ def test_python_negative_number_fails_cleanly(repo: Path) -> None:
     assert py.stderr == "Error: --number must be an unsigned integer, got '-1'\n"
 
 
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize("digit_count", [244, 5000])
-def test_python_oversized_number_fails_cleanly(repo: Path, digit_count: int) -> None:
+def test_all_variants_oversized_number_fails_cleanly(
+    repo: Path, digit_count: int
+) -> None:
     number = "9" * digit_count
+    bash = run(
+        bash_cmd(
+            repo,
+            SCRIPT,
+            "--json",
+            "--dry-run",
+            "--number",
+            number,
+            "add rate limiting",
+        ),
+        repo,
+    )
+    ps = run(
+        ps_cmd(
+            repo,
+            SCRIPT,
+            "-Json",
+            "-DryRun",
+            "-Number",
+            number,
+            "add rate limiting",
+        ),
+        repo,
+    )
     py = run(
         py_cmd(
             repo,
@@ -198,9 +239,13 @@ def test_python_oversized_number_fails_cleanly(repo: Path, digit_count: int) -> 
         repo,
     )
 
-    assert py.returncode == 1
-    assert py.stdout == ""
-    assert py.stderr == "Error: feature number is too long for a branch name\n"
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""
+    expected = (
+        f"Error: --number must be between 0 and {2**63 - 1}, got '{number}'"
+    )
+    for result in (bash, ps, py):
+        assert expected in _normalized_error_text(result.stderr, repo)
 
 
 @requires_bash
@@ -537,6 +582,34 @@ def test_all_variants_text_mode_match(repo: Path) -> None:
         normalize_repo_paths(bash.stdout, repo)
         == normalize_repo_paths(ps.stdout, repo)
         == normalize_repo_paths(py.stdout, repo)
+    )
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_non_dry_text_mode_match(tmp_path: Path) -> None:
+    bash_repo = _setup_repo(tmp_path, "bash")
+    ps_repo = _setup_repo(tmp_path, "powershell")
+    py_repo = _setup_repo(tmp_path, "python")
+
+    bash = run(
+        bash_cmd(bash_repo, SCRIPT, "--number", "7", "x"), bash_repo
+    )
+    ps = run(
+        ps_cmd(ps_repo, SCRIPT, "-Number", "7", "x"), ps_repo
+    )
+    py = run(py_cmd(py_repo, SCRIPT, "--number", "7", "x"), py_repo)
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert (
+        normalize_repo_paths(bash.stdout, bash_repo)
+        == normalize_repo_paths(ps.stdout, ps_repo)
+        == normalize_repo_paths(py.stdout, py_repo)
+    )
+    assert (
+        normalize_repo_paths(bash.stderr, bash_repo)
+        == normalize_repo_paths(ps.stderr, ps_repo)
+        == normalize_repo_paths(py.stderr, py_repo)
     )
 
 

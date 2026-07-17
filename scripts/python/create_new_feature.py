@@ -215,9 +215,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 1
             normalized_number = branch_number.lstrip("0") or "0"
-            if len(normalized_number) + 1 >= _MAX_BRANCH_LENGTH:
+            max_feature_number = str(_MAX_FEATURE_NUMBER)
+            if len(normalized_number) > len(max_feature_number) or (
+                len(normalized_number) == len(max_feature_number)
+                and normalized_number > max_feature_number
+            ):
                 print(
-                    "Error: feature number is too long for a branch name",
+                    "Error: --number must be between 0 and "
+                    f"{_MAX_FEATURE_NUMBER}, got '{branch_number}'",
                     file=sys.stderr,
                 )
                 return 1

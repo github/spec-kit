@@ -238,6 +238,9 @@ if (-not $DryRun) {
     # Set environment variables for the current session
     $env:SPECIFY_FEATURE = $branchName
     $env:SPECIFY_FEATURE_DIRECTORY = $featureDir
+
+    [Console]::Error.WriteLine("# To persist: export SPECIFY_FEATURE=$branchName")
+    [Console]::Error.WriteLine("#              export SPECIFY_FEATURE_DIRECTORY=$featureDir")
 }
 
 if ($Json) {
@@ -255,7 +258,7 @@ if ($Json) {
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
     if (-not $DryRun) {
-        Write-Output "SPECIFY_FEATURE set to: $branchName"
-        Write-Output "SPECIFY_FEATURE_DIRECTORY set to: $featureDir"
+        Write-Output "# To persist in your shell: export SPECIFY_FEATURE=$branchName"
+        Write-Output "#                           export SPECIFY_FEATURE_DIRECTORY=$featureDir"
     }
 }
