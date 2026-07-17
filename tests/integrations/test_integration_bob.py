@@ -622,3 +622,75 @@ class TestBobUseFlowPreservesLegacyLayout:
         # And the persisted separator must reflect the legacy layout.
         data = json.loads(integ_json.read_text(encoding="utf-8"))
         assert data["integration_settings"]["bob"].get("invoke_separator") == "."
+
+
+class TestBobCommandRefScopedToActiveAgent:
+    """Regression (review #3415, 4716424313).
+
+    ``CommandRegistrar.register_commands`` runs once per detected agent, but the
+    persisted ``ai_skills`` flag describes only the *active* integration
+    (``opts["ai"]``).  When another agent (e.g. Copilot) is active in skills
+    mode while a legacy ``.bob/commands`` layout is also present, Bob's command
+    references must still render with the ``.`` separator (Bob 1.x
+    ``/speckit.<cmd>``) rather than inheriting Copilot's ``ai_skills=True`` and
+    rendering ``/speckit-<cmd>``.
+    """
+
+    def _write_command_ref_ext(self, source_dir):
+        source_dir.mkdir(parents=True, exist_ok=True)
+        cmd = source_dir / "run.md"
+        cmd.write_text(
+            "---\ndescription: Run\n---\n\nUse __SPECKIT_COMMAND_PLAN__ first.\n",
+            encoding="utf-8",
+        )
+        return [{"name": "speckit.ext.run", "file": "run.md"}]
+
+    def test_legacy_bob_ref_not_rewritten_when_other_agent_active_in_skills(
+        self, tmp_path
+    ):
+        from specify_cli._init_options import save_init_options
+        from specify_cli.agents import CommandRegistrar
+
+        # Legacy Bob layout on disk; skills layout absent.
+        (tmp_path / ".bob" / "commands").mkdir(parents=True)
+        # A different agent (Copilot) is the active integration, in skills mode.
+        save_init_options(tmp_path, {"ai": "copilot", "ai_skills": True})
+
+        source_dir = tmp_path / "ext-src"
+        commands = self._write_command_ref_ext(source_dir)
+
+        registrar = CommandRegistrar()
+        registered = registrar.register_commands(
+            "bob", commands, "ext", source_dir, tmp_path,
+        )
+        assert "speckit.ext.run" in registered
+
+        written = list((tmp_path / ".bob" / "commands").glob("*.md"))
+        assert written, "expected a rendered Bob command file"
+        content = written[0].read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert "/speckit.plan" in content, (
+            "legacy Bob command refs must use the dot separator even when "
+            "another agent is active in skills mode"
+        )
+        assert "/speckit-plan" not in content
+
+    def test_active_bob_skills_still_uses_hyphen(self, tmp_path):
+        """Control: when Bob itself is the active skills agent, refs use ``-``."""
+        from specify_cli._init_options import save_init_options
+        from specify_cli.agents import CommandRegistrar
+
+        (tmp_path / ".bob" / "skills").mkdir(parents=True)
+        save_init_options(tmp_path, {"ai": "bob", "ai_skills": True})
+
+        source_dir = tmp_path / "ext-src"
+        commands = self._write_command_ref_ext(source_dir)
+
+        registrar = CommandRegistrar()
+        registrar.register_commands("bob", commands, "ext", source_dir, tmp_path)
+
+        written = list((tmp_path / ".bob" / "commands").glob("*.md"))
+        assert written, "expected a rendered Bob command file"
+        content = written[0].read_text(encoding="utf-8")
+        assert "/speckit-plan" in content
+        assert "/speckit.plan" not in content

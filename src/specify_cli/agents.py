@@ -648,9 +648,21 @@ class CommandRegistrar:
 
             _integ = get_integration(agent_name)
             if _integ is not None:
-                _sep = _integ.invoke_separator_for_mode(
-                    is_ai_skills_enabled(load_init_options(project_root))
-                )
+                _opts = load_init_options(project_root)
+                # The persisted ``ai_skills`` flag describes only the active
+                # integration (``opts["ai"]``).  ``register_commands_for_all_agents``
+                # calls this for every detected agent, so trusting that flag for a
+                # different agent would, e.g., render a legacy ``.bob/commands``
+                # project's refs as ``/speckit-*`` just because Copilot is active in
+                # skills mode.  Only consult the flag for the agent it describes;
+                # otherwise resolve this agent's separator from its own project-aware
+                # detection.
+                if _opts.get("ai") == agent_name:
+                    _sep = _integ.invoke_separator_for_mode(
+                        is_ai_skills_enabled(_opts)
+                    )
+                else:
+                    _sep = _integ.effective_invoke_separator(None, project_root)
         except Exception:
             pass
 
