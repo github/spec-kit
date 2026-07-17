@@ -118,16 +118,18 @@ def test_python_unknown_option_matches_bash(repo: Path) -> None:
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-@pytest.mark.parametrize("context", ["missing", "malformed"])
+@pytest.mark.parametrize("context", ["missing", "invalid_json", "invalid_utf8"])
 def test_all_variants_feature_context_error_matches(
     tmp_path: Path, context: str
 ) -> None:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)
-    if context == "malformed":
+    if context == "invalid_json":
         (repo / ".specify" / "feature.json").write_text(
             "{not json", encoding="utf-8"
         )
+    elif context == "invalid_utf8":
+        (repo / ".specify" / "feature.json").write_bytes(b"\xff")
 
     bash = run(bash_cmd(repo, SCRIPT, "--json"), repo)
     ps = run(ps_cmd(repo, SCRIPT, "-Json"), repo)

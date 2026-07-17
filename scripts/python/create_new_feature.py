@@ -321,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
                 spec_file.touch()
 
         # Persist to .specify/feature.json so downstream commands can find the feature.
-        persist_feature_json(repo_root, str(feature_dir))
+        persist_feature_json(repo_root, f"specs/{branch_name}")
 
         # Inform the user how to set feature state in their own shell.
         feature_assignment, directory_assignment = _persistence_assignments(

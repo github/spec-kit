@@ -130,16 +130,18 @@ def test_python_broken_registry_falls_back_to_dir_scan_matches_bash(
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-@pytest.mark.parametrize("context", ["missing", "malformed"])
+@pytest.mark.parametrize("context", ["missing", "invalid_json", "invalid_utf8"])
 def test_all_variants_feature_context_error_matches(
     tmp_path: Path, context: str
 ) -> None:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)
-    if context == "malformed":
+    if context == "invalid_json":
         (repo / ".specify" / "feature.json").write_text(
             "{not json", encoding="utf-8"
         )
+    elif context == "invalid_utf8":
+        (repo / ".specify" / "feature.json").write_bytes(b"\xff")
 
     bash = run(bash_cmd(repo, SCRIPT, "--json"), repo)
     ps = run(ps_cmd(repo, SCRIPT, "-Json"), repo)
@@ -152,7 +154,17 @@ def test_all_variants_feature_context_error_matches(
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-def test_all_variants_ignore_disabled_preset_template(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "registry",
+    [
+        '{"presets":{"alpha":{"enabled":false,"priority":1}}}',
+        '{"presets":{"alpha":"invalid"}}',
+    ],
+    ids=["disabled", "invalid_metadata"],
+)
+def test_all_variants_ignore_inactive_preset_template(
+    tmp_path: Path, registry: str
+) -> None:
     repos = [
         _setup_repo(tmp_path, "bash"),
         _setup_repo(tmp_path, "powershell"),
@@ -167,8 +179,7 @@ def test_all_variants_ignore_disabled_preset_template(tmp_path: Path) -> None:
             "# Disabled preset\n", encoding="utf-8"
         )
         (current / ".specify" / "presets" / ".registry").write_text(
-            '{"presets":{"alpha":{"enabled":false,"priority":1}}}',
-            encoding="utf-8",
+            registry, encoding="utf-8"
         )
 
     bash = run(bash_cmd(repos[0], SCRIPT, "--json"), repos[0])

@@ -84,7 +84,7 @@ def read_feature_json_feature_directory(repo_root: Path) -> str:
         return ""
     try:
         data = json.loads(feature_json.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return ""
     value = data.get("feature_directory") if isinstance(data, dict) else None
     return value if isinstance(value, str) else ""

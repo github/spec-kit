@@ -90,6 +90,19 @@ if [ -z "$FEATURE_DESCRIPTION" ]; then
     exit 1
 fi
 
+MAX_FEATURE_NUMBER=9223372036854775807
+
+is_feature_number_in_range() {
+    local value="$1"
+    local normalized="${value#"${value%%[!0]*}"}"
+    [ -n "$normalized" ] || normalized=0
+    [ ${#normalized} -lt ${#MAX_FEATURE_NUMBER} ] && return 0
+    [ ${#normalized} -gt ${#MAX_FEATURE_NUMBER} ] && return 1
+    # Equal-length digit strings must be compared without arithmetic overflow.
+    # shellcheck disable=SC2071
+    [[ "$normalized" < "$MAX_FEATURE_NUMBER" || "$normalized" == "$MAX_FEATURE_NUMBER" ]]
+}
+
 # Function to get highest number from specs directory
 get_highest_from_specs() {
     local specs_dir="$1"
@@ -102,9 +115,11 @@ get_highest_from_specs() {
             # Match sequential prefixes (>=3 digits), but skip timestamp dirs.
             if echo "$dirname" | grep -Eq '^[0-9]{3,}-' && ! echo "$dirname" | grep -Eq '^[0-9]{8}-[0-9]{6}-'; then
                 number=$(echo "$dirname" | grep -Eo '^[0-9]+')
-                number=$((10#$number))
-                if [ "$number" -gt "$highest" ]; then
-                    highest=$number
+                if is_feature_number_in_range "$number"; then
+                    number=$((10#$number))
+                    if [ "$number" -gt "$highest" ]; then
+                        highest=$number
+                    fi
                 fi
             fi
         done
@@ -202,28 +217,15 @@ if [ "$USE_TIMESTAMP" = true ]; then
     FEATURE_NUM=$(date +%Y%m%d-%H%M%S)
     BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 else
-    MAX_FEATURE_NUMBER=9223372036854775807
     if [ -n "$BRANCH_NUMBER" ] && [[ ! "$BRANCH_NUMBER" =~ ^[0-9]+$ ]]; then
         echo "Error: --number must be an unsigned integer, got '$BRANCH_NUMBER'" >&2
         exit 1
     fi
 
     # Bash arithmetic is signed 64-bit; reject digit strings that would wrap.
-    if [ -n "$BRANCH_NUMBER" ]; then
-        NORMALIZED_BRANCH_NUMBER="${BRANCH_NUMBER#"${BRANCH_NUMBER%%[!0]*}"}"
-        [ -n "$NORMALIZED_BRANCH_NUMBER" ] || NORMALIZED_BRANCH_NUMBER=0
-        NUMBER_TOO_LARGE=false
-        if [ ${#NORMALIZED_BRANCH_NUMBER} -gt ${#MAX_FEATURE_NUMBER} ]; then
-            NUMBER_TOO_LARGE=true
-        elif [ ${#NORMALIZED_BRANCH_NUMBER} -eq ${#MAX_FEATURE_NUMBER} ]; then
-            # Equal-length digit strings must be compared without arithmetic overflow.
-            # shellcheck disable=SC2071
-            [[ "$NORMALIZED_BRANCH_NUMBER" > "$MAX_FEATURE_NUMBER" ]] && NUMBER_TOO_LARGE=true
-        fi
-        if $NUMBER_TOO_LARGE; then
-            echo "Error: --number must be between 0 and $MAX_FEATURE_NUMBER, got '$BRANCH_NUMBER'" >&2
-            exit 1
-        fi
+    if [ -n "$BRANCH_NUMBER" ] && ! is_feature_number_in_range "$BRANCH_NUMBER"; then
+        echo "Error: --number must be between 0 and $MAX_FEATURE_NUMBER, got '$BRANCH_NUMBER'" >&2
+        exit 1
     fi
 
     # Determine branch number from existing feature directories

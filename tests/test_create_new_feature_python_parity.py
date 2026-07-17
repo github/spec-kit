@@ -591,8 +591,11 @@ def test_all_variants_reject_exhausted_auto_number_range(repo: Path) -> None:
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-def test_all_variants_ignore_out_of_range_existing_prefix(repo: Path) -> None:
-    (repo / "specs" / f"{2**63}-existing").mkdir(parents=True)
+@pytest.mark.parametrize("prefix", [2**63, 2**64 + 5])
+def test_all_variants_ignore_out_of_range_existing_prefix(
+    repo: Path, prefix: int
+) -> None:
+    (repo / "specs" / f"{prefix}-existing").mkdir(parents=True)
 
     bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", "x"), repo)
     ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", "x"), repo)
@@ -682,6 +685,42 @@ def test_python_powershell_persistence_assignments_escape_quotes() -> None:
         "$env:SPECIFY_FEATURE = '007-x'",
         "$env:SPECIFY_FEATURE_DIRECTORY = 'C:\\repo\\O''Brien'",
     )
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_persist_symlinked_specs_path_lexically(
+    tmp_path: Path,
+) -> None:
+    repos = [
+        _setup_repo(tmp_path, "bash"),
+        _setup_repo(tmp_path, "powershell"),
+        _setup_repo(tmp_path, "python"),
+    ]
+    for current in repos:
+        specs_target = tmp_path / f"{current.name}-specs"
+        specs_target.mkdir()
+        (current / "specs").symlink_to(specs_target, target_is_directory=True)
+
+    bash = run(
+        bash_cmd(repos[0], SCRIPT, "--json", "--number", "7", "x"),
+        repos[0],
+    )
+    ps = run(
+        ps_cmd(repos[1], SCRIPT, "-Json", "-Number", "7", "x"),
+        repos[1],
+    )
+    py = run(
+        py_cmd(repos[2], SCRIPT, "--json", "--number", "7", "x"),
+        repos[2],
+    )
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    expected = '{"feature_directory":"specs/007-x"}'
+    for current in repos:
+        assert (
+            current / ".specify" / "feature.json"
+        ).read_text(encoding="utf-8").strip() == expected
 
 
 @requires_bash

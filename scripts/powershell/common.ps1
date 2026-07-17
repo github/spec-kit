@@ -345,6 +345,7 @@ function Resolve-Template {
                 $presets = $registryData.presets
                 if ($presets) {
                     $sortedPresets = $presets.PSObject.Properties |
+                        Where-Object { $_.Value -is [PSCustomObject] } |
                         Where-Object { $null -eq $_.Value.enabled -or $_.Value.enabled -ne $false } |
                         Sort-Object { if ($null -ne $_.Value.priority) { $_.Value.priority } else { 10 } } |
                         ForEach-Object { $_.Name }
