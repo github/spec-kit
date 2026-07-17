@@ -39,7 +39,7 @@ After resolution, set `ASSESS_SLUG` (the normalized, validated value) and `ASSES
 
 - **Path safety (do this before any `mkdir`, read, or write)**: resolve the project root and the real, symlink-resolved path of `.specify/assessments/<ASSESS_SLUG>/` and every artifact you touch. **Refuse and report — never follow —** if any path component (`.specify`, `.specify/assessments`, `ASSESS_DIR`, or the target file) is a symlink, or if the resolved path does not remain inside the project root. Never create `ASSESS_DIR` through a symlinked ancestor. This stops a cloned or crafted project from redirecting reads/writes outside the repository.
 - Ensure `ASSESS_DIR` exists, creating it (including missing parents) if necessary.
-- If `ASSESS_DIR/intake.md` already exists, ask the user whether to overwrite it before continuing (interactive); in automated mode, refuse and pick a new unique slug instead.
+- If `ASSESS_DIR/intake.md` already exists: in interactive mode, ask the user whether to overwrite it before continuing. In automated mode, if the slug was **user-provided**, **stop** and report the collision — never silently write under a different identity than the user chose (per the no-suffix rule for explicit slugs). Only for a **self-generated** slug should you pick a new unique slug instead (generated slugs are already disambiguated during resolution).
 
 ## Safety When Fetching URLs
 
@@ -68,7 +68,7 @@ Record in `intake.md`: the **sanitized URL** (strip any `user:password@` userinf
 
 ## Execution
 
-1. **Capture the idea verbatim.** Preserve the original wording (quoted) plus the source (URL, pasted block, or repo path).
+1. **Capture the idea, redacting secrets.** Preserve the original wording (quoted) plus the source (URL, pasted block, or repo path) — but apply the same sanitization as the Source field *inside the quoted text too*: sanitize any credential-bearing URL and redact tokens, passwords, API keys, or cookies. Never persist a secret just because it appeared in the original.
 2. **Restate it in one or two neutral sentences.** What is being proposed, in plain language, without endorsing or dismissing it.
 3. **Record origin and context.** Who raised it, when, and any triggering event (a complaint, an outage, a sales ask, a strategy shift). Mark unknowns as `[NEEDS CLARIFICATION: …]`.
 4. **Note the idea type** so downstream stages know what to weigh: `new-capability` | `improvement` | `fix` | `exploration` | `cost-saving` | `compliance` | `other`.
@@ -83,9 +83,9 @@ Record in `intake.md`: the **sanitized URL** (strip any `user:password@` userinf
    - **Source**: <sanitized URL, "pasted text", or repo path>
    - **Type**: new-capability | improvement | fix | exploration | cost-saving | compliance | other
 
-   ## Idea (verbatim)
+   ## Idea (as captured)
 
-   <Quoted original. If a URL was fetched, include the title and a short excerpt; link the sanitized URL and record the URL Trust Policy branch taken.>
+   <Quoted original, with any credential-bearing URL sanitized and secrets (tokens, passwords, keys, cookies) redacted. If a URL was fetched, include the title and a short excerpt; link the sanitized URL and record the URL Trust Policy branch taken.>
 
    ## Restated
 
