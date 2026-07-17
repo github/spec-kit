@@ -147,7 +147,8 @@ function Get-FeaturePathsEnv {
     # so pure path resolution never writes .specify/feature.json, which would
     # dirty the working tree or overwrite a pinned value (issue #3025).
     param(
-        [switch]$NoPersist
+        [switch]$NoPersist,
+        [switch]$ReturnNullOnError
     )
 
     $repoRoot = Get-RepoRoot
@@ -174,7 +175,8 @@ function Get-FeaturePathsEnv {
         try {
             $featureConfig = $featureJsonRaw | ConvertFrom-Json
         } catch {
-            [Console]::Error.WriteLine("ERROR: Failed to parse .specify/feature.json: $_")
+            [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
+            if ($ReturnNullOnError) { return $null }
             exit 1
         }
         if ($featureConfig.feature_directory) {
@@ -185,10 +187,12 @@ function Get-FeaturePathsEnv {
             }
         } else {
             [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or ensure .specify/feature.json contains feature_directory.")
+            if ($ReturnNullOnError) { return $null }
             exit 1
         }
     } else {
         [Console]::Error.WriteLine("ERROR: Feature directory not found. Set SPECIFY_FEATURE_DIRECTORY or run the specify command to create .specify/feature.json.")
+        if ($ReturnNullOnError) { return $null }
         exit 1
     }
 
@@ -334,6 +338,7 @@ function Resolve-Template {
     if (Test-Path $presetsDir) {
         $registryFile = Join-Path $presetsDir '.registry'
         $sortedPresets = @()
+        $registryParsed = $false
         if (Test-Path $registryFile) {
             try {
                 $registryData = Get-Content $registryFile -Raw | ConvertFrom-Json
@@ -344,13 +349,13 @@ function Resolve-Template {
                         Sort-Object { if ($null -ne $_.Value.priority) { $_.Value.priority } else { 10 } } |
                         ForEach-Object { $_.Name }
                 }
+                $registryParsed = $true
             } catch {
-                # Fallback: alphabetical directory order
-                $sortedPresets = @()
+                $registryParsed = $false
             }
         }
 
-        if ($sortedPresets.Count -gt 0) {
+        if ($registryParsed) {
             foreach ($presetId in $sortedPresets) {
                 $candidate = Join-Path $presetsDir "$presetId/templates/$TemplateName.md"
                 if (Test-Path $candidate) { return $candidate }

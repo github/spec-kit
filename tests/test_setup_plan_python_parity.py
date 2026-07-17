@@ -129,16 +129,63 @@ def test_python_broken_registry_falls_back_to_dir_scan_matches_bash(
 
 
 @requires_bash
-def test_python_missing_feature_context_matches_bash(tmp_path: Path) -> None:
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("context", ["missing", "malformed"])
+def test_all_variants_feature_context_error_matches(
+    tmp_path: Path, context: str
+) -> None:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)
+    if context == "malformed":
+        (repo / ".specify" / "feature.json").write_text(
+            "{not json", encoding="utf-8"
+        )
 
     bash = run(bash_cmd(repo, SCRIPT, "--json"), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json"), repo)
     py = run(py_cmd(repo, SCRIPT, "--json"), repo)
 
-    assert py.returncode == bash.returncode == 1
-    assert py.stdout == bash.stdout == ""
-    assert py.stderr == bash.stderr
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""
+    assert bash.stderr == ps.stderr == py.stderr
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_ignore_disabled_preset_template(tmp_path: Path) -> None:
+    repos = [
+        _setup_repo(tmp_path, "bash"),
+        _setup_repo(tmp_path, "powershell"),
+        _setup_repo(tmp_path, "python"),
+    ]
+    for current in repos:
+        preset_templates = (
+            current / ".specify" / "presets" / "alpha" / "templates"
+        )
+        preset_templates.mkdir(parents=True)
+        (preset_templates / "plan-template.md").write_text(
+            "# Disabled preset\n", encoding="utf-8"
+        )
+        (current / ".specify" / "presets" / ".registry").write_text(
+            '{"presets":{"alpha":{"enabled":false,"priority":1}}}',
+            encoding="utf-8",
+        )
+
+    bash = run(bash_cmd(repos[0], SCRIPT, "--json"), repos[0])
+    ps = run(ps_cmd(repos[1], SCRIPT, "-Json"), repos[1])
+    py = run(py_cmd(repos[2], SCRIPT, "--json"), repos[2])
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert normalize_repo_paths(bash.stdout, repos[0]) == normalize_repo_paths(
+        ps.stdout, repos[1]
+    ) == normalize_repo_paths(py.stdout, repos[2])
+    assert normalize_repo_paths(bash.stderr, repos[0]) == normalize_repo_paths(
+        ps.stderr, repos[1]
+    ) == normalize_repo_paths(py.stderr, repos[2])
+    for current in repos:
+        assert (
+            current / "specs" / "001-my-feature" / "plan.md"
+        ).read_text(encoding="utf-8") == TEMPLATE_BODY
 
 
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")

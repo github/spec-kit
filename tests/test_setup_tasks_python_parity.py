@@ -116,6 +116,28 @@ def test_python_unknown_option_matches_bash(repo: Path) -> None:
     assert py.stderr == bash.stderr
 
 
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("context", ["missing", "malformed"])
+def test_all_variants_feature_context_error_matches(
+    tmp_path: Path, context: str
+) -> None:
+    repo = make_repo(tmp_path)
+    install_scripts(repo, SCRIPT)
+    if context == "malformed":
+        (repo / ".specify" / "feature.json").write_text(
+            "{not json", encoding="utf-8"
+        )
+
+    bash = run(bash_cmd(repo, SCRIPT, "--json"), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json"), repo)
+    py = run(py_cmd(repo, SCRIPT, "--json"), repo)
+
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""
+    assert bash.stderr == ps.stderr == py.stderr
+
+
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 def test_python_json_output_matches_powershell(repo: Path) -> None:
     feature = repo / "specs" / "001-my-feature"

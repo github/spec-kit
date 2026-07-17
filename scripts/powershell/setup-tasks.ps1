@@ -17,7 +17,11 @@ if ($Help) {
 . "$PSScriptRoot/common.ps1"
 
 # Get feature paths
-$paths = Get-FeaturePathsEnv
+$paths = Get-FeaturePathsEnv -ReturnNullOnError
+if (-not $paths) {
+    [Console]::Error.WriteLine("ERROR: Failed to resolve feature paths")
+    exit 1
+}
 
 if (-not (Test-Path $paths.IMPL_PLAN -PathType Leaf)) {
     [Console]::Error.WriteLine("ERROR: plan.md not found in $($paths.FEATURE_DIR)")
