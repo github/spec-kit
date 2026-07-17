@@ -762,3 +762,83 @@ class TestBobCommandRefScopedToActiveAgent:
             "of a coexisting .bob/skills directory"
         )
         assert "/speckit-plan" not in content
+
+
+class TestBobSetupPreservesLegacyOnUpgrade:
+    """Regression (review #3415, 4723782860, comment 1).
+
+    ``setup()`` must apply the same managed-artifact detection as ``use`` so
+    that ``integration upgrade bob`` on a Bob 1.x install (managed
+    ``.bob/commands/speckit.*.md`` on disk, no stored options) preserves the
+    command layout instead of silently generating skills and stale-deleting
+    the legacy commands.
+    """
+
+    def test_setup_without_options_preserves_existing_command_layout(
+        self, tmp_path
+    ):
+        from specify_cli.integrations.bob import BobIntegration
+
+        # Pre-existing Bob 1.x install: managed command files, no options.
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.plan.md").write_text("# plan", encoding="utf-8")
+
+        bob = BobIntegration()
+        m = IntegrationManifest("bob", tmp_path)
+        with pytest.warns(UserWarning, match="Bob legacy commands mode"):
+            created = bob.setup(tmp_path, m, parsed_options=None)
+
+        # Command layout regenerated; no skills layout introduced.
+        assert not (tmp_path / ".bob" / "skills").exists(), (
+            "upgrade must not migrate an existing legacy Bob project to skills"
+        )
+        assert created, "expected command files to be regenerated"
+        for f in created:
+            assert f.parent == tmp_path / ".bob" / "commands"
+            assert f.suffix == ".md"
+
+    def test_setup_fresh_project_still_defaults_to_skills(self, tmp_path):
+        """A fresh project (no managed artifacts) still defaults to skills."""
+        from specify_cli.integrations.bob import BobIntegration
+
+        bob = BobIntegration()
+        m = IntegrationManifest("bob", tmp_path)
+        created = bob.setup(tmp_path, m, parsed_options=None)
+
+        assert (tmp_path / ".bob" / "skills").is_dir()
+        assert not (tmp_path / ".bob" / "commands").exists()
+        assert created
+
+
+class TestBobPostProcessSkillContent:
+    """Regression (review #3415, 4723782860, comment 2).
+
+    Preset/extension skill generators call ``post_process_skill_content`` on
+    the *registered* ``BobIntegration`` instance. Core Bob skills are
+    intent-activated and intentionally omit the shared slash-command hook note,
+    so the registered class must expose the same no-op the skills helper does
+    (not inherit a note-injecting default) to keep every skill path consistent.
+    """
+
+    def test_registered_bob_has_post_process_hook(self):
+        bob = get_integration("bob")
+        assert hasattr(bob, "post_process_skill_content")
+
+    def test_post_process_is_noop_no_hook_note_injected(self):
+        bob = get_integration("bob")
+        sample = (
+            "---\nname: speckit-plan\n---\n\n"
+            "Run /speckit.plan then /speckit.tasks.\n"
+        )
+        assert bob.post_process_skill_content(sample) == sample
+
+    def test_post_process_matches_skills_helper(self):
+        from specify_cli.integrations.bob import _BobSkillsHelper
+
+        bob = get_integration("bob")
+        sample = "---\nname: speckit-analyze\n---\n\nSome body with /speckit.plan.\n"
+        assert (
+            bob.post_process_skill_content(sample)
+            == _BobSkillsHelper().post_process_skill_content(sample)
+        )

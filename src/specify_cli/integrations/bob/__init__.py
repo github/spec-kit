@@ -203,6 +203,17 @@ class BobIntegration(IntegrationBase):
         """
         return "-" if skills_enabled else "."
 
+    def post_process_skill_content(self, content: str) -> str:
+        """Bob skills are intent-activated; no slash-command note is injected.
+
+        Preset/extension skill generators call this on the *registered*
+        ``BobIntegration`` instance, not on :class:`_BobSkillsHelper`, so the
+        no-op must be repeated here (delegating to the helper) — otherwise
+        those paths would inherit ``IntegrationBase``'s default and inject
+        ``/speckit-*`` hook guidance that core Bob skills intentionally omit.
+        """
+        return _BobSkillsHelper().post_process_skill_content(content)
+
     def setup(
         self,
         project_root: Path,
@@ -211,7 +222,7 @@ class BobIntegration(IntegrationBase):
         **opts: Any,
     ) -> list[Path]:
         parsed_options = parsed_options or {}
-        if self.is_skills_mode(parsed_options):
+        if self.is_skills_mode(parsed_options, project_root):
             return _BobSkillsHelper().setup(
                 project_root, manifest, parsed_options, **opts
             )
