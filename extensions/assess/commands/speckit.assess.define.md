@@ -20,6 +20,7 @@ Resolve the slug: explicit `slug=…` → conversation context (a slug reported 
 
 - **Path safety (do this before any `mkdir`, read, or write)**: resolve the project root and the real, symlink-resolved path of `.specify/assessments/<ASSESS_SLUG>/` and every artifact you touch. **Refuse and report — never follow —** if any path component (`.specify`, `.specify/assessments`, `ASSESS_DIR`, or the target file) is a symlink, or if the resolved path does not remain inside the project root. Never create `ASSESS_DIR` through a symlinked ancestor. This stops a cloned or crafted project from redirecting reads/writes outside the repository.
 - Read `ASSESS_DIR/intake.md` and `ASSESS_DIR/research.md` if they exist. Neither is strictly required — `define` is the minimum viable assessment stage and may be run directly on the user input — but if research exists, ground every claim in it and do not contradict it silently.
+- **Require a substantive problem to define.** When both `intake.md` and `research.md` are absent, proceed only if `$ARGUMENTS` carries real idea/problem text beyond the slug and options. If the input is *only* a slug, do **not** manufacture a definition from it: ask the user for the idea (interactive) or stop with a note (automated).
 - If `ASSESS_DIR/problem.md` already exists, ask whether to overwrite (interactive); in automated mode, refuse.
 - If `ASSESS_DIR` does not exist, create it and record that intake/research were skipped.
 
