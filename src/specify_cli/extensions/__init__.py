@@ -1546,7 +1546,15 @@ class ExtensionManager:
                 staged_stat = staged_file.stat()
                 staged_bytes = staged_file.read_bytes()
                 live_file = dest_dir / staged_name
-                if live_file.is_file() and not live_file.is_symlink():
+                if live_file.is_symlink():
+                    # A user may have replaced the live config with a symlink
+                    # after the interrupted attempt. It cannot be compared by
+                    # bytes/mode against the staged copy, and the rmtree below
+                    # would silently delete this newer choice and restore the
+                    # older staged file. Treat any live symlink as a conflict so
+                    # both are preserved and the user resolves it.
+                    conflicting.add(staged_name)
+                elif live_file.is_file():
                     # A live config that cannot be read or stat'ed must not be
                     # treated as non-conflicting: the rmtree below would delete
                     # it and restore the stale staged copy. Abort while dest_dir
@@ -1584,7 +1592,22 @@ class ExtensionManager:
                 list(dest_dir.glob("*-config.yml"))
                 + list(dest_dir.glob("*-config.local.yml"))
             ):
-                if cfg_file.is_file() and not cfg_file.is_symlink():
+                if cfg_file.is_symlink():
+                    # `remove --keep-config` preserves a symlinked config
+                    # because Path.is_file() follows symlinks. Its bytes cannot
+                    # be safely rescued (the target may live outside dest_dir),
+                    # and the rmtree below would delete the link and silently
+                    # discard the kept configuration. Reject the reinstall while
+                    # dest_dir is untouched so the user resolves it rather than
+                    # losing the linked config.
+                    raise ValidationError(
+                        "Preserved extension config for "
+                        f"'{manifest.id}' is a symlink ({cfg_file.name}) in "
+                        f"{dest_dir}, which cannot be safely rescued during "
+                        "reinstall. Resolve manually — replace the symlink with "
+                        "a regular file or remove it — then reinstall."
+                    )
+                if cfg_file.is_file():
                     stranded_configs[cfg_file.name] = (
                         cfg_file.read_bytes(),
                         cfg_file.stat().st_mode,

@@ -1290,6 +1290,113 @@ class TestExtensionManager:
         assert local_cfg.exists()
         assert "local_override: true" in local_cfg.read_text()
 
+    def test_reinstall_with_symlinked_config_rejects_install(
+        self, extension_dir, project_dir
+    ):
+        """A preserved symlinked config must abort reinstall, not be deleted."""
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        if not can_create_symlink(ext_dir.parent if ext_dir.parent.exists() else project_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        manager = ExtensionManager(project_dir)
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Replace the installed config with a symlink to a file outside dest_dir.
+        config_file = ext_dir / "test-ext-config.yml"
+        external_target = project_dir / "external-config.yml"
+        external_target.write_text("model: linked-model\n")
+        config_file.unlink()
+        os.symlink(external_target, config_file)
+        assert config_file.is_symlink()
+
+        # `remove --keep-config` follows the symlink via is_file() and keeps it.
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.is_symlink()
+
+        # Plain reinstall must reject rather than silently delete the link.
+        with pytest.raises(ValidationError, match="is a symlink"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # The symlink and its target survive; nothing was silently discarded.
+        assert config_file.is_symlink()
+        assert external_target.read_text() == "model: linked-model\n"
+        assert not manager.registry.is_installed("test-ext")
+
+    def test_retry_with_symlinked_live_config_aborts_and_preserves_both(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """A live config replaced by a symlink on retry is a conflict, not overwritten."""
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        if not can_create_symlink(project_dir):
+            pytest.skip("Current platform/user cannot create symlinks")
+
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        staged_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+
+        # Simulate the user replacing the live config with a symlink before retry.
+        external_target = project_dir / "external-config.yml"
+        external_target.write_text("model: newer-linked-model\n")
+        config_file.unlink()
+        os.symlink(external_target, config_file)
+        assert config_file.is_symlink()
+
+        with pytest.raises(ValidationError, match="Preserved extension config conflict"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Both copies survive: the live symlink choice and the staged backup.
+        assert config_file.is_symlink()
+        assert external_target.read_text() == "model: newer-linked-model\n"
+        assert staging_dir.exists()
+        assert (staging_dir / "test-ext-config.yml").read_bytes() == staged_bytes
+        assert not manager.registry.is_installed("test-ext")
+
     def test_copytree_failure_restores_stranded_config(
         self, extension_dir, project_dir, monkeypatch
     ):
