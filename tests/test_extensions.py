@@ -1603,6 +1603,92 @@ class TestExtensionManager:
             restored_mode = config_file.stat().st_mode
             assert stat.S_IMODE(restored_mode) == stat.S_IMODE(original_mode)
 
+    def test_retry_restores_config_from_staging_when_live_absent(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Retry succeeds using only staging when the live config is absent.
+
+        After a copytree failure, staging is complete and the rollback writes
+        the config back to dest_dir.  If a power loss interrupts that rollback
+        the config may be absent on the next attempt.  The retry-from-staging
+        branch (``if staging_is_complete``) must restore the config from staging
+        alone so the original bytes and mode are recovered even when no live copy
+        is present.  This is the critical path that distinguishes the staging
+        branch from the live-dir fallback.
+        """
+        import stat
+
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+
+        if platform.system() != "Windows":
+            config_file.chmod(0o640)
+        original_bytes = config_file.read_bytes()
+        original_mode = config_file.stat().st_mode
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+        assert not staging_dir.exists()
+
+        original_copytree = shutil.copytree
+        copytree_calls = 0
+
+        def flaky_copytree(*args, **kwargs):
+            nonlocal copytree_calls
+            copytree_calls += 1
+            if copytree_calls == 1:
+                dst = args[1]
+                Path(dst).mkdir(parents=True, exist_ok=True)
+                (Path(dst) / "_partial.txt").write_text("partial")
+                raise OSError("simulated disk full")
+            return original_copytree(*args, **kwargs)
+
+        monkeypatch.setattr(_ext_module.shutil, "copytree", flaky_copytree)
+
+        with pytest.raises(OSError, match="simulated disk full"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # Staging is complete after the first failure.
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+        assert (staging_dir / "test-ext-config.yml").exists()
+
+        # Simulate a power loss that prevented the rollback from writing the
+        # config back: delete the live copy so the retry must rely on staging.
+        config_file.unlink()
+        assert not config_file.exists()
+
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # The staging branch must restore the original bytes even though no live
+        # copy was present — proving staging (not the live-dir fallback) was used.
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        assert config_file.read_bytes() == original_bytes
+        assert not (ext_dir / "_partial.txt").exists()
+        assert not staging_dir.exists()
+
+        if platform.system() != "Windows":
+            restored_mode = config_file.stat().st_mode
+            assert stat.S_IMODE(restored_mode) == stat.S_IMODE(original_mode)
+
     def test_retry_with_edited_live_config_aborts_and_preserves_both(
         self, extension_dir, project_dir, monkeypatch
     ):
