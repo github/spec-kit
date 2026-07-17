@@ -111,7 +111,10 @@ def write_feature_json(
 
 def normalize_repo_paths(text: str, repo: Path) -> str:
     """Replace the repo path with a placeholder so two-repo runs compare equal."""
-    return text.replace(str(repo), "<REPO>").replace("\r\n", "\n")
+    repo_paths = sorted({str(repo), str(repo.resolve())}, key=len, reverse=True)
+    for repo_path in repo_paths:
+        text = text.replace(repo_path, "<REPO>")
+    return text.replace("\r\n", "\n")
 
 
 def normalize_script_names(text: str, repo: Path, script: str) -> str:

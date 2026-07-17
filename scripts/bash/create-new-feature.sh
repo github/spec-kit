@@ -202,9 +202,14 @@ if [ "$USE_TIMESTAMP" = true ]; then
     FEATURE_NUM=$(date +%Y%m%d-%H%M%S)
     BRANCH_NAME="${FEATURE_NUM}-${BRANCH_SUFFIX}"
 else
+    MAX_FEATURE_NUMBER=9223372036854775807
+    if [ -n "$BRANCH_NUMBER" ] && [[ ! "$BRANCH_NUMBER" =~ ^[0-9]+$ ]]; then
+        echo "Error: --number must be an unsigned integer, got '$BRANCH_NUMBER'" >&2
+        exit 1
+    fi
+
     # Bash arithmetic is signed 64-bit; reject digit strings that would wrap.
-    if [[ "$BRANCH_NUMBER" =~ ^[0-9]+$ ]]; then
-        MAX_FEATURE_NUMBER=9223372036854775807
+    if [ -n "$BRANCH_NUMBER" ]; then
         NORMALIZED_BRANCH_NUMBER="${BRANCH_NUMBER#"${BRANCH_NUMBER%%[!0]*}"}"
         [ -n "$NORMALIZED_BRANCH_NUMBER" ] || NORMALIZED_BRANCH_NUMBER=0
         NUMBER_TOO_LARGE=false
@@ -224,6 +229,10 @@ else
     # Determine branch number from existing feature directories
     if [ -z "$BRANCH_NUMBER" ]; then
         HIGHEST=$(get_highest_from_specs "$SPECS_DIR")
+        if [ "$HIGHEST" -eq "$MAX_FEATURE_NUMBER" ]; then
+            echo "Error: feature number must be between 0 and $MAX_FEATURE_NUMBER, got '9223372036854775808'" >&2
+            exit 1
+        fi
         BRANCH_NUMBER=$((HIGHEST + 1))
     fi
 

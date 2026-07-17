@@ -173,7 +173,8 @@ def _get_highest_from_specs(specs_dir: Path) -> int:
             r"^[0-9]{8}-[0-9]{6}-", name
         ):
             number = int(re.match(r"^[0-9]+", name).group(), 10)
-            highest = max(highest, number)
+            if number <= _MAX_FEATURE_NUMBER:
+                highest = max(highest, number)
     return highest
 
 
@@ -208,7 +209,8 @@ def main(argv: list[str] | None = None) -> int:
             # characters that int() would otherwise tolerate.
             if not re.fullmatch(r"[0-9]+", branch_number):
                 print(
-                    f"Error: --number must be an integer, got '{branch_number}'",
+                    "Error: --number must be an unsigned integer, "
+                    f"got '{branch_number}'",
                     file=sys.stderr,
                 )
                 return 1
@@ -224,8 +226,9 @@ def main(argv: list[str] | None = None) -> int:
             number = _get_highest_from_specs(specs_dir) + 1
         if number > _MAX_FEATURE_NUMBER:
             rejected_number = branch_number or str(number)
+            number_label = "--number" if branch_number else "feature number"
             print(
-                "Error: feature number must be between 0 and "
+                f"Error: {number_label} must be between 0 and "
                 f"{_MAX_FEATURE_NUMBER}, got '{rejected_number}'",
                 file=sys.stderr,
             )

@@ -35,6 +35,13 @@ def _setup_repo(tmp_path: Path, name: str = "proj") -> Path:
     return repo
 
 
+def _normalized_error_text(stderr: str, repo: Path) -> str:
+    stderr = re.sub(r"\x1b\[[0-9;]*m", "", stderr)
+    stderr = re.sub(r"(?m)^\s*\|\s?", "", stderr)
+    stderr = normalize_repo_paths(stderr, repo).replace("-Number", "--number")
+    return " ".join(stderr.split())
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     return _setup_repo(tmp_path)
@@ -98,14 +105,31 @@ def test_python_sequential_numbering_matches_bash(repo: Path) -> None:
 
 
 @requires_bash
-def test_python_timestamp_mode_matches_bash_shape(repo: Path) -> None:
+def test_all_variants_timestamp_mode_match_shape(repo: Path) -> None:
     args = ("--json", "--dry-run", "--timestamp", "--short-name", "user-auth", "x")
     bash = run(bash_cmd(repo, SCRIPT, *args), repo)
     py = run(py_cmd(repo, SCRIPT, *args), repo)
+    results = [bash, py]
+    if HAS_POWERSHELL:
+        results.append(
+            run(
+                ps_cmd(
+                    repo,
+                    SCRIPT,
+                    "-Json",
+                    "-DryRun",
+                    "-Timestamp",
+                    "-ShortName",
+                    "user-auth",
+                    "x",
+                ),
+                repo,
+            )
+        )
 
-    assert py.returncode == bash.returncode == 0
+    assert all(result.returncode == 0 for result in results)
     # Timestamps may straddle a second boundary, so compare shape and suffix.
-    for result in (bash, py):
+    for result in results:
         data = json_stdout(result)
         assert re.fullmatch(r"\d{8}-\d{6}-user-auth", data["BRANCH_NAME"])
         assert data["BRANCH_NAME"].startswith(data["FEATURE_NUM"])
@@ -144,7 +168,7 @@ def test_python_invalid_number_fails_cleanly(repo: Path) -> None:
 
     assert py.returncode == 1
     assert py.stdout == ""
-    assert py.stderr == "Error: --number must be an integer, got 'abc'\n"
+    assert py.stderr == "Error: --number must be an unsigned integer, got 'abc'\n"
 
 
 def test_python_negative_number_fails_cleanly(repo: Path) -> None:
@@ -155,7 +179,7 @@ def test_python_negative_number_fails_cleanly(repo: Path) -> None:
 
     assert py.returncode == 1
     assert py.stdout == ""
-    assert py.stderr == "Error: --number must be an integer, got '-1'\n"
+    assert py.stderr == "Error: --number must be an unsigned integer, got '-1'\n"
 
 
 @pytest.mark.parametrize("digit_count", [244, 5000])
@@ -402,6 +426,9 @@ def test_all_variants_reject_signed_number(repo: Path, number: str) -> None:
     )
 
     assert bash.returncode == ps.returncode == py.returncode == 1
+    expected = f"Error: --number must be an unsigned integer, got '{number}'"
+    for result in (bash, ps, py):
+        assert expected in _normalized_error_text(result.stderr, repo)
 
 
 @requires_bash
@@ -462,6 +489,9 @@ def test_all_variants_share_int64_number_range(
         assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
     else:
         assert bash.stdout == ps.stdout == py.stdout == ""
+        expected = f"Error: --number must be between 0 and {2**63 - 1}, got '{number}'"
+        for result in (bash, ps, py):
+            assert expected in _normalized_error_text(result.stderr, repo)
 
 
 @requires_bash
@@ -475,3 +505,106 @@ def test_all_variants_reject_exhausted_auto_number_range(repo: Path) -> None:
 
     assert bash.returncode == ps.returncode == py.returncode == 1
     assert bash.stdout == ps.stdout == py.stdout == ""
+    expected = f"Error: feature number must be between 0 and {2**63 - 1}, got '{2**63}'"
+    for result in (bash, ps, py):
+        assert expected in _normalized_error_text(result.stderr, repo)
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_ignore_out_of_range_existing_prefix(repo: Path) -> None:
+    (repo / "specs" / f"{2**63}-existing").mkdir(parents=True)
+
+    bash = run(bash_cmd(repo, SCRIPT, "--json", "--dry-run", "x"), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json", "-DryRun", "x"), repo)
+    py = run(py_cmd(repo, SCRIPT, "--json", "--dry-run", "x"), repo)
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
+    assert json_stdout(py)["FEATURE_NUM"] == "001"
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_text_mode_match(repo: Path) -> None:
+    bash = run(bash_cmd(repo, SCRIPT, "--dry-run", "--number", "7", "x"), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-DryRun", "-Number", "7", "x"), repo)
+    py = run(py_cmd(repo, SCRIPT, "--dry-run", "--number", "7", "x"), repo)
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert bash.stderr == ps.stderr == py.stderr == ""
+    assert (
+        normalize_repo_paths(bash.stdout, repo)
+        == normalize_repo_paths(ps.stdout, repo)
+        == normalize_repo_paths(py.stdout, repo)
+    )
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_allow_existing_branch(repo: Path) -> None:
+    feature_dir = repo / "specs" / "001-x"
+    feature_dir.mkdir(parents=True)
+    spec_file = feature_dir / "spec.md"
+    spec_file.write_text("existing\n", encoding="utf-8")
+
+    bash = run(
+        bash_cmd(
+            repo,
+            SCRIPT,
+            "--json",
+            "--number",
+            "1",
+            "--allow-existing-branch",
+            "x",
+        ),
+        repo,
+    )
+    ps = run(
+        ps_cmd(
+            repo,
+            SCRIPT,
+            "-Json",
+            "-Number",
+            "1",
+            "-AllowExistingBranch",
+            "x",
+        ),
+        repo,
+    )
+    py = run(
+        py_cmd(
+            repo,
+            SCRIPT,
+            "--json",
+            "--number",
+            "1",
+            "--allow-existing-branch",
+            "x",
+        ),
+        repo,
+    )
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
+    assert spec_file.read_text(encoding="utf-8") == "existing\n"
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_existing_directory_failure_diagnostics(repo: Path) -> None:
+    (repo / "specs" / "001-x").mkdir(parents=True)
+    expected = (
+        "Error: Feature directory '<REPO>/specs/001-x' already exists. "
+        "Please use a different feature name or specify a different number "
+        "with --number."
+    )
+
+    bash = run(bash_cmd(repo, SCRIPT, "--json", "--number", "1", "x"), repo)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json", "-Number", "1", "x"), repo)
+    py = run(py_cmd(repo, SCRIPT, "--json", "--number", "1", "x"), repo)
+
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""
+    for result in (bash, ps, py):
+        assert expected in _normalized_error_text(result.stderr, repo)

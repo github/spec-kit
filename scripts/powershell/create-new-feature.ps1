@@ -161,9 +161,17 @@ if ($Timestamp) {
     # matching the bash twin's `[ -z "$BRANCH_NUMBER" ]` check.
     [long]$resolvedNumber = 0
     if (-not $hasNumber) {
-        $resolvedNumber = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
-    } elseif ($Number -notmatch '^[0-9]+$' -or -not [long]::TryParse($Number, [ref]$resolvedNumber)) {
+        $highestNumber = Get-HighestNumberFromSpecs -SpecsDir $specsDir
+        if ($highestNumber -eq [long]::MaxValue) {
+            Write-Error "Error: feature number must be between 0 and $([long]::MaxValue), got '9223372036854775808'"
+            exit 1
+        }
+        $resolvedNumber = $highestNumber + 1
+    } elseif ($Number -notmatch '^[0-9]+$') {
         Write-Error "Error: -Number must be an unsigned integer, got '$Number'"
+        exit 1
+    } elseif (-not [long]::TryParse($Number, [ref]$resolvedNumber)) {
+        Write-Error "Error: -Number must be between 0 and $([long]::MaxValue), got '$Number'"
         exit 1
     }
 
