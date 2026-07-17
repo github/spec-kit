@@ -1,5 +1,6 @@
 """resolve_skill_placeholders must support the py script variant (#3280)."""
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -113,3 +114,35 @@ def test_py_install_includes_python_and_fallback_scripts(tmp_path, monkeypatch):
         else ".specify/scripts/powershell/check-prerequisites.ps1"
     )
     assert (tmp_path / fallback).is_file()
+
+
+def test_py_install_covers_one_sided_opposite_platform_fallback(
+    tmp_path, monkeypatch
+):
+    from specify_cli import _install_shared_infra
+    from specify_cli import shared_infra
+
+    class WindowsOs:
+        name = "nt"
+
+        def __getattr__(self, attr):
+            return getattr(os, attr)
+
+    monkeypatch.setattr(shared_infra, "os", WindowsOs())
+    monkeypatch.setattr("specify_cli.agents.platform.system", lambda: "Windows")
+    _install_shared_infra(tmp_path, "py", force=True)
+
+    save_init_options(tmp_path, {"script": "py"})
+    frontmatter = {
+        "scripts": {
+            "sh": "scripts/bash/check-prerequisites.sh --json",
+        }
+    }
+    body = CommandRegistrar.resolve_skill_placeholders(
+        "codex", frontmatter, "Run {SCRIPT} now.", tmp_path
+    )
+
+    assert ".specify/scripts/bash/check-prerequisites.sh" in body
+    assert (
+        tmp_path / ".specify/scripts/bash/check-prerequisites.sh"
+    ).is_file()

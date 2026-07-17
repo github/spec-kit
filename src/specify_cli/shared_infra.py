@@ -403,9 +403,8 @@ def install_shared_infra(
     # manifest entries the core no longer ships (stale-script cleanup, #3076).
     seen_rels: set[str] = set()
     scanned_variant_dirs: set[str] = set()
-    shell_variant = "powershell" if os.name == "nt" else "bash"
     variant_dirs = (
-        ("python", shell_variant)
+        ("python", "bash", "powershell")
         if script_type == "py"
         else ("bash" if script_type == "sh" else "powershell",)
     )

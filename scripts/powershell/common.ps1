@@ -350,12 +350,36 @@ function Resolve-Template {
         if (Test-Path $registryFile) {
             try {
                 $registryData = Get-Content $registryFile -Raw | ConvertFrom-Json
-                $presets = $registryData.presets
-                if ($presets) {
-                    $sortedPresets = $presets.PSObject.Properties |
+                if ($null -eq $registryData -or $registryData -isnot [PSCustomObject]) {
+                    throw 'Registry root must be an object'
+                }
+                $presetsProperty = $registryData.PSObject.Properties['presets']
+                if ($presetsProperty) {
+                    $presets = $presetsProperty.Value
+                    if ($null -eq $presets -or $presets -isnot [PSCustomObject]) {
+                        throw 'Registry presets must be an object'
+                    }
+                    $presetEntries = @($presets.PSObject.Properties)
+                    $priorityFor = {
+                        param($Entry)
+                        if ($Entry.Value -is [PSCustomObject]) {
+                            $priorityProperty = $Entry.Value.PSObject.Properties['priority']
+                            if ($priorityProperty) { return $priorityProperty.Value }
+                        }
+                        return 10
+                    }
+                    $priorities = @($presetEntries | ForEach-Object { & $priorityFor $_ })
+                    if ($priorities.Count -gt 1) {
+                        $allNumeric = @($priorities | Where-Object { $_ -isnot [ValueType] }).Count -eq 0
+                        $allStrings = @($priorities | Where-Object { $_ -isnot [string] }).Count -eq 0
+                        if (-not $allNumeric -and -not $allStrings) {
+                            throw 'Registry priorities are not mutually orderable'
+                        }
+                    }
+                    $sortedPresets = $presetEntries |
                         Where-Object { $_.Value -is [PSCustomObject] } |
                         Where-Object { $null -eq $_.Value.enabled -or $_.Value.enabled -ne $false } |
-                        Sort-Object { if ($null -ne $_.Value.priority) { $_.Value.priority } else { 10 } } |
+                        Sort-Object { & $priorityFor $_ } |
                         ForEach-Object { $_.Name }
                 }
                 $registryParsed = $true

@@ -196,7 +196,5 @@ def test_install_shared_infra_copies_python_scripts(tmp_path):
     )
     scripts_dir = tmp_path / ".specify" / "scripts"
     assert (scripts_dir / "python" / "check_prerequisites.py").is_file()
-    shell_variant = "powershell" if os.name == "nt" else "bash"
-    other_variant = "bash" if os.name == "nt" else "powershell"
-    assert (scripts_dir / shell_variant).is_dir()
-    assert not (scripts_dir / other_variant).exists()
+    assert (scripts_dir / "bash").is_dir()
+    assert (scripts_dir / "powershell").is_dir()
