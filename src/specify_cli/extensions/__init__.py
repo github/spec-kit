@@ -2631,8 +2631,20 @@ class ExtensionCatalog(CatalogStackBase):
         # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
         from urllib.parse import urlparse
 
-        parsed = urlparse(download_url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # "https://[::1") makes urlparse / hostname access raise ValueError.
+        # The download_url comes from catalog payload data, so surface a clean
+        # ExtensionError rather than leaking a raw ValueError past the command
+        # handler (which only catches ExtensionError). Mirrors catalogs (#3435)
+        # and workflows/catalog.py (#3484).
+        try:
+            parsed = urlparse(download_url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise ExtensionError(
+                f"Extension download URL is malformed: {download_url}"
+            ) from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             raise ExtensionError(
                 f"Extension download URL must use HTTPS: {download_url}"

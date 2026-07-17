@@ -2291,6 +2291,28 @@ class TestPresetCatalog:
             with pytest.raises(PresetError, match="[Ii]ntegrity"):
                 catalog.download_pack("test-pack", target_dir=project_dir)
 
+    def test_download_pack_malformed_url_raises_preset_error(self, project_dir):
+        """A catalog ``download_url`` with a malformed authority (e.g. an
+        unterminated IPv6 bracket) surfaces a clean ``PresetError`` rather than
+        leaking a raw ``ValueError`` from ``urlparse``/``.hostname`` past the
+        command handler (which only catches ``PresetError``). Mirrors the
+        extensions coverage.
+        """
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        for bad_url in ("https://[::1", "https://[not-an-ip]/x"):
+            pack_info = {
+                "id": "test-pack",
+                "name": "Test Pack",
+                "version": "1.0.0",
+                "download_url": bad_url,
+                "_install_allowed": True,
+            }
+            with patch.object(catalog, "get_pack_info", return_value=pack_info):
+                with pytest.raises(PresetError, match="malformed"):
+                    catalog.download_pack("test-pack", target_dir=project_dir)
+
     def test_download_pack_without_sha256_skips_verification(self, project_dir):
         """A catalog entry with no ``sha256`` keeps working: verification is
         opt-in, so the backwards-compatible path (``pack_info.get("sha256")``

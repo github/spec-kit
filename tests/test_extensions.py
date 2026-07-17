@@ -4195,6 +4195,26 @@ class TestExtensionCatalog:
             with pytest.raises(ExtensionError, match="[Ii]ntegrity"):
                 catalog.download_extension("test-ext", target_dir=temp_dir)
 
+    def test_download_extension_malformed_url_raises_extension_error(self, temp_dir):
+        """A catalog ``download_url`` with a malformed authority (e.g. an
+        unterminated IPv6 bracket) surfaces a clean ``ExtensionError`` rather
+        than leaking a raw ``ValueError`` from ``urlparse``/``.hostname`` past
+        the command handler (which only catches ``ExtensionError``).
+        """
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        for bad_url in ("https://[::1", "https://[not-an-ip]/x"):
+            ext_info = {
+                "id": "test-ext",
+                "name": "Test Extension",
+                "version": "1.0.0",
+                "download_url": bad_url,
+            }
+            with patch.object(catalog, "get_extension_info", return_value=ext_info):
+                with pytest.raises(ExtensionError, match="malformed"):
+                    catalog.download_extension("test-ext", target_dir=temp_dir)
+
     def test_download_extension_without_sha256_still_succeeds(self, temp_dir):
         """Entries without ``sha256`` keep working (backwards compatible)."""
         from unittest.mock import patch
