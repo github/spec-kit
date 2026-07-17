@@ -2154,6 +2154,23 @@ class TestIfThenStep:
         assert res_else.status is StepStatus.FAILED
         assert "'else' must be a list" in (res_else.error or "")
 
+    def test_execute_allows_null_else_branch(self):
+        """`else: null` is the supported 'no else branch' form (validate accepts
+        it); a false condition must run cleanly (COMPLETED, no next steps), not
+        be turned into FAILED by the non-list guard."""
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        result = step.execute(
+            {"id": "i", "condition": "{{ inputs.scope == 'full' }}",
+             "then": [{"id": "a", "command": "speckit.tasks"}], "else": None},
+            StepContext(inputs={"scope": "backend"}),
+        )
+        assert result.status is StepStatus.COMPLETED
+        assert result.output["condition_result"] is False
+        assert result.next_steps == []
+
     def test_validate_missing_condition(self):
         from specify_cli.workflows.steps.if_then import IfThenStep
 

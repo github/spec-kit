@@ -22,13 +22,17 @@ class IfThenStep(StepBase):
         result = evaluate_condition(condition, context)
 
         if result:
-            branch_name = "then"
             branch = config.get("then", [])
             branch_name = "then"
         else:
-            branch_name = "else"
             branch = config.get("else", [])
             branch_name = "else"
+
+        # ``else: null`` is the supported "no else branch" form (validate()
+        # accepts None here); normalize a selected None branch to [] so a false
+        # condition on such a config runs cleanly instead of hitting the guard.
+        if branch is None:
+            branch = []
 
         if not isinstance(branch, list):
             # The engine does not auto-validate step config and feeds
