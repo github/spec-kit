@@ -1152,7 +1152,16 @@ class PresetManager:
                 for skill_name in stale_skill_names
                 if skill_name not in fully_replaced
             ]
-            self._unregister_skills({agent_name: fully_replaced}, pack_dir)
+            override_sources = {
+                skill_name: f"override:{skill_to_primary[skill_name]}"
+                for skill_name in fully_replaced
+                if skill_name in skill_to_primary
+            }
+            self._unregister_skills(
+                {agent_name: fully_replaced},
+                pack_dir,
+                additional_owned_sources=override_sources,
+            )
             if remaining_stale:
                 merged_skills[agent_name] = remaining_stale
             else:
@@ -1938,19 +1947,6 @@ class PresetManager:
             dir_managed_names = (
                 managed_skill_names if managed_names is None else managed_names
             )
-            # Re-create the skill directory only if it was previously
-            # managed (i.e., listed in some preset's registered_skills).
-            # This avoids creating new skill dirs that _register_skills
-            # would normally skip.
-            for skill_name in dir_managed_names:
-                if not self._is_safe_registry_skill_name(skill_name):
-                    continue
-                skill_subdir = skills_dir / skill_name
-                if not self._validate_skill_subdir(
-                    skill_subdir, create=True, skills_root=skills_dir
-                ):
-                    continue
-
             # Restore skills for commands whose winner is non-preset.
             # _unregister_skills_in_dir can rmtree the skill dir, so
             # overrides must be handled directly (create dir + write)
@@ -2073,6 +2069,17 @@ class PresetManager:
                     continue
                 cmds_set = set(dir_cmds)
                 filtered_manifest = self._FilteredManifest(manifest, cmds_set)
+                for cmd_name in dir_cmds:
+                    for skill_name in self._skill_names_for_command(cmd_name):
+                        if skill_name not in dir_managed_names:
+                            continue
+                        skill_subdir = skills_dir / skill_name
+                        if not self._validate_skill_subdir(
+                            skill_subdir,
+                            create=True,
+                            skills_root=skills_dir,
+                        ):
+                            continue
                 if is_active:
                     # Preserve exact prior behaviour for the currently
                     # active directory (including the ability to create
@@ -2109,14 +2116,17 @@ class PresetManager:
         extra_dirs = extra_skills_dirs or {}
         if active_skills_dir:
             active_provenance = extra_dirs.get(active_skills_dir)
-            apply_to_dir(
-                active_skills_dir,
-                active_ai,
-                is_active=True,
-                managed_names=(
-                    set(active_provenance[1]) if active_provenance else None
-                ),
-            )
+            if extra_skills_dirs is None or active_provenance:
+                apply_to_dir(
+                    active_skills_dir,
+                    active_ai,
+                    is_active=True,
+                    managed_names=(
+                        set(active_provenance[1])
+                        if active_provenance
+                        else None
+                    ),
+                )
 
         for extra_dir, (extra_agent, extra_names) in extra_dirs.items():
             if extra_dir == active_skills_dir:
@@ -2743,6 +2753,8 @@ class PresetManager:
         self,
         registered_skills: Union[Dict[str, List[str]], List[str]],
         preset_dir: Union[Path, str],
+        *,
+        additional_owned_sources: Optional[Dict[str, str]] = None,
     ) -> Dict[Path, tuple[Optional[str], List[str]]]:
         """Restore original SKILL.md files after a preset is removed.
 
@@ -2764,10 +2776,12 @@ class PresetManager:
                 ``List[str]`` from a registry written before this
                 provenance tracking existed.
             preset_dir: The preset's installed directory (may already be deleted).
+            additional_owned_sources: Generated non-preset source markers
+                that this cleanup may also replace for specific skill names.
 
         Returns:
             ``{skills_dir: (renderer_agent, managed_skill_names)}`` for
-            every directory actually restored.
+            every directory and skill name actually restored or removed.
         """
         if not registered_skills:
             return {}
@@ -2815,16 +2829,18 @@ class PresetManager:
                 renderer_agent = (
                     active_agent if active_agent in agents else sorted(agents)[0]
                 )
-                self._unregister_skills_in_dir(
+                mutated_names = self._unregister_skills_in_dir(
                     group["names"],
                     skills_dir,
                     renderer_agent,
                     pack_id=pack_id,
+                    additional_owned_sources=additional_owned_sources,
                 )
-                restored[skills_dir] = (
-                    renderer_agent,
-                    list(group["names"]),
-                )
+                if mutated_names:
+                    restored[skills_dir] = (
+                        renderer_agent,
+                        mutated_names,
+                    )
             return restored
 
         # Legacy flat-list format: no record of which agent directory these
@@ -2845,13 +2861,18 @@ class PresetManager:
             for name in registered_skills
             if self._is_safe_registry_skill_name(name)
         ]
-        self._unregister_skills_in_dir(
+        mutated_names = self._unregister_skills_in_dir(
             safe_names,
             skills_dir,
             selected_ai,
             pack_id=pack_id,
+            additional_owned_sources=additional_owned_sources,
         )
-        return {skills_dir: (selected_ai, safe_names)}
+        return (
+            {skills_dir: (selected_ai, mutated_names)}
+            if mutated_names
+            else {}
+        )
 
     def _delete_agent_preset_skills(
         self, agent_name: str, skill_names: List[str], pack_id: str
@@ -2897,7 +2918,8 @@ class PresetManager:
         selected_ai: Optional[str],
         *,
         pack_id: Optional[str] = None,
-    ) -> None:
+        additional_owned_sources: Optional[Dict[str, str]] = None,
+    ) -> List[str]:
         """Restore original SKILL.md files within a single skills directory.
 
         Args:
@@ -2905,6 +2927,11 @@ class PresetManager:
             skills_dir: The skills directory to restore within.
             selected_ai: The agent name that owns ``skills_dir``, used for
                 placeholder resolution and argument-hint formatting.
+            additional_owned_sources: Generated non-preset source markers
+                accepted as owned for specific skill names.
+
+        Returns:
+            Skill names whose files were restored or removed.
         """
         from .. import SKILL_DESCRIPTIONS
         from ..agents import CommandRegistrar
@@ -2916,6 +2943,7 @@ class PresetManager:
         registrar = CommandRegistrar()
         integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
         extension_restore_index = self._build_extension_skill_restore_index()
+        mutated_names: List[str] = []
 
         for skill_name in skill_names:
             # Guard against a corrupted/malicious registry entry: a
@@ -2966,7 +2994,14 @@ class PresetManager:
                     if isinstance(current_metadata, dict)
                     else None
                 )
-                if current_source != f"preset:{pack_id}":
+                owned_sources = {f"preset:{pack_id}"}
+                if additional_owned_sources:
+                    additional_source = additional_owned_sources.get(
+                        skill_name
+                    )
+                    if additional_source:
+                        owned_sources.add(additional_source)
+                if current_source not in owned_sources:
                     continue
 
             # Try to find the core command template
@@ -3013,6 +3048,7 @@ class PresetManager:
                         skill_content
                     )
                 _write_shared_text(skills_dir, skill_file, skill_content)
+                mutated_names.append(skill_name)
                 continue
 
             extension_restore = extension_restore_index.get(skill_name)
@@ -3061,9 +3097,13 @@ class PresetManager:
                         skill_content
                     )
                 _write_shared_text(skills_dir, skill_file, skill_content)
+                mutated_names.append(skill_name)
             else:
                 # No core or extension template — remove the skill entirely
                 shutil.rmtree(skill_subdir)
+                mutated_names.append(skill_name)
+
+        return mutated_names
 
     def install_from_directory(
         self,
@@ -3338,7 +3378,16 @@ class PresetManager:
             Path, tuple[Optional[str], List[str]]
         ] = {}
         if registered_skills:
-            affected_skill_dirs = self._unregister_skills(registered_skills, pack_dir)
+            override_sources = {
+                skill_name: f"override:{command_name}"
+                for command_name in removed_cmd_names
+                for skill_name in self._skill_names_for_command(command_name)
+            }
+            affected_skill_dirs = self._unregister_skills(
+                registered_skills,
+                pack_dir,
+                additional_owned_sources=override_sources,
+            )
             try:
                 from ..agents import CommandRegistrar
             except ImportError:

@@ -5409,6 +5409,59 @@ class TestPresetSkills:
         metadata = manager.registry.get("override-toggle-preset")
         assert not metadata["registered_skills"].get("copilot")
 
+    def test_project_override_command_retires_reconciled_override_skill(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+        skills_dir = project_dir / ".github" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "reconciled-override-toggle-preset",
+            "speckit.specify",
+            "Preset",
+            "Preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        overrides_dir = (
+            project_dir / ".specify" / "templates" / "overrides"
+        )
+        overrides_dir.mkdir(parents=True)
+        (overrides_dir / "speckit.specify.md").write_text(
+            "---\ndescription: Project override\n---\n\nOverride body\n",
+            encoding="utf-8",
+        )
+        (
+            manager.presets_dir
+            / "reconciled-override-toggle-preset"
+            / "commands"
+            / "speckit.specify.md"
+        ).unlink()
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        assert "override:speckit.specify" in skill_file.read_text(
+            encoding="utf-8"
+        )
+
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert "Override body" in (
+            commands_dir / "speckit.specify.agent.md"
+        ).read_text(encoding="utf-8")
+        assert not skill_file.exists()
+        metadata = manager.registry.get(
+            "reconciled-override-toggle-preset"
+        )
+        assert not metadata["registered_skills"].get("copilot")
+
     def test_project_override_skill_retires_stale_preset_command(
         self, project_dir, temp_dir
     ):
@@ -6559,6 +6612,64 @@ class TestPresetSkills:
 
         assert "preset:preset-a" in claude_skill_file.read_text(), (
             "removing preset B must not disturb preset A's Claude override (#2948)"
+        )
+
+    def test_remove_does_not_recreate_empty_skill_dir(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-orphan")
+        preset_dir = self._create_command_preset(
+            temp_dir,
+            "orphan-skill-preset",
+            "speckit.orphan",
+            "Orphan",
+            "Preset-only body",
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        skill_dir = skills_dir / "speckit-orphan"
+        assert skill_dir.exists()
+        assert manager.remove("orphan-skill-preset") is True
+        assert not skill_dir.exists()
+
+    def test_remove_preserves_non_owned_skill_during_reconciliation(
+        self, project_dir, temp_dir
+    ):
+        self._write_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = project_dir / ".claude" / "skills"
+        self._create_skill(skills_dir, "speckit-specify")
+
+        lower_dir = self._create_command_preset(
+            temp_dir,
+            "non-owned-lower-preset",
+            "speckit.specify",
+            "Lower",
+            "Lower preset body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir,
+            "non-owned-higher-preset",
+            "speckit.specify",
+            "Higher",
+            "Higher preset body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=10)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=1)
+
+        skill_file = skills_dir / "speckit-specify" / "SKILL.md"
+        skill_file.write_text(
+            "---\nname: speckit-specify\n---\n\nUser-owned body\n",
+            encoding="utf-8",
+        )
+
+        assert manager.remove("non-owned-higher-preset") is True
+        assert skill_file.read_text(encoding="utf-8") == (
+            "---\nname: speckit-specify\n---\n\nUser-owned body\n"
         )
 
     def test_shared_skills_dir_restored_once_using_active_agent(
