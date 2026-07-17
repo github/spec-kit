@@ -220,6 +220,28 @@ class TestManifestUninstall:
         m.uninstall()
         assert not m.manifest_path.exists()
 
+    def test_remove_manifest_false_preserves_manifest_file(self, tmp_path):
+        """Regression (review #3415, 4724160183): a partial cleanup must not
+        delete ``{key}.manifest.json``.
+
+        The upgrade stale-file pass builds a throwaway manifest sharing the
+        integration's key over a subset of files and uninstalls it.  With
+        ``remove_manifest=False`` the tracked files are still removed but the
+        real, freshly-saved manifest for that key survives — otherwise a
+        layout-shrinking upgrade (e.g. Bob migrating legacy commands → skills)
+        would leave the integration untracked and un-upgradeable.
+        """
+        m = IntegrationManifest("test", tmp_path, version="1.0")
+        m.record_file("f.txt", "content")
+        m.save()
+        assert m.manifest_path.exists()
+        removed, skipped = m.uninstall(remove_manifest=False)
+        assert len(removed) == 1
+        assert not (tmp_path / "f.txt").exists()
+        assert m.manifest_path.exists(), (
+            "remove_manifest=False must keep the manifest file on disk"
+        )
+
     def test_cleans_empty_parent_dirs(self, tmp_path):
         m = IntegrationManifest("test", tmp_path)
         m.record_file("a/b/c/f.txt", "content")

@@ -23,6 +23,8 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+import typer
+
 from ..base import (
     IntegrationBase,
     IntegrationOption,
@@ -30,6 +32,24 @@ from ..base import (
     SkillsIntegration,
 )
 from ..manifest import IntegrationManifest
+
+
+def _validate_mode_options(parsed_options: dict[str, Any] | None) -> None:
+    """Reject ``--skills`` and ``--legacy-commands`` used together.
+
+    The two flags select opposite layouts, so combining them is ambiguous.
+    Fail fast with the same clean exit-1 UX as other bad-option paths rather
+    than silently letting one win.
+    """
+    opts = parsed_options or {}
+    if opts.get("skills") and opts.get("legacy_commands"):
+        from ..._console import console
+
+        console.print(
+            "[red]Error:[/red] --skills and --legacy-commands are mutually "
+            "exclusive; pass only one."
+        )
+        raise typer.Exit(1)
 
 
 def _warn_legacy_commands_deprecated() -> None:
@@ -133,6 +153,17 @@ class BobIntegration(IntegrationBase):
     def options(cls) -> list[IntegrationOption]:
         return [
             IntegrationOption(
+                "--skills",
+                is_flag=True,
+                default=False,
+                help=(
+                    "Force the default skills layout (.bob/skills/), overriding "
+                    "on-disk auto-detection. Use this to migrate a legacy "
+                    "commands install to skills, e.g. "
+                    "`integration upgrade bob --integration-options \"--skills\"`"
+                ),
+            ),
+            IntegrationOption(
                 "--legacy-commands",
                 is_flag=True,
                 default=False,
@@ -151,23 +182,39 @@ class BobIntegration(IntegrationBase):
     ) -> bool:
         """Bob is skills-first; ``--legacy-commands`` opts out.
 
-        On ``use`` / ``switch`` / ``upgrade`` no ``setup()`` runs and
-        *parsed_options* is typically empty (existing Bob 1.x installs never
-        stored ``legacy_commands``).  Defaulting to skills there would rewrite
-        such a project's ``ai_skills`` flag to ``True`` even though it still
-        only contains a command layout — silently switching its extension /
-        command-reference handling to the skills layout.
+        Precedence:
 
-        So when a *project_root* is supplied, the Spec Kit layout is inferred
-        from **managed Spec Kit artifacts**, not from the mere presence of a
-        ``.bob/skills/`` directory: a user may keep unrelated Bob 2 skills in
-        ``.bob/skills/`` while their Spec Kit commands still live in
+        1. Explicit ``--skills`` wins — it *forces* skills mode regardless of
+           what is already on disk.  This is the supported migration / opt-in
+           path: ``integration upgrade bob --integration-options "--skills"``
+           converts a legacy commands install to the skills layout (setup()
+           scaffolds ``.bob/skills`` and the upgrade's stale-file pass removes
+           the old ``.bob/commands`` files).
+        2. Explicit ``--legacy-commands`` opts out to the Bob 1.x layout.
+        3. Otherwise, when a *project_root* is supplied, the layout is inferred
+           from **managed Spec Kit artifacts** (see below).
+        4. A fresh project (no managed artifacts, no flags) defaults to skills.
+
+        The disk-detection fallback exists because on ``use`` / ``switch`` /
+        ``upgrade`` (without ``--skills``) no ``setup()`` runs and
+        *parsed_options* is typically empty — existing Bob 1.x installs never
+        stored ``legacy_commands``.  Defaulting to skills there would rewrite
+        such a project's ``ai_skills`` flag to ``True`` even though it still
+        only contains a command layout, silently switching its extension /
+        command-reference handling.  So the layout is inferred from managed
+        Spec Kit artifacts, not the mere presence of a ``.bob/skills/``
+        directory: a user may keep unrelated Bob 2 skills in ``.bob/skills/``
+        while their Spec Kit commands still live in
         ``.bob/commands/speckit.*.md``.  We therefore treat the project as
         legacy (command) mode only when managed Spec Kit command files exist
-        and no managed Spec Kit skills (``speckit-*`` skill dirs) do.  A fresh
-        project (no managed artifacts yet) still defaults to skills.
+        and no managed Spec Kit skills (``speckit-*`` skill dirs) do.  Passing
+        ``--skills`` overrides this so users are never trapped in legacy mode.
         """
-        if (parsed_options or {}).get("legacy_commands", False):
+        opts = parsed_options or {}
+        _validate_mode_options(opts)
+        if opts.get("skills", False):
+            return True
+        if opts.get("legacy_commands", False):
             return False
         if project_root is not None:
             bob_dir = Path(project_root) / ".bob"

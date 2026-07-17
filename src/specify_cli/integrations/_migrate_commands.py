@@ -496,7 +496,15 @@ def integration_upgrade(
     if stale_keys:
         stale_manifest = IntegrationManifest(key, project_root, version="stale-cleanup")
         stale_manifest._files = {k: old_files[k] for k in stale_keys}
-        stale_removed, _ = stale_manifest.uninstall(project_root, force=True)
+        # remove_manifest=False: this throwaway manifest shares ``key`` with the
+        # real one just saved above (new_manifest.save()).  Letting uninstall()
+        # delete ``{key}.manifest.json`` would wipe the freshly-written manifest
+        # whenever an upgrade shrinks the tracked file set (e.g. Bob migrating
+        # from the legacy commands layout to skills), leaving the integration
+        # untracked and un-upgradeable.
+        stale_removed, _ = stale_manifest.uninstall(
+            project_root, force=True, remove_manifest=False
+        )
         if stale_removed:
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
 

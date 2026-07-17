@@ -64,12 +64,20 @@ class TestBobOptionsFlag:
         # Legacy must be OPT-IN (default=False) — skills are the default
         assert opt.default is False
 
-    def test_no_skills_flag(self):
-        """The old --skills flag must be gone; it has been replaced by the default."""
+    def test_options_include_skills_migration_flag(self):
+        """Review #3415, 4724160183, comment 1: a ``--skills`` opt-in exists as
+        the supported migration path from legacy commands to the skills layout.
+        It is distinct from the pre-skills-default ``--skills`` flag: here it
+        *forces* skills mode over on-disk auto-detection.
+        """
         bob = get_integration("bob")
         opts = bob.options()
         skills_opts = [o for o in opts if o.name == "--skills"]
-        assert len(skills_opts) == 0
+        assert len(skills_opts) == 1
+        opt = skills_opts[0]
+        assert opt.is_flag is True
+        # Opt-in: disk auto-detection remains the default behavior.
+        assert opt.default is False
 
 
 class TestBobIsSkillsModeHook:
@@ -147,10 +155,40 @@ class TestBobIsSkillsModeHook:
             is False
         )
 
+    def test_explicit_skills_flag_forces_skills_over_legacy_disk_layout(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4724160183, comment 1).
+
+        ``--skills`` is the supported migration / opt-in: it must force skills
+        mode even when a managed legacy ``.bob/commands`` layout is on disk
+        (which otherwise auto-detects to legacy). This gives
+        ``integration upgrade bob --integration-options="--skills"`` a path out
+        of legacy mode instead of being trapped by disk detection.
+        """
+        bob = get_integration("bob")
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.plan.md").write_text("# plan", encoding="utf-8")
+        assert bob.is_skills_mode({"skills": True}, project_root=tmp_path) is True
+        assert (
+            bob.effective_invoke_separator({"skills": True}, project_root=tmp_path)
+            == "-"
+        )
+
+    def test_skills_and_legacy_flags_are_mutually_exclusive(self):
+        """Passing both ``--skills`` and ``--legacy-commands`` exits cleanly."""
+        import typer
+
+        bob = get_integration("bob")
+        with pytest.raises(typer.Exit):
+            bob.is_skills_mode({"skills": True, "legacy_commands": True})
+
     def test_effective_invoke_separator_tracks_mode(self):
         bob = get_integration("bob")
         assert bob.effective_invoke_separator(None) == "-"
         assert bob.effective_invoke_separator({"legacy_commands": True}) == "."
+        assert bob.effective_invoke_separator({"skills": True}) == "-"
 
     def test_invoke_separator_for_mode_tracks_persisted_state(self):
         """Registration paths resolve the separator from persisted ai_skills."""
@@ -710,8 +748,19 @@ class TestBobCommandRefScopedToActiveAgent:
         )
         assert "/speckit-plan" not in content
 
-    def test_active_bob_skills_still_uses_hyphen(self, tmp_path):
-        """Control: when Bob itself is the active skills agent, refs use ``-``."""
+    def test_active_bob_skills_command_output_uses_dot(self, tmp_path):
+        """Regression (review #3415, 4724160183, comment 2).
+
+        The separator must match the *output layout* the registrar writes, not
+        the project's persisted ``ai_skills`` flag.  Even when Bob itself is the
+        active agent in skills mode, a ``.bob/commands/*.md`` file is a
+        command-layout artifact and must render Bob 1.x ``/speckit.<cmd>``.
+        Rendering ``/speckit-<cmd>`` into a command file (as the old
+        ``ai_skills``-driven active-agent branch did) produced an invocation the
+        command layout can't resolve.  Bob skills are written via its own
+        skills path, so ``register_commands`` only ever emits command-layout
+        files for Bob.
+        """
         from specify_cli._init_options import save_init_options
         from specify_cli.agents import CommandRegistrar
 
@@ -727,8 +776,12 @@ class TestBobCommandRefScopedToActiveAgent:
         written = list((tmp_path / ".bob" / "commands").glob("*.md"))
         assert written, "expected a rendered Bob command file"
         content = written[0].read_text(encoding="utf-8")
-        assert "/speckit-plan" in content
-        assert "/speckit.plan" not in content
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert "/speckit.plan" in content, (
+            "a .bob/commands/*.md command-layout file must use the dot "
+            "separator even when Bob is the active agent in skills mode"
+        )
+        assert "/speckit-plan" not in content
 
     def test_inactive_bob_command_output_uses_dot_even_with_skills_dir(
         self, tmp_path
@@ -809,6 +862,36 @@ class TestBobSetupPreservesLegacyOnUpgrade:
         assert (tmp_path / ".bob" / "skills").is_dir()
         assert not (tmp_path / ".bob" / "commands").exists()
         assert created
+
+    def test_setup_with_skills_flag_migrates_legacy_to_skills(self, tmp_path):
+        """Review #3415, 4724160183, comment 1: ``--skills`` on an existing
+        legacy install forces the skills layout (the migration opt-in), instead
+        of preserving the auto-detected legacy layout. ``setup()`` scaffolds the
+        skills layout; the ``integration upgrade`` stale-file pass removes the
+        old command files.
+        """
+        from specify_cli.integrations.bob import BobIntegration
+
+        # Pre-existing Bob 1.x install on disk.
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.plan.md").write_text("# plan", encoding="utf-8")
+
+        bob = BobIntegration()
+        m = IntegrationManifest("bob", tmp_path)
+        # No deprecation warning — the user opted into skills, not legacy.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            created = bob.setup(tmp_path, m, parsed_options={"skills": True})
+
+        assert (tmp_path / ".bob" / "skills").is_dir(), (
+            "--skills must force the skills layout even when a legacy commands "
+            "layout is already on disk"
+        )
+        assert created
+        for f in created:
+            assert f.name == "SKILL.md"
+            assert f.parent.name.startswith("speckit-")
 
 
 class TestBobPostProcessSkillContent:

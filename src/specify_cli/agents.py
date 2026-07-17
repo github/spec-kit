@@ -637,46 +637,34 @@ class CommandRegistrar:
         is_cline_ext = agent_name == "cline" and source_id != "core"
         source_root = source_dir.resolve()
 
-        # Resolve the command-reference separator once for this agent/project.
-        # Dual-layout agents (e.g. Bob) use different separators for their
-        # skills vs command layouts, so we ask the integration to map the
-        # project's persisted skills state to the correct separator rather than
-        # relying on the single static AGENT_CONFIGS value.
+        # Resolve the command-reference separator for the file THIS registrar
+        # is about to write.  The separator must match the *output layout* the
+        # registrar produces for this agent — not the project's persisted
+        # ``ai_skills`` flag, and not unrelated sibling directories on disk.  A
+        # skill scaffold ("/SKILL.md") uses the skills separator; any
+        # command-layout output (".md", ".agent.md", ".toml", …) uses the
+        # command separator.
+        #
+        # This holds for the *active* agent too.  Dual-layout agents (Bob,
+        # Copilot) write their skills via their own setup()/skills path, so
+        # ``register_commands`` only ever emits their command-layout files.
+        # Deriving the separator from ``ai_skills`` would render such a
+        # ``.bob/commands/*.md`` (or ``.github/agents/*.agent.md``) file with
+        # ``/speckit-*`` whenever that agent is active in skills mode — even
+        # though a command-layout file must use ``/speckit.*``.  Deriving it
+        # from the agent's static output config avoids that mismatch and stays
+        # correct when a stale ``.bob/skills`` directory coexists with
+        # ``.bob/commands``.
         _sep = agent_config.get("invoke_separator", ".")
         try:
             from specify_cli.integrations import get_integration  # noqa: PLC0415
 
             _integ = get_integration(agent_name)
             if _integ is not None:
-                _opts = load_init_options(project_root)
-                # The persisted ``ai_skills`` flag describes only the active
-                # integration (``opts["ai"]``).  ``register_commands_for_all_agents``
-                # calls this for every detected agent, so trusting that flag for a
-                # different agent would, e.g., render a legacy ``.bob/commands``
-                # project's refs as ``/speckit-*`` just because Copilot is active in
-                # skills mode.  Only consult the flag for the agent it describes;
-                # otherwise resolve this agent's separator from its own project-aware
-                # detection.
-                if _opts.get("ai") == agent_name:
-                    _sep = _integ.invoke_separator_for_mode(
-                        is_ai_skills_enabled(_opts)
-                    )
-                else:
-                    # Inactive agent: the reference separator must match the
-                    # layout THIS registrar writes into — determined by the
-                    # agent's static output config (its command dir + file
-                    # extension), not by unrelated sibling directories on disk.
-                    # A skill-scaffold output ("/SKILL.md") uses the skills
-                    # separator; a command-layout output uses the command
-                    # separator. This avoids mislabeling a Bob command-layout
-                    # write as skills just because an unrelated .bob/skills
-                    # directory happens to exist.
-                    registrar_writes_skills = (
-                        agent_config.get("extension") == "/SKILL.md"
-                    )
-                    _sep = _integ.invoke_separator_for_mode(
-                        registrar_writes_skills
-                    )
+                registrar_writes_skills = (
+                    agent_config.get("extension") == "/SKILL.md"
+                )
+                _sep = _integ.invoke_separator_for_mode(registrar_writes_skills)
         except Exception:
             pass
 

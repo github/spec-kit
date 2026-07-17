@@ -2477,6 +2477,59 @@ class TestIntegrationUpgrade:
             f"found: {[f.name for f in core_remaining]}"
         )
 
+    def test_upgrade_bob_skills_migration_preserves_manifest(self, tmp_path):
+        """Regression (review #3415, 4724160183, comment 1).
+
+        ``integration upgrade bob --integration-options="--skills"`` migrates a
+        legacy Bob 1.x install (``.bob/commands/*.md``) to the skills layout
+        (``.bob/skills/speckit-*/SKILL.md``) and stale-removes the old command
+        files.  Because that stale-file pass shrinks the tracked set, the
+        upgrade's Phase 2 must NOT delete the freshly-saved ``bob.manifest.json``
+        — otherwise the migrated project is left untracked and un-upgradeable.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+        manifest_path = (
+            project / ".specify" / "integrations" / "bob.manifest.json"
+        )
+        assert commands.is_dir() and sorted(commands.glob("speckit.*.md"))
+        assert not skills.exists()
+        assert manifest_path.is_file()
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, f"migration upgrade failed: {result.output}"
+
+        # Skills layout scaffolded; legacy core command files removed.
+        assert skills.is_dir(), ".bob/skills/ must exist after --skills migration"
+        assert sorted(skills.glob("speckit-*")), "expected migrated skill dirs"
+        core_commands = [
+            f for f in commands.glob("speckit.*.md")
+            if "agent-context" not in f.name
+        ] if commands.exists() else []
+        assert core_commands == [], (
+            f"legacy core command files should be removed, found: "
+            f"{[f.name for f in core_commands]}"
+        )
+
+        # The manifest must survive so the project stays tracked/upgradeable.
+        assert manifest_path.is_file(), (
+            "bob.manifest.json must survive a layout-shrinking migration"
+        )
+        reupgrade = _run_in_project(project, [
+            "integration", "upgrade", "bob", "--script", "sh", "--force",
+        ])
+        assert reupgrade.exit_code == 0, (
+            f"migrated project must remain upgradeable: {reupgrade.output}"
+        )
+
     def test_upgrade_preserves_existing_vscode_settings(self, tmp_path):
         """Regression: copilot upgrade must not stale-delete .vscode/settings.json.
 
