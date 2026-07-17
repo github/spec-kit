@@ -259,7 +259,11 @@ def _traverse_and_apply(
 
         if winning_edit is not None and winning_edit.operation == "remove":
             # Winning edit removes this step; ignore all other edits on this anchor.
-            _remove_sources_recursively(step, sources)
+            # Do NOT call _remove_sources_recursively here: _build_attribution only
+            # traverses the result list, so stale sources entries for removed steps
+            # are never read.  Calling it would incorrectly pop the attribution of a
+            # *surviving* step that reuses the same ID (e.g. a replacement step
+            # introduced by a higher-priority overlay targeting a different anchor).
             continue
 
         # Insert before (in merge order).

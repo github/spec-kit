@@ -700,7 +700,7 @@ class TestMergeStepsIdCollision:
                 OverlayEdit("remove", "b"),
             ],
         )
-        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+        steps, attribution = merge_steps(base, [_layer(overlay, "project:ov")])
         # The original "b" is removed; the replacement (also id="b") survives.
         # "c" is untouched.
         assert len(steps) == 2
@@ -708,3 +708,11 @@ class TestMergeStepsIdCollision:
         assert remaining_ids == ["b", "c"]
         # The surviving "b" step is the replacement (has the custom command).
         assert steps[0]["command"] == "speckit.replaced"
+        # Attribution for the surviving replacement "b" must not be "unknown".
+        # Previously, removing original "b" would pop sources["b"], erasing the
+        # attribution recorded for the replacement step (regression guard for the
+        # _remove_sources_recursively-in-remove-branch bug).
+        sources = {cs.step_id: cs.source for cs in attribution}
+        assert sources.get("b") == "project:ov", (
+            f"expected 'project:ov' but got {sources.get('b')!r}"
+        )
