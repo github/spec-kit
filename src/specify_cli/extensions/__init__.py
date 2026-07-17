@@ -1518,24 +1518,33 @@ class ExtensionManager:
             # when a live config disagrees with its staged copy we must not
             # silently pick either — preserve both and abort, letting the user
             # resolve it. dest_dir is still untouched here, so raising is safe.
-            def _recognized_config_names(directory: Path) -> set[str]:
+            def _recognized_config_names(
+                directory: Path, *, follow_symlinks: bool = True
+            ) -> set[str]:
                 names: set[str] = set()
                 if not directory.is_dir():
                     return names
                 for entry in directory.iterdir():
-                    if (
-                        entry.is_file()
-                        and not entry.is_symlink()
-                        and entry.name.endswith(
-                            ("-config.yml", "-config.local.yml")
-                        )
+                    if not entry.name.endswith(
+                        ("-config.yml", "-config.local.yml")
                     ):
-                        names.add(entry.name)
+                        continue
+                    if follow_symlinks:
+                        if entry.is_file() and not entry.is_symlink():
+                            names.add(entry.name)
+                    else:
+                        # Include symlinks without following them so that
+                        # live-only symlinked configs are detected and
+                        # preserved rather than silently deleted.
+                        if entry.is_file() or entry.is_symlink():
+                            names.add(entry.name)
                 return names
 
             conflicting: set[str] = set()
             staged_names = _recognized_config_names(rescue_staging_dir)
-            live_names = _recognized_config_names(dest_dir)
+            live_names = _recognized_config_names(
+                dest_dir, follow_symlinks=False
+            )
             # A live-only config created after the interrupted attempt is not
             # enumerated by staging, so without this it would be silently
             # deleted by the rmtree below and its bytes lost. Treat it as a
@@ -1732,7 +1741,7 @@ class ExtensionManager:
                         try:
                             os.close(target_fd)
                         except OSError:
-                            pass
+                            pass  # best-effort close during cleanup; ignore errors
                 _fsync_directory(target.parent)
             except BaseException:
                 if tmp_path is not None and tmp_path.exists():

@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from tests.conftest import strip_ansi
-import specify_cli.extensions as _ext_module
+from specify_cli import extensions as _ext_module
 from specify_cli.extensions import (
     CatalogEntry,
     CORE_COMMAND_NAMES,
