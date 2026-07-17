@@ -25,7 +25,7 @@ If the input is empty, ask the user for the idea (interactive), or stop with a n
 
 ## Slug Resolution
 
-**Ancestor path safety (do this before any filesystem lookup in this section)**: verify that `.specify` and `.specify/assessments` are real directories — not symlinks — that resolve inside the project root, and refuse and report if either is a symlink or escapes the root. Only then run any existence check or directory enumeration below.
+**Ancestor path safety (do this before any filesystem lookup in this section)**: where `.specify` or `.specify/assessments` already exist, verify each is a real directory (not a symlink) that resolves inside the project root, and refuse and report if either exists as a symlink or escapes the root — a not-yet-created directory is allowed and will be created safely later. Only then run any existence check or directory enumeration below.
 
 Each idea gets its own directory under `.specify/assessments/<slug>/`. Resolve the slug in this order:
 

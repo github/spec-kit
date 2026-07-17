@@ -14,7 +14,7 @@ Research **collects and cites evidence; it does not decide.** No verdict, no sol
 $ARGUMENTS
 ```
 
-The input carries the slug and (optionally) research direction or links. **Ancestor path safety (before any filesystem lookup here)**: verify `.specify` and `.specify/assessments` are real directories — not symlinks — resolving inside the project root; refuse and report otherwise. Only then resolve the slug:
+The input carries the slug and (optionally) research direction or links. **Ancestor path safety (before any filesystem lookup here)**: where `.specify` or `.specify/assessments` already exist, verify each is a real directory (not a symlink) resolving inside the project root, and refuse and report if either exists as a symlink or escapes the root — a not-yet-created directory is allowed and will be created safely later. Only then resolve the slug:
 
 1. **Explicit slug** (`slug=…`, `--slug …`, or an obvious token) — normalize it (see **Slug safety** below).
 2. **Conversation context** — if this session just ran `__SPECKIT_COMMAND_ASSESS_INTAKE__`, reuse the slug it reported. Confirm by checking that `.specify/assessments/<slug>/intake.md` exists; if not, fall through.
