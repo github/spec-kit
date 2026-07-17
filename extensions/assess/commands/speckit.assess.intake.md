@@ -56,9 +56,10 @@ Before fetching, classify the URL by host and scheme:
 
 1. **Refuse outright** (do not fetch, do not prompt). Record the URL and reason in `intake.md`:
    - Non-`http(s)` schemes: `file:`, `ftp:`, `ssh:`, `data:`, `javascript:`, etc.
-   - Loopback / link-local hosts: `localhost`, `127.0.0.0/8`, `::1`, `169.254.0.0/16`.
-   - RFC1918 private space: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`.
-   - Cloud instance metadata endpoints: `169.254.169.254`, `metadata.google.internal`, `100.100.100.200`, `metadata.azure.com`.
+   - Loopback / link-local hosts: `localhost`, `127.0.0.0/8`, `::1`, `169.254.0.0/16`, IPv6 link-local `fe80::/10`.
+   - RFC1918 private space: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, plus IPv6 unique-local `fc00::/7` and any IPv4-mapped IPv6 form of the above (`::ffff:10.0.0.1`, etc.).
+   - Cloud instance metadata endpoints: `169.254.169.254`, `metadata.google.internal`, `100.100.100.200`, `metadata.azure.com`, and the IPv6 metadata address `fd00:ec2::254`.
+   - **Resolution-time check (defeats DNS rebinding)**: even for an allowlisted or user-confirmed host, resolve the destination address and refuse if it lands in any loopback, link-local, private, unique-local, IPv4-mapped-IPv6, or metadata range above. A public hostname that resolves to an internal address is refused, not fetched.
 2. **Fetch without prompting** when the host is a widely-used public source: `github.com`, `gist.github.com`, `gitlab.com`, `bitbucket.org`, `*.atlassian.net`, `linear.app`, `notion.so`, `*.notion.site`, `docs.google.com`, `stackoverflow.com`, `*.stackexchange.com`.
 3. **Otherwise** the host is unrecognized:
    - **Interactive**: ask once, naming the host explicitly (e.g., `Fetch https://example.internal/foo (host: example.internal)? (yes/no)`). Default to **no**; only fetch on an explicit affirmative.
