@@ -1519,7 +1519,11 @@ class ExtensionManager:
         # secrets (API keys); recreating them with default perms could widen
         # access.
         preserved_configs: dict[str, tuple[bytes, int, float, float]] = {}
-        if dest_dir.exists():
+        # Require a REAL directory, not a symlink: iterating a symlinked dest_dir
+        # would follow the link and read arbitrary external files into
+        # preserved_configs. This path only ever legitimately captures on-disk
+        # leftover configs inside the real extension directory.
+        if dest_dir.is_dir() and not dest_dir.is_symlink():
             for cfg_file in dest_dir.iterdir():
                 if (
                     cfg_file.is_file()
@@ -1561,8 +1565,10 @@ class ExtensionManager:
 
         restored_ok = not preserved_configs
         try:
-            if dest_dir.exists():
-                shutil.rmtree(dest_dir)
+            # Reset via _reset_dir (unlink a symlink / rmtree a real dir) rather
+            # than a bare rmtree, which raises on a symlink or file at dest_dir.
+            # Handles an unexpected occupant consistently with the rollback path.
+            self._reset_dir(dest_dir)
             shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
             # Restore every preserved config. A failure here is NOT swallowed: a
             # config we promised to preserve but could not restore must fail the

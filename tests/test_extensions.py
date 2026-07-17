@@ -1870,6 +1870,63 @@ class TestExtensionManager:
         assert config_file.is_file()
         assert "SECRET-VALUE" in config_file.read_text()
 
+    def test_reinstall_replaces_file_at_dest_dir(self, extension_dir, project_dir):
+        """If a non-directory (a stray file) occupies dest_dir at reinstall, the
+        main install path clears it via _reset_dir rather than crashing on
+        shutil.rmtree (which raises NotADirectoryError on a file)."""
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        # Drop the registry entry, then replace the extension dir with a file.
+        assert manager.remove("test-ext", keep_config=True) is True
+        shutil.rmtree(ext_dir)
+        ext_dir.write_text("not a directory")
+        assert ext_dir.is_file()
+
+        # Reinstall must succeed, replacing the file with a real extension dir.
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        assert ext_dir.is_dir() and not ext_dir.is_symlink()
+        assert (ext_dir / "extension.yml").is_file()
+
+    def test_preserve_capture_ignores_symlinked_dest_dir(
+        self, extension_dir, project_dir
+    ):
+        """The preserve-config capture must not follow a symlinked dest_dir and
+        read external files into preserved_configs. Skipped without symlink
+        privilege; runs on Linux CI."""
+        probe_t = project_dir / "_pt2"
+        probe_l = project_dir / "_pl2"
+        try:
+            probe_t.mkdir()
+            probe_l.symlink_to(probe_t, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not supported in this environment")
+        finally:
+            if probe_l.is_symlink():
+                probe_l.unlink()
+            if probe_t.exists():
+                shutil.rmtree(probe_t, ignore_errors=True)
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        assert manager.remove("test-ext", keep_config=True) is True
+
+        # External dir with a config-looking file that must NOT be captured.
+        external = project_dir / "external_configs"
+        external.mkdir()
+        (external / "test-ext-config.yml").write_text("api_key: EXTERNAL-SECRET")
+        # Swap dest_dir for a symlink to the external dir.
+        shutil.rmtree(ext_dir)
+        ext_dir.symlink_to(external, target_is_directory=True)
+
+        manager.install_from_directory(extension_dir, "0.1.0", register_commands=False)
+
+        # The external secret was never captured, restored, or overwritten.
+        assert (external / "test-ext-config.yml").read_text() == "api_key: EXTERNAL-SECRET"
+        assert ext_dir.is_dir() and not ext_dir.is_symlink()
+        assert not (ext_dir / "test-ext-config.yml").exists()
+
 
 # ===== CommandRegistrar Tests =====
 
