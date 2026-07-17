@@ -19,7 +19,7 @@ Resolve the slug: explicit `slug=…` → conversation context (a slug reported 
 ## Prerequisites
 
 - `ASSESS_DIR/problem.md` **MUST** exist (you cannot decide on an undefined problem). If missing, stop and instruct the user to run `__SPECKIT_COMMAND_ASSESS_DEFINE__` first.
-- `ASSESS_DIR/concept.md` **SHOULD** exist. If missing, you may still decide, but a `go` verdict without a shaped concept must be downgraded to `needs-clarification` unless the idea is trivially small — a go should not hand `specify` an unshaped idea.
+- `ASSESS_DIR/concept.md` **SHOULD** exist. If missing, you may still decide, but a `go` verdict without a shaped concept must be downgraded to `needs-clarification` — a go should not hand `specify` an unshaped idea.
 - Read every artifact present (`intake.md`, `research.md`, `problem.md`, `concept.md`) — the decision must be consistent with all of them.
 - If `ASSESS_DIR/decision.md` already exists, ask whether to overwrite (interactive); in automated mode, refuse.
 

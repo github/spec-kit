@@ -27,7 +27,7 @@ If the input is empty, ask the user for the idea (interactive), or stop with a n
 
 Each idea gets its own directory under `.specify/assessments/<slug>/`. Resolve the slug in this order:
 
-1. **User-provided slug**: If the user explicitly passes a slug (e.g., `slug=offline-mode`, `--slug offline-mode`, or an obvious slug-like token), use it verbatim after normalization (lowercase, hyphen-separated, no spaces, no characters other than `-` and digits). Do not append timestamps or numbers.
+1. **User-provided slug**: If the user explicitly passes a slug (e.g., `slug=offline-mode`, `--slug offline-mode`, or an obvious slug-like token), use it verbatim after normalization (lowercase; hyphen-separated; no spaces; keep only lowercase letters `a–z`, digits `0–9`, and `-`). Do not append timestamps or numbers.
 2. **Interactive mode** (a human is driving): If no slug was provided, **ask the user** and wait. Suggest a 2–4 word kebab-case candidate derived from the idea as a default.
 3. **Automated / non-interactive mode** (no human to ask): Generate a concise slug yourself (2–4 kebab-case words). The generated slug **MUST** produce a unique directory — if `.specify/assessments/<slug>/` already exists, append the shortest disambiguating suffix (`-2`, `-3`, …) or a short ISO-style date (`-20260715`). Never overwrite an existing assessment directory.
 
@@ -61,7 +61,7 @@ Before fetching, classify the URL by host and scheme:
    - **Interactive**: ask once, naming the host explicitly (e.g., `Fetch https://example.internal/foo (host: example.internal)? (yes/no)`). Default to **no**; only fetch on an explicit affirmative.
    - **Automated / non-interactive**: do **not** fetch. Record `[UNVERIFIED — fetch skipped: host not on safe list: <host>]` and continue with the pasted text.
 
-Record in `intake.md`: the verbatim URL, the parsed host (no redirect following), and the policy branch taken (`allowlisted` / `confirmed-by-user` / `auto-refused: <reason>`). Never issue a preflight `HEAD` (or any) request to "see what it is" — that probe is itself the gated request.
+Record in `intake.md`: the **sanitized URL** (strip any `user:password@` userinfo and drop query/fragment parameters that may carry credentials or signatures — e.g. `token`, `sig`, `signature`, `key`, `password`, `access_token`, and anything under a `X-Amz-*`/`Goog-*` signed-URL scheme; keep the scheme, host, and path), the parsed host (no redirect following), and the policy branch taken (`allowlisted` / `confirmed-by-user` / `auto-refused: <reason>`). Never persist a verbatim URL that may embed secrets. Never issue a preflight `HEAD` (or any) request to "see what it is" — that probe is itself the gated request.
 
 ## Execution
 
@@ -77,12 +77,12 @@ Record in `intake.md`: the verbatim URL, the parsed host (no redirect following)
 
    - **Slug**: <ASSESS_SLUG>
    - **Created**: <ISO 8601 date>
-   - **Source**: <URL, "pasted text", or repo path>
+   - **Source**: <sanitized URL, "pasted text", or repo path>
    - **Type**: new-capability | improvement | fix | exploration | cost-saving | compliance | other
 
    ## Idea (verbatim)
 
-   <Quoted original. If a URL was fetched, include the title and a short excerpt; link the URL and record the URL Trust Policy branch taken.>
+   <Quoted original. If a URL was fetched, include the title and a short excerpt; link the sanitized URL and record the URL Trust Policy branch taken.>
 
    ## Restated
 

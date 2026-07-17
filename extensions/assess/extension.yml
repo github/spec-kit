@@ -4,7 +4,7 @@ extension:
   id: assess
   name: "Idea Assessment Pipeline"
   version: "1.0.0"
-  description: "Assess any idea before Spec-Driven Development: run it through intake, research, define, shape, and decide, then hand a build/kill decision to /speckit.specify. Assessments stored under .specify/assessments/<slug>/"
+  description: "Assess an idea before Spec-Driven Development via intake, research, define, shape, and decide, then hand a build/kill call to /speckit.specify. Assessments live under .specify/assessments/<slug>/"
   category: "process"
   effect: "read-write"
   author: spec-kit-core
@@ -36,7 +36,7 @@ hooks:
   before_specify:
     command: speckit.assess.intake
     optional: true
-    prompt: "No assessment found for this idea — assess it before specifying?"
+    prompt: "Assess this idea before specifying?"
     description: "Nudge to assess an idea before committing it to a specification"
 
 tags:
