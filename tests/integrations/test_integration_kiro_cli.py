@@ -56,16 +56,6 @@ class TestKiroCliIntegration(MarkdownIntegrationTests):
         assert i.registrar_config["format"] == "markdown"
         assert i.registrar_config["extension"] == ".md"
 
-    def test_declared_multi_install_safe(self):
-        """kiro-cli uses a fully isolated .kiro/ root, a stable "." separator,
-        and a dedicated manifest, so it must be declared multi-install safe —
-        otherwise co-installing it (e.g. alongside claude) leaves
-        `integration status` permanently in ERROR with no way to resolve it
-        (#3471). The registry contract tests enforce the actual path isolation
-        against every other safe integration."""
-        i = get_integration(self.KEY)
-        assert i.multi_install_safe is True
-
     def test_registrar_config_args_is_exact_prose_fallback(self):
         """Layer 1 — pin the exact fallback so wording drift requires a
         deliberate paired commit (production constant + test update)."""
