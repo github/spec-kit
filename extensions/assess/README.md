@@ -23,8 +23,8 @@ The pipeline is a **funnel**: most ideas should be killed or parked before `shap
 flowchart LR
     A[intake] --> R[research] --> D[define] --> S[shape] --> C{decide}
     C -->|go| SPEC[/speckit.specify/]
-    C -->|needs-clarification| R
     C -->|kill| X[closed, recorded]
+    C -.->|needs-clarification: revisit the named earlier stage| A
 ```
 
 ## Commands
