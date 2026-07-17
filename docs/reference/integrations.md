@@ -48,11 +48,11 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 specify integration list
 ```
 
-| Option      | Description                                                                                  |
-| ----------- | ------------------------------------------------------------------------------------------- |
-| `--catalog` | Browse the full catalog (built-in + community) instead of only the built-in/installed set   |
+| Option      | Description                                                                                                             |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--catalog` | Also browse the catalog (built-in **and** community). Community integrations that are not built in are only shown here.  |
 
-Shows all available integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
+Shows the built-in integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
 When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
 The list also shows whether each built-in integration is declared multi-install safe.
 
