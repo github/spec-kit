@@ -42,6 +42,28 @@ class FanInStep(StepBase):
                 output={"results": []},
             )
 
+        # A non-string entry can never match a real step id. An unhashable one
+        # (a list/dict from a YAML indentation slip like ``wait_for: [[a, b]]``)
+        # crashes the whole run at ``context.steps.get(step_id, ...)`` below with
+        # a raw TypeError; a hashable-but-non-string one (``wait_for: [123]``)
+        # silently joins an empty ``{}`` and still reports COMPLETED — the exact
+        # "silent empty result + COMPLETED" wiring bug the whole-list guard above
+        # and the engine's fan-in validation (engine.py) both reject. The engine
+        # does not auto-validate step config, so fail this step loudly on an
+        # unvalidated run too, using the engine's phrasing.
+        bad_entries = [w for w in wait_for if not isinstance(w, str)]
+        if bad_entries:
+            first = bad_entries[0]
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Fan-in step {config.get('id', '?')!r}: 'wait_for' entries "
+                    f"must be step-id strings, got {type(first).__name__} "
+                    f"({first!r})."
+                ),
+                output={"results": []},
+            )
+
         # Collect results from referenced steps
         results = []
         for step_id in wait_for:

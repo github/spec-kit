@@ -2784,6 +2784,34 @@ class TestFanInStep:
         assert "'wait_for' must be a list" in (result.error or "")
         assert result.output["results"] == []
 
+    @pytest.mark.parametrize("bad_entry", [["a", "b"], {"a": 1}, 123, None])
+    def test_execute_non_string_wait_for_entry_fails_loudly(self, bad_entry):
+        """A ``wait_for`` list with a non-string entry must fail the step, not
+        crash the run or silently produce a bogus join.
+
+        The whole-list guard (``test_execute_non_list_wait_for_fails_loudly``)
+        and the engine's fan-in validation both already reject the list *shape*,
+        but neither the step's ``execute`` nor the engine's runtime path guarded
+        the list's *elements*. On an unvalidated run an unhashable entry
+        (a list/dict from a YAML indentation slip like ``wait_for: [[a, b]]``)
+        crashed ``context.steps.get(entry, ...)`` with a raw TypeError, while a
+        hashable-but-non-string entry (``wait_for: [123]``) silently joined an
+        empty ``{}`` and still reported COMPLETED — the same wiring bug the
+        list-shape guard exists to prevent. Mirrors the engine's
+        ``test_non_string_wait_for_entry_is_rejected`` load-time check.
+        """
+        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanInStep()
+        ctx = StepContext(steps={"a": {"output": {"x": 1}}})
+        # A valid entry alongside the bad one proves it is the entry, not the
+        # list, that is rejected.
+        result = step.execute({"id": "collect", "wait_for": ["a", bad_entry]}, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "'wait_for' entries must be step-id strings" in (result.error or "")
+        assert result.output["results"] == []
+
     def test_validate_empty_wait_for(self):
         from specify_cli.workflows.steps.fan_in import FanInStep
 
