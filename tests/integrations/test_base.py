@@ -479,6 +479,24 @@ class TestProcessTemplatePyScriptType:
         assert ".specify/scripts/bash/check-prerequisites.sh --json" in result
         assert "python" not in result
 
+    def test_body_scripts_example_does_not_override_frontmatter(self):
+        content = (
+            "---\n"
+            "scripts:\n"
+            "  sh: scripts/bash/real.sh --json\n"
+            "---\n"
+            "Run {SCRIPT} now.\n"
+            "```yaml\n"
+            "scripts:\n"
+            "  sh: examples/not-the-command.sh\n"
+            "```\n"
+        )
+
+        result = IntegrationBase.process_template(content, "agent", "sh")
+
+        assert ".specify/scripts/bash/real.sh --json" in result
+        assert "examples/not-the-command.sh" in result
+
     def test_py_quotes_interpreter_with_spaces(self, monkeypatch):
         # An interpreter path containing whitespace (e.g. Windows
         # ``Program Files``) must be quoted so it isn't split into args.

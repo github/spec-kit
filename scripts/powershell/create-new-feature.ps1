@@ -147,7 +147,7 @@ $hasNumber = $PSBoundParameters.ContainsKey('Number') -and $Number -ne ''
 
 # Warn if -Number and -Timestamp are both specified.
 if ($Timestamp -and $hasNumber) {
-    Write-Warning "[specify] Warning: -Number is ignored when -Timestamp is used"
+    [Console]::Error.WriteLine("[specify] Warning: -Number is ignored when -Timestamp is used")
     $Number = ''
 }
 
@@ -239,8 +239,12 @@ if (-not $DryRun) {
     $env:SPECIFY_FEATURE = $branchName
     $env:SPECIFY_FEATURE_DIRECTORY = $featureDir
 
-    [Console]::Error.WriteLine("# To persist: export SPECIFY_FEATURE=$branchName")
-    [Console]::Error.WriteLine("#              export SPECIFY_FEATURE_DIRECTORY=$featureDir")
+    $quotedBranchName = "'" + $branchName.Replace("'", "''") + "'"
+    $quotedFeatureDir = "'" + $featureDir.Replace("'", "''") + "'"
+    $featureAssignment = '$env:SPECIFY_FEATURE = ' + $quotedBranchName
+    $directoryAssignment = '$env:SPECIFY_FEATURE_DIRECTORY = ' + $quotedFeatureDir
+    [Console]::Error.WriteLine("# To persist: $featureAssignment")
+    [Console]::Error.WriteLine("#              $directoryAssignment")
 }
 
 if ($Json) {
@@ -258,7 +262,7 @@ if ($Json) {
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
     if (-not $DryRun) {
-        Write-Output "# To persist in your shell: export SPECIFY_FEATURE=$branchName"
-        Write-Output "#                           export SPECIFY_FEATURE_DIRECTORY=$featureDir"
+        Write-Output "# To persist in your shell: $featureAssignment"
+        Write-Output "#                           $directoryAssignment"
     }
 }

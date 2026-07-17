@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.python import create_new_feature
 from scripts.python.common import persist_feature_json
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
@@ -136,7 +137,8 @@ def test_all_variants_timestamp_mode_match_shape(repo: Path) -> None:
 
 
 @requires_bash
-def test_python_timestamp_number_warning_matches_bash(repo: Path) -> None:
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_timestamp_number_warning_matches(repo: Path) -> None:
     args = (
         "--json",
         "--dry-run",
@@ -148,12 +150,31 @@ def test_python_timestamp_number_warning_matches_bash(repo: Path) -> None:
         "x",
     )
     bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    ps = run(
+        ps_cmd(
+            repo,
+            SCRIPT,
+            "-Json",
+            "-DryRun",
+            "-Timestamp",
+            "-Number",
+            "5",
+            "-ShortName",
+            "ua",
+            "x",
+        ),
+        repo,
+    )
     py = run(py_cmd(repo, SCRIPT, *args), repo)
 
-    assert py.returncode == bash.returncode == 0
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert json_stdout(ps)
     assert (
         py.stderr
         == bash.stderr
+        == ps.stderr.replace("-Number", "--number").replace(
+            "-Timestamp", "--timestamp"
+        )
         == "[specify] Warning: --number is ignored when --timestamp is used\n"
     )
 
@@ -569,6 +590,26 @@ def test_all_variants_ignore_out_of_range_existing_prefix(repo: Path) -> None:
     assert json_stdout(py)["FEATURE_NUM"] == "001"
 
 
+def test_python_ignores_unconvertibly_large_existing_prefix() -> None:
+    class Entry:
+        name = f"{'9' * 5000}-existing"
+
+        @staticmethod
+        def is_dir() -> bool:
+            return True
+
+    class SpecsDir:
+        @staticmethod
+        def is_dir() -> bool:
+            return True
+
+        @staticmethod
+        def iterdir() -> list[Entry]:
+            return [Entry()]
+
+    assert create_new_feature._get_highest_from_specs(SpecsDir()) == 0
+
+
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 def test_all_variants_text_mode_match(repo: Path) -> None:
@@ -603,13 +644,30 @@ def test_all_variants_non_dry_text_mode_match(tmp_path: Path) -> None:
     assert bash.returncode == ps.returncode == py.returncode == 0
     assert (
         normalize_repo_paths(bash.stdout, bash_repo)
-        == normalize_repo_paths(ps.stdout, ps_repo)
         == normalize_repo_paths(py.stdout, py_repo)
     )
     assert (
         normalize_repo_paths(bash.stderr, bash_repo)
-        == normalize_repo_paths(ps.stderr, ps_repo)
         == normalize_repo_paths(py.stderr, py_repo)
+    )
+    ps_stdout = normalize_repo_paths(ps.stdout, ps_repo)
+    ps_stderr = normalize_repo_paths(ps.stderr, ps_repo)
+    assert "$env:SPECIFY_FEATURE = '007-x'" in ps_stdout
+    assert (
+        "$env:SPECIFY_FEATURE_DIRECTORY = '<REPO>/specs/007-x'" in ps_stdout
+    )
+    assert "$env:SPECIFY_FEATURE = '007-x'" in ps_stderr
+    assert (
+        "$env:SPECIFY_FEATURE_DIRECTORY = '<REPO>/specs/007-x'" in ps_stderr
+    )
+
+
+def test_python_powershell_persistence_assignments_escape_quotes() -> None:
+    assert create_new_feature._persistence_assignments(
+        "007-x", r"C:\repo\O'Brien", powershell=True
+    ) == (
+        "$env:SPECIFY_FEATURE = '007-x'",
+        "$env:SPECIFY_FEATURE_DIRECTORY = 'C:\\repo\\O''Brien'",
     )
 
 

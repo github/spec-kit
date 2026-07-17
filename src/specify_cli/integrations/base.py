@@ -679,13 +679,21 @@ class IntegrationBase(ABC):
         script_commands: dict[str, str] = {}
         script_pattern = re.compile(r"^\s*([A-Za-z0-9_-]+):\s*(.+)$")
         # Find the scripts: block
+        in_frontmatter = False
         in_scripts = False
         for line in content.splitlines():
-            if line.strip() == "scripts:":
+            if line == "---":
+                if in_frontmatter:
+                    break
+                in_frontmatter = True
+                continue
+            if not in_frontmatter:
+                continue
+            if line == "scripts:":
                 in_scripts = True
                 continue
             if in_scripts and line and not line[0].isspace():
-                in_scripts = False
+                break
             if in_scripts:
                 m = script_pattern.match(line)
                 if m:

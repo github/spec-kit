@@ -35,6 +35,32 @@ _MAX_BRANCH_LENGTH = 244
 _MAX_FEATURE_NUMBER = 2**63 - 1
 
 
+def _int64_from_digits(value: str) -> int | None:
+    normalized = value.lstrip("0") or "0"
+    maximum = str(_MAX_FEATURE_NUMBER)
+    if len(normalized) > len(maximum) or (
+        len(normalized) == len(maximum) and normalized > maximum
+    ):
+        return None
+    return int(normalized, 10)
+
+
+def _persistence_assignments(
+    branch_name: str, feature_dir: str, *, powershell: bool
+) -> tuple[str, str]:
+    if powershell:
+        quoted_branch = "'" + branch_name.replace("'", "''") + "'"
+        quoted_dir = "'" + feature_dir.replace("'", "''") + "'"
+        return (
+            f"$env:SPECIFY_FEATURE = {quoted_branch}",
+            f"$env:SPECIFY_FEATURE_DIRECTORY = {quoted_dir}",
+        )
+    return (
+        f"export SPECIFY_FEATURE={shlex.quote(branch_name)}",
+        f"export SPECIFY_FEATURE_DIRECTORY={shlex.quote(feature_dir)}",
+    )
+
+
 def _usage(argv0: str) -> str:
     return (
         f"Usage: {argv0} [--json] [--dry-run] [--allow-existing-branch] "
@@ -172,8 +198,8 @@ def _get_highest_from_specs(specs_dir: Path) -> int:
         if re.match(r"^[0-9]{3,}-", name) and not re.match(
             r"^[0-9]{8}-[0-9]{6}-", name
         ):
-            number = int(re.match(r"^[0-9]+", name).group(), 10)
-            if number <= _MAX_FEATURE_NUMBER:
+            number = _int64_from_digits(re.match(r"^[0-9]+", name).group())
+            if number is not None:
                 highest = max(highest, number)
     return highest
 
@@ -214,19 +240,14 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            normalized_number = branch_number.lstrip("0") or "0"
-            max_feature_number = str(_MAX_FEATURE_NUMBER)
-            if len(normalized_number) > len(max_feature_number) or (
-                len(normalized_number) == len(max_feature_number)
-                and normalized_number > max_feature_number
-            ):
+            number = _int64_from_digits(branch_number)
+            if number is None:
                 print(
                     "Error: --number must be between 0 and "
                     f"{_MAX_FEATURE_NUMBER}, got '{branch_number}'",
                     file=sys.stderr,
                 )
                 return 1
-            number = int(normalized_number, 10)
         else:
             number = _get_highest_from_specs(specs_dir) + 1
         if number > _MAX_FEATURE_NUMBER:
@@ -303,15 +324,13 @@ def main(argv: list[str] | None = None) -> int:
         persist_feature_json(repo_root, str(feature_dir))
 
         # Inform the user how to set feature state in their own shell.
-        print(
-            f"# To persist: export SPECIFY_FEATURE={shlex.quote(branch_name)}",
-            file=sys.stderr,
+        feature_assignment, directory_assignment = _persistence_assignments(
+            branch_name,
+            str(feature_dir),
+            powershell=sys.platform == "win32",
         )
-        print(
-            "#              export "
-            f"SPECIFY_FEATURE_DIRECTORY={shlex.quote(str(feature_dir))}",
-            file=sys.stderr,
-        )
+        print(f"# To persist: {feature_assignment}", file=sys.stderr)
+        print(f"#              {directory_assignment}", file=sys.stderr)
 
     if args.json_mode:
         payload: dict[str, object] = {
@@ -327,14 +346,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SPEC_FILE: {spec_file}")
         print(f"FEATURE_NUM: {feature_num}")
         if not args.dry_run:
-            print(
-                "# To persist in your shell: export "
-                f"SPECIFY_FEATURE={shlex.quote(branch_name)}"
-            )
-            print(
-                "#                           export "
-                f"SPECIFY_FEATURE_DIRECTORY={shlex.quote(str(feature_dir))}"
-            )
+            print(f"# To persist in your shell: {feature_assignment}")
+            print(f"#                           {directory_assignment}")
     return 0
 
 
