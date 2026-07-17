@@ -4,7 +4,10 @@
 [CmdletBinding()]
 param(
     [switch]$Json,
-    [switch]$Help
+    [switch]$Help,
+    # Capture extra positional arguments to match Bash/Python behavior.
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArgs
 )
 
 $ErrorActionPreference = 'Stop'
