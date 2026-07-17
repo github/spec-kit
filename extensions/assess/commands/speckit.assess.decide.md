@@ -18,6 +18,7 @@ Resolve the slug: explicit `slug=…` → conversation context (a slug reported 
 
 ## Prerequisites
 
+- **Path safety (do this before any read or write)**: resolve the project root and the real, symlink-resolved path of `.specify/assessments/<ASSESS_SLUG>/` and every artifact you touch. **Refuse and report — never follow —** if any path component (`.specify`, `.specify/assessments`, `ASSESS_DIR`, or the target file) is a symlink, or if the resolved path does not remain inside the project root. This stops a cloned or crafted project from redirecting reads/writes outside the repository.
 - `ASSESS_DIR/problem.md` **MUST** exist (you cannot decide on an undefined problem). If missing, stop and instruct the user to run `__SPECKIT_COMMAND_ASSESS_DEFINE__` first.
 - `ASSESS_DIR/concept.md` **SHOULD** exist. If missing, you may still decide, but a `go` verdict without a shaped concept must be downgraded to `needs-clarification` — a go should not hand `specify` an unshaped idea.
 - Read every artifact present (`intake.md`, `research.md`, `problem.md`, `concept.md`) — the decision must be consistent with all of them.

@@ -95,7 +95,7 @@ specify extension enable assess
 - Web content fetched during `intake`/`research` is treated as untrusted data, governed by an explicit URL Trust Policy (allowlisted public sources fetched freely; unknown hosts prompted or skipped; loopback/RFC1918/metadata endpoints refused).
 - Evidence is never over-claimed: unsourced statements are tagged `ASSUMPTION`, and `research.md` always includes an *Evidence Against the Idea* section.
 - Verdicts are never over-claimed: a `go` requires a valid problem, `adequate`+ evidence (never weak/unknown), and a shaped concept; otherwise the honest verdict is `needs-clarification`.
-- Slugs are normalized to `[a-z0-9-]` and an empty result is rejected, so an assessment directory can never escape `.specify/assessments/`.
+- Slugs are normalized to `[a-z0-9-]` and an empty result is rejected; before any read or write, each command also rejects symlinked path components and verifies the resolved path stays inside the project root — so an assessment can never escape `.specify/assessments/`, even in a crafted or cloned project.
 - No command overwrites an existing artifact without confirmation; in automated mode it refuses.
 
 ## Relationship to Other Extensions

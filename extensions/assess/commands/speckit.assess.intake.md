@@ -37,6 +37,7 @@ After resolution, set `ASSESS_SLUG` (the normalized, validated value) and `ASSES
 
 ## Prerequisites
 
+- **Path safety (do this before any `mkdir`, read, or write)**: resolve the project root and the real, symlink-resolved path of `.specify/assessments/<ASSESS_SLUG>/` and every artifact you touch. **Refuse and report — never follow —** if any path component (`.specify`, `.specify/assessments`, `ASSESS_DIR`, or the target file) is a symlink, or if the resolved path does not remain inside the project root. Never create `ASSESS_DIR` through a symlinked ancestor. This stops a cloned or crafted project from redirecting reads/writes outside the repository.
 - Ensure `ASSESS_DIR` exists, creating it (including missing parents) if necessary.
 - If `ASSESS_DIR/intake.md` already exists, ask the user whether to overwrite it before continuing (interactive); in automated mode, refuse and pick a new unique slug instead.
 
