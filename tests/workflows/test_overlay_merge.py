@@ -579,3 +579,131 @@ class TestValidateEdits:
         edits = [OverlayEdit("remove", "a", _step("extra"))]
         errors = validate_edits(edits, {"a"})
         assert len(errors) > 0
+
+
+class TestMergeStepsAncestorConflicts:
+    """merge_steps raises when two targeted anchors are in a parent/descendant relationship."""
+
+    def _if_step(self, parent_id: str, child_id: str) -> dict[str, Any]:
+        return {
+            "id": parent_id,
+            "type": "if",
+            "condition": "true",
+            "then": [_step(child_id)],
+        }
+
+    def test_remove_parent_and_insert_after_child_raises(self):
+        """Removing a parent while inserting after its nested child is an anchor conflict."""
+        parent_id = "if-step"
+        child_id = "then-child"
+        base = [self._if_step(parent_id, child_id)]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("remove", parent_id),
+                OverlayEdit("insert_after", child_id, _step("new-step")),
+            ],
+        )
+        with pytest.raises(ValueError, match="ancestor"):
+            merge_steps(base, [_layer(overlay, "project:ov")])
+
+    def test_replace_parent_and_remove_child_raises(self):
+        """Replacing a parent while also removing a nested child is an anchor conflict."""
+        parent_id = "if-step"
+        child_id = "then-child"
+        base = [self._if_step(parent_id, child_id)]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("replace", parent_id, _step("new-parent")),
+                OverlayEdit("remove", child_id),
+            ],
+        )
+        with pytest.raises(ValueError, match="ancestor"):
+            merge_steps(base, [_layer(overlay, "project:ov")])
+
+    def test_conflict_across_multiple_overlays_raises(self):
+        """Conflict is detected even when conflicting anchors come from different overlays."""
+        parent_id = "if-step"
+        child_id = "then-child"
+        base = [self._if_step(parent_id, child_id)]
+        overlay_a = Overlay(
+            id="ov-a",
+            extends="wf",
+            priority=5,
+            edits=[OverlayEdit("remove", parent_id)],
+        )
+        overlay_b = Overlay(
+            id="ov-b",
+            extends="wf",
+            priority=10,
+            edits=[OverlayEdit("insert_after", child_id, _step("new-step"))],
+        )
+        with pytest.raises(ValueError, match="ancestor"):
+            merge_steps(
+                base,
+                [_layer(overlay_a, "project:ov-a"), _layer(overlay_b, "project:ov-b")],
+            )
+
+    def test_sibling_anchors_not_conflicting(self):
+        """Anchors in sibling branches (not ancestor/descendant) are allowed."""
+        base = [
+            {
+                "id": "if-step",
+                "type": "if",
+                "condition": "true",
+                "then": [_step("then-child")],
+                "else": [_step("else-child")],
+            }
+        ]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("insert_after", "then-child", _step("after-then")),
+                OverlayEdit("insert_after", "else-child", _step("after-else")),
+            ],
+        )
+        # Should not raise — the two anchors are siblings, not ancestor/descendant.
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+        step_ids = [s.get("id") for s in steps[0]["then"]] + [s.get("id") for s in steps[0]["else"]]
+        assert "after-then" in step_ids
+        assert "after-else" in step_ids
+
+    def test_single_anchor_not_conflicting(self):
+        """A single anchor is never in conflict with itself."""
+        parent_id = "if-step"
+        child_id = "then-child"
+        base = [self._if_step(parent_id, child_id)]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[OverlayEdit("remove", parent_id)],
+        )
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+        assert steps == []
+
+    def test_child_not_targeted_no_conflict(self):
+        """Targeting a parent alone (child not in any edit) is allowed."""
+        parent_id = "if-step"
+        child_id = "then-child"
+        base = [self._if_step(parent_id, child_id), _step("other")]
+        overlay = Overlay(
+            id="ov",
+            extends="wf",
+            priority=10,
+            edits=[
+                OverlayEdit("remove", parent_id),
+                OverlayEdit("insert_after", "other", _step("new-step")),
+            ],
+        )
+        # "other" is not inside "if-step", so no ancestor conflict.
+        steps, _ = merge_steps(base, [_layer(overlay, "project:ov")])
+        assert [s["id"] for s in steps] == ["other", "new-step"]
+

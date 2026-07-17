@@ -81,6 +81,49 @@ def _all_base_step_ids(steps: list[dict[str, Any]]) -> set[str]:
     return ids
 
 
+def _descendant_ids(step: dict[str, Any]) -> set[str]:
+    """Return all step IDs nested inside *step* (not including *step* itself)."""
+    ids: set[str] = set()
+    for key in _NESTED_LIST_KEYS:
+        nested = step.get(key)
+        if isinstance(nested, list):
+            ids.update(_all_base_step_ids(nested))
+    cases = step.get("cases")
+    if isinstance(cases, dict):
+        for case_steps in cases.values():
+            if isinstance(case_steps, list):
+                ids.update(_all_base_step_ids(case_steps))
+    return ids
+
+
+def _check_anchor_conflicts(
+    anchors: set[str],
+    base_steps: list[dict[str, Any]],
+) -> list[str]:
+    """Return error messages for anchor pairs where one is an ancestor of the other.
+
+    When two targeted anchors share a parent/descendant relationship the edit
+    processing order determines success or failure, producing non-deterministic
+    results.  Callers should raise on any returned errors before mutating the
+    step tree.
+    """
+    errors: list[str] = []
+    for anchor in sorted(anchors):  # sorted for deterministic error order
+        location = find_step(base_steps, anchor)
+        if location is None:
+            continue  # missing anchors are reported by validate_edits
+        parent_list, idx = location
+        step = parent_list[idx]
+        conflicting = anchors & _descendant_ids(step)
+        for child_anchor in sorted(conflicting):
+            errors.append(
+                f"Anchor conflict: '{anchor}' is an ancestor of '{child_anchor}'. "
+                "Targeting both anchors in the same overlay set produces "
+                "order-dependent results; restructure edits to avoid nesting."
+            )
+    return errors
+
+
 def _init_sources_recursively(
     steps: list[dict[str, Any]], sources: dict[str, str]
 ) -> None:
@@ -251,6 +294,14 @@ def merge_steps(
     for layer in overlays:
         for edit in layer.overlay.edits:
             edits_by_anchor.setdefault(edit.anchor, []).append((layer, edit))
+
+    # Reject edits that target anchors with a parent/descendant relationship —
+    # processing such pairs independently produces order-dependent results.
+    anchor_conflicts = _check_anchor_conflicts(set(edits_by_anchor.keys()), base_steps)
+    if anchor_conflicts:
+        raise ValueError(
+            "Overlay anchor conflict(s) detected:\n  - " + "\n  - ".join(anchor_conflicts)
+        )
 
     for anchor, edits in edits_by_anchor.items():
         # Highest-priority edit is last because *overlays* is already sorted.
