@@ -216,3 +216,29 @@ class TestOverlayIdValidation:
         )
         assert not errors, errors
         assert overlay is not None
+
+    def test_validate_safe_id_rejects_trailing_newline(self):
+        """A trailing newline must not pass ID validation (fullmatch guard)."""
+        overlay, errors = validate_overlay_yaml(
+            {
+                "id": "overlay\n",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            }
+        )
+        assert overlay is None
+        assert any("id" in e.lower() for e in errors), errors
+
+    def test_validate_safe_id_rejects_embedded_newline(self):
+        """An embedded newline must not pass ID validation."""
+        overlay, errors = validate_overlay_yaml(
+            {
+                "id": "ov\nerlay",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            }
+        )
+        assert overlay is None
+        assert any("id" in e.lower() for e in errors), errors

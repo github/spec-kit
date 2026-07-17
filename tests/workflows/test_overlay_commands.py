@@ -82,6 +82,58 @@ class TestOverlayCli:
         data = yaml.safe_load(installed.read_text(encoding="utf-8"))
         assert data["priority"] == 5
 
+    def test_overlay_add_reuses_yaml_extension(self, project_dir, monkeypatch):
+        """If <id>.yaml already exists, overlay add must write to it instead of creating <id>.yml."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        # Pre-create the overlay using the .yaml extension.
+        existing_yaml = project_dir / ".specify" / "workflows" / "overlays" / "wf" / "ov1.yaml"
+        existing_yaml.parent.mkdir(parents=True, exist_ok=True)
+        existing_yaml.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "ov1",
+                    "extends": "wf",
+                    "priority": 1,
+                    "edits": [{"remove": "a"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        overlay_file = project_dir / "overlay.yml"
+        overlay_file.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "ov1",
+                    "extends": "wf",
+                    "priority": 20,
+                    "edits": [{"remove": "a"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(overlay_file)])
+        assert result.exit_code == 0, result.output
+
+        # Should have written to the pre-existing .yaml file.
+        assert existing_yaml.is_file()
+        data = yaml.safe_load(existing_yaml.read_text(encoding="utf-8"))
+        assert data["priority"] == 20
+
+        # Must NOT have created a duplicate .yml alongside the .yaml.
+        duplicate_yml = existing_yaml.with_suffix(".yml")
+        assert not duplicate_yml.exists(), "duplicate .yml was created alongside existing .yaml"
+
     def test_overlay_add_with_priority_override_missing_in_file(self, project_dir, monkeypatch):
         """--priority must fix a missing priority in the overlay file."""
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)

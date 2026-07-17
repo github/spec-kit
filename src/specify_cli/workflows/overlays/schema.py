@@ -41,7 +41,7 @@ def _validate_safe_id(value: str, field_name: str, allow_reserved: bool = False)
     """Return an error message if *value* is not a safe path segment ID."""
     if not isinstance(value, str) or not value:
         return f"Overlay '{field_name}' is required and must be a non-empty string."
-    if not _SAFE_ID_PATTERN.match(value):
+    if not _SAFE_ID_PATTERN.fullmatch(value):
         return (
             f"Overlay '{field_name}' {value!r} contains invalid characters; "
             "only lowercase letters, digits, and hyphens are allowed."

@@ -179,9 +179,14 @@ def workflow_overlay_add(
 
     target_dir = _project_overlay_dir(project_root, overlay.extends)
     target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = _ensure_contained_path(
-        target_dir / f"{overlay.id}.yml", _overlay_root(project_root)
-    )
+    # Reuse an existing .yaml file so we don't create a duplicate .yml layer.
+    existing = _find_overlay_file(project_root, overlay.extends, overlay.id)
+    if existing is not None:
+        target_path = existing
+    else:
+        target_path = _ensure_contained_path(
+            target_dir / f"{overlay.id}.yml", _overlay_root(project_root)
+        )
 
     try:
         target_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
