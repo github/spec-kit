@@ -761,6 +761,18 @@ class ExtensionManager:
         return self.extensions_dir / f".rescue-staging-{digest}"
 
     @staticmethod
+    def _has_keep_config_marker(directory: Path) -> bool:
+        """Return True when *directory* contains a valid ``.keep-config`` marker.
+
+        The marker is a regular (non-symlink) file written by
+        ``remove(..., keep_config=True)`` to record explicit provenance.  Its
+        content is intentionally empty — only presence matters, not content.
+        The symlink guard prevents a crafted symlink from fooling the check.
+        """
+        marker = directory / ".keep-config"
+        return marker.is_file() and not marker.is_symlink()
+
+    @staticmethod
     def _collect_manifest_command_names(manifest: ExtensionManifest) -> Dict[str, str]:
         """Collect command and alias names declared by a manifest.
 
@@ -1635,8 +1647,7 @@ class ExtensionManager:
         elif (
             dest_dir.exists()
             and not self.registry.is_installed(manifest.id)
-            and (dest_dir / ".keep-config").is_file()
-            and not (dest_dir / ".keep-config").is_symlink()
+            and self._has_keep_config_marker(dest_dir)
         ):
             for cfg_file in (
                 list(dest_dir.glob("*-config.yml"))
@@ -2024,6 +2035,7 @@ class ExtensionManager:
                 # distinguish this --keep-config leftover from a directory left
                 # by a partially-failed install (which must not have its
                 # packaged default configs treated as user-preserved data).
+                # Content is intentionally empty — only presence matters.
                 (extension_dir / ".keep-config").write_text("")
         else:
             # Backup config files before deleting
