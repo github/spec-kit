@@ -86,7 +86,7 @@ Lists workflows installed in the current project.
 specify workflow add <source>
 ```
 
-Installs a workflow from the catalog, a URL (HTTPS required), a local YAML file, or a local directory containing `workflow.yml`.  Local workflow directories may include an optional `overlays/` subdirectory, which is installed alongside the workflow as shipped overlays.
+Installs a workflow from the catalog, a URL (HTTPS required), a local YAML file, or a local directory containing `workflow.yml`.
 
 ## Workflow Overlays
 
@@ -96,16 +96,13 @@ When `specify workflow run <workflow-id>` loads a workflow, the engine composes 
 
 ### How Overlays Work
 
-An overlay is a YAML file that declares a set of edit operations against the step list of a base workflow.  Overlays are applied in priority order (lowest first, highest last); at the same priority, installed overlays are applied before project overlays, so project overlays win ties.
+An overlay is a YAML file that declares a set of edit operations against the step list of a base workflow.  Overlays are applied in priority order (lowest first, highest last); equal-priority overlays are applied in source order (last applied wins).
 
-Overlay files live in two locations:
+Project overlay files live at:
 
-| Location | Purpose | Tier |
-| --- | --- | --- |
-| `.specify/workflows/<id>/overlays/*.yml` | Shipped with the installed workflow | `installed-overlay` |
-| `.specify/workflows/overlays/<id>/*.yml` | Project-local customizations | `project-overlay` |
-
-Project overlays always take precedence over installed overlays at the same priority.
+| Location | Purpose |
+| --- | --- |
+| `.specify/workflows/overlays/<id>/*.yml` | Project-local customizations |
 
 ### Overlay File Format
 
@@ -204,7 +201,7 @@ specify workflow overlay enable <workflow-id> <overlay-id>
 specify workflow overlay remove <workflow-id> <overlay-id>
 ```
 
-Removes the project overlay file.  Installed overlays shipped with a workflow are removed by `specify workflow remove <workflow-id>`, which deletes the entire workflow directory.
+Removes the project overlay file.
 
 #### Inspect the Composed Workflow
 
@@ -264,7 +261,7 @@ Higher priority (`20`) means this overlay is applied after the `add-lint` overla
 
 ### Interaction with Bundles and Updates
 
-`specify workflow add <local-directory>` copies `workflow.yml` and an optional `overlays/` subdirectory into `.specify/workflows/<id>/`.  Overlays shipped this way are discovered automatically as `installed-overlay` layers.
+`specify workflow add <local-directory>` installs `workflow.yml` from the local directory into `.specify/workflows/<id>/`.
 
 When an installed workflow is refreshed or reinstalled, project overlays in `.specify/workflows/overlays/<id>/` are preserved because they live outside the installed workflow directory.
 
