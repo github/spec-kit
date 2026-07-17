@@ -32,6 +32,7 @@ _STOP_WORDS = frozenset(
 )
 
 _MAX_BRANCH_LENGTH = 244
+_MAX_FEATURE_NUMBER = 2**63 - 1
 
 
 def _usage(argv0: str) -> str:
@@ -219,6 +220,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 1
             number = int(normalized_number, 10)
+            if number > _MAX_FEATURE_NUMBER:
+                print(
+                    "Error: --number must be between 0 and "
+                    f"{_MAX_FEATURE_NUMBER}, got '{branch_number}'",
+                    file=sys.stderr,
+                )
+                return 1
         else:
             number = _get_highest_from_specs(specs_dir) + 1
         feature_num = f"{number:03d}"

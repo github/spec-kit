@@ -142,10 +142,11 @@ if ($ShortName) {
     $branchSuffix = Get-BranchName -Description $featureDesc
 }
 
-# Warn if -Number and -Timestamp are both specified. Use ContainsKey (not
-# `-ne 0`) so an explicit `-Number 0` is also detected, matching the bash twin's
-# `[ -n "$BRANCH_NUMBER" ]` check.
-if ($Timestamp -and $PSBoundParameters.ContainsKey('Number')) {
+# Treat an explicit empty string as omitted, matching the bash and Python twins.
+$hasNumber = $PSBoundParameters.ContainsKey('Number') -and $Number -ne ''
+
+# Warn if -Number and -Timestamp are both specified.
+if ($Timestamp -and $hasNumber) {
     Write-Warning "[specify] Warning: -Number is ignored when -Timestamp is used"
     $Number = ''
 }
@@ -159,7 +160,7 @@ if ($Timestamp) {
     # when -Number was not supplied; an explicit value (including 0) is honored,
     # matching the bash twin's `[ -z "$BRANCH_NUMBER" ]` check.
     [long]$resolvedNumber = 0
-    if (-not $PSBoundParameters.ContainsKey('Number')) {
+    if (-not $hasNumber) {
         $resolvedNumber = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
     } elseif ($Number -notmatch '^[0-9]+$' -or -not [long]::TryParse($Number, [ref]$resolvedNumber)) {
         Write-Error "Error: -Number must be an unsigned integer, got '$Number'"

@@ -402,3 +402,63 @@ def test_all_variants_reject_signed_number(repo: Path, number: str) -> None:
     )
 
     assert bash.returncode == ps.returncode == py.returncode == 1
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize("timestamp", [False, True], ids=["numbered", "timestamp"])
+def test_all_variants_treat_empty_number_as_omitted(
+    repo: Path, timestamp: bool
+) -> None:
+    bash_args = ["--json", "--dry-run", "--number", ""]
+    ps_args = ["-Json", "-DryRun", "-Number", ""]
+    py_args = ["--json", "--dry-run", "--number", ""]
+    if timestamp:
+        bash_args.append("--timestamp")
+        ps_args.append("-Timestamp")
+        py_args.append("--timestamp")
+    bash_args.append("x")
+    ps_args.append("x")
+    py_args.append("x")
+
+    bash = run(bash_cmd(repo, SCRIPT, *bash_args), repo)
+    ps = run(ps_cmd(repo, SCRIPT, *ps_args), repo)
+    py = run(py_cmd(repo, SCRIPT, *py_args), repo)
+
+    assert bash.returncode == ps.returncode == py.returncode == 0
+    assert bash.stderr == ps.stderr == py.stderr == ""
+    if not timestamp:
+        assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
+
+
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+@pytest.mark.parametrize(
+    ("number", "returncode"),
+    [
+        (str(2**63 - 1), 0),
+        (str(2**63), 1),
+    ],
+    ids=["int64_max", "int64_overflow"],
+)
+def test_all_variants_share_int64_number_range(
+    repo: Path, number: str, returncode: int
+) -> None:
+    bash = run(
+        bash_cmd(repo, SCRIPT, "--json", "--dry-run", "--number", number, "x"),
+        repo,
+    )
+    ps = run(
+        ps_cmd(repo, SCRIPT, "-Json", "-DryRun", "-Number", number, "x"),
+        repo,
+    )
+    py = run(
+        py_cmd(repo, SCRIPT, "--json", "--dry-run", "--number", number, "x"),
+        repo,
+    )
+
+    assert bash.returncode == ps.returncode == py.returncode == returncode
+    if returncode == 0:
+        assert json_stdout(bash) == json_stdout(ps) == json_stdout(py)
+    else:
+        assert bash.stdout == ps.stdout == py.stdout == ""
