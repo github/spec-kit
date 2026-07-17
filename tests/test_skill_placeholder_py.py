@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from specify_cli._init_options import save_init_options
 from specify_cli.agents import CommandRegistrar
 
@@ -116,7 +118,7 @@ def test_py_install_includes_python_and_fallback_scripts(tmp_path, monkeypatch):
     assert (tmp_path / fallback).is_file()
 
 
-def test_py_install_covers_one_sided_opposite_platform_fallback(
+def test_py_rejects_one_sided_opposite_platform_fallback(
     tmp_path, monkeypatch
 ):
     from specify_cli import _install_shared_infra
@@ -129,7 +131,9 @@ def test_py_install_covers_one_sided_opposite_platform_fallback(
             return getattr(os, attr)
 
     monkeypatch.setattr(shared_infra, "os", WindowsOs())
-    monkeypatch.setattr("specify_cli.agents.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.platform.system", lambda: "Windows"
+    )
     _install_shared_infra(tmp_path, "py", force=True)
 
     save_init_options(tmp_path, {"script": "py"})
@@ -138,11 +142,11 @@ def test_py_install_covers_one_sided_opposite_platform_fallback(
             "sh": "scripts/bash/check-prerequisites.sh --json",
         }
     }
-    body = CommandRegistrar.resolve_skill_placeholders(
-        "codex", frontmatter, "Run {SCRIPT} now.", tmp_path
-    )
+    with pytest.raises(ValueError, match="No runnable script variant"):
+        CommandRegistrar.resolve_skill_placeholders(
+            "codex", frontmatter, "Run {SCRIPT} now.", tmp_path
+        )
 
-    assert ".specify/scripts/bash/check-prerequisites.sh" in body
-    assert (
+    assert not (
         tmp_path / ".specify/scripts/bash/check-prerequisites.sh"
-    ).is_file()
+    ).exists()

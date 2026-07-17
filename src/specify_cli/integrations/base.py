@@ -14,6 +14,7 @@ Provides:
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shlex
 import shutil
@@ -633,6 +634,27 @@ class IntegrationBase(ABC):
         return f"{interpreter} {script_command}"
 
     @staticmethod
+    def select_script_variant(
+        requested: object, script_commands: dict[str, str]
+    ) -> str:
+        """Select the requested variant or a runnable platform fallback."""
+        if isinstance(requested, str) and requested in script_commands:
+            return requested
+
+        platform_variant = (
+            "ps" if platform.system().lower().startswith("win") else "sh"
+        )
+        for candidate in (platform_variant, "py"):
+            if candidate in script_commands:
+                return candidate
+
+        available = ", ".join(sorted(script_commands)) or "none"
+        raise ValueError(
+            "No runnable script variant for this platform: "
+            f"requested {requested!r}; available: {available}"
+        )
+
+    @staticmethod
     def _interpreter_runs(path: str) -> bool:
         """Return True when *path* executes as a Python interpreter.
 
@@ -667,7 +689,7 @@ class IntegrationBase(ABC):
 
         Performs the same transformations as the release script:
         1. Select ``scripts.<script_type>`` from YAML frontmatter, falling
-           back to the platform shell when that variant is unavailable
+           back to a runnable platform shell or Python variant when unavailable
         2. Replace ``{SCRIPT}`` with the extracted script command
         3. Strip ``scripts:`` section from frontmatter
         4. Replace ``{ARGS}`` and ``$ARGUMENTS`` with *arg_placeholder*
@@ -699,21 +721,11 @@ class IntegrationBase(ABC):
                 if m:
                     script_commands[m.group(1)] = m.group(2).strip()
 
-        selected_script_type = script_type
-        if selected_script_type not in script_commands:
-            default_variant = "ps" if os.name == "nt" else "sh"
-            secondary_variant = "sh" if default_variant == "ps" else "ps"
-            fallback_order = [
-                variant
-                for variant in (default_variant, secondary_variant)
-                if variant in script_commands
-            ]
-            fallback_order.extend(
-                variant
-                for variant in script_commands
-                if variant not in fallback_order
-            )
-            selected_script_type = fallback_order[0] if fallback_order else ""
+        selected_script_type = (
+            IntegrationBase.select_script_variant(script_type, script_commands)
+            if script_commands
+            else ""
+        )
 
         script_command = script_commands.get(selected_script_type, "")
 

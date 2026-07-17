@@ -83,6 +83,18 @@ def test_template_renders_python_invocation(name: str):
     ), f"{name} did not render a Python invocation"
 
 
+def test_py_missing_variant_rejects_opposite_shell_only():
+    content = """---
+scripts:
+  ps: scripts/powershell/setup-plan.ps1 -Json
+---
+Run {SCRIPT} now.
+"""
+
+    with pytest.raises(ValueError, match="No runnable script variant"):
+        IntegrationBase.process_template(content, "agent", "py")
+
+
 def test_spaced_python_interpreter_uses_powershell_call_operator(monkeypatch):
     interpreter = r"C:\Program Files\Py$thon's\python.exe"
     quoted_interpreter = interpreter.replace("'", "''")
@@ -196,5 +208,7 @@ def test_install_shared_infra_copies_python_scripts(tmp_path):
     )
     scripts_dir = tmp_path / ".specify" / "scripts"
     assert (scripts_dir / "python" / "check_prerequisites.py").is_file()
-    assert (scripts_dir / "bash").is_dir()
-    assert (scripts_dir / "powershell").is_dir()
+    shell_variant = "powershell" if os.name == "nt" else "bash"
+    other_variant = "bash" if os.name == "nt" else "powershell"
+    assert (scripts_dir / shell_variant).is_dir()
+    assert not (scripts_dir / other_variant).exists()

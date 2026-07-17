@@ -77,7 +77,7 @@ def register(app: typer.Typer) -> None:
             help="Name for your new project directory (optional if using --here, or use '.' for current directory)",
         ),
         script_type: str = typer.Option(
-            None, "--script", help="Script type to use: sh or ps"
+            None, "--script", help="Script type to use: sh, ps, or py"
         ),
         ignore_agent_tools: bool = typer.Option(
             False,

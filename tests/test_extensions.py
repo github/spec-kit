@@ -2323,7 +2323,9 @@ Run {SCRIPT}
         """Without init metadata, Windows fallback should prefer ps scripts over sh."""
         import yaml
 
-        monkeypatch.setattr("specify_cli.agents.platform.system", lambda: "Windows")
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.platform.system", lambda: "Windows"
+        )
 
         ext_dir = temp_dir / "ext-script-windows-fallback"
         ext_dir.mkdir()

@@ -15,6 +15,22 @@ from tests.conftest import strip_ansi
 runner = CliRunner()
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["init", "--help"],
+        ["integration", "install", "--help"],
+        ["integration", "switch", "--help"],
+        ["integration", "upgrade", "--help"],
+    ],
+)
+def test_script_help_includes_python_variant(args):
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 0
+    assert "sh, ps, or py" in " ".join(strip_ansi(result.output).split())
+
+
 def _init_project(tmp_path, integration="copilot", integration_options=None):
     """Helper: init a spec-kit project with the given integration."""
     project = tmp_path / "proj"

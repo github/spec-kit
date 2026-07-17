@@ -141,8 +141,8 @@ def _install_shared_infra(
 
     Copies ``.specify/scripts/<variant>/`` and ``.specify/templates/`` from
     the bundled core_pack or source checkout. ``sh`` installs Bash, ``ps``
-    installs PowerShell, and ``py`` installs Python plus both shell fallbacks.
-    Tracks all installed files in ``speckit.manifest.json``.
+    installs PowerShell, and ``py`` installs Python plus the platform shell
+    fallback. Tracks all installed files in ``speckit.manifest.json``.
 
     Shared scripts and page templates are processed to resolve
     ``__SPECKIT_COMMAND_<NAME>__`` placeholders using *invoke_separator*

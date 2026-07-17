@@ -7,7 +7,6 @@ command files into agent-specific directories in the correct format.
 """
 
 import os
-import platform
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -475,32 +474,16 @@ class CommandRegistrar:
             init_opts = {}
 
         script_variant = init_opts.get("script")
-        # Fall back when the configured variant is unknown OR the command
-        # frontmatter does not provide it (e.g. script=py with a template
-        # that only ships sh/ps), so {SCRIPT} is never left unresolved.
-        if script_variant not in {"sh", "ps", "py"} or script_variant not in scripts:
-            fallback_order = []
-            default_variant = (
-                "ps" if platform.system().lower().startswith("win") else "sh"
+        if scripts:
+            from specify_cli.integrations.base import IntegrationBase
+
+            script_variant = IntegrationBase.select_script_variant(
+                script_variant, scripts
             )
-            secondary_variant = "sh" if default_variant == "ps" else "ps"
-
-            if default_variant in scripts:
-                fallback_order.append(default_variant)
-            if secondary_variant in scripts:
-                fallback_order.append(secondary_variant)
-
-            for key in scripts:
-                if key not in fallback_order:
-                    fallback_order.append(key)
-
-            script_variant = fallback_order[0] if fallback_order else None
 
         script_command = scripts.get(script_variant) if script_variant else None
         if script_command:
             if script_variant == "py":
-                from specify_cli.integrations.base import IntegrationBase
-
                 script_command = IntegrationBase.build_python_invocation(
                     script_command, project_root
                 )
