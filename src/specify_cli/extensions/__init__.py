@@ -1562,6 +1562,8 @@ class ExtensionManager:
                 try:
                     _staged_modes = json.loads(rescue_modes_file.read_bytes())
                 except (OSError, ValueError):
+                    # Ignore unreadable/invalid sidecar metadata and fall back
+                    # to each staged file's mode for compatibility.
                     pass
             for staged_name in sorted(staged_names):
                 staged_file = rescue_staging_dir / staged_name
