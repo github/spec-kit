@@ -9,6 +9,7 @@ import typer
 import yaml
 
 from ..._console import console, err_console
+from .._commands import _reject_unsafe_dir, _reject_unsafe_workflow_storage
 from . import WorkflowResolver
 from .schema import _RESERVED_OVERLAY_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
 
@@ -38,8 +39,11 @@ def _validate_workflow_id_or_exit(workflow_id: str) -> None:
 
 
 def _overlay_root(project_root: Path) -> Path:
-    """Return the project-local overlay root directory."""
-    return project_root / ".specify" / "workflows" / "overlays"
+    """Return the project-local overlay root after rejecting unsafe ancestors."""
+    _reject_unsafe_workflow_storage(project_root)
+    root = project_root / ".specify" / "workflows" / "overlays"
+    _reject_unsafe_dir(root, ".specify/workflows/overlays")
+    return root
 
 
 def _project_overlay_dir(project_root: Path, workflow_id: str) -> Path:
@@ -58,9 +62,15 @@ def _ensure_contained_dir(path: Path, root: Path) -> Path:
 
     Returns *path* if safe. Raises typer.Exit on traversal or symlink.
     """
+    _reject_unsafe_dir(root, ".specify/workflows/overlays")
     if path.is_symlink():
         err_console.print(
             f"[red]Error:[/red] Refusing to use symlinked path {path}."
+        )
+        raise typer.Exit(1)
+    if path.exists() and not path.is_dir():
+        err_console.print(
+            f"[red]Error:[/red] Overlay directory path is not a directory: {path}."
         )
         raise typer.Exit(1)
     try:
@@ -95,6 +105,12 @@ def _find_overlay_file(project_root: Path, workflow_id: str, overlay_id: str) ->
 
 def _ensure_contained_path(path: Path, root: Path) -> Path:
     """Return *path* only if it resolves inside *root*; otherwise raise typer.Exit."""
+    _reject_unsafe_dir(root, ".specify/workflows/overlays")
+    if path.is_symlink():
+        err_console.print(
+            f"[red]Error:[/red] Refusing to use symlinked path {path}."
+        )
+        raise typer.Exit(1)
     try:
         resolved = path.resolve()
         root_resolved = root.resolve()
@@ -141,6 +157,7 @@ def workflow_overlay_add(
 
     Returns the path of the installed overlay file, or None on failure.
     """
+    _reject_unsafe_workflow_storage(project_root)
     data, errors = _read_overlay(source)
     if data is None:
         for err in errors:
@@ -186,6 +203,7 @@ def _update_overlay_field(
     value: Any,
 ) -> bool:
     """Update a single field in a project-local overlay file."""
+    _reject_unsafe_workflow_storage(project_root)
     path = _find_overlay_file(project_root, workflow_id, overlay_id)
     if path is None:
         err_console.print(
@@ -262,6 +280,7 @@ def workflow_overlay_remove(
     overlay_id: str,
 ) -> bool:
     """Remove a project-local overlay file."""
+    _reject_unsafe_workflow_storage(project_root)
     path = _find_overlay_file(project_root, workflow_id, overlay_id)
     if path is None:
         err_console.print(
@@ -284,6 +303,7 @@ def workflow_overlay_list(project_root: Path, workflow_id: str) -> list[dict[str
 
     Returns the raw list data for machine-readable callers, or None on error.
     """
+    _reject_unsafe_workflow_storage(project_root)
     _validate_workflow_id_or_exit(workflow_id)
     resolver = WorkflowResolver(project_root)
     try:
@@ -322,6 +342,7 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
 
     Returns a serializable attribution payload.
     """
+    _reject_unsafe_workflow_storage(project_root)
     _validate_workflow_id_or_exit(workflow_id)
     resolver = WorkflowResolver(project_root)
     try:

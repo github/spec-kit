@@ -336,6 +336,59 @@ class TestWorkflowResolver:
         with pytest.raises(ValueError, match="Symlinked overlay directories are not allowed"):
             resolver.resolve("wf")
 
+    def test_resolve_rejects_symlinked_overlay_root(self, project_dir, tmp_path):
+        """ProjectOverlaySource must reject a symlinked overlay root too."""
+        data = {
+            "schema_version": "1.0",
+            "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+            "steps": [{"id": "a", "type": "command", "command": "speckit.specify"}],
+        }
+        _write_workflow(project_dir, "wf", data)
+
+        outside_root = tmp_path / "outside-overlays-root"
+        outside_root.mkdir(parents=True, exist_ok=True)
+        workflow_dir = outside_root / "wf"
+        workflow_dir.mkdir()
+        workflow_dir.joinpath("evil.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "id": "evil",
+                    "extends": "wf",
+                    "priority": 100,
+                    "edits": [
+                        {
+                            "operation": "insert_after",
+                            "anchor": "a",
+                            "step": {"id": "evil-step", "type": "command", "command": "rm -rf /"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        overlays_root = project_dir / ".specify" / "workflows" / "overlays"
+        overlays_root.symlink_to(outside_root, target_is_directory=True)
+
+        resolver = WorkflowResolver(project_dir)
+        with pytest.raises(ValueError, match="Symlinked overlay directories are not allowed"):
+            resolver.resolve("wf")
+
+    def test_resolve_reports_invalid_overlay_yaml_cleanly(self, project_dir):
+        data = {
+            "schema_version": "1.0",
+            "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+            "steps": [{"id": "a", "type": "command", "command": "speckit.specify"}],
+        }
+        _write_workflow(project_dir, "wf", data)
+        overlay_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+        (overlay_dir / "broken.yml").write_text("id: broken\nextends: wf\npriority: [\n", encoding="utf-8")
+
+        resolver = WorkflowResolver(project_dir)
+        with pytest.raises(ValueError, match="Invalid YAML"):
+            resolver.resolve("wf")
+
     def test_resolve_attribution_for_inserted_composite_step(self, project_dir):
         """Inserted composite steps must attribute nested children to the overlay source."""
         data = {

@@ -30,6 +30,41 @@ class OverlayLoadError(ValueError):
         super().__init__(f"Invalid overlay {path}:\n  - " + "\n  - ".join(errors))
 
 
+def _resolve_project_overlay_root(project_root: Path) -> Path:
+    """Return the unresolved overlay root after rejecting symlinked ancestors.
+
+    This mirrors the older workflow step-directory hardening pattern locally.
+    The path-walk / containment logic should be centralized in a shared helper
+    in a follow-up DRY pass, but this stays inline here to keep the Cluster 1
+    security fix small and low-risk.
+    """
+    project_root_resolved = project_root.resolve()
+    overlays_root = project_root / ".specify" / "workflows" / "overlays"
+
+    current = project_root
+    for part in (".specify", "workflows", "overlays"):
+        current = current / part
+        if current.is_symlink():
+            raise OverlayLoadError(
+                current,
+                [f"Symlinked overlay directories are not allowed ({current})"],
+            )
+        if current.exists() and not current.is_dir():
+            raise OverlayLoadError(
+                current,
+                [f"Overlay directory path is not a directory ({current})"],
+            )
+
+    try:
+        overlays_root.resolve().relative_to(project_root_resolved)
+    except ValueError:
+        raise OverlayLoadError(
+            overlays_root,
+            ["Overlay directory escapes the project root"],
+        ) from None
+    return overlays_root
+
+
 class ProjectOverlaySource:
     """Project-local overlays: ``.specify/workflows/overlays/<id>/*.yml``."""
 
@@ -41,11 +76,17 @@ class ProjectOverlaySource:
 
     def collect(self, workflow_id: str) -> list[Layer]:
         """Collect all project-local overlays for the given workflow id."""
+        self.overlays_dir = _resolve_project_overlay_root(self.project_root)
         workflow_overlay_dir = self.overlays_dir / workflow_id
         if workflow_overlay_dir.is_symlink():
             raise OverlayLoadError(
                 workflow_overlay_dir,
                 ["Symlinked overlay directories are not allowed"],
+            )
+        if workflow_overlay_dir.exists() and not workflow_overlay_dir.is_dir():
+            raise OverlayLoadError(
+                workflow_overlay_dir,
+                ["Overlay directory path is not a directory"],
             )
         if not workflow_overlay_dir.is_dir():
             return []
@@ -55,7 +96,10 @@ class ProjectOverlaySource:
                 continue
             if path.is_symlink():
                 raise OverlayLoadError(path, ["Symlinked overlay files are not allowed"])
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError as exc:
+                raise OverlayLoadError(path, [f"Invalid YAML: {exc}"]) from exc
             overlay, errors = validate_overlay_yaml(data)
             if overlay is None or errors:
                 raise OverlayLoadError(path, errors)

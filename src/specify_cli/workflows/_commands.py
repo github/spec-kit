@@ -116,7 +116,7 @@ def _reject_unsafe_workflow_storage(project_root: Path) -> None:
 
 
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
-_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"runs", "steps"})
+_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"})
 
 
 def _validate_workflow_id_or_exit(workflow_id: str) -> None:

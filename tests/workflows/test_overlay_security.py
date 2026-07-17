@@ -165,6 +165,50 @@ class TestOverlayPathTraversal:
         assert real_file.is_file()
         assert "symlink" in result.output.lower() or "Invalid" in result.output
 
+    def test_overlay_add_rejects_symlinked_target_file(self, project_dir, monkeypatch):
+        """overlay add must not overwrite through a symlinked overlay file target."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+
+        overlay_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+        real_file = overlay_dir / "other.yml"
+        real_file.write_text("sentinel\n", encoding="utf-8")
+        (overlay_dir / "ov1.yml").symlink_to(real_file)
+
+        overlay_file = project_dir / "overlay.yml"
+        overlay_file.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "ov1",
+                    "extends": "wf",
+                    "priority": 10,
+                    "edits": [
+                        {
+                            "operation": "insert_after",
+                            "anchor": "a",
+                            "step": {"id": "new", "type": "command", "command": "echo"},
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(overlay_file)])
+
+        assert result.exit_code != 0, result.output
+        assert "symlinked path" in result.output.lower()
+        assert real_file.read_text(encoding="utf-8") == "sentinel\n"
+
     def test_overlay_operations_reject_overlays_as_workflow_id(self, project_dir, monkeypatch):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         result = runner.invoke(app, ["workflow", "overlay", "list", "overlays"])
@@ -251,3 +295,24 @@ class TestOverlayPathTraversal:
         result = runner.invoke(app, ["workflow", "overlay", "list", "wf"])
         assert result.exit_code != 0, result.output
         assert "symlink" in result.output.lower()
+
+    def test_overlay_list_reports_invalid_yaml_cleanly(self, project_dir, monkeypatch):
+        """Overlay list should surface malformed overlay YAML as a clean user error."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        overlay_dir = project_dir / ".specify" / "workflows" / "overlays" / "wf"
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+        (overlay_dir / "broken.yml").write_text("id: broken\nextends: wf\npriority: [\n", encoding="utf-8")
+
+        result = runner.invoke(app, ["workflow", "overlay", "list", "wf"])
+
+        assert result.exit_code != 0, result.output
+        assert "Invalid YAML" in result.output
