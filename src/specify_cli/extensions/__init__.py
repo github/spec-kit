@@ -1549,11 +1549,30 @@ class ExtensionManager:
             # enumerated by staging, so without this it would be silently
             # deleted by the rmtree below and its bytes lost. Treat it as a
             # conflict so both locations are preserved and the user resolves it.
-            conflicting.update(live_names - staged_names)
+            live_only = live_names - staged_names
+            conflicting.update(live_only)
+            # Load original permission bits from the sidecar JSON written by
+            # the staging step.  Staged files are kept at mode 0o600 so that
+            # rmtree always succeeds on Windows, so staged_stat.st_mode would
+            # always be 0o600 and must not be used for mode comparisons or
+            # restoration; the sidecar records the true original mode.
+            rescue_modes_file = rescue_staging_dir / ".rescue-modes.json"
+            _staged_modes: dict[str, int] = {}
+            if rescue_modes_file.is_file() and not rescue_modes_file.is_symlink():
+                try:
+                    _staged_modes = json.loads(rescue_modes_file.read_bytes())
+                except (OSError, ValueError):
+                    pass
             for staged_name in sorted(staged_names):
                 staged_file = rescue_staging_dir / staged_name
                 staged_stat = staged_file.stat()
                 staged_bytes = staged_file.read_bytes()
+                # Prefer the sidecar-recorded mode; fall back to the staged
+                # file's own mode for backwards-compat with staging dirs
+                # written before the sidecar was introduced.
+                staged_mode = _staged_modes.get(
+                    staged_name, stat.S_IMODE(staged_stat.st_mode)
+                )
                 live_file = dest_dir / staged_name
                 if live_file.is_symlink():
                     # A user may have replaced the live config with a symlink
@@ -1579,23 +1598,38 @@ class ExtensionManager:
                     else:
                         if live_bytes != staged_bytes or stat.S_IMODE(
                             live_stat.st_mode
-                        ) != stat.S_IMODE(staged_stat.st_mode):
+                        ) != staged_mode:
                             conflicting.add(staged_name)
-                stranded_configs[staged_name] = (
-                    staged_bytes,
-                    staged_stat.st_mode,
-                )
+                stranded_configs[staged_name] = (staged_bytes, staged_mode)
             if conflicting:
-                names = ", ".join(sorted(conflicting))
-                raise ValidationError(
-                    "Preserved extension config conflict for "
-                    f"'{manifest.id}': the current config file(s) ({names}) in "
-                    f"{dest_dir} differ from the rescued backup left by an "
-                    f"interrupted install in {rescue_staging_dir}. Both copies "
-                    "have been preserved. Resolve manually — keep the current "
-                    f"file and delete {rescue_staging_dir}, or restore the "
-                    "backup over the current file — then reinstall."
+                # Split into two cases for accurate user guidance: files that
+                # exist in both locations but have diverged, and files that
+                # exist only in the live directory with no rescue-backup copy.
+                both_diverged = conflicting - live_only
+                live_only_conflict = conflicting & live_only
+                msg_parts: list[str] = [
+                    f"Preserved extension config conflict for '{manifest.id}':"
+                ]
+                if both_diverged:
+                    names = ", ".join(sorted(both_diverged))
+                    msg_parts.append(
+                        f"The current config(s) ({names}) in {dest_dir} differ"
+                        f" from their rescued backup in {rescue_staging_dir}."
+                        " Both copies have been preserved."
+                    )
+                if live_only_conflict:
+                    names = ", ".join(sorted(live_only_conflict))
+                    msg_parts.append(
+                        f"The config(s) ({names}) exist only in {dest_dir}"
+                        f" with no counterpart in the rescued backup at"
+                        f" {rescue_staging_dir}."
+                    )
+                msg_parts.append(
+                    f"Reconcile {dest_dir} and {rescue_staging_dir} to the"
+                    f" desired final state, delete {rescue_staging_dir},"
+                    " then reinstall."
                 )
+                raise ValidationError(" ".join(msg_parts))
         elif dest_dir.exists() and not self.registry.is_installed(manifest.id):
             for cfg_file in (
                 list(dest_dir.glob("*-config.yml"))
@@ -1661,16 +1695,39 @@ class ExtensionManager:
                         written = 0
                         while written < len(view):
                             written += os.write(fd, view[written:])
-                        try:
-                            os.fchmod(fd, stat.S_IMODE(mode))
-                        except (AttributeError, NotImplementedError, OSError):
-                            try:
-                                staged.chmod(stat.S_IMODE(mode))
-                            except (NotImplementedError, OSError):
-                                pass  # Best-effort; chmod may not be supported on all platforms.
+                        # Do NOT chmod the staged file: setting a read-only
+                        # mode (e.g. 0o444) makes the file undeletable on
+                        # Windows and causes shutil.rmtree to fail during
+                        # cleanup.  Original modes are recorded separately in
+                        # .rescue-modes.json so they can be reapplied when the
+                        # config is actually restored.
                         _fsync_fd(fd)
                     finally:
                         os.close(fd)
+                # Persist the original permission bits in a sidecar JSON file
+                # so a retry can correctly reapply them even though the staged
+                # files themselves are kept at their creation mode (0o600).
+                rescue_modes_file = rescue_staging_dir / ".rescue-modes.json"
+                modes_payload = json.dumps(
+                    {
+                        filename: stat.S_IMODE(mode)
+                        for filename, (_, mode) in stranded_configs.items()
+                    },
+                    sort_keys=True,
+                ).encode()
+                modes_fd = os.open(
+                    str(rescue_modes_file),
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                    0o600,
+                )
+                try:
+                    view = memoryview(modes_payload)
+                    written = 0
+                    while written < len(view):
+                        written += os.write(modes_fd, view[written:])
+                    _fsync_fd(modes_fd)
+                finally:
+                    os.close(modes_fd)
                 # Flush the staging directory metadata before publishing the
                 # completion marker so a crash cannot leave a visible marker with
                 # only a subset of staged files.
