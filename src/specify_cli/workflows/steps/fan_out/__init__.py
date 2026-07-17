@@ -93,8 +93,13 @@ class FanOutStep(StepBase):
                 f"Fan-out step {config.get('id', '?')!r} is missing "
                 f"'step' field (nested step template)."
             )
-        step = config.get("step")
-        if step is not None and not isinstance(step, dict):
+        elif not isinstance(config["step"], dict):
+            # A present-but-non-mapping ``step`` (including an explicit
+            # ``step: null``) is an authoring mistake. ``config.get("step", {})``
+            # in ``execute`` only substitutes the ``{}`` default for an *absent*
+            # key, so an explicit ``None`` reaches the runtime guard and FAILS
+            # the step. Reject it here too so a workflow cannot pass validation
+            # and then fail during execution.
             errors.append(
                 f"Fan-out step {config.get('id', '?')!r}: 'step' must be a mapping."
             )

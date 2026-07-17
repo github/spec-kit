@@ -2442,7 +2442,10 @@ class TestFanOutStep:
 
         step = FanOutStep()
         ctx = StepContext(steps={"tasks": {"output": {"task_list": [1, 2]}}})
-        for bad_step in (["impl"], "impl", 5):
+        # ``None`` is an explicit ``step: null``: ``config.get("step", {})`` only
+        # substitutes the default for an *absent* key, so it reaches the guard
+        # and must fail here too — matching ``validate``.
+        for bad_step in (["impl"], "impl", 5, None):
             result = step.execute(
                 {
                     "id": "parallel",
@@ -2468,12 +2471,13 @@ class TestFanOutStep:
         from specify_cli.workflows.steps.fan_out import FanOutStep
 
         step = FanOutStep()
-        errors = step.validate({
-            "id": "test",
-            "items": "{{ x }}",
-            "step": "not-a-dict",
-        })
-        assert any("'step' must be a mapping" in e for e in errors)
+        for bad_step in ("not-a-dict", ["impl"], 5, None):
+            errors = step.validate({
+                "id": "test",
+                "items": "{{ x }}",
+                "step": bad_step,
+            })
+            assert any("'step' must be a mapping" in e for e in errors), bad_step
 
 
 class TestFanInStep:
