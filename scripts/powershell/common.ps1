@@ -368,10 +368,18 @@ function Resolve-Template {
                         }
                         return 10
                     }
-                    $priorities = @($presetEntries | ForEach-Object { & $priorityFor $_ })
-                    if ($priorities.Count -gt 1) {
-                        $allNumeric = @($priorities | Where-Object { $_ -isnot [ValueType] }).Count -eq 0
-                        $allStrings = @($priorities | Where-Object { $_ -isnot [string] }).Count -eq 0
+                    if ($presetEntries.Count -gt 1) {
+                        $allNumeric = $true
+                        $allStrings = $true
+                        foreach ($entry in $presetEntries) {
+                            $priority = & $priorityFor $entry
+                            if ($null -eq $priority -or $priority -isnot [ValueType]) {
+                                $allNumeric = $false
+                            }
+                            if ($null -eq $priority -or $priority -isnot [string]) {
+                                $allStrings = $false
+                            }
+                        }
                         if (-not $allNumeric -and -not $allStrings) {
                             throw 'Registry priorities are not mutually orderable'
                         }
@@ -395,7 +403,7 @@ function Resolve-Template {
             }
         } else {
             # Fallback: alphabetical directory order
-            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' }) {
+            foreach ($preset in Get-ChildItem -Path $presetsDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '.*' } | Sort-Object Name) {
                 $candidate = Join-Path $preset.FullName "templates/$TemplateName.md"
                 if (Test-Path $candidate) { return $candidate }
             }

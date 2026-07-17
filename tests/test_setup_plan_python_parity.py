@@ -9,6 +9,7 @@ import pytest
 from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
+    POWERSHELL_EXE,
     bash_cmd,
     clean_env,
     install_scripts,
@@ -99,11 +100,18 @@ def test_python_missing_template_matches_bash(tmp_path: Path) -> None:
     "registry",
     [
         '{"presets": {"alpha": {"priority": "high"}, "beta": {"priority": 1}}}',
+        '{"presets": {"alpha": {"priority": 2}, "beta": {"priority": 1}, "gamma": {"priority": null}}}',
         "[]",
         '{"presets":[]}',
         '{"presets":null}',
     ],
-    ids=["mixed_priorities", "list_root", "list_presets", "null_presets"],
+    ids=[
+        "mixed_priorities",
+        "null_priority",
+        "list_root",
+        "list_presets",
+        "null_presets",
+    ],
 )
 def test_all_variants_broken_registry_falls_back_to_dir_scan(
     tmp_path: Path, registry: str
@@ -118,8 +126,8 @@ def test_all_variants_broken_registry_falls_back_to_dir_scan(
         presets = repo / ".specify" / "presets"
         for name, body in (
             (".hidden", "# hidden\n"),
-            ("alpha", "# alpha plan\n"),
             ("beta", "# beta plan\n"),
+            ("alpha", "# alpha plan\n"),
         ):
             (presets / name / "templates").mkdir(parents=True)
             (presets / name / "templates" / "plan-template.md").write_text(
@@ -154,6 +162,47 @@ def test_all_variants_broken_registry_falls_back_to_dir_scan(
     for _, repo in results:
         plan = repo / "specs" / "001-my-feature" / "plan.md"
         assert plan.read_text(encoding="utf-8") == "# alpha plan\n"
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_broken_registry_fallback_sorts_directories(
+    tmp_path: Path,
+) -> None:
+    repo = _setup_repo(tmp_path, "powershell", template=False)
+    presets = repo / ".specify" / "presets"
+    for name in ("alpha", "beta"):
+        templates = presets / name / "templates"
+        templates.mkdir(parents=True)
+        (templates / "plan-template.md").write_text(
+            f"# {name} plan\n", encoding="utf-8"
+        )
+    (presets / ".registry").write_text("{broken", encoding="utf-8")
+
+    common = repo / ".specify" / "scripts" / "powershell" / "common.ps1"
+    common_ps = str(common).replace("'", "''")
+    alpha_ps = str(presets / "alpha").replace("'", "''")
+    beta_ps = str(presets / "beta").replace("'", "''")
+    repo_ps = str(repo).replace("'", "''")
+    command = f"""
+. '{common_ps}'
+function Get-ChildItem {{
+    @(
+        [PSCustomObject]@{{ Name = 'beta'; FullName = '{beta_ps}' }}
+        [PSCustomObject]@{{ Name = 'alpha'; FullName = '{alpha_ps}' }}
+    )
+}}
+Resolve-Template -TemplateName 'plan-template' -RepoRoot '{repo_ps}'
+"""
+    result = run(
+        [POWERSHELL_EXE, "-NoProfile", "-Command", command],
+        repo,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert Path(result.stdout.strip()).read_text(encoding="utf-8") == (
+        "# alpha plan\n"
+    )
 
 
 @requires_bash

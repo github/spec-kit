@@ -700,7 +700,12 @@ def test_all_variants_persist_symlinked_specs_path_lexically(
     for current in repos:
         specs_target = tmp_path / f"{current.name}-specs"
         specs_target.mkdir()
-        (current / "specs").symlink_to(specs_target, target_is_directory=True)
+        try:
+            (current / "specs").symlink_to(
+                specs_target, target_is_directory=True
+            )
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlinks are not available in this environment")
 
     bash = run(
         bash_cmd(repos[0], SCRIPT, "--json", "--number", "7", "x"),
