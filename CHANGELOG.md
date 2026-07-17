@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.12.18] - 2026-07-17
+
+### Changed
+
+- chore(deps): bump actions/setup-dotnet from 5.4.0 to 6.0.0 (#3574)
+- chore(deps): bump actions/stale from 10.3.0 to 10.4.0 (#3572)
+- chore(deps): bump actions/setup-node from 6.4.0 to 7.0.0 (#3570)
+- docs: weave harness/SDLC framing into landing page (#3567)
+- docs: reframe SDD positioning, modernize install, and de-duplicate walkthroughs (#3565)
+- docs: document extensions.yml hook configuration (#3563)
+- docs: refresh landing page ecosystem stats (#3561)
+- [extension] Add Dotdog extension to community catalog (#3558)
+- Update DocGuard — CDD Enforcement to v0.33.0 (#3559)
+- chore: release 0.12.17, begin 0.12.18.dev0 development (#3560)
+
 ## [0.12.17] - 2026-07-16
 
 ### Changed
