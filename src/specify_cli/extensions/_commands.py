@@ -206,8 +206,29 @@ def _resolve_catalog_extension(
 def extension_list(
     available: bool = typer.Option(False, "--available", help="Show available extensions from catalog"),
     all_extensions: bool = typer.Option(False, "--all", help="Show both installed and available"),
+    markdown: bool = typer.Option(
+        False,
+        "--markdown",
+        help="Output the full community extensions reference table as Markdown",
+    ),
 ):
-    """List installed extensions."""
+    """List installed extensions or render the community reference table."""
+    if markdown:
+        if available or all_extensions:
+            typer.echo(
+                "Warning: --markdown outputs the full community extensions table "
+                "and ignores --available/--all.",
+                err=True,
+            )
+        from ..community_catalog_docs import render_community_extensions_table
+
+        try:
+            typer.echo(render_community_extensions_table(), nl=False)
+        except (FileNotFoundError, ValueError) as exc:
+            typer.echo(f"Error rendering community extensions table: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        return
+
     from . import ExtensionManager
 
     project_root = _require_specify_project()

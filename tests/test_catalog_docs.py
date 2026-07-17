@@ -12,6 +12,8 @@ from specify_cli.catalog_docs import (
     escape_url_for_markdown_link,
     escape_markdown_link_text,
     INTEGRATIONS_REFERENCE_PATH,
+    INTEGRATION_DOC_URLS,
+    INTEGRATION_NOTES,
     render_cell,
     list_integrations_for_docs,
     render_integrations_table,
@@ -178,6 +180,28 @@ def test_explicit_none_doc_url_suppresses_install_url():
 
 def test_escape_markdown_link_text():
     assert escape_markdown_link_text("Code [Buddy]") == "Code \\[Buddy\\]"
+
+
+def test_doc_url_map_matches_registry_keys():
+    from specify_cli.integrations import INTEGRATION_REGISTRY
+
+    assert set(INTEGRATION_DOC_URLS) == set(INTEGRATION_REGISTRY)
+
+
+def test_notes_preserve_hand_maintained_integration_guidance():
+    expected_keys = {
+        "cline",
+        "copilot",
+        "firebender",
+        "grok",
+        "hermes",
+        "omp",
+        "rovodev",
+        "zcode",
+        "zed",
+    }
+
+    assert expected_keys <= set(INTEGRATION_NOTES)
 
 
 def test_integrations_docs_label_and_url_sources():

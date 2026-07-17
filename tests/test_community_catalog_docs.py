@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+from typer.testing import CliRunner
+
+from specify_cli import app
 
 from specify_cli.community_catalog_docs import list_community_extensions, render_community_extensions_table
+
+
+runner = CliRunner()
 
 
 def _write_catalog(tmp_path: Path, extensions: dict) -> Path:
@@ -31,6 +38,39 @@ def test_community_extensions_table_renders() -> None:
     assert "| Category" in table
     assert "| Effect" in table
     assert "| URL" in table
+
+
+def test_cli_extension_list_markdown_success() -> None:
+    result = runner.invoke(app, ["extension", "list", "--markdown"])
+
+    assert result.exit_code == 0
+    lines = result.stdout.splitlines()
+    assert lines[0] == "| Extension | Purpose | Category | Effect | URL |"
+    assert lines[1] == "| --- | --- | --- | --- | --- |"
+    assert result.stderr == ""
+
+
+def test_cli_extension_list_markdown_warns_when_list_filters_are_present() -> None:
+    result = runner.invoke(
+        app,
+        ["extension", "list", "--markdown", "--available"],
+    )
+
+    assert result.exit_code == 0
+    assert "ignores --available/--all" in result.stderr
+    assert result.stdout.startswith("| Extension | Purpose | Category | Effect | URL |")
+
+
+def test_cli_extension_list_markdown_failure_exits_nonzero() -> None:
+    with patch(
+        "specify_cli.community_catalog_docs.render_community_extensions_table",
+        side_effect=ValueError("boom"),
+    ):
+        result = runner.invoke(app, ["extension", "list", "--markdown"])
+
+    assert result.exit_code == 1
+    assert "Error rendering community extensions table: boom" in result.stderr
+    assert result.stdout == ""
 
 
 def test_community_extensions_are_sorted_by_name() -> None:

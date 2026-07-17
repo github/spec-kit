@@ -17,31 +17,36 @@ INTEGRATION_DOC_URLS: dict[str, str | None] = {
     "auggie": "https://docs.augmentcode.com/cli/overview",
     "bob": "https://www.ibm.com/products/bob",
     "claude": "https://www.anthropic.com/claude-code",
-    "codebuddy": "https://www.codebuddy.ai/cli",
+    "cline": "https://github.com/cline/cline",
+    "codebuddy": "https://www.codebuddy.cn/docs/cli/installation",
     "codex": "https://github.com/openai/codex",
     "copilot": "https://code.visualstudio.com/",
     "cursor-agent": "https://cursor.sh/",
     "devin": "https://cli.devin.ai/docs",
+    "firebender": "https://firebender.com/",
     "forge": "https://forgecode.dev/",
     "gemini": "https://github.com/google-gemini/gemini-cli",
     "generic": None,
-    "goose": "https://block.github.io/goose/",
-    "iflow": "https://docs.iflow.cn/en/cli/quickstart",
+    "goose": "https://goose-docs.ai/",
+    "grok": "https://docs.x.ai/build/overview",
+    "hermes": "https://github.com/NousResearch/hermes-agent",
     "junie": "https://junie.jetbrains.com/",
     "kilocode": "https://github.com/Kilo-Org/kilocode",
     "kimi": "https://code.kimi.com/",
     "kiro-cli": "https://kiro.dev/docs/cli/",
     "lingma": "https://lingma.aliyun.com/",
+    "omp": "https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent",
     "opencode": "https://opencode.ai/",
     "pi": "https://pi.dev",
     "qodercli": "https://qoder.com/cli",
     "qwen": "https://github.com/QwenLM/qwen-code",
-    "roo": "https://roocode.com/",
+    "rovodev": "https://www.atlassian.com/software/rovo-dev",
     "shai": "https://github.com/ovh/shai",
     "tabnine": "https://docs.tabnine.com/main/getting-started/tabnine-cli",
     "trae": "https://www.trae.ai/",
     "vibe": "https://github.com/mistralai/mistral-vibe",
-    "windsurf": "https://windsurf.com/",
+    "zcode": "https://zcode.z.ai/",
+    "zed": "https://zed.dev/",
 }
 
 INTEGRATION_LABEL_OVERRIDES: dict[str, str] = {
@@ -54,16 +59,35 @@ INTEGRATION_LABEL_OVERRIDES: dict[str, str] = {
 INTEGRATION_NOTES: dict[str, str] = {
     "agy": "Skills-based integration; skills are installed automatically",
     "claude": "Skills-based integration; installs skills in `.claude/skills`",
+    "cline": "IDE-based agent",
     "codex": (
         "Skills-based integration; installs skills into `.agents/skills` "
         "and invokes them as `$speckit-<command>`"
+    ),
+    "copilot": (
+        "Defaults to legacy markdown mode: `.agent.md` command files under "
+        "`.github/agents/`, companion `.prompt.md` files under "
+        "`.github/prompts/`, and a `.vscode/settings.json` merge. Pass "
+        "`--integration-options=\"--skills\"` to scaffold skills as "
+        "`speckit-<command>/SKILL.md` under `.github/skills/` instead. "
+        "Legacy markdown mode is deprecated and will stop being the default "
+        "in a future release."
     ),
     "bob": "IDE-based agent",
     "devin": (
         "Skills-based integration; installs skills into `.devin/skills/` "
         "and invokes them as `/speckit-<command>`"
     ),
+    "firebender": "IDE-based agent for Android Studio / IntelliJ",
     "goose": "Uses YAML recipe format in `.goose/recipes/`",
+    "grok": (
+        "Skills-based integration; installs skills into `.grok/skills` "
+        "and invokes them as `/speckit-<command>`"
+    ),
+    "hermes": (
+        "Skills-based integration; installs skills globally into "
+        "`~/.hermes/skills/`"
+    ),
     "kimi": (
         "Skills-based integration; supports `--migrate-legacy` "
         "for dotted→hyphenated directory migration"
@@ -76,6 +100,19 @@ INTEGRATION_NOTES: dict[str, str] = {
         "Alias: `--integration kiro`"
     ),
     "lingma": "Skills-based integration; skills are installed automatically",
+    "omp": "Installs slash commands into `.omp/commands`",
+    "rovodev": (
+        "Generates `.rovodev/skills/`, prompt wrappers, and `prompts.yml`; "
+        "runtime dispatch uses `acli rovodev`"
+    ),
+    "zcode": (
+        "Skills-based integration; installs skills into `.zcode/skills` "
+        "and invokes them as `$speckit-<command>`"
+    ),
+    "zed": (
+        "Skills-based integration; installs skills into `.agents/skills` "
+        "and invokes them as `/speckit-<command>`"
+    ),
     "pi": (
         "Pi doesn't have MCP support out of the box, so `taskstoissues` "
         "won't work as intended. MCP support can be added via "

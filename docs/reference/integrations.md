@@ -11,36 +11,36 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Auggie CLI](https://docs.augmentcode.com/cli/overview) | `auggie` |  |
 | [IBM Bob](https://www.ibm.com/products/bob) | `bob` | IDE-based agent |
 | [Claude Code](https://www.anthropic.com/claude-code) | `claude` | Skills-based integration; installs skills in `.claude/skills` |
-| [Cline](https://github.com/cline/cline) | `cline` |  |
-| [CodeBuddy CLI](https://www.codebuddy.ai/cli) | `codebuddy` |  |
+| [Cline](https://github.com/cline/cline) | `cline` | IDE-based agent |
+| [CodeBuddy CLI](https://www.codebuddy.cn/docs/cli/installation) | `codebuddy` |  |
 | [Codex CLI](https://github.com/openai/codex) | `codex` | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
-| [GitHub Copilot](https://code.visualstudio.com/) | `copilot` |  |
+| [GitHub Copilot](https://code.visualstudio.com/) | `copilot` | Defaults to legacy markdown mode: `.agent.md` command files under `.github/agents/`, companion `.prompt.md` files under `.github/prompts/`, and a `.vscode/settings.json` merge. Pass `--integration-options="--skills"` to scaffold skills as `speckit-<command>/SKILL.md` under `.github/skills/` instead. Legacy markdown mode is deprecated and will stop being the default in a future release. |
 | [Cursor](https://cursor.sh/) | `cursor-agent` |  |
 | [Devin for Terminal](https://cli.devin.ai/docs) | `devin` | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
-| [Firebender](https://firebender.com/) | `firebender` |  |
+| [Firebender](https://firebender.com/) | `firebender` | IDE-based agent for Android Studio / IntelliJ |
 | [Forge](https://forgecode.dev/) | `forge` |  |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `gemini` |  |
 | Generic | `generic` | Bring your own agent — use `--integration generic --integration-options="--commands-dir <path>"` for AI coding agents not listed above |
-| [Goose](https://block.github.io/goose/) | `goose` | Uses YAML recipe format in `.goose/recipes/` |
-| [Grok Build](https://docs.x.ai/build/overview) | `grok` |  |
-| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | `hermes` |  |
+| [Goose](https://goose-docs.ai/) | `goose` | Uses YAML recipe format in `.goose/recipes/` |
+| [Grok Build](https://docs.x.ai/build/overview) | `grok` | Skills-based integration; installs skills into `.grok/skills` and invokes them as `/speckit-<command>` |
+| [Hermes Agent](https://github.com/NousResearch/hermes-agent) | `hermes` | Skills-based integration; installs skills globally into `~/.hermes/skills/` |
 | [Junie](https://junie.jetbrains.com/) | `junie` |  |
 | [Kilo Code](https://github.com/Kilo-Org/kilocode) | `kilocode` |  |
 | [Kimi Code](https://code.kimi.com/) | `kimi` | Skills-based integration; supports `--migrate-legacy` for dotted→hyphenated directory migration |
 | [Kiro CLI](https://kiro.dev/docs/cli/) | `kiro-cli` | Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, so Spec Kit ships a prose fallback at render time (see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) and issue [#1926](https://github.com/github/spec-kit/issues/1926)). Alias: `--integration kiro` |
 | [Lingma](https://lingma.aliyun.com/) | `lingma` | Skills-based integration; skills are installed automatically |
-| [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent) | `omp` |  |
+| [Oh My Pi](https://www.npmjs.com/package/@oh-my-pi/pi-coding-agent) | `omp` | Installs slash commands into `.omp/commands` |
 | [opencode](https://opencode.ai/) | `opencode` |  |
 | [Pi Coding Agent](https://pi.dev) | `pi` | Pi doesn't have MCP support out of the box, so `taskstoissues` won't work as intended. MCP support can be added via [extensions](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#extensions) |
 | [Qoder CLI](https://qoder.com/cli) | `qodercli` |  |
 | [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` |  |
-| [RovoDev ACLI](https://www.atlassian.com/software/rovo-dev) | `rovodev` |  |
+| [RovoDev ACLI](https://www.atlassian.com/software/rovo-dev) | `rovodev` | Generates `.rovodev/skills/`, prompt wrappers, and `prompts.yml`; runtime dispatch uses `acli rovodev` |
 | [SHAI (OVHcloud)](https://github.com/ovh/shai) | `shai` |  |
 | [Tabnine CLI](https://docs.tabnine.com/main/getting-started/tabnine-cli) | `tabnine` |  |
 | [Trae](https://www.trae.ai/) | `trae` | Skills-based integration; skills are installed automatically |
 | [Mistral Vibe](https://github.com/mistralai/mistral-vibe) | `vibe` |  |
-| [ZCode](https://zcode.z.ai/) | `zcode` |  |
-| Zed | `zed` |  |
+| [ZCode](https://zcode.z.ai/) | `zcode` | Skills-based integration; installs skills into `.zcode/skills` and invokes them as `$speckit-<command>` |
+| [Zed](https://zed.dev/) | `zed` | Skills-based integration; installs skills into `.agents/skills` and invokes them as `/speckit-<command>` |
 
 ## List Available Integrations
 
@@ -220,6 +220,7 @@ Some integrations accept additional options via `--integration-options`:
 | ----------- | ------------------- | -------------------------------------------------------------- |
 | `generic`   | `--commands-dir`    | Required. Directory for command files                          |
 | `kimi`      | `--migrate-legacy`  | Migrate legacy `.kimi/skills/` installs to `.kimi-code/skills/` (including dotted→hyphenated skill naming, e.g. `speckit.xxx` → `speckit-xxx`) |
+| `copilot`   | `--skills`          | Scaffold commands as agent skills (`speckit-<command>/SKILL.md` under `.github/skills/`, invoked as `/speckit-<command>`) instead of the default legacy markdown mode (`.github/agents/*.agent.md` plus `.github/prompts/*.prompt.md` and a `.vscode/settings.json` merge). Without this flag, install warns that legacy markdown mode is deprecated. |
 
 Example:
 
@@ -249,7 +250,11 @@ Spec Kit tracks one default integration in `.specify/integration.json` with `def
 
 ### Which integrations are multi-install safe?
 
-An integration is multi-install safe when it uses isolated agent directories, a dedicated context file that does not collide with another safe integration, stable command invocation settings, and a separate install manifest. Shared Spec Kit templates remain aligned to the single default integration.
+An integration is multi-install safe when it uses a static, unique agent root and command directory, stable command invocation settings, and a separate install manifest whose managed files do not overlap another safe integration. Registry tests enforce those path and manifest invariants. Shared Spec Kit templates remain aligned to the single default integration.
+
+The Isolation column below lists paths Spec Kit manages for that integration (skills/commands roots and any integration-owned rule files). It is not a full inventory of every file an agent may read.
+
+**Agent-context defaults are separate.** The optional agent-context extension maps each integration to a default context file in `extensions/agent-context/agent-context-defaults.json`. Those defaults are independent of multi-install safety: several agents may share a root file such as `AGENTS.md` when the extension is enabled. Multi-install safety does not require a unique context file per safe integration.
 
 The currently declared multi-install safe integrations are:
 
@@ -263,6 +268,7 @@ The currently declared multi-install safe integrations are:
 | `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
 | `firebender` | `.firebender/commands`, `.firebender/rules/specify-rules.mdc` |
 | `gemini` | `.gemini/commands`, `GEMINI.md` |
+| `grok` | `.grok/skills` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |
 | `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
 | `qodercli` | `.qoder/commands`, `QODER.md` |
@@ -272,7 +278,7 @@ The currently declared multi-install safe integrations are:
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
 | `zcode` | `.zcode/skills`, `ZCODE.md` |
 
-Integrations that share a context file or command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
+Integrations that share a command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
 
 ### What happens to my changes when I uninstall or switch?
 
