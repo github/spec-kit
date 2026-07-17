@@ -4,7 +4,7 @@ extension:
   id: assess
   name: "Idea Assessment Pipeline"
   version: "1.0.0"
-  description: "Assess an idea before Spec-Driven Development via intake, research, define, shape, and decide, then hand a build/kill call to /speckit.specify. Assessments live under .specify/assessments/<slug>/"
+  description: "Assess an idea before Spec-Driven Development via intake, research, define, shape, and decide. A go verdict hands off to /speckit.specify; a kill closes it. Lives under .specify/assessments/<slug>/"
   category: "process"
   effect: "read-write"
   author: spec-kit-core

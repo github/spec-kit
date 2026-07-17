@@ -27,11 +27,13 @@ If the input is empty, ask the user for the idea (interactive), or stop with a n
 
 Each idea gets its own directory under `.specify/assessments/<slug>/`. Resolve the slug in this order:
 
-1. **User-provided slug**: If the user explicitly passes a slug (e.g., `slug=offline-mode`, `--slug offline-mode`, or an obvious slug-like token), use it verbatim after normalization (lowercase; hyphen-separated; no spaces; keep only lowercase letters `a–z`, digits `0–9`, and `-`). Do not append timestamps or numbers.
+1. **User-provided slug**: If the user explicitly passes a slug (e.g., `slug=offline-mode`, `--slug offline-mode`, or an obvious slug-like token), normalize it: lowercase; convert runs of whitespace/underscores to `-`; keep only lowercase letters `a–z`, digits `0–9`, and `-`; drop every other character (including `.`, `/`, `\`); collapse repeated `-`; strip leading/trailing `-`. Do not append timestamps or numbers.
 2. **Interactive mode** (a human is driving): If no slug was provided, **ask the user** and wait. Suggest a 2–4 word kebab-case candidate derived from the idea as a default.
 3. **Automated / non-interactive mode** (no human to ask): Generate a concise slug yourself (2–4 kebab-case words). The generated slug **MUST** produce a unique directory — if `.specify/assessments/<slug>/` already exists, append the shortest disambiguating suffix (`-2`, `-3`, …) or a short ISO-style date (`-20260715`). Never overwrite an existing assessment directory.
 
-After resolution, set `ASSESS_SLUG` and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>`.
+**Reject unsafe slugs.** If the normalized slug is empty (e.g. the input was `../..`, `/`, or non-ASCII-only), refuse it: ask again (interactive) or stop with a note (automated). Never build a path from an unnormalized slug — normalization strips `.`, `/`, and `\`, which guarantees `ASSESS_DIR` cannot escape `.specify/assessments/`.
+
+After resolution, set `ASSESS_SLUG` (the normalized, validated value) and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>`.
 
 ## Prerequisites
 

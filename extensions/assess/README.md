@@ -94,7 +94,8 @@ specify extension enable assess
 - Only `speckit.assess.*` commands write, and only inside `.specify/assessments/<slug>/`. **None of them modify source code** — solution design and implementation belong to the SDD lifecycle (`/speckit.specify` onward).
 - Web content fetched during `intake`/`research` is treated as untrusted data, governed by an explicit URL Trust Policy (allowlisted public sources fetched freely; unknown hosts prompted or skipped; loopback/RFC1918/metadata endpoints refused).
 - Evidence is never over-claimed: unsourced statements are tagged `ASSUMPTION`, and `research.md` always includes an *Evidence Against the Idea* section.
-- Verdicts are never over-claimed: a `go` requires a valid problem and a shaped concept; otherwise the honest verdict is `needs-clarification`.
+- Verdicts are never over-claimed: a `go` requires a valid problem, `adequate`+ evidence (never weak/unknown), and a shaped concept; otherwise the honest verdict is `needs-clarification`.
+- Slugs are normalized to `[a-z0-9-]` and an empty result is rejected, so an assessment directory can never escape `.specify/assessments/`.
 - No command overwrites an existing artifact without confirmation; in automated mode it refuses.
 
 ## Relationship to Other Extensions

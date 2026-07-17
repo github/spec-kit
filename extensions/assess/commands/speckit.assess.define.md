@@ -14,7 +14,7 @@ Define **frames the problem; it does not shape or choose a solution.** If the in
 $ARGUMENTS
 ```
 
-Resolve the slug: explicit `slug=…` → conversation context (a slug reported earlier this session, confirmed by an existing `.specify/assessments/<slug>/` directory) → ask (interactive) → single existing directory (automated) → otherwise stop and ask. Set `ASSESS_SLUG` and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>`.
+Resolve the slug: explicit `slug=…` → conversation context (a slug reported earlier this session, confirmed by an existing `.specify/assessments/<slug>/` directory) → ask (interactive) → single existing directory (automated) → otherwise stop and ask. **Slug safety**: normalize any explicit or user-supplied slug — lowercase; whitespace/underscores → `-`; keep only `[a-z0-9-]` (drop every other character, including `.`, `/`, `\`); collapse and trim `-`; reject an empty normalized result. Only then set `ASSESS_SLUG` (the normalized value) and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>` — this keeps every read and write inside `.specify/assessments/`.
 
 ## Prerequisites
 

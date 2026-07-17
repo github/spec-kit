@@ -14,7 +14,7 @@ Decide **judges; it does not spec or build.** It weighs the evidence already gat
 $ARGUMENTS
 ```
 
-Resolve the slug: explicit `slug=…` → conversation context (a slug reported earlier this session, confirmed by an existing `.specify/assessments/<slug>/` directory) → ask (interactive) → single existing directory (automated) → otherwise stop and ask. Set `ASSESS_SLUG` and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>`.
+Resolve the slug: explicit `slug=…` → conversation context (a slug reported earlier this session, confirmed by an existing `.specify/assessments/<slug>/` directory) → ask (interactive) → single existing directory (automated) → otherwise stop and ask. **Slug safety**: normalize any explicit or user-supplied slug — lowercase; whitespace/underscores → `-`; keep only `[a-z0-9-]` (drop every other character, including `.`, `/`, `\`); collapse and trim `-`; reject an empty normalized result. Only then set `ASSESS_SLUG` (the normalized value) and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>` — this keeps every read and write inside `.specify/assessments/`.
 
 ## Prerequisites
 
@@ -31,9 +31,9 @@ Resolve the slug: explicit `slug=…` → conversation context (a slug reported 
    - **Value vs. cost of inaction** — does solving it beat doing nothing? (from `problem.md`)
    - **Feasibility / appetite fit** — is there a credible option within a sane appetite? (from `concept.md`)
    - **Strategic fit** — does it align with the project's constitution/goals, if known?
-   - **Risk** — what could make this fail or backfire?
+   - **Risk posture** — are the major risks understood and acceptably mitigated? Rate with the same positive polarity as the other criteria: `strong` = key risks identified and credibly mitigated; `weak` = serious, unmitigated risk. (from all artifacts)
 2. **Reach a verdict**:
-   - **go** — the idea is worth specifying. Requires problem validity `adequate`+ and a recommended concept option.
+   - **go** — the idea is worth specifying. Requires problem validity `adequate`+, **evidence strength `adequate`+ (never `weak` or `unknown`)**, and a recommended concept option. If evidence is `weak`/`unknown`, the verdict is `needs-clarification`, not `go`.
    - **needs-clarification** — promising but blocked on specific unknowns. List exactly what must be answered and which stage to revisit.
    - **kill** — not worth building now. State the decisive reason plainly (weak problem, better alternative exists, cost > value, out of scope, superseded).
 3. **Record the rationale** so the decision is auditable months later. Any `unknown` score must be acknowledged, not glossed.
@@ -58,7 +58,7 @@ Write `ASSESS_DIR/decision.md`:
 | Value vs. inaction | … | … |
 | Feasibility / appetite | … | … |
 | Strategic fit | … | … |
-| Risk | … | … |
+| Risk posture | … | … |
 
 ## Verdict & Rationale
 

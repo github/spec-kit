@@ -16,10 +16,12 @@ $ARGUMENTS
 
 The input carries the slug and (optionally) research direction or links. Resolve the slug:
 
-1. **Explicit slug** (`slug=…`, `--slug …`, or an obvious token) — use it verbatim after normalization.
+1. **Explicit slug** (`slug=…`, `--slug …`, or an obvious token) — normalize it (see **Slug safety** below).
 2. **Conversation context** — if this session just ran `__SPECKIT_COMMAND_ASSESS_INTAKE__`, reuse the slug it reported. Confirm by checking that `.specify/assessments/<slug>/intake.md` exists; if not, fall through.
 3. **Interactive** — ask the user for the slug and wait.
 4. **Automated** — if exactly one assessment directory exists, use it; otherwise stop and ask.
+
+**Slug safety**: normalize any explicit or user-supplied slug to the slug alphabet — lowercase; whitespace/underscores → `-`; keep only `[a-z0-9-]` (drop every other character, including `.`, `/`, `\`); collapse and trim `-`. **Reject** a slug whose normalized form is empty. Only then set `ASSESS_SLUG` (the normalized value) and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>` — this keeps every read and write inside `.specify/assessments/`.
 
 Set `ASSESS_SLUG` and `ASSESS_DIR = .specify/assessments/<ASSESS_SLUG>`.
 

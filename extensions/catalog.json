@@ -21,7 +21,7 @@
       "name": "Idea Assessment Pipeline",
       "id": "assess",
       "version": "1.0.0",
-      "description": "Assess an idea before Spec-Driven Development via intake, research, define, shape, and decide, then hand a build/kill call to /speckit.specify. Assessments live under .specify/assessments/<slug>/",
+      "description": "Assess an idea before Spec-Driven Development via intake, research, define, shape, and decide. A go verdict hands off to /speckit.specify; a kill closes it. Lives under .specify/assessments/<slug>/",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
       "bundled": true,
