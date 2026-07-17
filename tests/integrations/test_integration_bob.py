@@ -85,32 +85,63 @@ class TestBobIsSkillsModeHook:
         assert bob.is_skills_mode({"legacy_commands": True}) is False
 
     def test_existing_commands_layout_preserved_on_use(self, tmp_path):
-        """Regression (review #3415): an existing Bob 1.x project (only
-        ``.bob/commands/`` on disk, no stored ``legacy_commands``) must NOT be
-        treated as skills mode when re-resolved with a project_root, so
-        ``use``/``switch``/``upgrade`` never silently migrate it to skills.
+        """Regression (review #3415): an existing Bob 1.x project (managed
+        ``.bob/commands/speckit.*.md`` on disk, no stored ``legacy_commands``)
+        must NOT be treated as skills mode when re-resolved with a
+        project_root, so ``use``/``switch``/``upgrade`` never silently migrate
+        it to skills.
         """
         bob = get_integration("bob")
-        (tmp_path / ".bob" / "commands").mkdir(parents=True)
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.plan.md").write_text("# plan", encoding="utf-8")
         # No parsed options at all — the pre-existing-install scenario.
         assert bob.is_skills_mode(None, project_root=tmp_path) is False
         assert bob.is_skills_mode({}, project_root=tmp_path) is False
 
     def test_existing_skills_layout_stays_skills_on_use(self, tmp_path):
-        """A ``.bob/skills/`` project resolves to skills mode."""
+        """A project with managed ``speckit-*`` skills resolves to skills mode."""
         bob = get_integration("bob")
-        (tmp_path / ".bob" / "skills").mkdir(parents=True)
+        (tmp_path / ".bob" / "skills" / "speckit-plan").mkdir(parents=True)
+        assert bob.is_skills_mode(None, project_root=tmp_path) is True
+
+    def test_managed_commands_with_unrelated_skills_dir_stays_legacy(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4723246468): a legacy Spec Kit install
+        (managed ``.bob/commands/speckit.*.md``) that *also* carries unrelated
+        Bob 2 skills (a ``.bob/skills/`` dir with no managed ``speckit-*``
+        skills) must stay in command mode — the mere presence of a skills
+        directory is not evidence that Spec Kit is skills-based.
+        """
+        bob = get_integration("bob")
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.plan.md").write_text("# plan", encoding="utf-8")
+        # An unrelated (non-Spec-Kit) skill the user authored.
+        (tmp_path / ".bob" / "skills" / "my-own-skill").mkdir(parents=True)
+        assert bob.is_skills_mode(None, project_root=tmp_path) is False
+        assert bob.effective_invoke_separator(None, project_root=tmp_path) == "."
+
+    def test_managed_skills_win_when_both_layouts_present(self, tmp_path):
+        """When managed Spec Kit skills exist, skills mode wins even if a stale
+        managed command file is still on disk (upgrade leftover)."""
+        bob = get_integration("bob")
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.plan.md").write_text("# plan", encoding="utf-8")
+        (tmp_path / ".bob" / "skills" / "speckit-plan").mkdir(parents=True)
         assert bob.is_skills_mode(None, project_root=tmp_path) is True
 
     def test_fresh_project_defaults_to_skills_with_project_root(self, tmp_path):
-        """A project with no ``.bob/`` layout yet still defaults to skills."""
+        """A project with no managed ``.bob/`` artifacts yet defaults to skills."""
         bob = get_integration("bob")
         assert bob.is_skills_mode(None, project_root=tmp_path) is True
 
     def test_explicit_legacy_flag_wins_over_disk_layout(self, tmp_path):
         """An explicit ``--legacy-commands`` overrides on-disk detection."""
         bob = get_integration("bob")
-        (tmp_path / ".bob" / "skills").mkdir(parents=True)
+        (tmp_path / ".bob" / "skills" / "speckit-plan").mkdir(parents=True)
         assert (
             bob.is_skills_mode({"legacy_commands": True}, project_root=tmp_path)
             is False
@@ -519,7 +550,9 @@ class TestBobUseFlowPreservesLegacyLayout:
         from specify_cli import load_init_options
 
         # Existing Bob 1.x project: legacy commands dir on disk, no ai_skills.
-        (tmp_path / ".bob" / "commands").mkdir(parents=True)
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.plan.md").write_text("# plan", encoding="utf-8")
         bob = get_integration("bob")
 
         # Simulate the use/switch path: no parsed options were stored.
@@ -538,7 +571,7 @@ class TestBobUseFlowPreservesLegacyLayout:
         )
         from specify_cli import load_init_options
 
-        (tmp_path / ".bob" / "skills").mkdir(parents=True)
+        (tmp_path / ".bob" / "skills" / "speckit-plan").mkdir(parents=True)
         bob = get_integration("bob")
 
         _update_init_options_for_integration(tmp_path, bob, parsed_options=None)
@@ -556,7 +589,9 @@ class TestBobUseFlowPreservesLegacyLayout:
         """
         from specify_cli.integration_runtime import with_integration_setting
 
-        (tmp_path / ".bob" / "commands").mkdir(parents=True)
+        cmds = tmp_path / ".bob" / "commands"
+        cmds.mkdir(parents=True)
+        (cmds / "speckit.plan.md").write_text("# plan", encoding="utf-8")
         bob = get_integration("bob")
 
         # Simulate the use/switch path: no parsed options stored.
@@ -694,3 +729,36 @@ class TestBobCommandRefScopedToActiveAgent:
         content = written[0].read_text(encoding="utf-8")
         assert "/speckit-plan" in content
         assert "/speckit.plan" not in content
+
+    def test_inactive_bob_command_output_uses_dot_even_with_skills_dir(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4723246468): for an inactive Bob install
+        the registrar's separator must match the layout it is actually writing
+        (``.bob/commands/*.md`` — command layout), not on-disk sibling dirs.
+        Even when a ``.bob/skills/`` directory (with managed ``speckit-*``
+        skills) coexists, command-layout files must keep ``/speckit.<cmd>``.
+        """
+        from specify_cli._init_options import save_init_options
+        from specify_cli.agents import CommandRegistrar
+
+        # Both layouts on disk; the active agent is something else entirely.
+        (tmp_path / ".bob" / "commands").mkdir(parents=True)
+        (tmp_path / ".bob" / "skills" / "speckit-plan").mkdir(parents=True)
+        save_init_options(tmp_path, {"ai": "claude", "ai_skills": True})
+
+        source_dir = tmp_path / "ext-src"
+        commands = self._write_command_ref_ext(source_dir)
+
+        registrar = CommandRegistrar()
+        registrar.register_commands("bob", commands, "ext", source_dir, tmp_path)
+
+        written = list((tmp_path / ".bob" / "commands").glob("*.md"))
+        assert written, "expected a rendered Bob command file"
+        content = written[0].read_text(encoding="utf-8")
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert "/speckit.plan" in content, (
+            "Bob command-layout output must use the dot separator regardless "
+            "of a coexisting .bob/skills directory"
+        )
+        assert "/speckit-plan" not in content

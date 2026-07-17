@@ -155,18 +155,25 @@ class BobIntegration(IntegrationBase):
         *parsed_options* is typically empty (existing Bob 1.x installs never
         stored ``legacy_commands``).  Defaulting to skills there would rewrite
         such a project's ``ai_skills`` flag to ``True`` even though it still
-        only contains ``.bob/commands/`` — silently switching its extension /
-        command-reference handling to the skills layout.  So when a
-        *project_root* is supplied, an already-installed legacy layout
-        (``.bob/commands/`` present, ``.bob/skills/`` absent) is preserved
-        until an explicit upgrade actually creates ``.bob/skills/``.  A fresh
-        project (no ``.bob/`` layout yet) still defaults to skills.
+        only contains a command layout — silently switching its extension /
+        command-reference handling to the skills layout.
+
+        So when a *project_root* is supplied, the Spec Kit layout is inferred
+        from **managed Spec Kit artifacts**, not from the mere presence of a
+        ``.bob/skills/`` directory: a user may keep unrelated Bob 2 skills in
+        ``.bob/skills/`` while their Spec Kit commands still live in
+        ``.bob/commands/speckit.*.md``.  We therefore treat the project as
+        legacy (command) mode only when managed Spec Kit command files exist
+        and no managed Spec Kit skills (``speckit-*`` skill dirs) do.  A fresh
+        project (no managed artifacts yet) still defaults to skills.
         """
         if (parsed_options or {}).get("legacy_commands", False):
             return False
         if project_root is not None:
             bob_dir = Path(project_root) / ".bob"
-            if (bob_dir / "commands").is_dir() and not (bob_dir / "skills").is_dir():
+            has_managed_skills = any((bob_dir / "skills").glob("speckit-*"))
+            has_managed_commands = any((bob_dir / "commands").glob("speckit.*.md"))
+            if has_managed_commands and not has_managed_skills:
                 return False
         return True
 

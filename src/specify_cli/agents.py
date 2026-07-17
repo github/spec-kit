@@ -662,7 +662,21 @@ class CommandRegistrar:
                         is_ai_skills_enabled(_opts)
                     )
                 else:
-                    _sep = _integ.effective_invoke_separator(None, project_root)
+                    # Inactive agent: the reference separator must match the
+                    # layout THIS registrar writes into — determined by the
+                    # agent's static output config (its command dir + file
+                    # extension), not by unrelated sibling directories on disk.
+                    # A skill-scaffold output ("/SKILL.md") uses the skills
+                    # separator; a command-layout output uses the command
+                    # separator. This avoids mislabeling a Bob command-layout
+                    # write as skills just because an unrelated .bob/skills
+                    # directory happens to exist.
+                    registrar_writes_skills = (
+                        agent_config.get("extension") == "/SKILL.md"
+                    )
+                    _sep = _integ.invoke_separator_for_mode(
+                        registrar_writes_skills
+                    )
         except Exception:
             pass
 
