@@ -1672,6 +1672,93 @@ class TestExtensionManager:
         assert (staging_dir / "test-ext-config.yml").read_bytes() == staged_bytes
         assert not manager.registry.is_installed("test-ext")
 
+    @pytest.mark.parametrize(
+        "failure_mode",
+        [
+            pytest.param("mkdir", id="mkdir"),
+            pytest.param("os_open", id="os_open"),
+            pytest.param("fsync", id="fsync"),
+        ],
+    )
+    def test_staging_failure_aborts_before_dest_dir_removal(
+        self, extension_dir, project_dir, monkeypatch, failure_mode
+    ):
+        """Staging failures abort the install before dest_dir is removed.
+
+        When mkdir, os.open, or fsync fails while publishing rescue staging,
+        the install must abort before removing dest_dir so the preserved
+        config bytes remain authoritative, any partial staging is cleaned up
+        rather than trusted on retry, and the extension stays unregistered.
+        """
+        import errno as _errno
+
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        original_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+        assert not staging_dir.exists()
+
+        if failure_mode == "mkdir":
+            original_mkdir = Path.mkdir
+
+            def failing_mkdir(self_path, *args, **kwargs):
+                if self_path == staging_dir:
+                    raise OSError("staging mkdir failed")
+                return original_mkdir(self_path, *args, **kwargs)
+
+            monkeypatch.setattr(Path, "mkdir", failing_mkdir)
+
+        elif failure_mode == "os_open":
+            original_os_open = _ext_module.os.open
+
+            def failing_os_open(path, flags, mode=0o777, *args, **kwargs):
+                # Fail only for file creation (O_CREAT) inside the staging
+                # directory so other os.open calls (e.g. directory fsync) are
+                # unaffected.
+                if str(staging_dir) in str(path) and (flags & os.O_CREAT):
+                    raise OSError(_errno.ENOSPC, "No space left on device")
+                return original_os_open(path, flags, mode, *args, **kwargs)
+
+            monkeypatch.setattr(_ext_module.os, "open", failing_os_open)
+
+        else:  # "fsync"
+            def failing_fsync_fd(fd: int) -> None:
+                # Simulate a real storage error (EIO) that the helper propagates.
+                raise OSError(_errno.EIO, "Input/output error")
+
+            monkeypatch.setattr(_ext_module, "_fsync_fd", failing_fsync_fd)
+
+        with pytest.raises(OSError):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        # dest_dir must still exist — the install aborted before rmtree.
+        assert ext_dir.exists(), "dest_dir must survive a staging failure"
+        assert config_file.read_bytes() == original_bytes, (
+            "preserved config must remain authoritative"
+        )
+        # Partial staging must have been cleaned up and not left as complete.
+        assert not staging_dir.exists() or not (
+            staging_dir / ".rescue-complete"
+        ).exists(), "incomplete staging must not be trusted"
+        assert not manager.registry.is_installed("test-ext")
+
     def test_rescue_staging_dir_is_fixed_length_for_long_ids(self, project_dir):
         """The rescue staging component length must not grow with the ID length.
 
