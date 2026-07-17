@@ -1,4 +1,4 @@
-"""Tests for ProjectOverlaySource file-read error handling."""
+"""Tests for ProjectOverlaySource and BaseWorkflowSource."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from specify_cli.workflows.overlays.layer_sources import (
+    BaseWorkflowSource,
     OverlayLoadError,
     ProjectOverlaySource,
 )
@@ -58,3 +59,49 @@ class TestProjectOverlaySourceFileReadErrors:
         with pytest.raises(OverlayLoadError) as exc_info:
             source.collect("wf")
         assert exc_info.value.errors, "OverlayLoadError must carry a non-empty errors list"
+
+
+_UNSAFE_IDS = [
+    "../outside",
+    "../../escape",
+    "nested/workflow",
+    "wf\n",
+    "overlays",
+    "runs",
+    "steps",
+    "",
+    "/absolute",
+    "UPPER",
+    "has space",
+]
+
+
+class TestProjectOverlaySourceIdValidation:
+    """ProjectOverlaySource.collect() must reject unsafe IDs before path construction."""
+
+    @pytest.mark.parametrize("workflow_id", _UNSAFE_IDS)
+    def test_rejects_unsafe_id(self, project_dir: Path, workflow_id: str) -> None:
+        source = ProjectOverlaySource(project_dir)
+        with pytest.raises(OverlayLoadError, match="Invalid workflow ID"):
+            source.collect(workflow_id)
+
+    @pytest.mark.parametrize("workflow_id", _UNSAFE_IDS)
+    def test_does_not_access_filesystem_for_unsafe_id(
+        self, project_dir: Path, workflow_id: str
+    ) -> None:
+        """No directory walk or file read should happen for an invalid ID."""
+        source = ProjectOverlaySource(project_dir)
+        with patch.object(Path, "iterdir", side_effect=AssertionError("iterdir called")):
+            with pytest.raises(OverlayLoadError, match="Invalid workflow ID"):
+                source.collect(workflow_id)
+
+
+class TestBaseWorkflowSourceIdValidation:
+    """BaseWorkflowSource.collect() must reject unsafe IDs before path construction."""
+
+    @pytest.mark.parametrize("workflow_id", _UNSAFE_IDS)
+    def test_rejects_unsafe_id(self, project_dir: Path, workflow_id: str) -> None:
+        source = BaseWorkflowSource(project_dir)
+        with pytest.raises(OverlayLoadError, match="Invalid workflow ID"):
+            source.collect(workflow_id)
+

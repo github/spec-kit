@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from .schema import Overlay, validate_overlay_yaml
+from .schema import Overlay, _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
 
 
 @dataclass
@@ -28,6 +28,23 @@ class OverlayLoadError(ValueError):
         self.path = path
         self.errors = errors
         super().__init__(f"Invalid overlay {path}:\n  - " + "\n  - ".join(errors))
+
+
+def _validate_workflow_id(workflow_id: str, context_path: Path) -> None:
+    """Raise OverlayLoadError if workflow_id is not a safe path-segment identifier.
+
+    Mirrors the same check performed by WorkflowResolver so layer sources are
+    safe to call directly, without going through the resolver.
+    """
+    if (
+        not isinstance(workflow_id, str)
+        or not _SAFE_ID_PATTERN.fullmatch(workflow_id)
+        or workflow_id in _RESERVED_WORKFLOW_IDS
+    ):
+        raise OverlayLoadError(
+            context_path,
+            [f"Invalid workflow ID: {workflow_id!r}"],
+        )
 
 
 def _resolve_project_overlay_root(project_root: Path) -> Path:
@@ -77,6 +94,7 @@ class ProjectOverlaySource:
     def collect(self, workflow_id: str) -> list[Layer]:
         """Collect all project-local overlays for the given workflow id."""
         self.overlays_dir = _resolve_project_overlay_root(self.project_root)
+        _validate_workflow_id(workflow_id, self.overlays_dir)
         workflow_overlay_dir = self.overlays_dir / workflow_id
         if workflow_overlay_dir.is_symlink():
             raise OverlayLoadError(
@@ -138,6 +156,7 @@ class BaseWorkflowSource:
 
     def collect(self, workflow_id: str) -> list[Layer]:
         """Return the base workflow as a single layer if it exists."""
+        _validate_workflow_id(workflow_id, self.workflows_dir)
         path = self.workflows_dir / workflow_id / "workflow.yml"
         if not path.is_file():
             return []
