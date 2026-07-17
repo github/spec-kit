@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-16T00:00:00Z",
+  "updated_at": "2026-07-17T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -2679,6 +2679,40 @@
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
       "updated_at": "2026-06-01T00:00:00Z"
+    },
+    "okf": {
+      "name": "OKF Knowledge Bundle Generator",
+      "id": "okf",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository.",
+      "author": "Alex Punnen",
+      "version": "0.2.0",
+      "download_url": "https://github.com/alexcpn/speckit_ofk/archive/refs/tags/v0.2.0.zip",
+      "repository": "https://github.com/alexcpn/speckit_ofk",
+      "homepage": "https://github.com/alexcpn/speckit_ofk",
+      "documentation": "https://github.com/alexcpn/speckit_ofk/blob/main/README.md",
+      "changelog": "https://github.com/alexcpn/speckit_ofk/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0"
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "knowledge",
+        "okf",
+        "documentation",
+        "metadata",
+        "catalog"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-17T00:00:00Z",
+      "updated_at": "2026-07-17T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
