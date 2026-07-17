@@ -10,6 +10,7 @@ from tests.conftest import requires_bash
 from tests.parity_helpers import (
     HAS_POWERSHELL,
     bash_cmd,
+    clean_env,
     install_scripts,
     json_stdout,
     make_repo,
@@ -130,22 +131,28 @@ def test_python_broken_registry_falls_back_to_dir_scan_matches_bash(
 
 @requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
-@pytest.mark.parametrize("context", ["missing", "invalid_json", "invalid_utf8"])
+@pytest.mark.parametrize(
+    "context", ["missing", "invalid_json", "invalid_utf8", "invalid_init_dir"]
+)
 def test_all_variants_feature_context_error_matches(
     tmp_path: Path, context: str
 ) -> None:
     repo = make_repo(tmp_path)
     install_scripts(repo, SCRIPT)
+    env = None
     if context == "invalid_json":
         (repo / ".specify" / "feature.json").write_text(
             "{not json", encoding="utf-8"
         )
     elif context == "invalid_utf8":
         (repo / ".specify" / "feature.json").write_bytes(b"\xff")
+    elif context == "invalid_init_dir":
+        env = clean_env()
+        env["SPECIFY_INIT_DIR"] = str(tmp_path / "missing")
 
-    bash = run(bash_cmd(repo, SCRIPT, "--json"), repo)
-    ps = run(ps_cmd(repo, SCRIPT, "-Json"), repo)
-    py = run(py_cmd(repo, SCRIPT, "--json"), repo)
+    bash = run(bash_cmd(repo, SCRIPT, "--json"), repo, env)
+    ps = run(ps_cmd(repo, SCRIPT, "-Json"), repo, env)
+    py = run(py_cmd(repo, SCRIPT, "--json"), repo, env)
 
     assert bash.returncode == ps.returncode == py.returncode == 1
     assert bash.stdout == ps.stdout == py.stdout == ""
