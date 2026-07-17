@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
+import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -87,17 +89,63 @@ def loads_json(text: str, *, origin: str = "<string>") -> Any:
 
 
 def dump_json(path: Path, data: Any, *, within: Path | None = None) -> Path:
-    """Write *data* as pretty JSON to *path* (optionally confined to *within*)."""
+    """Atomically write pretty JSON to *path* (optionally confined to *within*)."""
     path = Path(path)
     if within is not None:
         path = ensure_within(within, path)
+    fd = -1
+    temp_path: Path | None = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as handle:
+        fd, temp_name = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        )
+        temp_path = Path(temp_name)
+        with os.fdopen(os.dup(fd), "w", encoding="utf-8") as handle:
             json.dump(data, handle, indent=2, sort_keys=False)
             handle.write("\n")
+
+        try:
+            if path.exists():
+                existing = path.stat(follow_symlinks=False)
+                if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchmod"):
+                    os.fchmod(fd, stat.S_IMODE(existing.st_mode))
+                if stat.S_ISREG(existing.st_mode) and hasattr(os, "fchown"):
+                    try:
+                        os.fchown(fd, existing.st_uid, existing.st_gid)
+                    except PermissionError:
+                        pass
+        except OSError:
+            pass
+
+        staged = os.stat(temp_path, follow_symlinks=False)
+        opened = os.fstat(fd)
+        if (
+            not stat.S_ISREG(staged.st_mode)
+            or staged.st_dev != opened.st_dev
+            or staged.st_ino != opened.st_ino
+        ):
+            raise OSError("staged JSON file changed before commit")
+
+        os.close(fd)
+        fd = -1
+        os.replace(temp_path, path)
+        temp_path = None
     except OSError as exc:
         raise BundlerError(f"Could not write {path}: {exc}") from exc
+    finally:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
     return path
 
 

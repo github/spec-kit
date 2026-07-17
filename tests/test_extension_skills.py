@@ -911,6 +911,172 @@ class TestExtensionSkillRegistration:
         assert ".specify/scripts/bash/resolve-skill.sh" not in content
         assert ".specify/scripts/bash/ensure-skills.sh" not in content
 
+    def test_skill_registration_rewrites_extension_subdir_paths(self, project_dir, temp_dir):
+        """Auto-registered skills should resolve extension-relative subdir
+        references (agents/, knowledge-base/) to their installed location,
+        matching the rewrite already applied by register_commands() (#2101)."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="claude")
+
+        ext_dir = temp_dir / "path-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "path-ext",
+                "name": "Path Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.path-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "agents" / "control").mkdir(parents=True)
+        (ext_dir / "agents" / "control" / "commander.md").write_text("# Commander\n")
+        (ext_dir / "knowledge-base").mkdir()
+        (ext_dir / "knowledge-base" / "agent-scores.yaml").write_text("scores: {}\n")
+        (ext_dir / "templates").mkdir()
+        (ext_dir / "templates" / "kill-report.md").write_text("# Kill Report\n")
+
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Read agents/control/commander.md and knowledge-base/agent-scores.yaml.\n"
+            "Use templates/kill-report.md as the report template.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-path-ext-run" / "SKILL.md").read_text()
+        assert ".specify/extensions/path-ext/agents/control/commander.md" in content
+        assert ".specify/extensions/path-ext/knowledge-base/agent-scores.yaml" in content
+        # extension's own templates/ dir must resolve under the extension,
+        # not the project-level .specify/templates/
+        assert ".specify/extensions/path-ext/templates/kill-report.md" in content
+        assert "Read agents/control" not in content
+        assert "and knowledge-base/" not in content
+
+    @pytest.mark.parametrize(
+        ("ai", "expected_invocation"),
+        [
+            ("claude", "/speckit-plan"),
+            ("copilot", "/speckit-plan"),
+            ("codex", "$speckit-plan"),
+            ("kimi", "/skill:speckit-plan"),
+            ("zcode", "$speckit-plan"),
+        ],
+    )
+    def test_skill_registration_resolves_command_ref_tokens(
+        self, project_dir, temp_dir, ai, expected_invocation
+    ):
+        """Auto-registered skills should resolve explicit command ref tokens."""
+        _create_init_options(project_dir, ai=ai, ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai=ai)
+
+        ext_dir = temp_dir / "command-ref-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "command-ref-ext",
+                "name": "Command Ref Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.command-ref-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Use __SPECKIT_COMMAND_PLAN__ before proceeding.\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-command-ref-ext-run" / "SKILL.md").read_text()
+        assert "__SPECKIT_COMMAND_PLAN__" not in content
+        assert expected_invocation in content
+
+    def test_skill_registration_does_not_rewrite_literal_speckit_text(
+        self, project_dir, temp_dir
+    ):
+        """Auto-registered skills should leave literal speckit text untouched."""
+        _create_init_options(project_dir, ai="codex", ai_skills=True)
+        skills_dir = _create_skills_dir(project_dir, ai="codex")
+
+        ext_dir = temp_dir / "literal-ref-ext"
+        ext_dir.mkdir()
+        manifest_data = {
+            "schema_version": "1.0",
+            "extension": {
+                "id": "literal-ref-ext",
+                "name": "Literal Ref Extension",
+                "version": "1.0.0",
+                "description": "Test",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "commands": [
+                    {
+                        "name": "speckit.literal-ref-ext.run",
+                        "file": "commands/run.md",
+                        "description": "Run command",
+                    }
+                ]
+            },
+        }
+        with open(ext_dir / "extension.yml", "w") as f:
+            yaml.safe_dump(manifest_data, f)
+
+        (ext_dir / "commands").mkdir()
+        (ext_dir / "commands" / "run.md").write_text(
+            "---\n"
+            "description: Run command\n"
+            "---\n\n"
+            "Literal slash form: /speckit.foo.bar\n"
+            "Literal skill form: /speckit-plan\n"
+            "Literal bare form: speckit.foo.bar\n"
+        )
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(ext_dir, "0.1.0", register_commands=False)
+
+        content = (skills_dir / "speckit-literal-ref-ext-run" / "SKILL.md").read_text()
+        assert "/speckit.foo.bar" in content
+        assert "/speckit-plan" in content
+        assert "speckit.foo.bar" in content
+        assert "/speckit-foo-bar" not in content
+        assert "$speckit-plan" not in content
+
     def test_missing_command_file_skipped(self, skills_project, temp_dir):
         """Commands with missing source files should be skipped gracefully."""
         project_dir, skills_dir = skills_project

@@ -1122,6 +1122,17 @@ class TomlIntegration(IntegrationBase):
 # YamlIntegration — YAML-format agents (Goose)
 # ---------------------------------------------------------------------------
 
+# Characters a YAML literal block scalar cannot carry: C0 controls other
+# than tab/LF (a bare CR acts as a line break inside the scalar), DEL, the
+# C1 range, lone UTF-16 surrogates, and the non-characters U+FFFE/U+FFFF.
+# NEL (U+0085) is YAML-printable but, like LS/PS (U+2028/U+2029), YAML 1.1
+# treats it as a line break, which corrupts the block scalar's structure
+# just the same, so all three are included.
+_YAML_BLOCK_SCALAR_UNSAFE = re.compile(
+    r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\ud800-\udfff\ufffe\uffff]"
+)
+
+
 class YamlIntegration(IntegrationBase):
     """Concrete base for integrations that use YAML recipe format.
 
@@ -1227,9 +1238,9 @@ class YamlIntegration(IntegrationBase):
     def _render_yaml(cls, title: str, description: str, body: str, source_id: str) -> str:
         """Render a YAML recipe file from title, description, and body.
 
-        Produces a Goose-compatible recipe with a literal block scalar
-        for the prompt content.  Uses ``yaml.safe_dump()`` for the
-        header fields to ensure proper escaping.
+        Produces a Goose-compatible recipe with a literal block scalar for
+        normal prompt content, or an escaped quoted scalar when control
+        characters require it. Uses ``yaml.safe_dump()`` for the header fields.
         """
         header = cls._build_yaml_header(title, description)
 
@@ -1239,6 +1250,23 @@ class YamlIntegration(IntegrationBase):
             allow_unicode=True,
             default_flow_style=False,
         ).strip()
+
+        # YAML forbids C0 control characters (except tab and newline) and
+        # DEL in every scalar form, and a bare CR acts as a line break
+        # inside a block scalar. A literal block scalar emits such bytes
+        # verbatim, producing a recipe the YAML parser rejects, so fall
+        # back to an escaped double-quoted scalar for those bodies.
+        if _YAML_BLOCK_SCALAR_UNSAFE.search(body):
+            prompt_yaml = yaml.safe_dump(
+                {"prompt": body}, allow_unicode=True, default_style='"', width=sys.maxsize
+            ).strip()
+            lines = [
+                header_yaml,
+                prompt_yaml,
+                "",
+                f"# Source: {source_id}",
+            ]
+            return "\n".join(lines) + "\n"
 
         # Indent the body for YAML block scalar. Use an explicit indentation
         # indicator ("|2") rather than a bare "|": YAML infers a plain block

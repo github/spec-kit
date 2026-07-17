@@ -201,6 +201,36 @@ class YamlIntegrationTests:
         parsed = yaml.safe_load("\n".join(yaml_lines))
         assert parsed["prompt"].rstrip("\n") == body
 
+    def test_yaml_prompt_with_control_characters_stays_valid(self):
+        """A body containing control characters must still produce parseable YAML.
+
+        YAML forbids C0 control characters (except tab and newline), DEL,
+        C1 controls, lone surrogates and U+FFFE/U+FFFF in every scalar form,
+        and YAML 1.1 treats NEL (U+0085), LS (U+2028) and PS (U+2029) as
+        line breaks that corrupt a literal block scalar's structure. The
+        renderer falls back to an escaped double-quoted scalar for such
+        bodies."""
+        for ch in (
+            "\x08", "\x0c", "\x1b", "\x7f",
+            "\x80", "\x84", "\x85", "\x86", "\x9f",
+            "\u2028", "\u2029",
+            "\ud800", "\udfff", "\ufffe", "\uffff",
+        ):
+            body = f"before{ch}after\nsecond line"
+            rendered = YamlIntegration._render_yaml("Title", "Desc", body, "src")
+            parsed = yaml.safe_load(rendered)
+            assert parsed["prompt"].rstrip("\n") == body, f"char {ch!r} round-trip"
+
+    def test_yaml_prompt_with_bare_carriage_return_stays_valid(self):
+        """A bare CR (not part of CRLF) must not break the generated YAML.
+
+        Inside a block scalar a lone \r acts as a line break, corrupting
+        the document structure."""
+        body = "line1\rstill line1\nline2"
+        rendered = YamlIntegration._render_yaml("Title", "Desc", body, "src")
+        parsed = yaml.safe_load(rendered)
+        assert parsed["prompt"].rstrip("\n") == body
+
     def test_plan_command_has_no_context_placeholder(self, tmp_path):
         """The generated plan command must not carry a context-file placeholder.
 
@@ -401,6 +431,7 @@ class YamlIntegrationTests:
         ]:
             files.append(f".specify/templates/{name}")
 
+        files.append(".specify/memory/.constitution-template.json")
         files.append(".specify/memory/constitution.md")
         # Bundled workflow
         files.append(".specify/workflows/speckit/workflow.yml")

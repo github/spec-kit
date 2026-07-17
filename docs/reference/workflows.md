@@ -86,6 +86,11 @@ Lists workflows installed in the current project.
 specify workflow add <source>
 ```
 
+| Option          | Description                                            |
+| --------------- | ------------------------------------------------------ |
+| `--dev`         | Install from a local workflow YAML file or directory   |
+| `--from <url>`  | Install from a custom URL (`<source>` names the expected workflow ID) |
+
 Installs a workflow from the catalog, a URL (HTTPS required), a local YAML file, or a local directory containing `workflow.yml`.
 
 ## Workflow Overlays
@@ -272,6 +277,22 @@ When an installed workflow is refreshed or reinstalled, project overlays in `.sp
 - An overlay that targets a step id that does not exist in the base workflow will raise a validation error when the workflow is resolved.
 - Overlays cannot target steps added by other overlays.
 - Overlays cannot add new inputs or change the input schema of the base workflow.
+## Update Workflows
+
+```bash
+specify workflow update [workflow_id]
+```
+
+Updates one installed catalog workflow — or all of them when no ID is given — to the latest catalog version. Prompts for confirmation and keeps the installed copy if a download or validation fails.
+
+## Enable or Disable a Workflow
+
+```bash
+specify workflow enable <workflow_id>
+specify workflow disable <workflow_id>
+```
+
+Disabled workflows stay installed and listed (marked `[disabled]`) but refuse to run until re-enabled.
 
 ## Remove a Workflow
 
@@ -287,9 +308,10 @@ Removes an installed workflow from the project.
 specify workflow search [query]
 ```
 
-| Option  | Description     |
-| ------- | --------------- |
-| `--tag` | Filter by tag   |
+| Option     | Description       |
+| ---------- | ----------------- |
+| `--tag`    | Filter by tag     |
+| `--author` | Filter by author  |
 
 Searches all active catalogs for workflows matching the query.
 
@@ -467,6 +489,8 @@ Steps can reference inputs and previous step outputs using `{{ expression }}` sy
 | `inputs.spec`                  | Workflow input values                |
 | `steps.specify.output.file`    | Output from a previous step          |
 | `item`                         | Current item in a fan-out iteration  |
+| `context.run_id`               | Current workflow run ID              |
+| `context.workflow_dir`         | Resolved absolute path to the workflow source directory. Empty string for string-loaded workflows. |
 
 Available filters: `default`, `join`, `contains`, `map`, `from_json`.
 
@@ -477,6 +501,14 @@ condition: "{{ steps.test.output.exit_code == 0 }}"
 args: "{{ inputs.spec }}"
 message: "{{ status | default('pending') }}"
 ```
+
+## Shell Step Environment Variables
+
+Shell steps automatically receive the following environment variables:
+
+| Variable | Description |
+| -------- | ----------- |
+| `SPECKIT_WORKFLOW_DIR` | Resolved absolute path to the workflow source directory (same value as `{{ context.workflow_dir }}`). Not set when the workflow has no source path. |
 
 ## Input Types
 

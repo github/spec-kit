@@ -24,6 +24,7 @@ GITHUB_HOSTS = frozenset({
     "api.github.com",
     "codeload.github.com",
 })
+_MAX_RELEASE_METADATA_BYTES = 5 * 1024 * 1024
 
 
 def build_github_request(url: str) -> urllib.request.Request:
@@ -68,6 +69,8 @@ def resolve_github_release_asset_api_url(
     open_url_fn: Callable,
     timeout: int = 60,
     github_hosts: tuple[str, ...] = (),
+    redirect_validator: Callable[[str, str], None] | None = None,
+    max_metadata_bytes: int = _MAX_RELEASE_METADATA_BYTES,
 ) -> Optional[str]:
     """Resolve a GitHub release browser-download URL to its REST API asset URL.
 
@@ -91,6 +94,8 @@ def resolve_github_release_asset_api_url(
             authenticated release-metadata lookup.
         timeout: Per-request timeout in seconds.
         github_hosts: Host patterns to treat as GitHub Enterprise Server.
+        redirect_validator: Optional policy applied to metadata redirects.
+        max_metadata_bytes: Maximum release-metadata response size.
     """
     import json
     import urllib.error
@@ -149,13 +154,33 @@ def resolve_github_release_asset_api_url(
     release_url = f"{api_base}/repos/{owner}/{repo}/releases/tags/{encoded_tag}"
 
     try:
-        with open_url_fn(release_url, timeout=timeout) as response:
-            release_data = json.loads(response.read())
-    except (urllib.error.URLError, json.JSONDecodeError):
+        open_kwargs = {"timeout": timeout}
+        if redirect_validator is not None:
+            open_kwargs["redirect_validator"] = redirect_validator
+        with open_url_fn(release_url, **open_kwargs) as response:
+            raw_release_data = response.read(max_metadata_bytes + 1)
+            if len(raw_release_data) > max_metadata_bytes:
+                raise ValueError("GitHub release metadata exceeds size limit")
+            release_data = json.loads(raw_release_data)
+    except (
+        urllib.error.URLError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ):
         return None
 
-    for asset in release_data.get("assets", []):
-        if asset.get("name") == asset_name and asset.get("url"):
+    if not isinstance(release_data, dict):
+        return None
+    assets = release_data.get("assets", [])
+    if not isinstance(assets, list):
+        return None
+    for asset in assets:
+        if (
+            isinstance(asset, dict)
+            and asset.get("name") == asset_name
+            and asset.get("url")
+        ):
             return str(asset["url"])
 
     return None
