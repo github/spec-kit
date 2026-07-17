@@ -209,9 +209,12 @@ class TestOverlayPathTraversal:
         assert "symlinked path" in result.output.lower()
         assert real_file.read_text(encoding="utf-8") == "sentinel\n"
 
-    def test_overlay_operations_reject_overlays_as_workflow_id(self, project_dir, monkeypatch):
+    @pytest.mark.parametrize("workflow_id", ["overlays", "runs", "steps"])
+    def test_overlay_operations_reject_reserved_workflow_id(
+        self, project_dir, monkeypatch, workflow_id
+    ):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
-        result = runner.invoke(app, ["workflow", "overlay", "list", "overlays"])
+        result = runner.invoke(app, ["workflow", "overlay", "list", workflow_id])
         assert result.exit_code != 0, result.output
         assert "Invalid" in result.output or "reserved" in result.output.lower()
 

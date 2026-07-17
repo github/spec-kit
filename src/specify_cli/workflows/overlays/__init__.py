@@ -12,6 +12,17 @@ from .layer_sources import (
     ProjectOverlaySource,
 )
 from .merge import ComposedStep
+from .schema import _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN
+
+
+def _validate_workflow_id(workflow_id: str) -> None:
+    """Reject workflow IDs that are unsafe as installed-storage path segments."""
+    if (
+        not isinstance(workflow_id, str)
+        or not _SAFE_ID_PATTERN.fullmatch(workflow_id)
+        or workflow_id in _RESERVED_WORKFLOW_IDS
+    ):
+        raise ValueError(f"Invalid workflow ID: {workflow_id!r}")
 
 
 class WorkflowResolver:
@@ -41,6 +52,8 @@ class WorkflowResolver:
         reverse source ordering here to show the winner at the top of the list.
         Two stable passes: source descending, then priority descending.
         """
+        _validate_workflow_id(workflow_id)
+
         all_layers: list[Layer] = []
         for source in self._sources:
             all_layers.extend(source.collect(workflow_id))

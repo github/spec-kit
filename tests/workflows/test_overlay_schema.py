@@ -205,6 +205,19 @@ class TestOverlayIdValidation:
         assert overlay is None
         assert any("extends" in e.lower() for e in errors), errors
 
+    @pytest.mark.parametrize("extends", ["overlays", "runs", "steps"])
+    def test_reserved_workflow_id_rejected(self, extends):
+        overlay, errors = validate_overlay_yaml(
+            {
+                "id": "ov",
+                "extends": extends,
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            }
+        )
+        assert overlay is None
+        assert any("reserved" in error.lower() for error in errors), errors
+
     def test_valid_dashed_id_accepted(self):
         overlay, errors = validate_overlay_yaml(
             {

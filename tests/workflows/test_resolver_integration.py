@@ -31,6 +31,46 @@ def _write_overlay(project_root: Path, workflow_id: str, overlay_id: str, data: 
 class TestWorkflowResolver:
     """End-to-end resolution of base workflows plus overlays."""
 
+    @pytest.mark.parametrize(
+        "workflow_id",
+        [
+            "../outside",
+            "nested/workflow",
+            "wf\n",
+            "overlays",
+            "runs",
+            "steps",
+        ],
+    )
+    def test_rejects_unsafe_id_before_collecting_sources(
+        self, project_dir, workflow_id
+    ):
+        resolver = WorkflowResolver(project_dir)
+
+        class UnexpectedSource:
+            def collect(self, _workflow_id):
+                pytest.fail("source collection must not run for an unsafe workflow ID")
+
+        resolver._sources = [UnexpectedSource()]
+
+        with pytest.raises(ValueError, match="Invalid workflow ID"):
+            resolver.resolve(workflow_id)
+
+    def test_rejects_absolute_id_before_collecting_sources(
+        self, project_dir, tmp_path
+    ):
+        resolver = WorkflowResolver(project_dir)
+        outside = tmp_path / "outside"
+
+        class UnexpectedSource:
+            def collect(self, _workflow_id):
+                pytest.fail("source collection must not run for an absolute workflow ID")
+
+        resolver._sources = [UnexpectedSource()]
+
+        with pytest.raises(ValueError, match="Invalid workflow ID"):
+            resolver.resolve(str(outside))
+
     def test_resolve_without_overlays(self, project_dir):
         data = {
             "schema_version": "1.0",
@@ -459,3 +499,35 @@ class TestWorkflowResolver:
         engine = WorkflowEngine(project_dir)
         definition = engine.load_workflow("wf")
         assert [s["id"] for s in definition.steps] == ["a", "new"]
+
+    def test_engine_rejects_traversal_without_legacy_path_fallback(
+        self, project_dir
+    ):
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        outside = project_dir / ".specify" / "outside"
+        outside.mkdir(parents=True)
+        (outside / "workflow.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "workflow": {
+                        "id": "outside",
+                        "name": "Outside",
+                        "version": "1.0.0",
+                    },
+                    "steps": [
+                        {
+                            "id": "external",
+                            "type": "command",
+                            "command": "echo",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="Invalid workflow ID"):
+            engine.load_workflow("../outside")

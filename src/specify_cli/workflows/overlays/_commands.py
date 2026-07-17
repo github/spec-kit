@@ -11,7 +11,7 @@ import yaml
 from ..._console import console, err_console
 from .._commands import _reject_unsafe_dir, _reject_unsafe_workflow_storage
 from . import WorkflowResolver
-from .schema import _RESERVED_OVERLAY_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
+from .schema import _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
 
 
 def _validate_overlay_id_or_exit(id_value: str, label: str) -> None:
@@ -30,7 +30,7 @@ def _validate_overlay_id_or_exit(id_value: str, label: str) -> None:
 def _validate_workflow_id_or_exit(workflow_id: str) -> None:
     """Validate a workflow id, treating the overlay root as reserved."""
     _validate_overlay_id_or_exit(workflow_id, "workflow ID")
-    if workflow_id in _RESERVED_OVERLAY_WORKFLOW_IDS:
+    if workflow_id in _RESERVED_WORKFLOW_IDS:
         err_console.print(
             f"[red]Error:[/red] Invalid workflow ID {workflow_id!r}: "
             "reserved name."

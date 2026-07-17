@@ -10,6 +10,7 @@ from typing import Any, Literal
 # Safe single-segment identifiers: no path separators, no traversal, no dots.
 _SAFE_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 _RESERVED_OVERLAY_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays"})
+_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"})
 
 VALID_OPERATIONS = frozenset({"insert_after", "insert_before", "replace", "remove"})
 
@@ -37,7 +38,12 @@ class Overlay:
     enabled: bool = True
 
 
-def _validate_safe_id(value: str, field_name: str, allow_reserved: bool = False) -> str | None:
+def _validate_safe_id(
+    value: str,
+    field_name: str,
+    allow_reserved: bool = False,
+    reserved_ids: frozenset[str] = _RESERVED_OVERLAY_WORKFLOW_IDS,
+) -> str | None:
     """Return an error message if *value* is not a safe path segment ID."""
     if not isinstance(value, str) or not value:
         return f"Overlay '{field_name}' is required and must be a non-empty string."
@@ -46,7 +52,7 @@ def _validate_safe_id(value: str, field_name: str, allow_reserved: bool = False)
             f"Overlay '{field_name}' {value!r} contains invalid characters; "
             "only lowercase letters, digits, and hyphens are allowed."
         )
-    if not allow_reserved and value in _RESERVED_OVERLAY_WORKFLOW_IDS:
+    if not allow_reserved and value in reserved_ids:
         return f"Overlay '{field_name}' {value!r} is reserved."
     return None
 
@@ -121,7 +127,11 @@ def validate_overlay_yaml(data: dict[str, Any]) -> tuple[Overlay | None, list[st
         overlay_id = ""
 
     extends = data.get("extends")
-    if err := _validate_safe_id(extends, "extends"):
+    if err := _validate_safe_id(
+        extends,
+        "extends",
+        reserved_ids=_RESERVED_WORKFLOW_IDS,
+    ):
         errors.append(err)
         extends = ""
 
