@@ -1,5 +1,5 @@
 ---
-description: "Apply a go / needs-clarification / kill gate and hand survivors off to /speckit.specify"
+description: "Apply a go / needs-clarification / kill gate and hand survivors off into Spec-Driven Development"
 ---
 
 # Decide: Go, Clarify, or Kill
@@ -71,7 +71,7 @@ Write `ASSESS_DIR/decision.md`:
 - **Blocking questions**: [NEEDS CLARIFICATION: …]
 - **Revisit stage**: intake | research | define | shape
 
-## If go — Handoff to /speckit.specify
+## If go — Handoff to `__SPECKIT_COMMAND_SPECIFY__`
 
 - **Problem**: <one-line problem statement>
 - **Chosen approach**: <recommended concept option>
