@@ -252,7 +252,7 @@ Use standard Markdown with special placeholders:
 
 - `$ARGUMENTS`: User-provided arguments
 - `{SCRIPT}`: Replaced with script path during registration
-- `__SPECKIT_COMMAND_<NAME>__`: Replaced with the invocation of another command, rendered in the active agent's syntax (see [Referencing other commands](#referencing-other-commands))
+- `__SPECKIT_COMMAND_<NAME>__`: Replaced with the invocation of another command, rendered using the active integration's separator (see [Referencing other commands](#referencing-other-commands))
 
 **Example**:
 
@@ -270,9 +270,9 @@ echo "Running with args: $args"
 
 ### Referencing other commands
 
-A command body is a *template* that Spec Kit renders once per agent. Different agents invoke commands with different surface syntax — slash-based agents use `/speckit.plan`, skills-based agents use `/speckit-plan`, and some (Codex, Zcode) use `$speckit-plan` in skills mode. So when you reference a sibling command from a body, **do not hard-code a literal invocation** like `/speckit.my-ext.prepare`. A literal is correct for exactly one agent and breaks on the rest.
+A command body is a *template* that Spec Kit renders once per agent. Different agents invoke commands with different surface syntax — for example `/speckit.plan` (dot separator) or `/speckit-plan` (hyphen separator). Some agents also use different prefixes in skills mode (e.g. Kimi `/skill:speckit-plan`, Codex/ZCode `$speckit-plan`). So when you reference a sibling command from a body, **do not hard-code a literal invocation** like `/speckit.my-ext.prepare`. A literal is correct for exactly one agent and breaks on the rest.
 
-Instead use the agent-neutral token `__SPECKIT_COMMAND_<NAME>__`. Spec Kit resolves it to the correct invocation for whichever agent the project is initialized with.
+Instead use the agent-neutral token `__SPECKIT_COMMAND_<NAME>__`. Spec Kit resolves it to a `/speckit<separator>...` invocation using the active integration's `invoke_separator` (and integrations may post-process that further in skills output).
 
 Encode the command name in upper case, dropping the `speckit.` prefix and turning each dotted segment separator into an underscore:
 
