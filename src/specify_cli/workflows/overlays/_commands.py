@@ -19,7 +19,7 @@ def _validate_overlay_id_or_exit(id_value: str, label: str) -> None:
     if not isinstance(id_value, str) or not id_value:
         err_console.print(f"[red]Error:[/red] {label} is required and must be a non-empty string.")
         raise typer.Exit(1)
-    if not _SAFE_ID_PATTERN.match(id_value):
+    if not _SAFE_ID_PATTERN.fullmatch(id_value):
         err_console.print(
             f"[red]Error:[/red] Invalid {label} {id_value!r}: "
             "only lowercase letters, digits, and hyphens are allowed."

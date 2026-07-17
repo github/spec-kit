@@ -216,6 +216,47 @@ class TestOverlayCli:
         )
         assert data["priority"] == 20
 
+    def test_overlay_set_priority_rejects_ids_with_trailing_newline(self, project_dir, monkeypatch):
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        _write_overlay(
+            project_dir,
+            "wf",
+            "ov1",
+            {
+                "id": "ov1",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [
+                    {
+                        "operation": "insert_after",
+                        "anchor": "a",
+                        "step": {"id": "new", "type": "command", "command": "echo"},
+                    }
+                ],
+            },
+        )
+
+        result = runner.invoke(
+            app, ["workflow", "overlay", "set-priority", "wf", "ov1\n", "20"]
+        )
+        assert result.exit_code == 1
+        assert "Invalid overlay ID" in result.output
+
+        result = runner.invoke(
+            app, ["workflow", "overlay", "set-priority", "wf\n", "ov1", "20"]
+        )
+        assert result.exit_code == 1
+        assert "Invalid workflow ID" in result.output
+
     def test_overlay_disable_and_enable(self, project_dir, monkeypatch):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         _write_workflow(
