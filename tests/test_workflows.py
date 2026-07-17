@@ -1336,11 +1336,36 @@ class TestPromptStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'prompt'" in e for e in errors)
 
+    @pytest.mark.parametrize("bad_prompt", [None, ["review", "this"], 42, {"a": 1}])
+    def test_validate_rejects_non_string_prompt(self, bad_prompt):
+        """A non-string 'prompt' must be rejected at validation.
+
+        execute() str()-coerces prompt and dispatches it to the integration
+        CLI, so a null or list prompt would otherwise send the Python repr to
+        the model as instructions — silently wrong. Mirrors the shell-step
+        'run' type check.
+        """
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate({"id": "p", "prompt": bad_prompt})
+        assert any("'prompt' must be a string" in e for e in errors)
+
     def test_validate_valid(self):
         from specify_cli.workflows.steps.prompt import PromptStep
 
         step = PromptStep()
         errors = step.validate({"id": "test", "prompt": "do something"})
+        assert errors == []
+
+    def test_validate_accepts_expression_prompt(self):
+        """A '{{ ... }}' expression prompt is a str, so it stays valid."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate(
+            {"id": "p", "prompt": "Review {{ inputs.file }}"}
+        )
         assert errors == []
 
 
