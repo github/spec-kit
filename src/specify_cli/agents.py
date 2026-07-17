@@ -742,9 +742,12 @@ class CommandRegistrar:
             # Resolve __SPECKIT_COMMAND_*__ tokens using the agent's invoke separator.
             # For dual-layout agents (e.g. Bob) the separator differs between the
             # skills and command layouts, so a single static AGENT_CONFIGS value is
-            # insufficient. Resolve it from the integration using the project's
-            # persisted skills state; single-layout agents fall back to the static
-            # AGENT_CONFIGS value unchanged (invoke_separator_for_mode default).
+            # insufficient. ``_sep`` (resolved above) is derived from the *output
+            # layout* this registrar writes — a "/SKILL.md" scaffold uses the skills
+            # separator, any command-layout file uses the command separator — not
+            # the project's persisted ai_skills state. Single-layout agents fall back
+            # to the static AGENT_CONFIGS value unchanged (invoke_separator_for_mode
+            # default).
             # Deferred import of IntegrationBase avoids a circular import at module load
             # (base.py itself imports CommandRegistrar lazily).
             from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
