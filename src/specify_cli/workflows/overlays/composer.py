@@ -42,7 +42,10 @@ class StepListComposer:
         base_definition = WorkflowDefinition.from_yaml(base_layer.path)
         base_steps = base_definition.data.get("steps", [])
         if not isinstance(base_steps, list):
-            base_steps = []
+            # Preserve the invalid definition intact so validate_workflow can
+            # report "'steps' must be a list." to the caller; coercing to []
+            # here would mask that error.
+            return base_definition, []
 
         # Sort overlays into merge order.
         merge_order = sorted(
