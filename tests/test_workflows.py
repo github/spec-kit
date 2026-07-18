@@ -2171,6 +2171,21 @@ class TestIfThenStep:
         assert result.output["condition_result"] is False
         assert result.next_steps == []
 
+    def test_execute_null_then_is_failed_not_normalized(self):
+        """Only `else: null` is normalized to []; `then: null` is invalid
+        (validate() rejects it), so a true condition must FAIL, not silently
+        complete an empty branch."""
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        result = step.execute(
+            {"id": "i", "condition": "{{ inputs.scope == 'full' }}", "then": None},
+            StepContext(inputs={"scope": "full"}),
+        )
+        assert result.status is StepStatus.FAILED
+        assert "'then' must be" in (result.error or "")
+
     def test_validate_missing_condition(self):
         from specify_cli.workflows.steps.if_then import IfThenStep
 

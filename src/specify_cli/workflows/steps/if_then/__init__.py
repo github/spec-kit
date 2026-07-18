@@ -28,32 +28,6 @@ class IfThenStep(StepBase):
             branch = config.get("else", [])
             branch_name = "else"
 
-        # ``else: null`` is the supported "no else branch" form (validate()
-        # accepts None here); normalize a selected None branch to [] so a false
-        # condition on such a config runs cleanly instead of hitting the guard.
-        if branch is None:
-            branch = []
-
-        if not isinstance(branch, list):
-            # The engine does not auto-validate step config and feeds
-            # ``next_steps`` straight into ``_execute_steps``, which iterates them
-            # as step mappings. A non-list ``then``/``else`` (a single mapping or
-            # scalar authoring mistake) would otherwise be iterated element-wise
-            # — a dict yields its keys, a str its characters — and crash the whole
-            # run with AttributeError on ``.get()``. ``validate`` already rejects
-            # a non-list branch; fail this step loudly on an unvalidated run
-            # instead, mirroring the while/do-while (#3519) / switch / fan-out
-            # steps. The selected branch is always returned as next_steps, so the
-            # guard is unconditional.
-            return StepResult(
-                status=StepStatus.FAILED,
-                error=(
-                    f"If step {config.get('id', '?')!r}: {branch_name!r} must be a "
-                    f"list of steps, got {type(branch).__name__}."
-                ),
-                output={"condition_result": result},
-            )
-
         # The engine does not auto-validate step config (see
         # ``WorkflowEngine.load_workflow``), and it feeds ``next_steps`` straight
         # into ``_execute_steps`` which iterates them as step mappings. A
