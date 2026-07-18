@@ -273,6 +273,39 @@ class TestWorkflowResolver:
         definition = resolver.resolve("wf")
         assert [s["id"] for s in definition.steps] == ["a"]
 
+    def test_collect_all_layers_can_include_disabled_overlay_for_listing(self, project_dir):
+        data = {
+            "schema_version": "1.0",
+            "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+            "steps": [{"id": "a", "type": "command", "command": "speckit.specify"}],
+        }
+        _write_workflow(project_dir, "wf", data)
+        _write_overlay(
+            project_dir,
+            "wf",
+            "disabled",
+            {
+                "id": "disabled",
+                "extends": "wf",
+                "priority": 10,
+                "enabled": False,
+                "edits": [
+                    {
+                        "operation": "insert_after",
+                        "anchor": "a",
+                        "step": {"id": "new", "type": "command", "command": "echo"},
+                    }
+                ],
+            },
+        )
+
+        resolver = WorkflowResolver(project_dir)
+        default_layers = resolver.collect_all_layers("wf")
+        listed_layers = resolver.collect_all_layers("wf", include_disabled=True)
+
+        assert [layer.source for layer in default_layers] == ["base"]
+        assert [layer.source for layer in listed_layers] == ["project:disabled", "base"]
+
     def test_resolve_invalid_anchor_raises(self, project_dir):
         data = {
             "schema_version": "1.0",

@@ -44,7 +44,9 @@ class WorkflowResolver:
         ]
         self._composer = StepListComposer()
 
-    def collect_all_layers(self, workflow_id: str) -> list[Layer]:
+    def collect_all_layers(
+        self, workflow_id: str, *, include_disabled: bool = False
+    ) -> list[Layer]:
         """Collect all layers sorted by resolver precedence.
 
         Higher priority wins. Ties are broken so the actual winner appears first:
@@ -56,7 +58,9 @@ class WorkflowResolver:
 
         all_layers: list[Layer] = []
         for source in self._sources:
-            all_layers.extend(source.collect(workflow_id))
+            all_layers.extend(
+                source.collect(workflow_id, include_disabled=include_disabled)
+            )
 
         # Pass 1: source descending — within each priority group the winning
         # source (alphabetically last = applied last by the composer) rises first.

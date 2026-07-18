@@ -143,6 +143,46 @@ class TestProjectOverlaySourceContainment:
                 source.collect("wf")
 
 
+class TestProjectOverlaySourceDisabledFiltering:
+    """ProjectOverlaySource.collect() should expose disabled entries only on opt-in."""
+
+    def test_skips_disabled_by_default(self, project_dir: Path) -> None:
+        _write_overlay_file(
+            project_dir,
+            "wf",
+            "ov1",
+            {
+                "id": "ov1",
+                "extends": "wf",
+                "priority": 5,
+                "enabled": False,
+                "edits": [{"remove": "a"}],
+            },
+        )
+
+        source = ProjectOverlaySource(project_dir)
+        assert source.collect("wf") == []
+
+    def test_can_include_disabled_for_management_views(self, project_dir: Path) -> None:
+        _write_overlay_file(
+            project_dir,
+            "wf",
+            "ov1",
+            {
+                "id": "ov1",
+                "extends": "wf",
+                "priority": 5,
+                "enabled": False,
+                "edits": [{"remove": "a"}],
+            },
+        )
+
+        source = ProjectOverlaySource(project_dir)
+        layers = source.collect("wf", include_disabled=True)
+        assert [layer.content.id for layer in layers] == ["ov1"]
+        assert layers[0].content.enabled is False
+
+
 class TestBaseWorkflowSourceIdValidation:
     """BaseWorkflowSource.collect() must reject unsafe IDs before path construction."""
 
@@ -190,4 +230,3 @@ class TestBaseWorkflowSourceContainment:
         """A workflow directory that does not exist returns an empty layer list."""
         source = BaseWorkflowSource(project_dir)
         assert source.collect("no-such-wf") == []
-

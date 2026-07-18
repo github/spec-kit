@@ -323,7 +323,7 @@ def workflow_overlay_list(project_root: Path, workflow_id: str) -> list[dict[str
     _validate_workflow_id_or_exit(workflow_id)
     resolver = WorkflowResolver(project_root)
     try:
-        layers = resolver.collect_all_layers(workflow_id)
+        layers = resolver.collect_all_layers(workflow_id, include_disabled=True)
     except ValueError as exc:
         err_console.print(f"[red]Error:[/red] {exc}")
         return None

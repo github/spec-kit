@@ -113,8 +113,14 @@ class ProjectOverlaySource:
         self.project_root = project_root
         self.overlays_dir = project_root / ".specify" / "workflows" / "overlays"
 
-    def collect(self, workflow_id: str) -> list[Layer]:
-        """Collect all project-local overlays for the given workflow id."""
+    def collect(self, workflow_id: str, *, include_disabled: bool = False) -> list[Layer]:
+        """Collect project-local overlays for the given workflow id.
+
+        Args:
+            workflow_id: Workflow identifier whose overlay directory to scan.
+            include_disabled: When True, return disabled overlays for
+                management/list views. Resolution paths keep the default False.
+        """
         self.overlays_dir = _resolve_project_overlay_root(self.project_root)
         _validate_workflow_id(workflow_id, self.overlays_dir)
         workflow_overlay_dir = self.overlays_dir / workflow_id
@@ -142,7 +148,7 @@ class ProjectOverlaySource:
             overlay, errors = validate_overlay_yaml(data)
             if overlay is None or errors:
                 raise OverlayLoadError(path, errors)
-            if not overlay.enabled:
+            if not include_disabled and not overlay.enabled:
                 continue
             if overlay.extends != workflow_id:
                 raise OverlayLoadError(
@@ -173,7 +179,7 @@ class BaseWorkflowSource:
         self.project_root = project_root
         self.workflows_dir = project_root / ".specify" / "workflows"
 
-    def collect(self, workflow_id: str) -> list[Layer]:
+    def collect(self, workflow_id: str, *, include_disabled: bool = False) -> list[Layer]:
         """Return the base workflow as a single layer if it exists."""
         _validate_workflow_id(workflow_id, self.workflows_dir)
         workflow_dir = self.workflows_dir / workflow_id
