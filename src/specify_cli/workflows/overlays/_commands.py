@@ -9,7 +9,13 @@ import typer
 import yaml
 
 from ..._console import console, err_console
-from .._commands import _reject_unsafe_dir, _reject_unsafe_workflow_storage
+from .._commands import (
+    _commit_workflow_file,
+    _discard_staged_workflow_file,
+    _reject_unsafe_dir,
+    _reject_unsafe_workflow_storage,
+    _stage_workflow_file,
+)
 from . import WorkflowResolver
 from .schema import _RESERVED_WORKFLOW_IDS, _SAFE_ID_PATTERN, validate_overlay_yaml
 
@@ -200,7 +206,14 @@ def workflow_overlay_add(
         )
 
     try:
-        target_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        existed_before = target_path.exists()
+        staged = _stage_workflow_file(target_path.parent)
+        try:
+            staged.write_bytes(yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
+            _commit_workflow_file(staged, target_path, existed_before)
+        except BaseException:
+            _discard_staged_workflow_file(staged, target_path.parent)
+            raise
     except OSError as exc:
         err_console.print(f"[red]Error:[/red] Failed to write overlay: {exc}")
         return None
@@ -242,7 +255,14 @@ def _update_overlay_field(
         return False
 
     try:
-        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        existed_before = path.exists()
+        staged = _stage_workflow_file(path.parent)
+        try:
+            staged.write_bytes(yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
+            _commit_workflow_file(staged, path, existed_before)
+        except BaseException:
+            _discard_staged_workflow_file(staged, path.parent)
+            raise
     except OSError as exc:
         err_console.print(f"[red]Error:[/red] Failed to write overlay: {exc}")
         return False
