@@ -188,7 +188,7 @@ def _remove_sources_recursively(
     Traverses the same nesting keys as ``_record_sources_recursively``.
     """
     step_id = step.get("id")
-    if isinstance(step_id, str):
+    if isinstance(step_id, str) and sources.get(step_id) == "base":
         sources.pop(step_id, None)
     for key in _NESTED_LIST_KEYS:
         nested = step.get(key)
