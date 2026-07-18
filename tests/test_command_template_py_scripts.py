@@ -84,15 +84,33 @@ def test_template_renders_python_invocation(name: str):
 
 
 def test_py_missing_variant_rejects_opposite_shell_only():
+    opposite_variant = "sh" if os.name == "nt" else "ps"
+    opposite_command = (
+        "scripts/bash/setup-plan.sh --json"
+        if opposite_variant == "sh"
+        else "scripts/powershell/setup-plan.ps1 -Json"
+    )
     content = """---
 scripts:
-  ps: scripts/powershell/setup-plan.ps1 -Json
+  {variant}: {command}
 ---
-Run {SCRIPT} now.
-"""
+Run {{SCRIPT}} now.
+""".format(variant=opposite_variant, command=opposite_command)
 
     with pytest.raises(ValueError, match="No runnable script variant"):
         IntegrationBase.process_template(content, "agent", "py")
+
+
+def test_missing_script_preference_keeps_available_shell(monkeypatch):
+    monkeypatch.setattr(
+        "specify_cli.integrations.base.platform.system", lambda: "Windows"
+    )
+
+    selected = IntegrationBase.select_script_variant(
+        None, {"sh": "scripts/bash/setup-plan.sh --json"}
+    )
+
+    assert selected == "sh"
 
 
 def test_spaced_python_interpreter_uses_powershell_call_operator(monkeypatch):

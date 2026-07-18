@@ -644,7 +644,13 @@ class IntegrationBase(ABC):
         platform_variant = (
             "ps" if platform.system().lower().startswith("win") else "sh"
         )
-        for candidate in (platform_variant, "py"):
+        secondary_variant = "sh" if platform_variant == "ps" else "ps"
+        fallbacks = (
+            (platform_variant, "py")
+            if requested == "py"
+            else (platform_variant, secondary_variant, "py")
+        )
+        for candidate in fallbacks:
             if candidate in script_commands:
                 return candidate
 
