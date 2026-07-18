@@ -86,20 +86,31 @@ def _ensure_contained_dir(path: Path, root: Path) -> Path:
 
 
 def _find_overlay_file(project_root: Path, workflow_id: str, overlay_id: str) -> Path | None:
-    """Locate a project-local overlay file by workflow id and overlay id."""
+    """Locate a project-local overlay file by its manifest ID, not filename.
+
+    Scans all YAML files in the overlay directory and matches on the ``id``
+    field inside each manifest. This aligns with ``ProjectOverlaySource.collect()``
+    which also derives identity from the manifest, not the filename.
+    """
     _validate_workflow_id_or_exit(workflow_id)
     _validate_overlay_id_or_exit(overlay_id, "overlay ID")
     overlay_dir = _project_overlay_dir(project_root, workflow_id)
-    for suffix in (".yml", ".yaml"):
-        candidate = overlay_dir / f"{overlay_id}{suffix}"
-        candidate = _ensure_contained_path(candidate, _overlay_root(project_root))
-        if candidate.is_file():
-            if candidate.is_symlink():
-                err_console.print(
-                    f"[red]Error:[/red] Refusing to read symlinked overlay file {candidate}."
-                )
-                raise typer.Exit(1)
-            return candidate
+    if not overlay_dir.is_dir():
+        return None
+    try:
+        entries = sorted(overlay_dir.iterdir())
+    except OSError:
+        return None
+    for path in entries:
+        if not path.is_file() or path.suffix not in (".yml", ".yaml"):
+            continue
+        if path.is_symlink():
+            continue
+        data, _ = _read_overlay(path)
+        if data is None:
+            continue
+        if data.get("id") == overlay_id:
+            return path
     return None
 
 

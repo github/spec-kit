@@ -507,3 +507,212 @@ class TestOverlayCli:
             project_dir / ".specify" / "workflows" / "wf" / "overlays" / "ov1.yml"
         )
         assert not installed_overlay.exists()
+
+
+class TestOverlayFilenameVsManifestId:
+    """Overlay identity must come from the manifest ``id`` field, not the filename.
+
+    This matches the project-wide convention: presets use ``preset.id``,
+    extensions use ``extension.id``, workflows use ``workflow.id``, and
+    workflow steps use ``step.type_key``. Overlays must follow the same pattern.
+    """
+
+    def _write_mismatched_overlay(
+        self, project_root: Path, workflow_id: str, filename: str, manifest_id: str, data: dict
+    ) -> Path:
+        """Write an overlay file where filename != manifest id."""
+        ov_dir = project_root / ".specify" / "workflows" / "overlays" / workflow_id
+        ov_dir.mkdir(parents=True, exist_ok=True)
+        ov_path = ov_dir / filename
+        ov_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        return ov_path
+
+    def test_find_overlay_by_manifest_id_not_filename(self, project_dir, monkeypatch):
+        """_find_overlay_file must locate overlays by manifest id, not filename."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        # File is named "custom.yml" but manifest declares id: "lint"
+        self._write_mismatched_overlay(
+            project_dir,
+            "wf",
+            "custom.yml",
+            "lint",
+            {
+                "id": "lint",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            },
+        )
+
+        from specify_cli.workflows.overlays._commands import _find_overlay_file
+
+        # Must find by manifest id "lint", not by filename "custom"
+        found = _find_overlay_file(project_dir, "wf", "lint")
+        assert found is not None
+        assert found.name == "custom.yml"
+
+        # Must NOT find by filename stem "custom"
+        not_found = _find_overlay_file(project_dir, "wf", "custom")
+        assert not_found is None
+
+    def test_enable_disable_with_mismatched_filename(self, project_dir, monkeypatch):
+        """enable/disable must work when filename != manifest id."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        self._write_mismatched_overlay(
+            project_dir,
+            "wf",
+            "custom.yml",
+            "lint",
+            {
+                "id": "lint",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            },
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "disable", "wf", "lint"])
+        assert result.exit_code == 0, result.output
+        data = yaml.safe_load(
+            (project_dir / ".specify" / "workflows" / "overlays" / "wf" / "custom.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert data["enabled"] is False
+
+        result = runner.invoke(app, ["workflow", "overlay", "enable", "wf", "lint"])
+        assert result.exit_code == 0, result.output
+        data = yaml.safe_load(
+            (project_dir / ".specify" / "workflows" / "overlays" / "wf" / "custom.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert data["enabled"] is True
+
+    def test_set_priority_with_mismatched_filename(self, project_dir, monkeypatch):
+        """set-priority must work when filename != manifest id."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        self._write_mismatched_overlay(
+            project_dir,
+            "wf",
+            "custom.yml",
+            "lint",
+            {
+                "id": "lint",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            },
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "set-priority", "wf", "lint", "25"])
+        assert result.exit_code == 0, result.output
+        data = yaml.safe_load(
+            (project_dir / ".specify" / "workflows" / "overlays" / "wf" / "custom.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert data["priority"] == 25
+
+    def test_remove_with_mismatched_filename(self, project_dir, monkeypatch):
+        """remove must work when filename != manifest id."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        self._write_mismatched_overlay(
+            project_dir,
+            "wf",
+            "custom.yml",
+            "lint",
+            {
+                "id": "lint",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            },
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "remove", "wf", "lint"])
+        assert result.exit_code == 0, result.output
+        assert not (
+            project_dir / ".specify" / "workflows" / "overlays" / "wf" / "custom.yml"
+        ).exists()
+
+    def test_duplicate_manifest_id_returns_first_sorted(self, project_dir, monkeypatch):
+        """Two files with the same manifest id: first sorted match wins."""
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "echo"}],
+            },
+        )
+        # Two files, both declare id: "lint"
+        self._write_mismatched_overlay(
+            project_dir,
+            "wf",
+            "aaa.yml",
+            "lint",
+            {
+                "id": "lint",
+                "extends": "wf",
+                "priority": 10,
+                "edits": [{"remove": "a"}],
+            },
+        )
+        self._write_mismatched_overlay(
+            project_dir,
+            "wf",
+            "zzz.yml",
+            "lint",
+            {
+                "id": "lint",
+                "extends": "wf",
+                "priority": 20,
+                "edits": [{"remove": "a"}],
+            },
+        )
+
+        from specify_cli.workflows.overlays._commands import _find_overlay_file
+
+        found = _find_overlay_file(project_dir, "wf", "lint")
+        assert found is not None
+        # sorted() returns aaa.yml before zzz.yml
+        assert found.name == "aaa.yml"
