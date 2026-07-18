@@ -47,6 +47,28 @@ def _validate_workflow_id(workflow_id: str, context_path: Path) -> None:
         )
 
 
+def _ensure_contained_dir(path: Path, root: Path) -> None:
+    """Raise OverlayLoadError if *path* is a symlink, a non-directory, or escapes *root*.
+
+    Mirrors the logic of ``_ensure_contained_dir`` in ``overlays/_commands.py``
+    but raises ``OverlayLoadError`` instead of ``typer.Exit`` so layer sources
+    can enforce the same invariants without a CLI dependency.
+
+    The caller is responsible for ensuring *root* itself is already validated
+    (e.g. via ``_resolve_project_overlay_root``).
+    """
+    if path.is_symlink():
+        raise OverlayLoadError(path, ["Symlinked overlay directories are not allowed"])
+    if path.exists() and not path.is_dir():
+        raise OverlayLoadError(path, ["Overlay directory path is not a directory"])
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        raise OverlayLoadError(
+            path, ["Path traversal detected: directory escapes allowed root"]
+        ) from None
+
+
 def _resolve_project_overlay_root(project_root: Path) -> Path:
     """Return the unresolved overlay root after rejecting symlinked ancestors.
 
@@ -96,16 +118,7 @@ class ProjectOverlaySource:
         self.overlays_dir = _resolve_project_overlay_root(self.project_root)
         _validate_workflow_id(workflow_id, self.overlays_dir)
         workflow_overlay_dir = self.overlays_dir / workflow_id
-        if workflow_overlay_dir.is_symlink():
-            raise OverlayLoadError(
-                workflow_overlay_dir,
-                ["Symlinked overlay directories are not allowed"],
-            )
-        if workflow_overlay_dir.exists() and not workflow_overlay_dir.is_dir():
-            raise OverlayLoadError(
-                workflow_overlay_dir,
-                ["Overlay directory path is not a directory"],
-            )
+        _ensure_contained_dir(workflow_overlay_dir, self.overlays_dir)
         if not workflow_overlay_dir.is_dir():
             return []
         layers: list[Layer] = []
@@ -157,7 +170,11 @@ class BaseWorkflowSource:
     def collect(self, workflow_id: str) -> list[Layer]:
         """Return the base workflow as a single layer if it exists."""
         _validate_workflow_id(workflow_id, self.workflows_dir)
-        path = self.workflows_dir / workflow_id / "workflow.yml"
+        workflow_dir = self.workflows_dir / workflow_id
+        _ensure_contained_dir(workflow_dir, self.workflows_dir)
+        path = workflow_dir / "workflow.yml"
+        if path.is_symlink():
+            raise OverlayLoadError(path, ["Symlinked workflow files are not allowed"])
         if not path.is_file():
             return []
         # The base layer is represented by an Overlay with empty edits.

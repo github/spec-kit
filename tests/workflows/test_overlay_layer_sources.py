@@ -96,6 +96,53 @@ class TestProjectOverlaySourceIdValidation:
                 source.collect(workflow_id)
 
 
+class TestProjectOverlaySourceContainment:
+    """ProjectOverlaySource.collect() must enforce containment of the workflow overlay dir."""
+
+    def test_rejects_symlinked_workflow_overlay_dir(self, project_dir: Path, tmp_path: Path) -> None:
+        """A symlinked per-workflow overlay directory must be rejected."""
+        real_dir = tmp_path / "real-overlay"
+        real_dir.mkdir()
+        overlay_root = project_dir / ".specify" / "workflows" / "overlays"
+        overlay_root.mkdir(parents=True, exist_ok=True)
+        link = overlay_root / "wf"
+        link.symlink_to(real_dir)
+
+        source = ProjectOverlaySource(project_dir)
+        with pytest.raises(OverlayLoadError, match="Symlinked overlay directories are not allowed"):
+            source.collect("wf")
+
+    def test_rejects_workflow_overlay_dir_escaping_root(
+        self, project_dir: Path, tmp_path: Path
+    ) -> None:
+        """A workflow overlay dir that resolves outside the overlay root must be rejected.
+
+        This requires the ID itself to pass validation but the resolved path to escape —
+        which is possible if the overlay root itself is a junction/mount that resolves
+        outside the project root; or in edge cases on case-insensitive file systems.
+        We simulate it by patching Path.resolve to return an outside path.
+        """
+        overlay_root = project_dir / ".specify" / "workflows" / "overlays"
+        overlay_root.mkdir(parents=True, exist_ok=True)
+        workflow_overlay_dir = overlay_root / "wf"
+        workflow_overlay_dir.mkdir()
+
+        outside = tmp_path / "outside" / "wf"
+        outside.mkdir(parents=True)
+
+        original_resolve = Path.resolve
+
+        def fake_resolve(self: Path, **kwargs: object) -> Path:
+            if self == workflow_overlay_dir:
+                return outside
+            return original_resolve(self, **kwargs)
+
+        source = ProjectOverlaySource(project_dir)
+        with patch.object(Path, "resolve", fake_resolve):
+            with pytest.raises(OverlayLoadError, match="Path traversal detected"):
+                source.collect("wf")
+
+
 class TestBaseWorkflowSourceIdValidation:
     """BaseWorkflowSource.collect() must reject unsafe IDs before path construction."""
 
@@ -104,4 +151,43 @@ class TestBaseWorkflowSourceIdValidation:
         source = BaseWorkflowSource(project_dir)
         with pytest.raises(OverlayLoadError, match="Invalid workflow ID"):
             source.collect(workflow_id)
+
+
+class TestBaseWorkflowSourceContainment:
+    """BaseWorkflowSource.collect() must enforce the same checks as _safe_workflow_id_dir."""
+
+    def test_rejects_symlinked_workflow_dir(self, project_dir: Path, tmp_path: Path) -> None:
+        """A symlinked workflow directory must be rejected."""
+        real_dir = tmp_path / "real-wf"
+        real_dir.mkdir()
+        (real_dir / "workflow.yml").write_text("schema_version: '1.0'\n", encoding="utf-8")
+
+        workflows_dir = project_dir / ".specify" / "workflows"
+        workflows_dir.mkdir(parents=True, exist_ok=True)
+        link = workflows_dir / "wf"
+        link.symlink_to(real_dir)
+
+        source = BaseWorkflowSource(project_dir)
+        with pytest.raises(OverlayLoadError, match="Symlinked overlay directories are not allowed"):
+            source.collect("wf")
+
+    def test_rejects_symlinked_workflow_yml(self, project_dir: Path, tmp_path: Path) -> None:
+        """A symlinked workflow.yml must be rejected even if the directory is real."""
+        real_yml = tmp_path / "workflow.yml"
+        real_yml.write_text("schema_version: '1.0'\n", encoding="utf-8")
+
+        workflows_dir = project_dir / ".specify" / "workflows"
+        wf_dir = workflows_dir / "wf"
+        wf_dir.mkdir(parents=True, exist_ok=True)
+        link = wf_dir / "workflow.yml"
+        link.symlink_to(real_yml)
+
+        source = BaseWorkflowSource(project_dir)
+        with pytest.raises(OverlayLoadError, match="Symlinked workflow files are not allowed"):
+            source.collect("wf")
+
+    def test_missing_workflow_returns_empty(self, project_dir: Path) -> None:
+        """A workflow directory that does not exist returns an empty layer list."""
+        source = BaseWorkflowSource(project_dir)
+        assert source.collect("no-such-wf") == []
 
