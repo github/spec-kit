@@ -2235,7 +2235,10 @@ class PresetCatalog:
                 )
             try:
                 priority = int(raw_priority)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
+                # OverflowError: int(float("inf")) — a YAML ``priority: .inf``
+                # would otherwise escape as an uncaught traceback instead of the
+                # clean validation error (mirrors catalogs.py).
                 raise PresetValidationError(
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
                     f"expected integer, got {raw_priority!r}"

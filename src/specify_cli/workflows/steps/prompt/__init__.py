@@ -160,4 +160,16 @@ class PromptStep(StepBase):
             errors.append(
                 f"Prompt step {config.get('id', '?')!r} is missing 'prompt' field."
             )
+        elif not isinstance(config["prompt"], str):
+            # execute() str()-coerces prompt and dispatches it to the
+            # integration CLI, so a null or list 'prompt' would send the Python
+            # repr ('None', "['review', 'this']") to the model as instructions —
+            # silently wrong, with no error. Reject non-strings at validation,
+            # mirroring the shell-step 'run' and command-step input/options type
+            # checks. An expression like "{{ ... }}" is still a str, so it stays
+            # valid.
+            errors.append(
+                f"Prompt step {config.get('id', '?')!r}: 'prompt' must be a "
+                f"string, got {type(config['prompt']).__name__}."
+            )
         return errors

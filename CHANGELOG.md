@@ -2,6 +2,21 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.13.0] - 2026-07-17
+
+### Changed
+
+- fix(auth): Azure DevOps az-CLI token acquisition returns None on undecodable output (#3527)
+- feat(extensions): add assess idea assessment pipeline extension (#3568)
+- fix(bundle): surface a clean BundlerError on a malformed bundle download URL (#3586)
+- Add OKF Knowledge Bundle Generator extension to community catalog (#3585)
+- Update Autonomous Run Governance preset to v0.2.2 (#3584)
+- docs: update extension guide PyPI upgrade guidance (#3578)
+- fix(presets): raise PresetValidationError, not raw ValueError, on malformed catalog URL (#3576)
+- chore(deps): bump github/codeql-action/init from 4.36.2 to 4.37.1 (#3571)
+- docs: align README hero tagline and subtitle with docs/index.md (#3581)
+- chore: release 0.12.18, begin 0.12.19.dev0 development (#3583)
+
 ## [0.12.18] - 2026-07-17
 
 ### Changed

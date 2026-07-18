@@ -4542,6 +4542,36 @@ class TestCatalogStack:
             catalog.get_active_catalogs()
         assert str(config_path) in str(exc_info.value)
 
+    def test_load_catalog_config_rejects_infinite_priority(self, temp_dir):
+        """A ``priority: .inf`` yields a clean validation error, not an uncaught
+        OverflowError from int(float('inf'))."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "inf-priority",
+                            "url": "https://example.com/catalog.json",
+                            "priority": float("inf"),
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(
+            ValidationError, match="Invalid priority|expected integer"
+        ) as exc_info:
+            catalog.get_active_catalogs()
+        assert str(config_path) in str(exc_info.value)
+
     def test_load_catalog_config_defaults_blank_names(self, temp_dir):
         """Blank and null names normalize by valid catalog order."""
         import yaml as yaml_module

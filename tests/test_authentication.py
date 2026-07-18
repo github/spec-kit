@@ -502,6 +502,19 @@ class TestAzureDevOpsAuth:
         with patch("specify_cli.authentication.azure_devops.subprocess.run", side_effect=OSError("not found")):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
+    def test_resolve_token_azure_cli_undecodable_output_returns_none(self):
+        """Undecodable az output returns None, not a crash. With text=True,
+        subprocess.run decodes stdout with the locale encoding and raises
+        UnicodeDecodeError (not a JSONDecodeError) when it can't — the helper's
+        contract is to return None on any failure."""
+        from unittest.mock import patch
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        boom = UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid start byte")
+        with patch("specify_cli.authentication.azure_devops.subprocess.run", side_effect=boom):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
     def test_resolve_token_azure_ad_success(self, monkeypatch):
         """azure-ad acquires token via OAuth2 client credentials."""
         from unittest.mock import patch, MagicMock

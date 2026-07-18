@@ -1381,11 +1381,36 @@ class TestPromptStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'prompt'" in e for e in errors)
 
+    @pytest.mark.parametrize("bad_prompt", [None, ["review", "this"], 42, {"a": 1}])
+    def test_validate_rejects_non_string_prompt(self, bad_prompt):
+        """A non-string 'prompt' must be rejected at validation.
+
+        execute() str()-coerces prompt and dispatches it to the integration
+        CLI, so a null or list prompt would otherwise send the Python repr to
+        the model as instructions — silently wrong. Mirrors the shell-step
+        'run' type check.
+        """
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate({"id": "p", "prompt": bad_prompt})
+        assert any("'prompt' must be a string" in e for e in errors)
+
     def test_validate_valid(self):
         from specify_cli.workflows.steps.prompt import PromptStep
 
         step = PromptStep()
         errors = step.validate({"id": "test", "prompt": "do something"})
+        assert errors == []
+
+    def test_validate_accepts_expression_prompt(self):
+        """A '{{ ... }}' expression prompt is a str, so it stays valid."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate(
+            {"id": "p", "prompt": "Review {{ inputs.file }}"}
+        )
         assert errors == []
 
 
@@ -2684,6 +2709,39 @@ class TestFanOutStep:
         assert result.status == StepStatus.COMPLETED
         assert result.output["item_count"] == 0
 
+    def test_execute_non_dict_step_fails_loudly(self):
+        """A truthy non-mapping ``step`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-dict ``step``, but the engine's ``execute()``
+        does not auto-validate (see ``WorkflowEngine.load_workflow``). On a
+        COMPLETED fan-out the engine reads ``step_template`` back out and, when
+        it is truthy, calls ``template.get("id", ...)`` in ``_run_fan_out``. A
+        truthy non-mapping ``step`` (a scalar or list authoring mistake) raised
+        AttributeError there and took down the whole run. Mirrors the fan-out
+        non-list ``items`` guard and the switch non-dict ``cases`` guard.
+        """
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanOutStep()
+        ctx = StepContext(steps={"tasks": {"output": {"task_list": [1, 2]}}})
+        # ``None`` is an explicit ``step: null``: ``config.get("step", {})`` only
+        # substitutes the default for an *absent* key, so it reaches the guard
+        # and must fail here too — matching ``validate``.
+        for bad_step in (["impl"], "impl", 5, None):
+            result = step.execute(
+                {
+                    "id": "parallel",
+                    "items": "{{ steps.tasks.output.task_list }}",
+                    "step": bad_step,
+                },
+                ctx,
+            )
+            assert result.status == StepStatus.FAILED
+            assert "'step' must be a" in (result.error or "")
+            assert result.output["item_count"] == 0
+            assert result.output["step_template"] == {}
+
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
 
@@ -2696,12 +2754,13 @@ class TestFanOutStep:
         from specify_cli.workflows.steps.fan_out import FanOutStep
 
         step = FanOutStep()
-        errors = step.validate({
-            "id": "test",
-            "items": "{{ x }}",
-            "step": "not-a-dict",
-        })
-        assert any("'step' must be a mapping" in e for e in errors)
+        for bad_step in ("not-a-dict", ["impl"], 5, None):
+            errors = step.validate({
+                "id": "test",
+                "items": "{{ x }}",
+                "step": bad_step,
+            })
+            assert any("'step' must be a mapping" in e for e in errors), bad_step
 
 
 class TestFanInStep:
@@ -2782,6 +2841,34 @@ class TestFanInStep:
         result = step.execute({"id": "collect", "wait_for": bad_wait_for}, ctx)
         assert result.status == StepStatus.FAILED
         assert "'wait_for' must be a list" in (result.error or "")
+        assert result.output["results"] == []
+
+    @pytest.mark.parametrize("bad_entry", [["a", "b"], {"a": 1}, 123, None])
+    def test_execute_non_string_wait_for_entry_fails_loudly(self, bad_entry):
+        """A ``wait_for`` list with a non-string entry must fail the step, not
+        crash the run or silently produce a bogus join.
+
+        The whole-list guard (``test_execute_non_list_wait_for_fails_loudly``)
+        and the engine's fan-in validation both already reject the list *shape*,
+        but neither the step's ``execute`` nor the engine's runtime path guarded
+        the list's *elements*. On an unvalidated run an unhashable entry
+        (a list/dict from a YAML indentation slip like ``wait_for: [[a, b]]``)
+        crashed ``context.steps.get(entry, ...)`` with a raw TypeError, while a
+        hashable-but-non-string entry (``wait_for: [123]``) silently joined an
+        empty ``{}`` and still reported COMPLETED — the same wiring bug the
+        list-shape guard exists to prevent. Mirrors the engine's
+        ``test_non_string_wait_for_entry_is_rejected`` load-time check.
+        """
+        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanInStep()
+        ctx = StepContext(steps={"a": {"output": {"x": 1}}})
+        # A valid entry alongside the bad one proves it is the entry, not the
+        # list, that is rejected.
+        result = step.execute({"id": "collect", "wait_for": ["a", bad_entry]}, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "'wait_for' entries must be step-id strings" in (result.error or "")
         assert result.output["results"] == []
 
     def test_validate_empty_wait_for(self):
@@ -5775,6 +5862,26 @@ class TestWorkflowCatalog:
         assert len(entries) == 1
         assert entries[0].name == "custom"
 
+    @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
+    def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
+        """`priority: true` must not be silently coerced to 1, and `priority: .inf`
+        must not crash with an uncaught OverflowError — both raise a clean
+        validation error (parity with the base CatalogStackBase loader)."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "bad",
+                "url": "https://example.com/wf-catalog.json",
+                "priority": bad_priority,
+                "install_allowed": True,
+            }]
+        }))
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="Invalid priority|expected integer"):
+            catalog.get_active_catalogs()
+
     def test_validate_url_http_rejected(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
@@ -5877,6 +5984,31 @@ class TestWorkflowCatalog:
         data = yaml.safe_load(config_path.read_text())
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-catalog.json"
+
+    def test_add_catalog_with_existing_inf_priority(self, project_dir):
+        """add_catalog() derives the new priority from existing ones via
+        _coerce_priority; an existing `priority: .inf` must not crash it
+        (int(float('inf')) is an OverflowError) — it is treated as 0 and the add
+        succeeds."""
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "existing",
+                "url": "https://a.example.com/c.json",
+                "priority": float("inf"),
+                "install_allowed": True,
+            }]
+        }))
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog("https://b.example.com/c.json", "new")
+
+        data = yaml.safe_load(config_path.read_text())
+        new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/c.json")
+        assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
     def test_add_catalog_duplicate_rejected(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
@@ -6298,6 +6430,25 @@ class TestStepCatalog:
         assert len(entries) == 1
         assert entries[0].name == "custom"
 
+    @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
+    def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
+        """`priority: true`/`.inf` in a step-catalog config raise a clean
+        validation error instead of coercing to 1 / crashing with OverflowError."""
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "bad",
+                "url": "https://example.com/step-catalog.json",
+                "priority": bad_priority,
+                "install_allowed": True,
+            }]
+        }))
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="Invalid priority|expected integer"):
+            catalog.get_active_catalogs()
+
     def test_validate_url_http_rejected(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
 
@@ -6392,6 +6543,30 @@ class TestStepCatalog:
         data = yaml.safe_load(config_path.read_text())
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
+
+    def test_add_catalog_with_existing_inf_priority(self, project_dir):
+        """Step-catalog add_catalog() must not crash when an existing entry has a
+        `priority: .inf` (int(float('inf')) is an OverflowError) — _coerce_priority
+        treats it as 0 and the add succeeds."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "existing",
+                "url": "https://a.example.com/s.json",
+                "priority": float("inf"),
+                "install_allowed": True,
+            }]
+        }))
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://b.example.com/s.json", "new")
+
+        data = yaml.safe_load(config_path.read_text())
+        new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/s.json")
+        assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
     def test_add_catalog_empty_yaml_file(self, project_dir):
         """An empty YAML config file should be treated as empty, not corrupted."""
@@ -9057,10 +9232,12 @@ steps:
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        # Original download error remains present.
-        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
+        # Original download error remains present. Normalize whitespace so the
+        # assertion is robust to Rich line-wrapping at narrow terminal widths.
+        normalized_output = "".join(result.output.split())
+        assert "exceedsthe100-byteworkflowsizelimit" in normalized_output
         # Cleanup failure is reported too, not silently swallowed / crashing.
-        assert "cleanup denied" in result.output
+        assert "cleanupdenied" in normalized_output
         assert "Warning" in result.output
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
@@ -13027,6 +13204,58 @@ steps:
         result = runner.invoke(app, ["workflow", "status", "nonexistent-run"])
         assert result.exit_code != 0
         assert "Run not found: nonexistent-run" in result.output
+
+    def test_status_json_not_found_error_goes_to_stderr(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """Under --json, the not-found/invalid-run error must go to stderr so the
+        stdout JSON stream stays parseable (empty on the error path) — mirroring
+        `workflow run`/`workflow resume`. Before this fix both handlers used the
+        stdout console, corrupting a consumer's json.loads(stdout)."""
+        import typer
+        from specify_cli.workflows import _commands
+
+        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            _commands, "_require_specify_project", lambda: project_dir
+        )
+        with pytest.raises(typer.Exit) as exc:
+            _commands.workflow_status("does-not-exist", json_output=True)
+        assert exc.value.exit_code == 1
+        captured = capsys.readouterr()
+        assert "Run not found" in captured.err
+        assert "Run not found" not in captured.out
+        # stdout carries no partial/corrupt JSON on the error path.
+        assert captured.out.strip() == ""
+
+    def test_status_json_invalid_run_error_goes_to_stderr(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """The ValueError handler (a malformed/invalid run state) must ALSO route
+        to stderr under --json, not just the FileNotFoundError one — otherwise a
+        regression there would silently corrupt the JSON stream and this suite
+        wouldn't catch it."""
+        import typer
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.engine import RunState
+
+        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            _commands, "_require_specify_project", lambda: project_dir
+        )
+
+        def _raise_value_error(*args, **kwargs):
+            raise ValueError("corrupt run state: bad status")
+
+        monkeypatch.setattr(RunState, "load", _raise_value_error)
+
+        with pytest.raises(typer.Exit) as exc:
+            _commands.workflow_status("some-run", json_output=True)
+        assert exc.value.exit_code == 1
+        captured = capsys.readouterr()
+        assert "corrupt run state" in captured.err
+        assert "corrupt run state" not in captured.out
+        assert captured.out.strip() == ""
 
     def test_status_no_run_id_list_path_unaffected(self, project_dir, monkeypatch):
         """The no-run-id list-all-runs path must remain unaffected by the

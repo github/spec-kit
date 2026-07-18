@@ -2671,6 +2671,24 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
             catalog._load_catalog_config(config_path)
 
+    def test_load_catalog_config_rejects_infinite_priority(self, project_dir):
+        """A ``priority: .inf`` yields a clean validation error, not an uncaught
+        OverflowError from int(float('inf'))."""
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [
+                {
+                    "name": "inf-priority",
+                    "url": "https://example.com/catalog.json",
+                    "priority": float("inf"),
+                }
+            ]
+        }))
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
+            catalog._load_catalog_config(config_path)
+
     def test_load_catalog_config_install_allowed_string(self, project_dir):
         """Test that install_allowed accepts string values."""
         config_path = project_dir / ".specify" / "preset-catalogs.yml"
