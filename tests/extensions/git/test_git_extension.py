@@ -1222,6 +1222,32 @@ class TestAutoCommitBashCommitStyle:
         )
         assert "[Spec Kit] Add specification" in log.stdout
 
+    def test_duplicate_commit_style_lines_use_first_match(self, tmp_path: Path):
+        """A config with multiple `commit_style:` lines (e.g. from a bad merge) uses only
+        the first match instead of concatenating values into an unrecognized style."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "commit_style: fixed\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "feat: add OAuth specification"
+        )
+        assert result.returncode == 0
+        assert "unknown commit_style" not in result.stderr.lower()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add OAuth specification" in log.stdout
+        assert "[Spec Kit] Add specification" not in log.stdout
+
 
 @pytest.mark.skipif(not HAS_PWSH, reason="pwsh not available")
 class TestAutoCommitPowerShell:

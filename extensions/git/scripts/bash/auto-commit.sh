@@ -55,7 +55,7 @@ _commit_style="fixed"
 
 if [ -f "$_config_file" ]; then
     # Top-level scalar key: commit_style (fixed | conventional)
-    _style_val=$(grep '^commit_style:' "$_config_file" 2>/dev/null | sed 's/^commit_style:[[:space:]]*//' | sed 's/[[:space:]]\{1,\}#.*$//' | sed 's/[[:space:]]*$//' | sed 's/^["'\'']//' | sed 's/["'\'']*$//' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+    _style_val=$(grep -m1 '^commit_style:' "$_config_file" 2>/dev/null | sed 's/^commit_style:[[:space:]]*//' | sed 's/[[:space:]]\{1,\}#.*$//' | sed 's/[[:space:]]*$//' | sed 's/^["'\'']//' | sed 's/["'\'']*$//' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
     if [ -n "$_style_val" ]; then
         case "$_style_val" in
             fixed|conventional)
