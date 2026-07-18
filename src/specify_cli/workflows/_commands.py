@@ -2397,6 +2397,9 @@ def workflow_info(
         # Local workflow definition not found on disk; fall back to
         # catalog/registry lookup below.
         pass
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] Invalid workflow: {_escape_markup(str(exc))}")
+        raise typer.Exit(1)
 
     if definition:
         console.print(f"\n[bold cyan]{definition.name}[/bold cyan] ({definition.id})")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..engine import WorkflowDefinition, validate_workflow
+from ..engine import WorkflowDefinition
 from .layer_sources import Layer
 from .merge import OverlayLayer, merge_steps, validate_edits
 
@@ -17,7 +17,7 @@ class StepListComposer:
     - Overlays are applied in merge order: lowest priority first, highest last;
       ties are resolved so installed overlays are applied before project
       overlays, letting project overlays win.
-    - ``validate_workflow`` runs on the composed result.
+    - Returns a parsed WorkflowDefinition; callers must validate separately.
     """
 
     def compose(
@@ -74,13 +74,6 @@ class StepListComposer:
         composed_data["steps"] = composed_steps
 
         composed_definition = WorkflowDefinition(composed_data, source_path=base_layer.path)
-        validation_errors = validate_workflow(composed_definition)
-        if validation_errors:
-            # Surface validation errors as a single exception with details.
-            raise ValueError(
-                "Composed workflow is invalid:\n  - "
-                + "\n  - ".join(validation_errors)
-            )
 
         return composed_definition, attribution
 

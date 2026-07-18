@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from specify_cli.workflows.engine import WorkflowDefinition
+from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
 from specify_cli.workflows.overlays import WorkflowResolver
 from specify_cli.workflows.overlays.merge import ComposedStep
 
@@ -307,7 +307,7 @@ class TestWorkflowResolver:
         with pytest.raises(FileNotFoundError, match="Workflow not found"):
             resolver.resolve("missing")
 
-    def test_resolve_validates_composed_result(self, project_dir):
+    def test_resolve_returns_composed_result_for_caller_validation(self, project_dir):
         data = {
             "schema_version": "1.0",
             "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
@@ -333,8 +333,9 @@ class TestWorkflowResolver:
         )
 
         resolver = WorkflowResolver(project_dir)
-        with pytest.raises(ValueError, match="Composed workflow is invalid"):
-            resolver.resolve("wf")
+        definition = resolver.resolve("wf")
+        errors = validate_workflow(definition)
+        assert any("invalid-type" in err for err in errors)
 
     def test_resolve_rejects_symlinked_project_overlay_dir(self, project_dir, tmp_path):
         """ProjectOverlaySource must reject a symlinked per-workflow overlay directory."""
