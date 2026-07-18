@@ -145,7 +145,13 @@ class ProjectOverlaySource:
             if not overlay.enabled:
                 continue
             if overlay.extends != workflow_id:
-                continue
+                raise OverlayLoadError(
+                    path,
+                    [
+                        f"Overlay extends {overlay.extends!r}, but is stored under "
+                        f"workflow {workflow_id!r}."
+                    ],
+                )
             layers.append(
                 Layer(
                     content=overlay,
