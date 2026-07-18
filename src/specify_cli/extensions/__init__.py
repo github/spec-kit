@@ -1577,24 +1577,27 @@ class ExtensionManager:
                 self._atomic_restore_config(dest_dir / name, data, mode, atime, mtime)
             restored_ok = True
         except Exception:
-            # Roll the configs back into a clean, symlink-safe dest_dir from the
-            # durable backup so a failed reinstall leaves them intact, then
-            # re-raise the original error. Reset dest_dir (unlink a symlink /
-            # rmtree a real dir — surfacing failures, never ignore_errors) and
-            # recreate it under a verified non-symlink ancestor chain BEFORE
-            # copying, so recovery can never merge through a symlinked or
-            # partially-removed directory into an external target.
+            # Roll the configs back into place from the durable backup so a failed
+            # reinstall leaves them intact, then re-raise the original error.
+            # Reset dest_dir (unlink a symlink / rmtree a real dir — surfacing
+            # failures, never ignore_errors), verify its ancestor chain is not
+            # symlinked, then ATOMICALLY MOVE the whole backup directory into
+            # place with os.replace. The backup already holds real files written
+            # via _atomic_restore_config, so moving the directory wholesale avoids
+            # copytree's copy2 following a leaf symlink raced into the recreated
+            # dest_dir and writing a preserved secret to an external target.
             if backup_dir is not None:
                 try:
                     from ..shared_infra import _ensure_safe_shared_directory
                     self._reset_dir(dest_dir)
                     _ensure_safe_shared_directory(
                         self.project_root,
-                        dest_dir,
-                        create=True,
+                        dest_dir.parent,
+                        create=False,
                         context="extension directory",
                     )
-                    shutil.copytree(backup_dir, dest_dir, dirs_exist_ok=True)
+                    os.replace(backup_dir, dest_dir)
+                    backup_dir = None  # consumed by the move; nothing to clean up
                     restored_ok = True
                 except (OSError, ValueError):
                     # ValueError covers SymlinkedSharedPathError (a symlinked
@@ -1602,7 +1605,8 @@ class ExtensionManager:
                     restored_ok = False
             raise
         finally:
-            # Drop the backup only when the configs are provably in dest_dir.
+            # Drop the backup only when the configs are provably in dest_dir
+            # (a successful move sets backup_dir to None, so nothing to clean).
             if backup_dir is not None and restored_ok and backup_dir.exists():
                 shutil.rmtree(backup_dir, ignore_errors=True)
 
