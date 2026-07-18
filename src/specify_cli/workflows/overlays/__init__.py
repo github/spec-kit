@@ -71,9 +71,12 @@ class WorkflowResolver:
     def resolve(self, workflow_id: str) -> WorkflowDefinition:
         """Resolve a workflow ID to its composed definition.
 
+        This method composes layers but does not validate workflow semantics;
+        callers should validate the returned definition when needed.
+
         Raises:
             FileNotFoundError: if the workflow cannot be found.
-            ValueError: if the composed workflow is invalid.
+            ValueError: if layer collection/composition fails.
         """
         layers = self.collect_all_layers(workflow_id)
         definition, _ = self._composer.compose(layers)

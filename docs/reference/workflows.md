@@ -151,7 +151,7 @@ edits:
 | Field | Required | Description |
 | --- | --- | --- |
 | `id` | yes | Identifier for this overlay. Used in `specify workflow overlay *` commands. Must be lowercase letters, digits, and hyphens only; no dots, underscores, path separators, or `overlays`. |
-| `extends` | yes | The workflow id this overlay applies to. Uses the same safe-id format as `id`; `overlays` is reserved. |
+| `extends` | yes | The workflow id this overlay applies to. Uses the same safe-id format as `id`; `overlays`, `runs`, and `steps` are reserved. |
 | `priority` | yes | Integer `>= 1`. Higher priority overlays are applied later and win conflicts. |
 | `enabled` | no | Boolean. Defaults to `true`. Disabled overlays are ignored. |
 | `edits` | yes | Non-empty list of edit operations. |
