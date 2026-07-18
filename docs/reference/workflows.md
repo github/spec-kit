@@ -185,7 +185,7 @@ Validates the overlay file and copies it to `.specify/workflows/overlays/<extend
 specify workflow overlay list <workflow-id>
 ```
 
-Shows enabled overlays for the workflow, ordered by resolver precedence.  Disabled overlays are ignored by the resolver and are not listed.
+Shows all overlays for the workflow, ordered by resolver precedence. Disabled overlays are marked as disabled in the listing and are ignored during workflow resolution.
 
 #### Change Priority
 
