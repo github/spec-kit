@@ -3721,6 +3721,23 @@ class TestExtensionCatalog:
             with pytest.raises(ExtensionError, match="HTTPS"):
                 catalog.fetch_catalog(force_refresh=True)
 
+    def test_fetch_catalog_legacy_validates_every_redirect_hop(self, temp_dir):
+        """The legacy fetch_catalog() path also validates every INTERMEDIATE hop
+        (not just the terminal URL): it must supply a redirect_validator that
+        rejects an insecure hop, so an https -> http -> https chain is caught."""
+        catalog = self._make_catalog(temp_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator(url, "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        with pytest.raises(ExtensionError, match="HTTPS"):
+            catalog.fetch_catalog(force_refresh=True)
+        assert captured["rv"] is not None
+
     @pytest.mark.parametrize(
         "payload",
         [
