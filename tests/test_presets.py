@@ -1846,6 +1846,23 @@ class TestPresetCatalog:
         with pytest.raises(PresetError, match="HTTPS"):
             catalog.fetch_catalog(force_refresh=True)
 
+    def test_fetch_catalog_legacy_validates_every_redirect_hop(self, project_dir):
+        """The legacy fetch_catalog() path also validates every INTERMEDIATE hop
+        (not just the terminal URL): it must supply a redirect_validator that
+        rejects an insecure hop, so an https -> http -> https chain is caught."""
+        catalog = PresetCatalog(project_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator(url, "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        with pytest.raises(PresetError, match="HTTPS"):
+            catalog.fetch_catalog(force_refresh=True)
+        assert captured["rv"] is not None
+
     @pytest.mark.parametrize(
         "payload",
         [
@@ -1879,7 +1896,6 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
-        mock_response.geturl.return_value = "https://example.com/catalog.json"
         # A real urllib response reports the final URL (== request URL with no
         # redirect); the fetcher re-validates it after redirects.
         mock_response.geturl.return_value = "https://example.com/catalog.json"
