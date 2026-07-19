@@ -136,7 +136,7 @@ def normalize_priority(value: Any, default: int = DEFAULT_HOOK_PRIORITY) -> int:
         return default
     try:
         priority = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
     return priority if priority >= 1 else default
 
