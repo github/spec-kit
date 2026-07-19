@@ -13,6 +13,7 @@ from pathlib import Path
 
 import typer
 import yaml
+from rich.markup import escape as _escape_markup
 
 from .._console import console
 
@@ -107,8 +108,6 @@ def preset_add(
             try:
                 _parsed = _urlparse(from_url)
             except ValueError:
-                from rich.markup import escape as _escape_markup
-
                 console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
                 raise typer.Exit(1)
 
@@ -141,9 +140,7 @@ def preset_add(
                 )
                 raise typer.Exit(1)
 
-            from rich.markup import escape as _esc
-
-            console.print(f"Installing preset from [cyan]{_esc(from_url)}[/cyan]...")
+            console.print(f"Installing preset from [cyan]{_escape_markup(from_url)}[/cyan]...")
             import urllib.error
             import tempfile
             import shutil
@@ -183,7 +180,7 @@ def preset_add(
                             except TypeError:
                                 output.write(response.read())
                 except urllib.error.URLError as e:
-                    console.print(f"[red]Error:[/red] Failed to download: {e}")
+                    console.print(f"[red]Error:[/red] Failed to download: {_escape_markup(str(e))}")
                     raise typer.Exit(1)
 
                 manifest = manager.install_from_zip(zip_path, speckit_version, priority)
@@ -240,13 +237,13 @@ def preset_add(
             raise typer.Exit(1)
 
     except PresetCompatibilityError as e:
-        console.print(f"[red]Compatibility Error:[/red] {e}")
+        console.print(f"[red]Compatibility Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
     except PresetValidationError as e:
-        console.print(f"[red]Validation Error:[/red] {e}")
+        console.print(f"[red]Validation Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
     except PresetError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
 
@@ -288,7 +285,7 @@ def preset_search(
     try:
         results = catalog.search(query=query, tag=tag, author=author)
     except PresetError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
     if not results:
@@ -582,7 +579,7 @@ def preset_catalog_list():
     try:
         active_catalogs = catalog.get_active_catalogs()
     except PresetValidationError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
     console.print("\n[bold cyan]Active Preset Catalogs:[/bold cyan]\n")
@@ -647,7 +644,7 @@ def preset_catalog_add(
     try:
         tmp_catalog._validate_catalog_url(url)
     except PresetValidationError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        console.print(f"[red]Error:[/red] {_escape_markup(str(e))}")
         raise typer.Exit(1)
 
     config_path = specify_dir / "preset-catalogs.yml"
@@ -658,7 +655,7 @@ def preset_catalog_add(
             config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         except Exception as e:
             config_label = _display_project_path(project_root, config_path)
-            console.print(f"[red]Error:[/red] Failed to read {config_label}: {e}")
+            console.print(f"[red]Error:[/red] Failed to read {_escape_markup(str(config_label))}: {_escape_markup(str(e))}")
             raise typer.Exit(1)
     else:
         config = {}
