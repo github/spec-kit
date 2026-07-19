@@ -4050,6 +4050,67 @@ steps:
         errors = validate_workflow(definition)
         assert not any("enum" in e for e in errors), errors
 
+    def test_validate_workflow_scalar_enum_still_reports_bad_default_type(self):
+        """A malformed ``enum`` must not mask an independent default type error.
+
+        With ``type: string`` and ``default: 5`` alongside ``enum: 5``, the
+        malformed enum is reported once *and* the wrong-typed default is still
+        surfaced — stripping only ``enum`` from the coercion input preserves the
+        default's type validation instead of skipping it entirely."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "scalar-enum-bad-default"
+  name: "Scalar Enum Bad Default"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    default: 5
+    enum: 5
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        # The enum shape is reported exactly once...
+        assert sum("invalid 'enum'" in e for e in errors) == 1, errors
+        # ...and the independent wrong-typed default is still surfaced.
+        assert any(
+            "invalid default" in e and "expected a string" in e for e in errors
+        ), errors
+
+    def test_resolve_inputs_auto_integration_rejects_scalar_enum(self, project_dir):
+        """The ``integration: auto`` runtime exemption must not swallow a
+        malformed ``enum``.
+
+        ``_resolve_inputs`` strips ``enum`` before coercing the ``auto``
+        sentinel so a workflow listing specific integrations doesn't crash on
+        ``"auto"``. But that strip must apply only to a *list* ``enum`` — a
+        scalar ``enum: 5`` must still reach ``_coerce_input`` and raise a clean
+        ``ValueError``, not be silently exempted and resolve successfully."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-integration-scalar-enum"
+  name: "Auto Integration Scalar Enum"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+    enum: 5
+""")
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="invalid 'enum'"):
+            engine._resolve_inputs(definition, {})
+
     def test_while_loop_condition_reads_latest_iteration(self, project_dir):
         """Regression: while-loop condition must see updated step output
         from the most recent iteration, not stale iteration-0 data.

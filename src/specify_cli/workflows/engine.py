@@ -215,19 +215,28 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             # enum-membership check is exempted for that exact case — the
             # declared type is still enforced (e.g. ``type: number`` paired
             # with ``default: "auto"`` is still rejected).
-            # A malformed (non-list) ``enum`` is already reported above; skip
-            # the default check when it is, so ``_coerce_input`` doesn't re-raise
-            # the same enum error re-framed as an "invalid default" (a confusing
-            # duplicate). The type/coercion of the default is still meaningfully
-            # checkable, but reporting one clear enum error is better than two.
             enum_is_valid = enum_values is None or isinstance(enum_values, list)
-            if "default" in input_def and enum_is_valid:
+            if "default" in input_def:
                 default_value = input_def["default"]
                 is_auto_integration = (
                     input_name == "integration" and default_value == "auto"
                 )
+                # Strip ``enum`` from the definition handed to ``_coerce_input``
+                # when either:
+                #   * this is the auto-integration sentinel (enum-membership is
+                #     a runtime concern, exempted for ``"auto"``), or
+                #   * the ``enum`` is malformed (non-list) and already reported
+                #     above — leaving it in would make ``_coerce_input`` re-raise
+                #     the same enum-shape error re-framed as an "invalid default"
+                #     (a confusing duplicate).
+                # Removing *only* ``enum`` (rather than skipping the check
+                # entirely) preserves the default's type validation: a
+                # ``type: string`` input with ``default: 5, enum: 5`` still
+                # reports the wrong-typed default alongside the enum error,
+                # instead of hiding it.
+                strip_enum = (is_auto_integration or not enum_is_valid)
                 validation_input_def: dict[str, Any] = input_def
-                if is_auto_integration and "enum" in input_def:
+                if strip_enum and "enum" in input_def:
                     validation_input_def = {
                         key: value
                         for key, value in input_def.items()
@@ -1388,11 +1397,18 @@ class WorkflowEngine:
             # definition (``string`` rejects non-strings, ``number`` rejects
             # bools and uncoercible values, ``boolean`` rejects non-bools),
             # so ill-typed values still fail fast here.
+            #
+            # ``execute()`` accepts unvalidated definitions, so a malformed
+            # (non-list) ``enum`` can reach here. Only strip a *list* ``enum``:
+            # a scalar/string ``enum`` must stay in the definition so
+            # ``_coerce_input`` raises the clean shape ``ValueError`` instead of
+            # being silently exempted by the ``auto`` membership skip (which
+            # would otherwise let ``enum: 5`` resolve successfully).
             coerce_input_def = input_def
             if (
                 name == "integration"
                 and value == "auto"
-                and "enum" in input_def
+                and isinstance(input_def.get("enum"), list)
             ):
                 coerce_input_def = {
                     key: val
