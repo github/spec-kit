@@ -304,7 +304,7 @@ class TestWorkflowResolver:
         listed_layers = resolver.collect_all_layers("wf", include_disabled=True)
 
         assert [layer.source for layer in default_layers] == ["base"]
-        assert [layer.source for layer in listed_layers] == ["base", "project:disabled"]
+        assert [layer.source for layer in listed_layers] == ["project:disabled", "base"]
 
     def test_resolve_invalid_anchor_raises(self, project_dir):
         data = {

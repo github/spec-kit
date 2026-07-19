@@ -184,6 +184,9 @@ def workflow_overlay_add(
     # Apply --priority override before validation so a valid CLI priority
     # can fix a missing or invalid priority in the file.
     if priority is not None:
+        if isinstance(priority, bool) or not isinstance(priority, int) or priority < 1:
+            err_console.print("[red]Error:[/red] Priority must be >= 1.")
+            return None
         data["priority"] = normalize_priority(priority)
 
     overlay, validation_errors = validate_overlay_yaml(data)
@@ -406,9 +409,12 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
     console.print(f"Resolved workflow '{workflow_id}':")
     console.print("Layers (highest precedence first):")
     for layer in layers:
+        priority = (
+            "n/a" if layer.tier == "base" else str(normalize_priority(layer.priority))
+        )
         console.print(
             f"  \u2022 [{layer.tier}] {layer.source} "
-            f"(priority={normalize_priority(layer.priority)})"
+            f"(priority={priority})"
         )
 
     console.print("Step attribution:")
@@ -421,7 +427,11 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
             {
                 "source": layer.source,
                 "tier": layer.tier,
-                "priority": normalize_priority(layer.priority),
+                "priority": (
+                    None
+                    if layer.tier == "base"
+                    else normalize_priority(layer.priority)
+                ),
             }
             for layer in layers
         ],

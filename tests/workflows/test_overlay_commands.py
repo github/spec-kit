@@ -198,6 +198,28 @@ class TestOverlayCli:
         installed = project_dir / ".specify" / "workflows" / "overlays" / "wf" / "ov1.yml"
         assert yaml.safe_load(installed.read_text(encoding="utf-8"))["priority"] == 10
 
+    def test_overlay_add_rejects_non_positive_priority(self, project_dir, monkeypatch):
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        overlay_file = project_dir / "overlay.yml"
+        overlay_file.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "ov1",
+                    "extends": "wf",
+                    "edits": [{"remove": "a"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(
+            app,
+            ["workflow", "overlay", "add", str(overlay_file), "--priority", "0"],
+        )
+
+        assert result.exit_code == 1
+        assert "must be >= 1" in result.output
+
     def test_overlay_set_priority(self, project_dir, monkeypatch):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         _write_workflow(
@@ -478,6 +500,14 @@ class TestOverlayCli:
         assert "base" in result.output
         assert "project:ov1" in result.output
         assert "new" in result.output
+        assert "priority=n/a" in result.output
+
+        from specify_cli.workflows.overlays._commands import workflow_resolve
+
+        payload = workflow_resolve(project_dir, "wf")
+        assert payload is not None
+        assert payload["layers"][-1]["tier"] == "base"
+        assert payload["layers"][-1]["priority"] is None
 
     def test_workflow_resolve_equal_priority_layers_sort_by_source(self, project_dir, monkeypatch):
         """Equal-priority overlays are listed alphabetically by source."""

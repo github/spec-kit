@@ -47,10 +47,11 @@ class WorkflowResolver:
     def collect_all_layers(
         self, workflow_id: str, *, include_disabled: bool = False
     ) -> list[Layer]:
-        """Collect all layers sorted by resolver precedence.
+        """Collect overlays sorted by precedence, followed by the base layer.
 
         Lower priority numbers win. Ties are sorted alphabetically by source,
-        matching ``PresetRegistry.list_by_priority()``.
+        matching ``PresetRegistry.list_by_priority()``. The base workflow is a
+        foundation rather than a precedence candidate, so it is kept separate.
         """
         _validate_workflow_id(workflow_id)
 
@@ -60,7 +61,12 @@ class WorkflowResolver:
                 source.collect(workflow_id, include_disabled=include_disabled)
             )
 
-        return sorted(all_layers, key=lambda layer: (layer.priority, layer.source))
+        overlays = [layer for layer in all_layers if layer.tier != "base"]
+        base_layers = [layer for layer in all_layers if layer.tier == "base"]
+        return (
+            sorted(overlays, key=lambda layer: (layer.priority, layer.source))
+            + base_layers
+        )
 
     def resolve(self, workflow_id: str) -> WorkflowDefinition:
         """Resolve a workflow ID to its composed definition.
