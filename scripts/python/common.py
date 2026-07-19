@@ -95,16 +95,17 @@ def _json_dump(data: dict[str, str]) -> str:
 
 
 def persist_feature_json(repo_root: Path, feature_dir_value: str) -> None:
+    # Strip the repo root prefix lexically (no resolve()) to mirror the
+    # Bash/PowerShell helpers: with a symlinked <repo>/specs, resolve() would
+    # escape the repo and persist a machine-specific absolute path instead of
+    # the relative "specs/NNN-name" the other variants store.
     value = feature_dir_value
-    try:
-        relative = Path(value)
-        if relative.is_absolute():
-            try:
-                value = relative.resolve().relative_to(repo_root.resolve()).as_posix()
-            except ValueError:
-                value = str(relative)
-    except OSError:
-        pass
+    relative = Path(value)
+    if relative.is_absolute():
+        try:
+            value = relative.relative_to(repo_root).as_posix()
+        except ValueError:
+            value = str(relative)
 
     current = read_feature_json_feature_directory(repo_root)
     if current == value:

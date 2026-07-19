@@ -130,6 +130,27 @@ def test_powershell_unknown_option_matches_siblings(repo: Path) -> None:
 
 
 @requires_bash
+def test_help_beats_unknown_option_matches_bash(repo: Path) -> None:
+    """--help must win over a later unknown option and exit 0."""
+    bash = run(bash_cmd(repo, SCRIPT, "--help", "--bogus"), repo)
+    py = run(py_cmd(repo, SCRIPT, "--help", "--bogus"), repo)
+
+    assert py.returncode == bash.returncode == 0
+    assert py.stderr == bash.stderr == ""
+    assert "Usage" in py.stdout and "Usage" in bash.stdout
+
+
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_powershell_help_beats_unknown_option(repo: Path) -> None:
+    """-Help must win over unknown-argument validation like the siblings."""
+    ps = run(ps_cmd(repo, SCRIPT, "-Help", "--bogus"), repo)
+
+    assert ps.returncode == 0, ps.stderr
+    assert ps.stderr == ""
+    assert "Usage" in ps.stdout
+
+
+@requires_bash
 @pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
 @pytest.mark.parametrize(
     "context", ["missing", "invalid_json", "invalid_utf8", "invalid_init_dir"]

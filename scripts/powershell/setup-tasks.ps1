@@ -10,14 +10,16 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if ($RemainingArgs.Count -gt 0) {
-    [Console]::Error.WriteLine("ERROR: Unknown option '$($RemainingArgs[0])'")
-    exit 1
-}
-
+# Help wins over unknown-argument validation to match the Bash/Python
+# variants, which stop at --help and exit 0.
 if ($Help) {
     Write-Output "Usage: setup-tasks.ps1 [-Json] [-Help]"
     exit 0
+}
+
+if ($RemainingArgs.Count -gt 0) {
+    [Console]::Error.WriteLine("ERROR: Unknown option '$($RemainingArgs[0])'")
+    exit 1
 }
 
 # Source common functions
