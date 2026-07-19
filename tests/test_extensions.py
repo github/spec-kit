@@ -1638,6 +1638,21 @@ $ARGUMENTS
         assert frontmatter == {}
         assert "Command body" in body
 
+    def test_parse_frontmatter_dash_in_value(self):
+        """A ``---`` inside a frontmatter value must not close the block early."""
+        content = """---
+description: Separate sections with --- markers
+argument-hint: "[name]"
+---
+Real body starts here.
+"""
+        registrar = CommandRegistrar()
+        frontmatter, body = registrar.parse_frontmatter(content)
+
+        assert frontmatter["description"] == "Separate sections with --- markers"
+        assert frontmatter["argument-hint"] == "[name]"
+        assert body == "Real body starts here."
+
     def test_render_frontmatter(self):
         """Test rendering frontmatter to YAML."""
         frontmatter = {

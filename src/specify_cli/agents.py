@@ -114,13 +114,24 @@ class CommandRegistrar:
         if not content.startswith("---"):
             return {}, content
 
-        # Find second ---
-        end_marker = content.find("---", 3)
-        if end_marker == -1:
+        # The closing delimiter is a line that is exactly ``---`` (a YAML
+        # document separator), not any ``---`` substring. Scanning with
+        # ``content.find("---", 3)`` stops at the first ``---`` *anywhere* —
+        # including one embedded in a frontmatter value (e.g. a description like
+        # "Separate sections with ---") or inside an indented literal block —
+        # which truncates the frontmatter and spills the remainder into the
+        # body. Match on line boundaries instead, mirroring the line-anchored
+        # scan in ``VibeIntegration._inject_frontmatter_flag``.
+        lines = content.splitlines(keepends=True)
+        end_line = next(
+            (i for i in range(1, len(lines)) if lines[i].rstrip() == "---"),
+            None,
+        )
+        if end_line is None:
             return {}, content
 
-        frontmatter_str = content[3:end_marker].strip()
-        body = content[end_marker + 3 :].strip()
+        frontmatter_str = "".join(lines[1:end_line]).strip()
+        body = "".join(lines[end_line + 1 :]).strip()
 
         try:
             frontmatter = yaml.safe_load(frontmatter_str) or {}
