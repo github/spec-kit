@@ -350,6 +350,10 @@ class CopilotIntegration(IntegrationBase):
         if not templates:
             return []
 
+        from ...presets import PresetResolver
+
+        preset_resolver = PresetResolver(project_root_resolved)
+
         dest = self.commands_dest(project_root)
         dest_resolved = dest.resolve()
         try:
@@ -367,7 +371,11 @@ class CopilotIntegration(IntegrationBase):
 
         # 1. Process and write command files as .agent.md
         for src_file in templates:
-            raw = src_file.read_text(encoding="utf-8")
+            resolved_template = preset_resolver.resolve(
+                src_file.stem, template_type="command"
+            )
+            source_path = resolved_template or src_file
+            raw = source_path.read_text(encoding="utf-8")
             processed = self.process_template(
                 raw, self.key, script_type, arg_placeholder,
                 project_root=project_root,
