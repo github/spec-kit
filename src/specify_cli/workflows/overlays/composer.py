@@ -14,9 +14,9 @@ class StepListComposer:
 
     - The base layer (tier="base") provides the full step list.
     - Overlay layers provide edit operations.
-    - Overlays are applied in merge order: lowest priority first, highest last;
-      ties are resolved so installed overlays are applied before project
-      overlays, letting project overlays win.
+    - Overlays are applied in merge order: highest priority number first,
+      lowest last, so lower priority numbers win. Ties are applied by overlay
+      ID, with the alphabetically last ID winning.
     - Returns a parsed WorkflowDefinition; callers must validate separately.
     """
 
@@ -47,14 +47,10 @@ class StepListComposer:
             # here would mask that error.
             return base_definition, []
 
-        # Sort overlays into merge order.
+        # Last applied wins, so apply lower priority numbers last.
         merge_order = sorted(
             overlay_layers,
-            key=lambda layer: (
-                layer.priority,
-                0 if layer.tier == "installed-overlay" else 1,
-                layer.source,
-            ),
+            key=lambda layer: (-layer.priority, layer.content.id),
         )
 
         # Validate edits against base anchors before mutation.

@@ -192,6 +192,26 @@ class TestOverlayIdValidation:
         assert overlay is None
         assert any("id" in e.lower() for e in errors), errors
 
+
+class TestOverlayPriorityNormalization:
+    """Stored overlay priorities match preset normalization semantics."""
+
+    @pytest.mark.parametrize("priority", [None, True, "invalid", 0])
+    def test_invalid_or_missing_priority_defaults_to_ten(self, priority):
+        data = {
+            "id": "ov",
+            "extends": "wf",
+            "edits": [{"remove": "a"}],
+        }
+        if priority is not None:
+            data["priority"] = priority
+
+        overlay, errors = validate_overlay_yaml(data)
+
+        assert errors == []
+        assert overlay is not None
+        assert overlay.priority == 10
+
     @pytest.mark.parametrize("extends", ["../wf", "a/b", "a\\\\b", ".", "..", ""])
     def test_invalid_extends_rejected(self, extends):
         overlay, errors = validate_overlay_yaml(

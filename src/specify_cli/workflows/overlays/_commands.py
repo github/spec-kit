@@ -9,11 +9,13 @@ import typer
 import yaml
 
 from ..._console import console, err_console
+from ...extensions import normalize_priority
 from .._commands import (
     _commit_workflow_file,
-    _discard_staged_workflow_file,
+    _discard_committed_backup_file,
     _reject_unsafe_dir,
     _reject_unsafe_workflow_storage,
+    _safe_discard_staged_workflow_file,
     _stage_workflow_file,
 )
 from . import WorkflowResolver
@@ -107,6 +109,7 @@ def _find_overlay_file(project_root: Path, workflow_id: str, overlay_id: str) ->
         entries = sorted(overlay_dir.iterdir())
     except OSError:
         return None
+    matches: list[Path] = []
     for path in entries:
         if not path.is_file() or path.suffix not in (".yml", ".yaml"):
             continue
@@ -116,8 +119,15 @@ def _find_overlay_file(project_root: Path, workflow_id: str, overlay_id: str) ->
         if data is None:
             continue
         if data.get("id") == overlay_id:
-            return path
-    return None
+            matches.append(path)
+    if len(matches) > 1:
+        paths = ", ".join(str(path) for path in matches)
+        err_console.print(
+            f"[red]Error:[/red] Duplicate overlay ID '{overlay_id}' in {paths}. "
+            "Resolve the duplicate manifest IDs before continuing."
+        )
+        raise typer.Exit(1)
+    return matches[0] if matches else None
 
 
 def _ensure_contained_path(path: Path, root: Path) -> Path:
@@ -138,16 +148,6 @@ def _ensure_contained_path(path: Path, root: Path) -> Path:
         )
         raise typer.Exit(1)
     return path
-
-
-def _validate_priority(priority: int) -> None:
-    """Validate a user-supplied priority value."""
-    if isinstance(priority, bool) or not isinstance(priority, int):
-        err_console.print("[red]Error:[/red] Priority must be an integer.")
-        raise typer.Exit(1)
-    if priority < 1:
-        err_console.print("[red]Error:[/red] Priority must be >= 1.")
-        raise typer.Exit(1)
 
 
 def _read_overlay(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -184,8 +184,7 @@ def workflow_overlay_add(
     # Apply --priority override before validation so a valid CLI priority
     # can fix a missing or invalid priority in the file.
     if priority is not None:
-        _validate_priority(priority)
-        data["priority"] = priority
+        data["priority"] = normalize_priority(priority)
 
     overlay, validation_errors = validate_overlay_yaml(data)
     if overlay is None:
@@ -193,9 +192,9 @@ def workflow_overlay_add(
         for err in validation_errors:
             err_console.print(f"  \u2022 {err}")
         return None
+    data["priority"] = overlay.priority
 
     target_dir = _project_overlay_dir(project_root, overlay.extends)
-    target_dir.mkdir(parents=True, exist_ok=True)
     # Reuse an existing .yaml file so we don't create a duplicate .yml layer.
     existing = _find_overlay_file(project_root, overlay.extends, overlay.id)
     if existing is not None:
@@ -205,18 +204,23 @@ def workflow_overlay_add(
             target_dir / f"{overlay.id}.yml", _overlay_root(project_root)
         )
 
+    backup: Path | None = None
     try:
+        target_dir.mkdir(parents=True, exist_ok=True)
         existed_before = target_path.exists()
         staged = _stage_workflow_file(target_path.parent)
         try:
             staged.write_bytes(yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
-            _commit_workflow_file(staged, target_path, existed_before)
+            backup = _commit_workflow_file(staged, target_path, existed_before)
         except BaseException:
-            _discard_staged_workflow_file(staged, target_path.parent)
+            _safe_discard_staged_workflow_file(
+                staged, target_path.parent, existed_before
+            )
             raise
     except OSError as exc:
         err_console.print(f"[red]Error:[/red] Failed to write overlay: {exc}")
         return None
+    _discard_committed_backup_file(backup)
 
     console.print(
         f"[green]\u2713[/green] Overlay '{overlay.id}' added for workflow '{overlay.extends}'"
@@ -254,18 +258,20 @@ def _update_overlay_field(
             err_console.print(f"  \u2022 {err}")
         return False
 
+    backup: Path | None = None
     try:
         existed_before = path.exists()
         staged = _stage_workflow_file(path.parent)
         try:
             staged.write_bytes(yaml.safe_dump(data, sort_keys=False).encode("utf-8"))
-            _commit_workflow_file(staged, path, existed_before)
+            backup = _commit_workflow_file(staged, path, existed_before)
         except BaseException:
-            _discard_staged_workflow_file(staged, path.parent)
+            _safe_discard_staged_workflow_file(staged, path.parent, existed_before)
             raise
     except OSError as exc:
         err_console.print(f"[red]Error:[/red] Failed to write overlay: {exc}")
         return False
+    _discard_committed_backup_file(backup)
 
     return True
 
@@ -277,10 +283,15 @@ def workflow_overlay_set_priority(
     priority: int,
 ) -> bool:
     """Set the priority of a project-local overlay."""
-    _validate_priority(priority)
-    if _update_overlay_field(project_root, workflow_id, overlay_id, "priority", priority):
+    if isinstance(priority, bool) or not isinstance(priority, int) or priority < 1:
+        err_console.print("[red]Error:[/red] Priority must be >= 1.")
+        raise typer.Exit(1)
+    normalized_priority = normalize_priority(priority)
+    if _update_overlay_field(
+        project_root, workflow_id, overlay_id, "priority", normalized_priority
+    ):
         console.print(
-            f"[green]\u2713[/green] Priority of overlay '{overlay_id}' set to {priority}"
+            f"[green]\u2713[/green] Priority of overlay '{overlay_id}' set to {normalized_priority}"
         )
         return True
     return False
@@ -361,13 +372,13 @@ def workflow_overlay_list(project_root: Path, workflow_id: str) -> list[dict[str
             "id": overlay.id,
             "source": layer.source,
             "tier": layer.tier,
-            "priority": overlay.priority,
+            "priority": normalize_priority(overlay.priority),
             "enabled": overlay.enabled,
             "path": str(layer.path) if layer.path else None,
         })
         enabled_marker = "enabled" if overlay.enabled else "disabled"
         console.print(
-            f"  \u2022 {overlay.id} (priority={overlay.priority}, "
+            f"  \u2022 {overlay.id} (priority={normalize_priority(overlay.priority)}, "
             f"source={layer.source}, {enabled_marker})"
         )
     return rows
@@ -396,7 +407,8 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
     console.print("Layers (highest precedence first):")
     for layer in layers:
         console.print(
-            f"  \u2022 [{layer.tier}] {layer.source} (priority={layer.priority})"
+            f"  \u2022 [{layer.tier}] {layer.source} "
+            f"(priority={normalize_priority(layer.priority)})"
         )
 
     console.print("Step attribution:")
@@ -409,7 +421,7 @@ def workflow_resolve(project_root: Path, workflow_id: str) -> dict[str, Any] | N
             {
                 "source": layer.source,
                 "tier": layer.tier,
-                "priority": layer.priority,
+                "priority": normalize_priority(layer.priority),
             }
             for layer in layers
         ],

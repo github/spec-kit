@@ -32,7 +32,7 @@ class WorkflowResolver:
     - project-local overlays (``.specify/workflows/overlays/<id>/*.yml``)
     - the base workflow itself (``.specify/workflows/<id>/workflow.yml``)
 
-    Resolution is higher-wins: overlays with higher priority are applied
+    Resolution is lower-wins: overlays with lower priority numbers are applied
     later and override earlier edits on the same anchors.
     """
 
@@ -49,10 +49,8 @@ class WorkflowResolver:
     ) -> list[Layer]:
         """Collect all layers sorted by resolver precedence.
 
-        Higher priority wins. Ties are broken so the actual winner appears first:
-        the composer applies equal-priority sources ascending (last wins), so we
-        reverse source ordering here to show the winner at the top of the list.
-        Two stable passes: source descending, then priority descending.
+        Lower priority numbers win. Ties are sorted alphabetically by source,
+        matching ``PresetRegistry.list_by_priority()``.
         """
         _validate_workflow_id(workflow_id)
 
@@ -62,11 +60,7 @@ class WorkflowResolver:
                 source.collect(workflow_id, include_disabled=include_disabled)
             )
 
-        # Pass 1: source descending — within each priority group the winning
-        # source (alphabetically last = applied last by the composer) rises first.
-        by_source = sorted(all_layers, key=lambda layer: layer.source, reverse=True)
-        # Pass 2: priority descending — overall ordering by precedence.
-        return sorted(by_source, key=lambda layer: layer.priority, reverse=True)
+        return sorted(all_layers, key=lambda layer: (layer.priority, layer.source))
 
     def resolve(self, workflow_id: str) -> WorkflowDefinition:
         """Resolve a workflow ID to its composed definition.

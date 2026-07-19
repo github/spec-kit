@@ -101,7 +101,7 @@ When `specify workflow run <workflow-id>` loads a workflow, the engine composes 
 
 ### How Overlays Work
 
-An overlay is a YAML file that declares a set of edit operations against the step list of a base workflow.  Overlays are applied in priority order (lowest first, highest last); equal-priority overlays are applied in source order (last applied wins).
+An overlay is a YAML file that declares a set of edit operations against the step list of a base workflow. Overlays use lower-wins precedence: higher priority numbers are applied first and lower numbers last. Equal-priority overlays are applied alphabetically by ID, with the last ID winning conflicts.
 
 Project overlay files live at:
 
@@ -152,7 +152,7 @@ edits:
 | --- | --- | --- |
 | `id` | yes | Identifier for this overlay. Used in `specify workflow overlay *` commands. Must be lowercase letters, digits, and hyphens only; no dots, underscores, path separators, or `overlays`. |
 | `extends` | yes | The workflow id this overlay applies to. Uses the same safe-id format as `id`; `overlays`, `runs`, and `steps` are reserved. |
-| `priority` | yes | Integer `>= 1`. Higher priority overlays are applied later and win conflicts. |
+| `priority` | no | Integer; defaults to `10`. Lower values have higher precedence and win conflicts. Missing or invalid values fall back to `10`. |
 | `enabled` | no | Boolean. Defaults to `true`. Disabled overlays are ignored. |
 | `edits` | yes | Non-empty list of edit operations. |
 
@@ -177,7 +177,7 @@ Step ids must not contain `:` — that character is reserved for engine-generate
 specify workflow overlay add <path-to-overlay.yml> --priority <n>
 ```
 
-Validates the overlay file and copies it to `.specify/workflows/overlays/<extends>/<id>.yml`.  `--priority` overrides the `priority` field in the file.
+Validates the overlay file and copies it to `.specify/workflows/overlays/<extends>/<id>.yml`. `--priority` defaults to `10` and overrides the `priority` field in the file.
 
 #### List Overlays
 
@@ -251,7 +251,7 @@ The composed workflow will now run the full SDD cycle and execute `ruff check sr
 ```yaml
 id: "skip-plan-review"
 extends: "speckit"
-priority: 20
+priority: 5
 edits:
   - replace: review-plan
     step:
@@ -262,7 +262,7 @@ edits:
         args: "{{ inputs.spec }}"
 ```
 
-Higher priority (`20`) means this overlay is applied after the `add-lint` overlay above.  It replaces the `review-plan` gate with a non-interactive command.
+Lower priority values have higher precedence. Change this overlay to `priority: 5` if it must win a conflict with the `add-lint` overlay above. It replaces the `review-plan` gate with a non-interactive command.
 
 ### Interaction with Bundles and Updates
 

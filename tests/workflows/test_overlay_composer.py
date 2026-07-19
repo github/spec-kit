@@ -104,3 +104,50 @@ class TestStepListComposerValidation:
         resolver = WorkflowResolver(project_dir)
         with pytest.raises(ValueError, match="missing"):
             resolver.resolve("wf")
+
+    def test_composer_applies_lower_priority_last(self, project_dir):
+        _write_workflow(
+            project_dir,
+            "wf",
+            {
+                "schema_version": "1.0",
+                "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
+                "steps": [{"id": "a", "type": "command", "command": "base"}],
+            },
+        )
+        high_number = Overlay(
+            id="high-number",
+            extends="wf",
+            priority=20,
+            edits=[
+                OverlayEdit(
+                    "replace",
+                    "a",
+                    {"id": "a", "type": "command", "command": "priority-20"},
+                )
+            ],
+        )
+        low_number = Overlay(
+            id="low-number",
+            extends="wf",
+            priority=5,
+            edits=[
+                OverlayEdit(
+                    "replace",
+                    "a",
+                    {"id": "a", "type": "command", "command": "priority-5"},
+                )
+            ],
+        )
+
+        definition, attribution = StepListComposer().compose(
+            [
+                BaseWorkflowSource(project_dir).collect("wf")[0],
+                Layer(high_number, "project:high-number", "project-overlay", 20),
+                Layer(low_number, "project:low-number", "project-overlay", 5),
+            ]
+        )
+
+        assert definition is not None
+        assert definition.data["steps"][0]["command"] == "priority-5"
+        assert attribution[0].source == "project:low-number"

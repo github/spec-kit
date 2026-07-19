@@ -182,6 +182,36 @@ class TestProjectOverlaySourceDisabledFiltering:
         assert [layer.content.id for layer in layers] == ["ov1"]
         assert layers[0].content.enabled is False
 
+    def test_skips_invalid_disabled_overlay_during_resolution(self, project_dir: Path) -> None:
+        _write_overlay_file(
+            project_dir,
+            "wf",
+            "disabled",
+            {
+                "id": "disabled",
+                "extends": "wf",
+                "enabled": False,
+                "edits": "not-a-list",
+            },
+        )
+
+        source = ProjectOverlaySource(project_dir)
+        assert source.collect("wf") == []
+        with pytest.raises(OverlayLoadError, match="edits"):
+            source.collect("wf", include_disabled=True)
+
+    def test_rejects_duplicate_manifest_ids(self, project_dir: Path) -> None:
+        data = {
+            "id": "duplicate",
+            "extends": "wf",
+            "edits": [{"remove": "a"}],
+        }
+        _write_overlay_file(project_dir, "wf", "first", data)
+        _write_overlay_file(project_dir, "wf", "second", data)
+
+        with pytest.raises(OverlayLoadError, match="Duplicate overlay id"):
+            ProjectOverlaySource(project_dir).collect("wf")
+
 
 class TestBaseWorkflowSourceIdValidation:
     """BaseWorkflowSource.collect() must reject unsafe IDs before path construction."""
@@ -230,3 +260,13 @@ class TestBaseWorkflowSourceContainment:
         """A workflow directory that does not exist returns an empty layer list."""
         source = BaseWorkflowSource(project_dir)
         assert source.collect("no-such-wf") == []
+
+    def test_rejects_symlinked_workflows_root(self, project_dir: Path, tmp_path: Path) -> None:
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        workflows_dir = project_dir / ".specify" / "workflows"
+        workflows_dir.rmdir()
+        workflows_dir.symlink_to(outside)
+
+        with pytest.raises(OverlayLoadError, match="Symlinked workflow directories"):
+            BaseWorkflowSource(project_dir).collect("wf")

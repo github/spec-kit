@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import typer
 import yaml
 from typer.testing import CliRunner
 
@@ -128,11 +129,12 @@ class TestOverlayCli:
         # Should have written to the pre-existing .yaml file.
         assert existing_yaml.is_file()
         data = yaml.safe_load(existing_yaml.read_text(encoding="utf-8"))
-        assert data["priority"] == 20
+        assert data["priority"] == 10
 
         # Must NOT have created a duplicate .yml alongside the .yaml.
         duplicate_yml = existing_yaml.with_suffix(".yml")
         assert not duplicate_yml.exists(), "duplicate .yml was created alongside existing .yaml"
+        assert list(existing_yaml.parent.glob(f".{existing_yaml.name}.*.bak")) == []
 
     def test_overlay_add_with_priority_override_missing_in_file(self, project_dir, monkeypatch):
         """--priority must fix a missing priority in the overlay file."""
@@ -176,6 +178,26 @@ class TestOverlayCli:
         data = yaml.safe_load(installed.read_text(encoding="utf-8"))
         assert data["priority"] == 5
 
+    def test_overlay_add_defaults_priority_to_ten(self, project_dir, monkeypatch):
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+        overlay_file = project_dir / "overlay.yml"
+        overlay_file.write_text(
+            yaml.safe_dump(
+                {
+                    "id": "ov1",
+                    "extends": "wf",
+                    "edits": [{"remove": "a"}],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["workflow", "overlay", "add", str(overlay_file)])
+
+        assert result.exit_code == 0, result.output
+        installed = project_dir / ".specify" / "workflows" / "overlays" / "wf" / "ov1.yml"
+        assert yaml.safe_load(installed.read_text(encoding="utf-8"))["priority"] == 10
+
     def test_overlay_set_priority(self, project_dir, monkeypatch):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         _write_workflow(
@@ -215,6 +237,21 @@ class TestOverlayCli:
             ).read_text(encoding="utf-8")
         )
         assert data["priority"] == 20
+        assert list(
+            (project_dir / ".specify" / "workflows" / "overlays" / "wf").glob(
+                ".ov1.yml.*.bak"
+            )
+        ) == []
+
+    def test_overlay_set_priority_rejects_zero(self, project_dir, monkeypatch):
+        monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
+
+        result = runner.invoke(
+            app, ["workflow", "overlay", "set-priority", "wf", "ov1", "0"]
+        )
+
+        assert result.exit_code == 1
+        assert "must be >= 1" in result.output
 
     def test_overlay_set_priority_rejects_ids_with_trailing_newline(self, project_dir, monkeypatch):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
@@ -442,8 +479,8 @@ class TestOverlayCli:
         assert "project:ov1" in result.output
         assert "new" in result.output
 
-    def test_workflow_resolve_equal_priority_winner_shown_first(self, project_dir, monkeypatch):
-        """Equal-priority overlays must be displayed with the actual winner (last applied) first."""
+    def test_workflow_resolve_equal_priority_layers_sort_by_source(self, project_dir, monkeypatch):
+        """Equal-priority overlays are listed alphabetically by source."""
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         _write_workflow(
             project_dir,
@@ -454,9 +491,8 @@ class TestOverlayCli:
                 "steps": [{"id": "a", "type": "command", "command": "echo"}],
             },
         )
-        # "zzz" sorts last alphabetically, so the composer applies it last → it wins.
-        # "aaa" sorts first, so it is applied first → it loses.
-        # The display must show the winner ("project:zzz") before the loser ("project:aaa").
+        # "zzz" sorts last alphabetically, so the composer applies it last and wins.
+        # Resolver layer output follows the common priority/source sort order.
         _write_overlay(
             project_dir,
             "wf",
@@ -496,9 +532,7 @@ class TestOverlayCli:
         assert result.exit_code == 0, result.output
         zzz_pos = result.output.index("project:zzz")
         aaa_pos = result.output.index("project:aaa")
-        assert zzz_pos < aaa_pos, (
-            "project:zzz (the winning source) should appear before project:aaa in the output"
-        )
+        assert aaa_pos < zzz_pos
 
     def test_workflow_add_does_not_copy_overlays(self, project_dir, monkeypatch, tmp_path):
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
@@ -707,8 +741,8 @@ class TestOverlayFilenameVsManifestId:
             project_dir / ".specify" / "workflows" / "overlays" / "wf" / "custom.yml"
         ).exists()
 
-    def test_duplicate_manifest_id_returns_first_sorted(self, project_dir, monkeypatch):
-        """Two files with the same manifest id: first sorted match wins."""
+    def test_duplicate_manifest_id_is_rejected(self, project_dir, monkeypatch):
+        """Two files with the same manifest ID are ambiguous."""
         monkeypatch.setattr("specify_cli._require_specify_project", lambda: project_dir)
         _write_workflow(
             project_dir,
@@ -747,7 +781,5 @@ class TestOverlayFilenameVsManifestId:
 
         from specify_cli.workflows.overlays._commands import _find_overlay_file
 
-        found = _find_overlay_file(project_dir, "wf", "lint")
-        assert found is not None
-        # sorted() returns aaa.yml before zzz.yml
-        assert found.name == "aaa.yml"
+        with pytest.raises(typer.Exit):
+            _find_overlay_file(project_dir, "wf", "lint")

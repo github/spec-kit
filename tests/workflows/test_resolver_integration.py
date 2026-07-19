@@ -117,7 +117,7 @@ class TestWorkflowResolver:
         definition = resolver.resolve("wf")
         assert [s["id"] for s in definition.steps] == ["a", "new", "b"]
 
-    def test_resolve_higher_priority_wins(self, project_dir):
+    def test_resolve_lower_priority_wins(self, project_dir):
         data = {
             "schema_version": "1.0",
             "workflow": {"id": "wf", "name": "WF", "version": "1.0.0"},
@@ -161,9 +161,9 @@ class TestWorkflowResolver:
 
         resolver = WorkflowResolver(project_dir)
         definition = resolver.resolve("wf")
-        # Higher priority is applied later; both insert_after 'a', so high-step
+        # Lower priority is applied later; both insert_after 'a', so low-step
         # ends up closer to the anchor and wins the conflict.
-        assert [s["id"] for s in definition.steps] == ["a", "high-step", "low-step"]
+        assert [s["id"] for s in definition.steps] == ["a", "low-step", "high-step"]
 
     def test_resolve_with_layers_returns_attribution(self, project_dir):
         data = {
@@ -304,7 +304,7 @@ class TestWorkflowResolver:
         listed_layers = resolver.collect_all_layers("wf", include_disabled=True)
 
         assert [layer.source for layer in default_layers] == ["base"]
-        assert [layer.source for layer in listed_layers] == ["project:disabled", "base"]
+        assert [layer.source for layer in listed_layers] == ["base", "project:disabled"]
 
     def test_resolve_invalid_anchor_raises(self, project_dir):
         data = {

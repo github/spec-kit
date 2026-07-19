@@ -69,38 +69,49 @@ def _ensure_contained_dir(path: Path, root: Path) -> None:
         ) from None
 
 
-def _resolve_project_overlay_root(project_root: Path) -> Path:
-    """Return the unresolved overlay root after rejecting symlinked ancestors.
-
-    This mirrors the older workflow step-directory hardening pattern locally.
-    The path-walk / containment logic should be centralized in a shared helper
-    in a follow-up DRY pass, but this stays inline here to keep the Cluster 1
-    security fix small and low-risk.
-    """
+def _resolve_workflows_root(project_root: Path) -> Path:
+    """Return the workflow storage root after rejecting unsafe ancestors."""
     project_root_resolved = project_root.resolve()
-    overlays_root = project_root / ".specify" / "workflows" / "overlays"
+    workflows_root = project_root / ".specify" / "workflows"
 
     current = project_root
-    for part in (".specify", "workflows", "overlays"):
+    for part in (".specify", "workflows"):
         current = current / part
         if current.is_symlink():
             raise OverlayLoadError(
                 current,
-                [f"Symlinked overlay directories are not allowed ({current})"],
+                [f"Symlinked workflow directories are not allowed ({current})"],
             )
         if current.exists() and not current.is_dir():
             raise OverlayLoadError(
                 current,
-                [f"Overlay directory path is not a directory ({current})"],
+                [f"Workflow directory path is not a directory ({current})"],
             )
 
     try:
-        overlays_root.resolve().relative_to(project_root_resolved)
+        workflows_root.resolve().relative_to(project_root_resolved)
     except ValueError:
         raise OverlayLoadError(
-            overlays_root,
-            ["Overlay directory escapes the project root"],
+            workflows_root,
+            ["Workflow directory escapes the project root"],
         ) from None
+    return workflows_root
+
+
+def _resolve_project_overlay_root(project_root: Path) -> Path:
+    """Return the unresolved overlay root after rejecting unsafe ancestors."""
+    workflows_root = _resolve_workflows_root(project_root)
+    overlays_root = workflows_root / "overlays"
+    if overlays_root.is_symlink():
+        raise OverlayLoadError(
+            overlays_root,
+            [f"Symlinked overlay directories are not allowed ({overlays_root})"],
+        )
+    if overlays_root.exists() and not overlays_root.is_dir():
+        raise OverlayLoadError(
+            overlays_root,
+            [f"Overlay directory path is not a directory ({overlays_root})"],
+        )
     return overlays_root
 
 
@@ -128,6 +139,7 @@ class ProjectOverlaySource:
         if not workflow_overlay_dir.is_dir():
             return []
         layers: list[Layer] = []
+        overlay_paths_by_id: dict[str, Path] = {}
         try:
             entries = sorted(workflow_overlay_dir.iterdir())
         except OSError as exc:
@@ -145,11 +157,15 @@ class ProjectOverlaySource:
                 raise OverlayLoadError(path, [f"Invalid YAML: {exc}"]) from exc
             except (OSError, UnicodeDecodeError) as exc:
                 raise OverlayLoadError(path, [f"Cannot load overlay: {exc}"]) from exc
+            if (
+                not include_disabled
+                and isinstance(data, dict)
+                and data.get("enabled", True) is False
+            ):
+                continue
             overlay, errors = validate_overlay_yaml(data)
             if overlay is None or errors:
                 raise OverlayLoadError(path, errors)
-            if not include_disabled and not overlay.enabled:
-                continue
             if overlay.extends != workflow_id:
                 raise OverlayLoadError(
                     path,
@@ -158,6 +174,16 @@ class ProjectOverlaySource:
                         f"workflow {workflow_id!r}."
                     ],
                 )
+            first_path = overlay_paths_by_id.get(overlay.id)
+            if first_path is not None:
+                raise OverlayLoadError(
+                    path,
+                    [
+                        f"Duplicate overlay id {overlay.id!r}; also declared in "
+                        f"{first_path}."
+                    ],
+                )
+            overlay_paths_by_id[overlay.id] = path
             layers.append(
                 Layer(
                     content=overlay,
@@ -181,6 +207,7 @@ class BaseWorkflowSource:
 
     def collect(self, workflow_id: str, *, include_disabled: bool = False) -> list[Layer]:
         """Return the base workflow as a single layer if it exists."""
+        self.workflows_dir = _resolve_workflows_root(self.project_root)
         _validate_workflow_id(workflow_id, self.workflows_dir)
         workflow_dir = self.workflows_dir / workflow_id
         _ensure_contained_dir(workflow_dir, self.workflows_dir)

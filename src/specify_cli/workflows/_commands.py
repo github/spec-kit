@@ -3169,8 +3169,10 @@ def workflow_step_catalog_remove(
 @workflow_overlay_app.command("add")
 def workflow_overlay_add_cmd(
     source: Path = typer.Argument(..., help="Path to overlay YAML file"),
-    priority: int | None = typer.Option(
-        None, "--priority", help="Overlay priority (higher wins, >= 1)"
+    priority: int = typer.Option(
+        10,
+        "--priority",
+        help="Resolution priority (lower = higher precedence, default 10)",
     ),
 ):
     """Add a project-local overlay for a workflow."""
@@ -3185,7 +3187,9 @@ def workflow_overlay_add_cmd(
 def workflow_overlay_set_priority_cmd(
     workflow_id: str = typer.Argument(..., help="Workflow ID the overlay extends"),
     overlay_id: str = typer.Argument(..., help="Overlay ID"),
-    priority: int = typer.Argument(..., help="New priority (>= 1)"),
+    priority: int = typer.Argument(
+        ..., help="New priority (lower = higher precedence)"
+    ),
 ):
     """Set the priority of a project-local overlay."""
     from .overlays._commands import workflow_overlay_set_priority

@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from ...extensions import normalize_priority
 
 # Safe single-segment identifiers: no path separators, no traversal, no dots.
 _SAFE_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
@@ -33,8 +34,8 @@ class Overlay:
 
     id: str
     extends: str
-    priority: int
     edits: list[OverlayEdit]
+    priority: int = 10
     enabled: bool = True
 
 
@@ -135,16 +136,7 @@ def validate_overlay_yaml(data: dict[str, Any]) -> tuple[Overlay | None, list[st
         errors.append(err)
         extends = ""
 
-    priority = data.get("priority")
-    if isinstance(priority, bool) or not isinstance(priority, int):
-        errors.append(
-            f"Overlay 'priority' must be an integer >= 1, got {priority!r}."
-        )
-        priority = 0
-    elif priority < 1:
-        errors.append(
-            f"Overlay 'priority' must be an integer >= 1, got {priority!r}."
-        )
+    priority = normalize_priority(data.get("priority", 10))
 
     edits_raw = data.get("edits")
     edits: list[OverlayEdit] = []
