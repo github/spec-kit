@@ -134,6 +134,19 @@ clean_branch_name() {
     echo "$name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-//' | sed 's/-$//'
 }
 
+# Quote a value for POSIX shell reuse, byte-identical to Python's shlex.quote
+# so the persistence hints match the Python variant exactly (printf %q output
+# differs between bash versions and from shlex.quote for spaces/metachars).
+shell_quote() {
+    local value="$1" LC_ALL=C
+    if [[ "$value" =~ ^[A-Za-z0-9_@%+=:,./-]+$ ]]; then
+        printf '%s' "$value"
+    else
+        local q="'\"'\"'"
+        printf "'%s'" "${value//\'/$q}"
+    fi
+}
+
 # Resolve repository root using common.sh functions which prioritize .specify
 SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
@@ -294,8 +307,8 @@ if [ "$DRY_RUN" != true ]; then
     _persist_feature_json "$REPO_ROOT" "$FEATURE_DIR"
 
     # Inform the user how to set feature state in their own shell
-    printf '# To persist: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME" >&2
-    printf '#              export SPECIFY_FEATURE_DIRECTORY=%q\n' "$FEATURE_DIR" >&2
+    printf '# To persist: export SPECIFY_FEATURE=%s\n' "$(shell_quote "$BRANCH_NAME")" >&2
+    printf '#              export SPECIFY_FEATURE_DIRECTORY=%s\n' "$(shell_quote "$FEATURE_DIR")" >&2
 fi
 
 if $JSON_MODE; then
@@ -325,7 +338,7 @@ else
     echo "SPEC_FILE: $SPEC_FILE"
     echo "FEATURE_NUM: $FEATURE_NUM"
     if [ "$DRY_RUN" != true ]; then
-        printf '# To persist in your shell: export SPECIFY_FEATURE=%q\n' "$BRANCH_NAME"
-        printf '#                           export SPECIFY_FEATURE_DIRECTORY=%q\n' "$FEATURE_DIR"
+        printf '# To persist in your shell: export SPECIFY_FEATURE=%s\n' "$(shell_quote "$BRANCH_NAME")"
+        printf '#                           export SPECIFY_FEATURE_DIRECTORY=%s\n' "$(shell_quote "$FEATURE_DIR")"
     fi
 fi

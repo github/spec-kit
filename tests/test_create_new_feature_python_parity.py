@@ -205,15 +205,30 @@ def test_all_variants_invalid_number_fails_cleanly(repo: Path) -> None:
         assert expected in _normalized_error_text(result.stderr, repo)
 
 
-def test_python_negative_number_fails_cleanly(repo: Path) -> None:
-    # Shell arithmetic differs across platforms for signed decimal strings;
-    # the Python port deliberately rejects them consistently.
+@requires_bash
+@pytest.mark.skipif(not HAS_POWERSHELL, reason="no PowerShell available")
+def test_all_variants_negative_number_fails_cleanly(repo: Path) -> None:
     args = ("--json", "--dry-run", "--number", "-1", "add rate limiting")
+    bash = run(bash_cmd(repo, SCRIPT, *args), repo)
+    ps = run(
+        ps_cmd(
+            repo,
+            SCRIPT,
+            "-Json",
+            "-DryRun",
+            "-Number",
+            "-1",
+            "add rate limiting",
+        ),
+        repo,
+    )
     py = run(py_cmd(repo, SCRIPT, *args), repo)
 
-    assert py.returncode == 1
-    assert py.stdout == ""
-    assert py.stderr == "Error: --number must be an unsigned integer, got '-1'\n"
+    assert bash.returncode == ps.returncode == py.returncode == 1
+    assert bash.stdout == ps.stdout == py.stdout == ""
+    expected = "Error: --number must be an unsigned integer, got '-1'"
+    for result in (bash, ps, py):
+        assert expected in _normalized_error_text(result.stderr, repo)
 
 
 @requires_bash
@@ -675,6 +690,30 @@ def test_all_variants_non_dry_text_mode_match(tmp_path: Path) -> None:
     assert "$env:SPECIFY_FEATURE = '007-x'" in ps_stderr
     assert (
         "$env:SPECIFY_FEATURE_DIRECTORY = '<REPO>/specs/007-x'" in ps_stderr
+    )
+
+
+@requires_bash
+def test_python_persist_hints_match_bash_for_spaced_repo_path(
+    tmp_path: Path,
+) -> None:
+    """Paths with spaces must be quoted identically (shlex.quote format) so
+    the side-by-side text/stderr comparison holds."""
+    bash_repo = _setup_repo(tmp_path, "my proj a")
+    py_repo = _setup_repo(tmp_path, "my proj b")
+
+    bash = run(bash_cmd(bash_repo, SCRIPT, "--number", "7", "x"), bash_repo)
+    py = run(py_cmd(py_repo, SCRIPT, "--number", "7", "x"), py_repo)
+
+    assert bash.returncode == py.returncode == 0, bash.stderr + py.stderr
+    assert normalize_repo_paths(bash.stdout, bash_repo) == normalize_repo_paths(
+        py.stdout, py_repo
+    )
+    assert normalize_repo_paths(bash.stderr, bash_repo) == normalize_repo_paths(
+        py.stderr, py_repo
+    )
+    assert "export SPECIFY_FEATURE_DIRECTORY='<REPO>/specs/007-x'" in (
+        normalize_repo_paths(py.stderr, py_repo)
     )
 
 
