@@ -910,8 +910,15 @@ class ExtensionManager:
 
         return _ignore
 
-    def _get_skills_dir(self) -> Optional[Path]:
-        """Return the active skills directory for extension skill registration.
+    def _get_skills_dir(self, agent_name: Optional[str] = None) -> Optional[Path]:
+        """Return the skills directory for extension skill registration.
+
+        When *agent_name* is given, resolves the skills directory and
+        skills-enabled state for that specific agent (using per-agent
+        settings in ``.specify/integration.json``), so skill rendering
+        works correctly for non-active agents (#2948). When omitted,
+        falls back to the previous behaviour of using the active agent
+        from init-options.
 
         Delegates to :func:`resolve_active_skills_dir` which reads
         init-options, applies the Kimi native-skills fallback, and
@@ -926,6 +933,8 @@ class ExtensionManager:
             load_init_options,
             resolve_active_skills_dir,
         )
+        from .._init_options import is_agent_skills_enabled
+        from .. import _get_skills_dir as resolve_agent_skills_dir
 
         def _ensure_usable(skills_dir: Path) -> Optional[Path]:
             try:
@@ -943,26 +952,42 @@ class ExtensionManager:
                 return None
             return skills_dir
 
-        try:
-            skills_dir = resolve_active_skills_dir(self.project_root)
-        except (ValueError, OSError) as exc:
-            _print_cli_warning(
-                "resolve",
-                "skills directory",
-                None,
-                exc,
-                continuing="Continuing without skill registration.",
-            )
-            return None
-        if skills_dir is None:
-            return None
-
         opts = load_init_options(self.project_root)
         if not isinstance(opts, dict):
-            return _ensure_usable(skills_dir)
-        selected_ai = opts.get("ai")
-        if not isinstance(selected_ai, str) or not selected_ai:
-            return _ensure_usable(skills_dir)
+            opts = {}
+
+        if agent_name is None:
+            try:
+                skills_dir = resolve_active_skills_dir(self.project_root)
+            except (ValueError, OSError) as exc:
+                _print_cli_warning(
+                    "resolve",
+                    "skills directory",
+                    None,
+                    exc,
+                    continuing="Continuing without skill registration.",
+                )
+                return None
+            if skills_dir is None:
+                return None
+            selected_ai = opts.get("ai")
+            if not isinstance(selected_ai, str) or not selected_ai:
+                return _ensure_usable(skills_dir)
+        else:
+            if not is_agent_skills_enabled(self.project_root, agent_name, opts):
+                return None
+            try:
+                skills_dir = resolve_agent_skills_dir(self.project_root, agent_name)
+            except (ValueError, OSError) as exc:
+                _print_cli_warning(
+                    "resolve",
+                    "skills directory",
+                    None,
+                    exc,
+                    continuing="Continuing without skill registration.",
+                )
+                return None
+            selected_ai = agent_name
 
         from ..agents import CommandRegistrar
 
@@ -980,6 +1005,7 @@ class ExtensionManager:
         manifest: ExtensionManifest,
         extension_dir: Path,
         link_outputs: bool = False,
+        agent_name: Optional[str] = None,
     ) -> List[str]:
         """Generate SKILL.md files for extension commands as agent skills.
 
@@ -997,11 +1023,12 @@ class ExtensionManager:
         Returns:
             List of skill names that were created (for registry storage).
         """
-        skills_dir = self._get_skills_dir()
+        skills_dir = self._get_skills_dir(agent_name)
         if not skills_dir:
             return []
 
         from .. import load_init_options
+        from .._init_options import is_agent_skills_enabled
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
         from ..integrations.base import IntegrationBase
@@ -1010,13 +1037,13 @@ class ExtensionManager:
         opts = load_init_options(self.project_root)
         if not isinstance(opts, dict):
             opts = {}
-        selected_ai = opts.get("ai")
+        selected_ai = agent_name if agent_name else opts.get("ai")
         if not isinstance(selected_ai, str) or not selected_ai:
             return []
         registrar = CommandRegistrar()
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         integration = get_integration(selected_ai)
-        ai_skills_enabled = is_ai_skills_enabled(opts)
+        ai_skills_enabled = is_agent_skills_enabled(self.project_root, selected_ai, opts)
 
         def _resolve_command_ref_tokens(body: str) -> str:
             """Resolve explicit command-ref tokens with the active skill style."""
@@ -1731,17 +1758,16 @@ class ExtensionManager:
     def register_enabled_extensions_for_agent(self, agent_name: str) -> None:
         """Register installed, enabled extensions for ``agent_name``.
 
-        Command-file registration is scoped to the explicit ``agent_name``
-        argument, so this method can be used after install, upgrade, or switch.
-        Extension skill rendering is still scoped to the active ``ai`` /
-        ``ai_skills`` settings in init-options, so non-active skills-mode
-        targets receive command files here. Per-agent skills parity is tracked
-        separately in #2948.
+        Both command-file and skill registration are scoped to the explicit
+        ``agent_name`` argument, so this method can be used after install,
+        upgrade, or switch and renders skills correctly for any enabled
+        skills-mode agent, not just the active one (#2948).
         """
         if not agent_name:
             return
 
         from .. import load_init_options
+        from .._init_options import is_agent_skills_enabled
 
         registrar = CommandRegistrar()
         agent_config = registrar.AGENT_CONFIGS.get(agent_name)
@@ -1750,10 +1776,11 @@ class ExtensionManager:
             init_options = {}
 
         active_agent = init_options.get("ai")
-        ai_skills_enabled = is_ai_skills_enabled(init_options)
+        ai_skills_enabled = is_agent_skills_enabled(
+            self.project_root, agent_name, init_options
+        )
         skills_mode_active = (
-            active_agent == agent_name
-            and ai_skills_enabled
+            ai_skills_enabled
             and bool(agent_config)
             and agent_config.get("extension") != "/SKILL.md"
         )
@@ -1793,46 +1820,42 @@ class ExtensionManager:
                     if new_registered != registered_commands:
                         updates["registered_commands"] = new_registered
 
-                # Extension *skills* are only ever rendered for the active agent:
-                # `_register_extension_skills` resolves the skills dir and
-                # frontmatter from init-options["ai"], ignoring ``agent_name``.
-                # When this method runs for a non-active agent — as install/upgrade
-                # now do for a secondary integration (#2886) — the skills pass would
-                # re-render the *active* agent's extension skills as a side effect,
-                # resurrecting skill files the user deliberately deleted. Skip it
-                # unless the target is the active agent; `switch` is unaffected
-                # because it activates the target before registering. (Rendering
-                # skills for a non-active target is tracked separately in #2948.)
-                if agent_name == active_agent:
-                    try:
-                        registered_skills = self._register_extension_skills(
-                            manifest, ext_dir
-                        )
-                    except Exception as skills_err:
-                        # Skills are a companion artifact.  If command registration
-                        # already succeeded, still persist it so later cleanup can
-                        # find those command files.
-                        from .. import _print_cli_warning
+                # Extension skills are rendered whenever *agent_name* itself
+                # has skills mode enabled (checked via per-agent settings in
+                # `.specify/integration.json`, falling back to the legacy
+                # global init-options for the active agent). This makes
+                # skill rendering agent-aware instead of only ever
+                # targeting the active agent (#2948), while still avoiding
+                # unrelated side effects on other installed agents.
+                try:
+                    registered_skills = self._register_extension_skills(
+                        manifest, ext_dir, agent_name=agent_name
+                    )
+                except Exception as skills_err:
+                    # Skills are a companion artifact.  If command registration
+                    # already succeeded, still persist it so later cleanup can
+                    # find those command files.
+                    from .. import _print_cli_warning
 
-                        _print_cli_warning(
-                            "register extension skills for",
-                            "extension",
-                            ext_id,
-                            skills_err,
-                            continuing=(
-                                "Continuing with available registration results for this "
-                                "extension and the remaining extensions."
-                            ),
+                    _print_cli_warning(
+                        "register extension skills for",
+                        "extension",
+                        ext_id,
+                        skills_err,
+                        continuing=(
+                            "Continuing with available registration results for this "
+                            "extension and the remaining extensions."
+                        ),
+                    )
+                else:
+                    if registered_skills:
+                        existing_skills = self._valid_name_list(
+                            metadata.get("registered_skills", [])
                         )
-                    else:
-                        if registered_skills:
-                            existing_skills = self._valid_name_list(
-                                metadata.get("registered_skills", [])
-                            )
-                            merged_skills = list(
-                                dict.fromkeys(existing_skills + registered_skills)
-                            )
-                            updates["registered_skills"] = merged_skills
+                        merged_skills = list(
+                            dict.fromkeys(existing_skills + registered_skills)
+                        )
+                        updates["registered_skills"] = merged_skills
 
                 if updates:
                     self.registry.update(ext_id, updates)

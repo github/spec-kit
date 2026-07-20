@@ -402,14 +402,12 @@ def _register_extensions_for_agent(
     integration has no extension side effects until it is selected or upgraded.
     See issue #2886.
 
-    Known limitation: extension *skill* rendering is scoped to the active
-    agent (init-options track a single ``ai`` / ``ai_skills`` pair). A
-    skills-mode agent registered while it is *not* the active agent (e.g.
-    Copilot ``--skills`` registered while non-active) therefore
-    receives command files rather than skills here — matching ``extension
-    add``'s multi-agent behavior. ``use`` / ``switch`` avoid this because they
-    make the target the active agent first. Per-agent skills parity is tracked in
-    #2948.
+    Extension *skill* rendering is scoped to ``agent_key`` itself (using
+    per-agent settings in ``.specify/integration.json`` when available, with
+    a fallback to the legacy global init-options for the active agent), so a
+    skills-mode agent registered while it is not the active agent (e.g.
+    Copilot ``--skills`` registered while non-active) still receives skill
+    files here instead of only command files (#2948).
 
     Best-effort: never aborts the surrounding integration operation. Callers
     invoke it *after* the use/upgrade/switch transaction has committed so a
