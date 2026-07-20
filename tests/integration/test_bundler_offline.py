@@ -36,12 +36,17 @@ def test_builtin_community_catalog_resolves_from_packaged_snapshot_offline():
     source = _src(
         "community",
         "builtin://community",
-        priority=2,
+        priority=20,
         policy="discovery-only",
     )
+    payload = fetcher(source)
     stack = CatalogStack([source], fetcher)
 
-    assert stack.search() == []
+    assert isinstance(payload.get("bundles"), dict)
+    assert all(
+        result.source.id == "community" and not result.install_allowed
+        for result in stack.search()
+    )
     assert stack.sources[0].install_allowed is False
 
 

@@ -261,6 +261,12 @@ changes, list the validation results, include
 `Closes #${{ github.event.issue.number }}`, and mention the submitter with
 `cc @<issue-author>`.
 
+End the commit message with this authorship trailer:
+
+```text
+Assisted-by: GitHub Copilot (model: <name-if-known>, autonomous)
+```
+
 ## Important Rules
 
 - Modify only `bundles/catalog.community.json` and
