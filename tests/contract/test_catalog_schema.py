@@ -39,6 +39,7 @@ def test_builtin_default_stack_when_no_config(tmp_path: Path):
     assert ids == ["default", "community"]
     assert sources[0].install_policy is InstallPolicy.INSTALL_ALLOWED
     assert sources[1].install_policy is InstallPolicy.DISCOVERY_ONLY
+    assert sources[1].priority == 20
     assert all(s.scope is Scope.BUILTIN for s in sources)
 
 

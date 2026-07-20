@@ -152,9 +152,9 @@ Confirm that:
 - If non-default catalogs are required, ensure each URL is HTTPS, the README
   documents the corresponding `catalog add` command, and the testing details
   say those catalogs were registered in the clean-project test.
-- If the field says `None` but a component is not bundled and cannot be found
-  in a default Spec Kit catalog, fail validation and ask the submitter to list
-  and document its catalog.
+- If the field says `None` but a component is not bundled and cannot be
+  installed from a default Spec Kit catalog, fail validation and ask the
+  submitter to list and document an install-allowed companion catalog.
 
 The community bundle catalog itself remains discovery-only. Companion catalog
 URLs are documentation and validation metadata, not catalogs this workflow
@@ -249,8 +249,10 @@ repository README remains the source for the actual URLs.
 
 Create one draft pull request.
 
-- New entry branch: `add-<bundle-id>-bundle`
-- Update branch: `update-<bundle-id>-bundle`
+- New entry branch:
+  `community/${{ github.event.issue.number }}-add-<bundle-id>-bundle`
+- Update branch:
+  `community/${{ github.event.issue.number }}-update-<bundle-id>-bundle`
 - New title: `Add <Bundle Name> bundle to community catalog`
 - Update title: `Update <Bundle Name> bundle to v<version>`
 
