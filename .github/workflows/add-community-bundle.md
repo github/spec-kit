@@ -241,6 +241,12 @@ by bundle name:
 | <Name> | <Description> | `<role>` | <component counts> | <None or documented> | [<repo-name>](<repository>) |
 ```
 
+Before rendering the row, convert every user-derived display value to
+single-line plain text: collapse CR/LF sequences to spaces, remove control
+characters, and backslash-escape `\`, `|`, backticks, `*`, `_`, `[`, `]`, `<`,
+and `>`. Use the validated HTTPS GitHub repository URL unchanged only as the
+Markdown link destination.
+
 Render component counts compactly, omitting zero-valued component types. Use
 `None` when no companion catalogs are needed and `Documented` otherwise; the
 repository README remains the source for the actual URLs.
