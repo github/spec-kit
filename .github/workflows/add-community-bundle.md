@@ -44,6 +44,8 @@ safe-outputs:
   add-labels:
     allowed: [bundle-submission, validation-passed, validation-failed, needs-info]
     max: 3
+  remove-labels:
+    allowed: [validation-passed, validation-failed, needs-info]
 ---
 
 # Add Community Bundle from Issue Submission
@@ -174,10 +176,12 @@ should add to Spec Kit.
 If any check fails:
 
 1. Comment once with every failed check and a specific correction.
-2. Add `validation-failed`; add `needs-info` when submitter input is needed.
-3. Stop without editing files or creating a pull request.
+2. Remove `validation-passed`.
+3. Add `validation-failed`; add `needs-info` when submitter input is needed.
+4. Stop without editing files or creating a pull request.
 
-If all checks pass, add `validation-passed` and continue.
+If all checks pass, remove `validation-failed` and `needs-info`, add
+`validation-passed`, and continue.
 
 ## Step 3 - Determine Add or Update
 
