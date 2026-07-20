@@ -1026,6 +1026,41 @@ class TestCommandStep:
         assert res_opt.status is StepStatus.FAILED
         assert "'options' must be a mapping" in (res_opt.error or "")
 
+    def test_validate_rejects_non_string_command(self):
+        from specify_cli.workflows.steps.command import CommandStep
+
+        step = CommandStep()
+        # execute() passes 'command' to build_command_invocation(), which does
+        # command_name.startswith(...); a non-string crashes there with a raw
+        # AttributeError. validate() must report it, like prompt-step 'prompt'.
+        for bad in (None, ["a", "b"], 5, {"x": 1}):
+            errs = step.validate({"id": "c", "command": bad})
+            assert any("'command' must be a string" in e for e in errs), bad
+        # a string command (incl. an expression) is still accepted
+        assert step.validate({"id": "c", "command": "/x"}) == []
+        assert step.validate({"id": "c", "command": "{{ inputs.cmd }}"}) == []
+
+    def test_execute_non_string_command_fails_cleanly(self):
+        from unittest.mock import patch
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        # The engine may skip validate(); a non-string 'command' must FAIL the
+        # step with the contract error rather than reaching _try_dispatch and
+        # crashing build_command_invocation with a raw AttributeError. Force a
+        # resolvable integration + installed CLI so, absent the guard, dispatch
+        # would actually be attempted and the crash would fire.
+        ctx = StepContext(default_integration="claude")
+        with patch("specify_cli.workflows.steps.command.shutil.which",
+                   return_value="/usr/bin/claude"):
+            for bad in (None, ["a", "b"], 5, {"x": 1}):
+                result = step.execute(
+                    {"id": "c", "command": bad, "input": {}}, ctx
+                )
+                assert result.status is StepStatus.FAILED, bad
+                assert "'command' must be a string" in (result.error or ""), bad
+
     def test_step_override_integration(self):
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
