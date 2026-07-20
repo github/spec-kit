@@ -1026,6 +1026,63 @@ class TestCommandStep:
         assert res_opt.status is StepStatus.FAILED
         assert "'options' must be a mapping" in (res_opt.error or "")
 
+    @pytest.mark.parametrize("bad", [["claude"], {"a": 1}, 5, True])
+    def test_validate_rejects_non_string_integration_and_model(self, bad):
+        """A non-string 'integration'/'model' must be rejected at validation.
+
+        execute() passes 'integration' to get_integration(), which uses it as a
+        dict key — an unhashable list/dict raises a raw TypeError there, even on
+        a validated run — and feeds 'model' into the CLI argv. Mirrors the
+        'command'/'input'/'options' type checks.
+        """
+        from specify_cli.workflows.steps.command import CommandStep
+
+        step = CommandStep()
+        errs = step.validate({"id": "c", "command": "/x", "integration": bad})
+        assert any("'integration' must be a string" in e for e in errs), bad
+        errs = step.validate({"id": "c", "command": "/x", "model": bad})
+        assert any("'model' must be a string" in e for e in errs), bad
+
+    def test_validate_accepts_none_and_expression_integration_model(self):
+        """An explicit YAML-null (inherit default) or a '{{ ... }}' expression
+        integration/model stays valid — only literal non-strings are rejected."""
+        from specify_cli.workflows.steps.command import CommandStep
+
+        step = CommandStep()
+        assert step.validate(
+            {"id": "c", "command": "/x", "integration": None, "model": None}
+        ) == []
+        assert step.validate(
+            {
+                "id": "c",
+                "command": "/x",
+                "integration": "{{ inputs.agent }}",
+                "model": "{{ inputs.model }}",
+            }
+        ) == []
+
+    def test_execute_non_string_integration_fails_loudly(self):
+        """On an unvalidated run, an unhashable 'integration' would crash
+        get_integration() (dict.get on a list) with a raw TypeError. execute()
+        must fail the step with the contract error instead."""
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        res = step.execute(
+            {"id": "c", "command": "speckit.specify", "integration": ["claude"]},
+            StepContext(),
+        )
+        assert res.status is StepStatus.FAILED
+        assert "'integration' must be a string" in (res.error or "")
+        # non-string model likewise fails before build_exec_args
+        res = step.execute(
+            {"id": "c", "command": "speckit.specify", "integration": "claude", "model": ["m"]},
+            StepContext(),
+        )
+        assert res.status is StepStatus.FAILED
+        assert "'model' must be a string" in (res.error or "")
+
     def test_step_override_integration(self):
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
@@ -1412,6 +1469,59 @@ class TestPromptStep:
             {"id": "p", "prompt": "Review {{ inputs.file }}"}
         )
         assert errors == []
+
+    @pytest.mark.parametrize("bad", [["claude"], {"a": 1}, 5, True])
+    def test_validate_rejects_non_string_integration_and_model(self, bad):
+        """A non-string 'integration'/'model' must be rejected at validation.
+
+        execute() passes 'integration' to get_integration(), which uses it as a
+        dict key — an unhashable list/dict raises a raw TypeError there, even on
+        a validated run — and feeds 'model' into the CLI argv."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errs = step.validate({"id": "p", "prompt": "hi", "integration": bad})
+        assert any("'integration' must be a string" in e for e in errs), bad
+        errs = step.validate({"id": "p", "prompt": "hi", "model": bad})
+        assert any("'model' must be a string" in e for e in errs), bad
+
+    def test_validate_accepts_none_and_expression_integration_model(self):
+        """An explicit YAML-null (inherit default) or a '{{ ... }}' expression
+        integration/model stays valid — only literal non-strings are rejected."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        assert step.validate(
+            {"id": "p", "prompt": "hi", "integration": None, "model": None}
+        ) == []
+        assert step.validate(
+            {
+                "id": "p",
+                "prompt": "hi",
+                "integration": "{{ inputs.agent }}",
+                "model": "{{ inputs.model }}",
+            }
+        ) == []
+
+    def test_execute_non_string_integration_fails_loudly(self):
+        """On an unvalidated run, an unhashable 'integration' would crash
+        get_integration() (dict.get on a dict) with a raw TypeError. execute()
+        must fail the step with the contract error instead."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = PromptStep()
+        res = step.execute(
+            {"id": "p", "prompt": "hi", "integration": {"a": 1}}, StepContext()
+        )
+        assert res.status is StepStatus.FAILED
+        assert "'integration' must be a string" in (res.error or "")
+        res = step.execute(
+            {"id": "p", "prompt": "hi", "integration": "claude", "model": ["m"]},
+            StepContext(),
+        )
+        assert res.status is StepStatus.FAILED
+        assert "'model' must be a string" in (res.error or "")
 
 
 class TestShellStep:

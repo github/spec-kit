@@ -52,6 +52,31 @@ class PromptStep(StepBase):
         if model and isinstance(model, str) and "{{" in model:
             model = evaluate_expression(model, context)
 
+        # A non-string integration/model — a literal list/dict/number that
+        # skipped validation, an unvalidated workflow-level default, or an
+        # expression that resolved to one — crashes downstream: get_integration()
+        # uses the value as a dict key (raw TypeError on an unhashable list/dict,
+        # even on a *validated* run) and build_exec_args() feeds model into the
+        # CLI argv. Fail the step with the contract error rather than taking down
+        # the whole run. ``None`` stays valid — it means "unset" and falls back
+        # to dispatch-not-possible.
+        if integration is not None and not isinstance(integration, str):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Prompt step {config.get('id', '?')!r}: 'integration' must "
+                    f"be a string, got {type(integration).__name__}."
+                ),
+            )
+        if model is not None and not isinstance(model, str):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Prompt step {config.get('id', '?')!r}: 'model' must be a "
+                    f"string, got {type(model).__name__}."
+                ),
+            )
+
         # Attempt CLI dispatch
         dispatch_result = self._try_dispatch(
             prompt, integration, model, context
@@ -171,5 +196,24 @@ class PromptStep(StepBase):
             errors.append(
                 f"Prompt step {config.get('id', '?')!r}: 'prompt' must be a "
                 f"string, got {type(config['prompt']).__name__}."
+            )
+        # execute() passes 'integration' to get_integration(), which uses it as a
+        # dict key — a non-string (list/dict) raises a raw TypeError (unhashable),
+        # even on a validated run — and feeds 'model' into the CLI argv. Reject a
+        # literal non-string here, mirroring the 'prompt' check above. ``None``
+        # (an explicit ``integration:``/``model:`` YAML null) means "inherit the
+        # workflow default" and stays valid; an expression like "{{ ... }}" is
+        # still a str, so it stays valid too.
+        integration = config.get("integration")
+        if integration is not None and not isinstance(integration, str):
+            errors.append(
+                f"Prompt step {config.get('id', '?')!r}: 'integration' must be a "
+                f"string, got {type(integration).__name__}."
+            )
+        model = config.get("model")
+        if model is not None and not isinstance(model, str):
+            errors.append(
+                f"Prompt step {config.get('id', '?')!r}: 'model' must be a "
+                f"string, got {type(model).__name__}."
             )
         return errors
