@@ -2093,6 +2093,72 @@ class TestGateStep:
         assert result.status == StepStatus.PAUSED
         assert result.output["show_file"] == "123"
 
+    @pytest.mark.parametrize(
+        "bad_options",
+        [5, {"a": "approve"}, None, [], "approve"],
+    )
+    def test_execute_non_list_options_fails_cleanly(self, monkeypatch, bad_options):
+        """A malformed ``options`` must FAIL the step, not crash the run.
+
+        ``validate`` rejects a non-list/empty ``options``, but the engine does
+        not auto-validate before ``execute``. On an interactive run a scalar/
+        dict/None ``options`` would otherwise reach ``_prompt`` and raise a raw
+        ``TypeError`` (``enumerate``/``len`` on a non-iterable) or ``KeyError``
+        (indexing a dict), crashing the whole workflow. Mirrors the switch
+        'cases' and command 'input' unvalidated-execute guards."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Force an interactive TTY so the crash-prone _prompt path is reached;
+        # input() is stubbed so a (buggy) fall-through can't block the suite.
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": bad_options}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
+        assert result.output["choice"] is None
+
+    def test_execute_non_string_options_element_fails_cleanly(self, monkeypatch):
+        """A non-string option element must FAIL the step, not crash.
+
+        A non-empty list with a non-string element passes the shape check but
+        would reach the reject test ``choice.lower()`` and raise a raw
+        ``AttributeError`` at run time. ``validate`` reports "must be strings";
+        ``execute`` must fail cleanly on an unvalidated run too."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": [123, 456]}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
+
+    def test_execute_non_list_options_fails_in_non_tty_too(self):
+        """The guard runs before the non-TTY PAUSE short-circuit.
+
+        A malformed ``options`` should surface as FAILED in CI (non-TTY) rather
+        than PAUSING and only crashing later when an operator resumes on a real
+        terminal."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Autouse fixture already forces non-TTY stdin.
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": 5}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
+
 
 class TestIfThenStep:
     """Test the if/then/else step type."""
