@@ -163,6 +163,58 @@ def _create_unicode_extension_dir(temp_dir: Path, ext_id: str = "uni-ext") -> Pa
     return ext_dir
 
 
+def _create_dashed_description_extension_dir(
+    temp_dir: Path, ext_id: str = "dash-ext"
+) -> Path:
+    """Create an extension whose command description contains a ``---`` run.
+
+    A ``---`` inside the description survives into the generated SKILL.md
+    frontmatter and exercises the delimiter-line parsing used when reading
+    metadata.source back during removal (regression guard for the
+    split("---", 2) substring bug, mirroring #3590).
+    """
+    ext_dir = temp_dir / ext_id
+    ext_dir.mkdir()
+    description = "Separate sections with --- markers"
+
+    manifest_data = {
+        "schema_version": "1.0",
+        "extension": {
+            "id": ext_id,
+            "name": "Dashed Extension",
+            "version": "1.0.0",
+            "description": description,
+        },
+        "requires": {"speckit_version": ">=0.1.0"},
+        "provides": {
+            "commands": [
+                {
+                    "name": f"speckit.{ext_id}.hello",
+                    "file": "commands/hello.md",
+                    "description": description,
+                },
+            ]
+        },
+    }
+
+    with open(ext_dir / "extension.yml", "w", encoding="utf-8") as f:
+        yaml.safe_dump(manifest_data, f, allow_unicode=True)
+
+    commands_dir = ext_dir / "commands"
+    commands_dir.mkdir()
+    (commands_dir / "hello.md").write_text(
+        "---\n"
+        f'description: "{description}"\n'
+        "---\n"
+        "\n"
+        "# Hello\n"
+        "\n"
+        "Body.\n",
+        encoding="utf-8",
+    )
+    return ext_dir
+
+
 def _can_create_symlink(temp_dir: Path) -> bool:
     """Return True when the current platform/user can create file symlinks."""
     target = temp_dir / "symlink-target.txt"
@@ -1657,6 +1709,36 @@ class TestExtensionSkillUnregistration:
         # Skills should be gone
         assert not (skills_dir / "speckit-test-ext-hello").exists()
         assert not (skills_dir / "speckit-test-ext-world").exists()
+
+    def test_skills_removed_when_description_contains_dashes(
+        self, skills_project, temp_dir
+    ):
+        """A ``---`` in the command description must not orphan the skill dir.
+
+        The removal safety check reads metadata.source back from the generated
+        SKILL.md. A raw ``split("---", 2)`` stopped at the ``---`` embedded in
+        the description, so metadata.source parsed empty, the skill looked
+        unrelated, and its directory was left behind. Regression guard for the
+        delimiter-line fix (mirrors #3590).
+        """
+        project_dir, skills_dir = skills_project
+        ext_dir = _create_dashed_description_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+
+        skill_dir = skills_dir / "speckit-dash-ext-hello"
+        skill_md = skill_dir / "SKILL.md"
+        assert skill_md.exists()
+        # The dashed description must have survived into the frontmatter.
+        assert "--- markers" in skill_md.read_text(encoding="utf-8")
+
+        result = manager.remove(manifest.id, keep_config=False)
+        assert result is True
+
+        # The extension's own skill must be recognised and removed, not orphaned.
+        assert not skill_dir.exists()
 
     def test_other_skills_preserved_on_remove(self, skills_project, extension_dir):
         """Non-extension skills should not be affected by extension removal."""

@@ -1330,19 +1330,20 @@ class ExtensionManager:
                 if not skill_md.is_file():
                     continue
                 try:
-                    import yaml as _yaml
+                    from ..agents import CommandRegistrar as _Registrar
 
                     raw = skill_md.read_text(encoding="utf-8")
-                    source = ""
-                    if raw.startswith("---"):
-                        parts = raw.split("---", 2)
-                        if len(parts) >= 3:
-                            fm = _yaml.safe_load(parts[1]) or {}
-                            source = (
-                                fm.get("metadata", {}).get("source", "")
-                                if isinstance(fm, dict)
-                                else ""
-                            )
+                    # Parse on the ``---`` delimiter *line*, not any ``---``
+                    # substring: a description containing ``---`` would trip a
+                    # raw ``split("---", 2)`` and hide metadata.source, so this
+                    # extension's own skill would look unrelated and be left
+                    # orphaned. Mirrors the #3590 parse_frontmatter fix.
+                    fm, _ = _Registrar.parse_frontmatter(raw)
+                    source = (
+                        fm.get("metadata", {}).get("source", "")
+                        if isinstance(fm, dict)
+                        else ""
+                    )
                     if source != f"extension:{extension_id}":
                         continue
                 except (OSError, UnicodeDecodeError, Exception):
@@ -1386,19 +1387,20 @@ class ExtensionManager:
                     if not skill_md.is_file():
                         continue
                     try:
-                        import yaml as _yaml
+                        from ..agents import CommandRegistrar as _Registrar
 
                         raw = skill_md.read_text(encoding="utf-8")
-                        source = ""
-                        if raw.startswith("---"):
-                            parts = raw.split("---", 2)
-                            if len(parts) >= 3:
-                                fm = _yaml.safe_load(parts[1]) or {}
-                                source = (
-                                    fm.get("metadata", {}).get("source", "")
-                                    if isinstance(fm, dict)
-                                    else ""
-                                )
+                        # Parse on the ``---`` delimiter *line*, not any ``---``
+                        # substring: a description containing ``---`` would trip
+                        # a raw ``split("---", 2)`` and hide metadata.source, so
+                        # this extension's own skill would look unrelated and be
+                        # left orphaned. Mirrors the #3590 parse_frontmatter fix.
+                        fm, _ = _Registrar.parse_frontmatter(raw)
+                        source = (
+                            fm.get("metadata", {}).get("source", "")
+                            if isinstance(fm, dict)
+                            else ""
+                        )
                         # Only remove skills explicitly created by this extension
                         if source != f"extension:{extension_id}":
                             continue
