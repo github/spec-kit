@@ -250,9 +250,9 @@ Spec Kit tracks one default integration in `.specify/integration.json` with `def
 
 ### Which integrations are multi-install safe?
 
-An integration is multi-install safe when it uses a static, unique command directory, stable command invocation settings, and a separate install manifest whose managed files do not overlap another safe integration. Registry tests enforce those path and manifest invariants. Shared Spec Kit templates remain aligned to the single default integration.
+An integration is multi-install safe when it uses a static, unique agent root and command directory, stable command invocation settings, and a separate install manifest whose managed files do not overlap another safe integration. Registry tests enforce those path and manifest invariants. Shared Spec Kit templates remain aligned to the single default integration.
 
-The Command directory column below lists the directory each integration installs its commands or skills into. The optional agent-context extension is a separate concern — it seeds a per-agent context file (for example `AGENTS.md` or `CLAUDE.md`) and is *not* multi-install safe, since several agents can map to the same context file; see the agent-context extension for details.
+The Command directory column below lists the directory each integration installs its commands or skills into. Context-file targeting is a separate concern from integration multi-install safety: `multi_install_safe` is an integration declaration about command/skill paths, whereas the optional agent-context extension manages a per-agent context file (for example `AGENTS.md` or `CLAUDE.md`) and can even synchronize several anchors at once via its `context_files` setting. Multiple agents mapping to the same context file is expected there and does not affect whether an integration is multi-install safe; see the agent-context extension for details.
 
 The currently declared multi-install safe integrations are:
 
