@@ -95,7 +95,7 @@ class TestDependencyAuditWorkflow:
         assert job["if"] == "${{ github.event_name != 'schedule' }}"
         assert job["runs-on"] == "ubuntu-latest"
         assert "strategy" not in job
-        assert setup_python["with"]["python-version"] == "3.13"
+        assert setup_python["with"]["python-version"] == "3.14"
         assert sync_check["env"]["DEPENDENCY_DIFF_BASE"] == (
             "${{ github.event.pull_request.base.sha || github.event.before || '' }}"
         )
@@ -156,7 +156,7 @@ class TestDependencyAuditWorkflow:
 
         assert job["if"] == "${{ github.event_name == 'schedule' }}"
         assert matrix["os"] == ["ubuntu-latest", "windows-latest"]
-        assert matrix["python-version"] == ["3.11", "3.12", "3.13"]
+        assert matrix["python-version"] == ["3.11", "3.12", "3.13", "3.14"]
         assert job["runs-on"] == "${{ matrix.os }}"
         assert WORKFLOW_COMPILE_SCHEDULED_TEST_EXTRA_DEPS in scheduled_compile["run"]
         assert scheduled_audit["run"] == WORKFLOW_LIVE_PIP_AUDIT
@@ -202,6 +202,29 @@ class TestDependencyAuditWorkflow:
                 for step in job["steps"]
                 if step.get("uses", "").startswith("actions/setup-python@")
             )
+
+        assert len(repo_standard_refs) == 1
+        assert security_refs == repo_standard_refs
+
+    def test_setup_uv_pin_matches_repo_standard(self):
+        workflow = _load_security_workflow()
+        security_refs = {
+            step["uses"]
+            for job in workflow["jobs"].values()
+            for step in job["steps"]
+            if step.get("uses", "").startswith("astral-sh/setup-uv@")
+        }
+        test_workflow = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "test.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+        repo_standard_refs = {
+            step["uses"]
+            for job in test_workflow["jobs"].values()
+            for step in job["steps"]
+            if step.get("uses", "").startswith("astral-sh/setup-uv@")
+        }
 
         assert len(repo_standard_refs) == 1
         assert security_refs == repo_standard_refs
