@@ -105,14 +105,24 @@ def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str
 
     affected: list[str] = []
     for preset_id, meta in data.get("presets", {}).items():
+        # A malformed entry means we cannot verify whether this preset owns
+        # artifacts for the agent, so fail closed rather than skip it.
         if not isinstance(meta, dict):
-            continue
+            raise _PresetRegistryUnreadableError(
+                f"preset '{preset_id}' entry is malformed"
+            )
         registered_commands = meta.get("registered_commands", {})
-        has_commands = (
-            isinstance(registered_commands, dict)
-            and bool(registered_commands.get(agent_key))
-        )
-        has_skills = bool(meta.get("registered_skills"))
+        if not isinstance(registered_commands, dict):
+            raise _PresetRegistryUnreadableError(
+                f"preset '{preset_id}' registered_commands is malformed"
+            )
+        registered_skills = meta.get("registered_skills", [])
+        if not isinstance(registered_skills, (list, tuple)):
+            raise _PresetRegistryUnreadableError(
+                f"preset '{preset_id}' registered_skills is malformed"
+            )
+        has_commands = bool(registered_commands.get(agent_key))
+        has_skills = bool(registered_skills)
         if has_commands or has_skills:
             affected.append(preset_id)
     return affected

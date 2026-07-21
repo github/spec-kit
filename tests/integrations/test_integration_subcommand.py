@@ -2943,6 +2943,29 @@ class TestIntegrationUpgrade:
         with pytest.raises(_PresetRegistryUnreadableError):
             _installed_presets_affecting_agent(project, "bob")
 
+        # Malformed per-preset entry (not a dict) → ownership unknown → raise.
+        registry.write_text(
+            json.dumps({"presets": {"p1": []}}), encoding="utf-8"
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Malformed registered_commands (not a dict) → raise.
+        registry.write_text(
+            json.dumps({"presets": {"p1": {"registered_commands": []}}}),
+            encoding="utf-8",
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Malformed registered_skills (not a list) → raise.
+        registry.write_text(
+            json.dumps({"presets": {"p1": {"registered_skills": {}}}}),
+            encoding="utf-8",
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
         # Valid, empty registry → empty list.
         registry.write_text(json.dumps({"presets": {}}), encoding="utf-8")
         assert _installed_presets_affecting_agent(project, "bob") == []
