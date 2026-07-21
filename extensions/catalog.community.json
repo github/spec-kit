@@ -4643,8 +4643,8 @@
       "id": "v-model",
       "description": "Enforces V-Model paired generation of development specs and test specs with full traceability.",
       "author": "leocamello",
-      "version": "0.6.0",
-      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.6.0.zip",
+      "version": "0.7.2",
+      "download_url": "https://github.com/leocamello/spec-kit-v-model/archive/refs/tags/v0.7.2.zip",
       "repository": "https://github.com/leocamello/spec-kit-v-model",
       "homepage": "https://github.com/leocamello/spec-kit-v-model",
       "documentation": "https://github.com/leocamello/spec-kit-v-model/blob/main/README.md",
@@ -4656,8 +4656,8 @@
         "speckit_version": ">=0.1.0"
       },
       "provides": {
-        "commands": 14,
-        "hooks": 1
+        "commands": 17,
+        "hooks": 4
       },
       "tags": [
         "v-model",
@@ -4668,9 +4668,9 @@
       ],
       "verified": false,
       "downloads": 0,
-      "stars": 21,
+      "stars": 27,
       "created_at": "2026-02-20T00:00:00Z",
-      "updated_at": "2026-04-25T00:00:00Z"
+      "updated_at": "2026-05-21T00:00:00Z"
     },
     "verify": {
       "name": "Verify Extension",
