@@ -2219,6 +2219,14 @@ class PresetManager:
                     continue
                 cmds_set = set(dir_cmds)
                 filtered_manifest = self._FilteredManifest(manifest, cmds_set)
+                # Not dead code: _register_skills only *overwrites* skill
+                # subdirectories that already exist (plus brand-new ones for
+                # the active ai_skills agent). For a restore into a
+                # historical directory, _unregister_skills has just deleted
+                # the retiring preset's subdirectory, so pre-create the
+                # tracked (dir_managed_names) subdirectories here — under
+                # the same symlink guard — or the surviving preset's
+                # override would be silently skipped (#2948).
                 for cmd_name in dir_cmds:
                     for skill_name in self._skill_names_for_command(cmd_name):
                         if skill_name not in dir_managed_names:
