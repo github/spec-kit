@@ -3022,6 +3022,57 @@ class TestIntegrationUpgrade:
         cmds_agents, skill_names = _git_registry()
         assert "bob" in cmds_agents and not skill_names
 
+    def test_upgrade_layout_change_preserves_extension_artifacts_when_reregistration_fails(
+        self, tmp_path
+    ):
+        """Regression (review 3624075109).
+
+        A layout-changing upgrade must not eagerly unregister the agent's
+        extension artifacts before re-registration: the retirement of each
+        opposite-mode artifact belongs to
+        ``register_enabled_extensions_for_agent``'s deferred toggle cleanup,
+        which retires an old artifact only after its replacement in the new
+        layout is confirmed. If re-registration cannot rebuild an extension
+        (here: its installed manifest is corrupted), the old artifact and its
+        registry tracking must survive instead of leaving the extension with
+        no artifacts at all.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        commands = project / ".bob" / "commands"
+        assert sorted(commands.glob("speckit.git.*.md")), (
+            "precondition: git extension renders as legacy command files"
+        )
+
+        # Corrupt the installed extension manifest so re-registration cannot
+        # rebuild the artifacts in the new layout.
+        (
+            project / ".specify" / "extensions" / "git" / "extension.yml"
+        ).write_text("invalid: [", encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"upgrade is best-effort about extensions: {result.output}"
+        )
+
+        assert sorted(commands.glob("speckit.git.*.md")), (
+            "old-layout extension artifacts must survive when their "
+            "replacement could not be registered"
+        )
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        assert "bob" in data["extensions"]["git"].get("registered_commands", {}), (
+            "extension registry must keep tracking the surviving artifacts"
+        )
+
     def test_upgrade_active_bob_layout_change_reconciles_presets(self, tmp_path):
         """Regression (review 3623357447).
 

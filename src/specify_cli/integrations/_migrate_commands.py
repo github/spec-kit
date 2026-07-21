@@ -740,51 +740,29 @@ def integration_upgrade(
     # Layout-change reconciliation: a dual-mode agent (e.g. Bob) can flip
     # between the legacy commands layout and the skills layout across an
     # upgrade (``upgrade bob --integration-options "--skills"`` / reverse
-    # ``--legacy-commands``). Phase 2 above only removes stale files tracked by
-    # the *integration* manifest (core commands); extension artifacts are
-    # tracked separately in the extension registry, so the old layout's
-    # extension command/skill files would otherwise linger as orphans. When the
-    # layout actually changed, first unregister the agent's extension artifacts
-    # (removing old-layout files and clearing per-agent registry entries) so the
-    # re-registration below recreates them in the new layout. ``upgrade``s that
-    # don't change layout skip this to avoid needless remove/re-add churn.
+    # ``--legacy-commands``). Phase 2 above only removes stale files tracked
+    # by the *integration* manifest (core commands); extension and preset
+    # artifacts are tracked in their own registries. Their re-registration
+    # below retires each old-layout artifact itself, and only *after* its
+    # replacement in the new layout is confirmed — the deferred toggle
+    # cleanup in ``register_enabled_extensions_for_agent`` and the analogous
+    # handling in ``register_enabled_presets_for_agent`` — so a partial or
+    # failed re-registration never strips a still-tracked artifact. An eager
+    # ``unregister_agent_artifacts`` pass here would delete the old artifact
+    # and its tracking before the replacement exists, defeating that
+    # failure-safety (and, run for a *secondary* agent, could even delete the
+    # active agent's skills via its any-agent fallback scan). Disabled
+    # extensions are skipped by re-registration, leaving their artifacts
+    # frozen in place until re-enable/removal — consistent with how disabled
+    # presets are handled (their case is rejected by the guard near the top
+    # of this function, since the preset rescaffold cannot retire files it
+    # must not touch).
     #
-    # Only the *active* integration is reconciled this way (``installed_key ==
-    # key``).  ``ExtensionManager.unregister_agent_artifacts`` treats the
-    # per-extension ``registered_skills`` list as belonging to the passed agent
-    # and, when that agent's skills directory is absent, falls back to scanning
-    # every agent's skills directory — so running it for a *secondary*
-    # (non-active) agent could delete or untrack the *active* agent's extension
-    # skills.  The subsequent re-registration cannot repair that because
-    # extension skill rendering is intentionally scoped to the active agent
-    # (#2948).  Extension skills only ever exist for the active agent, so
-    # skipping the unregister for a secondary agent orphans nothing new: a
-    # secondary agent only has extension *command* files, which the
-    # re-registration below rewrites in place regardless of layout.
-    #
-    # Preset artifacts follow the same pattern via the
-    # ``_register_presets_for_agent`` rescaffold below: for the active
-    # integration, ``register_enabled_presets_for_agent`` re-registers every
-    # enabled preset in the new layout and retires the old layout's stale
-    # command/skill files itself (its command↔skills toggle handling), so a
-    # layout change needs no preset-specific unregister step here. The cases
-    # the rescaffold cannot reconcile — a non-active integration (preset
-    # registration is active-only, #2948) and a disabled preset's frozen
-    # artifacts (skipped by the rescaffold, kept until removal) — are
-    # rejected by the guard near the top of this function instead, so
+    # The cases the preset rescaffold cannot reconcile — a non-active
+    # integration (preset registration is active-only, #2948) and a disabled
+    # preset's frozen artifacts — are rejected by that same guard, so
     # control never reaches here in those states.
     if key == installed_key:
-        if _manifest_tracks_skill_layout(old_manifest) != _manifest_tracks_skill_layout(
-            new_manifest
-        ):
-            _unregister_extensions_for_agent(
-                project_root,
-                key,
-                continuing=(
-                    "The integration layout changed, but old-layout extension "
-                    "artifacts may need manual cleanup."
-                ),
-            )
         _register_extensions_for_agent(
             project_root,
             key,
