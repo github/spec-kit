@@ -204,19 +204,19 @@ class TestBuildCommandInvocation:
     def test_skills_core_command(self):
         from specify_cli.integrations import get_integration
         i = get_integration("codex")
-        assert i.build_command_invocation("speckit.plan") == "/speckit-plan"
-        assert i.build_command_invocation("plan") == "/speckit-plan"
+        assert i.build_command_invocation("speckit.plan") == "$speckit-plan"
+        assert i.build_command_invocation("plan") == "$speckit-plan"
 
     def test_skills_extension_command(self):
         from specify_cli.integrations import get_integration
         i = get_integration("codex")
-        assert i.build_command_invocation("speckit.git.commit") == "/speckit-git-commit"
-        assert i.build_command_invocation("git.commit") == "/speckit-git-commit"
+        assert i.build_command_invocation("speckit.git.commit") == "$speckit-git-commit"
+        assert i.build_command_invocation("git.commit") == "$speckit-git-commit"
 
     def test_skills_extension_command_with_args(self):
         from specify_cli.integrations import get_integration
         i = get_integration("codex")
-        assert i.build_command_invocation("speckit.git.commit", "fix typo") == "/speckit-git-commit fix typo"
+        assert i.build_command_invocation("speckit.git.commit", "fix typo") == "$speckit-git-commit fix typo"
 
     def test_forge_core_command_hyphenated(self):
         """Forge installs hyphenated slash-commands (/speckit-<name>), so the
