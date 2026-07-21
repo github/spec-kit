@@ -12,6 +12,16 @@ class TestCodexIntegration(SkillsIntegrationTests):
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".agents/skills"
 
+    def test_constitution_skill_uses_dollar_follow_up(self, tmp_path):
+        integration = get_integration("codex")
+        manifest = IntegrationManifest("codex", tmp_path)
+        integration.setup(tmp_path, manifest, script_type="sh")
+
+        skill = tmp_path / ".agents/skills/speckit-constitution/SKILL.md"
+        content = skill.read_text(encoding="utf-8")
+        assert "$speckit-specify <intent>" in content
+        assert "/speckit-specify <intent>" not in content
+
 
 class TestCodexInitFlow:
     """--integration codex creates expected files."""
