@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-17T00:00:00Z",
+  "updated_at": "2026-07-21T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -479,6 +479,35 @@
       ],
       "created_at": "2026-04-09T00:00:00Z",
       "updated_at": "2026-04-09T00:00:00Z"
+    },
+    "parallel-autonomous-run-governance": {
+      "name": "Parallel Autonomous Run Governance",
+      "id": "parallel-autonomous-run-governance",
+      "version": "0.2.2",
+      "description": "Coordinates isolated autonomous Spec Kit campaigns with bounded concurrency, mixed agents, resumable consolidation, and governed post-merge closeout.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/archive/refs/tags/v0.2.2.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.2/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 9,
+        "commands": 5,
+        "scripts": 2
+      },
+      "tags": [
+        "parallel",
+        "autonomous",
+        "governance",
+        "orchestration",
+        "resume"
+      ],
+      "created_at": "2026-07-21T00:00:00Z",
+      "updated_at": "2026-07-21T00:00:00Z"
     },
     "pirate": {
       "name": "Pirate Speak (Full)",
