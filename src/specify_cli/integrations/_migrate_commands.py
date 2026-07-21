@@ -71,15 +71,17 @@ def _installed_presets_affecting_agent(
 ) -> list[tuple[str, bool]]:
     """Return ``(preset_id, enabled)`` for presets with artifacts for *agent_key*.
 
-    Presets register command overrides for every detected agent and mirror
-    skills for the active skills agent, tracking the result in each preset's
-    ``registered_commands`` / ``registered_skills`` metadata. Across a
-    command↔skills *layout change*, only the active integration's presets are
-    reconciled — the post-upgrade rescaffold re-registers *enabled* presets in
-    the new layout — so callers use this to reject the unsafe cases (non-active
-    agent, or a disabled preset whose frozen artifacts the rescaffold must not
-    touch) rather than silently orphaning preset files / leaving stale registry
-    entries (see ``integration_upgrade``).
+    Preset registration is active-agent-only (#2948): command overrides are
+    written for the active non-skills agent and skills for the active skills
+    agent, tracked per preset in ``registered_commands`` /
+    ``registered_skills``. Entries for *other* agents may still exist from
+    when those agents were active. Across a command↔skills *layout change*,
+    only the active integration's presets are reconciled — the post-upgrade
+    rescaffold re-registers *enabled* presets in the new layout — so callers
+    use this to reject the unsafe cases (non-active agent, or a disabled
+    preset whose frozen artifacts the rescaffold must not touch) rather than
+    silently orphaning preset files / leaving stale registry entries (see
+    ``integration_upgrade``).
 
     Fails **closed**: a genuinely absent registry (no presets ever installed)
     returns an empty list, but if the registry file exists and cannot be read
