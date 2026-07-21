@@ -4111,6 +4111,81 @@ inputs:
         with pytest.raises(ValueError, match="invalid 'enum'"):
             engine._resolve_inputs(definition, {})
 
+    def test_validate_workflow_rejects_null_enum(self):
+        """An explicitly declared ``enum:`` / ``enum: null`` is a non-list too and
+        must be rejected.
+
+        ``.get("enum")`` returns ``None`` for both an omitted key and a present
+        null value, so a ``None``-based guard would silently accept a declared
+        null enum. validate_workflow distinguishes the two by key presence, so a
+        present null is reported like any other non-list."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "null-enum"
+  name: "Null Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    enum:
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid 'enum'" in e and "must be a list" in e for e in errors), errors
+
+    def test_validate_workflow_omitted_enum_is_valid(self):
+        """An *omitted* ``enum`` means "no restriction" and must stay valid — the
+        null-enum guard must not over-reach and flag inputs that declare no enum
+        at all."""
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "no-enum"
+  name: "No Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    default: "full"
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert not any("enum" in e for e in errors), errors
+
+    def test_resolve_inputs_rejects_null_enum_at_runtime(self, project_dir):
+        """A present ``enum: null`` must raise a clean ``ValueError`` at run time
+        too — ``execute`` does not auto-validate, and ``.get("enum")`` collapsing
+        null to ``None`` would otherwise let the input resolve as if unrestricted."""
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "runtime-null-enum"
+  name: "Runtime Null Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    enum:
+""")
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="invalid 'enum'"):
+            engine._resolve_inputs(definition, {"scope": "bar"})
+
     def test_while_loop_condition_reads_latest_iteration(self, project_dir):
         """Regression: while-loop condition must see updated step output
         from the most recent iteration, not stale iteration-0 data.

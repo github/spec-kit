@@ -199,9 +199,18 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             # strips ``enum`` before coercing; a scalar/string ``enum`` on an
             # input with no default (or the auto-integration default) would
             # otherwise slip through here and then crash ``_resolve_inputs`` with
-            # a raw ``TypeError`` at run time. ``None`` means "no enum".
+            # a raw ``TypeError`` at run time.
+            #
+            # Distinguish an *omitted* ``enum`` (no restriction — valid) from a
+            # *present* one via ``in``, not ``.get()``: ``.get("enum")`` returns
+            # ``None`` for both an absent key and an explicit ``enum:``/``enum:
+            # null``, so a ``None``-based check would silently accept a declared
+            # null enum even though it is a non-list. Mirrors the present-but-null
+            # ``requires:`` handling below.
+            enum_present = "enum" in input_def
             enum_values = input_def.get("enum")
-            if enum_values is not None and not isinstance(enum_values, list):
+            enum_is_valid = not enum_present or isinstance(enum_values, list)
+            if not enum_is_valid:
                 errors.append(
                     f"Input {input_name!r} has invalid 'enum': must be a list, "
                     f"got {type(enum_values).__name__}."
@@ -215,7 +224,6 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             # enum-membership check is exempted for that exact case — the
             # declared type is still enforced (e.g. ``type: number`` paired
             # with ``default: "auto"`` is still rejected).
-            enum_is_valid = enum_values is None or isinstance(enum_values, list)
             if "default" in input_def:
                 default_value = input_def["default"]
                 is_auto_integration = (
@@ -1452,6 +1460,7 @@ class WorkflowEngine:
     ) -> Any:
         """Coerce a provided input value to the declared type."""
         input_type = input_def.get("type", "string")
+        enum_present = "enum" in input_def
         enum_values = input_def.get("enum")
 
         # ``enum`` must be a list. A scalar (``enum: 5``, ``enum: true``) makes
@@ -1461,9 +1470,13 @@ class WorkflowEngine:
         # "return errors, never raise" contract — and crashes ``_resolve_inputs``
         # outright at run time. A bare string is just as wrong: ``value in "abc"``
         # is a silent substring/character test, not enum membership. Require a
-        # list so both forms fail fast with a clear message. ``None`` means "no
-        # enum" and is left alone.
-        if enum_values is not None and not isinstance(enum_values, list):
+        # list so both forms fail fast with a clear message.
+        #
+        # An *omitted* ``enum`` means "no restriction" and is left alone; a
+        # *present* ``enum:``/``enum: null`` is a declared non-list and must fail
+        # like any other. Distinguish the two via ``in`` — ``.get()`` collapses
+        # both to ``None`` and would let a null enum resolve silently.
+        if enum_present and not isinstance(enum_values, list):
             msg = (
                 f"Input {name!r} has invalid 'enum': must be a list, got "
                 f"{type(enum_values).__name__}."
