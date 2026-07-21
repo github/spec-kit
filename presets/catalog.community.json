@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-17T00:00:00Z",
+  "updated_at": "2026-07-21T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -134,16 +134,17 @@
     "autonomous-run-governance": {
       "name": "Autonomous Run Governance",
       "id": "autonomous-run-governance",
-      "version": "0.2.2",
-      "description": "Adds permission-bounded, evidence-first governance for autonomous Spec Kit delivery with validated status, stop, resume, exact-head proof, closeout, and learner guidance.",
+      "version": "0.3.2",
+      "description": "Adds permission-bounded, evidence-first governance for complete autonomous Spec Kit delivery, including validated status, stop, explicit resume, exact-head proof, post-merge closeout, retrospective learning, and an optional policy-driven intake-review gate before feature creation.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/archive/refs/tags/v0.2.2.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/archive/refs/tags/v0.3.2.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/blob/v0.2.2/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-autonomous-run-governance/blob/v0.3.2/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.8.3"
+        "speckit_version": ">=0.8.3",
+        "extensions": ["intake-review-governance"]
       },
       "provides": {
         "templates": 13,
@@ -155,10 +156,11 @@
         "governance",
         "evidence",
         "permissions",
-        "resume"
+        "resume",
+        "intake-review"
       ],
       "created_at": "2026-07-13T00:00:00Z",
-      "updated_at": "2026-07-17T00:00:00Z"
+      "updated_at": "2026-07-21T00:00:00Z"
     },
     "canon-core": {
       "name": "Canon Core",
