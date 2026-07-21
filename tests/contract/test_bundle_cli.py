@@ -6,6 +6,7 @@ contracts/cli-commands.md (offline, discovery-only refusal, not-a-project error)
 """
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -61,6 +62,42 @@ def test_commands_outside_project_fail_with_guidance(tmp_path: Path, monkeypatch
     result = runner.invoke(app, ["bundle", "list"])
     assert result.exit_code == 1
     assert "Spec Kit project" in result.output
+
+
+def test_remove_reports_clean_error_when_primitive_raises_raw_exception(
+    project: Path,
+):
+    """A raw exception from a primitive installer (e.g. an OSError from an
+    unreadable workflow registry surfacing through _WorkflowKindManager's
+    fail-closed construction) must not propagate uncaught through
+    `specify bundle remove` -- the command only catches BundlerError, so
+    without a conversion at the remove_bundle boundary this would exit
+    with an unhandled exception and empty/raw output instead of a clean,
+    actionable message, and no removal side effects should occur either."""
+    from specify_cli.bundler.models.manifest import BundleManifest
+    from specify_cli.bundler.models.records import load_records
+    from specify_cli.bundler.services.adapters import DefaultPrimitiveInstaller
+    from specify_cli.bundler.services.installer import install_bundle
+    from specify_cli.bundler.services.resolver import resolve_install_plan
+    from tests.bundler_helpers import FakeInstaller
+
+    manifest = BundleManifest.from_dict(valid_manifest_dict())
+    plan = resolve_install_plan(
+        manifest, speckit_version="0.11.2", active_integration="copilot"
+    )
+    install_bundle(project, plan, FakeInstaller(), manifest=manifest)
+
+    def boom(self, project_root, component):
+        raise OSError("workflow registry unreadable")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(DefaultPrimitiveInstaller, "is_installed", boom)
+        result = runner.invoke(app, ["bundle", "remove", "demo-bundle"])
+
+    assert result.exit_code != 0
+    assert result.output.strip() != ""
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert {r.bundle_id for r in load_records(project)} == {"demo-bundle"}
 
 
 def test_fail_writes_error_to_stderr_not_stdout(capsys):
@@ -432,24 +469,15 @@ def test_install_integration_override_cannot_bypass_clash_guard(project: Path):
 # ===== Private GitHub release asset URL resolution =====
 
 
-class FakeBundleResponse:
+class FakeBundleResponse(io.BytesIO):
     """Minimal context-manager response stub for open_url fakes."""
 
     def __init__(self, data: bytes, url: str = "https://api.github.com/repos/org/repo/releases/assets/99"):
-        self._data = data
+        super().__init__(data)
         self._url = url
-
-    def read(self) -> bytes:
-        return self._data
 
     def geturl(self) -> str:
         return self._url
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        return False
 
 
 def _make_catalog_config(catalog_path: Path, project: Path) -> None:

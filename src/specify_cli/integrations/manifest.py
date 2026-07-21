@@ -327,12 +327,18 @@ class IntegrationManifest:
         project_root: Path | None = None,
         *,
         force: bool = False,
+        remove_manifest: bool = True,
     ) -> tuple[list[Path], list[Path]]:
         """Remove tracked files whose hash still matches.
 
         Parameters:
-            project_root: Override for the project root.
-            force:        If ``True``, remove files even if modified.
+            project_root:    Override for the project root.
+            force:           If ``True``, remove files even if modified.
+            remove_manifest: If ``True`` (default), also delete this
+                integration's ``{key}.manifest.json``. Set ``False`` for
+                *partial* cleanups (e.g. the upgrade stale-file pass, which
+                builds a throwaway manifest over a subset of files) so the
+                real, freshly-saved manifest for the same key is not destroyed.
 
         Returns:
             ``(removed, skipped)`` — absolute paths.
@@ -393,7 +399,7 @@ class IntegrationManifest:
 
         # Remove the manifest file itself
         manifest = root / ".specify" / "integrations" / f"{self.key}.manifest.json"
-        if manifest.exists():
+        if remove_manifest and manifest.exists():
             manifest.unlink()
             parent = manifest.parent
             while parent != root:

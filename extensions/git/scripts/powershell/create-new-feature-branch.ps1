@@ -41,6 +41,16 @@ if ($Help) {
     exit 0
 }
 
+# -Number is [long], so PowerShell binds "-5" as -5 rather than rejecting it
+# the way the bash/Python twins do (`^[0-9]+$`). A negative value would format
+# via '{0:000}' to e.g. "-005" and produce a branch name starting with "-",
+# which git refuses (refs cannot begin with a dash). Reject it here, before the
+# description check, matching the bash twin's parse-time validation order.
+if ($Number -lt 0) {
+    Write-Error 'Error: --number must be a non-negative integer'
+    exit 1
+}
+
 if (-not $FeatureDescription -or $FeatureDescription.Count -eq 0) {
     Write-Error "Usage: ./create-new-feature-branch.ps1 [-Json] [-DryRun] [-AllowExistingBranch] [-ShortName <name>] [-Number N] [-Timestamp] <feature description>"
     exit 1

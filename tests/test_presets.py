@@ -1634,6 +1634,18 @@ class TestPresetCatalog:
         with pytest.raises(PresetValidationError, match="valid URL with a host"):
             catalog._validate_catalog_url(url)
 
+    def test_validate_catalog_url_malformed_rejected(self, project_dir):
+        """A malformed URL raises PresetValidationError, not a raw ValueError.
+
+        ``urlparse('https://[::1').hostname`` raises ``ValueError: Invalid IPv6
+        URL`` (unterminated bracket). Without wrapping, that leaks past callers'
+        ``except PresetValidationError`` guards and crashes the CLI. Mirrors the
+        shared ``CatalogStackBase`` (#3435) and ``IntegrationCatalog`` behaviour.
+        """
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="malformed"):
+            catalog._validate_catalog_url("https://[::1")
+
     def test_env_var_catalog_url(self, project_dir, monkeypatch):
         """Test catalog URL from environment variable."""
         monkeypatch.setenv("SPECKIT_PRESET_CATALOG_URL", "https://custom.example.com/catalog.json")
@@ -2291,6 +2303,28 @@ class TestPresetCatalog:
             with pytest.raises(PresetError, match="[Ii]ntegrity"):
                 catalog.download_pack("test-pack", target_dir=project_dir)
 
+    def test_download_pack_malformed_url_raises_preset_error(self, project_dir):
+        """A catalog ``download_url`` with a malformed authority (e.g. an
+        unterminated IPv6 bracket) surfaces a clean ``PresetError`` rather than
+        leaking a raw ``ValueError`` from ``urlparse``/``.hostname`` past the
+        command handler (which only catches ``PresetError``). Mirrors the
+        extensions coverage.
+        """
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        for bad_url in ("https://[::1", "https://[not-an-ip]/x"):
+            pack_info = {
+                "id": "test-pack",
+                "name": "Test Pack",
+                "version": "1.0.0",
+                "download_url": bad_url,
+                "_install_allowed": True,
+            }
+            with patch.object(catalog, "get_pack_info", return_value=pack_info):
+                with pytest.raises(PresetError, match="malformed"):
+                    catalog.download_pack("test-pack", target_dir=project_dir)
+
     def test_download_pack_without_sha256_skips_verification(self, project_dir):
         """A catalog entry with no ``sha256`` keeps working: verification is
         opt-in, so the backwards-compatible path (``pack_info.get("sha256")``
@@ -2659,6 +2693,24 @@ class TestPresetCatalogMultiCatalog:
         with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
             catalog._load_catalog_config(config_path)
 
+    def test_load_catalog_config_rejects_infinite_priority(self, project_dir):
+        """A ``priority: .inf`` yields a clean validation error, not an uncaught
+        OverflowError from int(float('inf'))."""
+        config_path = project_dir / ".specify" / "preset-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [
+                {
+                    "name": "inf-priority",
+                    "url": "https://example.com/catalog.json",
+                    "priority": float("inf"),
+                }
+            ]
+        }))
+
+        catalog = PresetCatalog(project_dir)
+        with pytest.raises(PresetValidationError, match="Invalid priority|expected integer"):
+            catalog._load_catalog_config(config_path)
+
     def test_load_catalog_config_install_allowed_string(self, project_dir):
         """Test that install_allowed accepts string values."""
         config_path = project_dir / ".specify" / "preset-catalogs.yml"
@@ -2777,6 +2829,40 @@ def install_self_test_preset(manager: PresetManager, speckit_version: str = "0.1
         return manager.install_from_directory(SELF_TEST_PRESET_DIR, speckit_version)
 
 
+def _make_convention_constitution_preset(temp_dir: Path) -> Path:
+    """Create a preset whose constitution is found by convention, not its manifest."""
+    preset_dir = temp_dir / "convention-constitution"
+    (preset_dir / "templates").mkdir(parents=True)
+    (preset_dir / "templates" / "constitution-template.md").write_text(
+        "# Convention Constitution\n"
+    )
+    (preset_dir / "templates" / "spec-template.md").write_text("# Spec\n")
+    (preset_dir / "preset.yml").write_text(
+        yaml.dump(
+            {
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "convention-constitution",
+                    "name": "Convention Constitution",
+                    "version": "1.0.0",
+                    "description": "Convention-based constitution for testing",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [
+                        {
+                            "type": "template",
+                            "name": "spec-template",
+                            "file": "templates/spec-template.md",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+    return preset_dir
+
+
 class TestSelfTestPreset:
     """Tests using the self-test preset that ships with the repo.
 
@@ -2884,6 +2970,24 @@ class TestSelfTestPreset:
             assert result is not None
             assert result["source"] == "core"
 
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Core constitution-template\n"
+
+    def test_self_test_removal_preserves_edited_constitution(self, project_dir):
+        """Removing a preset does not overwrite an edited generated constitution."""
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        edited = memory.read_text() + "\n## Authored amendment\n"
+        memory.write_text(edited)
+
+        manager.remove("self-test")
+
+        assert memory.read_text() == edited
+
     def test_self_test_not_in_catalog(self):
         """Verify the self-test preset is NOT in the catalog (it's local-only)."""
         catalog_path = Path(__file__).parent.parent / "presets" / "catalog.json"
@@ -2957,6 +3061,432 @@ class TestSelfTestPreset:
 
         metadata = manager.registry.get("self-test")
         assert metadata["registered_commands"] == {}
+
+    def test_self_test_seeds_constitution_when_memory_absent(self, project_dir):
+        """Installing a preset seeds memory/constitution.md from its template."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.exists(), "constitution.md was not seeded from the preset"
+        assert "preset:self-test" in memory.read_text(), (
+            "constitution.md was not seeded from the self-test preset template"
+        )
+
+    def test_self_test_reseeds_exact_core_constitution(self, project_dir):
+        """An unchanged core constitution is re-seeded from the preset template."""
+        resolver = PresetResolver(project_dir)
+        bundled_core = resolver._find_bundled_core(
+            "constitution-template", "template", ".md"
+        )
+        assert bundled_core is not None
+        core = bundled_core.read_bytes()
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_bytes(core)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        content = memory.read_text()
+        assert "preset:self-test" in content, "placeholder constitution was not re-seeded"
+        assert "[PROJECT_NAME]" not in content
+
+    @pytest.mark.parametrize(
+        "provenance_content",
+        [
+            '{"sha256": "does-not-match", "source": "old-preset"}\n',
+            "{not valid json",
+        ],
+        ids=["hash-mismatch", "malformed"],
+    )
+    def test_self_test_preserves_core_content_with_existing_invalid_provenance(
+        self, project_dir, provenance_content
+    ):
+        """A present invalid sidecar disables legacy core-template migration."""
+        resolver = PresetResolver(project_dir)
+        bundled_core = resolver._find_bundled_core(
+            "constitution-template", "template", ".md"
+        )
+        assert bundled_core is not None
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_bytes(bundled_core.read_bytes())
+        (memory.parent / ".constitution-template.json").write_text(
+            provenance_content
+        )
+        original = memory.read_bytes()
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_bytes() == original
+
+    def test_self_test_preserves_mutable_project_core_copy(self, project_dir):
+        """A project template copy does not establish generated provenance."""
+        authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
+        project_template = (
+            project_dir / ".specify" / "templates" / "constitution-template.md"
+        )
+        project_template.write_text(authored)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+        assert not (memory.parent / ".constitution-template.json").exists()
+
+    def test_core_prefixed_preset_does_not_establish_generated_provenance(
+        self, project_dir, temp_dir
+    ):
+        """A preset ID beginning with core is not an immutable core source."""
+        authored = "# Acme Organization Constitution\n\nOrganization policy.\n"
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        memory.write_text(authored)
+
+        preset_dir = temp_dir / "core-company"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(authored)
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "core-company",
+                        "name": "Core Company",
+                        "version": "1.0.0",
+                        "description": "Company constitution preset",
+                        "author": "Test Author",
+                        "repository": "https://github.com/test/core-company",
+                        "license": "MIT",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "description": "Company constitution",
+                                "replaces": "constitution-template",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        PresetManager(project_dir).install_from_directory(preset_dir, "0.1.5")
+
+        assert memory.read_text() == authored
+        assert not (memory.parent / ".constitution-template.json").exists()
+
+    def test_self_test_preserves_authored_constitution_with_placeholder(
+        self, project_dir
+    ):
+        """A placeholder mention does not establish generated provenance."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\n\nGuidance for [PROJECT_NAME].\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+
+    def test_self_test_preserves_authored_constitution(self, project_dir):
+        """An authored (placeholder-free) constitution is never overwritten."""
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\n\n### I. Ship It\nAuthored by a human.\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored, "authored constitution was overwritten"
+
+    def test_self_test_override_resolves_constitution_template(self, project_dir):
+        """The preset override of constitution-template resolves to the preset file."""
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core constitution\n")
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        resolver = PresetResolver(project_dir)
+        result = resolver.resolve("constitution-template", "template")
+        assert result is not None
+        assert "preset:self-test" in result.read_text()
+
+    def test_constitution_seed_composes_wrap_strategy(self, project_dir, temp_dir):
+        """Seeding memory composes wrap constitution-template layers."""
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# Core Constitution\n\n## Core Principle\n"
+        )
+
+        preset_dir = temp_dir / "constitution-wrap"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Wrapper Constitution\n\n{CORE_TEMPLATE}\n\n## Wrapper Footer\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "constitution-wrap",
+                        "name": "Constitution Wrap",
+                        "version": "1.0.0",
+                        "description": "Wrap constitution template for testing",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Wrapped constitution template",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        content = memory.read_text()
+        assert "{CORE_TEMPLATE}" not in content
+        assert "# Wrapper Constitution" in content
+        assert "## Core Principle" in content
+
+    def test_constitution_follows_priority_when_winning_preset_removed(
+        self, project_dir, temp_dir
+    ):
+        """An unchanged generated constitution follows priority and fallback layers."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        preset_dir = temp_dir / "higher-priority"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Higher Priority Constitution\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "higher-priority",
+                        "name": "Higher Priority",
+                        "version": "1.0.0",
+                        "description": "Higher-priority constitution",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "replace",
+                                "description": "Higher-priority constitution",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager.install_from_directory(preset_dir, "0.1.5", priority=1)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Higher Priority Constitution\n"
+
+        manager.remove("higher-priority")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_convention_constitution_removal_restores_remaining_layer(
+        self, project_dir, temp_dir
+    ):
+        """Removing a convention layer rematerializes the remaining resolver layer."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=1
+        )
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Convention Constitution\n"
+
+        manager.remove("convention-constitution")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_convention_constitution_removal_preserves_edited_content(
+        self, project_dir, temp_dir
+    ):
+        """Removing a convention layer does not overwrite edited generated content."""
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        templates_dir = project_dir / ".specify" / "templates"
+        (templates_dir / "constitution-template.md").write_text("# Core Constitution\n")
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5"
+        )
+        ensure_constitution_from_template(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        edited = memory.read_text() + "\n## Authored amendment\n"
+        memory.write_text(edited)
+
+        manager.remove("convention-constitution")
+
+        assert memory.read_text() == edited
+
+    def test_custom_constitution_removal_recovers_with_invalid_manifest(
+        self, project_dir, temp_dir
+    ):
+        """Provenance triggers fallback when a custom-path manifest is invalid."""
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        preset_dir = temp_dir / "custom-constitution"
+        (preset_dir / "policy").mkdir(parents=True)
+        (preset_dir / "policy" / "charter.md").write_text("# Custom Constitution\n")
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "custom-constitution",
+                        "name": "Custom Constitution",
+                        "version": "1.0.0",
+                        "description": "Custom-path constitution for testing",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "policy/charter.md",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        manager.install_from_directory(preset_dir, "0.1.5", priority=1)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Custom Constitution\n"
+
+        installed_manifest = (
+            project_dir
+            / ".specify"
+            / "presets"
+            / "custom-constitution"
+            / "preset.yml"
+        )
+        installed_manifest.write_text("invalid: [")
+
+        manager.remove("custom-constitution")
+
+        assert "preset:self-test" in memory.read_text()
+
+    def test_constitution_seed_rejects_symlinked_memory_directory(
+        self, project_dir, temp_dir
+    ):
+        """Preset installation cannot seed through a symlinked memory directory."""
+        outside = temp_dir / "outside"
+        outside.mkdir()
+        try:
+            (project_dir / ".specify" / "memory").symlink_to(
+                outside, target_is_directory=True
+            )
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="symlinked"):
+            install_self_test_preset(manager)
+
+        assert manager.registry.is_installed("self-test")
+        assert not (outside / "constitution.md").exists()
+
+    def test_constitution_seed_rejects_dangling_destination_symlink(
+        self, project_dir, temp_dir
+    ):
+        """Preset installation cannot seed through a dangling destination symlink."""
+        memory = project_dir / ".specify" / "memory"
+        memory.mkdir(parents=True)
+        outside = temp_dir / "outside-constitution.md"
+        try:
+            (memory / "constitution.md").symlink_to(outside)
+        except OSError:
+            pytest.skip("symlinks are unavailable")
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="symlinked"):
+            install_self_test_preset(manager)
+
+        assert manager.registry.is_installed("self-test")
+        assert not outside.exists()
+
+    def test_constitution_materialization_error_is_nonfatal(
+        self, project_dir, temp_dir
+    ):
+        """An invalid wrap warns without reporting an uninstalled preset."""
+        preset_dir = temp_dir / "invalid-wrap"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Missing core placeholder\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "invalid-wrap",
+                        "name": "Invalid Wrap",
+                        "version": "1.0.0",
+                        "description": "Invalid wrapping constitution",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Invalid wrap",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+
+        manager = PresetManager(project_dir)
+        with pytest.warns(UserWarning, match="Failed to seed constitution"):
+            manifest = manager.install_from_directory(preset_dir, "0.1.5")
+
+        assert manifest.id == "invalid-wrap"
+        assert manager.registry.is_installed("invalid-wrap")
 
     def test_extension_command_skipped_when_extension_missing(self, project_dir, temp_dir):
         """Test that extension command overrides are skipped if the extension isn't installed."""
@@ -8182,6 +8712,31 @@ class TestPresetSetPriority:
         manager2 = PresetManager(project_dir)
         assert manager2.registry.get("test-pack")["priority"] == 5
 
+    def test_set_priority_reconciles_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """Changing priority rematerializes an unchanged generated constitution."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=20
+        )
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert "preset:self-test" in memory.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = CliRunner().invoke(
+                app,
+                ["preset", "set-priority", "convention-constitution", "1"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert memory.read_text() == "# Convention Constitution\n"
+
     def test_set_priority_same_value_no_change(self, project_dir, pack_dir):
         """Test set-priority with same value shows already set message."""
         from typer.testing import CliRunner
@@ -8401,6 +8956,61 @@ class TestPresetEnableDisable:
         # Reload registry to see updated value
         manager2 = PresetManager(project_dir)
         assert manager2.registry.get("test-pack")["enabled"] is True
+
+    def test_enable_disable_reconciles_generated_constitution(
+        self, project_dir, temp_dir
+    ):
+        """Enable and disable rematerialize the winning constitution layer."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+        manager.install_from_directory(
+            _make_convention_constitution_preset(temp_dir), "0.1.5", priority=1
+        )
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.read_text() == "# Convention Constitution\n"
+        runner = CliRunner()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            disabled = runner.invoke(
+                app, ["preset", "disable", "convention-constitution"]
+            )
+
+        assert disabled.exit_code == 0, disabled.output
+        assert "preset:self-test" in memory.read_text()
+
+        with patch.object(Path, "cwd", return_value=project_dir):
+            enabled = runner.invoke(
+                app, ["preset", "enable", "convention-constitution"]
+            )
+
+        assert enabled.exit_code == 0, enabled.output
+        assert memory.read_text() == "# Convention Constitution\n"
+
+    def test_stack_changes_do_not_create_missing_constitution(
+        self, project_dir, pack_dir
+    ):
+        """Stack changes for non-providers do not seed a missing constitution."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        PresetManager(project_dir).install_from_directory(pack_dir, "0.1.5")
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        runner = CliRunner()
+
+        for args in (
+            ["preset", "set-priority", "test-pack", "5"],
+            ["preset", "disable", "test-pack"],
+            ["preset", "enable", "test-pack"],
+        ):
+            with patch.object(Path, "cwd", return_value=project_dir):
+                result = runner.invoke(app, args)
+            assert result.exit_code == 0, result.output
+            assert not memory.exists()
 
     def test_disable_already_disabled(self, project_dir, pack_dir):
         """Test disable on already disabled preset shows warning."""
@@ -8734,6 +9344,82 @@ class TestBundledPresetLocator:
         assert "Invalid URL" in output
         open_url.assert_not_called()
 
+    def test_preset_add_bracketed_host_download_url_exits_cleanly(self, project_dir):
+        """A catalog download_url with a bracketed non-IP host must render cleanly.
+
+        ``download_pack`` raises ``PresetError`` whose message embeds the raw URL
+        (e.g. ``https://[not-an-ip]/x``). The ``preset_add`` handler must escape
+        that message before printing so Rich does not interpret ``[not-an-ip]``
+        as a markup tag and crash while rendering the error.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        bad_url = "https://[not-an-ip]/x"
+        catalog_data = {
+            "test-pack": {
+                "name": "Test Pack",
+                "version": "1.0.0",
+                "download_url": bad_url,
+            }
+        }
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(PresetCatalog, "_get_merged_packs", return_value=catalog_data):
+            result = runner.invoke(
+                app,
+                ["preset", "add", "test-pack"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        output = strip_ansi(result.output)
+        assert "Error:" in output
+        # The malformed URL surfaces verbatim rather than crashing the renderer.
+        assert bad_url in output
+
+    @pytest.mark.parametrize(
+        ("exc_type", "label"),
+        [
+            (PresetCompatibilityError, "Compatibility Error"),
+            (PresetValidationError, "Validation Error"),
+            (PresetError, "Error"),
+        ],
+    )
+    def test_preset_add_exception_handlers_escape_markup(self, project_dir, exc_type, label):
+        """Preset install exceptions can include catalog-controlled values.
+
+        The message must be escaped so Rich does not treat bracketed content as
+        markup and raise while rendering the error.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        dev_dir = project_dir / "dev-pack"
+        dev_dir.mkdir()
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(
+                 PresetManager,
+                 "install_from_directory",
+                 side_effect=exc_type("bad [red]preset[/red]"),
+             ):
+            result = runner.invoke(
+                app,
+                ["preset", "add", "--dev", str(dev_dir)],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1, result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert f"{label}:" in result.output
+        assert "bad [red]preset[/red]" in result.output
+
     def test_preset_add_from_url_redirect_error_describes_disallowed_url(self, project_dir, monkeypatch, capsys):
         """Redirect rejection message covers hostless HTTPS, not only non-HTTPS URLs."""
         import typer
@@ -8890,26 +9576,13 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
+                return io.BytesIO(json.dumps({
                     "assets": [{"name": "preset.zip", "url": "https://api.github.com/repos/org/repo/releases/assets/42"}]
                 }).encode())
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -8948,22 +9621,9 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -9005,26 +9665,13 @@ class TestPresetAddFromUrlResolution:
 
         captured_urls = []
 
-        class FakeResponse:
-            def __init__(self, data):
-                self._data = data
-
-            def read(self):
-                return self._data
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
         def fake_open_url(url, timeout=None, extra_headers=None, redirect_validator=None):
             captured_urls.append((url, extra_headers))
             if "releases/tags/" in url:
-                return FakeResponse(json.dumps({
+                return io.BytesIO(json.dumps({
                     "assets": [{"name": "preset.zip", "url": "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"}]
                 }).encode())
-            return FakeResponse(zip_bytes)
+            return io.BytesIO(zip_bytes)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
@@ -10591,3 +11238,130 @@ def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monke
     )
     assert resolved == "https://ghes.example/api/v3/repos/o/r/releases/assets/9"
     assert captured == ["https://ghes.example/api/v3/repos/o/r/releases/tags/v2"]
+
+
+# ===== ensure_constitution_from_template resolver-awareness =====
+
+
+class TestEnsureConstitutionResolverAware:
+    """`ensure_constitution_from_template` must resolve through PresetResolver.
+
+    The constitution is the only template materialized to a live file rather
+    than resolved on demand. These tests pin the regression from issue #3272:
+    a preset-provided ``constitution-template`` must seed memory, while the
+    core template is used when no preset overrides it.
+    """
+
+    def _core_constitution(self, project_dir):
+        templates_dir = project_dir / ".specify" / "templates"
+        templates_dir.mkdir(parents=True, exist_ok=True)
+        (templates_dir / "constitution-template.md").write_text(
+            "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n"
+        )
+
+    def _wrap_constitution_preset(self, temp_dir):
+        preset_dir = temp_dir / "ensure-wrap-preset"
+        (preset_dir / "templates").mkdir(parents=True)
+        (preset_dir / "templates" / "constitution-template.md").write_text(
+            "# Ensure Wrapper\n\n{CORE_TEMPLATE}\n\n## Tail\n"
+        )
+        (preset_dir / "preset.yml").write_text(
+            yaml.dump(
+                {
+                    "schema_version": "1.0",
+                    "preset": {
+                        "id": "ensure-wrap",
+                        "name": "Ensure Wrap",
+                        "version": "1.0.0",
+                        "description": "Wrap strategy for ensure() coverage",
+                    },
+                    "requires": {"speckit_version": ">=0.1.0"},
+                    "provides": {
+                        "templates": [
+                            {
+                                "type": "template",
+                                "name": "constitution-template",
+                                "file": "templates/constitution-template.md",
+                                "strategy": "wrap",
+                                "description": "Wrapped constitution",
+                            }
+                        ]
+                    },
+                }
+            )
+        )
+        return preset_dir
+
+    def test_seeds_from_core_when_no_preset(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        ensure_constitution_from_template(project_dir)
+
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        assert memory.exists()
+        assert "[PROJECT_NAME]" in memory.read_text()
+        assert (memory.parent / ".constitution-template.json").exists()
+
+    def test_seeds_from_preset_when_installed(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        # Remove the memory file seeded during install to test ensure() in
+        # isolation; it must re-seed from the preset, not the core template.
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.unlink()
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory.exists()
+        content = memory.read_text()
+        assert "preset:self-test" in content
+        assert "[PROJECT_NAME]" not in content
+
+    def test_preserves_existing_memory(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.parent.mkdir(parents=True, exist_ok=True)
+        authored = "# Acme Constitution\nAuthored.\n"
+        memory.write_text(authored)
+
+        ensure_constitution_from_template(project_dir)
+
+        assert memory.read_text() == authored
+
+    def test_preserves_edited_generated_memory(self, project_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        ensure_constitution_from_template(project_dir)
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        authored = memory.read_text() + "\nAuthored amendment.\n"
+        memory.write_text(authored)
+
+        manager = PresetManager(project_dir)
+        install_self_test_preset(manager)
+
+        assert memory.read_text() == authored
+
+    def test_composes_wrap_strategy_when_ensuring(self, project_dir, temp_dir):
+        from specify_cli.commands.init import ensure_constitution_from_template
+
+        self._core_constitution(project_dir)
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(self._wrap_constitution_preset(temp_dir), "0.1.5")
+
+        # Ensure we validate ensure() behavior directly.
+        memory = project_dir / ".specify" / "memory" / "constitution.md"
+        memory.unlink()
+        ensure_constitution_from_template(project_dir)
+
+        content = memory.read_text()
+        assert "{CORE_TEMPLATE}" not in content
+        assert "# Ensure Wrapper" in content
+        assert "[PROJECT_NAME]" in content

@@ -79,7 +79,11 @@ class WorkflowDefinition:
     def from_yaml(cls, path: Path) -> WorkflowDefinition:
         """Load a workflow definition from a YAML file."""
         with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as exc:
+                msg = f"Invalid YAML in {path}: {exc}"
+                raise ValueError(msg) from exc
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -88,7 +92,11 @@ class WorkflowDefinition:
     @classmethod
     def from_string(cls, content: str) -> WorkflowDefinition:
         """Load a workflow definition from a YAML string."""
-        data = yaml.safe_load(content)
+        try:
+            data = yaml.safe_load(content)
+        except yaml.YAMLError as exc:
+            msg = f"Invalid YAML: {exc}"
+            raise ValueError(msg) from exc
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -150,7 +158,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"'workflow.id' must be a string, got "
             f"{type(definition.id).__name__} ({definition.id!r})."
         )
-    elif not _ID_PATTERN.match(definition.id):
+    elif not _ID_PATTERN.fullmatch(definition.id):
         errors.append(
             f"Workflow ID {definition.id!r} must be lowercase alphanumeric "
             f"with hyphens."
@@ -172,7 +180,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
             f"{type(definition.version).__name__} ({definition.version!r}) — "
             f'quote it in YAML (version: "1.0.0").'
         )
-    elif not re.match(r"^\d+\.\d+\.\d+$", definition.version):
+    elif not re.fullmatch(r"\d+\.\d+\.\d+", definition.version):
         errors.append(
             f"Workflow version {definition.version!r} is not valid "
             f"semantic versioning (expected X.Y.Z)."
@@ -416,18 +424,57 @@ class RunState:
         ID into a path so a malicious value cannot probe or read files
         outside ``.specify/workflows/runs/<run_id>/``.
         """
-        if not isinstance(run_id, str) or not cls._RUN_ID_PATTERN.match(run_id):
+        if not isinstance(run_id, str) or not cls._RUN_ID_PATTERN.fullmatch(run_id):
             raise ValueError(
                 f"Invalid run_id {run_id!r}: must be alphanumeric with "
                 "hyphens/underscores only (and must start with an "
                 "alphanumeric character)."
             )
 
+    @staticmethod
+    def _validate_installed_origin(
+        installed_workflow_id: str | None,
+        installed_registry_root: str | None,
+    ) -> None:
+        """Validate persisted installed-workflow ownership metadata."""
+        if installed_workflow_id is not None:
+            if not isinstance(installed_workflow_id, str):
+                raise ValueError(
+                    "Invalid run state: 'installed_workflow_id' must be a "
+                    f"string or null, got {type(installed_workflow_id).__name__}"
+                )
+            if not _ID_PATTERN.fullmatch(installed_workflow_id):
+                raise ValueError(
+                    "Invalid run state: 'installed_workflow_id' must be a "
+                    "lowercase alphanumeric workflow ID with hyphens"
+                )
+        if installed_registry_root is not None:
+            if not isinstance(installed_registry_root, str):
+                raise ValueError(
+                    "Invalid run state: 'installed_registry_root' must be a "
+                    f"string or null, got {type(installed_registry_root).__name__}"
+                )
+            if not installed_registry_root or not Path(
+                installed_registry_root
+            ).is_absolute():
+                raise ValueError(
+                    "Invalid run state: 'installed_registry_root' must be "
+                    "an absolute path or null"
+                )
+            if installed_workflow_id is None:
+                raise ValueError(
+                    "Invalid run state: 'installed_registry_root' requires "
+                    "'installed_workflow_id'"
+                )
+
     def __init__(
         self,
         run_id: str | None = None,
         workflow_id: str = "",
         project_root: Path | None = None,
+        installed_workflow_id: str | None = None,
+        installed_registry_root: str | None = None,
+        installed_origin_tracked: bool = True,
     ) -> None:
         # ``run_id is None`` (omitted) → auto-generate. An explicit empty
         # string is *not* the same as "omitted" and must be validated like
@@ -439,8 +486,22 @@ class RunState:
         else:
             self.run_id = run_id
         self._validate_run_id(self.run_id)
+        self._validate_installed_origin(
+            installed_workflow_id, installed_registry_root
+        )
         self.workflow_id = workflow_id
         self.project_root = project_root or Path(".")
+        # Identifies the installed workflow (if any) this run was started
+        # from, and the project root that owns its registry — set by
+        # execute() when the source was resolved to an installed ID (see
+        # workflow_run's ownership mapping). None for a direct/non-installed
+        # YAML source. ``installed_origin_tracked`` distinguishes those
+        # explicit None values from legacy state files that predate both
+        # fields, allowing the CLI to conservatively infer same-project
+        # registry ownership before resuming.
+        self.installed_workflow_id = installed_workflow_id
+        self.installed_registry_root = installed_registry_root
+        self.installed_origin_tracked = installed_origin_tracked
         self.status = RunStatus.CREATED
         self.current_step_index = 0
         self.current_step_id: str | None = None
@@ -455,6 +516,7 @@ class RunState:
         # append_log is never called while _lock is held, the two never nest.
         self._log_lock = threading.Lock()
         self.inputs: dict[str, Any] = {}
+        self.workflow_dir: str | None = None
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
         self.log_entries: list[dict[str, Any]] = []
@@ -503,10 +565,13 @@ class RunState:
             state_data = {
                 "run_id": self.run_id,
                 "workflow_id": self.workflow_id,
+                "installed_workflow_id": self.installed_workflow_id,
+                "installed_registry_root": self.installed_registry_root,
                 "status": self.status.value,
                 "current_step_index": self.current_step_index,
                 "current_step_id": self.current_step_id,
                 "step_results": self.step_results,
+                "workflow_dir": self.workflow_dir,
                 "created_at": self.created_at,
                 "updated_at": self.updated_at,
             }
@@ -554,16 +619,52 @@ class RunState:
 
         with open(state_path, encoding="utf-8") as f:
             state_data = json.load(f)
+        if not isinstance(state_data, dict):
+            raise ValueError("Invalid run state: expected a JSON object")
+        missing_fields = [
+            field
+            for field in ("run_id", "workflow_id", "status")
+            if field not in state_data
+        ]
+        if missing_fields:
+            raise ValueError(
+                "Invalid run state: missing required field(s): "
+                + ", ".join(missing_fields)
+            )
+
+        workflow_id = state_data["workflow_id"]
+        if not isinstance(workflow_id, str) or not _ID_PATTERN.fullmatch(
+            workflow_id
+        ):
+            raise ValueError(
+                "Invalid run state: 'workflow_id' must be a lowercase "
+                "alphanumeric workflow ID with hyphens"
+            )
+
+        has_installed_workflow_id = "installed_workflow_id" in state_data
+        has_installed_registry_root = "installed_registry_root" in state_data
+        if has_installed_workflow_id != has_installed_registry_root:
+            raise ValueError(
+                "Invalid run state: installed workflow origin fields must "
+                "either both be present or both be absent"
+            )
+
+        installed_workflow_id = state_data.get("installed_workflow_id")
+        installed_registry_root = state_data.get("installed_registry_root")
 
         state = cls(
             run_id=state_data["run_id"],
-            workflow_id=state_data["workflow_id"],
+            workflow_id=workflow_id,
             project_root=project_root,
+            installed_workflow_id=installed_workflow_id,
+            installed_registry_root=installed_registry_root,
+            installed_origin_tracked=has_installed_workflow_id,
         )
         state.status = RunStatus(state_data["status"])
         state.current_step_index = state_data.get("current_step_index", 0)
         state.current_step_id = state_data.get("current_step_id")
         state.step_results = state_data.get("step_results", {})
+        state.workflow_dir = state_data.get("workflow_dir")
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
 
@@ -571,7 +672,16 @@ class RunState:
         if inputs_path.exists():
             with open(inputs_path, encoding="utf-8") as f:
                 inputs_data = json.load(f)
-            state.inputs = inputs_data.get("inputs", {})
+            if not isinstance(inputs_data, dict):
+                raise ValueError(
+                    "Invalid run inputs: expected a JSON object"
+                )
+            inputs = inputs_data.get("inputs", {})
+            if not isinstance(inputs, dict):
+                raise ValueError(
+                    "Invalid run inputs: 'inputs' must be a JSON object"
+                )
+            state.inputs = inputs
 
         return state
 
@@ -625,13 +735,24 @@ class WorkflowEngine:
         ValueError:
             If the workflow YAML is invalid.
         """
+        from .overlays import WorkflowResolver
+
         path = Path(source).expanduser()
 
         # Try as a direct file path first
         if path.suffix.lower() in (".yml", ".yaml") and path.is_file():
             return WorkflowDefinition.from_yaml(path)
 
-        # Try as an installed workflow ID
+        # Try as an installed workflow ID, resolving any overlays.
+        resolver = WorkflowResolver(self.project_root)
+        try:
+            return resolver.resolve(str(source))
+        except FileNotFoundError:
+            # Fall back to the direct workflow.yml path so callers still get
+            # the original error when the workflow id is not installed.
+            pass
+
+        # Legacy direct path check for workflows installed without registry entries.
         installed_path = (
             self.project_root
             / ".specify"
@@ -654,6 +775,8 @@ class WorkflowEngine:
         definition: WorkflowDefinition,
         inputs: dict[str, Any] | None = None,
         run_id: str | None = None,
+        installed_workflow_id: str | None = None,
+        installed_registry_root: Path | None = None,
     ) -> RunState:
         """Execute a workflow definition.
 
@@ -665,6 +788,12 @@ class WorkflowEngine:
             User-provided input values.
         run_id:
             Optional run ID (uses SPECKIT_WORKFLOW_RUN_ID when set, otherwise auto-generated).
+        installed_workflow_id, installed_registry_root:
+            When the run was started from an installed workflow (as opposed
+            to a direct/non-installed YAML source), identifies it and its
+            owning registry root so a later ``resume`` can re-check the
+            registry's current disabled state before continuing — see
+            ``workflow_resume``.
 
         Returns
         -------
@@ -682,6 +811,12 @@ class WorkflowEngine:
             run_id=effective_run_id,
             workflow_id=definition.id,
             project_root=self.project_root,
+            installed_workflow_id=installed_workflow_id,
+            installed_registry_root=(
+                str(installed_registry_root)
+                if installed_registry_root is not None
+                else None
+            ),
         )
 
         # Persist a copy of the workflow definition so resume can
@@ -697,6 +832,12 @@ class WorkflowEngine:
         # Resolve inputs
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
         state.inputs = resolved_inputs
+        workflow_dir = (
+            str(definition.source_path.resolve().parent)
+            if definition.source_path is not None
+            else None
+        )
+        state.workflow_dir = workflow_dir
         state.status = RunStatus.RUNNING
         state.save()
 
@@ -707,6 +848,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            workflow_dir=workflow_dir,
         )
 
         # Execute steps
@@ -772,6 +914,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            workflow_dir=state.workflow_dir,
         )
 
         from . import STEP_REGISTRY
@@ -1084,9 +1227,9 @@ class WorkflowEngine:
         already flipped), so the prefix never drops the actual halting item.
 
         ``max_concurrency`` is coerced with ``int()``; a value that cannot be
-        coerced (``None``, a non-numeric string, …) or that coerces to <= 1 runs
-        sequentially, while a numeric string like ``"4"`` or a float like ``4.0``
-        is honored.
+        coerced (``None``, a non-numeric string, ``.inf``/``.nan``, …) or that
+        coerces to <= 1 runs sequentially, while a numeric string like ``"4"`` or
+        a float like ``4.0`` is honored.
         """
         if not items:
             return []
@@ -1094,7 +1237,9 @@ class WorkflowEngine:
         halting = (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED)
         try:
             workers = max(1, int(max_concurrency))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: int(float("inf")) — a YAML ``max_concurrency: .inf``
+            # would otherwise crash the whole run instead of falling back.
             workers = 1
         # Never spin up more workers than there is work — bounds a user-controlled
         # max_concurrency from over-allocating threads.

@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-13T00:00:00Z",
+  "updated_at": "2026-07-21T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -394,6 +394,66 @@
       "stars": 0,
       "created_at": "2026-03-03T00:00:00Z",
       "updated_at": "2026-03-03T00:00:00Z"
+    },
+    "bdd": {
+      "name": "Spec-Kit BDD",
+      "id": "bdd",
+      "description": "ATDD/BDD extension: convert specs to Gherkin scenarios, scaffold step definitions, and verify acceptance test coverage.",
+      "author": "RSginer",
+      "version": "1.0.2",
+      "download_url": "https://github.com/RSginer/spec-kit-bdd/archive/refs/tags/v1.0.2.zip",
+      "repository": "https://github.com/RSginer/spec-kit-bdd",
+      "homepage": "https://github.com/RSginer/spec-kit-bdd",
+      "documentation": "https://github.com/RSginer/spec-kit-bdd/blob/main/docs/usage.md",
+      "changelog": "https://github.com/RSginer/spec-kit-bdd/releases",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "pytest-bdd",
+            "required": false
+          },
+          {
+            "name": "behave",
+            "required": false
+          },
+          {
+            "name": "@cucumber/cucumber",
+            "required": false
+          },
+          {
+            "name": "cucumber",
+            "required": false
+          },
+          {
+            "name": "io.cucumber",
+            "required": false
+          },
+          {
+            "name": "SpecFlow",
+            "required": false
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 2
+      },
+      "tags": [
+        "bdd",
+        "gherkin",
+        "atdd",
+        "acceptance-testing",
+        "tdd"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-15T00:00:00Z",
+      "updated_at": "2026-07-15T00:00:00Z"
     },
     "blueprint": {
       "name": "Blueprint",
@@ -809,8 +869,8 @@
       "id": "coding-standards-drift-control",
       "description": "Generate coding-standards drift reports and remediation tasks for active Spec Kit features",
       "author": "Igor Benicio de Mesquita",
-      "version": "0.3.1",
-      "download_url": "https://github.com/benizzio/spec-kit-coding-standards-drift-control/archive/refs/tags/v0.3.1.zip",
+      "version": "0.4.0",
+      "download_url": "https://github.com/benizzio/spec-kit-coding-standards-drift-control/archive/refs/tags/v0.4.0.zip",
       "repository": "https://github.com/benizzio/spec-kit-coding-standards-drift-control",
       "homepage": "https://github.com/benizzio/spec-kit-coding-standards-drift-control",
       "documentation": "https://github.com/benizzio/spec-kit-coding-standards-drift-control#readme",
@@ -835,7 +895,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-06-11T00:00:00Z",
-      "updated_at": "2026-06-11T00:00:00Z"
+      "updated_at": "2026-07-15T00:00:00Z"
     },
     "companion": {
       "name": "SpecKit Companion",
@@ -1106,10 +1166,10 @@
     "docguard": {
       "name": "DocGuard — CDD Enforcement",
       "id": "docguard",
-      "description": "The only doc-integrity engine with an MCP server, SARIF output, and a deterministic zero-LLM core. Validates, scores, and traces documentation against code — 24 validators, stable finding codes, GitHub Action with PR annotations, spec-kit hooks. Pure Node.js, one pinned dep.",
+      "description": "The only doc-integrity engine with an MCP server, SARIF/JUnit output, and a deterministic zero-LLM core. Validates, scores, and traces documentation against code — 27 validators, stable finding codes, adoption baseline for legacy repos, compliance-evidence reports, GitHub Action with PR annotations, spec-kit hooks. Pure Node.js, one pinned dep.",
       "author": "raccioly",
-      "version": "0.30.0",
-      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.30.0/spec-kit-docguard-v0.30.0.zip",
+      "version": "0.33.0",
+      "download_url": "https://github.com/raccioly/docguard/releases/download/v0.33.0/spec-kit-docguard-v0.33.0.zip",
       "repository": "https://github.com/raccioly/docguard",
       "homepage": "https://www.npmjs.com/package/docguard-cli",
       "documentation": "https://github.com/raccioly/docguard/blob/main/extensions/spec-kit-docguard/README.md",
@@ -1124,6 +1184,14 @@
             "name": "node",
             "version": ">=18.0.0",
             "required": true
+          },
+          {
+            "name": "npx",
+            "required": true
+          },
+          {
+            "name": "specify",
+            "required": false
           }
         ]
       },
@@ -1145,7 +1213,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
-      "updated_at": "2026-07-06T00:00:00Z"
+      "updated_at": "2026-07-16T00:00:00Z"
     },
     "doctor": {
       "name": "Project Health Check",
@@ -1179,6 +1247,47 @@
       "stars": 0,
       "created_at": "2026-03-13T00:00:00Z",
       "updated_at": "2026-03-13T00:00:00Z"
+    },
+    "dotdog": {
+      "name": "Dotdog",
+      "id": "dotdog",
+      "description": "Import GitHub Spec Kit artifacts into local knowledge graphs for validation, analysis, search, and MCP queries.",
+      "author": "specdog",
+      "version": "0.9.0",
+      "download_url": "https://github.com/specdog/dotdog/releases/download/v0.9.0/dotdog-spec-kit-extension-v0.9.0.zip",
+      "repository": "https://github.com/specdog/dotdog",
+      "homepage": "https://specdog.github.io/dotdog",
+      "documentation": "https://github.com/specdog/dotdog/blob/main/docs/spec-kit-extension.md",
+      "changelog": "https://github.com/specdog/dotdog/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0",
+        "tools": [
+          {
+            "name": "dotdog",
+            "version": ">=0.9.0",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 0
+      },
+      "tags": [
+        "specification",
+        "knowledge-graph",
+        "validation",
+        "mcp",
+        "local-first"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-16T00:00:00Z",
+      "updated_at": "2026-07-16T00:00:00Z"
     },
     "ears": {
       "name": "EARS Requirements Syntax",
@@ -1286,6 +1395,43 @@
       "stars": 0,
       "created_at": "2026-07-08T00:00:00Z",
       "updated_at": "2026-07-08T00:00:00Z"
+    },
+    "figma-starter": {
+      "name": "Figma Starter",
+      "id": "figma-starter",
+      "description": "Turns a Figma section's screens into per-screen spec.md files, an app-level user-stories.md, and a build-order.md, then hands off to /speckit.specify.",
+      "author": "WaveMaker",
+      "version": "1.0.0",
+      "download_url": "https://github.com/wavemaker/spec-kit-figma-starter/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/wavemaker/spec-kit-figma-starter",
+      "homepage": "https://github.com/wavemaker/spec-kit-figma-starter",
+      "documentation": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/README.md",
+      "changelog": "https://github.com/wavemaker/spec-kit-figma-starter/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          { "name": "python3", "version": ">=3.8", "required": true }
+        ]
+      },
+      "provides": {
+        "commands": 1,
+        "hooks": 1
+      },
+      "tags": [
+        "figma",
+        "design",
+        "design-to-spec",
+        "ui",
+        "frontend"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-15T00:00:00Z",
+      "updated_at": "2026-07-15T00:00:00Z"
     },
     "fix-findings": {
       "name": "Fix Findings",
@@ -1430,13 +1576,14 @@
     "gates": {
       "name": "Quality Gates (Enforcement Layer)",
       "id": "gates",
-      "description": "Deterministic quality enforcement for Spec Kit projects at three boundaries — agent hooks, git pre-commit, CI — with one policy file and provable enforcement (attestations, canaries, verified parity).",
+      "description": "Deterministic quality enforcement for Spec Kit across agent hooks, git checks, and CI pipelines with one policy file and one verify entrypoint for identical results at every boundary.",
       "author": "schwichtgit",
-      "version": "0.1.0",
-      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.1.0/gates-0.1.0.zip",
+      "version": "0.3.2",
+      "download_url": "https://github.com/schwichtgit/spec-gates/releases/download/v0.3.2/gates-0.3.2.zip",
       "repository": "https://github.com/schwichtgit/spec-gates",
       "homepage": "https://github.com/schwichtgit/spec-gates",
       "documentation": "https://github.com/schwichtgit/spec-gates/blob/main/docs/how-it-works.md",
+      "changelog": "https://github.com/schwichtgit/spec-gates/releases",
       "license": "MIT",
       "category": "process",
       "effect": "read-write",
@@ -1449,7 +1596,7 @@
           },
           {
             "name": "git",
-            "required": true
+            "required": false
           },
           {
             "name": "node",
@@ -1462,8 +1609,8 @@
         ]
       },
       "provides": {
-        "commands": 5,
-        "hooks": 1
+        "commands": 8,
+        "hooks": 2
       },
       "tags": [
         "quality",
@@ -1476,7 +1623,7 @@
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-09T00:00:00Z",
-      "updated_at": "2026-07-13T00:00:00Z"
+      "updated_at": "2026-07-15T00:00:00Z"
     },
     "github-issues": {
       "name": "GitHub Issues Integration 1",
@@ -2268,6 +2415,42 @@
       "created_at": "2026-05-08T00:00:00Z",
       "updated_at": "2026-05-08T00:00:00Z"
     },
+    "memory": {
+      "name": "Spec Kit Memory",
+      "id": "memory",
+      "description": "Recalls prior specs and decisions from configurable memory tools (e.g. memsearch) before SDLC stages, so planning and specification start from what the project already knows.",
+      "author": "Andrey Zaytsev",
+      "version": "0.3.0",
+      "download_url": "https://github.com/zaytsevand/spec-kit-memory/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/zaytsevand/spec-kit-memory",
+      "homepage": "https://github.com/zaytsevand/spec-kit-memory",
+      "documentation": "https://github.com/zaytsevand/spec-kit-memory/blob/main/README.md",
+      "changelog": "",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          { "name": "memsearch", "required": false }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 3
+      },
+      "tags": [
+        "memory",
+        "recall",
+        "research",
+        "memsearch"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-10T00:00:00Z",
+      "updated_at": "2026-07-10T00:00:00Z"
+    },
     "memory-loader": {
       "name": "Memory Loader",
       "id": "memory-loader",
@@ -2422,6 +2605,48 @@
       "created_at": "2026-05-04T02:51:52Z",
       "updated_at": "2026-06-18T00:00:00Z"
     },
+    "multi-repo-sync": {
+      "name": "Multi-Repo Branch Sync",
+      "id": "multi-repo-sync",
+      "description": "Creates the feature branch in affected sub-repositories and git submodules via plan/tasks hooks",
+      "author": "Fyloss",
+      "version": "1.0.0",
+      "download_url": "https://github.com/fyloss/spec-kit-multi-repo-sync/releases/download/v1.0.0/spec-kit-multi-repo-sync.zip",
+      "sha256": "12a5c7392145b4424b20715aaa3d8b6a8218c143dea596873e344146c1a76ba0",
+      "repository": "https://github.com/fyloss/spec-kit-multi-repo-sync",
+      "homepage": "https://github.com/fyloss/spec-kit-multi-repo-sync",
+      "documentation": "https://github.com/fyloss/spec-kit-multi-repo-sync/blob/main/README.md",
+      "changelog": "https://github.com/fyloss/spec-kit-multi-repo-sync/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0",
+        "tools": [
+          {
+            "name": "git",
+            "version": ">=2.31",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 3,
+        "hooks": 2
+      },
+      "tags": [
+        "git",
+        "branching",
+        "multi-repo",
+        "submodules",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-13T00:00:00Z",
+      "updated_at": "2026-07-13T00:00:00Z"
+    },
     "multi-sites": {
       "name": "Multi-Sites Spec Kit",
       "id": "multi-sites",
@@ -2454,6 +2679,40 @@
       "stars": 0,
       "created_at": "2026-06-01T00:00:00Z",
       "updated_at": "2026-06-01T00:00:00Z"
+    },
+    "okf": {
+      "name": "OKF Knowledge Bundle Generator",
+      "id": "okf",
+      "description": "Generates and maintains an Open Knowledge Format (OKF v0.1) knowledge bundle from a source-code repository, mining git history for significance and rationale, and resolving open questions with the user.",
+      "author": "Alex Punnen",
+      "version": "0.3.0",
+      "download_url": "https://github.com/alexcpn/speckit_ofk/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/alexcpn/speckit_ofk",
+      "homepage": "https://github.com/alexcpn/speckit_ofk",
+      "documentation": "https://github.com/alexcpn/speckit_ofk/blob/main/README.md",
+      "changelog": "https://github.com/alexcpn/speckit_ofk/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "docs",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.12.0"
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "knowledge",
+        "okf",
+        "documentation",
+        "metadata",
+        "catalog"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-17T00:00:00Z",
+      "updated_at": "2026-07-21T00:00:00Z"
     },
     "onboard": {
       "name": "Onboard",
@@ -2590,6 +2849,46 @@
       "stars": 0,
       "created_at": "2026-04-24T14:00:00Z",
       "updated_at": "2026-04-24T14:00:00Z"
+    },
+    "patchwarden-evidence": {
+      "name": "PatchWarden Evidence Pack",
+      "id": "patchwarden-evidence",
+      "description": "Map Spec Kit tasks into a guarded PatchWarden Goal and export bounded, traceable evidence for an accepted lineage.",
+      "author": "Zengjie",
+      "version": "1.0.1",
+      "download_url": "https://github.com/jiezeng2004-design/spec-kit-patchwarden/archive/refs/tags/v1.0.1.zip",
+      "repository": "https://github.com/jiezeng2004-design/spec-kit-patchwarden",
+      "homepage": "https://github.com/jiezeng2004-design/spec-kit-patchwarden",
+      "documentation": "https://github.com/jiezeng2004-design/spec-kit-patchwarden/blob/main/README.md",
+      "changelog": "https://github.com/jiezeng2004-design/spec-kit-patchwarden/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.1.0",
+        "tools": [
+          {
+            "name": "patchwarden",
+            "version": ">=1.5.1",
+            "required": true
+          }
+        ]
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 2
+      },
+      "tags": [
+        "verification",
+        "evidence",
+        "traceability",
+        "security"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-14T00:00:00Z",
+      "updated_at": "2026-07-14T00:00:00Z"
     },
     "plan-review-gate": {
       "name": "Plan Review Gate",
@@ -4042,6 +4341,40 @@
       "stars": 0,
       "created_at": "2026-05-20T00:00:00Z",
       "updated_at": "2026-05-20T00:00:00Z"
+    },
+    "test-coverage-drift-control": {
+      "name": "Test Coverage Drift Control",
+      "id": "test-coverage-drift-control",
+      "description": "Generate incremental coverage drift reports and planned remediation tasks after implementation",
+      "author": "Igor Benicio de Mesquita",
+      "version": "0.3.0",
+      "download_url": "https://github.com/benizzio/spec-kit-test-coverage-drift-control/archive/refs/tags/v0.3.0.zip",
+      "repository": "https://github.com/benizzio/spec-kit-test-coverage-drift-control",
+      "homepage": "https://github.com/benizzio/spec-kit-test-coverage-drift-control",
+      "documentation": "https://github.com/benizzio/spec-kit-test-coverage-drift-control#readme",
+      "changelog": "https://github.com/benizzio/spec-kit-test-coverage-drift-control/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "code",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.2.0"
+      },
+      "provides": {
+        "commands": 2,
+        "hooks": 1
+      },
+      "tags": [
+        "analysis",
+        "coverage",
+        "testing",
+        "quality",
+        "maintenance"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-21T00:00:00Z",
+      "updated_at": "2026-07-21T00:00:00Z"
     },
     "time-machine": {
       "name": "Time Machine",

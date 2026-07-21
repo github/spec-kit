@@ -765,7 +765,16 @@ def _download_manifest(resolved, *, offline: bool):
             f"Catalog entry '{resolved.entry.id}' has no download_url; cannot resolve "
             "its manifest."
         )
-    parsed = urlparse(url)
+    # A malformed authority (e.g. an unclosed IPv6 bracket ``https://[::1``)
+    # makes urlparse raise ValueError. Surface it as the documented
+    # BundlerError, like the sibling ``_validate_remote_url``, rather than
+    # leaking a raw ValueError past the callers, which only catch BundlerError.
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        raise BundlerError(
+            f"Catalog entry '{resolved.entry.id}' has a malformed download_url: {url}"
+        ) from None
     scheme = parsed.scheme.lower()
 
     # ``file://`` URLs and bare filesystem paths (including Windows drive paths
@@ -802,8 +811,17 @@ def _download_manifest(resolved, *, offline: bool):
 def _require_https(label: str, url: str) -> None:
     from urllib.parse import urlparse
 
-    parsed = urlparse(url)
-    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    # urlparse / hostname access raise ValueError on a malformed authority;
+    # keep the documented BundlerError contract (older Pythons surface this via
+    # the .hostname access below rather than at the urlparse call).
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+    except ValueError:
+        raise BundlerError(
+            f"Refusing to download {label}: URL is malformed: {url}"
+        ) from None
+    is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
     if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
         raise BundlerError(
             f"Refusing to download {label} over non-HTTPS URL: {url}"

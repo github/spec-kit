@@ -136,7 +136,7 @@ def normalize_priority(value: Any, default: int = DEFAULT_HOOK_PRIORITY) -> int:
         return default
     try:
         priority = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
     return priority if priority >= 1 else default
 
@@ -1090,6 +1090,7 @@ class ExtensionManager:
         from .. import load_init_options
         from ..agents import CommandRegistrar
         from ..integrations import get_integration
+        from ..integrations.base import IntegrationBase
 
         written: List[str] = []
         opts = load_init_options(self.project_root)
@@ -1101,6 +1102,30 @@ class ExtensionManager:
         registrar = CommandRegistrar()
         agent_config = registrar.AGENT_CONFIGS.get(selected_ai, {})
         integration = get_integration(selected_ai)
+        ai_skills_enabled = is_ai_skills_enabled(opts)
+
+        def _resolve_command_ref_tokens(body: str) -> str:
+            """Resolve explicit command-ref tokens with the active skill style."""
+
+            def _replacement(match: re.Match[str]) -> str:
+                command_name = "speckit." + match.group(1).lower().replace("_", ".")
+                if is_dollar_skills_agent(selected_ai, ai_skills_enabled):
+                    return "$" + command_name.replace("speckit.", "speckit-").replace(
+                        ".", "-"
+                    )
+                if is_slash_skills_agent(selected_ai, ai_skills_enabled):
+                    return "/" + command_name.replace("speckit.", "speckit-").replace(
+                        ".", "-"
+                    )
+                if integration is not None:
+                    return integration.build_command_invocation(command_name)
+                return IntegrationBase.resolve_command_refs(
+                    match.group(0), agent_config.get("invoke_separator", ".")
+                )
+
+            return re.sub(
+                r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__", _replacement, body
+            )
 
         for cmd_info in manifest.commands:
             cmd_name = cmd_info["name"]
@@ -1172,6 +1197,7 @@ class ExtensionManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root, extension_id=manifest.id
             )
+            body = _resolve_command_ref_tokens(body)
 
             original_desc = frontmatter.get("description", "")
             description = original_desc or f"Extension command: {cmd_name}"
@@ -3059,8 +3085,20 @@ class ExtensionCatalog(CatalogStackBase):
         # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
         from urllib.parse import urlparse
 
-        parsed = urlparse(download_url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # "https://[::1") makes urlparse / hostname access raise ValueError.
+        # The download_url comes from catalog payload data, so surface a clean
+        # ExtensionError rather than leaking a raw ValueError past the command
+        # handler (which only catches ExtensionError). Mirrors catalogs (#3435)
+        # and workflows/catalog.py (#3484).
+        try:
+            parsed = urlparse(download_url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise ExtensionError(
+                f"Extension download URL is malformed: {download_url}"
+            ) from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             raise ExtensionError(
                 f"Extension download URL must use HTTPS: {download_url}"
@@ -3191,6 +3229,36 @@ class ConfigManager:
         config_file = self.extension_dir / "local-config.yml"
         return self._load_yaml_config(config_file)
 
+    def _sibling_extension_ids(self) -> list[str]:
+        """Return IDs of other extensions installed alongside this one.
+
+        Sourced from ``ExtensionRegistry`` (``.specify/extensions/.registry``)
+        rather than a directory scan: ``ExtensionManager.remove(...,
+        keep_config=True)`` deliberately preserves the extension directory
+        while dropping the registry entry, so a directory scan would treat
+        that config-only leftover as an installed sibling and keep silently
+        absorbing its ``SPECKIT_<sibling>_*`` env vars into no one. The
+        registry is the source of truth for "installed".
+
+        Returns an empty list if the registry is missing or corrupted
+        (fresh project, ad-hoc test harness) so ``_get_env_config`` degrades
+        to its pre-fix behaviour rather than crashing. ``UnicodeError`` is
+        caught alongside ``OSError`` because ``ExtensionRegistry._load()``
+        opens the file in text mode and only handles ``JSONDecodeError`` /
+        ``FileNotFoundError``, so a registry file with non-UTF-8 bytes would
+        otherwise surface a ``UnicodeDecodeError`` here and break *every*
+        config read instead of degrading gracefully.
+
+        Used by ``_get_env_config`` to detect env vars whose remainder claims
+        a longer, sibling-owned prefix (e.g. ``SPECKIT_GIT_HOOKS_URL`` is
+        owned by ``git-hooks`` when it is co-installed with ``git``).
+        """
+        extensions_dir = self.project_root / ".specify" / "extensions"
+        try:
+            return list(ExtensionRegistry(extensions_dir).keys())
+        except (OSError, UnicodeError):
+            return []
+
     def _get_env_config(self) -> Dict[str, Any]:
         """Get configuration from environment variables.
 
@@ -3210,15 +3278,49 @@ class ConfigManager:
         ext_id_upper = self.extension_id.replace("-", "_").upper()
         prefix = f"SPECKIT_{ext_id_upper}_"
 
+        # Cross-extension prefix collision: because ``_`` doubles as both the
+        # separator between the extension ID and the config path *and* the
+        # substitute for ``-`` inside an extension ID, an env var like
+        # ``SPECKIT_GIT_HOOKS_URL`` begins with *both* the ``SPECKIT_GIT_``
+        # prefix of the ``git`` extension and the ``SPECKIT_GIT_HOOKS_`` prefix
+        # of a co-installed ``git-hooks`` extension. It logically belongs to
+        # the extension whose normalized ID is the longer, more specific match
+        # — otherwise config intended for one extension silently surfaces
+        # inside another and can drive hooks that only inspect
+        # ``config.<field> is set``. Build the list of sibling-owned
+        # remainder-prefixes here so a later env var can be skipped if it
+        # matches one.
+        sibling_prefixes: list[str] = []
+        for sibling_id in self._sibling_extension_ids():
+            if sibling_id == self.extension_id:
+                continue
+            sib_upper = sibling_id.replace("-", "_").upper()
+            # A sibling collides only when its normalized ID *extends* our own
+            # (i.e. starts with ``<US>_``). ``git`` vs ``not-git`` is not a
+            # collision; ``git`` vs ``git-hooks`` is.
+            if sib_upper.startswith(ext_id_upper + "_"):
+                # The portion of the env-var *remainder* the sibling claims,
+                # including the trailing ``_`` so a shorter ID that shares a
+                # non-boundary prefix cannot false-positive (e.g. sibling
+                # ``hook`` would not eat env vars under key ``hooks``).
+                sibling_prefixes.append(sib_upper[len(ext_id_upper) + 1 :] + "_")
+
         for key, value in os.environ.items():
             if not key.startswith(prefix):
+                continue
+
+            remainder = key[len(prefix) :]
+            # Skip when a longer sibling ID claims this var — see the block
+            # above. Keeps ``SPECKIT_GIT_HOOKS_URL`` out of the ``git``
+            # extension's config when ``git-hooks`` is co-installed.
+            if any(remainder.startswith(sp) for sp in sibling_prefixes):
                 continue
 
             # Remove prefix and split into parts. Drop empty components from a
             # malformed name (e.g. ``SPECKIT_<EXT>_`` with no key, or
             # consecutive underscores ``SPECKIT_X__Y``) so we never create an
             # entry under an empty key.
-            config_path = [p for p in key[len(prefix) :].lower().split("_") if p]
+            config_path = [p for p in remainder.lower().split("_") if p]
             if not config_path:
                 continue
 

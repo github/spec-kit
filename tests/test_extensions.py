@@ -4196,6 +4196,26 @@ class TestExtensionCatalog:
             with pytest.raises(ExtensionError, match="[Ii]ntegrity"):
                 catalog.download_extension("test-ext", target_dir=temp_dir)
 
+    def test_download_extension_malformed_url_raises_extension_error(self, temp_dir):
+        """A catalog ``download_url`` with a malformed authority (e.g. an
+        unterminated IPv6 bracket) surfaces a clean ``ExtensionError`` rather
+        than leaking a raw ``ValueError`` from ``urlparse``/``.hostname`` past
+        the command handler (which only catches ``ExtensionError``).
+        """
+        from unittest.mock import patch
+
+        catalog = self._make_catalog(temp_dir)
+        for bad_url in ("https://[::1", "https://[not-an-ip]/x"):
+            ext_info = {
+                "id": "test-ext",
+                "name": "Test Extension",
+                "version": "1.0.0",
+                "download_url": bad_url,
+            }
+            with patch.object(catalog, "get_extension_info", return_value=ext_info):
+                with pytest.raises(ExtensionError, match="malformed"):
+                    catalog.download_extension("test-ext", target_dir=temp_dir)
+
     def test_download_extension_without_sha256_still_succeeds(self, temp_dir):
         """Entries without ``sha256`` keep working (backwards compatible)."""
         from unittest.mock import patch
@@ -4528,6 +4548,36 @@ class TestCatalogStack:
                             "name": "bad-priority",
                             "url": "https://example.com/catalog.json",
                             "priority": True,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(
+            ValidationError, match="Invalid priority|expected integer"
+        ) as exc_info:
+            catalog.get_active_catalogs()
+        assert str(config_path) in str(exc_info.value)
+
+    def test_load_catalog_config_rejects_infinite_priority(self, temp_dir):
+        """A ``priority: .inf`` yields a clean validation error, not an uncaught
+        OverflowError from int(float('inf'))."""
+        import yaml as yaml_module
+
+        project_dir = self._make_project(temp_dir)
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        config_path.write_text(
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "inf-priority",
+                            "url": "https://example.com/catalog.json",
+                            "priority": float("inf"),
                         }
                     ]
                 }
@@ -7897,3 +7947,135 @@ class TestConfigManagerEnvPrefixCollision:
         cfg = cm._get_env_config()
         assert "" not in cfg
         assert cfg == {"a": {"b": "z"}}
+
+
+class TestConfigManagerCrossExtensionEnvLeak:
+    """Cross-extension env-var leak: a longer, co-installed sibling ID must
+    own its own env vars instead of leaking them into a shorter-prefix sibling.
+
+    Before the fix, ``SPECKIT_GIT_HOOKS_URL`` (intended for a ``git-hooks``
+    extension) also surfaced inside the ``git`` extension's config as
+    ``{'hooks': {'url': ...}}`` because ``SPECKIT_GIT_`` is a strict prefix of
+    ``SPECKIT_GIT_HOOKS_``.
+    """
+
+    def _install(self, project_root, ext_id):
+        extensions_dir = project_root / ".specify" / "extensions"
+        (extensions_dir / ext_id).mkdir(parents=True)
+        # Register in the extension registry — the registry is the source of
+        # truth for "installed" (a bare directory can be a config-only leftover
+        # from ``ExtensionManager.remove(..., keep_config=True)``).
+        ExtensionRegistry(extensions_dir).add(ext_id, {})
+
+    def test_sibling_owns_longer_prefix_env(self, tmp_path, monkeypatch):
+        """SPECKIT_GIT_HOOKS_URL belongs to git-hooks when co-installed with git."""
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "git-hooks")
+        monkeypatch.setenv("SPECKIT_GIT_URL", "for_git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        git_cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        gh_cfg = ConfigManager(tmp_path, "git-hooks")._get_env_config()
+
+        # 'git' must NOT see the git-hooks var — no cross-extension leak.
+        assert git_cfg == {"url": "for_git"}
+        # 'git-hooks' still receives its own var (unchanged behaviour).
+        assert gh_cfg == {"url": "for_git_hooks"}
+
+    def test_no_sibling_installed_keeps_legacy_absorption(self, tmp_path, monkeypatch):
+        """Without a longer-prefix sibling installed, the legacy behaviour is
+        preserved: ``SPECKIT_GIT_HOOKS_URL`` is absorbed as a nested key of
+        the ``git`` extension. This keeps the fix strictly to the *collision*
+        case and avoids surprising users who deliberately set a nested key
+        via env with no sibling to disambiguate against.
+        """
+        self._install(tmp_path, "git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_hooks"}}
+
+    def test_non_prefix_sibling_ignored(self, tmp_path, monkeypatch):
+        """A sibling whose ID does not extend our own is not a collision.
+
+        e.g. current='git' and sibling='not-git' — 'not-git' normalized to
+        'NOT_GIT' does not start with 'GIT_', so its presence must not
+        influence git's env-var interpretation.
+        """
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "not-git")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_hooks")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_hooks"}}
+
+    def test_boundary_prevents_false_positive(self, tmp_path, monkeypatch):
+        """Sibling ID 'hook' (not 'hooks') must NOT eat env keys starting
+        with 'hooks'. The trailing-underscore boundary in the sibling prefix
+        prevents this false positive.
+        """
+        self._install(tmp_path, "git")
+        self._install(tmp_path, "git-hook")
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git_key_hooks")
+
+        # git-hook's prefix is 'HOOK_', which does not match 'HOOKS_URL',
+        # so 'git' keeps the env var (single-installed semantics).
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        assert cfg == {"hooks": {"url": "for_git_key_hooks"}}
+
+    def test_missing_extensions_dir_does_not_crash(self, tmp_path, monkeypatch):
+        """A ConfigManager built against a project without ``.specify/extensions``
+        (fresh project, ad-hoc test harness) must still evaluate env config
+        rather than raising from the sibling scan.
+        """
+        # Note: no _install call — extensions dir intentionally absent.
+        monkeypatch.setenv("SPECKIT_TESTEXT_URL", "v")
+
+        cfg = ConfigManager(tmp_path, "testext")._get_env_config()
+        assert cfg == {"url": "v"}
+
+    def test_config_only_leftover_not_treated_as_sibling(self, tmp_path, monkeypatch):
+        """A directory left behind by ``remove(..., keep_config=True)`` must
+        NOT be treated as an installed sibling.
+
+        ``ExtensionManager.remove(keep_config=True)`` preserves the extension
+        directory (config files remain, dormant, for a possible reinstall) but
+        removes the registry entry. The sibling scan is sourced from the
+        registry, so a leftover ``git-hooks/`` directory without a registry
+        entry must not silently discard ``SPECKIT_GIT_HOOKS_*`` from ``git``.
+        """
+        self._install(tmp_path, "git")
+        # Simulate ``remove('git-hooks', keep_config=True)``: dir present,
+        # config file preserved, but no registry entry.
+        gh_dir = tmp_path / ".specify" / "extensions" / "git-hooks"
+        gh_dir.mkdir(parents=True)
+        (gh_dir / "git-hooks-config.yml").write_text("url: leftover\n")
+        # Sanity: git-hooks is NOT registered.
+        registry = ExtensionRegistry(tmp_path / ".specify" / "extensions")
+        assert "git-hooks" not in registry.keys()
+
+        monkeypatch.setenv("SPECKIT_GIT_HOOKS_URL", "for_git")
+
+        cfg = ConfigManager(tmp_path, "git")._get_env_config()
+        # git absorbs the var (no registered sibling owns it).
+        assert cfg == {"hooks": {"url": "for_git"}}
+
+    def test_non_utf8_registry_does_not_crash(self, tmp_path, monkeypatch):
+        """A registry file with invalid text encoding must NOT propagate
+        ``UnicodeDecodeError`` out of the sibling scan and abort every
+        config read. ``ExtensionRegistry._load()`` catches ``JSONDecodeError``
+        / ``FileNotFoundError`` only, so ``_sibling_extension_ids`` must
+        additionally swallow ``UnicodeError`` and degrade to the documented
+        pre-fix behaviour.
+        """
+        extensions_dir = tmp_path / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        # Write bytes that are not valid UTF-8 to the registry file.
+        (extensions_dir / ExtensionRegistry.REGISTRY_FILE).write_bytes(
+            b"\xff\xfe invalid utf-8 registry \xc3\x28"
+        )
+        monkeypatch.setenv("SPECKIT_TESTEXT_URL", "v")
+
+        # Must not raise; must fall back to the "no siblings" path.
+        cfg = ConfigManager(tmp_path, "testext")._get_env_config()
+        assert cfg == {"url": "v"}

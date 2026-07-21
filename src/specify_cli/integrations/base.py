@@ -160,16 +160,65 @@ class IntegrationBase(ABC):
         return []
 
     def effective_invoke_separator(
-        self, parsed_options: dict[str, Any] | None = None
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
     ) -> str:
         """Return the invoke separator for the given options.
 
         Subclasses whose separator depends on runtime options (e.g.
         Copilot in ``--skills`` mode) should override this method.
-        The default implementation ignores *parsed_options* and returns
-        the class-level ``invoke_separator``.
+        The default implementation ignores *parsed_options* and
+        *project_root* and returns the class-level ``invoke_separator``.
         """
         return self.invoke_separator
+
+    def invoke_separator_for_mode(self, skills_enabled: bool) -> str:
+        """Command-ref separator given the project's *resolved* skills state.
+
+        Registration paths (extension / preset command rendering) have no CLI
+        ``parsed_options`` — only the persisted ``ai_skills`` flag — so they
+        resolve the command-reference separator through this hook rather than
+        the static ``AGENT_CONFIGS[key]["invoke_separator"]`` value, which
+        cannot represent an agent whose separator differs between its skills
+        and command layouts.
+
+        The default is mode-independent and returns exactly what
+        ``_build_agent_configs`` would place in ``AGENT_CONFIGS`` (the
+        ``registrar_config`` override if present, else the class-level
+        ``invoke_separator``), so single-layout agents are unaffected.
+        Dual-mode agents whose separator depends on the layout (e.g. Bob:
+        ``-`` for skills, ``.`` for legacy commands) override this.
+        """
+        cfg = self.registrar_config or {}
+        return cfg.get("invoke_separator", self.invoke_separator)
+
+    def is_skills_mode(
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> bool:
+        """Return whether this integration scaffolds skills for these options.
+
+        This is the single, well-defined hook the shared init/install/upgrade
+        machinery consults to decide whether to persist ``ai_skills=True`` and
+        render skill invocations.  It replaces ad-hoc ``isinstance`` /
+        ``getattr(self, "_skills_mode", ...)`` probing so an integration's
+        internal representation never has to leak into shared dispatch code.
+
+        *project_root* is optional context for the ``use`` / ``switch`` /
+        ``upgrade`` path, where no ``setup()`` runs and *parsed_options* may be
+        empty: dual-mode integrations can consult the already-installed
+        on-disk layout to avoid silently migrating an existing project to a
+        different mode.  The default ignores it.
+
+        The default (command-first integrations, e.g. Copilot's default
+        layout) is skills mode only when ``--skills`` was requested.
+        ``SkillsIntegration`` overrides this to return ``True`` by default;
+        skills-first integrations that expose a legacy opt-out (e.g. Bob)
+        override it to honor their own flag.
+        """
+        return bool((parsed_options or {}).get("skills"))
 
     def build_exec_args(
         self,
@@ -1122,6 +1171,17 @@ class TomlIntegration(IntegrationBase):
 # YamlIntegration — YAML-format agents (Goose)
 # ---------------------------------------------------------------------------
 
+# Characters a YAML literal block scalar cannot carry: C0 controls other
+# than tab/LF (a bare CR acts as a line break inside the scalar), DEL, the
+# C1 range, lone UTF-16 surrogates, and the non-characters U+FFFE/U+FFFF.
+# NEL (U+0085) is YAML-printable but, like LS/PS (U+2028/U+2029), YAML 1.1
+# treats it as a line break, which corrupts the block scalar's structure
+# just the same, so all three are included.
+_YAML_BLOCK_SCALAR_UNSAFE = re.compile(
+    r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\ud800-\udfff\ufffe\uffff]"
+)
+
+
 class YamlIntegration(IntegrationBase):
     """Concrete base for integrations that use YAML recipe format.
 
@@ -1227,9 +1287,9 @@ class YamlIntegration(IntegrationBase):
     def _render_yaml(cls, title: str, description: str, body: str, source_id: str) -> str:
         """Render a YAML recipe file from title, description, and body.
 
-        Produces a Goose-compatible recipe with a literal block scalar
-        for the prompt content.  Uses ``yaml.safe_dump()`` for the
-        header fields to ensure proper escaping.
+        Produces a Goose-compatible recipe with a literal block scalar for
+        normal prompt content, or an escaped quoted scalar when control
+        characters require it. Uses ``yaml.safe_dump()`` for the header fields.
         """
         header = cls._build_yaml_header(title, description)
 
@@ -1239,6 +1299,23 @@ class YamlIntegration(IntegrationBase):
             allow_unicode=True,
             default_flow_style=False,
         ).strip()
+
+        # YAML forbids C0 control characters (except tab and newline) and
+        # DEL in every scalar form, and a bare CR acts as a line break
+        # inside a block scalar. A literal block scalar emits such bytes
+        # verbatim, producing a recipe the YAML parser rejects, so fall
+        # back to an escaped double-quoted scalar for those bodies.
+        if _YAML_BLOCK_SCALAR_UNSAFE.search(body):
+            prompt_yaml = yaml.safe_dump(
+                {"prompt": body}, allow_unicode=True, default_style='"', width=sys.maxsize
+            ).strip()
+            lines = [
+                header_yaml,
+                prompt_yaml,
+                "",
+                f"# Source: {source_id}",
+            ]
+            return "\n".join(lines) + "\n"
 
         # Indent the body for YAML block scalar. Use an explicit indentation
         # indicator ("|2") rather than a bare "|": YAML infers a plain block
@@ -1347,6 +1424,14 @@ class SkillsIntegration(IntegrationBase):
     """
 
     invoke_separator = "-"
+
+    def is_skills_mode(
+        self,
+        parsed_options: dict[str, Any] | None = None,
+        project_root: Path | None = None,
+    ) -> bool:
+        """Skills-native integrations scaffold skills unconditionally."""
+        return True
 
     def build_exec_args(
         self,
