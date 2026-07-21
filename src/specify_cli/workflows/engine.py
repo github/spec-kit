@@ -79,7 +79,11 @@ class WorkflowDefinition:
     def from_yaml(cls, path: Path) -> WorkflowDefinition:
         """Load a workflow definition from a YAML file."""
         with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as exc:
+                msg = f"Invalid YAML in {path}: {exc}"
+                raise ValueError(msg) from exc
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -88,7 +92,11 @@ class WorkflowDefinition:
     @classmethod
     def from_string(cls, content: str) -> WorkflowDefinition:
         """Load a workflow definition from a YAML string."""
-        data = yaml.safe_load(content)
+        try:
+            data = yaml.safe_load(content)
+        except yaml.YAMLError as exc:
+            msg = f"Invalid YAML: {exc}"
+            raise ValueError(msg) from exc
         if not isinstance(data, dict):
             msg = f"Workflow YAML must be a mapping, got {type(data).__name__}."
             raise ValueError(msg)
@@ -242,7 +250,7 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
                 # ``type: string`` input with ``default: 5, enum: 5`` still
                 # reports the wrong-typed default alongside the enum error,
                 # instead of hiding it.
-                strip_enum = (is_auto_integration or not enum_is_valid)
+                strip_enum = is_auto_integration or not enum_is_valid
                 validation_input_def: dict[str, Any] = input_def
                 if strip_enum and "enum" in input_def:
                     validation_input_def = {
@@ -545,6 +553,7 @@ class RunState:
         # append_log is never called while _lock is held, the two never nest.
         self._log_lock = threading.Lock()
         self.inputs: dict[str, Any] = {}
+        self.workflow_dir: str | None = None
         self.created_at = datetime.now(timezone.utc).isoformat()
         self.updated_at = self.created_at
         self.log_entries: list[dict[str, Any]] = []
@@ -599,6 +608,7 @@ class RunState:
                 "current_step_index": self.current_step_index,
                 "current_step_id": self.current_step_id,
                 "step_results": self.step_results,
+                "workflow_dir": self.workflow_dir,
                 "created_at": self.created_at,
                 "updated_at": self.updated_at,
             }
@@ -691,6 +701,7 @@ class RunState:
         state.current_step_index = state_data.get("current_step_index", 0)
         state.current_step_id = state_data.get("current_step_id")
         state.step_results = state_data.get("step_results", {})
+        state.workflow_dir = state_data.get("workflow_dir")
         state.created_at = state_data.get("created_at", "")
         state.updated_at = state_data.get("updated_at", "")
 
@@ -761,13 +772,24 @@ class WorkflowEngine:
         ValueError:
             If the workflow YAML is invalid.
         """
+        from .overlays import WorkflowResolver
+
         path = Path(source).expanduser()
 
         # Try as a direct file path first
         if path.suffix.lower() in (".yml", ".yaml") and path.is_file():
             return WorkflowDefinition.from_yaml(path)
 
-        # Try as an installed workflow ID
+        # Try as an installed workflow ID, resolving any overlays.
+        resolver = WorkflowResolver(self.project_root)
+        try:
+            return resolver.resolve(str(source))
+        except FileNotFoundError:
+            # Fall back to the direct workflow.yml path so callers still get
+            # the original error when the workflow id is not installed.
+            pass
+
+        # Legacy direct path check for workflows installed without registry entries.
         installed_path = (
             self.project_root
             / ".specify"
@@ -847,6 +869,12 @@ class WorkflowEngine:
         # Resolve inputs
         resolved_inputs = self._resolve_inputs(definition, inputs or {})
         state.inputs = resolved_inputs
+        workflow_dir = (
+            str(definition.source_path.resolve().parent)
+            if definition.source_path is not None
+            else None
+        )
+        state.workflow_dir = workflow_dir
         state.status = RunStatus.RUNNING
         state.save()
 
@@ -857,6 +885,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            workflow_dir=workflow_dir,
         )
 
         # Execute steps
@@ -922,6 +951,7 @@ class WorkflowEngine:
             default_options=definition.default_options,
             project_root=str(self.project_root),
             run_id=state.run_id,
+            workflow_dir=state.workflow_dir,
         )
 
         from . import STEP_REGISTRY
@@ -1234,9 +1264,9 @@ class WorkflowEngine:
         already flipped), so the prefix never drops the actual halting item.
 
         ``max_concurrency`` is coerced with ``int()``; a value that cannot be
-        coerced (``None``, a non-numeric string, …) or that coerces to <= 1 runs
-        sequentially, while a numeric string like ``"4"`` or a float like ``4.0``
-        is honored.
+        coerced (``None``, a non-numeric string, ``.inf``/``.nan``, …) or that
+        coerces to <= 1 runs sequentially, while a numeric string like ``"4"`` or
+        a float like ``4.0`` is honored.
         """
         if not items:
             return []
@@ -1244,7 +1274,9 @@ class WorkflowEngine:
         halting = (RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED)
         try:
             workers = max(1, int(max_concurrency))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: int(float("inf")) — a YAML ``max_concurrency: .inf``
+            # would otherwise crash the whole run instead of falling back.
             workers = 1
         # Never spin up more workers than there is work — bounds a user-controlled
         # max_concurrency from over-allocating threads.

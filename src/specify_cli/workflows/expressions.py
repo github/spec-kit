@@ -35,14 +35,38 @@ def _filter_default(value: Any, default_value: Any = "") -> Any:
 
 
 def _filter_join(value: Any, separator: str = ", ") -> str:
-    """Join a list into a string with *separator*."""
+    """Join a list into a string with *separator*.
+
+    Raises ``ValueError`` when *separator* is not a string. Without the guard a
+    non-string separator (an authoring mistake like ``| join(5)``) reaches
+    ``str.join`` and raises a cryptic ``AttributeError: 'int' object has no
+    attribute 'join'`` that escapes the evaluator and crashes the whole run,
+    since the engine wraps neither expression evaluation nor ``execute`` in a
+    try/except. Mirrors the strict argument handling in ``from_json``.
+    """
+    if not isinstance(separator, str):
+        raise ValueError(
+            f"join: expected a string separator, got {type(separator).__name__}"
+        )
     if isinstance(value, list):
         return separator.join(str(v) for v in value)
     return str(value)
 
 
 def _filter_map(value: Any, attr: str) -> list[Any]:
-    """Map a list of dicts to a specific attribute."""
+    """Map a list of dicts to a specific attribute.
+
+    Raises ``ValueError`` when *attr* is not a string. Without the guard a
+    non-string attribute (an authoring mistake like ``| map(5)``) reaches
+    ``attr.split(".")`` and raises a cryptic ``AttributeError: 'int' object has
+    no attribute 'split'`` that escapes the evaluator and crashes the whole run,
+    since the engine wraps neither expression evaluation nor ``execute`` in a
+    try/except. Mirrors the strict argument handling in ``from_json``.
+    """
+    if not isinstance(attr, str):
+        raise ValueError(
+            f"map: expected a string attribute name, got {type(attr).__name__}"
+        )
     if isinstance(value, list):
         result = []
         for item in value:
@@ -63,9 +87,25 @@ def _filter_map(value: Any, attr: str) -> list[Any]:
     return []
 
 
-def _filter_contains(value: Any, substring: str) -> bool:
-    """Check if a string or list contains *substring*."""
+def _filter_contains(value: Any, substring: Any) -> bool:
+    """Check if a string or list contains *substring*.
+
+    For a string *value*, *substring* must itself be a string: ``x in y`` on a
+    string requires a string left operand, so a non-string argument (an
+    authoring mistake like ``| contains(5)``) would otherwise raise a cryptic
+    ``TypeError`` that escapes the evaluator and crashes the whole run, since
+    the engine wraps neither expression evaluation nor ``execute`` in a
+    try/except. Raise a ``ValueError`` naming the problem instead, mirroring the
+    strict argument handling in ``from_json``. For a list *value*, membership of
+    any element type is legitimate (``5 in [1, 2, 5]``), so that branch is left
+    unguarded.
+    """
     if isinstance(value, str):
+        if not isinstance(substring, str):
+            raise ValueError(
+                "contains: expected a string argument when the value is a "
+                f"string, got {type(substring).__name__}"
+            )
         return substring in value
     if isinstance(value, list):
         return substring in value
@@ -142,7 +182,8 @@ def _build_namespace(context: Any) -> dict[str, Any]:
     # runs use an 8-character uuid4 hex; operator-supplied ids may be
     # any alphanumeric string with hyphens or underscores.
     run_id = getattr(context, "run_id", None) or ""
-    ns["context"] = {"run_id": run_id}
+    workflow_dir = getattr(context, "workflow_dir", None) or ""
+    ns["context"] = {"run_id": run_id, "workflow_dir": workflow_dir}
     return ns
 
 

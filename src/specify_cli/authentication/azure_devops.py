@@ -76,7 +76,17 @@ class AzureDevOpsAuth(AuthProvider):
             payload = _json.loads(result.stdout)
             token = payload.get("accessToken", "").strip()
             return token or None
-        except (OSError, subprocess.TimeoutExpired, _json.JSONDecodeError, KeyError):
+        except (
+            OSError,
+            subprocess.TimeoutExpired,
+            _json.JSONDecodeError,
+            UnicodeDecodeError,
+            KeyError,
+        ):
+            # UnicodeDecodeError: text=True decodes az stdout with the locale
+            # encoding, which raises (not a JSONDecodeError) if the output isn't
+            # decodable — this helper's contract is to return None on any
+            # failure, never to propagate.
             return None
 
     @staticmethod

@@ -4,7 +4,7 @@ The Spec Kit community builds extensions, presets, bundles, walkthroughs, and co
 
 ## Extensions
 
-Extensions add new capabilities to Spec Kit — domain-specific commands, external tool integrations, quality gates, and more. Over 90 community extensions are available from 50+ authors, covering everything from accessibility governance to multi-agent orchestration.
+Extensions add new capabilities to Spec Kit — domain-specific commands, external tool integrations, quality gates, and more. Over 130 community extensions are available from 70+ authors, covering everything from accessibility governance to multi-agent orchestration.
 
 [Browse community extensions →](extensions.md)
 

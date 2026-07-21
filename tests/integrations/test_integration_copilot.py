@@ -252,6 +252,7 @@ class TestCopilotIntegration:
             ".specify/templates/plan-template.md",
             ".specify/templates/spec-template.md",
             ".specify/templates/tasks-template.md",
+            ".specify/memory/.constitution-template.json",
             ".specify/memory/constitution.md",
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
@@ -313,6 +314,7 @@ class TestCopilotIntegration:
             ".specify/templates/plan-template.md",
             ".specify/templates/spec-template.md",
             ".specify/templates/tasks-template.md",
+            ".specify/memory/.constitution-template.json",
             ".specify/memory/constitution.md",
             ".specify/workflows/speckit/workflow.yml",
             ".specify/workflows/workflow-registry.json",
@@ -573,6 +575,17 @@ class TestCopilotSkillsMode:
         assert copilot.effective_invoke_separator({"skills": True}) == "-"
         assert copilot.effective_invoke_separator({"skills": False}) == "."
 
+    def test_invoke_separator_for_mode_tracks_persisted_state(self):
+        """Regression (review #3415): registration paths (preset/extension
+        command refs) must resolve the separator from the persisted ai_skills
+        state. A Copilot skills project renders ``/speckit-<cmd>`` (hyphen),
+        matching ``build_command_invocation``; the default markdown layout
+        renders ``/speckit.<cmd>`` (dot).
+        """
+        copilot = self._make_copilot()
+        assert copilot.invoke_separator_for_mode(True) == "-"
+        assert copilot.invoke_separator_for_mode(False) == "."
+
     def test_skill_body_has_content(self, tmp_path):
         """Each SKILL.md body should contain template content."""
         copilot = self._make_copilot()
@@ -724,6 +737,7 @@ class TestCopilotSkillsMode:
             ".specify/templates/plan-template.md",
             ".specify/templates/spec-template.md",
             ".specify/templates/tasks-template.md",
+            ".specify/memory/.constitution-template.json",
             ".specify/memory/constitution.md",
             # Bundled workflow
             ".specify/workflows/speckit/workflow.yml",

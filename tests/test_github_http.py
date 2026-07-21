@@ -144,7 +144,7 @@ class TestResolveGitHubReleaseAssetApiUrl:
         @contextmanager
         def failing_open(url, timeout=None, extra_headers=None):
             raise urllib.error.URLError("network error")
-            yield  # noqa: unreachable
+            yield  # pragma: no cover
 
         result = resolve_github_release_asset_api_url(
             "https://github.com/org/repo/releases/download/v1/pack.zip",

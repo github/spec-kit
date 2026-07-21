@@ -224,6 +224,66 @@ class TestInitIntegrationFlag:
         assert "Continuing without the optional preset" in normalized
         assert "Project ready" in normalized
 
+    def test_init_with_local_preset_seeds_manifest_constitution(
+        self, tmp_path, monkeypatch
+    ):
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.presets import PresetManager
+
+        monkeypatch.setattr(
+            PresetManager,
+            "_seed_constitution_from_preset",
+            lambda *_args, **_kwargs: None,
+        )
+
+        preset_dir = tmp_path / "constitution-preset"
+        (preset_dir / "organization").mkdir(parents=True)
+        preset_content = "# Ratified Organization Constitution\n"
+        (preset_dir / "organization" / "ratified.md").write_text(preset_content)
+        (preset_dir / "preset.yml").write_text(
+            yaml.safe_dump({
+                "schema_version": "1.0",
+                "preset": {
+                    "id": "constitution-preset",
+                    "name": "Constitution Preset",
+                    "version": "1.0.0",
+                    "description": "Provides a ratified constitution",
+                },
+                "requires": {"speckit_version": ">=0.1.0"},
+                "provides": {
+                    "templates": [{
+                        "type": "template",
+                        "name": "constitution-template",
+                        "file": "organization/ratified.md",
+                        "strategy": "replace",
+                    }]
+                },
+            })
+        )
+        project = tmp_path / "init-with-preset"
+
+        result = CliRunner().invoke(
+            app,
+            [
+                "init",
+                str(project),
+                "--integration",
+                "copilot",
+                "--script",
+                "sh",
+                "--ignore-agent-tools",
+                "--preset",
+                str(preset_dir),
+            ],
+            catch_exceptions=False,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            project / ".specify" / "memory" / "constitution.md"
+        ).read_text() == preset_content
+
     def test_integration_claude_here_preserves_preexisting_commands(self, tmp_path):
         from typer.testing import CliRunner
         from specify_cli import app

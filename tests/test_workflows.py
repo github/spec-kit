@@ -586,6 +586,51 @@ class TestExpressions:
         with pytest.raises(ValueError, match="unknown filter 'upper'"):
             evaluate_expression("{{ inputs.text | upper('x') }}", ctx)
 
+    def test_filter_map_non_string_attr_raises(self):
+        # A non-string attribute (authoring mistake like `map(5)`) must raise a
+        # ValueError naming the problem, not leak the cryptic AttributeError
+        # from attr.split() that would escape the evaluator and crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"rows": [{"id": "a"}, {"id": "b"}]})
+        with pytest.raises(ValueError, match="map: expected a string attribute name"):
+            evaluate_expression("{{ inputs.rows | map(5) }}", ctx)
+
+    def test_filter_join_non_string_separator_raises(self):
+        # A non-string separator (authoring mistake like `join(5)`) must raise a
+        # ValueError, not leak the cryptic AttributeError from str.join.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"tags": ["a", "b"]})
+        with pytest.raises(ValueError, match="join: expected a string separator"):
+            evaluate_expression("{{ inputs.tags | join(5) }}", ctx)
+
+    def test_filter_contains_non_string_arg_on_string_raises(self):
+        # For a string value, `contains` requires a string argument: `x in y` on
+        # a string needs a string left operand. A non-string argument must raise
+        # a ValueError, not leak the cryptic TypeError that would crash the run.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"text": "hello"})
+        with pytest.raises(ValueError, match="contains: expected a string argument"):
+            evaluate_expression("{{ inputs.text | contains(5) }}", ctx)
+
+    def test_filter_contains_non_string_arg_on_list_ok(self):
+        # For a list value, membership of any element type is legitimate, so a
+        # non-string argument stays valid and is not rejected.
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(inputs={"nums": [1, 2, 5]})
+        assert evaluate_expression("{{ inputs.nums | contains(5) }}", ctx) is True
+        assert evaluate_expression("{{ inputs.nums | contains(9) }}", ctx) is False
+
     def test_registered_filters_unaffected(self):
         # Regression: all five registered filters keep working unchanged.
         from specify_cli.workflows.expressions import evaluate_expression
@@ -981,6 +1026,41 @@ class TestCommandStep:
         assert res_opt.status is StepStatus.FAILED
         assert "'options' must be a mapping" in (res_opt.error or "")
 
+    def test_validate_rejects_non_string_command(self):
+        from specify_cli.workflows.steps.command import CommandStep
+
+        step = CommandStep()
+        # execute() passes 'command' to build_command_invocation(), which does
+        # command_name.startswith(...); a non-string crashes there with a raw
+        # AttributeError. validate() must report it, like prompt-step 'prompt'.
+        for bad in (None, ["a", "b"], 5, {"x": 1}):
+            errs = step.validate({"id": "c", "command": bad})
+            assert any("'command' must be a string" in e for e in errs), bad
+        # a string command (incl. an expression) is still accepted
+        assert step.validate({"id": "c", "command": "/x"}) == []
+        assert step.validate({"id": "c", "command": "{{ inputs.cmd }}"}) == []
+
+    def test_execute_non_string_command_fails_cleanly(self):
+        from unittest.mock import patch
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        # The engine may skip validate(); a non-string 'command' must FAIL the
+        # step with the contract error rather than reaching _try_dispatch and
+        # crashing build_command_invocation with a raw AttributeError. Force a
+        # resolvable integration + installed CLI so, absent the guard, dispatch
+        # would actually be attempted and the crash would fire.
+        ctx = StepContext(default_integration="claude")
+        with patch("specify_cli.workflows.steps.command.shutil.which",
+                   return_value="/usr/bin/claude"):
+            for bad in (None, ["a", "b"], 5, {"x": 1}):
+                result = step.execute(
+                    {"id": "c", "command": bad, "input": {}}, ctx
+                )
+                assert result.status is StepStatus.FAILED, bad
+                assert "'command' must be a string" in (result.error or ""), bad
+
     def test_step_override_integration(self):
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
@@ -1336,11 +1416,36 @@ class TestPromptStep:
         errors = step.validate({"id": "test"})
         assert any("missing 'prompt'" in e for e in errors)
 
+    @pytest.mark.parametrize("bad_prompt", [None, ["review", "this"], 42, {"a": 1}])
+    def test_validate_rejects_non_string_prompt(self, bad_prompt):
+        """A non-string 'prompt' must be rejected at validation.
+
+        execute() str()-coerces prompt and dispatches it to the integration
+        CLI, so a null or list prompt would otherwise send the Python repr to
+        the model as instructions — silently wrong. Mirrors the shell-step
+        'run' type check.
+        """
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate({"id": "p", "prompt": bad_prompt})
+        assert any("'prompt' must be a string" in e for e in errors)
+
     def test_validate_valid(self):
         from specify_cli.workflows.steps.prompt import PromptStep
 
         step = PromptStep()
         errors = step.validate({"id": "test", "prompt": "do something"})
+        assert errors == []
+
+    def test_validate_accepts_expression_prompt(self):
+        """A '{{ ... }}' expression prompt is a str, so it stays valid."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+
+        step = PromptStep()
+        errors = step.validate(
+            {"id": "p", "prompt": "Review {{ inputs.file }}"}
+        )
         assert errors == []
 
 
@@ -2023,6 +2128,72 @@ class TestGateStep:
         assert result.status == StepStatus.PAUSED
         assert result.output["show_file"] == "123"
 
+    @pytest.mark.parametrize(
+        "bad_options",
+        [5, {"a": "approve"}, None, [], "approve"],
+    )
+    def test_execute_non_list_options_fails_cleanly(self, monkeypatch, bad_options):
+        """A malformed ``options`` must FAIL the step, not crash the run.
+
+        ``validate`` rejects a non-list/empty ``options``, but the engine does
+        not auto-validate before ``execute``. On an interactive run a scalar/
+        dict/None ``options`` would otherwise reach ``_prompt`` and raise a raw
+        ``TypeError`` (``enumerate``/``len`` on a non-iterable) or ``KeyError``
+        (indexing a dict), crashing the whole workflow. Mirrors the switch
+        'cases' and command 'input' unvalidated-execute guards."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Force an interactive TTY so the crash-prone _prompt path is reached;
+        # input() is stubbed so a (buggy) fall-through can't block the suite.
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": bad_options}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
+        assert result.output["choice"] is None
+
+    def test_execute_non_string_options_element_fails_cleanly(self, monkeypatch):
+        """A non-string option element must FAIL the step, not crash.
+
+        A non-empty list with a non-string element passes the shape check but
+        would reach the reject test ``choice.lower()`` and raise a raw
+        ``AttributeError`` at run time. ``validate`` reports "must be strings";
+        ``execute`` must fail cleanly on an unvalidated run too."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": [123, 456]}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
+
+    def test_execute_non_list_options_fails_in_non_tty_too(self):
+        """The guard runs before the non-TTY PAUSE short-circuit.
+
+        A malformed ``options`` should surface as FAILED in CI (non-TTY) rather
+        than PAUSING and only crashing later when an operator resumes on a real
+        terminal."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Autouse fixture already forces non-TTY stdin.
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": 5}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
+
 
 class TestIfThenStep:
     """Test the if/then/else step type."""
@@ -2066,6 +2237,69 @@ class TestIfThenStep:
         step = IfThenStep()
         errors = step.validate({"id": "test", "then": []})
         assert any("missing 'condition'" in e for e in errors)
+
+    @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_then_fails_loudly(self, bad_branch):
+        """A non-list ``then`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-list ``then``, but the engine does not
+        auto-validate (see ``WorkflowEngine.load_workflow``) and feeds
+        ``next_steps`` straight into ``_execute_steps``, which iterates them as
+        step mappings. Before the guard, a non-list ``then`` (a single mapping
+        or scalar authoring mistake) was iterated element-wise and raised
+        AttributeError on ``.get()``, taking down the whole run. Mirrors the
+        switch/fan-out non-list handling.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "branch", "condition": "true", "then": bad_branch}, ctx
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'then' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+
+    @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_else_fails_loudly(self, bad_branch):
+        """A non-list ``else`` selected at runtime must fail the step, not crash.
+
+        Same asymmetry as ``then``: the ``else`` branch is only reached when the
+        condition is false, so a non-list ``else`` reaches ``next_steps`` and
+        would crash the engine's step iteration on an unvalidated run.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "branch", "condition": "false", "then": [], "else": bad_branch},
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'else' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+
+    def test_execute_none_else_stays_empty(self):
+        """An explicit ``else: null`` selected at runtime stays an empty branch.
+
+        ``validate`` deliberately accepts ``else: None``; the execute guard must
+        normalize it to an empty branch (COMPLETED) rather than failing a
+        validator-approved workflow when the condition is false.
+        """
+        from specify_cli.workflows.steps.if_then import IfThenStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = IfThenStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "branch", "condition": "false", "then": [], "else": None}, ctx
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.next_steps == []
 
     @pytest.mark.parametrize("bad_else", [False, 0, "", {}, 42])
     def test_validate_rejects_non_list_else(self, bad_else):
@@ -2200,6 +2434,91 @@ class TestSwitchStep:
             # expression is still evaluated, so its value is surfaced for context.
             assert result.output["expression_value"] == "approve"
 
+    @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_matched_case_fails_loudly(self, bad_branch):
+        """A matched case with a non-list body must fail the step, not crash.
+
+        ``validate`` rejects a non-list case body, but the engine does not
+        auto-validate (see ``WorkflowEngine.load_workflow``) and feeds the
+        selected branch straight into ``_execute_steps``, which iterates it as
+        step mappings. A non-list body (a single mapping or scalar authoring
+        mistake) would be iterated element-wise and raise AttributeError on
+        ``.get()``, taking down the whole run. Mirrors the non-mapping
+        ``cases`` guard.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = SwitchStep()
+        ctx = StepContext(steps={"review": {"output": {"choice": "approve"}}})
+        result = step.execute(
+            {
+                "id": "route",
+                "expression": "{{ steps.review.output.choice }}",
+                "cases": {"approve": bad_branch},
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "case 'approve' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+        # expression is still evaluated, so its value is surfaced for context.
+        assert result.output["expression_value"] == "approve"
+
+    @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_default_fails_loudly(self, bad_branch):
+        """A non-list ``default`` reached at runtime must fail, not crash.
+
+        Same asymmetry as the case body: ``default`` is only selected when no
+        case matches, so a non-list ``default`` reaches ``next_steps`` and would
+        crash the engine's step iteration on an unvalidated run.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = SwitchStep()
+        ctx = StepContext(steps={"review": {"output": {"choice": "other"}}})
+        result = step.execute(
+            {
+                "id": "route",
+                "expression": "{{ steps.review.output.choice }}",
+                "cases": {"approve": [{"id": "plan", "command": "speckit.plan"}]},
+                "default": bad_branch,
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'default' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+        # expression is still evaluated, so its value is surfaced for context.
+        assert result.output["expression_value"] == "other"
+
+    @pytest.mark.parametrize("ok_default", [None, [], [{"id": "x", "command": "/y"}]])
+    def test_execute_none_default_stays_empty(self, ok_default):
+        """An explicit ``default: null`` or a list default stays valid.
+
+        ``validate`` deliberately accepts ``default: None``; the execute guard
+        must normalize it to an empty branch (COMPLETED) rather than failing a
+        validator-approved workflow.
+        """
+        from specify_cli.workflows.steps.switch import SwitchStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = SwitchStep()
+        ctx = StepContext(steps={"review": {"output": {"choice": "other"}}})
+        result = step.execute(
+            {
+                "id": "route",
+                "expression": "{{ steps.review.output.choice }}",
+                "cases": {"approve": [{"id": "plan", "command": "speckit.plan"}]},
+                "default": ok_default,
+            },
+            ctx,
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["matched_case"] == "__default__"
+        assert result.next_steps == (ok_default or [])
+
     def test_validate_missing_expression(self):
         from specify_cli.workflows.steps.switch import SwitchStep
 
@@ -2257,6 +2576,47 @@ class TestWhileStep:
             "steps": [{"id": "fix", "command": "speckit.implement"}],
         }
         result = step.execute(config, ctx)
+        assert result.output["condition_result"] is False
+        assert result.next_steps == []
+
+    @pytest.mark.parametrize("bad_steps", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_steps_fails_loudly(self, bad_steps):
+        """A non-list ``steps`` reached at runtime must fail the step, not crash.
+
+        ``validate`` rejects a non-list ``steps``, but the engine does not
+        auto-validate (see ``WorkflowEngine.load_workflow``) and feeds
+        ``next_steps`` straight into ``_execute_steps``, which iterates them as
+        step mappings. The while body only dispatches when the condition is
+        truthy, so a non-list ``steps`` reaches ``next_steps`` and would crash
+        the engine's step iteration on an unvalidated run. Mirrors the
+        if/switch/fan-out non-list handling.
+        """
+        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = WhileStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "retry", "condition": "true", "steps": bad_steps}, ctx
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'steps' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+
+    @pytest.mark.parametrize("bad_steps", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_steps_ok_when_condition_false(self, bad_steps):
+        """A false condition never dispatches the body, so a non-list ``steps``
+        stays benign — the step completes without touching ``next_steps``.
+        """
+        from specify_cli.workflows.steps.while_loop import WhileStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = WhileStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "retry", "condition": "false", "steps": bad_steps}, ctx
+        )
+        assert result.status == StepStatus.COMPLETED
         assert result.output["condition_result"] is False
         assert result.next_steps == []
 
@@ -2350,6 +2710,30 @@ class TestDoWhileStep:
         assert result.next_steps == []
         assert result.status.value == "completed"
 
+    @pytest.mark.parametrize("bad_steps", [{"id": "x"}, "oops", 5])
+    def test_execute_non_list_steps_fails_loudly(self, bad_steps):
+        """A non-list ``steps`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-list ``steps``, but the engine does not
+        auto-validate (see ``WorkflowEngine.load_workflow``) and feeds
+        ``next_steps`` straight into ``_execute_steps``, which iterates them as
+        step mappings. The do-while body always dispatches on the first call
+        regardless of condition, so a non-list ``steps`` always reaches
+        ``next_steps`` and would crash the engine's step iteration on an
+        unvalidated run. Mirrors the if/switch/fan-out non-list handling.
+        """
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = DoWhileStep()
+        ctx = StepContext(inputs={})
+        result = step.execute(
+            {"id": "cycle", "condition": "false", "steps": bad_steps}, ctx
+        )
+        assert result.status == StepStatus.FAILED
+        assert "'steps' must be a list of steps" in (result.error or "")
+        assert result.next_steps == []
+
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.do_while import DoWhileStep
 
@@ -2426,6 +2810,39 @@ class TestFanOutStep:
         assert result.status == StepStatus.COMPLETED
         assert result.output["item_count"] == 0
 
+    def test_execute_non_dict_step_fails_loudly(self):
+        """A truthy non-mapping ``step`` must fail the step, not crash the run.
+
+        ``validate`` rejects a non-dict ``step``, but the engine's ``execute()``
+        does not auto-validate (see ``WorkflowEngine.load_workflow``). On a
+        COMPLETED fan-out the engine reads ``step_template`` back out and, when
+        it is truthy, calls ``template.get("id", ...)`` in ``_run_fan_out``. A
+        truthy non-mapping ``step`` (a scalar or list authoring mistake) raised
+        AttributeError there and took down the whole run. Mirrors the fan-out
+        non-list ``items`` guard and the switch non-dict ``cases`` guard.
+        """
+        from specify_cli.workflows.steps.fan_out import FanOutStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanOutStep()
+        ctx = StepContext(steps={"tasks": {"output": {"task_list": [1, 2]}}})
+        # ``None`` is an explicit ``step: null``: ``config.get("step", {})`` only
+        # substitutes the default for an *absent* key, so it reaches the guard
+        # and must fail here too — matching ``validate``.
+        for bad_step in (["impl"], "impl", 5, None):
+            result = step.execute(
+                {
+                    "id": "parallel",
+                    "items": "{{ steps.tasks.output.task_list }}",
+                    "step": bad_step,
+                },
+                ctx,
+            )
+            assert result.status == StepStatus.FAILED
+            assert "'step' must be a" in (result.error or "")
+            assert result.output["item_count"] == 0
+            assert result.output["step_template"] == {}
+
     def test_validate_missing_fields(self):
         from specify_cli.workflows.steps.fan_out import FanOutStep
 
@@ -2438,12 +2855,13 @@ class TestFanOutStep:
         from specify_cli.workflows.steps.fan_out import FanOutStep
 
         step = FanOutStep()
-        errors = step.validate({
-            "id": "test",
-            "items": "{{ x }}",
-            "step": "not-a-dict",
-        })
-        assert any("'step' must be a mapping" in e for e in errors)
+        for bad_step in ("not-a-dict", ["impl"], 5, None):
+            errors = step.validate({
+                "id": "test",
+                "items": "{{ x }}",
+                "step": bad_step,
+            })
+            assert any("'step' must be a mapping" in e for e in errors), bad_step
 
 
 class TestFanInStep:
@@ -2524,6 +2942,34 @@ class TestFanInStep:
         result = step.execute({"id": "collect", "wait_for": bad_wait_for}, ctx)
         assert result.status == StepStatus.FAILED
         assert "'wait_for' must be a list" in (result.error or "")
+        assert result.output["results"] == []
+
+    @pytest.mark.parametrize("bad_entry", [["a", "b"], {"a": 1}, 123, None])
+    def test_execute_non_string_wait_for_entry_fails_loudly(self, bad_entry):
+        """A ``wait_for`` list with a non-string entry must fail the step, not
+        crash the run or silently produce a bogus join.
+
+        The whole-list guard (``test_execute_non_list_wait_for_fails_loudly``)
+        and the engine's fan-in validation both already reject the list *shape*,
+        but neither the step's ``execute`` nor the engine's runtime path guarded
+        the list's *elements*. On an unvalidated run an unhashable entry
+        (a list/dict from a YAML indentation slip like ``wait_for: [[a, b]]``)
+        crashed ``context.steps.get(entry, ...)`` with a raw TypeError, while a
+        hashable-but-non-string entry (``wait_for: [123]``) silently joined an
+        empty ``{}`` and still reported COMPLETED — the same wiring bug the
+        list-shape guard exists to prevent. Mirrors the engine's
+        ``test_non_string_wait_for_entry_is_rejected`` load-time check.
+        """
+        from specify_cli.workflows.steps.fan_in import FanInStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = FanInStep()
+        ctx = StepContext(steps={"a": {"output": {"x": 1}}})
+        # A valid entry alongside the bad one proves it is the entry, not the
+        # list, that is rejected.
+        result = step.execute({"id": "collect", "wait_for": ["a", bad_entry]}, ctx)
+        assert result.status == StepStatus.FAILED
+        assert "'wait_for' entries must be step-id strings" in (result.error or "")
         assert result.output["results"] == []
 
     def test_validate_empty_wait_for(self):
@@ -2662,8 +3108,13 @@ class TestFanOutConcurrency:
         results, _ = self._run(tmp_path, list(range(n)), n, on_item)
         assert results == [{"seen": i} for i in range(n)]
 
-    @pytest.mark.parametrize("bad", [0, -1, None, "abc", 1.0])
+    @pytest.mark.parametrize(
+        "bad", [0, -1, None, "abc", 1.0, float("inf"), float("nan")]
+    )
     def test_invalid_max_concurrency_coerces_to_sequential(self, tmp_path, bad):
+        # float("inf") -> int() raises OverflowError (not TypeError/ValueError);
+        # it must fall back to sequential like any other uncoercible value, not
+        # crash the run.
         results, _ = self._run(tmp_path, list(range(4)), bad)
         assert results == [{"seen": i} for i in range(4)]
 
@@ -3898,6 +4349,108 @@ steps:
         assert WorkflowEngine._coerce_input("count", 5.0, {"type": "number"}) == 5
         assert WorkflowEngine._coerce_input("count", 3.5, {"type": "number"}) == 3.5
 
+    def test_coerce_input_rejects_non_list_enum_cleanly(self):
+        """A non-list ``enum`` (scalar or string) must raise a clean ValueError,
+        not the raw ``TypeError`` from the ``value not in enum`` membership test.
+
+        A scalar (``enum: 5``) makes ``value not in 5`` raise
+        ``TypeError: argument of type 'int' is not iterable``. A bare string
+        (``enum: "abc"``) is silently wrong instead — ``value in "abc"`` is a
+        substring test, not enum membership — so it must be rejected too.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        for bad_enum in (5, True, "abc", {"a": 1}):
+            with pytest.raises(ValueError, match="invalid 'enum': must be a list"):
+                WorkflowEngine._coerce_input(
+                    "scope", "x", {"type": "string", "enum": bad_enum}
+                )
+        # A valid list ``enum`` still works, and ``None`` means "no enum".
+        assert (
+            WorkflowEngine._coerce_input(
+                "scope", "a", {"type": "string", "enum": ["a", "b"]}
+            )
+            == "a"
+        )
+        assert (
+            WorkflowEngine._coerce_input("scope", "x", {"type": "string"}) == "x"
+        )
+
+    def test_validate_workflow_rejects_non_list_enum(self):
+        """A non-list ``enum`` must be reported as an error, not crash
+        ``validate_workflow``. The membership test would raise ``TypeError``,
+        which escapes its ``except ValueError`` and breaks the "return a list of
+        errors, never raise" contract. This must surface even with no ``default``
+        present (the coercion path that would otherwise catch it is only reached
+        when a default exists).
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "bad-enum"
+  name: "Bad Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    enum: 5
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid 'enum': must be a list" in e for e in errors), errors
+
+    def test_resolve_inputs_rejects_non_list_enum_at_runtime(self, project_dir):
+        """``execute()`` accepts unvalidated definitions, so a non-list ``enum``
+        can reach ``_resolve_inputs`` at run time. It must fail with a clean
+        ValueError rather than the raw ``TypeError`` from the membership test.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "runtime-bad-enum"
+  name: "Runtime Bad Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    enum: 5
+""")
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="invalid 'enum': must be a list"):
+            engine._resolve_inputs(definition, {"scope": "x"})
+
+    def test_non_list_enum_on_integration_auto_still_rejected(self, project_dir):
+        """The ``integration: auto`` sentinel strips a *list* ``enum`` before
+        coercion (enum-membership is a runtime concern for ``auto``). A non-list
+        ``enum`` must NOT be silently stripped by that path — it is still an
+        authoring error and must fail with the clean shape ValueError.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-bad-enum"
+  name: "Auto Bad Enum"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+    enum: 5
+""")
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="invalid 'enum': must be a list"):
+            engine._resolve_inputs(definition, {})
+
     def test_validate_workflow_rejects_infinite_default_for_number_type(self):
         """``type: number`` with an infinite default (YAML ``.inf``) must be
         reported as an error, not raise. ``int(inf)`` raises OverflowError during
@@ -4680,6 +5233,286 @@ steps:
 
         assert state.run_id == "explicit-456"
         assert state.step_results["stamp"]["output"]["stdout"].strip() == "explicit-456"
+
+
+# ===== context.workflow_dir Tests =====
+
+
+class TestContextWorkflowDir:
+    """Tests for `{{ context.workflow_dir }}` and `SPECKIT_WORKFLOW_DIR`."""
+
+    def test_context_workflow_dir_resolves(self):
+        """``{{ context.workflow_dir }}`` resolves to ``StepContext.workflow_dir``."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(workflow_dir="/home/user/my-workflow")
+        assert evaluate_expression("{{ context.workflow_dir }}", ctx) == "/home/user/my-workflow"
+
+    def test_context_workflow_dir_defaults_to_empty_when_unset(self):
+        """``{{ context.workflow_dir }}`` resolves to ``""`` when no source
+        path is available (string-loaded workflows, dry-run).
+        """
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        assert evaluate_expression("{{ context.workflow_dir }}", ctx) == ""
+
+    def test_context_workflow_dir_string_interpolation(self):
+        """Workflow dir interpolates inside a larger template string."""
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(workflow_dir="/opt/workflows/setup")
+        result = evaluate_expression("cp {{ context.workflow_dir }}/config.yml .", ctx)
+        assert result == "cp /opt/workflows/setup/config.yml ."
+
+    def test_step_context_workflow_dir(self):
+        """StepContext accepts and stores workflow_dir."""
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext(workflow_dir="/some/path")
+        assert ctx.workflow_dir == "/some/path"
+
+        ctx_none = StepContext()
+        assert ctx_none.workflow_dir is None
+
+    def test_from_yaml_sets_workflow_dir(self, project_dir):
+        """Workflow loaded from a YAML file has workflow_dir set to the
+        file's parent directory.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        wf_dir = project_dir / "my-workflows"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "setup.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "from-yaml"
+  name: "From YAML"
+  version: "1.0.0"
+steps:
+  - id: check-dir
+    type: shell
+    run: "echo DIR={{ context.workflow_dir }}"
+""")
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        stdout = state.step_results["check-dir"]["output"]["stdout"]
+        assert stdout.strip() == f"DIR={wf_dir.resolve()}"
+
+    def test_from_string_has_empty_workflow_dir(self, project_dir):
+        """String-loaded workflows have empty workflow_dir."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "from-string"
+  name: "From String"
+  version: "1.0.0"
+steps:
+  - id: check-dir
+    type: shell
+    run: "echo DIR={{ context.workflow_dir }}"
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        stdout = state.step_results["check-dir"]["output"]["stdout"]
+        assert stdout.strip() == "DIR="
+
+    def test_shell_step_receives_speckit_workflow_dir_env_var(self, project_dir):
+        """Shell steps receive SPECKIT_WORKFLOW_DIR in their environment."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        import sys
+
+        wf_dir = project_dir / "wf"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "workflow.yml"
+        python = sys.executable.replace("\\", "/")
+        wf_file.write_text(f"""
+schema_version: "1.0"
+workflow:
+  id: "env-var-test"
+  name: "Env Var Test"
+  version: "1.0.0"
+steps:
+  - id: print-env
+    type: shell
+    run: '"{python}" -c "import os; print(os.environ.get(''SPECKIT_WORKFLOW_DIR'', ''UNSET''))"'
+""")
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        stdout = state.step_results["print-env"]["output"]["stdout"]
+        assert stdout.strip() == str(wf_dir.resolve())
+
+    def test_shell_step_no_env_var_when_workflow_dir_unset(self, project_dir, monkeypatch):
+        """Shell steps do not set SPECKIT_WORKFLOW_DIR for string-loaded workflows."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        import sys
+
+        monkeypatch.delenv("SPECKIT_WORKFLOW_DIR", raising=False)
+
+        python = sys.executable.replace("\\", "/")
+        definition = WorkflowDefinition.from_string(f"""
+schema_version: "1.0"
+workflow:
+  id: "no-env-var"
+  name: "No Env Var"
+  version: "1.0.0"
+steps:
+  - id: check-env
+    type: shell
+    run: '"{python}" -c "import os; print(os.environ.get(''SPECKIT_WORKFLOW_DIR'', ''UNSET''))"'
+""")
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        stdout = state.step_results["check-env"]["output"]["stdout"]
+        assert stdout.strip() == "UNSET"
+
+    def test_resume_preserves_original_workflow_dir(self, project_dir):
+        """Resumed workflow uses the original source directory, not the
+        run-directory copy path.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        wf_dir = project_dir / "original-source"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "resumable.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "resumable"
+  name: "Resumable"
+  version: "1.0.0"
+steps:
+  - id: gate-step
+    type: gate
+    message: "Approve?"
+  - id: after-gate
+    type: shell
+    run: "echo DIR={{ context.workflow_dir }}"
+""")
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        engine = WorkflowEngine(project_dir)
+
+        # Execute -- gate pauses the workflow
+        state = engine.execute(definition)
+        assert state.status == RunStatus.PAUSED
+        assert state.workflow_dir == str(wf_dir.resolve())
+
+        # Simulate gate approval by patching the gate step
+        from unittest.mock import patch
+        from specify_cli.workflows.base import StepResult
+
+        with patch(
+            "specify_cli.workflows.steps.gate.GateStep.execute",
+            return_value=StepResult(output={"approved": True}),
+        ):
+            state = engine.resume(state.run_id)
+
+        assert state.status == RunStatus.COMPLETED
+        stdout = state.step_results["after-gate"]["output"]["stdout"]
+        assert stdout.strip() == f"DIR={wf_dir.resolve()}"
+
+    def test_workflow_dir_persisted_in_state(self, project_dir):
+        """workflow_dir is persisted in state.json and survives load/save."""
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine, RunState
+
+        wf_dir = project_dir / "persist-test"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "workflow.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "persist-wfdir"
+  name: "Persist WfDir"
+  version: "1.0.0"
+steps:
+  - id: noop
+    type: shell
+    run: "echo ok"
+""")
+        definition = WorkflowDefinition.from_yaml(wf_file)
+        engine = WorkflowEngine(project_dir)
+        state = engine.execute(definition)
+
+        # Reload state from disk and verify workflow_dir survived
+        loaded = RunState.load(state.run_id, project_dir)
+        assert loaded.workflow_dir == str(wf_dir.resolve())
+
+    def test_installed_workflow_has_workflow_dir(self, project_dir):
+        """Installed-by-ID workflows get workflow_dir pointing to the
+        installation directory (.specify/workflows/<id>/).
+        """
+        from specify_cli.workflows.engine import WorkflowEngine
+        from specify_cli.workflows.base import RunStatus
+
+        wf_id = "installed-wfdir"
+        install_dir = project_dir / ".specify" / "workflows" / wf_id
+        install_dir.mkdir(parents=True)
+        (install_dir / "workflow.yml").write_text("""
+schema_version: "1.0"
+workflow:
+  id: "installed-wfdir"
+  name: "Installed WfDir"
+  version: "1.0.0"
+steps:
+  - id: check-dir
+    type: shell
+    run: "echo DIR={{ context.workflow_dir }}"
+""")
+        engine = WorkflowEngine(project_dir)
+        definition = engine.load_workflow(wf_id)
+        state = engine.execute(definition)
+
+        assert state.status == RunStatus.COMPLETED
+        stdout = state.step_results["check-dir"]["output"]["stdout"]
+        assert stdout.strip() == f"DIR={install_dir.resolve()}"
+
+    def test_workflow_dir_is_resolved_to_absolute(self, project_dir):
+        """workflow_dir is resolved to an absolute path even when the
+        source path is relative.
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+        import os
+
+        wf_dir = project_dir / "rel-test"
+        wf_dir.mkdir()
+        wf_file = wf_dir / "workflow.yml"
+        wf_file.write_text("""
+schema_version: "1.0"
+workflow:
+  id: "rel-path"
+  name: "Relative Path"
+  version: "1.0.0"
+steps:
+  - id: check
+    type: shell
+    run: "echo ok"
+""")
+        # Load via a relative path
+        saved_cwd = os.getcwd()
+        try:
+            os.chdir(project_dir)
+            rel_path = Path("rel-test/workflow.yml")
+            definition = WorkflowDefinition.from_yaml(rel_path)
+            engine = WorkflowEngine(project_dir)
+            state = engine.execute(definition)
+        finally:
+            os.chdir(saved_cwd)
+
+        assert Path(state.workflow_dir).is_absolute()
+        assert state.workflow_dir == str(wf_dir.resolve())
 
 
 # ===== continue_on_error Tests =====
@@ -5468,6 +6301,26 @@ class TestWorkflowCatalog:
         assert len(entries) == 1
         assert entries[0].name == "custom"
 
+    @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
+    def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
+        """`priority: true` must not be silently coerced to 1, and `priority: .inf`
+        must not crash with an uncaught OverflowError — both raise a clean
+        validation error (parity with the base CatalogStackBase loader)."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "bad",
+                "url": "https://example.com/wf-catalog.json",
+                "priority": bad_priority,
+                "install_allowed": True,
+            }]
+        }))
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="Invalid priority|expected integer"):
+            catalog.get_active_catalogs()
+
     def test_validate_url_http_rejected(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
 
@@ -5570,6 +6423,31 @@ class TestWorkflowCatalog:
         data = yaml.safe_load(config_path.read_text())
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-catalog.json"
+
+    def test_add_catalog_with_existing_inf_priority(self, project_dir):
+        """add_catalog() derives the new priority from existing ones via
+        _coerce_priority; an existing `priority: .inf` must not crash it
+        (int(float('inf')) is an OverflowError) — it is treated as 0 and the add
+        succeeds."""
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "existing",
+                "url": "https://a.example.com/c.json",
+                "priority": float("inf"),
+                "install_allowed": True,
+            }]
+        }))
+
+        catalog = WorkflowCatalog(project_dir)
+        catalog.add_catalog("https://b.example.com/c.json", "new")
+
+        data = yaml.safe_load(config_path.read_text())
+        new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/c.json")
+        assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
     def test_add_catalog_duplicate_rejected(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
@@ -5991,6 +6869,25 @@ class TestStepCatalog:
         assert len(entries) == 1
         assert entries[0].name == "custom"
 
+    @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
+    def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
+        """`priority: true`/`.inf` in a step-catalog config raise a clean
+        validation error instead of coercing to 1 / crashing with OverflowError."""
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "bad",
+                "url": "https://example.com/step-catalog.json",
+                "priority": bad_priority,
+                "install_allowed": True,
+            }]
+        }))
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="Invalid priority|expected integer"):
+            catalog.get_active_catalogs()
+
     def test_validate_url_http_rejected(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog, StepValidationError
 
@@ -6085,6 +6982,30 @@ class TestStepCatalog:
         data = yaml.safe_load(config_path.read_text())
         assert len(data["catalogs"]) == 1
         assert data["catalogs"][0]["url"] == "https://example.com/new-steps.json"
+
+    def test_add_catalog_with_existing_inf_priority(self, project_dir):
+        """Step-catalog add_catalog() must not crash when an existing entry has a
+        `priority: .inf` (int(float('inf')) is an OverflowError) — _coerce_priority
+        treats it as 0 and the add succeeds."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.dump({
+            "catalogs": [{
+                "name": "existing",
+                "url": "https://a.example.com/s.json",
+                "priority": float("inf"),
+                "install_allowed": True,
+            }]
+        }))
+
+        catalog = StepCatalog(project_dir)
+        catalog.add_catalog("https://b.example.com/s.json", "new")
+
+        data = yaml.safe_load(config_path.read_text())
+        new = next(c for c in data["catalogs"] if c["url"] == "https://b.example.com/s.json")
+        assert new["priority"] == 1  # max(inf coerced to 0) + 1
 
     def test_add_catalog_empty_yaml_file(self, project_dir):
         """An empty YAML config file should be treated as empty, not corrupted."""
@@ -6609,7 +7530,7 @@ class TestWorkflowRemoveGuard:
         assert "Invalid workflow ID" in result.output
         assert sentinel.read_text(encoding="utf-8") == "keep"
 
-    @pytest.mark.parametrize("workflow_id", ["runs", "steps"])
+    @pytest.mark.parametrize("workflow_id", ["overlays", "runs", "steps"])
     def test_remove_rejects_reserved_storage_ids(
         self, project_dir, monkeypatch, workflow_id
     ):
@@ -6995,9 +7916,39 @@ steps:
         # Literal bracketed text survives; Rich did not consume it as a tag.
         assert "[red]evil[/red]" in out
 
+    def test_add_rejects_reserved_overlay_storage_id(self, temp_dir, monkeypatch):
+        """workflow add must not install into the overlay storage directory."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        overlay_file = temp_dir / "incoming.yml"
+        overlay_file.write_text(
+            """
+schema_version: "1.0"
+workflow:
+  id: "overlays"
+  name: "Bad Workflow"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(overlay_file)])
+
+        assert result.exit_code != 0
+        assert "Invalid workflow ID" in result.output
+        assert not (temp_dir / ".specify" / "workflows" / "overlays" / "workflow.yml").exists()
+
     @pytest.mark.parametrize(
         "workflow_id",
         [
+            "overlays",
             "runs",
             "steps",
             "nested/workflow",
@@ -8720,10 +9671,12 @@ steps:
 
         assert result.exit_code != 0
         assert result.exception is None or isinstance(result.exception, SystemExit)
-        # Original download error remains present.
-        assert "exceedsthe100-byteworkflowsizelimit" in "".join(result.output.split())
+        # Original download error remains present. Normalize whitespace so the
+        # assertion is robust to Rich line-wrapping at narrow terminal widths.
+        normalized_output = "".join(result.output.split())
+        assert "exceedsthe100-byteworkflowsizelimit" in normalized_output
         # Cleanup failure is reported too, not silently swallowed / crashing.
-        assert "cleanup denied" in result.output
+        assert "cleanupdenied" in normalized_output
         assert "Warning" in result.output
         assert not WorkflowRegistry(project_dir).is_installed("align-wf")
 
@@ -12690,6 +13643,58 @@ steps:
         result = runner.invoke(app, ["workflow", "status", "nonexistent-run"])
         assert result.exit_code != 0
         assert "Run not found: nonexistent-run" in result.output
+
+    def test_status_json_not_found_error_goes_to_stderr(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """Under --json, the not-found/invalid-run error must go to stderr so the
+        stdout JSON stream stays parseable (empty on the error path) — mirroring
+        `workflow run`/`workflow resume`. Before this fix both handlers used the
+        stdout console, corrupting a consumer's json.loads(stdout)."""
+        import typer
+        from specify_cli.workflows import _commands
+
+        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            _commands, "_require_specify_project", lambda: project_dir
+        )
+        with pytest.raises(typer.Exit) as exc:
+            _commands.workflow_status("does-not-exist", json_output=True)
+        assert exc.value.exit_code == 1
+        captured = capsys.readouterr()
+        assert "Run not found" in captured.err
+        assert "Run not found" not in captured.out
+        # stdout carries no partial/corrupt JSON on the error path.
+        assert captured.out.strip() == ""
+
+    def test_status_json_invalid_run_error_goes_to_stderr(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """The ValueError handler (a malformed/invalid run state) must ALSO route
+        to stderr under --json, not just the FileNotFoundError one — otherwise a
+        regression there would silently corrupt the JSON stream and this suite
+        wouldn't catch it."""
+        import typer
+        from specify_cli.workflows import _commands
+        from specify_cli.workflows.engine import RunState
+
+        (project_dir / ".specify" / "workflows").mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(
+            _commands, "_require_specify_project", lambda: project_dir
+        )
+
+        def _raise_value_error(*args, **kwargs):
+            raise ValueError("corrupt run state: bad status")
+
+        monkeypatch.setattr(RunState, "load", _raise_value_error)
+
+        with pytest.raises(typer.Exit) as exc:
+            _commands.workflow_status("some-run", json_output=True)
+        assert exc.value.exit_code == 1
+        captured = capsys.readouterr()
+        assert "corrupt run state" in captured.err
+        assert "corrupt run state" not in captured.out
+        assert captured.out.strip() == ""
 
     def test_status_no_run_id_list_path_unaffected(self, project_dir, monkeypatch):
         """The no-run-id list-all-runs path must remain unaffected by the

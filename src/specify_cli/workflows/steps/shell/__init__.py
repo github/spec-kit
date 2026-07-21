@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import subprocess
 from typing import Any
 
@@ -40,6 +41,13 @@ class ShellStep(StepBase):
                 error=timeout_error,
                 output={"exit_code": -1, "stdout": "", "stderr": "invalid timeout"},
             )
+
+        env = {**os.environ}
+        if context.workflow_dir:
+            env["SPECKIT_WORKFLOW_DIR"] = context.workflow_dir
+        else:
+            env.pop("SPECKIT_WORKFLOW_DIR", None)
+
         # NOTE: shell=True is required to support pipes, redirects, and
         # multi-command expressions in workflow YAML.  Workflow authors
         # control commands; catalog-installed workflows should be reviewed
@@ -51,6 +59,7 @@ class ShellStep(StepBase):
                 capture_output=True,
                 text=True,
                 cwd=cwd,
+                env=env,
                 timeout=timeout,
             )
             output = {

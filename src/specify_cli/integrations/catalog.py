@@ -429,7 +429,8 @@ class IntegrationCatalog(CatalogStackBase):
                     )
                 try:
                     normalized_priority = int(raw_priority)
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
+                    # OverflowError: int(float("inf")) — a ``priority: .inf``.
                     raise IntegrationValidationError(
                         f"Invalid catalog entry at index {idx} in {config_path}: "
                         f"'priority' must be an integer, got "
@@ -537,7 +538,8 @@ class IntegrationCatalog(CatalogStackBase):
             else:
                 try:
                     priority = int(raw_priority)
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, OverflowError):
+                    # OverflowError: int(float("inf")) — a ``priority: .inf``.
                     priority = yaml_idx + 1
             priority_pairs.append((priority, yaml_idx))
         if not priority_pairs:

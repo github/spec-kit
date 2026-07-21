@@ -91,6 +91,18 @@ class ForgeIntegration(MarkdownIntegration):
     }
     invoke_separator = "-"
 
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Forge installs hyphenated slash-commands (``/speckit-<name>``), so the
+        dispatch invocation must match. The inherited MarkdownIntegration default
+        builds the dotted ``/speckit.<name>``, which references a command Forge
+        never registered. Reuse the same hyphenation as the installed frontmatter
+        ``name`` (see ``format_forge_command_name``), mirroring the skills agents.
+        """
+        invocation = "/" + format_forge_command_name(command_name)
+        if args:
+            invocation = f"{invocation} {args}"
+        return invocation
+
     def setup(
         self,
         project_root: Path,

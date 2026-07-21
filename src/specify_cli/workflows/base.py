@@ -74,6 +74,9 @@ class StepContext:
     #: Current run ID.
     run_id: str | None = None
 
+    #: Source directory of the workflow definition file.
+    workflow_dir: str | None = None
+
 
 @dataclass
 class StepResult:

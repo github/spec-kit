@@ -42,6 +42,10 @@ class SwitchStep(StepBase):
             )
         for case_key, case_steps in cases.items():
             if str(case_key) == str_value:
+                if not isinstance(case_steps, list):
+                    return self._non_list_branch_failure(
+                        config, f"case {str(case_key)!r}", case_steps, value
+                    )
                 return StepResult(
                     status=StepStatus.COMPLETED,
                     output={"matched_case": str(case_key), "expression_value": value},
@@ -50,10 +54,39 @@ class SwitchStep(StepBase):
 
         # Default fallback
         default_steps = config.get("default", [])
+        if default_steps is None:
+            default_steps = []
+        elif not isinstance(default_steps, list):
+            return self._non_list_branch_failure(
+                config, "'default'", default_steps, value
+            )
         return StepResult(
             status=StepStatus.COMPLETED,
             output={"matched_case": "__default__", "expression_value": value},
             next_steps=default_steps,
+        )
+
+    @staticmethod
+    def _non_list_branch_failure(
+        config: dict[str, Any], branch_label: str, branch: Any, value: Any
+    ) -> StepResult:
+        """Fail the step for a non-list branch instead of crashing the run.
+
+        ``validate`` rejects a non-list case/default branch, but the engine does
+        not auto-validate and feeds ``next_steps`` straight into
+        ``_execute_steps``, which iterates them as step mappings. A non-list
+        branch would be iterated element-wise (a dict yields its keys, a str its
+        characters) and crash the whole run with AttributeError on ``.get()``.
+        Fail this step loudly on an unvalidated run instead, mirroring the
+        non-mapping ``cases`` guard above.
+        """
+        return StepResult(
+            status=StepStatus.FAILED,
+            output={"matched_case": None, "expression_value": value},
+            error=(
+                f"Switch step {config.get('id', '?')!r}: {branch_label} must be "
+                f"a list of steps, got {type(branch).__name__}."
+            ),
         )
 
     def validate(self, config: dict[str, Any]) -> list[str]:

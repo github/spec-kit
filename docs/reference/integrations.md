@@ -1,6 +1,6 @@
 # Supported AI Coding Agent Integrations
 
-The Specify CLI supports a wide range of AI coding agents. When you run `specify init`, the CLI sets up the appropriate command files, context rules, and directory structures for your chosen AI coding agent — so you can start using Spec-Driven Development immediately, regardless of which tool you prefer.
+The Specify CLI supports a wide range of AI coding agents. When you run `specify init`, the CLI sets up the appropriate command files and directory structures for your chosen AI coding agent — so you can start using Spec-Driven Development immediately, regardless of which tool you prefer.
 
 ## Supported AI Coding Agents
 
@@ -20,8 +20,9 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
 | [GitHub Copilot](https://code.visualstudio.com/)                                     | `copilot`        | Defaults to legacy markdown mode: `.agent.md` command files under `.github/agents/`, companion `.prompt.md` files under `.github/prompts/`, and a `.vscode/settings.json` merge. Pass `--integration-options="--skills"` to scaffold skills as `speckit-<command>/SKILL.md` under `.github/skills/` instead. Legacy markdown mode is deprecated and will stop being the default in a future release. |
 | [Goose](https://goose-docs.ai/)                                                      | `goose`          | Uses YAML recipe format in `.goose/recipes/`                                                                                              |
+| [Grok Build](https://docs.x.ai/build/overview)                                       | `grok`           | Skills-based integration; installs skills into `.grok/skills` and invokes them as `/speckit-<command>`                                    |
 | [Hermes](https://github.com/NousResearch/hermes-agent)                               | `hermes`         | Skills-based integration; installs skills globally into `~/.hermes/skills/`                                                                |
-| [IBM Bob](https://www.ibm.com/products/bob)                                          | `bob`            | IDE-based agent                                                                                                                           |
+| [IBM Bob](https://www.ibm.com/products/bob)                                          | `bob`            | Skills-based integration by default; installs skills as `speckit-<command>/SKILL.md` under `.bob/skills/` and invokes them as `/speckit-<command>`. Pass `--integration-options="--legacy-commands"` to scaffold the deprecated Bob 1.x layout (`.bob/commands/*.md`) instead; that flag will be removed in a future release. Existing legacy installs can migrate with `specify integration upgrade bob --integration-options="--skills"`, which converts them to the skills layout and removes the old command files. If preset overrides are installed, the migration is rejected with an actionable error (preset artifacts cannot yet be reconciled across a layout change) — remove the preset(s), migrate, then reinstall them. |
 | [Junie](https://junie.jetbrains.com/)                                                | `junie`          |                                                                                                                                           |
 | [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | `kilocode`       |                                                                                                                                           |
 | [Kimi Code](https://code.kimi.com/)                                                  | `kimi`           | Skills-based integration; installs into `.kimi-code/skills/`. `--migrate-legacy` moves old `.kimi/skills/` installs to the new paths |
@@ -47,7 +48,11 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 specify integration list
 ```
 
-Shows all available integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
+| Option      | Description                                                                                                             |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--catalog` | Also browse the catalog (built-in **and** community). Community integrations that are not built in are only shown here.  |
+
+Shows the built-in integrations, which one is currently installed, and whether each requires a CLI tool or is IDE-based.
 When multiple integrations are installed, the list marks the default integration separately from the other installed integrations.
 The list also shows whether each built-in integration is declared multi-install safe.
 
@@ -249,7 +254,11 @@ Spec Kit tracks one default integration in `.specify/integration.json` with `def
 
 ### Which integrations are multi-install safe?
 
-An integration is multi-install safe when it uses isolated agent directories, a dedicated context file that does not collide with another safe integration, stable command invocation settings, and a separate install manifest. Shared Spec Kit templates remain aligned to the single default integration.
+An integration is multi-install safe when it uses a static, unique agent root and command directory, stable command invocation settings, and a separate install manifest whose managed files do not overlap another safe integration. Registry tests enforce those path and manifest invariants. Shared Spec Kit templates remain aligned to the single default integration.
+
+The Isolation column below lists paths Spec Kit manages for that integration (skills/commands roots and any integration-owned rule files). It is not a full inventory of every file an agent may read.
+
+**Agent-context defaults are separate.** The optional agent-context extension maps each integration to a default context file in `extensions/agent-context/agent-context-defaults.json`. Those defaults are independent of multi-install safety: several agents may share a root file such as `AGENTS.md` when the extension is enabled. Multi-install safety does not require a unique context file per safe integration.
 
 The currently declared multi-install safe integrations are:
 
@@ -263,6 +272,7 @@ The currently declared multi-install safe integrations are:
 | `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
 | `firebender` | `.firebender/commands`, `.firebender/rules/specify-rules.mdc` |
 | `gemini` | `.gemini/commands`, `GEMINI.md` |
+| `grok` | `.grok/skills` |
 | `junie` | `.junie/commands`, `.junie/AGENTS.md` |
 | `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
 | `qodercli` | `.qoder/commands`, `QODER.md` |
@@ -272,7 +282,7 @@ The currently declared multi-install safe integrations are:
 | `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
 | `zcode` | `.zcode/skills`, `ZCODE.md` |
 
-Integrations that share a context file or command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
+Integrations that share a command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
 
 ### What happens to my changes when I uninstall or switch?
 

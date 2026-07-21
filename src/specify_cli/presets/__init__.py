@@ -31,7 +31,117 @@ from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priorit
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
-from ..shared_infra import verify_archive_sha256
+from ..shared_infra import (
+    _ensure_safe_shared_destination,
+    _ensure_safe_shared_directory,
+    _write_shared_bytes,
+    _write_shared_text,
+    verify_archive_sha256,
+)
+
+
+_CONSTITUTION_PROVENANCE_FILE = ".constitution-template.json"
+
+
+def _content_sha256(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _constitution_is_generated(
+    project_root: Path,
+    memory_constitution: Path,
+    resolver: "PresetResolver",
+) -> bool:
+    """Return whether the live constitution is an unchanged generated file."""
+    _ensure_safe_shared_destination(project_root, memory_constitution)
+    content = memory_constitution.read_bytes()
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    _ensure_safe_shared_destination(project_root, provenance)
+
+    if provenance.exists():
+        try:
+            metadata = json.loads(provenance.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return False
+        return (
+            isinstance(metadata, dict)
+            and metadata.get("sha256") == _content_sha256(content)
+        )
+
+    # Older projects have no provenance sidecar. Only the immutable bundled or
+    # source-checkout core template is safe to treat as generated.
+    core = resolver._find_bundled_core(
+        "constitution-template", "template", ".md"
+    )
+    return core is not None and core.read_bytes() == content
+
+
+def _constitution_provenance_matches_preset(
+    project_root: Path,
+    memory_constitution: Path,
+    pack_id: str,
+    pack_version: str,
+) -> bool:
+    """Return whether provenance identifies a preset as the materialized source."""
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    if not provenance.parent.exists():
+        return False
+    _ensure_safe_shared_destination(project_root, provenance)
+    if not provenance.exists():
+        return False
+    try:
+        metadata = json.loads(provenance.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("source") == f"{pack_id} v{pack_version}"
+    )
+
+
+def _materialize_constitution_template(
+    project_root: Path,
+    memory_constitution: Path,
+) -> str | None:
+    """Materialize constitution-template content into memory/constitution.md.
+
+    Returns:
+        "copied" when the winning layer is ``replace`` and the source file is
+        copied verbatim; "composed" when a composing strategy is materialized
+        via ``resolve_content``; ``None`` when no constitution template resolves.
+    """
+    resolver = PresetResolver(project_root)
+    layers = resolver.collect_all_layers("constitution-template", "template")
+    if not layers:
+        return None
+
+    top_layer = layers[0]
+    if top_layer["strategy"] == "replace":
+        content = top_layer["path"].read_bytes()
+        result = "copied"
+    else:
+        composed_content = resolver.resolve_content("constitution-template", "template")
+        if composed_content is None:
+            return None
+        content = composed_content.encode("utf-8")
+        result = "composed"
+
+    _ensure_safe_shared_directory(project_root, memory_constitution.parent)
+    _write_shared_bytes(project_root, memory_constitution, content)
+    provenance = memory_constitution.parent / _CONSTITUTION_PROVENANCE_FILE
+    _write_shared_text(
+        project_root,
+        provenance,
+        json.dumps(
+            {
+                "sha256": _content_sha256(content),
+                "source": top_layer["source"],
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    return result
 
 
 def _substitute_core_template(
@@ -1061,7 +1171,7 @@ class PresetManager:
                             selected_ai, fm, body, self.project_root
                         )
                         body = self._resolve_skill_command_refs(
-                            body, registrar, selected_ai
+                            body, registrar, selected_ai, self.project_root
                         )
                     from ..integrations import get_integration
                     integration = get_integration(selected_ai) if isinstance(selected_ai, str) else None
@@ -1142,7 +1252,10 @@ class PresetManager:
 
     @staticmethod
     def _resolve_skill_command_refs(
-        body: str, registrar: "CommandRegistrar", selected_ai: str
+        body: str,
+        registrar: "CommandRegistrar",
+        selected_ai: str,
+        project_root: "Path | None" = None,
     ) -> str:
         """Render ``__SPECKIT_COMMAND_*__`` tokens in a skill body as invocations.
 
@@ -1151,10 +1264,30 @@ class PresetManager:
         slash-command invocation — ``/speckit-<cmd>`` for a ``-`` separator,
         ``/speckit.<cmd>`` for ``.`` — the same rendering the command layer
         applies via ``CommandRegistrar.register_commands()``.
+
+        For dual-layout agents (e.g. Bob) the separator depends on the
+        project's persisted skills state, so — when *project_root* is provided
+        — the separator is resolved from the integration via
+        ``invoke_separator_for_mode`` rather than the single static
+        ``AGENT_CONFIGS`` value.
         """
-        separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
-            "invoke_separator", "."
-        )
+        separator = None
+        if project_root is not None and isinstance(selected_ai, str):
+            try:
+                from .. import load_init_options
+                from ..integrations import get_integration
+
+                integration = get_integration(selected_ai)
+                if integration is not None:
+                    separator = integration.invoke_separator_for_mode(
+                        is_ai_skills_enabled(load_init_options(project_root))
+                    )
+            except Exception:
+                separator = None
+        if separator is None:
+            separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
+                "invoke_separator", "."
+            )
         return IntegrationBase.resolve_command_refs(body, separator)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
@@ -1335,7 +1468,7 @@ class PresetManager:
             body = registrar.resolve_skill_placeholders(
                 selected_ai, frontmatter, body, self.project_root
             )
-            body = self._resolve_skill_command_refs(body, registrar, selected_ai)
+            body = self._resolve_skill_command_refs(body, registrar, selected_ai, self.project_root)
 
             for target_skill_name in target_skill_names:
                 skill_subdir = skills_dir / target_skill_name
@@ -1430,7 +1563,7 @@ class PresetManager:
                         selected_ai, frontmatter, body, self.project_root
                     )
                     body = self._resolve_skill_command_refs(
-                        body, registrar, selected_ai
+                        body, registrar, selected_ai, self.project_root
                     )
 
                 original_desc = frontmatter.get("description", "")
@@ -1482,7 +1615,7 @@ class PresetManager:
                         selected_ai, frontmatter, body, self.project_root
                     )
                     body = self._resolve_skill_command_refs(
-                        body, registrar, selected_ai
+                        body, registrar, selected_ai, self.project_root
                     )
 
                 command_name = extension_restore["command_name"]
@@ -1629,7 +1762,72 @@ class PresetManager:
                     stacklevel=2,
                 )
 
+        # Seed/re-seed memory/constitution.md from a preset-provided
+        # constitution-template. The constitution is the only template that is
+        # materialized to a live file rather than resolved on demand, so a
+        # preset that ships one (e.g. strategy: replace with a ratified
+        # constitution) must be propagated here. Guard against clobbering an
+        # already-authored constitution by only replacing a file whose recorded
+        # hash (or exact legacy core-template content) proves it was generated.
+        self._seed_constitution_from_preset(manifest, dest_dir)
+
         return manifest
+
+    def _seed_constitution_from_preset(
+        self, manifest: PresetManifest, preset_dir: Path
+    ) -> None:
+        """Seed memory/constitution.md from a preset constitution-template.
+
+        Only runs when the preset declares a ``type: template`` entry named
+        ``constitution-template`` or provides one at a convention path, and the
+        live memory file is either missing or is an unchanged generated file.
+        Authored constitutions are never overwritten.
+        """
+        provides_constitution = any(
+            t.get("type") == "template" and t.get("name") == "constitution-template"
+            for t in manifest.templates
+        ) or any(
+            (preset_dir / relative_path).is_file()
+            for relative_path in (
+                "templates/constitution-template.md",
+                "constitution-template.md",
+            )
+        )
+        if not provides_constitution:
+            return
+
+        self.reconcile_constitution(
+            f"Failed to seed constitution from preset {manifest.id}",
+            create_if_missing=True,
+        )
+
+    def reconcile_constitution(
+        self, failure_context: str, *, create_if_missing: bool = False
+    ) -> None:
+        """Reconcile generated constitution content without failing a persisted change."""
+        try:
+            self._reconcile_constitution(create_if_missing=create_if_missing)
+        except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
+            import warnings
+
+            warnings.warn(
+                f"{failure_context}: {exc}.",
+                stacklevel=2,
+            )
+
+    def _reconcile_constitution(self, *, create_if_missing: bool = False) -> None:
+        """Materialize the winning constitution layer when the live file is generated."""
+        memory_constitution = (
+            self.project_root / ".specify" / "memory" / "constitution.md"
+        )
+        if not memory_constitution.exists() and not create_if_missing:
+            return
+        resolver = PresetResolver(self.project_root)
+        if memory_constitution.exists() and not _constitution_is_generated(
+            self.project_root, memory_constitution, resolver
+        ):
+            return
+        _materialize_constitution_template(self.project_root, memory_constitution)
 
     def install_from_zip(
         self,
@@ -1710,6 +1908,25 @@ class PresetManager:
         # Also include aliases from the manifest as a safety net for registries
         # populated by older versions that may not track aliases.
         removed_cmd_names = set()
+        removed_constitution = any(
+            path.exists()
+            for path in (
+                pack_dir / "templates" / "constitution-template.md",
+                pack_dir / "constitution-template.md",
+            )
+        )
+        if metadata and isinstance(metadata.get("version"), str):
+            memory_constitution = (
+                self.project_root / ".specify" / "memory" / "constitution.md"
+            )
+            removed_constitution = removed_constitution or (
+                _constitution_provenance_matches_preset(
+                    self.project_root,
+                    memory_constitution,
+                    pack_id,
+                    metadata["version"],
+                )
+            )
         for cmd_names in registered_commands.values():
             removed_cmd_names.update(cmd_names)
         manifest_path = pack_dir / "preset.yml"
@@ -1717,6 +1934,11 @@ class PresetManager:
             try:
                 manifest = PresetManifest(manifest_path)
                 for tmpl in manifest.templates:
+                    if (
+                        tmpl.get("type") == "template"
+                        and tmpl.get("name") == "constitution-template"
+                    ):
+                        removed_constitution = True
                     if tmpl.get("type") == "command":
                         for alias in tmpl.get("aliases", []):
                             if isinstance(alias, str):
@@ -1760,6 +1982,18 @@ class PresetManager:
                     f"Post-removal reconciliation failed for {pack_id}: {exc}. "
                     f"Agent command files may be stale; reinstall affected presets "
                     f"or run 'specify preset add' to refresh.",
+                    stacklevel=2,
+                )
+
+        if removed_constitution:
+            try:
+                self._reconcile_constitution()
+            except (OSError, UnicodeDecodeError, PresetValidationError, ValueError) as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Post-removal constitution reconciliation failed for {pack_id}: "
+                    f"{exc}. The live constitution may be stale.",
                     stacklevel=2,
                 )
 
@@ -1863,8 +2097,12 @@ class PresetCatalog:
         """
         from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise PresetValidationError(f"Catalog URL is malformed: {url}") from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):
@@ -1875,7 +2113,7 @@ class PresetCatalog:
         # Check hostname, not netloc: netloc is truthy for host-less URLs like
         # "https://:8080" or "https://user@", so the host guarantee this error
         # promises would not actually hold. hostname is None in those cases (#3209).
-        if not parsed.hostname:
+        if not hostname:
             raise PresetValidationError(
                 "Catalog URL must be a valid URL with a host."
             )
@@ -1893,13 +2131,22 @@ class PresetCatalog:
         url: str,
         timeout: int = 10,
         extra_headers: Optional[Dict[str, str]] = None,
+        redirect_validator=None,
     ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
+        *redirect_validator*, when provided, is invoked as ``(old_url, new_url)``
+        before EACH redirect hop, so an HTTPS host guarantee can be enforced on
+        every intermediate URL, not just the terminal one.
         """
         from specify_cli.authentication.http import open_url
-        return open_url(url, timeout, extra_headers=extra_headers)
+        return open_url(
+            url,
+            timeout,
+            extra_headers=extra_headers,
+            redirect_validator=redirect_validator,
+        )
 
     def _resolve_github_release_asset_api_url(
         self,
@@ -2020,7 +2267,10 @@ class PresetCatalog:
                 )
             try:
                 priority = int(raw_priority)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
+                # OverflowError: int(float("inf")) — a YAML ``priority: .inf``
+                # would otherwise escape as an uncaught traceback instead of the
+                # clean validation error (mirrors catalogs.py).
                 raise PresetValidationError(
                     f"Invalid priority for catalog '{item.get('name', idx + 1)}': "
                     f"expected integer, got {raw_priority!r}"
@@ -2186,7 +2436,21 @@ class PresetCatalog:
                 pass
 
         try:
-            with self._open_url(entry.url, timeout=10) as response:
+            # Validate EVERY redirect hop (not just the terminal URL): an
+            # https -> http -> attacker-controlled-https chain would pass a
+            # final-URL-only check while the insecure intermediate hop lets a
+            # network attacker rewrite the next redirect. redirect_validator runs
+            # before each hop; the final geturl() check is retained as a
+            # belt-and-braces guard. Mirrors bundler/services/adapters.py.
+            def _validate_redirect(_old_url: str, new_url: str) -> None:
+                self._validate_catalog_url(new_url)
+
+            with self._open_url(
+                entry.url, timeout=10, redirect_validator=_validate_redirect
+            ) as response:
+                final_url = response.geturl()
+                if final_url != entry.url:
+                    self._validate_catalog_url(final_url)
                 catalog_data = json.loads(response.read())
 
             self._validate_catalog_payload(catalog_data, entry.url)
@@ -2337,7 +2601,18 @@ class PresetCatalog:
                 pass
 
         try:
-            with self._open_url(catalog_url, timeout=10) as response:
+            # Same redirect hardening as _fetch_single_catalog: validate every
+            # redirect hop AND the final URL so this legacy single-catalog path
+            # is not vulnerable to an HTTPS->HTTP redirected payload either.
+            def _validate_redirect(_old_url: str, new_url: str) -> None:
+                self._validate_catalog_url(new_url)
+
+            with self._open_url(
+                catalog_url, timeout=10, redirect_validator=_validate_redirect
+            ) as response:
+                final_url = response.geturl()
+                if final_url != catalog_url:
+                    self._validate_catalog_url(final_url)
                 catalog_data = json.loads(response.read())
 
             # Validate catalog structure. Reuses the same helper as
@@ -2502,8 +2777,20 @@ class PresetCatalog:
 
         from urllib.parse import urlparse
 
-        parsed = urlparse(download_url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # "https://[::1") makes urlparse / hostname access raise ValueError.
+        # The download_url comes from catalog payload data, so surface a clean
+        # PresetError rather than leaking a raw ValueError past the command
+        # handler (which only catches PresetError). Mirrors catalogs (#3435)
+        # and workflows/catalog.py (#3484).
+        try:
+            parsed = urlparse(download_url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise PresetError(
+                f"Preset download URL is malformed: {download_url}"
+            ) from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and is_localhost
         ):

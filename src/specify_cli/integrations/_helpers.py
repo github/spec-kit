@@ -260,6 +260,7 @@ def _update_init_options_for_integration(
     project_root: Path,
     integration: Any,
     script_type: str | None = None,
+    parsed_options: dict[str, Any] | None = None,
 ) -> None:
     """Update init-options.json to reflect *integration* as the active one.
 
@@ -271,14 +272,19 @@ def _update_init_options_for_integration(
         load_init_options,
         save_init_options,
     )
-    from .base import SkillsIntegration
     opts = load_init_options(project_root)
     opts["integration"] = integration.key
     opts["ai"] = integration.key
     opts["speckit_version"] = _get_speckit_version()
     if script_type:
         opts["script"] = script_type
-    if isinstance(integration, SkillsIntegration) or getattr(integration, "_skills_mode", False):
+    # Whether skills mode is active is owned by each integration via the
+    # ``is_skills_mode`` hook (base default honors ``--skills``;
+    # SkillsIntegration returns True; skills-first integrations with a legacy
+    # opt-out such as Bob override it). This keeps shared code free of
+    # ``isinstance`` / ``_skills_mode`` probing. Passing parsed_options lets it
+    # work on the ``use``/``install`` path where no setup() runs (issue #3550).
+    if integration.is_skills_mode(parsed_options, project_root=project_root):
         opts["ai_skills"] = True
     else:
         opts.pop("ai_skills", None)
@@ -314,6 +320,7 @@ def _set_default_integration(
         script_type=resolved_script,
         raw_options=raw_options,
         parsed_options=parsed_options,
+        project_root=project_root,
     )
 
     if refresh_templates:
@@ -322,7 +329,8 @@ def _set_default_integration(
                 project_root,
                 resolved_script,
                 invoke_separator=_invoke_separator_for_integration(
-                    integration, {"integration_settings": settings}, key, parsed_options
+                    integration, {"integration_settings": settings}, key, parsed_options,
+                    project_root=project_root,
                 ),
                 force=refresh_templates_force,
                 refresh_managed=True,
@@ -334,7 +342,9 @@ def _set_default_integration(
             ) from exc
 
     _write_integration_json(project_root, key, installed_keys, settings)
-    _update_init_options_for_integration(project_root, integration, script_type=resolved_script)
+    _update_init_options_for_integration(
+        project_root, integration, script_type=resolved_script, parsed_options=parsed_options
+    )
 
 
 def _set_default_integration_or_exit(*args: Any, **kwargs: Any) -> None:

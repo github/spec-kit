@@ -30,6 +30,21 @@ class CommandStep(StepBase):
 
     def execute(self, config: dict[str, Any], context: StepContext) -> StepResult:
         command = config.get("command", "")
+        # validate() rejects a non-string 'command', but the engine does not
+        # auto-validate before execute(); an unvalidated run would pass the value
+        # to build_command_invocation() (via _try_dispatch) and crash there with a
+        # raw AttributeError (command_name.startswith(...) on a list/int/None).
+        # Fail the step with the same contract error instead, mirroring the
+        # 'input'/'options' guards below.
+        if not isinstance(command, str):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Command step {config.get('id', '?')!r}: 'command' must be a "
+                    f"string, got {type(command).__name__}."
+                ),
+            )
+
         input_data = config.get("input", {})
         # validate() rejects a non-mapping input, but the engine does not
         # auto-validate before execute(); a workflow that skipped validation can
@@ -178,6 +193,17 @@ class CommandStep(StepBase):
         if "command" not in config:
             errors.append(
                 f"Command step {config.get('id', '?')!r} is missing 'command' field."
+            )
+        elif not isinstance(config["command"], str):
+            # execute() passes 'command' straight to the integration's
+            # build_command_invocation(), which does command_name.startswith(...);
+            # a non-string (null, list, int) crashes there with a raw
+            # AttributeError once dispatch is attempted. Reject it at validation,
+            # mirroring the prompt-step 'prompt' and shell-step 'run' type checks.
+            # An expression like "{{ ... }}" is still a str, so it stays valid.
+            errors.append(
+                f"Command step {config.get('id', '?')!r}: 'command' must be a "
+                f"string, got {type(config['command']).__name__}."
             )
         # execute() iterates input.items() and options.update(step_options); a
         # non-mapping here would raise at run time. Validate the shape like the
