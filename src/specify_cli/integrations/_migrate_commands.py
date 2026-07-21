@@ -1,8 +1,9 @@
 """specify integration switch / upgrade command handlers."""
 from __future__ import annotations
 
+import json
 import os
-from pathlib import PurePath
+from pathlib import Path, PurePath
 
 import typer
 
@@ -53,6 +54,16 @@ def _manifest_tracks_skill_layout(manifest) -> bool:
     return any(str(rel).endswith("/SKILL.md") for rel in manifest.files)
 
 
+class _PresetRegistryUnreadableError(Exception):
+    """Raised when an existing preset registry cannot be read or parsed.
+
+    Distinct from a *genuinely absent* registry (no presets installed): an
+    unreadable registry means we cannot verify whether preset overrides would
+    be orphaned by a layout change, so the migration must be rejected rather
+    than proceeding on a false "no presets" assumption.
+    """
+
+
 def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str]:
     """Return IDs of installed presets with artifacts registered for *agent_key*.
 
@@ -64,18 +75,36 @@ def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str
     Callers use this to detect the unsafe case and reject the migration rather
     than silently orphaning preset files / leaving stale registry entries.
 
-    Best-effort: any error resolving preset state yields an empty list so a
-    broken/absent preset registry never blocks an otherwise-valid upgrade.
+    Fails **closed**: a genuinely absent registry (no presets ever installed)
+    returns an empty list, but if the registry file exists and cannot be read
+    or parsed (e.g. a permission error or corruption) this raises
+    :class:`_PresetRegistryUnreadableError`.  Reporting "no presets" in that
+    case would let a ``--force`` layout-changing upgrade delete
+    preset-overridden files while their registry state can't be reconciled —
+    the exact inconsistency the guard exists to prevent.
     """
-    try:
-        from ..presets import PresetManager
+    from ..presets import PresetRegistry
 
-        presets = PresetManager(project_root).registry.list()
-    except Exception:
+    registry_path = (
+        Path(project_root) / ".specify" / "presets" / PresetRegistry.REGISTRY_FILE
+    )
+    # Genuinely absent registry → no presets installed → safe to proceed.
+    if not registry_path.exists():
         return []
 
+    # The registry exists: any failure to read or parse it must surface as an
+    # error, not be swallowed into an empty ("no presets") result.
+    try:
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise _PresetRegistryUnreadableError(str(exc)) from exc
+    if not isinstance(data, dict) or not isinstance(data.get("presets", {}), dict):
+        raise _PresetRegistryUnreadableError(
+            "preset registry structure is malformed"
+        )
+
     affected: list[str] = []
-    for preset_id, meta in presets.items():
+    for preset_id, meta in data.get("presets", {}).items():
         if not isinstance(meta, dict):
             continue
         registered_commands = meta.get("registered_commands", {})
@@ -463,7 +492,21 @@ def integration_upgrade(
     if _manifest_tracks_skill_layout(old_manifest) != integration.is_skills_mode(
         parsed_options, project_root
     ):
-        affected_presets = _installed_presets_affecting_agent(project_root, key)
+        try:
+            affected_presets = _installed_presets_affecting_agent(project_root, key)
+        except _PresetRegistryUnreadableError as exc:
+            console.print(
+                f"[red]Error:[/red] Cannot change '{key}' command layout: the "
+                f"preset registry could not be read to verify installed presets."
+            )
+            console.print(f"[dim]Details:[/dim] {_cli_error_detail(exc)}")
+            console.print(
+                "A layout change cannot reconcile preset artifacts, so the "
+                "migration is refused while the preset registry state is "
+                "unknown. Fix or restore "
+                "[cyan].specify/presets/.registry[/cyan] and retry."
+            )
+            raise typer.Exit(1)
         if affected_presets:
             preset_list = ", ".join(sorted(affected_presets))
             console.print(

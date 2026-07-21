@@ -196,15 +196,19 @@ class BobIntegration(IntegrationBase):
         4. A fresh project (no managed artifacts, no flags) defaults to skills.
 
         The disk-detection fallback exists because on ``use`` / ``switch`` /
-        ``upgrade`` (without ``--skills``) no ``setup()`` runs and
-        *parsed_options* is typically empty — existing Bob 1.x installs never
-        stored ``legacy_commands``.  Defaulting to skills there would rewrite
-        such a project's ``ai_skills`` flag to ``True`` even though it still
-        only contains a command layout, silently switching its extension /
-        command-reference handling.  So the layout is inferred from managed
-        Spec Kit artifacts, not the mere presence of a ``.bob/skills/``
-        directory: a user may keep unrelated Bob 2 skills in ``.bob/skills/``
-        while their Spec Kit commands still live in
+        ``upgrade`` (without an explicit ``--skills`` / ``--legacy-commands``)
+        *parsed_options* is typically empty: no flag was passed, and existing
+        Bob 1.x installs never persisted a ``legacy_commands`` option to
+        recover.  This is independent of whether ``setup()`` runs — ``upgrade``
+        *does* call :meth:`setup` (see ``_migrate_commands.integration_upgrade``),
+        but it passes those same empty *parsed_options*, so without disk
+        detection the mode would resolve to the skills default.  Defaulting to
+        skills there would rewrite such a project's ``ai_skills`` flag to
+        ``True`` even though it still only contains a command layout, silently
+        switching its extension / command-reference handling.  So the layout is
+        inferred from managed Spec Kit artifacts, not the mere presence of a
+        ``.bob/skills/`` directory: a user may keep unrelated Bob 2 skills in
+        ``.bob/skills/`` while their Spec Kit commands still live in
         ``.bob/commands/speckit.*.md``.  We therefore treat the project as
         legacy (command) mode only when managed Spec Kit command files exist
         and no managed Spec Kit skills (``speckit-*`` skill dirs) do.  Passing

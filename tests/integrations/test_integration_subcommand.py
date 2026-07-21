@@ -2662,6 +2662,58 @@ class TestIntegrationUpgrade:
             f"same-layout upgrade must not be blocked by presets: {result.output}"
         )
 
+    def test_upgrade_bob_layout_change_rejected_when_preset_registry_unreadable(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4744636079).
+
+        The preset guard must fail *closed*: if the preset registry exists but
+        cannot be read/parsed (corruption, permissions), the layout-changing
+        upgrade must be rejected before any mutation rather than proceeding on
+        a false "no presets installed" assumption (which would let ``--force``
+        delete preset-overridden command files while their registry state is
+        unknown). A genuinely absent registry must still be allowed.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+        assert sorted(commands.glob("speckit.*.md"))
+
+        # Corrupted (unparseable) registry: exists but cannot be read as JSON.
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True, exist_ok=True)
+        (presets_dir / ".registry").write_text("{ not valid json", encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code != 0, (
+            "layout change must be rejected when preset registry is unreadable"
+        )
+        assert "preset registry" in result.output.lower()
+        assert not skills.exists(), "no skills layout may be scaffolded on rejection"
+        assert sorted(commands.glob("speckit.*.md")), (
+            "legacy command files must be untouched when failing closed"
+        )
+
+        # A valid, empty registry must NOT block the migration.
+        (presets_dir / ".registry").write_text(
+            json.dumps({"presets": {}}), encoding="utf-8"
+        )
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"valid empty preset registry must not block migration: {result.output}"
+        )
+        assert skills.exists(), "skills layout should be scaffolded once unblocked"
+
     def test_upgrade_secondary_bob_layout_change_preserves_active_agent_skills(
         self, tmp_path
     ):
@@ -2857,6 +2909,59 @@ class TestIntegrationUpgrade:
             "upgrading a non-active agent must not resurrect the active agent's "
             "deleted extension skill (#2886)"
         )
+
+    def test_installed_presets_affecting_agent_absent_vs_unreadable(self, tmp_path):
+        """Unit (review #3415, 4744636079): fail closed only when unreadable.
+
+        The preset guard helper must return an empty list for a genuinely
+        absent registry, but raise ``_PresetRegistryUnreadableError`` when the
+        registry exists yet cannot be read/parsed — so a layout-changing
+        upgrade never proceeds on a false "no presets" result.
+        """
+        from specify_cli.integrations._migrate_commands import (
+            _PresetRegistryUnreadableError,
+            _installed_presets_affecting_agent,
+        )
+
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        # Genuinely absent registry → empty list (safe to proceed).
+        assert _installed_presets_affecting_agent(project, "bob") == []
+
+        presets_dir = project / ".specify" / "presets"
+        presets_dir.mkdir(parents=True)
+        registry = presets_dir / ".registry"
+
+        # Corrupted JSON → unreadable → raise.
+        registry.write_text("{ not json", encoding="utf-8")
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Malformed structure (presets not a dict) → unreadable → raise.
+        registry.write_text(json.dumps({"presets": []}), encoding="utf-8")
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
+        # Valid, empty registry → empty list.
+        registry.write_text(json.dumps({"presets": {}}), encoding="utf-8")
+        assert _installed_presets_affecting_agent(project, "bob") == []
+
+        # Valid registry with a preset registered for bob → reported.
+        registry.write_text(
+            json.dumps({
+                "presets": {
+                    "p1": {"registered_commands": {"bob": ["speckit.plan"]}},
+                    "p2": {"registered_commands": {"codex": ["speckit.plan"]}},
+                    "p3": {"registered_skills": ["speckit-x"]},
+                }
+            }),
+            encoding="utf-8",
+        )
+        assert sorted(_installed_presets_affecting_agent(project, "bob")) == [
+            "p1",
+            "p3",
+        ]
 
 
 # ── Full lifecycle ───────────────────────────────────────────────────
