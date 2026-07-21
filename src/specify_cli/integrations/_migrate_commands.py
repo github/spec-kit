@@ -120,14 +120,24 @@ def _installed_presets_affecting_agent(
                 f"preset '{preset_id}' entry is malformed"
             )
         registered_commands = meta.get("registered_commands", {})
-        if not isinstance(registered_commands, dict):
+        if not isinstance(registered_commands, dict) or not all(
+            isinstance(names, list) for names in registered_commands.values()
+        ):
             raise _PresetRegistryUnreadableError(
                 f"preset '{preset_id}' registered_commands is malformed"
             )
         registered_skills = meta.get("registered_skills", [])
         if isinstance(registered_skills, dict):
             # Per-agent provenance ({agent: [skill names]}): only entries for
-            # *this* agent make the preset affect it.
+            # *this* agent make the preset affect it. Values must be lists —
+            # anything else (e.g. null) leaves ownership undecidable, so fail
+            # closed rather than read it as "no artifacts".
+            if not all(
+                isinstance(names, list) for names in registered_skills.values()
+            ):
+                raise _PresetRegistryUnreadableError(
+                    f"preset '{preset_id}' registered_skills is malformed"
+                )
             has_skills = bool(registered_skills.get(agent_key))
         elif isinstance(registered_skills, (list, tuple)):
             # Legacy flat list: not agent-scoped, so any recorded skill may

@@ -3653,6 +3653,25 @@ class TestIntegrationUpgrade:
         with pytest.raises(_PresetRegistryUnreadableError):
             _installed_presets_affecting_agent(project, "bob")
 
+        # Dict-shaped fields with non-list values (ownership undecidable)
+        # must also fail closed, not read as "no artifacts".
+        registry.write_text(
+            json.dumps(
+                {"presets": {"p1": {"registered_skills": {"bob": None}}}}
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+        registry.write_text(
+            json.dumps(
+                {"presets": {"p1": {"registered_commands": {"bob": ""}}}}
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(_PresetRegistryUnreadableError):
+            _installed_presets_affecting_agent(project, "bob")
+
         # Valid, empty registry → empty list.
         registry.write_text(json.dumps({"presets": {}}), encoding="utf-8")
         assert _installed_presets_affecting_agent(project, "bob") == []
