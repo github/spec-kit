@@ -2738,8 +2738,11 @@ class PresetManager:
             skills_dir = self._safe_skills_dir_for_agent(agent_name)
             if skills_dir is None:
                 continue
-            # ponytail: legacy markers lack project ownership for global
-            # outputs; include home paths once provenance records the project.
+            # Only project-local skills directories are eligible: the
+            # legacy provenance markers don't record which project owns a
+            # skill under a home directory, so deletion stays restricted
+            # to the project root. Revisit if provenance ever records the
+            # owning project.
             if not Path(os.path.abspath(skills_dir)).is_relative_to(
                 Path(os.path.abspath(self.project_root))
             ):

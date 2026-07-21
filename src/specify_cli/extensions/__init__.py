@@ -1412,8 +1412,12 @@ class ExtensionManager:
                 skills_candidate,
                 trusted_root,
             ) in self._extension_skill_candidate_dirs().items():
-                # ponytail: flat provenance cannot safely own global output;
-                # include home paths once registry entries identify project/agent.
+                # Only project-local skills directories are eligible: the
+                # flat (non-agent-scoped) registered_skills provenance
+                # cannot prove a home-directory skill belongs to this
+                # project, so deleting there could remove another
+                # project's files. Revisit if registry entries ever record
+                # the owning project/agent.
                 if trusted_root != Path(os.path.abspath(self.project_root)):
                     continue
                 if not skills_candidate.is_dir():
