@@ -974,10 +974,29 @@ class ExtensionManager:
             if not isinstance(selected_ai, str) or not selected_ai:
                 return _ensure_usable(skills_dir)
         else:
-            if not is_agent_skills_enabled(self.project_root, agent_name, opts):
+            from ..shared_infra import _ensure_safe_shared_directory
+
+            ai_skills_enabled = is_agent_skills_enabled(
+                self.project_root, agent_name, opts
+            )
+            if not ai_skills_enabled and agent_name != "kimi":
                 return None
             try:
                 skills_dir = resolve_agent_skills_dir(self.project_root, agent_name)
+                if not ai_skills_enabled:
+                    # Kimi native-skills fallback: only use the directory if
+                    # it already exists; do not create it on demand.
+                    if not skills_dir.is_dir():
+                        return None
+                    _ensure_safe_shared_directory(
+                        self.project_root, skills_dir,
+                        create=False, context="agent skills directory",
+                    )
+                else:
+                    _ensure_safe_shared_directory(
+                        self.project_root, skills_dir,
+                        context="agent skills directory",
+                    )
             except (ValueError, OSError) as exc:
                 _print_cli_warning(
                     "resolve",
@@ -1190,6 +1209,73 @@ class ExtensionManager:
             written.append(skill_name)
 
         return written
+
+    def _register_extension_skills_for_installed_agents(
+        self,
+        manifest: ExtensionManifest,
+        extension_dir: Path,
+        link_outputs: bool = False,
+    ) -> List[str]:
+        """Render extension skills for every skills-mode agent detected.
+
+        Used by paths (like ``extension add``) that register an extension
+        for all agents at once, rather than a single explicit target agent.
+        Checks the active agent (legacy single-agent projects) plus every
+        agent recorded in ``.specify/integration.json``'s installed
+        integrations, and renders skills for whichever of those have skills
+        mode enabled for them specifically, instead of only the active
+        agent (#2948).
+        """
+        from .. import load_init_options
+        from ..integration_state import (
+            try_read_integration_json,
+            installed_integration_keys,
+        )
+
+        opts = load_init_options(self.project_root)
+        if not isinstance(opts, dict):
+            opts = {}
+
+        candidate_agents: List[str] = []
+        active_agent = opts.get("ai")
+        if isinstance(active_agent, str) and active_agent:
+            candidate_agents.append(active_agent)
+
+        state, _error = try_read_integration_json(self.project_root)
+        if state:
+            for key in installed_integration_keys(state):
+                if key not in candidate_agents:
+                    candidate_agents.append(key)
+
+        combined: List[str] = []
+        seen = set()
+        for agent_name in candidate_agents:
+            try:
+                agent_skills = self._register_extension_skills(
+                    manifest,
+                    extension_dir,
+                    link_outputs=link_outputs,
+                    agent_name=agent_name,
+                )
+            except Exception as skills_err:
+                from .. import _print_cli_warning
+                _print_cli_warning(
+                    "register extension skills for",
+                    "extension",
+                    manifest.id,
+                    skills_err,
+                    continuing=(
+                        "Continuing with available registration results for "
+                        "this extension and the remaining agents."
+                    ),
+                )
+                continue
+            for skill_name in agent_skills:
+                if skill_name not in seen:
+                    seen.add(skill_name)
+                    combined.append(skill_name)
+
+        return combined
 
     @staticmethod
     def _is_expected_dev_symlink(skill_file: Path, cache_file: Path) -> bool:
@@ -1475,9 +1561,11 @@ class ExtensionManager:
                 create_missing_active_skills_dir=True,
             )
 
-        # Auto-register extension commands as agent skills when skills mode
-        # was used during project initialisation (feature parity).
-        registered_skills = self._register_extension_skills(
+        # Auto-register extension commands as agent skills for every
+        # skills-mode agent detected (active agent plus any other
+        # installed integrations in skills mode), not just the active
+        # agent (#2948).
+        registered_skills = self._register_extension_skills_for_installed_agents(
             manifest, dest_dir, link_outputs=link_commands
         )
 

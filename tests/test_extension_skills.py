@@ -219,6 +219,40 @@ def no_skills_project(project_dir):
     return project_dir
 
 
+def _create_integration_json(
+    project_root: Path,
+    *,
+    default_agent: str,
+    installed: list,
+    skills_by_agent: dict,
+):
+    """Write a .specify/integration.json with per-agent skills settings.
+
+    ``skills_by_agent`` maps agent key -> bool for
+    ``integration_settings[agent].parsed_options.skills``.
+    """
+    specify_dir = project_root / ".specify"
+    specify_dir.mkdir(parents=True, exist_ok=True)
+    settings = {}
+    for agent in installed:
+        entry = {"script": "sh", "invoke_separator": "-"}
+        if agent in skills_by_agent:
+            entry["raw_options"] = "--skills" if skills_by_agent[agent] else ""
+            entry["parsed_options"] = {"skills": skills_by_agent[agent]}
+        settings[agent] = entry
+    payload = {
+        "version": "0.1.0",
+        "integration_state_schema": 1,
+        "installed_integrations": installed,
+        "integration_settings": settings,
+        "integration": default_agent,
+        "default_integration": default_agent,
+    }
+    (specify_dir / "integration.json").write_text(
+        json.dumps(payload), encoding="utf-8"
+    )
+
+
 # ===== ExtensionManager._get_skills_dir Tests =====
 
 class TestExtensionManagerGetSkillsDir:
@@ -1906,3 +1940,97 @@ class TestExtensionSkillEdgeCases:
         assert result is True
         assert not (skills_dir / "speckit-test-ext-hello").exists()
         assert not (skills_dir / "speckit-test-ext-world").exists()
+
+
+# ===== Per-agent (non-active) skills mode tests (#2948) =====
+class TestNonActiveAgentSkillRegistration:
+    """Skills should render for any skills-mode agent, not just the active one."""
+
+    def test_register_enabled_extensions_for_agent_renders_non_active_agent_skills(
+        self, project_dir, extension_dir
+    ):
+        """upgrade/install-style registration should target the given agent."""
+        _create_init_options(project_dir, ai="claude", ai_skills=False)
+        _create_integration_json(
+            project_dir,
+            default_agent="claude",
+            installed=["claude", "copilot"],
+            skills_by_agent={"copilot": True},
+        )
+        copilot_skills_dir = _create_skills_dir(project_dir, ai="copilot")
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+        manifest = manager.get_extension("test-ext")
+
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-test-ext-hello" in metadata["registered_skills"]
+        assert (
+            copilot_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()
+
+    def test_register_enabled_extensions_for_agent_does_not_affect_active_agent(
+        self, project_dir, extension_dir
+    ):
+        """Rendering skills for a non-active agent must not touch the active agent's own skills."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = _create_skills_dir(project_dir, ai="claude")
+        _create_integration_json(
+            project_dir,
+            default_agent="claude",
+            installed=["claude", "copilot"],
+            skills_by_agent={"copilot": True},
+        )
+        copilot_skills_dir = _create_skills_dir(project_dir, ai="copilot")
+
+        manager = ExtensionManager(project_dir)
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Simulate the user deleting the claude skill files before re-running
+        # registration for a different (copilot) agent.
+        claude_skill_dir = claude_skills_dir / "speckit-test-ext-hello"
+        shutil.rmtree(claude_skill_dir)
+        assert not claude_skill_dir.exists()
+
+        manager.register_enabled_extensions_for_agent("copilot")
+
+        # Copilot's skills were rendered...
+        assert (
+            copilot_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()
+        # ...but claude's deleted skill was not resurrected.
+        assert not claude_skill_dir.exists()
+
+    def test_extension_add_renders_skills_for_all_installed_skills_mode_agents(
+        self, project_dir, extension_dir
+    ):
+        """extension add should render skills for every installed skills-mode agent."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = _create_skills_dir(project_dir, ai="claude")
+        _create_integration_json(
+            project_dir,
+            default_agent="claude",
+            installed=["claude", "copilot"],
+            skills_by_agent={"copilot": True},
+        )
+        copilot_skills_dir = _create_skills_dir(project_dir, ai="copilot")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        metadata = manager.registry.get(manifest.id)
+        assert "speckit-test-ext-hello" in metadata["registered_skills"]
+        assert (
+            claude_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()
+        assert (
+            copilot_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()
