@@ -5181,6 +5181,123 @@ class TestPresetSkills:
             "source was missing"
         )
 
+    def test_remove_after_partial_command_to_skills_toggle_keeps_skills_mode_agent_command_free(
+        self, project_dir, temp_dir
+    ):
+        """Removal must not recreate a command file for a skills-mode agent.
+
+        A partially failed command→skills toggle leaves the active agent's
+        stale ``registered_commands`` entry behind. Removing that preset
+        records the agent in ``extra_agents`` for post-removal
+        reconciliation, and ``register_commands_for_non_skill_agents``
+        admits every ``extra_agents`` member even when the active-only
+        ``only_agent`` guard excludes the agent — so the surviving
+        lower-priority preset's command file was recreated for an agent
+        now running in skills mode (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir, "stale-toggle-lower-preset", "speckit.plan",
+            "Lower preset", "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir, "stale-toggle-higher-preset", "speckit.plan",
+            "Higher preset", "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+
+        command_file = copilot_commands_dir / "speckit.plan.agent.md"
+        assert "Higher body" in command_file.read_text(encoding="utf-8"), (
+            "sanity: command mode should have written the winning preset"
+        )
+
+        # Break the higher preset's installed source so its skill
+        # replacement is silently skipped during the toggle — a genuine
+        # partial command→skills toggle that leaves the stale
+        # registered_commands entry for copilot behind.
+        (manager.presets_dir / "stale-toggle-higher-preset" / "commands" / "speckit.plan.md").unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("stale-toggle-higher-preset")
+        assert "speckit.plan" in metadata["registered_commands"].get("copilot", []), (
+            "sanity: the partial toggle must leave the stale command "
+            "tracking behind"
+        )
+
+        manager.remove("stale-toggle-higher-preset")
+
+        assert not command_file.exists(), (
+            "removing the preset while copilot runs in skills mode must "
+            "not recreate its command file from the surviving lower "
+            "preset via the stale extra_agents entry (#2948)"
+        )
+
+    def test_remove_after_partial_skills_to_command_toggle_deletes_stale_skill(
+        self, project_dir, temp_dir
+    ):
+        """Removal must delete, not restore, a command-mode agent's stale skill.
+
+        The inverse partial toggle: a skills→command conversion that could
+        not replace one command leaves that skill tracked in
+        ``registered_skills``. Removing the preset while the agent is now
+        in command mode sent it through ``_unregister_skills()``, which
+        restored a core/extension ``SKILL.md``, and ``extra_skills_dirs``
+        then let ``_reconcile_skills`` reapply the surviving lower preset —
+        leaving the active command-mode agent with a skill artifact it
+        must not have (#2948).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=True)
+        copilot_commands_dir = project_dir / ".github" / "agents"
+        copilot_commands_dir.mkdir(parents=True)
+
+        lower_dir = self._create_command_preset(
+            temp_dir, "inverse-toggle-lower-preset", "speckit.plan",
+            "Lower preset", "Lower body",
+        )
+        higher_dir = self._create_command_preset(
+            temp_dir, "inverse-toggle-higher-preset", "speckit.plan",
+            "Higher preset", "Higher body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(lower_dir, "0.1.5", priority=20)
+        manager.install_from_directory(higher_dir, "0.1.5", priority=10)
+
+        skill_dir = project_dir / ".github" / "skills" / "speckit-plan"
+        assert (skill_dir / "SKILL.md").exists(), (
+            "sanity: skills mode should have written the skill"
+        )
+
+        # Break the higher preset's installed source so its command
+        # replacement never lands during the skills→command toggle,
+        # leaving the skill tracked for copilot.
+        (manager.presets_dir / "inverse-toggle-higher-preset" / "commands" / "speckit.plan.md").unlink()
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        manager.register_enabled_presets_for_agent("copilot")
+
+        metadata = manager.registry.get("inverse-toggle-higher-preset")
+        registered_skills = metadata.get("registered_skills") or {}
+        assert registered_skills.get("copilot"), (
+            "sanity: the partial toggle must leave the stale skill "
+            "tracking behind"
+        )
+        assert (skill_dir / "SKILL.md").exists(), (
+            "sanity: the stale skill artifact must survive the partial toggle"
+        )
+
+        manager.remove("inverse-toggle-higher-preset")
+
+        assert not skill_dir.exists(), (
+            "removing the preset while copilot runs in command mode must "
+            "delete the stale preset-owned skill instead of restoring core "
+            "content or reapplying the surviving lower preset (#2948)"
+        )
+
     def test_lower_priority_skill_does_not_remove_failed_winner_command(
         self, project_dir, temp_dir
     ):

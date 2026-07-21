@@ -1476,6 +1476,18 @@ class PresetManager:
             ):
                 only_agent = ""
 
+        # The active agent's participation is decided exclusively by the
+        # only_agent guard above (which encodes the ai_skills mode). A
+        # partially failed command→skills toggle can leave the active agent
+        # behind in extra_agents via its stale registered_commands entry,
+        # and register_commands_for_non_skill_agents admits every
+        # extra_agents member even when only_agent excludes the agent —
+        # recreating a command file for an agent now running in skills
+        # mode. Never re-admit the active agent through the
+        # historical-agents side channel (#2948).
+        if extra_agents and isinstance(resolved_agent, str):
+            extra_agents = set(extra_agents) - {resolved_agent}
+
         # Cache registry and manifests outside the loop to avoid
         # repeated filesystem reads for each command name.
         presets_by_priority = list(self.registry.list_by_priority())
@@ -3405,13 +3417,60 @@ class PresetManager:
             Path, tuple[Optional[str], List[str]]
         ] = {}
         if registered_skills:
+            restorable_skills = registered_skills
+            # A skill tracked for a command-backed agent whose ai_skills is
+            # now off is a leftover from a partially failed skills→command
+            # toggle. Restoring it via _unregister_skills (and letting
+            # _reconcile_skills reapply a surviving lower preset through
+            # extra_skills_dirs) would hand the active command-mode agent a
+            # skill artifact it must not have — its current representation
+            # is the command file handled via registered_commands above.
+            # Delete the preset-owned skill instead and keep its directory
+            # out of restoration/reconciliation entirely (#2948). Inactive
+            # agents' entries still restore as before.
+            # The legacy branch above locally imports load_init_options,
+            # shadowing the module-level name for this whole function.
+            from .._init_options import load_init_options as _load_init_options
+
+            resolved_active = resolve_active_agent_for_registration(
+                self.project_root
+            )
+            if (
+                isinstance(registered_skills, dict)
+                and isinstance(resolved_active, str)
+                and resolved_active in registered_skills
+                and _CommandRegistrarForScope is not None
+                and _CommandRegistrarForScope.AGENT_CONFIGS.get(
+                    resolved_active, {}
+                ).get("extension") != "/SKILL.md"
+                and not is_ai_skills_enabled(
+                    _load_init_options(self.project_root)
+                )
+            ):
+                raw_names = registered_skills.get(resolved_active)
+                stale_names = [
+                    name
+                    for name in (
+                        raw_names if isinstance(raw_names, list) else []
+                    )
+                    if isinstance(name, str)
+                ]
+                restorable_skills = {
+                    agent_name: names
+                    for agent_name, names in registered_skills.items()
+                    if agent_name != resolved_active
+                }
+                if stale_names:
+                    self._delete_agent_preset_skills(
+                        resolved_active, stale_names, pack_id
+                    )
             override_sources = {
                 skill_name: f"override:{command_name}"
                 for command_name in removed_cmd_names
                 for skill_name in self._skill_names_for_command(command_name)
             }
             affected_skill_dirs = self._unregister_skills(
-                registered_skills,
+                restorable_skills,
                 pack_dir,
                 additional_owned_sources=override_sources,
             )
