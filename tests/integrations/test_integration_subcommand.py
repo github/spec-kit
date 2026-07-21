@@ -2662,6 +2662,63 @@ class TestIntegrationUpgrade:
             f"same-layout upgrade must not be blocked by presets: {result.output}"
         )
 
+    def test_upgrade_secondary_bob_layout_change_preserves_active_agent_skills(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4726347306).
+
+        ``integration upgrade`` supports upgrading a *secondary* (non-active)
+        integration. The layout-change extension reconciliation must NOT run
+        for a secondary agent: ``unregister_agent_artifacts`` treats the
+        unscoped per-extension ``registered_skills`` as belonging to the passed
+        agent and, if that agent's skills dir is absent, scans every agent's
+        skills dir — which could delete/untrack the *active* agent's extension
+        skills. The following re-registration cannot repair that because
+        extension skill rendering is active-agent-scoped (#2948).
+        """
+        # Active agent: copilot in skills mode → git extension renders as skills.
+        project = _init_project(tmp_path, "copilot", integration_options="--skills")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+
+        skill = project / ".github" / "skills" / "speckit-git-feature" / "SKILL.md"
+        assert skill.exists(), "precondition: active copilot has the git extension skill"
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+
+        def _git_skills():
+            data = json.loads(registry_path.read_text(encoding="utf-8"))
+            return data["extensions"]["git"].get("registered_skills", [])
+
+        assert _git_skills(), "precondition: git skills registered for active copilot"
+
+        # Add a secondary (non-active) Bob in the legacy commands layout.
+        result = _run_in_project(project, [
+            "integration", "install", "bob",
+            "--integration-options", "--legacy-commands",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # Flip the *secondary* Bob's layout to skills. copilot stays active.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+
+        # The active agent's extension skill must be untouched on disk and in
+        # the registry — the secondary layout change must not reconcile it.
+        assert skill.exists(), (
+            "secondary Bob layout change must not delete the active agent's "
+            "extension skill"
+        )
+        assert _git_skills(), (
+            "secondary Bob layout change must not untrack the active agent's "
+            "extension skills in the registry"
+        )
+
     def test_upgrade_preserves_existing_vscode_settings(self, tmp_path):
         """Regression: copilot upgrade must not stale-delete .vscode/settings.json.
 

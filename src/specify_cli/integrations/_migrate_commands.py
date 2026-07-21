@@ -612,6 +612,19 @@ def integration_upgrade(
     # re-registration below recreates them in the new layout. ``upgrade``s that
     # don't change layout skip this to avoid needless remove/re-add churn.
     #
+    # Only the *active* integration is reconciled this way (``installed_key ==
+    # key``).  ``ExtensionManager.unregister_agent_artifacts`` treats the
+    # per-extension ``registered_skills`` list as belonging to the passed agent
+    # and, when that agent's skills directory is absent, falls back to scanning
+    # every agent's skills directory — so running it for a *secondary*
+    # (non-active) agent could delete or untrack the *active* agent's extension
+    # skills.  The subsequent re-registration cannot repair that because
+    # extension skill rendering is intentionally scoped to the active agent
+    # (#2948).  Extension skills only ever exist for the active agent, so
+    # skipping the unregister for a secondary agent orphans nothing new: a
+    # secondary agent only has extension *command* files, which the
+    # re-registration below rewrites in place regardless of layout.
+    #
     # Known limitation: preset command/skill artifacts are NOT reconciled on a
     # layout change. There is no agent-scoped preset re-registration mechanism
     # anywhere in the CLI — ``use`` / ``switch`` / ``upgrade`` never reconcile
@@ -622,8 +635,10 @@ def integration_upgrade(
     # layout) when no preset artifacts are at stake. Full preset reconciliation
     # would require a new cross-cutting PresetManager subsystem affecting every
     # dual-layout agent, which is out of scope for this Bob migration.
-    if _manifest_tracks_skill_layout(old_manifest) != _manifest_tracks_skill_layout(
-        new_manifest
+    if (
+        installed_key == key
+        and _manifest_tracks_skill_layout(old_manifest)
+        != _manifest_tracks_skill_layout(new_manifest)
     ):
         _unregister_extensions_for_agent(
             project_root,
