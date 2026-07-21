@@ -14,6 +14,29 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Scope Guard
+
+This command updates project governance only. It may modify:
+
+- `.specify/memory/constitution.md`
+- dependent templates under `.specify/templates/`
+- installed Spec Kit command files and runtime guidance documents when required to keep
+  them consistent with the amended constitution
+
+It **MUST NOT** create or modify application source code, feature specifications, plans,
+tasks, tests, or other implementation artifacts.
+
+If the user input includes feature requests, implementation instructions, or other
+non-governance work:
+
+1. Extract that content as out-of-scope intent.
+2. Do not execute it during this command.
+3. Complete the constitution update using only the governance-related input.
+4. Report the out-of-scope intent under **Suggested Follow-ups**, with the appropriate
+   next command (typically `__SPECKIT_COMMAND_SPECIFY__ <intent>`).
+
+Never invoke a suggested follow-up command automatically.
+
 ## Pre-Execution Checks
 
 **Check for extension hooks (before constitution update)**:
@@ -103,6 +126,9 @@ Follow this execution flow:
 8. Output a final summary to the user with:
    - New version and bump rationale.
    - Any files flagged for manual follow-up.
+   - A **Suggested Follow-ups** section listing any out-of-scope intent captured by the
+     Scope Guard and its recommended command. Omit this section when there is no
+     out-of-scope intent.
    - Suggested commit message (e.g., `docs: amend constitution to vX.Y.Z (principle additions + governance update)`).
 
 Formatting & Style Requirements:
