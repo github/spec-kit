@@ -773,6 +773,29 @@ class ExtensionManager:
         return marker.is_file() and not marker.is_symlink()
 
     @staticmethod
+    def _is_legacy_keep_config_leftover(directory: Path) -> bool:
+        """Return True for the pre-marker ``remove(..., keep_config=True)`` layout.
+
+        Older CLI releases preserved only top-level config files and removed every
+        other entry, but they did not write ``.keep-config``. Recognize that exact
+        config-only leftover so upgrades still preserve user config, while
+        excluding partially-failed installs that still contain copied payload such
+        as ``extension.yml`` or command directories.
+        """
+        if not directory.is_dir() or directory.is_symlink():
+            return False
+
+        has_config = False
+        for entry in directory.iterdir():
+            if entry.name.endswith(("-config.yml", "-config.local.yml")) and (
+                entry.is_file() or entry.is_symlink()
+            ):
+                has_config = True
+                continue
+            return False
+        return has_config
+
+    @staticmethod
     def _collect_manifest_command_names(manifest: ExtensionManifest) -> Dict[str, str]:
         """Collect command and alias names declared by a manifest.
 
@@ -1557,12 +1580,37 @@ class ExtensionManager:
             live_names = _recognized_config_names(
                 dest_dir, follow_symlinks=False
             )
+
+            def _matches_source_config_baseline(config_name: str) -> bool:
+                source_file = source_dir / config_name
+                live_file = dest_dir / config_name
+                if source_file.is_symlink() or live_file.is_symlink():
+                    return False
+                if not source_file.is_file() or not live_file.is_file():
+                    return False
+                try:
+                    source_stat = source_file.stat()
+                    source_bytes = source_file.read_bytes()
+                    live_stat = live_file.stat()
+                    live_bytes = live_file.read_bytes()
+                except OSError:
+                    return False
+                return live_bytes == source_bytes and stat.S_IMODE(
+                    live_stat.st_mode
+                ) == stat.S_IMODE(source_stat.st_mode)
+
             # A live-only config created after the interrupted attempt is not
             # enumerated by staging, so without this it would be silently
-            # deleted by the rmtree below and its bytes lost. Treat it as a
-            # conflict so both locations are preserved and the user resolves it.
+            # deleted by the rmtree below and its bytes lost. Live-only files
+            # that still match the current package baseline are safe: they were
+            # copied by the interrupted install and can be recreated on retry.
+            # Only truly divergent live-only configs are conflicts.
             live_only = live_names - staged_names
-            conflicting.update(live_only)
+            conflicting.update(
+                name
+                for name in live_only
+                if not _matches_source_config_baseline(name)
+            )
             # Load original permission bits from the sidecar JSON written by
             # the staging step.  Staged files are kept at mode 0o600 so that
             # rmtree always succeeds on Windows, so staged_stat.st_mode would
@@ -1661,7 +1709,10 @@ class ExtensionManager:
         elif (
             dest_dir.exists()
             and not self.registry.is_installed(manifest.id)
-            and self._has_keep_config_marker(dest_dir)
+            and (
+                self._has_keep_config_marker(dest_dir)
+                or self._is_legacy_keep_config_leftover(dest_dir)
+            )
         ):
             for cfg_file in (
                 list(dest_dir.glob("*-config.yml"))

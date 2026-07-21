@@ -1290,6 +1290,40 @@ class TestExtensionManager:
         assert local_cfg.exists()
         assert "local_override: true" in local_cfg.read_text()
 
+    def test_reinstall_after_legacy_keep_config_preserves_config(
+        self, extension_dir, project_dir
+    ):
+        """Pre-marker keep-config leftovers are still rescued on reinstall."""
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\nmax_iterations: 1\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: legacy-custom-model\nmax_iterations: 99\n")
+
+        manager.remove("test-ext", keep_config=True)
+        (ext_dir / ".keep-config").unlink()
+        assert not manager.registry.is_installed("test-ext")
+        assert config_file.exists()
+        assert "legacy-custom-model" in config_file.read_text()
+
+        packaged_config.write_text("model: upgraded-default-model\nmax_iterations: 2\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert config_file.exists()
+        assert "legacy-custom-model" in config_file.read_text()
+        assert "99" in config_file.read_text()
+        assert "upgraded-default-model" not in config_file.read_text()
+
     def test_reinstall_with_symlinked_config_rejects_install(
         self, extension_dir, project_dir
     ):
@@ -1688,6 +1722,67 @@ class TestExtensionManager:
         if platform.system() != "Windows":
             restored_mode = config_file.stat().st_mode
             assert stat.S_IMODE(restored_mode) == stat.S_IMODE(original_mode)
+
+    def test_retry_ignores_live_only_packaged_config_after_registry_failure(
+        self, extension_dir, project_dir, monkeypatch
+    ):
+        """Retry should keep packaged live-only configs that still match source."""
+        manager = ExtensionManager(project_dir)
+
+        packaged_config = extension_dir / "test-ext-config.yml"
+        packaged_config.write_text("model: default-model\n")
+
+        manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        ext_dir = project_dir / ".specify" / "extensions" / "test-ext"
+        config_file = ext_dir / "test-ext-config.yml"
+        config_file.write_text("model: custom-model\nmax_iterations: 99\n")
+        original_bytes = config_file.read_bytes()
+
+        manager.remove("test-ext", keep_config=True)
+        assert not manager.registry.is_installed("test-ext")
+
+        live_only_packaged = extension_dir / "test-ext-config.local.yml"
+        live_only_packaged.write_text("new_default: true\n")
+
+        original_add = manager.registry.add
+        add_calls = 0
+
+        def flaky_add(*args, **kwargs):
+            nonlocal add_calls
+            add_calls += 1
+            if add_calls == 1:
+                raise OSError("simulated registry failure")
+            return original_add(*args, **kwargs)
+
+        monkeypatch.setattr(manager.registry, "add", flaky_add)
+
+        with pytest.raises(OSError, match="simulated registry failure"):
+            manager.install_from_directory(
+                extension_dir, "0.1.0", register_commands=False
+            )
+
+        staging_dir = manager._rescue_staging_dir("test-ext")
+        assert staging_dir.exists()
+        assert (staging_dir / ".rescue-complete").exists()
+        assert config_file.read_bytes() == original_bytes
+        assert (
+            ext_dir / "test-ext-config.local.yml"
+        ).read_text() == "new_default: true\n"
+
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        assert manifest.id == "test-ext"
+        assert manager.registry.is_installed("test-ext")
+        assert config_file.read_bytes() == original_bytes
+        assert (
+            ext_dir / "test-ext-config.local.yml"
+        ).read_text() == "new_default: true\n"
+        assert not staging_dir.exists()
 
     def test_retry_with_edited_live_config_aborts_and_preserves_both(
         self, extension_dir, project_dir, monkeypatch
