@@ -43,7 +43,7 @@ class Scope(str, Enum):
 BUILTIN_DEFAULT_STACK: tuple[dict[str, Any], ...] = (
     {"id": "default", "url": "builtin://default", "priority": 1,
      "install_policy": InstallPolicy.INSTALL_ALLOWED.value},
-    {"id": "community", "url": "builtin://community", "priority": 2,
+    {"id": "community", "url": "builtin://community", "priority": 20,
      "install_policy": InstallPolicy.DISCOVERY_ONLY.value},
 )
 

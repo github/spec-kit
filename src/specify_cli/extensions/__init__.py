@@ -9,11 +9,13 @@ without bloating the core framework.
 from __future__ import annotations
 
 import copy
+import errno
 import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -101,6 +103,51 @@ def _load_core_command_names() -> frozenset[str]:
 CORE_COMMAND_NAMES = _load_core_command_names()
 
 
+def _fsync_fd(fd: int) -> None:
+    """Sync a file descriptor, raising on real storage errors."""
+    try:
+        os.fsync(fd)
+    except AttributeError:
+        return
+    except NotImplementedError:
+        return
+    except OSError as exc:
+        if exc.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.EBADF}:
+            return
+        raise
+
+
+def _fsync_directory(path: Path) -> None:
+    """Sync a directory when the platform supports it."""
+    if not path.exists():
+        return
+    if os.name == "nt":
+        return
+    try:
+        dir_fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except (AttributeError, NotImplementedError):
+        return
+    except OSError as exc:
+        if exc.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.EBADF}:
+            return
+        try:
+            dir_fd = os.open(str(path), os.O_RDONLY)
+        except (AttributeError, NotImplementedError):
+            return
+        except OSError as exc2:
+            if exc2.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.EINVAL, errno.EBADF}:
+                return
+            raise
+    try:
+        _fsync_fd(dir_fd)
+    finally:
+        try:
+            os.close(dir_fd)
+        except OSError:
+            # Cleanup after an fsync failure should not mask the original error.
+            pass
+
+
 class ExtensionError(Exception):
     """Base exception for extension-related errors."""
 
@@ -136,7 +183,7 @@ def normalize_priority(value: Any, default: int = DEFAULT_HOOK_PRIORITY) -> int:
         return default
     try:
         priority = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
     return priority if priority >= 1 else default
 
@@ -698,6 +745,55 @@ class ExtensionManager:
         self.project_root = project_root
         self.extensions_dir = project_root / ".specify" / "extensions"
         self.registry = ExtensionRegistry(self.extensions_dir)
+
+    def _rescue_staging_dir(self, extension_id: str) -> Path:
+        """Fixed-length staging directory path for a preserved-config rescue.
+
+        The extension ID can be arbitrarily long (manifest validation caps only
+        the character set, not the length), so embedding it verbatim in a single
+        path component could push the ``.rescue-staging-<id>`` directory past a
+        filesystem's per-component byte limit and make every reinstall after
+        ``--keep-config`` fail with ``ENAMETOOLONG`` even though the extension
+        installs fine at ``dest_dir``. Hash the ID to a fixed-length suffix so
+        the component length is bounded regardless of ID length.
+        """
+        digest = hashlib.sha256(extension_id.encode("utf-8")).hexdigest()[:16]
+        return self.extensions_dir / f".rescue-staging-{digest}"
+
+    @staticmethod
+    def _has_keep_config_marker(directory: Path) -> bool:
+        """Return True when *directory* contains a valid ``.keep-config`` marker.
+
+        The marker is a regular (non-symlink) file written by
+        ``remove(..., keep_config=True)`` to record explicit provenance.  Its
+        content is intentionally empty — only presence matters, not content.
+        The symlink guard prevents a crafted symlink from fooling the check.
+        """
+        marker = directory / ".keep-config"
+        return marker.is_file() and not marker.is_symlink()
+
+    @staticmethod
+    def _is_legacy_keep_config_leftover(directory: Path) -> bool:
+        """Return True for the pre-marker ``remove(..., keep_config=True)`` layout.
+
+        Older CLI releases preserved only top-level config files and removed every
+        other entry, but they did not write ``.keep-config``. Recognize that exact
+        config-only leftover so upgrades still preserve user config, while
+        excluding partially-failed installs that still contain copied payload such
+        as ``extension.yml`` or command directories.
+        """
+        if not directory.is_dir() or directory.is_symlink():
+            return False
+
+        has_config = False
+        for entry in directory.iterdir():
+            if entry.name.endswith(("-config.yml", "-config.local.yml")) and (
+                entry.is_file() or entry.is_symlink()
+            ):
+                has_config = True
+                continue
+            return False
+        return has_config
 
     @staticmethod
     def _collect_manifest_command_names(manifest: ExtensionManifest) -> Dict[str, str]:
@@ -1428,12 +1524,421 @@ class ExtensionManager:
                 backup_config_dir.unlink()
             did_remove = self.remove(manifest.id)
 
+        # Load and validate .extensionignore BEFORE reading/creating the rescue
+        # staging directory (and thus before deleting dest_dir). The loader can
+        # raise ValidationError (invalid UTF-8) or OSError; doing it first means
+        # such a failure aborts while the kept config is still authoritative in
+        # its documented location, rather than leaving a freshly published
+        # staging copy that a later retry (after the user edits the kept config)
+        # would reload and use to overwrite the newer bytes. Any staging left by
+        # an earlier destructive attempt is intentionally left intact here.
+        ignore_fn = self._load_extensionignore(source_dir)
+
+        # Rescue any config files left behind by a prior `remove --keep-config`.
+        # When an extension is removed with --keep-config, it is no longer in
+        # the registry but its config files remain in dest_dir.  A subsequent
+        # plain (non-force) install would delete that directory unconditionally,
+        # silently discarding the preserved config.  We read those files into
+        # memory and also write a durable staging copy outside dest_dir so
+        # that a partial rmtree, failed copytree, or partial restore cannot
+        # permanently discard the user's original bytes on a retry.  The
+        # staging dir is removed only after every config has been successfully
+        # restored.
+        stranded_configs: dict[str, tuple[bytes, int]] = {}
+        rescue_staging_dir = self._rescue_staging_dir(manifest.id)
+        # A staging directory is trusted only when this completion marker is
+        # present.  The marker is written after every staged file is complete
+        # and removed before the non-atomic cleanup, so a crash mid-staging or
+        # mid-cleanup can never leave a partial directory that a retry mistakes
+        # for a complete durable backup.
+        rescue_complete_marker = rescue_staging_dir / ".rescue-complete"
+        staging_is_complete = (
+            rescue_staging_dir.is_dir()
+            and not rescue_staging_dir.is_symlink()
+            and rescue_complete_marker.is_file()
+            and not rescue_complete_marker.is_symlink()
+        )
+
+        if staging_is_complete and not self.registry.is_installed(manifest.id):
+            # A previous install attempt staged the configs but never
+            # completed cleanly.  Reload from the durable backup so the
+            # original bytes are used on retry rather than whatever
+            # mixture of packaged defaults and partial restores remains
+            # on disk.  Only load non-symlinked files whose names match
+            # the two recognised config suffixes so a tampered staging
+            # directory cannot inject arbitrary files.
+            #
+            # A complete staging directory proves only that staging finished,
+            # not that dest_dir was ever modified: a crash after staging was
+            # synced but before the rmtree below leaves the live kept config
+            # intact. If the user then edits that live config before retrying,
+            # blindly preferring the staged bytes would silently overwrite the
+            # newer config. The staged and live copies are indistinguishable
+            # in provenance from disk alone (a genuine post-crash edit vs. a
+            # packaged default written by a partially-completed copytree), so
+            # when a live config disagrees with its staged copy we must not
+            # silently pick either — preserve both and abort, letting the user
+            # resolve it. dest_dir is still untouched here, so raising is safe.
+            def _recognized_config_names(
+                directory: Path, *, follow_symlinks: bool = True
+            ) -> set[str]:
+                names: set[str] = set()
+                if not directory.is_dir():
+                    return names
+                for entry in directory.iterdir():
+                    if not entry.name.endswith(
+                        ("-config.yml", "-config.local.yml")
+                    ):
+                        continue
+                    if follow_symlinks:
+                        if entry.is_file() and not entry.is_symlink():
+                            names.add(entry.name)
+                    else:
+                        # Include symlinks without following them so that
+                        # live-only symlinked configs are detected and
+                        # preserved rather than silently deleted.
+                        if entry.is_file() or entry.is_symlink():
+                            names.add(entry.name)
+                return names
+
+            conflicting: set[str] = set()
+            staged_names = _recognized_config_names(rescue_staging_dir)
+            live_names = _recognized_config_names(
+                dest_dir, follow_symlinks=False
+            )
+
+            def _matches_source_config_baseline(config_name: str) -> bool:
+                source_file = source_dir / config_name
+                live_file = dest_dir / config_name
+                if source_file.is_symlink() or live_file.is_symlink():
+                    return False
+                if not source_file.is_file() or not live_file.is_file():
+                    return False
+                try:
+                    source_stat = source_file.stat()
+                    source_bytes = source_file.read_bytes()
+                    live_stat = live_file.stat()
+                    live_bytes = live_file.read_bytes()
+                except OSError:
+                    return False
+                return live_bytes == source_bytes and stat.S_IMODE(
+                    live_stat.st_mode
+                ) == stat.S_IMODE(source_stat.st_mode)
+
+            # A live-only config created after the interrupted attempt is not
+            # enumerated by staging, so without this it would be silently
+            # deleted by the rmtree below and its bytes lost. Live-only files
+            # that still match the current package baseline are safe: they were
+            # copied by the interrupted install and can be recreated on retry.
+            # Only truly divergent live-only configs are conflicts.
+            live_only = live_names - staged_names
+            conflicting.update(
+                name
+                for name in live_only
+                if not _matches_source_config_baseline(name)
+            )
+            # Load original permission bits from the sidecar JSON written by
+            # the staging step.  Staged files are kept at mode 0o600 so that
+            # rmtree always succeeds on Windows, so staged_stat.st_mode would
+            # always be 0o600 and must not be used for mode comparisons or
+            # restoration; the sidecar records the true original mode.
+            rescue_modes_file = rescue_staging_dir / ".rescue-modes.json"
+            _staged_modes: dict[str, int] = {}
+            if rescue_modes_file.is_file() and not rescue_modes_file.is_symlink():
+                try:
+                    _loaded_modes = json.loads(rescue_modes_file.read_bytes())
+                except (OSError, ValueError):
+                    # Ignore unreadable/invalid sidecar metadata and fall back
+                    # to each staged file's mode for compatibility.
+                    pass
+                else:
+                    # json.loads() succeeds for any valid JSON document, so a
+                    # sidecar containing e.g. `[]` or a string would otherwise
+                    # crash later at _staged_modes.get() or stat.S_IMODE().
+                    # Accept only a mapping of string filenames to integer modes
+                    # (bool is rejected despite subclassing int); anything else
+                    # falls back to each staged file's own mode.
+                    if isinstance(_loaded_modes, dict) and all(
+                        isinstance(name, str)
+                        and isinstance(recorded_mode, int)
+                        and not isinstance(recorded_mode, bool)
+                        for name, recorded_mode in _loaded_modes.items()
+                    ):
+                        _staged_modes = _loaded_modes
+            for staged_name in sorted(staged_names):
+                staged_file = rescue_staging_dir / staged_name
+                staged_stat = staged_file.stat()
+                staged_bytes = staged_file.read_bytes()
+                # Prefer the sidecar-recorded mode; fall back to the staged
+                # file's own mode for backwards-compat with staging dirs
+                # written before the sidecar was introduced.
+                staged_mode = _staged_modes.get(
+                    staged_name, stat.S_IMODE(staged_stat.st_mode)
+                )
+                live_file = dest_dir / staged_name
+                if live_file.is_symlink():
+                    # A user may have replaced the live config with a symlink
+                    # after the interrupted attempt. It cannot be compared by
+                    # bytes/mode against the staged copy, and the rmtree below
+                    # would silently delete this newer choice and restore the
+                    # older staged file. Treat any live symlink as a conflict so
+                    # both are preserved and the user resolves it.
+                    conflicting.add(staged_name)
+                elif live_file.is_file():
+                    # A live config that cannot be read or stat'ed must not be
+                    # treated as non-conflicting: the rmtree below would delete
+                    # it and restore the stale staged copy. Abort while dest_dir
+                    # is untouched so no newer or permission-restricted config is
+                    # lost. Divergence also includes permission-only edits (for
+                    # example tightening a secret-bearing config from 0644 to
+                    # 0600), which byte equality alone would miss and then revert.
+                    try:
+                        live_stat = live_file.stat()
+                        live_bytes = live_file.read_bytes()
+                    except OSError:
+                        conflicting.add(staged_name)
+                    else:
+                        if live_bytes != staged_bytes or stat.S_IMODE(
+                            live_stat.st_mode
+                        ) != staged_mode:
+                            conflicting.add(staged_name)
+                stranded_configs[staged_name] = (staged_bytes, staged_mode)
+            if conflicting:
+                # Split into two cases for accurate user guidance: files that
+                # exist in both locations but have diverged, and files that
+                # exist only in the live directory with no rescue-backup copy.
+                both_diverged = conflicting - live_only
+                live_only_conflict = conflicting & live_only
+                msg_parts: list[str] = [
+                    f"Preserved extension config conflict for '{manifest.id}':"
+                ]
+                if both_diverged:
+                    names = ", ".join(sorted(both_diverged))
+                    msg_parts.append(
+                        f"The current config(s) ({names}) in {dest_dir} differ"
+                        f" from their rescued backup in {rescue_staging_dir}."
+                        " Both copies have been preserved."
+                    )
+                if live_only_conflict:
+                    names = ", ".join(sorted(live_only_conflict))
+                    msg_parts.append(
+                        f"The config(s) ({names}) exist only in {dest_dir}"
+                        f" with no counterpart in the rescued backup at"
+                        f" {rescue_staging_dir}."
+                    )
+                msg_parts.append(
+                    f"Reconcile {dest_dir} and {rescue_staging_dir} to the"
+                    f" desired final state, delete {rescue_staging_dir},"
+                    " then reinstall."
+                )
+                raise ValidationError(" ".join(msg_parts))
+        elif (
+            dest_dir.exists()
+            and not self.registry.is_installed(manifest.id)
+            and (
+                self._has_keep_config_marker(dest_dir)
+                or self._is_legacy_keep_config_leftover(dest_dir)
+            )
+        ):
+            for cfg_file in (
+                list(dest_dir.glob("*-config.yml"))
+                + list(dest_dir.glob("*-config.local.yml"))
+            ):
+                if cfg_file.is_symlink():
+                    # `remove --keep-config` preserves a symlinked config
+                    # because Path.is_file() follows symlinks. Its bytes cannot
+                    # be safely rescued (the target may live outside dest_dir),
+                    # and the rmtree below would delete the link and silently
+                    # discard the kept configuration. Reject the reinstall while
+                    # dest_dir is untouched so the user resolves it rather than
+                    # losing the linked config.
+                    raise ValidationError(
+                        "Preserved extension config for "
+                        f"'{manifest.id}' is a symlink ({cfg_file.name}) in "
+                        f"{dest_dir}, which cannot be safely rescued during "
+                        "reinstall. Resolve manually — replace the symlink with "
+                        "a regular file or remove it — then reinstall."
+                    )
+                if cfg_file.is_file():
+                    stranded_configs[cfg_file.name] = (
+                        cfg_file.read_bytes(),
+                        cfg_file.stat().st_mode,
+                    )
+
+        if stranded_configs and not staging_is_complete:
+            # Write a durable backup outside dest_dir before any
+            # destructive operation so the original bytes survive a
+            # crash or partial failure at any later step.  The staging
+            # dir is cleaned up only after every restore succeeds.
+            #
+            # Any pre-existing staging dir here lacks the completion marker
+            # (staging_is_complete is False), so it is a stale partial from an
+            # interrupted attempt — remove it first for a clean write.
+            if rescue_staging_dir.is_symlink():
+                rescue_staging_dir.unlink()
+            elif rescue_staging_dir.is_dir():
+                shutil.rmtree(rescue_staging_dir)
+            elif rescue_staging_dir.exists():
+                rescue_staging_dir.unlink()
+            try:
+                rescue_staging_dir.mkdir(parents=True, exist_ok=True)
+                for filename, (content, mode) in stranded_configs.items():
+                    staged = rescue_staging_dir / filename
+                    # Create the staging file with mode 0600 before writing so
+                    # the preserved bytes are never transiently readable by other
+                    # local users, even on a umask that would produce 0644.
+                    # O_BINARY (0 on POSIX) is required so Windows does not open
+                    # the descriptor in text mode and translate the preserved
+                    # bytes' "\n" into "\r\n" as they are written.
+                    fd = os.open(
+                        str(staged),
+                        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                        0o600,
+                    )
+                    try:
+                        # os.write() may write fewer bytes than requested, so
+                        # loop until the whole buffer is on disk — a truncated
+                        # "durable" backup would be trusted over the intact
+                        # config on a retry and cause silent data loss.
+                        view = memoryview(content)
+                        written = 0
+                        while written < len(view):
+                            written += os.write(fd, view[written:])
+                        # Do NOT chmod the staged file: setting a read-only
+                        # mode (e.g. 0o444) makes the file undeletable on
+                        # Windows and causes shutil.rmtree to fail during
+                        # cleanup.  Original modes are recorded separately in
+                        # .rescue-modes.json so they can be reapplied when the
+                        # config is actually restored.
+                        _fsync_fd(fd)
+                    finally:
+                        os.close(fd)
+                # Persist the original permission bits in a sidecar JSON file
+                # so a retry can correctly reapply them even though the staged
+                # files themselves are kept at their creation mode (0o600).
+                rescue_modes_file = rescue_staging_dir / ".rescue-modes.json"
+                modes_payload = json.dumps(
+                    {
+                        filename: stat.S_IMODE(mode)
+                        for filename, (_, mode) in stranded_configs.items()
+                    },
+                    sort_keys=True,
+                ).encode()
+                modes_fd = os.open(
+                    str(rescue_modes_file),
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
+                    0o600,
+                )
+                try:
+                    view = memoryview(modes_payload)
+                    written = 0
+                    while written < len(view):
+                        written += os.write(modes_fd, view[written:])
+                    _fsync_fd(modes_fd)
+                finally:
+                    os.close(modes_fd)
+                # Flush the staging directory metadata before publishing the
+                # completion marker so a crash cannot leave a visible marker with
+                # only a subset of staged files.
+                _fsync_directory(rescue_staging_dir)
+                # Write the completion marker only after every staged file is
+                # fully written so a retry trusts staging only when it is whole.
+                marker_fd = os.open(
+                    str(rescue_complete_marker),
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                )
+                try:
+                    _fsync_fd(marker_fd)
+                finally:
+                    os.close(marker_fd)
+                _fsync_directory(rescue_staging_dir)
+                _fsync_directory(rescue_staging_dir.parent)
+            except BaseException:
+                # Durable staging failed (or was interrupted).  Continuing with
+                # only the in-memory copy would reintroduce the permanent-loss
+                # path this staging exists to close: the rmtree below could
+                # delete the originals and a later restore failure would leave
+                # no on-disk copy.  dest_dir is still untouched here, so clean
+                # up the partial staging dir and abort the install instead of
+                # proceeding destructively.
+                shutil.rmtree(rescue_staging_dir, ignore_errors=True)
+                raise
+
         # Install extension (dest_dir computed above during self-install guard)
         if dest_dir.exists():
             shutil.rmtree(dest_dir)
 
-        ignore_fn = self._load_extensionignore(source_dir)
-        shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+        def _restore_stranded_config_file(
+            target: Path, content: bytes, preserved_mode: int
+        ) -> None:
+            tmp_path: Path | None = None
+            try:
+                # A short fixed prefix, not f".{target.name}.": the preserved
+                # config filename may itself already be near the filesystem's
+                # per-component byte limit, and NamedTemporaryFile appends a
+                # random suffix to the prefix — reusing the full name would push
+                # the temp file past the limit and raise ENAMETOOLONG on every
+                # retry. tempfile already guarantees collision avoidance.
+                with tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    dir=target.parent,
+                    prefix=".cfg-restore.",
+                    delete=False,
+                ) as tmp:
+                    tmp_path = Path(tmp.name)
+                    tmp.write(content)
+                    tmp.flush()
+                    _fsync_fd(tmp.fileno())
+                try:
+                    tmp_path.chmod(stat.S_IMODE(preserved_mode))
+                except (NotImplementedError, OSError):
+                    pass  # Best-effort; chmod may not be supported on all platforms.
+                os.replace(tmp_path, target)
+                try:
+                    target_fd = os.open(str(target), os.O_RDONLY)
+                except (AttributeError, OSError, NotImplementedError):
+                    target_fd = None
+                try:
+                    if target_fd is not None:
+                        _fsync_fd(target_fd)
+                finally:
+                    if target_fd is not None:
+                        try:
+                            os.close(target_fd)
+                        except OSError:
+                            pass  # best-effort close during cleanup; ignore errors
+                _fsync_directory(target.parent)
+            except BaseException:
+                if tmp_path is not None and tmp_path.exists():
+                    tmp_path.unlink()
+                raise
+
+        try:
+            shutil.copytree(source_dir, dest_dir, ignore=ignore_fn)
+        except BaseException:
+            # copytree failed — dest_dir may be absent or only partially
+            # created.  Write the rescued configs back now so they are not
+            # permanently lost even though the install did not complete.
+            if stranded_configs:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                for filename, (content, mode) in stranded_configs.items():
+                    target = dest_dir / filename
+                    _restore_stranded_config_file(target, content, mode)
+            raise
+
+        # Restore stranded configs rescued before the rmtree above.
+        for filename, (content, mode) in stranded_configs.items():
+            target = dest_dir / filename
+            _restore_stranded_config_file(target, content, mode)
+
+        # NOTE: the durable staging backup is intentionally NOT cleaned up
+        # here.  Command/skill/hook registration and the final registry.add()
+        # below can still fail; if we discarded the backup and provenance now,
+        # such a failure would leave the extension unregistered with no durable
+        # rescue copy, so the next plain retry would skip rescue and overwrite
+        # the restored user config with packaged defaults.  Cleanup is deferred
+        # until after registry.add() succeeds (see post-commit cleanup below).
 
         # Register commands with AI agents
         registered_commands = {}
@@ -1495,6 +2000,24 @@ class ExtensionManager:
                 "registered_skills": registered_skills,
             },
         )
+
+        # Post-commit cleanup: the registry now records this extension as
+        # installed, so the rescue guard (`not self.registry.is_installed`)
+        # will never misread a leftover staging dir on a future run.  The
+        # durable backup has therefore served its purpose and can be removed
+        # best-effort — a cleanup failure must not fail an install that has
+        # already committed successfully.
+        if rescue_staging_dir.is_dir() and not rescue_staging_dir.is_symlink():
+            # Remove the completion marker before the non-atomic rmtree so a
+            # crash mid-cleanup cannot leave a staging dir that a retry would
+            # wrongly trust as a complete durable backup.
+            try:
+                rescue_complete_marker.unlink(missing_ok=True)
+                _fsync_directory(rescue_staging_dir)
+                shutil.rmtree(rescue_staging_dir)
+                _fsync_directory(rescue_staging_dir.parent)
+            except OSError:
+                pass  # Best-effort; install already committed to the registry.
 
         return manifest
 
@@ -1612,6 +2135,12 @@ class ExtensionManager:
                         shutil.rmtree(child)
                     else:
                         child.unlink()
+                # Write a provenance marker so install_from_directory can
+                # distinguish this --keep-config leftover from a directory left
+                # by a partially-failed install (which must not have its
+                # packaged default configs treated as user-preserved data).
+                # Content is intentionally empty — only presence matters.
+                (extension_dir / ".keep-config").write_text("")
         else:
             # Backup config files before deleting
             if extension_dir.exists():
@@ -2073,14 +2602,23 @@ class ExtensionCatalog(CatalogStackBase):
         url: str,
         timeout: int = 10,
         extra_headers: Optional[Dict[str, str]] = None,
+        redirect_validator=None,
     ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
+        *redirect_validator*, when provided, is invoked as ``(old_url, new_url)``
+        before EACH redirect hop so an HTTPS host guarantee can be enforced on
+        every intermediate URL, not just the terminal one.
         """
         from specify_cli.authentication.http import open_url
 
-        return open_url(url, timeout, extra_headers=extra_headers)
+        return open_url(
+            url,
+            timeout,
+            extra_headers=extra_headers,
+            redirect_validator=redirect_validator,
+        )
 
     def _resolve_github_release_asset_api_url(
         self,
@@ -2304,7 +2842,24 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Fetch from network
         try:
-            with self._open_url(entry.url, timeout=10) as response:
+            # Validate EVERY redirect hop, not just the terminal URL. _open_url
+            # follows redirects; _StripAuthOnRedirect drops auth on an HTTPS->HTTP
+            # downgrade AND whenever the redirect leaves the configured trusted
+            # hosts, but the payload itself is still fetched and trusted, and it
+            # supplies each extension's download_url + sha256 (so a redirected
+            # payload defeats sha256 verification). A terminal-only check also
+            # misses an https -> http -> attacker-https chain. redirect_validator
+            # runs before each hop; the final geturl() check is kept as a
+            # belt-and-braces guard. Mirrors bundler/services/adapters.py.
+            def _validate_redirect(_old_url: str, new_url: str) -> None:
+                self._validate_catalog_url(new_url)
+
+            with self._open_url(
+                entry.url, timeout=10, redirect_validator=_validate_redirect
+            ) as response:
+                final_url = response.geturl()
+                if final_url != entry.url:
+                    self._validate_catalog_url(final_url)
                 catalog_data = json.loads(response.read())
 
             self._validate_catalog_payload(catalog_data, entry.url)
@@ -2481,7 +3036,18 @@ class ExtensionCatalog(CatalogStackBase):
         try:
             import urllib.error
 
-            with self._open_url(catalog_url, timeout=10) as response:
+            # Same redirect hardening as _fetch_single_catalog: validate every
+            # redirect hop AND the final URL so this legacy single-catalog path
+            # is not vulnerable to an HTTPS->HTTP redirected payload either.
+            def _validate_redirect(_old_url: str, new_url: str) -> None:
+                self._validate_catalog_url(new_url)
+
+            with self._open_url(
+                catalog_url, timeout=10, redirect_validator=_validate_redirect
+            ) as response:
+                final_url = response.geturl()
+                if final_url != catalog_url:
+                    self._validate_catalog_url(final_url)
                 catalog_data = json.loads(response.read())
 
             # Validate catalog structure. Reuses the same helper as
@@ -2631,8 +3197,20 @@ class ExtensionCatalog(CatalogStackBase):
         # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
         from urllib.parse import urlparse
 
-        parsed = urlparse(download_url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        # A malformed authority (e.g. an unterminated IPv6 bracket
+        # "https://[::1") makes urlparse / hostname access raise ValueError.
+        # The download_url comes from catalog payload data, so surface a clean
+        # ExtensionError rather than leaking a raw ValueError past the command
+        # handler (which only catches ExtensionError). Mirrors catalogs (#3435)
+        # and workflows/catalog.py (#3484).
+        try:
+            parsed = urlparse(download_url)
+            hostname = parsed.hostname
+        except ValueError:
+            raise ExtensionError(
+                f"Extension download URL is malformed: {download_url}"
+            ) from None
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             raise ExtensionError(
                 f"Extension download URL must use HTTPS: {download_url}"

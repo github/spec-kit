@@ -120,10 +120,10 @@ generated metadata, then add the import and `_register()` call in
 
 ## 7. Run Lint / Basic Checks
 
-CI enforces `ruff check src/` (see `.github/workflows/test.yml`), so run it locally before pushing:
+CI enforces `ruff check src tests` (see `.github/workflows/test.yml`), so run it locally before pushing:
 
 ```bash
-uvx ruff check src/
+uvx ruff check src tests
 ```
 
 You can also quickly sanity check importability:

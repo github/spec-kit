@@ -2,6 +2,41 @@
 
 <!-- insert new changelog below this comment -->
 
+## [0.13.2] - 2026-07-21
+
+### Changed
+
+- fix(workflows): reject a non-string 'command' in command-step (#3596)
+- fix(workflows): fail gate step loudly on a malformed 'options' (#3595)
+- fix(extensions): re-validate catalog URL after redirects (HTTPS parity/security) (#3524)
+- Add community bundle submission automation (#3553)
+- fix(presets): re-validate catalog URL after redirects (HTTPS parity/security) (#3523)
+- feat(scripts): port create-new-feature, setup-plan and setup-tasks to Python (#3386)
+- fix(agents): parse frontmatter on the --- delimiter line, not any --- substring (#3590)
+- [bug-fix] Fix reinstall-overwrites-kept-config: preserve config on plain reinstall after --keep-config (#3449)
+- feat: update Bob integration to skills-based layout for Bob 2.0 (#3415)
+- Update OKF Knowledge Bundle Generator to v0.3.0 (#3608)
+- Add Test Coverage Drift Control extension to community catalog (#3607)
+- chore: align ruff lint scope (#3139)
+- feat(workflows): WorkflowResolver standalone (PR 1) (#3557)
+- fix(extensions,presets): surface clean error on malformed download URL (#3577)
+- chore: release 0.13.1, begin 0.13.2.dev0 development (#3610)
+
+## [0.13.1] - 2026-07-21
+
+### Changed
+
+- fix(integrations): catch OverflowError on a `priority: .inf` in add/remove (#3589)
+- fix(workflows): reject bool / .inf catalog priority in workflow & step catalog loaders (#3526)
+- fix(catalogs): 'priority: .inf' yields a clean validation error instead of crashing (#3525)
+- docs(integrations): document the 'integration list --catalog' flag (#3530)
+- fix(workflows): fail fan-in loudly on a non-string wait_for entry (#3579)
+- fix(workflows): fail fan-out loudly on a truthy non-mapping step template (#3537)
+- fix(workflows): reject a non-string prompt in prompt-step validate() (#3582)
+- fix(workflows): route 'workflow status --json' errors to stderr (#3520)
+- fix(integrations): Forge dispatches hyphenated /speckit-<cmd> invocations (#3529)
+- chore: release 0.13.0, begin 0.13.1.dev0 development (#3588)
+
 ## [0.13.0] - 2026-07-17
 
 ### Changed

@@ -177,11 +177,11 @@
     "bob": {
       "id": "bob",
       "name": "IBM Bob",
-      "version": "1.0.0",
-      "description": "IBM Bob IDE integration",
+      "version": "2.0.0",
+      "description": "IBM Bob 2.0 IDE skills-based integration",
       "author": "spec-kit-core",
       "repository": "https://github.com/github/spec-kit",
-      "tags": ["ide", "ibm"]
+      "tags": ["ide", "ibm", "skills"]
     },
     "trae": {
       "id": "trae",

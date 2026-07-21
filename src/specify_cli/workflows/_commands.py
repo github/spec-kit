@@ -49,6 +49,13 @@ workflow_step_catalog_app = typer.Typer(
 )
 workflow_step_app.add_typer(workflow_step_catalog_app, name="catalog")
 
+workflow_overlay_app = typer.Typer(
+    name="overlay",
+    help="Manage workflow overlays",
+    add_completion=False,
+)
+workflow_app.add_typer(workflow_overlay_app, name="overlay")
+
 
 def _error_console(json_output: bool):
     """Console for error text: stderr under ``--json`` so the JSON stdout
@@ -191,6 +198,10 @@ def _reject_unsafe_workflow_storage(project_root: Path) -> None:
     _reject_unsafe_dir(
         project_root / ".specify" / "workflows" / "runs",
         ".specify/workflows/runs",
+    )
+    _reject_unsafe_dir(
+        project_root / ".specify" / "workflows" / "overlays",
+        ".specify/workflows/overlays",
     )
 
 
@@ -366,7 +377,7 @@ def _resolve_installed_workflow_ownership(
 
 
 _WORKFLOW_ID_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
-_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"runs", "steps"})
+_RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"})
 
 
 def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
@@ -1670,8 +1681,8 @@ def workflow_add(
                 except OSError as cleanup_exc:
                     console.print(
                         "[yellow]Warning:[/yellow] Could not remove temporary "
-                        f"download file {_escape_markup(str(tmp_path))}: "
-                        f"{_escape_markup(str(cleanup_exc))}"
+                        f"workflow download file: {_escape_markup(str(cleanup_exc))} "
+                        f"(path: {_escape_markup(str(tmp_path))})"
                     )
             console.print(f"[red]Error:[/red] Failed to download workflow: {_escape_markup(str(exc))}")
             raise typer.Exit(1)
@@ -1695,8 +1706,8 @@ def workflow_add(
             except OSError as exc:
                 console.print(
                     "[yellow]Warning:[/yellow] Could not remove temporary "
-                    f"download file {_escape_markup(str(tmp_path))}: "
-                    f"{_escape_markup(str(exc))}"
+                    f"workflow download file: {_escape_markup(str(exc))} "
+                    f"(path: {_escape_markup(str(tmp_path))})"
                 )
         return
 
@@ -2386,6 +2397,9 @@ def workflow_info(
         # Local workflow definition not found on disk; fall back to
         # catalog/registry lookup below.
         pass
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] Invalid workflow: {_escape_markup(str(exc))}")
+        raise typer.Exit(1)
 
     if definition:
         console.print(f"\n[bold cyan]{definition.name}[/bold cyan] ({definition.id})")
@@ -3150,6 +3164,102 @@ def workflow_step_catalog_remove(
         raise typer.Exit(1)
 
     console.print(f"[green]✓[/green] Step catalog source '{removed_name}' removed")
+
+
+@workflow_overlay_app.command("add")
+def workflow_overlay_add_cmd(
+    source: Path = typer.Argument(..., help="Path to overlay YAML file"),
+    priority: int = typer.Option(
+        10,
+        "--priority",
+        help="Resolution priority (lower = higher precedence, default 10)",
+    ),
+):
+    """Add a project-local overlay for a workflow."""
+    from .overlays._commands import workflow_overlay_add
+
+    project_root = _require_specify_project()
+    if workflow_overlay_add(project_root, source, priority) is None:
+        raise typer.Exit(1)
+
+
+@workflow_overlay_app.command("set-priority")
+def workflow_overlay_set_priority_cmd(
+    workflow_id: str = typer.Argument(..., help="Workflow ID the overlay extends"),
+    overlay_id: str = typer.Argument(..., help="Overlay ID"),
+    priority: int = typer.Argument(
+        ..., help="New priority (lower = higher precedence)"
+    ),
+):
+    """Set the priority of a project-local overlay."""
+    from .overlays._commands import workflow_overlay_set_priority
+
+    project_root = _require_specify_project()
+    if not workflow_overlay_set_priority(project_root, workflow_id, overlay_id, priority):
+        raise typer.Exit(1)
+
+
+@workflow_overlay_app.command("enable")
+def workflow_overlay_enable_cmd(
+    workflow_id: str = typer.Argument(..., help="Workflow ID the overlay extends"),
+    overlay_id: str = typer.Argument(..., help="Overlay ID"),
+):
+    """Enable a project-local overlay."""
+    from .overlays._commands import workflow_overlay_enable
+
+    project_root = _require_specify_project()
+    if not workflow_overlay_enable(project_root, workflow_id, overlay_id):
+        raise typer.Exit(1)
+
+
+@workflow_overlay_app.command("disable")
+def workflow_overlay_disable_cmd(
+    workflow_id: str = typer.Argument(..., help="Workflow ID the overlay extends"),
+    overlay_id: str = typer.Argument(..., help="Overlay ID"),
+):
+    """Disable a project-local overlay."""
+    from .overlays._commands import workflow_overlay_disable
+
+    project_root = _require_specify_project()
+    if not workflow_overlay_disable(project_root, workflow_id, overlay_id):
+        raise typer.Exit(1)
+
+
+@workflow_overlay_app.command("remove")
+def workflow_overlay_remove_cmd(
+    workflow_id: str = typer.Argument(..., help="Workflow ID the overlay extends"),
+    overlay_id: str = typer.Argument(..., help="Overlay ID"),
+):
+    """Remove a project-local overlay."""
+    from .overlays._commands import workflow_overlay_remove
+
+    project_root = _require_specify_project()
+    if not workflow_overlay_remove(project_root, workflow_id, overlay_id):
+        raise typer.Exit(1)
+
+
+@workflow_overlay_app.command("list")
+def workflow_overlay_list_cmd(
+    workflow_id: str = typer.Argument(..., help="Workflow ID"),
+):
+    """List overlays for a workflow."""
+    from .overlays._commands import workflow_overlay_list
+
+    project_root = _require_specify_project()
+    if workflow_overlay_list(project_root, workflow_id) is None:
+        raise typer.Exit(1)
+
+
+@workflow_app.command("resolve")
+def workflow_resolve_cmd(
+    workflow_id: str = typer.Argument(..., help="Workflow ID to resolve"),
+):
+    """Show layer attribution for a resolved workflow."""
+    from .overlays._commands import workflow_resolve
+
+    project_root = _require_specify_project()
+    if workflow_resolve(project_root, workflow_id) is None:
+        raise typer.Exit(1)
 
 
 def register(app: typer.Typer) -> None:

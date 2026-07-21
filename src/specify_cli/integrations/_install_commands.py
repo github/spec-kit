@@ -38,7 +38,7 @@ from ._helpers import (
 @integration_app.command("install")
 def integration_install(
     key: str = typer.Argument(help="Integration key to install (e.g. claude, copilot)"),
-    script: str | None = typer.Option(None, "--script", help="Script type: sh or ps (default: from init-options.json or platform default)"),
+    script: str | None = typer.Option(None, "--script", help="Script type: sh, ps, or py (default: from init-options.json or platform default)"),
     force: bool = typer.Option(False, "--force", help="Allow multi-install when integrations are not declared safe"),
     integration_options: str | None = typer.Option(None, "--integration-options", help='Options for the integration (e.g. --integration-options="--commands-dir .myagent/cmds")'),
 ):
@@ -127,7 +127,8 @@ def integration_install(
         project_root,
         selected_script,
         invoke_separator=_invoke_separator_for_integration(
-            infra_integration, current, infra_key, infra_parsed
+            infra_integration, current, infra_key, infra_parsed,
+            project_root=project_root,
         ),
     )
     if os.name != "nt":
@@ -155,10 +156,16 @@ def integration_install(
             script_type=selected_script,
             raw_options=raw_options,
             parsed_options=parsed_options,
+            project_root=project_root,
         )
         _write_integration_json(project_root, new_default, new_installed, settings)
         if new_default == integration.key:
-            _update_init_options_for_integration(project_root, integration, script_type=selected_script)
+            _update_init_options_for_integration(
+                project_root,
+                integration,
+                script_type=selected_script,
+                parsed_options=parsed_options,
+            )
         else:
             _refresh_init_options_speckit_version(project_root)
 

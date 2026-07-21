@@ -922,6 +922,57 @@ class TestCatalogSourceManagement:
         assert str(cfg_path) in message
         assert "expected a mapping" in message
 
+    def test_add_catalog_rejects_inf_priority_in_existing_entry(
+        self, tmp_path, monkeypatch
+    ):
+        # ``priority: .inf`` loads as float('inf'); int() on it raises
+        # OverflowError, which used to escape the IntegrationValidationError
+        # contract as a raw traceback (github/spec-kit#3526 fixed the sibling
+        # workflow/step loaders the same way).
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://a.example.com/catalog.json",
+                            "priority": float("inf"),
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        with pytest.raises(
+            IntegrationValidationError, match="must be an integer"
+        ):
+            cat.add_catalog("https://new.example.com/catalog.json")
+
+    def test_remove_catalog_tolerates_inf_priority(self, tmp_path, monkeypatch):
+        # Building the remove display order must not crash on a ``priority:
+        # .inf`` entry; it falls back to positional order like the other
+        # non-integer priorities do.
+        self._isolate(tmp_path, monkeypatch)
+        cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"
+        cfg_path.write_text(
+            yaml.dump(
+                {
+                    "catalogs": [
+                        {
+                            "url": "https://a.example.com/catalog.json",
+                            "priority": float("inf"),
+                        },
+                        {"url": "https://b.example.com/catalog.json", "priority": 2},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        cat = IntegrationCatalog(tmp_path)
+        cat.remove_catalog(0)  # must not raise OverflowError
+
     def test_add_catalog_skips_blank_url_entries(self, tmp_path, monkeypatch):
         self._isolate(tmp_path, monkeypatch)
         cfg_path = tmp_path / ".specify" / "integration-catalogs.yml"

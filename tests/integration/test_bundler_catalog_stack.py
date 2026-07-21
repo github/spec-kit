@@ -38,6 +38,27 @@ def test_resolve_prefers_highest_precedence_source():
     assert resolved.install_allowed is False
 
 
+def test_explicit_catalog_shadows_builtin_community_at_default_priority():
+    sources = [
+        _source("community", 20, "discovery-only"),
+        _source("explicit", 10, "install-allowed"),
+    ]
+    payloads = {
+        "community": catalog_payload({
+            "shared": catalog_entry_dict("shared", version="1.0.0"),
+        }),
+        "explicit": catalog_payload({
+            "shared": catalog_entry_dict("shared", version="2.0.0"),
+        }),
+    }
+
+    resolved = _stack(sources, payloads).resolve("shared")
+
+    assert resolved.source.id == "explicit"
+    assert resolved.entry.version == "2.0.0"
+    assert resolved.install_allowed is True
+
+
 def test_resolve_unknown_bundle_errors():
     stack = _stack(
         [_source("only", 1, "install-allowed")],

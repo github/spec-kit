@@ -1061,6 +1061,41 @@ class TestCommandStep:
             }
         ) == []
 
+    def test_validate_rejects_non_string_command(self):
+        from specify_cli.workflows.steps.command import CommandStep
+
+        step = CommandStep()
+        # execute() passes 'command' to build_command_invocation(), which does
+        # command_name.startswith(...); a non-string crashes there with a raw
+        # AttributeError. validate() must report it, like prompt-step 'prompt'.
+        for bad in (None, ["a", "b"], 5, {"x": 1}):
+            errs = step.validate({"id": "c", "command": bad})
+            assert any("'command' must be a string" in e for e in errs), bad
+        # a string command (incl. an expression) is still accepted
+        assert step.validate({"id": "c", "command": "/x"}) == []
+        assert step.validate({"id": "c", "command": "{{ inputs.cmd }}"}) == []
+
+    def test_execute_non_string_command_fails_cleanly(self):
+        from unittest.mock import patch
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        # The engine may skip validate(); a non-string 'command' must FAIL the
+        # step with the contract error rather than reaching _try_dispatch and
+        # crashing build_command_invocation with a raw AttributeError. Force a
+        # resolvable integration + installed CLI so, absent the guard, dispatch
+        # would actually be attempted and the crash would fire.
+        ctx = StepContext(default_integration="claude")
+        with patch("specify_cli.workflows.steps.command.shutil.which",
+                   return_value="/usr/bin/claude"):
+            for bad in (None, ["a", "b"], 5, {"x": 1}):
+                result = step.execute(
+                    {"id": "c", "command": bad, "input": {}}, ctx
+                )
+                assert result.status is StepStatus.FAILED, bad
+                assert "'command' must be a string" in (result.error or ""), bad
+
     def test_execute_non_string_integration_fails_loudly(self):
         """On an unvalidated run, an unhashable 'integration' would crash
         get_integration() (dict.get on a list) with a raw TypeError. execute()
@@ -2252,6 +2287,72 @@ class TestGateStep:
         result = step.execute(config, ctx)  # non-interactive -> PAUSED
         assert result.status == StepStatus.PAUSED
         assert result.output["show_file"] == "123"
+
+    @pytest.mark.parametrize(
+        "bad_options",
+        [5, {"a": "approve"}, None, [], "approve"],
+    )
+    def test_execute_non_list_options_fails_cleanly(self, monkeypatch, bad_options):
+        """A malformed ``options`` must FAIL the step, not crash the run.
+
+        ``validate`` rejects a non-list/empty ``options``, but the engine does
+        not auto-validate before ``execute``. On an interactive run a scalar/
+        dict/None ``options`` would otherwise reach ``_prompt`` and raise a raw
+        ``TypeError`` (``enumerate``/``len`` on a non-iterable) or ``KeyError``
+        (indexing a dict), crashing the whole workflow. Mirrors the switch
+        'cases' and command 'input' unvalidated-execute guards."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Force an interactive TTY so the crash-prone _prompt path is reached;
+        # input() is stubbed so a (buggy) fall-through can't block the suite.
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": bad_options}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
+        assert result.output["choice"] is None
+
+    def test_execute_non_string_options_element_fails_cleanly(self, monkeypatch):
+        """A non-string option element must FAIL the step, not crash.
+
+        A non-empty list with a non-string element passes the shape check but
+        would reach the reject test ``choice.lower()`` and raise a raw
+        ``AttributeError`` at run time. ``validate`` reports "must be strings";
+        ``execute`` must fail cleanly on an unvalidated run too."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
+
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": [123, 456]}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
+
+    def test_execute_non_list_options_fails_in_non_tty_too(self):
+        """The guard runs before the non-TTY PAUSE short-circuit.
+
+        A malformed ``options`` should surface as FAILED in CI (non-TTY) rather
+        than PAUSING and only crashing later when an operator resumes on a real
+        terminal."""
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        # Autouse fixture already forces non-TTY stdin.
+        step = GateStep()
+        config = {"id": "review", "message": "Review.", "options": 5}
+        result = step.execute(config, StepContext())
+
+        assert result.status == StepStatus.FAILED
+        assert "options" in (result.error or "")
 
 
 class TestIfThenStep:
@@ -4407,6 +4508,108 @@ steps:
         # Finite values still coerce (whole floats normalize to int).
         assert WorkflowEngine._coerce_input("count", 5.0, {"type": "number"}) == 5
         assert WorkflowEngine._coerce_input("count", 3.5, {"type": "number"}) == 3.5
+
+    def test_coerce_input_rejects_non_list_enum_cleanly(self):
+        """A non-list ``enum`` (scalar or string) must raise a clean ValueError,
+        not the raw ``TypeError`` from the ``value not in enum`` membership test.
+
+        A scalar (``enum: 5``) makes ``value not in 5`` raise
+        ``TypeError: argument of type 'int' is not iterable``. A bare string
+        (``enum: "abc"``) is silently wrong instead — ``value in "abc"`` is a
+        substring test, not enum membership — so it must be rejected too.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        for bad_enum in (5, True, "abc", {"a": 1}):
+            with pytest.raises(ValueError, match="invalid 'enum': must be a list"):
+                WorkflowEngine._coerce_input(
+                    "scope", "x", {"type": "string", "enum": bad_enum}
+                )
+        # A valid list ``enum`` still works, and ``None`` means "no enum".
+        assert (
+            WorkflowEngine._coerce_input(
+                "scope", "a", {"type": "string", "enum": ["a", "b"]}
+            )
+            == "a"
+        )
+        assert (
+            WorkflowEngine._coerce_input("scope", "x", {"type": "string"}) == "x"
+        )
+
+    def test_validate_workflow_rejects_non_list_enum(self):
+        """A non-list ``enum`` must be reported as an error, not crash
+        ``validate_workflow``. The membership test would raise ``TypeError``,
+        which escapes its ``except ValueError`` and breaks the "return a list of
+        errors, never raise" contract. This must surface even with no ``default``
+        present (the coercion path that would otherwise catch it is only reached
+        when a default exists).
+        """
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "bad-enum"
+  name: "Bad Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    enum: 5
+steps:
+  - id: noop
+    type: gate
+    message: "noop"
+    options: [approve]
+""")
+        errors = validate_workflow(definition)
+        assert any("invalid 'enum': must be a list" in e for e in errors), errors
+
+    def test_resolve_inputs_rejects_non_list_enum_at_runtime(self, project_dir):
+        """``execute()`` accepts unvalidated definitions, so a non-list ``enum``
+        can reach ``_resolve_inputs`` at run time. It must fail with a clean
+        ValueError rather than the raw ``TypeError`` from the membership test.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "runtime-bad-enum"
+  name: "Runtime Bad Enum"
+  version: "1.0.0"
+inputs:
+  scope:
+    type: string
+    enum: 5
+""")
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="invalid 'enum': must be a list"):
+            engine._resolve_inputs(definition, {"scope": "x"})
+
+    def test_non_list_enum_on_integration_auto_still_rejected(self, project_dir):
+        """The ``integration: auto`` sentinel strips a *list* ``enum`` before
+        coercion (enum-membership is a runtime concern for ``auto``). A non-list
+        ``enum`` must NOT be silently stripped by that path — it is still an
+        authoring error and must fail with the clean shape ValueError.
+        """
+        from specify_cli.workflows.engine import WorkflowEngine, WorkflowDefinition
+
+        definition = WorkflowDefinition.from_string("""
+schema_version: "1.0"
+workflow:
+  id: "auto-bad-enum"
+  name: "Auto Bad Enum"
+  version: "1.0.0"
+inputs:
+  integration:
+    type: string
+    default: "auto"
+    enum: 5
+""")
+        engine = WorkflowEngine(project_dir)
+        with pytest.raises(ValueError, match="invalid 'enum': must be a list"):
+            engine._resolve_inputs(definition, {})
 
     def test_validate_workflow_rejects_infinite_default_for_number_type(self):
         """``type: number`` with an infinite default (YAML ``.inf``) must be
@@ -7251,7 +7454,7 @@ class TestWorkflowRemoveGuard:
         assert "Invalid workflow ID" in result.output
         assert sentinel.read_text(encoding="utf-8") == "keep"
 
-    @pytest.mark.parametrize("workflow_id", ["runs", "steps"])
+    @pytest.mark.parametrize("workflow_id", ["overlays", "runs", "steps"])
     def test_remove_rejects_reserved_storage_ids(
         self, project_dir, monkeypatch, workflow_id
     ):
@@ -7637,9 +7840,39 @@ steps:
         # Literal bracketed text survives; Rich did not consume it as a tag.
         assert "[red]evil[/red]" in out
 
+    def test_add_rejects_reserved_overlay_storage_id(self, temp_dir, monkeypatch):
+        """workflow add must not install into the overlay storage directory."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        overlay_file = temp_dir / "incoming.yml"
+        overlay_file.write_text(
+            """
+schema_version: "1.0"
+workflow:
+  id: "overlays"
+  name: "Bad Workflow"
+  version: "1.0.0"
+steps:
+  - id: step-one
+    command: speckit.specify
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(overlay_file)])
+
+        assert result.exit_code != 0
+        assert "Invalid workflow ID" in result.output
+        assert not (temp_dir / ".specify" / "workflows" / "overlays" / "workflow.yml").exists()
+
     @pytest.mark.parametrize(
         "workflow_id",
         [
+            "overlays",
             "runs",
             "steps",
             "nested/workflow",

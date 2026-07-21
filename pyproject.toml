@@ -1,6 +1,6 @@
 [project]
 name = "specify-cli"
-version = "0.13.1.dev0"
+version = "0.13.3.dev0"
 description = "Specify CLI, part of GitHub Spec Kit. A tool to bootstrap your projects for Spec-Driven Development (SDD)."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -48,6 +48,8 @@ packages = ["src/specify_cli"]
 "workflows/speckit" = "specify_cli/core_pack/workflows/speckit"
 # Bundled presets (installable via `specify preset add <name>` or `specify init --preset <name>`)
 "presets/lean" = "specify_cli/core_pack/presets/lean"
+# Community bundle catalog snapshot (used for offline discovery)
+"bundles/catalog.community.json" = "specify_cli/core_pack/bundles/catalog.community.json"
 
 [project.optional-dependencies]
 test = [
