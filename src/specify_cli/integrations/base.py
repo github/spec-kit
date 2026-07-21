@@ -1578,8 +1578,11 @@ class SkillsIntegration(IntegrationBase):
         guidance for converting dotted hook command names to hyphenated
         slash commands.  Subclasses may override — see ``ClaudeIntegration``.
         """
+        uses_dollar_invocations = is_dollar_skills_agent(self.key, True)
+        if uses_dollar_invocations:
+            content = content.replace("$speckit-", "/speckit-")
         content = self._inject_hook_command_note(content)
-        if is_dollar_skills_agent(self.key, True):
+        if uses_dollar_invocations:
             content = content.replace("/speckit-", "$speckit-")
         return content
 
