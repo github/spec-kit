@@ -95,7 +95,7 @@ When Spec Kit releases new features (like new slash commands, updated templates,
 
 For existing Spec Kit projects, use the manifest-aware upgrade path first:
 
-- ✅ **Integration command/skill files** (`.claude/commands/`, `.github/prompts/`, `.agents/skills/`, etc.)
+- ✅ **Integration command/skill files** (`.claude/skills/`, `.github/prompts/`, `.agents/skills/`, etc.)
 - ✅ **Managed shared scripts and templates** (`.specify/scripts/`, `.specify/templates/`) when they are unchanged from the previous managed copy
 - ✅ **Installed extensions** when you run `specify extension update`
 
