@@ -548,14 +548,15 @@ class TestAzureDevOpsAuth:
     def test_resolve_token_azure_ad_network_error_returns_none(self, monkeypatch):
         """azure-ad returns None on network errors."""
         import urllib.error
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         monkeypatch.setenv("MY_SECRET", "secret-value")
         entry = AuthConfigEntry(
             hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
             tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
         )
-        with patch("urllib.request.urlopen",
-                    side_effect=urllib.error.URLError("connection refused")):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("connection refused")
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
     def test_resolve_token_azure_ad_invalid_utf8_returns_none(self, monkeypatch):
@@ -639,13 +640,15 @@ class TestAuthenticatedHttp:
         monkeypatch.setenv("GH_TOKEN", "my-token")
         self._set_config(monkeypatch, [_github_entry()])
         captured = {}
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             captured["req"] = req
             resp = MagicMock()
             resp.__enter__ = lambda s: s
             resp.__exit__ = MagicMock(return_value=False)
             return resp
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_urlopen):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = fake_open
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             open_url("https://example.com/file.json")
         assert captured["req"].get_header("Authorization") is None
 
@@ -654,13 +657,15 @@ class TestAuthenticatedHttp:
         from specify_cli.authentication.http import open_url
         self._set_config(monkeypatch, [])
         captured = {}
-        def fake_urlopen(req, timeout=None):
+        def fake_open(req, timeout=None):
             captured["req"] = req
             resp = MagicMock()
             resp.__enter__ = lambda s: s
             resp.__exit__ = MagicMock(return_value=False)
             return resp
-        with patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_urlopen):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = fake_open
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             open_url("https://github.com/org/repo")
         assert captured["req"].get_header("Authorization") is None
 
@@ -682,8 +687,7 @@ class TestAuthenticatedHttp:
             return resp
         mock_opener = MagicMock()
         mock_opener.open.side_effect = fake_side_effect
-        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener), \
-             patch("specify_cli.authentication.http.urllib.request.urlopen", side_effect=fake_side_effect):
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             open_url("https://github.com/org/repo")
         assert call_count == 2
 
@@ -724,21 +728,23 @@ class TestAuthenticatedHttpNegative:
 
     def test_urlerror_propagates(self, monkeypatch):
         import urllib.error
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         from specify_cli.authentication.http import open_url
         self._set_config(monkeypatch, [])
-        with patch("specify_cli.authentication.http.urllib.request.urlopen",
-                    side_effect=urllib.error.URLError("refused")):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("refused")
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             with pytest.raises(urllib.error.URLError):
                 open_url("https://example.com/file")
 
     def test_timeout_propagates(self, monkeypatch):
         import socket
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
         from specify_cli.authentication.http import open_url
         self._set_config(monkeypatch, [])
-        with patch("specify_cli.authentication.http.urllib.request.urlopen",
-                    side_effect=socket.timeout("timed out")):
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = socket.timeout("timed out")
+        with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):
             with pytest.raises(socket.timeout):
                 open_url("https://example.com/file")
 
@@ -987,8 +993,7 @@ class TestFetchLatestReleaseTagDelegation:
         from specify_cli._version import _fetch_latest_release_tag
         self._set_config(monkeypatch, [])
         captured, side_effect = self._capture_request()
-        # The release fetch uses strict_redirects=True, so the unauthenticated
-        # path goes through build_opener().open(), not urlopen.
+        # The unauthenticated path uses the strict redirect opener too.
         mock_opener = MagicMock()
         mock_opener.open.side_effect = side_effect
         with patch("specify_cli.authentication.http.urllib.request.build_opener", return_value=mock_opener):

@@ -1,4 +1,4 @@
-"""HTTP test helpers shared by version-related CLI tests."""
+"""HTTP test helpers shared by CLI tests."""
 
 import io
 import json
@@ -23,9 +23,9 @@ def mock_urlopen_response(payload: dict) -> MagicMock:
 def route_opener_open_through_urlopen(monkeypatch):
     """Route build_opener().open through urllib.request.urlopen.
 
-    ``open_url(..., strict_redirects=True)`` fetches via
-    ``build_opener(...).open()``, which bypasses ``urllib.request.urlopen``
-    — and with it the urlopen patches these test modules are built on.
+    ``open_url(...)`` fetches via ``build_opener(...).open()``, which bypasses
+    ``urllib.request.urlopen`` — and with it the urlopen patches these test
+    modules are built on.
     Delegating ``open()`` to urlopen at call time keeps those patches
     effective; the redirect handler's own behavior is covered by
     ``TestRedirectStripping`` in test_authentication.py.

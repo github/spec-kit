@@ -160,7 +160,6 @@ def open_url(
     timeout: int = 10,
     extra_headers: dict[str, str] | None = None,
     redirect_validator: RedirectValidator | None = None,
-    strict_redirects: bool = False,
 ):
     """Open *url* with config-driven auth, redirect stripping, and fallthrough.
 
@@ -174,17 +173,12 @@ def open_url(
     *redirect_validator*, when provided, is called with ``(old_url, new_url)``
     before following each redirect and may raise to reject the redirect.
 
-    Redirect scheme safety: every authenticated attempt goes through
-    ``_StripAuthOnRedirect``, which always rejects redirects to non-HTTPS
-    URLs (except HTTP to localhost / 127.0.0.1 / ::1, the hosts allowed by
-    ``is_https_or_localhost_http``). The unauthenticated fallback installs the
-    same handler when *strict_redirects* is true or *redirect_validator* is
-    supplied; without either, it follows redirects without that handler.
+    Redirect scheme safety: every attempt goes through
+    ``_StripAuthOnRedirect``, which rejects redirects to non-HTTPS URLs except
+    HTTP to localhost / 127.0.0.1 / ::1 (the hosts allowed by
+    ``is_https_or_localhost_http``).
     """
     entries = find_entries_for_url(url, _load_config())
-
-    effective_redirect_validator = redirect_validator
-    use_redirect_handler = strict_redirects or effective_redirect_validator is not None
 
     def _make_req(auth_headers: dict[str, str]) -> urllib.request.Request:
         merged = {}
@@ -205,7 +199,7 @@ def open_url(
             continue
 
         req = _make_req(provider.auth_headers(token, entry.auth))
-        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, effective_redirect_validator))
+        opener = urllib.request.build_opener(_StripAuthOnRedirect(entry.hosts, redirect_validator))
         try:
             return opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as exc:
@@ -216,9 +210,7 @@ def open_url(
 
     # No entry worked (or none matched) — unauthenticated fallback
     req = _make_req({})
-    if use_redirect_handler:
-        # No auth is attached on this path, so the handler's host list is empty:
-        # here it runs redirect validation only, not auth stripping.
-        opener = urllib.request.build_opener(_StripAuthOnRedirect((), effective_redirect_validator))
-        return opener.open(req, timeout=timeout)
-    return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310
+    # No auth is attached on this path, so the handler's host list is empty:
+    # here it runs redirect validation only, not auth stripping.
+    opener = urllib.request.build_opener(_StripAuthOnRedirect((), redirect_validator))
+    return opener.open(req, timeout=timeout)

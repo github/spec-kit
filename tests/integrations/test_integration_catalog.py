@@ -6,6 +6,8 @@ import os
 import pytest
 import yaml
 
+from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
+
 from specify_cli.integrations.catalog import (
     IntegrationCatalog,
     IntegrationCatalogEntry,

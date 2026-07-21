@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from tests.conftest import strip_ansi
+from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
 from specify_cli import extensions as _ext_module
 from specify_cli.extensions import (
     CatalogEntry,

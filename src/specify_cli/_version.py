@@ -119,7 +119,6 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
             GITHUB_API_LATEST,
             timeout=5,
             extra_headers={"Accept": "application/vnd.github+json"},
-            strict_redirects=True,
         ) as resp:
             payload = json.loads(
                 read_response_limited(
