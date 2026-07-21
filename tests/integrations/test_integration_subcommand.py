@@ -3022,24 +3022,137 @@ class TestIntegrationUpgrade:
         cmds_agents, skill_names = _git_registry()
         assert "bob" in cmds_agents and not skill_names
 
-    def test_upgrade_bob_layout_change_rejected_with_presets_installed(self, tmp_path):
-        """Regression (review #3415, 4726193915).
+    def test_upgrade_active_bob_layout_change_reconciles_presets(self, tmp_path):
+        """Regression (review 3623357447).
 
-        A command↔skills layout change cannot reconcile preset artifacts (no
-        agent-scoped preset re-registration exists). Rather than silently
-        orphaning preset files / leaving the registry inconsistent, a
-        layout-changing ``upgrade`` must reject the migration with an
-        actionable error *before any mutation* when preset overrides are
-        installed for the agent. A same-layout upgrade must still succeed.
+        A layout-changing upgrade of the *active* integration must no longer
+        be rejected when preset overrides are installed: the post-upgrade
+        preset rescaffold (``register_enabled_presets_for_agent``) re-registers
+        enabled presets in the new layout and retires the old layout's stale
+        files. Covers the CLI-level toggle both ways (legacy→skills→legacy).
         """
         project = _init_project(
             tmp_path, "bob", integration_options="--legacy-commands"
         )
         commands = project / ".bob" / "commands"
         skills = project / ".bob" / "skills"
+
+        preset_src = tmp_path / "cmd-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.plan.md").write_text(
+            "---\ndescription: Overridden plan\n---\nOverridden plan content\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "cmd-preset",
+                "name": "Command Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.plan",
+                        "file": "commands/speckit.plan.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+
+        (preset_src / "preset.yml").write_text(
+            yaml.dump(manifest_data), encoding="utf-8"
+        )
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, f"preset add failed: {result.output}"
+
+        cmd_file = commands / "speckit.plan.md"
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
+
+        registry_path = project / ".specify" / "presets" / ".registry"
+
+        def _preset_registry():
+            meta = json.loads(registry_path.read_text(encoding="utf-8"))[
+                "presets"
+            ]["cmd-preset"]
+            return (
+                meta.get("registered_commands", {}),
+                meta.get("registered_skills", {}),
+            )
+
+        registered_commands, _ = _preset_registry()
+        assert registered_commands.get("bob") == ["speckit.plan"]
+
+        # Migrate legacy -> skills: allowed, preset reconciled to a skill.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"active-agent layout change with presets must succeed: {result.output}"
+        )
+        assert not cmd_file.exists(), (
+            "stale preset command file must be removed after --skills migration"
+        )
+        skill_file = skills / "speckit-plan" / "SKILL.md"
+        assert skill_file.exists(), (
+            "preset must be re-registered as a skill after --skills migration"
+        )
+        registered_commands, registered_skills = _preset_registry()
+        assert not registered_commands.get("bob"), (
+            "preset registry must drop the stale bob command entry"
+        )
+        assert "speckit-plan" in (registered_skills.get("bob") or []), (
+            "preset registry must record the migrated bob skill"
+        )
+
+        # Migrate skills -> legacy: the reverse reconciliation must also hold.
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--legacy-commands",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"--legacy-commands migration with presets must succeed: {result.output}"
+        )
+        assert not skill_file.exists(), (
+            "stale preset skill must be removed after --legacy-commands migration"
+        )
+        assert cmd_file.exists() and "Overridden plan content" in cmd_file.read_text(
+            encoding="utf-8"
+        ), "preset command override must be recreated in the legacy layout"
+        registered_commands, registered_skills = _preset_registry()
+        assert registered_commands.get("bob") == ["speckit.plan"]
+        assert not (registered_skills.get("bob") if isinstance(registered_skills, dict) else registered_skills)
+
+    def test_upgrade_secondary_layout_change_rejected_with_presets_installed(
+        self, tmp_path
+    ):
+        """Regression (review #3415, 4726193915; updated for review 3623357447).
+
+        Preset rescaffolding is active-agent-only, so a layout-changing
+        ``upgrade`` of a *non-active* integration still cannot reconcile that
+        agent's preset artifacts. It must reject the migration with an
+        actionable error *before any mutation* when preset overrides are
+        installed for that agent. A same-layout upgrade must still succeed.
+        """
+        project = _init_project(tmp_path, "copilot")
+        result = _run_in_project(project, [
+            "integration", "install", "bob",
+            "--integration-options", "--legacy-commands",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, result.output
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
         assert sorted(commands.glob("speckit.*.md"))
 
-        # Simulate an installed preset that registered command overrides for bob.
+        # Simulate a historical preset registration for the non-active bob.
         presets_dir = project / ".specify" / "presets"
         presets_dir.mkdir(parents=True, exist_ok=True)
         (presets_dir / ".registry").write_text(
@@ -3049,20 +3162,22 @@ class TestIntegrationUpgrade:
                         "version": "1.0.0",
                         "enabled": True,
                         "registered_commands": {"bob": ["speckit.plan"]},
-                        "registered_skills": [],
+                        "registered_skills": {},
                     }
                 }
             }),
             encoding="utf-8",
         )
 
-        # Layout-changing upgrade is rejected, and nothing is mutated.
+        # Layout-changing upgrade of the secondary agent is rejected untouched.
         result = _run_in_project(project, [
             "integration", "upgrade", "bob",
             "--integration-options", "--skills",
             "--script", "sh", "--force",
         ])
-        assert result.exit_code != 0, "layout change with presets must be rejected"
+        assert result.exit_code != 0, (
+            "secondary layout change with presets must be rejected"
+        )
         assert "preset" in result.output.lower()
         assert "my-preset" in result.output
         assert not skills.exists(), "no skills layout must be scaffolded on rejection"
@@ -3445,9 +3560,9 @@ class TestIntegrationUpgrade:
         with pytest.raises(_PresetRegistryUnreadableError):
             _installed_presets_affecting_agent(project, "bob")
 
-        # Malformed registered_skills (not a list) → raise.
+        # Malformed registered_skills (neither list nor dict) → raise.
         registry.write_text(
-            json.dumps({"presets": {"p1": {"registered_skills": {}}}}),
+            json.dumps({"presets": {"p1": {"registered_skills": "oops"}}}),
             encoding="utf-8",
         )
         with pytest.raises(_PresetRegistryUnreadableError):
@@ -3458,12 +3573,19 @@ class TestIntegrationUpgrade:
         assert _installed_presets_affecting_agent(project, "bob") == []
 
         # Valid registry with a preset registered for bob → reported.
+        # registered_skills comes in two shapes: a legacy flat list (not
+        # agent-scoped → fail closed, any entry affects) and the per-agent
+        # dict written by preset registration ({agent: [skill names]} → only
+        # this agent's entries affect it).
         registry.write_text(
             json.dumps({
                 "presets": {
                     "p1": {"registered_commands": {"bob": ["speckit.plan"]}},
                     "p2": {"registered_commands": {"codex": ["speckit.plan"]}},
                     "p3": {"registered_skills": ["speckit-x"]},
+                    "p4": {"registered_skills": {"bob": ["speckit-y"]}},
+                    "p5": {"registered_skills": {"codex": ["speckit-z"]}},
+                    "p6": {"registered_skills": {"bob": []}},
                 }
             }),
             encoding="utf-8",
@@ -3471,6 +3593,7 @@ class TestIntegrationUpgrade:
         assert sorted(_installed_presets_affecting_agent(project, "bob")) == [
             "p1",
             "p3",
+            "p4",
         ]
 
 

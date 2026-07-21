@@ -701,6 +701,25 @@ class PresetManager:
 
         return True
 
+    def _extension_installed_for_command(self, command_name: str) -> bool:
+        """Whether *command_name* may be materialized in this project.
+
+        Extension command overrides follow ``speckit.<ext-id>.<cmd-name>``;
+        they must be skipped everywhere preset artifacts are written —
+        registration *and* reconciliation — when the extension isn't
+        installed, or reconciliation would materialize files that
+        registration refused to track. Core commands (single-dot names,
+        e.g. ``speckit.specify``) always pass.
+        """
+        parts = command_name.split(".")
+        if len(parts) >= 3 and parts[0] == "speckit":
+            ext_id = parts[1]
+            if not (
+                self.project_root / ".specify" / "extensions" / ext_id
+            ).is_dir():
+                return False
+        return True
+
     def _register_commands(
         self,
         manifest: PresetManifest,
@@ -730,17 +749,11 @@ class PresetManager:
             return {}
 
         # Filter out extension command overrides if the extension isn't installed.
-        # Command names follow the pattern: speckit.<ext-id>.<cmd-name>
-        # Core commands (e.g. speckit.specify) have only one dot — always register.
-        extensions_dir = self.project_root / ".specify" / "extensions"
-        filtered = []
-        for cmd in command_templates:
-            parts = cmd["name"].split(".")
-            if len(parts) >= 3 and parts[0] == "speckit":
-                ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
-                    continue
-            filtered.append(cmd)
+        filtered = [
+            cmd
+            for cmd in command_templates
+            if self._extension_installed_for_command(cmd["name"])
+        ]
 
         if not filtered:
             return {}
@@ -1543,6 +1556,21 @@ class PresetManager:
         Returns:
             Command names successfully written by this reconciliation pass.
         """
+        if not command_names:
+            return set()
+
+        # Never materialize extension-scoped commands whose extension isn't
+        # installed. Registration (_register_commands / _register_skills)
+        # already refuses them, so a reconciliation pass writing them would
+        # create files no registry entry tracks. Filtering here — the single
+        # chokepoint every install/remove/rescaffold reconciliation funnels
+        # through — keeps all callers consistent without each one re-applying
+        # the filter when seeding names from manifest templates.
+        command_names = [
+            name
+            for name in command_names
+            if self._extension_installed_for_command(name)
+        ]
         if not command_names:
             return set()
 
@@ -2503,15 +2531,11 @@ class PresetManager:
 
         # Filter out extension command overrides if the extension isn't installed,
         # matching the same logic used by _register_commands().
-        extensions_dir = self.project_root / ".specify" / "extensions"
-        filtered = []
-        for cmd in command_templates:
-            parts = cmd["name"].split(".")
-            if len(parts) >= 3 and parts[0] == "speckit":
-                ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
-                    continue
-            filtered.append(cmd)
+        filtered = [
+            cmd
+            for cmd in command_templates
+            if self._extension_installed_for_command(cmd["name"])
+        ]
 
         if not filtered:
             return {}
@@ -3369,20 +3393,11 @@ class PresetManager:
 
         # Reconcile all affected commands from the full priority stack so that
         # install order doesn't determine the winning command file.
-        # Apply the same extension-installed filter as _register_commands to
-        # avoid reconciling extension commands when the extension isn't installed.
-        extensions_dir = self.project_root / ".specify" / "extensions"
-        cmd_names = []
-        for t in manifest.templates:
-            if t.get("type") != "command":
-                continue
-            name = t["name"]
-            parts = name.split(".")
-            if len(parts) >= 3 and parts[0] == "speckit":
-                ext_id = parts[1]
-                if not (extensions_dir / ext_id).is_dir():
-                    continue
-            cmd_names.append(name)
+        cmd_names = [
+            t["name"]
+            for t in manifest.templates
+            if t.get("type") == "command"
+        ]
         if cmd_names:
             try:
                 self._reconcile_composed_commands(cmd_names)

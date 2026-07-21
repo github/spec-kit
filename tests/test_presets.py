@@ -5473,6 +5473,44 @@ class TestPresetSkills:
             "sanity: the new skills-mode artifact should still be written"
         )
 
+    def test_rescaffold_skips_extension_commands_when_extension_not_installed(
+        self, project_dir, temp_dir
+    ):
+        """Rescaffold must not materialize extension-scoped commands
+        (``speckit.<ext>.<cmd>``) when the extension isn't installed.
+
+        ``_register_commands`` refuses them, but the rescaffold seeded its
+        final reconciliation pass with every command template name
+        unfiltered, so ``_reconcile_composed_commands`` wrote the command
+        file anyway — an artifact no registry entry tracks (review
+        3623357358).
+        """
+        self._write_init_options(project_dir, ai="copilot", ai_skills=False)
+        commands_dir = project_dir / ".github" / "agents"
+        commands_dir.mkdir(parents=True)
+
+        preset_dir = self._create_command_preset(
+            temp_dir, "ext-scoped-preset", "speckit.git.feature",
+            "Ext override", "ext body",
+        )
+        manager = PresetManager(project_dir)
+        manager.install_from_directory(preset_dir, "0.1.5")
+
+        ext_cmd = commands_dir / "speckit.git.feature.agent.md"
+        assert not ext_cmd.exists(), (
+            "sanity: install must not write an extension command when the "
+            "extension isn't installed"
+        )
+
+        manager.register_enabled_presets_for_agent("copilot")
+
+        assert not ext_cmd.exists(), (
+            "rescaffold must not materialize an extension-scoped command "
+            "whose extension isn't installed"
+        )
+        metadata = manager.registry.get("ext-scoped-preset")
+        assert not (metadata.get("registered_commands") or {}).get("copilot")
+
     def test_same_mode_partial_command_rescaffold_keeps_skipped_tracking(
         self, project_dir, temp_dir
     ):
