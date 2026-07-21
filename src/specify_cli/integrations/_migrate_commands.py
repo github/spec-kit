@@ -66,16 +66,20 @@ class _PresetRegistryUnreadableError(Exception):
     """
 
 
-def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str]:
-    """Return IDs of installed presets with artifacts registered for *agent_key*.
+def _installed_presets_affecting_agent(
+    project_root, agent_key: str
+) -> list[tuple[str, bool]]:
+    """Return ``(preset_id, enabled)`` for presets with artifacts for *agent_key*.
 
     Presets register command overrides for every detected agent and mirror
     skills for the active skills agent, tracking the result in each preset's
-    ``registered_commands`` / ``registered_skills`` metadata. There is no
-    agent-scoped preset re-registration mechanism, so a command↔skills *layout
-    change* cannot reconcile those artifacts (see ``integration_upgrade``).
-    Callers use this to detect the unsafe case and reject the migration rather
-    than silently orphaning preset files / leaving stale registry entries.
+    ``registered_commands`` / ``registered_skills`` metadata. Across a
+    command↔skills *layout change*, only the active integration's presets are
+    reconciled — the post-upgrade rescaffold re-registers *enabled* presets in
+    the new layout — so callers use this to reject the unsafe cases (non-active
+    agent, or a disabled preset whose frozen artifacts the rescaffold must not
+    touch) rather than silently orphaning preset files / leaving stale registry
+    entries (see ``integration_upgrade``).
 
     Fails **closed**: a genuinely absent registry (no presets ever installed)
     returns an empty list, but if the registry file exists and cannot be read
@@ -105,7 +109,7 @@ def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str
             "preset registry structure is malformed"
         )
 
-    affected: list[str] = []
+    affected: list[tuple[str, bool]] = []
     for preset_id, meta in data.get("presets", {}).items():
         # A malformed entry means we cannot verify whether this preset owns
         # artifacts for the agent, so fail closed rather than skip it.
@@ -133,7 +137,7 @@ def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str
             )
         has_commands = bool(registered_commands.get(agent_key))
         if has_commands or has_skills:
-            affected.append(preset_id)
+            affected.append((preset_id, bool(meta.get("enabled", True))))
     return affected
 
 
@@ -530,8 +534,11 @@ def integration_upgrade(
     # *active* integration preset artifacts are too: the post-upgrade
     # ``_register_presets_for_agent`` rescaffold re-registers every enabled
     # preset in the new layout and retires the old layout's stale files
-    # (#2948), so an active-agent layout change proceeds.  A non-active
-    # integration gets no such rescaffold (preset registration is
+    # (#2948), so an active-agent layout change proceeds — provided every
+    # affected preset is *enabled*: the rescaffold iterates enabled presets
+    # only, and a disabled preset's artifacts are deliberately frozen until
+    # removal (``preset disable``), so it can reconcile neither.  A
+    # non-active integration gets no such rescaffold (preset registration is
     # active-only), so migrating it would delete a preset's old-layout files
     # without recreating them and leave the preset registry claiming
     # artifacts that no longer exist — bail out *before* any mutation with an
@@ -558,7 +565,7 @@ def integration_upgrade(
             )
             raise typer.Exit(1)
         if affected_presets and key != installed_key:
-            preset_list = ", ".join(sorted(affected_presets))
+            preset_list = ", ".join(sorted(pid for pid, _ in affected_presets))
             console.print(
                 f"[red]Error:[/red] Cannot change the non-active integration "
                 f"'{key}' command layout while preset override(s) are installed "
@@ -576,6 +583,28 @@ def integration_upgrade(
                 f"  [cyan]specify integration upgrade {key} "
                 f"--integration-options \"...\"[/cyan]\n"
                 f"  [cyan]specify preset add <id>[/cyan]"
+            )
+            raise typer.Exit(1)
+        disabled_affected = sorted(
+            pid for pid, enabled in affected_presets if not enabled
+        )
+        if disabled_affected:
+            preset_list = ", ".join(disabled_affected)
+            console.print(
+                f"[red]Error:[/red] Cannot change '{key}' command layout while "
+                f"disabled preset override(s) still own artifacts for it: "
+                f"[bold]{preset_list}[/bold]."
+            )
+            console.print(
+                "A disabled preset keeps its registered files until removal "
+                "and is skipped by the post-upgrade preset rescaffold, so the "
+                "migration would orphan its old-layout files and leave the "
+                "preset registry inconsistent."
+            )
+            console.print(
+                "Re-enable or remove the preset(s) first:\n"
+                "  [cyan]specify preset enable <id>[/cyan]  (reconciled by the upgrade)\n"
+                "  [cyan]specify preset remove <id>[/cyan]"
             )
             raise typer.Exit(1)
 
@@ -726,11 +755,12 @@ def integration_upgrade(
     # integration, ``register_enabled_presets_for_agent`` re-registers every
     # enabled preset in the new layout and retires the old layout's stale
     # command/skill files itself (its command↔skills toggle handling), so a
-    # layout change needs no preset-specific unregister step here. Non-active
-    # integrations are not rescaffolded (preset registration is active-only,
-    # #2948); a layout-changing upgrade of a non-active agent with preset
-    # artifacts is rejected by the guard near the top of this function
-    # instead, so control never reaches here in that state.
+    # layout change needs no preset-specific unregister step here. The cases
+    # the rescaffold cannot reconcile — a non-active integration (preset
+    # registration is active-only, #2948) and a disabled preset's frozen
+    # artifacts (skipped by the rescaffold, kept until removal) — are
+    # rejected by the guard near the top of this function instead, so
+    # control never reaches here in those states.
     if key == installed_key:
         if _manifest_tracks_skill_layout(old_manifest) != _manifest_tracks_skill_layout(
             new_manifest

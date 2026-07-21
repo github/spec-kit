@@ -3130,6 +3130,91 @@ class TestIntegrationUpgrade:
         assert registered_commands.get("bob") == ["speckit.plan"]
         assert not (registered_skills.get("bob") if isinstance(registered_skills, dict) else registered_skills)
 
+    def test_upgrade_active_layout_change_rejected_with_disabled_preset(
+        self, tmp_path
+    ):
+        """Regression (review 3623779277).
+
+        The post-upgrade rescaffold iterates *enabled* presets only, and a
+        disabled preset's artifacts are deliberately frozen until removal
+        (``preset disable``). An active-agent layout change must therefore be
+        rejected while a disabled preset still owns artifacts for the agent —
+        proceeding would delete its old-layout files in stale-manifest
+        cleanup, skip recreating them, and leave its registry entries stale.
+        Re-enabling the preset unblocks the migration.
+        """
+        project = _init_project(
+            tmp_path, "bob", integration_options="--legacy-commands"
+        )
+        commands = project / ".bob" / "commands"
+        skills = project / ".bob" / "skills"
+
+        preset_src = tmp_path / "cmd-preset"
+        (preset_src / "commands").mkdir(parents=True)
+        (preset_src / "commands" / "speckit.plan.md").write_text(
+            "---\ndescription: Overridden plan\n---\nOverridden plan content\n",
+            encoding="utf-8",
+        )
+        manifest_data = {
+            "schema_version": "1.0",
+            "preset": {
+                "id": "cmd-preset",
+                "name": "Command Preset",
+                "version": "1.0.0",
+                "description": "Test preset with a command override",
+            },
+            "requires": {"speckit_version": ">=0.1.0"},
+            "provides": {
+                "templates": [
+                    {
+                        "type": "command",
+                        "name": "speckit.plan",
+                        "file": "commands/speckit.plan.md",
+                    }
+                ]
+            },
+        }
+        import yaml
+
+        (preset_src / "preset.yml").write_text(
+            yaml.dump(manifest_data), encoding="utf-8"
+        )
+        result = _run_in_project(project, ["preset", "add", "--dev", str(preset_src)])
+        assert result.exit_code == 0, f"preset add failed: {result.output}"
+        result = _run_in_project(project, ["preset", "disable", "cmd-preset"])
+        assert result.exit_code == 0, f"preset disable failed: {result.output}"
+
+        cmd_file = commands / "speckit.plan.md"
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8")
+
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code != 0, (
+            "layout change with a disabled preset must be rejected"
+        )
+        assert "cmd-preset" in result.output
+        assert not skills.exists(), "no skills layout must be scaffolded on rejection"
+        assert "Overridden plan content" in cmd_file.read_text(encoding="utf-8"), (
+            "the disabled preset's command file must be left untouched"
+        )
+
+        # Re-enabling makes the preset reconcilable → migration proceeds.
+        result = _run_in_project(project, ["preset", "enable", "cmd-preset"])
+        assert result.exit_code == 0, f"preset enable failed: {result.output}"
+        result = _run_in_project(project, [
+            "integration", "upgrade", "bob",
+            "--integration-options", "--skills",
+            "--script", "sh", "--force",
+        ])
+        assert result.exit_code == 0, (
+            f"layout change must succeed once the preset is enabled: {result.output}"
+        )
+        assert not cmd_file.exists()
+        assert (skills / "speckit-plan" / "SKILL.md").exists()
+
     def test_upgrade_secondary_layout_change_rejected_with_presets_installed(
         self, tmp_path
     ):
@@ -3572,7 +3657,8 @@ class TestIntegrationUpgrade:
         registry.write_text(json.dumps({"presets": {}}), encoding="utf-8")
         assert _installed_presets_affecting_agent(project, "bob") == []
 
-        # Valid registry with a preset registered for bob → reported.
+        # Valid registry with a preset registered for bob → reported with its
+        # enabled state (absent flag defaults to enabled).
         # registered_skills comes in two shapes: a legacy flat list (not
         # agent-scoped → fail closed, any entry affects) and the per-agent
         # dict written by preset registration ({agent: [skill names]} → only
@@ -3586,14 +3672,19 @@ class TestIntegrationUpgrade:
                     "p4": {"registered_skills": {"bob": ["speckit-y"]}},
                     "p5": {"registered_skills": {"codex": ["speckit-z"]}},
                     "p6": {"registered_skills": {"bob": []}},
+                    "p7": {
+                        "enabled": False,
+                        "registered_commands": {"bob": ["speckit.tasks"]},
+                    },
                 }
             }),
             encoding="utf-8",
         )
         assert sorted(_installed_presets_affecting_agent(project, "bob")) == [
-            "p1",
-            "p3",
-            "p4",
+            ("p1", True),
+            ("p3", True),
+            ("p4", True),
+            ("p7", False),
         ]
 
 
