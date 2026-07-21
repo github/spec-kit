@@ -1083,6 +1083,33 @@ class TestCommandStep:
         assert res.status is StepStatus.FAILED
         assert "'model' must be a string" in (res.error or "")
 
+    @pytest.mark.parametrize("falsey", [[], {}, 0, False])
+    def test_execute_falsey_non_string_integration_fails_loudly(self, falsey):
+        """A *falsey* non-string ([], {}, 0, False) must fail the step, not be
+        swallowed by an ``or``-fallback to the workflow default.
+
+        A ``config.get('integration') or context.default_integration`` coerces a
+        falsey non-string to the default *before* the type guard runs, so with a
+        configured default the step would silently dispatch using the wrong
+        integration instead of surfacing the contract error. The default is set
+        here so a regression dispatches rather than fails-not-possible."""
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        ctx = StepContext(default_integration="claude", default_model="sonnet")
+        res = step.execute(
+            {"id": "c", "command": "speckit.specify", "integration": falsey}, ctx
+        )
+        assert res.status is StepStatus.FAILED, falsey
+        assert "'integration' must be a string" in (res.error or ""), falsey
+        # a falsey non-string model likewise reaches the guard
+        res = step.execute(
+            {"id": "c", "command": "speckit.specify", "model": falsey}, ctx
+        )
+        assert res.status is StepStatus.FAILED, falsey
+        assert "'model' must be a string" in (res.error or ""), falsey
+
     def test_step_override_integration(self):
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
@@ -1522,6 +1549,29 @@ class TestPromptStep:
         )
         assert res.status is StepStatus.FAILED
         assert "'model' must be a string" in (res.error or "")
+
+    @pytest.mark.parametrize("falsey", [[], {}, 0, False])
+    def test_execute_falsey_non_string_integration_fails_loudly(self, falsey):
+        """A *falsey* non-string ([], {}, 0, False) must fail the step, not be
+        swallowed by an ``or``-fallback to the workflow default.
+
+        A ``config.get('integration') or context.default_integration`` coerces a
+        falsey non-string to the default *before* the type guard runs, so with a
+        configured default the step would silently dispatch using the wrong
+        integration instead of surfacing the contract error. The default is set
+        here so a regression dispatches rather than fails-not-possible."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = PromptStep()
+        ctx = StepContext(default_integration="claude", default_model="sonnet")
+        res = step.execute({"id": "p", "prompt": "hi", "integration": falsey}, ctx)
+        assert res.status is StepStatus.FAILED, falsey
+        assert "'integration' must be a string" in (res.error or ""), falsey
+        # a falsey non-string model likewise reaches the guard
+        res = step.execute({"id": "p", "prompt": "hi", "model": falsey}, ctx)
+        assert res.status is StepStatus.FAILED, falsey
+        assert "'model' must be a string" in (res.error or ""), falsey
 
 
 class TestShellStep:

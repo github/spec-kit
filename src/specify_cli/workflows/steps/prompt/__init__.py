@@ -42,13 +42,24 @@ class PromptStep(StepBase):
         if not isinstance(prompt, str):
             prompt = str(prompt)
 
-        # Resolve integration (step → workflow default)
-        integration = config.get("integration") or context.default_integration
+        # Resolve integration (step → workflow default).
+        # Fall back to the workflow default ONLY for a genuinely-unset value
+        # (missing / YAML-null / empty string). A ``config.get(...) or ...``
+        # would also swallow a falsey *non-string* ([], {}, 0, False), coercing
+        # it to the default before the guard below runs — so on an unvalidated
+        # execute() such a step would silently dispatch with the configured
+        # default instead of failing. Fall through instead, so every non-string
+        # reaches the type guard.
+        integration = config.get("integration")
+        if integration is None or integration == "":
+            integration = context.default_integration
         if integration and isinstance(integration, str) and "{{" in integration:
             integration = evaluate_expression(integration, context)
 
-        # Resolve model
-        model = config.get("model") or context.default_model
+        # Resolve model (same fallback rationale as 'integration' above).
+        model = config.get("model")
+        if model is None or model == "":
+            model = context.default_model
         if model and isinstance(model, str) and "{{" in model:
             model = evaluate_expression(model, context)
 
