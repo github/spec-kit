@@ -1572,11 +1572,25 @@ class ExtensionManager:
             _staged_modes: dict[str, int] = {}
             if rescue_modes_file.is_file() and not rescue_modes_file.is_symlink():
                 try:
-                    _staged_modes = json.loads(rescue_modes_file.read_bytes())
+                    _loaded_modes = json.loads(rescue_modes_file.read_bytes())
                 except (OSError, ValueError):
                     # Ignore unreadable/invalid sidecar metadata and fall back
                     # to each staged file's mode for compatibility.
                     pass
+                else:
+                    # json.loads() succeeds for any valid JSON document, so a
+                    # sidecar containing e.g. `[]` or a string would otherwise
+                    # crash later at _staged_modes.get() or stat.S_IMODE().
+                    # Accept only a mapping of string filenames to integer modes
+                    # (bool is rejected despite subclassing int); anything else
+                    # falls back to each staged file's own mode.
+                    if isinstance(_loaded_modes, dict) and all(
+                        isinstance(name, str)
+                        and isinstance(recorded_mode, int)
+                        and not isinstance(recorded_mode, bool)
+                        for name, recorded_mode in _loaded_modes.items()
+                    ):
+                        _staged_modes = _loaded_modes
             for staged_name in sorted(staged_names):
                 staged_file = rescue_staging_dir / staged_name
                 staged_stat = staged_file.stat()
@@ -1841,18 +1855,13 @@ class ExtensionManager:
             target = dest_dir / filename
             _restore_stranded_config_file(target, content, mode)
 
-        # Every stranded config has been restored successfully — the
-        # durable staging backup is no longer needed.  Raise on failure so
-        # the install is not reported as successful while a stale backup
-        # that could be misread on the next retry remains on disk.
-        if rescue_staging_dir.is_dir() and not rescue_staging_dir.is_symlink():
-            # Remove the completion marker before the non-atomic rmtree so a
-            # crash mid-cleanup cannot leave a staging dir that a retry would
-            # wrongly trust as a complete durable backup.
-            rescue_complete_marker.unlink(missing_ok=True)
-            _fsync_directory(rescue_staging_dir)
-            shutil.rmtree(rescue_staging_dir)
-            _fsync_directory(rescue_staging_dir.parent)
+        # NOTE: the durable staging backup is intentionally NOT cleaned up
+        # here.  Command/skill/hook registration and the final registry.add()
+        # below can still fail; if we discarded the backup and provenance now,
+        # such a failure would leave the extension unregistered with no durable
+        # rescue copy, so the next plain retry would skip rescue and overwrite
+        # the restored user config with packaged defaults.  Cleanup is deferred
+        # until after registry.add() succeeds (see post-commit cleanup below).
 
         # Register commands with AI agents
         registered_commands = {}
@@ -1914,6 +1923,24 @@ class ExtensionManager:
                 "registered_skills": registered_skills,
             },
         )
+
+        # Post-commit cleanup: the registry now records this extension as
+        # installed, so the rescue guard (`not self.registry.is_installed`)
+        # will never misread a leftover staging dir on a future run.  The
+        # durable backup has therefore served its purpose and can be removed
+        # best-effort — a cleanup failure must not fail an install that has
+        # already committed successfully.
+        if rescue_staging_dir.is_dir() and not rescue_staging_dir.is_symlink():
+            # Remove the completion marker before the non-atomic rmtree so a
+            # crash mid-cleanup cannot leave a staging dir that a retry would
+            # wrongly trust as a complete durable backup.
+            try:
+                rescue_complete_marker.unlink(missing_ok=True)
+                _fsync_directory(rescue_staging_dir)
+                shutil.rmtree(rescue_staging_dir)
+                _fsync_directory(rescue_staging_dir.parent)
+            except OSError:
+                pass  # Best-effort; install already committed to the registry.
 
         return manifest
 
