@@ -442,6 +442,24 @@ def integration_switch(
                         f"[yellow]Warning:[/yellow] Failed to restore default "
                         f"integration '{fallback_key}': {restore_err}"
                     )
+                else:
+                    # Under active-only registration the fallback may never
+                    # have received any extension/preset artifacts (it was
+                    # installed while another integration was active), and
+                    # Phase 1 already unregistered the outgoing agent's
+                    # artifacts. Rescaffold so the restored default is
+                    # actually usable. Both helpers are best-effort and
+                    # cannot raise past this point.
+                    _register_extensions_for_agent(
+                        project_root,
+                        fallback_key,
+                        continuing="The switch was rolled back; installed extensions may need re-registration.",
+                    )
+                    _register_presets_for_agent(
+                        project_root,
+                        fallback_key,
+                        continuing="The switch was rolled back; installed presets may need re-registration.",
+                    )
             else:
                 _write_integration_json(
                     project_root, fallback_key, installed_keys, _integration_settings(current)

@@ -2691,6 +2691,54 @@ class TestIntegrationSwitch:
         template = project / ".specify" / "templates" / "plan-template.md"
         assert "/speckit-plan" in template.read_text(encoding="utf-8")
 
+    def test_failed_switch_rescaffolds_fallback_extensions(self, tmp_path):
+        """Regression (review 3624184343).
+
+        When Phase 2 of a switch fails, rollback selects another installed
+        integration as the new default. Under active-only registration that
+        fallback may never have received extension artifacts (it was
+        installed while another integration was active), and Phase 1 already
+        unregistered the outgoing agent's artifacts — so the restored default
+        must be rescaffolded, not just written to metadata.
+        """
+        project = _init_project(tmp_path, "claude")
+        result = _run_in_project(project, ["extension", "add", "git"])
+        assert result.exit_code == 0, f"extension add failed: {result.output}"
+        result = _run_in_project(project, [
+            "integration", "install", "codex",
+            "--script", "sh",
+        ])
+        assert result.exit_code == 0, result.output
+
+        registry_path = project / ".specify" / "extensions" / ".registry"
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" not in registered, (
+            "precondition: secondary install has no extension artifacts"
+        )
+
+        result = _run_in_project(project, [
+            "integration", "switch", "generic",
+            "--script", "sh",
+        ])
+        assert result.exit_code != 0
+
+        data = json.loads(
+            (project / ".specify" / "integration.json").read_text(encoding="utf-8")
+        )
+        assert data["integration"] == "codex", "precondition: fallback restored"
+
+        registered = json.loads(registry_path.read_text(encoding="utf-8"))[
+            "extensions"
+        ]["git"]["registered_commands"]
+        assert "codex" in registered, (
+            "rollback must rescaffold extensions for the restored default"
+        )
+        assert (
+            project / ".agents" / "skills" / "speckit-git-feature" / "SKILL.md"
+        ).exists()
+
 
 class TestIntegrationUpgrade:
     def test_upgrade_invalid_manifest_reports_cli_error(self, tmp_path):
