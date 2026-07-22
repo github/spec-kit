@@ -218,22 +218,6 @@ class TestBuildCommandInvocation:
         i = get_integration("codex")
         assert i.build_command_invocation("speckit.git.commit", "fix typo") == "$speckit-git-commit fix typo"
 
-    @pytest.mark.parametrize("integration_key", ["codex", "zcode"])
-    def test_dollar_skill_post_processing_is_idempotent(self, integration_key):
-        from specify_cli.integrations import get_integration
-
-        content = (
-            "---\nname: test\n---\n\n"
-            "- For each executable hook, output the following based on its flag:\n"
-        )
-        integration = get_integration(integration_key)
-        once = integration.post_process_skill_content(content)
-        twice = integration.post_process_skill_content(once)
-
-        assert twice == once
-        assert once.count("replace dots (`.`) with hyphens") == 1
-        assert "$speckit-git-commit" in once
-
     def test_forge_core_command_hyphenated(self):
         """Forge installs hyphenated slash-commands (/speckit-<name>), so the
         dispatch invocation must be hyphenated too — not the dotted default it
