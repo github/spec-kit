@@ -7,7 +7,7 @@ param(
     [switch]$DryRun,
     [string]$ShortName,
     [Parameter()]
-    [long]$Number = 0,
+    [string]$Number = '',
     [switch]$Timestamp,
     [switch]$Help,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
@@ -142,12 +142,13 @@ if ($ShortName) {
     $branchSuffix = Get-BranchName -Description $featureDesc
 }
 
-# Warn if -Number and -Timestamp are both specified. Use ContainsKey (not
-# `-ne 0`) so an explicit `-Number 0` is also detected, matching the bash twin's
-# `[ -n "$BRANCH_NUMBER" ]` check.
-if ($Timestamp -and $PSBoundParameters.ContainsKey('Number')) {
-    Write-Warning "[specify] Warning: -Number is ignored when -Timestamp is used"
-    $Number = 0
+# Treat an explicit empty string as omitted, matching the bash and Python twins.
+$hasNumber = $PSBoundParameters.ContainsKey('Number') -and $Number -ne ''
+
+# Warn if -Number and -Timestamp are both specified.
+if ($Timestamp -and $hasNumber) {
+    [Console]::Error.WriteLine("[specify] Warning: -Number is ignored when -Timestamp is used")
+    $Number = ''
 }
 
 # Determine branch prefix
@@ -158,11 +159,23 @@ if ($Timestamp) {
     # Determine branch number from existing feature directories. Auto-detect only
     # when -Number was not supplied; an explicit value (including 0) is honored,
     # matching the bash twin's `[ -z "$BRANCH_NUMBER" ]` check.
-    if (-not $PSBoundParameters.ContainsKey('Number')) {
-        $Number = (Get-HighestNumberFromSpecs -SpecsDir $specsDir) + 1
+    [long]$resolvedNumber = 0
+    if (-not $hasNumber) {
+        $highestNumber = Get-HighestNumberFromSpecs -SpecsDir $specsDir
+        if ($highestNumber -eq [long]::MaxValue) {
+            Write-Error "Error: feature number must be between 0 and $([long]::MaxValue), got '9223372036854775808'"
+            exit 1
+        }
+        $resolvedNumber = $highestNumber + 1
+    } elseif ($Number -notmatch '^[0-9]+$') {
+        Write-Error "Error: -Number must be an unsigned integer, got '$Number'"
+        exit 1
+    } elseif (-not [long]::TryParse($Number, [ref]$resolvedNumber)) {
+        Write-Error "Error: -Number must be between 0 and $([long]::MaxValue), got '$Number'"
+        exit 1
     }
 
-    $featureNum = ('{0:000}' -f $Number)
+    $featureNum = ('{0:000}' -f $resolvedNumber)
     $branchName = "$featureNum-$branchSuffix"
 }
 
@@ -183,9 +196,9 @@ if ($branchName.Length -gt $maxBranchLength) {
     $originalBranchName = $branchName
     $branchName = "$featureNum-$truncatedSuffix"
 
-    Write-Warning "[specify] Branch name exceeded GitHub's 244-byte limit"
-    Write-Warning "[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)"
-    Write-Warning "[specify] Truncated to: $branchName ($($branchName.Length) bytes)"
+    [Console]::Error.WriteLine("[specify] Warning: Branch name exceeded GitHub's 244-byte limit")
+    [Console]::Error.WriteLine("[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)")
+    [Console]::Error.WriteLine("[specify] Truncated to: $branchName ($($branchName.Length) bytes)")
 }
 
 $featureDir = Join-Path $specsDir $branchName
@@ -225,6 +238,13 @@ if (-not $DryRun) {
     # Set environment variables for the current session
     $env:SPECIFY_FEATURE = $branchName
     $env:SPECIFY_FEATURE_DIRECTORY = $featureDir
+
+    $quotedBranchName = "'" + $branchName.Replace("'", "''") + "'"
+    $quotedFeatureDir = "'" + $featureDir.Replace("'", "''") + "'"
+    $featureAssignment = '$env:SPECIFY_FEATURE = ' + $quotedBranchName
+    $directoryAssignment = '$env:SPECIFY_FEATURE_DIRECTORY = ' + $quotedFeatureDir
+    [Console]::Error.WriteLine("# To persist: $featureAssignment")
+    [Console]::Error.WriteLine("#              $directoryAssignment")
 }
 
 if ($Json) {
@@ -242,7 +262,7 @@ if ($Json) {
     Write-Output "SPEC_FILE: $specFile"
     Write-Output "FEATURE_NUM: $featureNum"
     if (-not $DryRun) {
-        Write-Output "SPECIFY_FEATURE set to: $branchName"
-        Write-Output "SPECIFY_FEATURE_DIRECTORY set to: $featureDir"
+        Write-Output "# To persist in your shell: $featureAssignment"
+        Write-Output "#                           $directoryAssignment"
     }
 }

@@ -1,6 +1,8 @@
 """Tests for IntegrationOption, IntegrationBase, MarkdownIntegration, and primitives."""
 
+import shlex
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -495,19 +497,41 @@ class TestProcessTemplatePyScriptType:
         assert ".specify/scripts/bash/check-prerequisites.sh --json" in result
         assert "python" not in result
 
+    def test_body_scripts_example_does_not_override_frontmatter(self):
+        content = (
+            "---\n"
+            "scripts:\n"
+            "  sh: scripts/bash/real.sh --json\n"
+            "---\n"
+            "Run {SCRIPT} now.\n"
+            "```yaml\n"
+            "scripts:\n"
+            "  sh: examples/not-the-command.sh\n"
+            "```\n"
+        )
+
+        result = IntegrationBase.process_template(content, "agent", "sh")
+
+        assert ".specify/scripts/bash/real.sh --json" in result
+        assert "examples/not-the-command.sh" in result
+
     def test_py_quotes_interpreter_with_spaces(self, monkeypatch):
         # An interpreter path containing whitespace (e.g. Windows
         # ``Program Files``) must be quoted so it isn't split into args.
+        interpreter = r"C:\Program Files\Python\python.exe"
         monkeypatch.setattr(
             "specify_cli.integrations.base.shutil.which", lambda name: None
         )
         monkeypatch.setattr(
             "specify_cli.integrations.base.sys.executable",
-            r"C:\Program Files\Python\python.exe",
+            interpreter,
+        )
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.os", SimpleNamespace(name="posix")
         )
         result = IntegrationBase.process_template(self.CONTENT, "agent", "py")
         assert (
-            '"C:\\Program Files\\Python\\python.exe" '
+            f"{shlex.quote(interpreter)} "
             ".specify/scripts/python/check-prerequisites.py --json"
         ) in result
 
@@ -528,6 +552,39 @@ class TestProcessTemplatePyScriptType:
             self.CONTENT, "agent", "py", project_root=tmp_path
         )
         assert ".venv/bin/python .specify/scripts/python/check-prerequisites.py" in result
+
+    def test_setup_py_falls_back_to_platform_shell(
+        self, monkeypatch, tmp_path
+    ):
+        template = tmp_path / "fallback.md"
+        template.write_text(
+            "---\n"
+            "scripts:\n"
+            "  sh: scripts/bash/check-prerequisites.sh --json\n"
+            "  ps: scripts/powershell/check-prerequisites.ps1 -Json\n"
+            "---\n"
+            "Run {SCRIPT} now.\n",
+            encoding="utf-8",
+        )
+        integration = StubIntegration()
+        monkeypatch.setattr(
+            integration, "list_command_templates", lambda: [template]
+        )
+
+        created = integration.setup(
+            tmp_path,
+            IntegrationManifest("stub", tmp_path),
+            script_type="py",
+        )
+
+        rendered = created[0].read_text(encoding="utf-8")
+        expected = (
+            ".specify/scripts/powershell/check-prerequisites.ps1"
+            if sys.platform == "win32"
+            else ".specify/scripts/bash/check-prerequisites.sh"
+        )
+        assert "{SCRIPT}" not in rendered
+        assert expected in rendered
 
 
 class TestInstallScriptsPython:

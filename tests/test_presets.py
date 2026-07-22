@@ -1766,6 +1766,103 @@ class TestPresetCatalog:
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
+    def test_fetch_single_catalog_revalidates_redirected_url(self, project_dir):
+        """An HTTPS catalog URL that redirects to http:// must be rejected AFTER
+        the redirect. _open_url follows redirects (auth stripped on downgrade),
+        so without re-validating response.geturl() the http payload would still
+        be fetched and trusted — and it supplies each preset's download_url +
+        sha256, defeating verify_archive_sha256. Parity with the
+        integrations/workflows catalog fetchers."""
+        catalog = PresetCatalog(project_dir)
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"schema_version": "1.0", "presets": {}}).encode()
+
+            def geturl(self):
+                return "http://evil.test/catalog.json"  # downgraded via redirect
+
+        catalog._open_url = lambda url, timeout=None, redirect_validator=None: _Resp()
+
+        entry = PresetCatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(PresetValidationError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_single_catalog_validates_every_redirect_hop(self, project_dir):
+        """A redirect_validator is passed to _open_url and rejects a non-HTTPS
+        INTERMEDIATE hop — closing the https -> http -> attacker-https chain that
+        a terminal-URL-only check would miss."""
+        catalog = PresetCatalog(project_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            # Simulate the hop urllib validates before following the redirect.
+            redirect_validator("https://good.example/catalog.json", "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        entry = PresetCatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(PresetValidationError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+        assert captured["rv"] is not None
+
+    def test_fetch_catalog_legacy_revalidates_redirected_url(self, project_dir):
+        """The legacy single-catalog fetch_catalog() path also rejects an
+        HTTPS -> http redirected payload (final geturl() check), matching
+        _fetch_single_catalog — it previously parsed the body with no check."""
+        catalog = PresetCatalog(project_dir)
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return json.dumps({"schema_version": "1.0", "presets": {}}).encode()
+
+            def geturl(self):
+                return "http://evil.test/catalog.json"
+
+        catalog._open_url = lambda url, timeout=None, redirect_validator=None: _Resp()
+        with pytest.raises(PresetError, match="HTTPS"):
+            catalog.fetch_catalog(force_refresh=True)
+
+    def test_fetch_catalog_legacy_validates_every_redirect_hop(self, project_dir):
+        """The legacy fetch_catalog() path also validates every INTERMEDIATE hop
+        (not just the terminal URL): it must supply a redirect_validator that
+        rejects an insecure hop, so an https -> http -> https chain is caught."""
+        catalog = PresetCatalog(project_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator(url, "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        with pytest.raises(PresetError, match="HTTPS"):
+            catalog.fetch_catalog(force_refresh=True)
+        assert captured["rv"] is not None
+
     @pytest.mark.parametrize(
         "payload",
         [
@@ -1799,6 +1896,9 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        # A real urllib response reports the final URL (== request URL with no
+        # redirect); the fetcher re-validates it after redirects.
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = PresetCatalogEntry(
             url="https://example.com/catalog.json",
@@ -1868,6 +1968,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
 
         entry = PresetCatalogEntry(
             url=catalog.DEFAULT_CATALOG_URL,
@@ -1915,6 +2016,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             with pytest.raises(PresetError, match="Invalid preset catalog format"):
@@ -1956,6 +2058,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.fetch_catalog(force_refresh=False)
@@ -1994,6 +2097,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.fetch_catalog(force_refresh=False)
@@ -2064,6 +2168,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(payload).encode("utf-8")
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         # Record every ``write_text`` call's encoding kwarg so the
         # assertion observes the production writer's argument directly.
@@ -2113,6 +2218,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = catalog.DEFAULT_CATALOG_URL
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -2165,6 +2271,7 @@ class TestPresetCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = PresetCatalogEntry(
             url="https://example.com/catalog.json",

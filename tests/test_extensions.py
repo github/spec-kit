@@ -3118,7 +3118,9 @@ Run {SCRIPT}
         """Without init metadata, Windows fallback should prefer ps scripts over sh."""
         import yaml
 
-        monkeypatch.setattr("specify_cli.agents.platform.system", lambda: "Windows")
+        monkeypatch.setattr(
+            "specify_cli.integrations.base.platform.system", lambda: "Windows"
+        )
 
         ext_dir = temp_dir / "ext-script-windows-fallback"
         ext_dir.mkdir()
@@ -4445,6 +4447,94 @@ class TestExtensionCatalog:
 
         assert captured["req"].get_header("Authorization") == "Bearer ghp_testtoken"
 
+    def test_fetch_single_catalog_revalidates_redirected_url(self, temp_dir):
+        """An HTTPS catalog URL that redirects to http:// must be rejected AFTER
+        the redirect. _open_url follows redirects (auth stripped on downgrade),
+        so without re-validating response.geturl() the http payload would still
+        be fetched and trusted — and it supplies each extension's download_url +
+        sha256, defeating sha256 verification. Parity with the
+        integrations/presets/workflows catalog fetchers."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(
+            {"schema_version": "1.0", "extensions": {}}
+        ).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "http://evil.test/catalog.json"
+
+        entry = CatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="HTTPS"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_single_catalog_validates_every_redirect_hop(self, temp_dir):
+        """A redirect_validator is passed to _open_url and rejects a non-HTTPS
+        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
+        terminal-URL-only check would miss."""
+        catalog = self._make_catalog(temp_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator("https://good.example/catalog.json", "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        entry = CatalogEntry(
+            url="https://good.example/catalog.json",
+            name="c",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(ExtensionError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+        assert captured["rv"] is not None
+
+    def test_fetch_catalog_legacy_revalidates_redirected_url(self, temp_dir):
+        """The legacy single-catalog fetch_catalog() path also rejects an
+        HTTPS -> http redirected payload (final geturl() check) — it previously
+        parsed the body with no redirect check."""
+        from unittest.mock import patch, MagicMock
+
+        catalog = self._make_catalog(temp_dir)
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(
+            {"schema_version": "1.0", "extensions": {}}
+        ).encode()
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "http://evil.test/catalog.json"
+
+        with patch.object(catalog, "_open_url", return_value=mock_response):
+            with pytest.raises(ExtensionError, match="HTTPS"):
+                catalog.fetch_catalog(force_refresh=True)
+
+    def test_fetch_catalog_legacy_validates_every_redirect_hop(self, temp_dir):
+        """The legacy fetch_catalog() path also validates every INTERMEDIATE hop
+        (not just the terminal URL): it must supply a redirect_validator that
+        rejects an insecure hop, so an https -> http -> https chain is caught."""
+        catalog = self._make_catalog(temp_dir)
+        captured = {}
+
+        def fake_open(url, timeout=None, extra_headers=None, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            redirect_validator(url, "http://evil.test/hop")
+            raise AssertionError("redirect_validator should have raised")
+
+        catalog._open_url = fake_open
+        with pytest.raises(ExtensionError, match="HTTPS"):
+            catalog.fetch_catalog(force_refresh=True)
+        assert captured["rv"] is not None
+
     @pytest.mark.parametrize(
         "payload",
         [
@@ -4478,6 +4568,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = CatalogEntry(
             url="https://example.com/catalog.json",
@@ -4546,6 +4637,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = CatalogEntry(
             url=ExtensionCatalog.DEFAULT_CATALOG_URL,
@@ -4593,6 +4685,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             with pytest.raises(ExtensionError, match="Invalid catalog format"):
@@ -4633,6 +4726,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.fetch_catalog(force_refresh=False)
@@ -4671,6 +4765,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "_open_url", return_value=mock_response):
             result = catalog.fetch_catalog(force_refresh=False)
@@ -4745,6 +4840,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(payload).encode("utf-8")
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         # Record every ``write_text`` call's encoding kwarg so the
         # assertion observes the production writer's argument directly.
@@ -4796,6 +4892,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(valid).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         # Simulate an unwritable cache dir: every write_text under the
         # cache directory raises PermissionError (an OSError subclass).
@@ -4847,6 +4944,7 @@ class TestExtensionCatalog:
         mock_response.read.return_value = json.dumps(payload).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         entry = CatalogEntry(
             url="https://example.com/catalog.json",
@@ -6875,6 +6973,7 @@ class TestDownloadExtensionBundled:
         mock_response.read.return_value = b"fake zip data"
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
+        mock_response.geturl.return_value = "https://example.com/catalog.json"
 
         with patch.object(catalog, "get_extension_info", return_value=bundled_with_url), \
              patch.object(urllib.request, "urlopen", return_value=mock_response):

@@ -2602,14 +2602,23 @@ class ExtensionCatalog(CatalogStackBase):
         url: str,
         timeout: int = 10,
         extra_headers: Optional[Dict[str, str]] = None,
+        redirect_validator=None,
     ):
         """Open a URL with provider-based auth, trying each configured provider.
 
         Delegates to :func:`specify_cli.authentication.http.open_url`.
+        *redirect_validator*, when provided, is invoked as ``(old_url, new_url)``
+        before EACH redirect hop so an HTTPS host guarantee can be enforced on
+        every intermediate URL, not just the terminal one.
         """
         from specify_cli.authentication.http import open_url
 
-        return open_url(url, timeout, extra_headers=extra_headers)
+        return open_url(
+            url,
+            timeout,
+            extra_headers=extra_headers,
+            redirect_validator=redirect_validator,
+        )
 
     def _resolve_github_release_asset_api_url(
         self,
@@ -2833,7 +2842,24 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Fetch from network
         try:
-            with self._open_url(entry.url, timeout=10) as response:
+            # Validate EVERY redirect hop, not just the terminal URL. _open_url
+            # follows redirects; _StripAuthOnRedirect drops auth on an HTTPS->HTTP
+            # downgrade AND whenever the redirect leaves the configured trusted
+            # hosts, but the payload itself is still fetched and trusted, and it
+            # supplies each extension's download_url + sha256 (so a redirected
+            # payload defeats sha256 verification). A terminal-only check also
+            # misses an https -> http -> attacker-https chain. redirect_validator
+            # runs before each hop; the final geturl() check is kept as a
+            # belt-and-braces guard. Mirrors bundler/services/adapters.py.
+            def _validate_redirect(_old_url: str, new_url: str) -> None:
+                self._validate_catalog_url(new_url)
+
+            with self._open_url(
+                entry.url, timeout=10, redirect_validator=_validate_redirect
+            ) as response:
+                final_url = response.geturl()
+                if final_url != entry.url:
+                    self._validate_catalog_url(final_url)
                 catalog_data = json.loads(response.read())
 
             self._validate_catalog_payload(catalog_data, entry.url)
@@ -3010,7 +3036,18 @@ class ExtensionCatalog(CatalogStackBase):
         try:
             import urllib.error
 
-            with self._open_url(catalog_url, timeout=10) as response:
+            # Same redirect hardening as _fetch_single_catalog: validate every
+            # redirect hop AND the final URL so this legacy single-catalog path
+            # is not vulnerable to an HTTPS->HTTP redirected payload either.
+            def _validate_redirect(_old_url: str, new_url: str) -> None:
+                self._validate_catalog_url(new_url)
+
+            with self._open_url(
+                catalog_url, timeout=10, redirect_validator=_validate_redirect
+            ) as response:
+                final_url = response.geturl()
+                if final_url != catalog_url:
+                    self._validate_catalog_url(final_url)
                 catalog_data = json.loads(response.read())
 
             # Validate catalog structure. Reuses the same helper as

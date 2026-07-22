@@ -5,6 +5,8 @@ built-in, install policy gating, payload parsing.
 """
 from __future__ import annotations
 
+import json
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -37,6 +39,7 @@ def test_builtin_default_stack_when_no_config(tmp_path: Path):
     assert ids == ["default", "community"]
     assert sources[0].install_policy is InstallPolicy.INSTALL_ALLOWED
     assert sources[1].install_policy is InstallPolicy.DISCOVERY_ONLY
+    assert sources[1].priority == 20
     assert all(s.scope is Scope.BUILTIN for s in sources)
 
 
@@ -93,6 +96,29 @@ def test_load_payload_parses_entries():
 def test_builtin_default_stack_constant_shape():
     ids = {raw["id"] for raw in BUILTIN_DEFAULT_STACK}
     assert ids == {"default", "community"}
+
+
+def test_repository_community_bundle_catalog_matches_contract():
+    catalog_path = Path(__file__).parents[2] / "bundles" / "catalog.community.json"
+    payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "1.0"
+    assert payload["catalog_url"].endswith("/bundles/catalog.community.json")
+    entries = load_catalog_payload(payload)
+    assert all(entry.verified is False for entry in entries.values())
+
+
+def test_wheel_packages_community_bundle_catalog():
+    repo_root = Path(__file__).parents[2]
+    with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
+        pyproject = tomllib.load(pyproject_file)
+
+    force_include = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"][
+        "force-include"
+    ]
+    assert force_include["bundles/catalog.community.json"] == (
+        "specify_cli/core_pack/bundles/catalog.community.json"
+    )
 
 
 def test_catalog_entry_rejects_string_tags():

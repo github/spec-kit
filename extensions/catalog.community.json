@@ -2029,6 +2029,40 @@
       "created_at": "2026-06-01T00:00:00Z",
       "updated_at": "2026-06-22T00:00:00Z"
     },
+    "linear-weave": {
+      "name": "Linear Weave",
+      "id": "linear-weave",
+      "description": "Weave Spec Kit into Linear: pull requirements, mirror tasks.md into sub-issues, sync statuses.",
+      "author": "Tony Woodhouse",
+      "version": "1.0.0",
+      "download_url": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/archive/refs/tags/v1.0.0.zip",
+      "repository": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
+      "homepage": "https://github.com/tonydwoodhouse/spec-kit-linear-weave",
+      "documentation": "https://github.com/tonydwoodhouse/spec-kit-linear-weave#readme",
+      "changelog": "https://github.com/tonydwoodhouse/spec-kit-linear-weave/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "integration",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.13.0,<1.0.0",
+        "tools": [{ "name": "linear-mcp", "required": true }]
+      },
+      "provides": {
+        "commands": 5,
+        "hooks": 5
+      },
+      "tags": [
+        "linear",
+        "issue-tracking",
+        "integration",
+        "workflow"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-21T00:00:00Z",
+      "updated_at": "2026-07-21T00:00:00Z"
+    },
     "loop": {
       "name": "Loop Engineering",
       "id": "loop",
