@@ -16,6 +16,10 @@ import yaml
 from rich.markup import escape as _escape_markup
 
 from .._console import console
+from .._download_security import (
+    is_https_or_localhost_http,
+    is_safe_download_redirect,
+)
 
 preset_app = typer.Typer(
     name="preset",
@@ -102,38 +106,25 @@ def preset_add(
 
         elif from_url:
             # Validate URL scheme before downloading
-            from ipaddress import ip_address
             from urllib.parse import urlparse as _urlparse
 
             try:
                 _parsed = _urlparse(from_url)
+                _parsed.port
             except ValueError:
                 console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
                 raise typer.Exit(1)
 
-            def _is_allowed_download_url(parsed_url):
-                host = parsed_url.hostname
-                if not host:
-                    return False
-                is_loopback = host == "localhost"
-                if not is_loopback:
-                    try:
-                        is_loopback = ip_address(host).is_loopback
-                    except ValueError:
-                        # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-                        pass
-                return parsed_url.scheme == "https" or (parsed_url.scheme == "http" and is_loopback)
-
             def _validate_download_redirect(old_url, new_url):
-                if not _is_allowed_download_url(_urlparse(new_url)):
+                if not is_safe_download_redirect(old_url, new_url):
                     import urllib.error
 
                     raise urllib.error.URLError(
-                        "redirect target must use HTTPS with a hostname, "
-                        "or HTTP for localhost/loopback"
+                        "redirect target must use HTTPS without entering a local "
+                        "target, or stay within loopback over HTTP"
                     )
 
-            if not _is_allowed_download_url(_parsed):
+            if not is_https_or_localhost_http(from_url):
                 console.print(
                     "[red]Error:[/red] URL must use HTTPS with a hostname, "
                     "or HTTP for localhost/loopback."
@@ -167,7 +158,7 @@ def preset_add(
                         redirect_validator=_validate_download_redirect,
                     ) as response:
                         final_url = response.geturl() if hasattr(response, "geturl") else from_url
-                        if not _is_allowed_download_url(_urlparse(final_url)):
+                        if not is_https_or_localhost_http(final_url):
                             console.print(
                                 "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
                                 f"{final_url}. Redirect targets must use HTTPS with a hostname, "

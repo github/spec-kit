@@ -17,7 +17,7 @@ from fnmatch import fnmatch
 from typing import Callable
 from urllib.parse import urlparse
 
-from .._download_security import is_https_or_localhost_http, is_loopback_url
+from .._download_security import is_safe_download_redirect
 from . import get_provider
 from .config import AuthConfigEntry, _default_config_path, find_entries_for_url, load_auth_config
 
@@ -62,15 +62,11 @@ RedirectValidator = Callable[[str, str], None]
 
 
 def _validate_strict_redirect(old_url: str, new_url: str) -> None:
-    target_is_allowed = is_https_or_localhost_http(new_url)
-    remote_to_http_loopback = (
-        urlparse(new_url).scheme == "http"
-        and not is_loopback_url(old_url)
-    )
-    if not target_is_allowed or remote_to_http_loopback:
+    if not is_safe_download_redirect(old_url, new_url):
         raise urllib.error.URLError(
             f"unsafe redirect to {new_url}: target must use HTTPS with a hostname, "
-            "or stay within localhost over HTTP (127.0.0.1, ::1)"
+            "must not enter a local target from a remote host, and may use HTTP only "
+            "within loopback (for example localhost, 127.0.0.1, ::1)"
         )
 
 
@@ -95,6 +91,8 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         try:
             new_parsed = urlparse(newurl)
+            # Force urllib's syntax and range validation before following.
+            new_parsed.port
         except ValueError as exc:
             # Malformed redirect target (e.g. unterminated IPv6 bracket).
             # Surface as URLError so callers' download error handling applies.
@@ -177,9 +175,11 @@ def open_url(
     *redirect_validator*, when provided, is called with ``(old_url, new_url)``
     before following each redirect and may raise to reject the redirect.
 
+    Every attempt uses an isolated opener so a process-wide opener installed
+    with ``urllib.request.install_opener`` cannot replace the redirect guard.
     Redirect scheme safety: every attempt goes through
     ``_StripAuthOnRedirect``, which rejects redirects to non-HTTPS URLs except
-    HTTP between localhost / 127.0.0.1 / ::1 URLs.
+    HTTP between loopback URLs, and rejects remote-to-local redirects.
     """
     entries = find_entries_for_url(url, _load_config())
 

@@ -39,6 +39,7 @@ packages = ["src/specify_cli"]
 "templates/commands" = "specify_cli/core_pack/commands"
 "scripts/bash" = "specify_cli/core_pack/scripts/bash"
 "scripts/powershell" = "specify_cli/core_pack/scripts/powershell"
+"scripts/python" = "specify_cli/core_pack/scripts/python"
 # Bundled extensions (installable via `specify extension add <name>`)
 "extensions/git" = "specify_cli/core_pack/extensions/git"
 "extensions/agent-context" = "specify_cli/core_pack/extensions/agent-context"

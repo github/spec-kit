@@ -1935,6 +1935,14 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
 class TestInitStep:
     """Test the init step type."""
 
+    def test_docstring_lists_every_valid_script_type(self):
+        # The `script` field docstring must not contradict the step's own
+        # VALID_SCRIPT_TYPES (which includes 'py'); validate() accepts all three.
+        from specify_cli.workflows.steps.init import InitStep, VALID_SCRIPT_TYPES
+
+        for script_type in VALID_SCRIPT_TYPES:
+            assert f"``{script_type}``" in InitStep.__doc__
+
     def test_builds_here_argv_and_bootstraps(self, tmp_path):
         from specify_cli.workflows.steps.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -2099,6 +2107,15 @@ class TestInitStep:
 
 class TestGateStep:
     """Test the gate step type."""
+
+    def test_docstring_lists_every_on_reject_behaviour(self):
+        # The docstring must not contradict validate()/execute(): on_reject
+        # accepts 'abort', 'skip', AND 'retry' (execute() has a dedicated
+        # retry -> PAUSED branch), but the summary omitted 'retry'.
+        from specify_cli.workflows.steps.gate import GateStep
+
+        for behaviour in ("abort", "skip", "retry"):
+            assert behaviour in GateStep.__doc__
 
     @pytest.fixture(autouse=True)
     def _non_tty_stdin_by_default(self, monkeypatch):
@@ -11736,6 +11753,10 @@ steps:
             _reject_insecure_download_redirect(
                 "https://example.com/wf.yml", "http://localhost:8000/wf.yml"
             )
+        with pytest.raises(urllib.error.URLError):
+            _reject_insecure_download_redirect(
+                "https://example.com/wf.yml", "https://127.0.0.2/wf.yml"
+            )
         # Allowed: HTTPS anywhere, or loopback HTTP that stays on loopback HTTP.
         _reject_insecure_download_redirect(
             "https://example.com/wf.yml", "https://cdn.example.com/wf.yml"
@@ -11745,6 +11766,9 @@ steps:
         )
         _reject_insecure_download_redirect(
             "http://127.0.0.1/source.yml", "http://127.0.0.1/wf.yml"
+        )
+        _reject_insecure_download_redirect(
+            "http://127.0.0.2/source.yml", "http://127.255.255.254/wf.yml"
         )
 
     def test_add_from_url_passes_redirect_validator(self, project_dir, monkeypatch):
