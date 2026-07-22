@@ -1078,6 +1078,21 @@ class TestCommandStep:
             result = step.execute(config, ctx)
         assert result.output["integration"] == "gemini"
 
+    def test_execute_non_string_integration_fails_cleanly(self):
+        """A non-string integration (e.g. a list from an expression that resolved
+        to one) must FAIL the step cleanly, not crash the run with
+        'TypeError: unhashable type: list' from get_integration's dict lookup."""
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        config = {
+            "id": "s", "command": "speckit.plan",
+            "integration": ["claude"], "input": {},
+        }
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.FAILED
+
     def test_step_override_model(self):
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
@@ -1274,6 +1289,20 @@ class TestPromptStep:
         assert result.output["prompt"] == "Review auth.py for security issues"
         assert result.output["integration"] == "claude"
         assert result.output["dispatched"] is False
+
+    def test_execute_non_string_integration_fails_cleanly(self):
+        """A non-string integration must FAIL the step cleanly, not crash with
+        'TypeError: unhashable type: list' from get_integration's dict lookup."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = PromptStep()
+        config = {
+            "id": "p", "type": "prompt", "prompt": "do it",
+            "integration": ["claude"],
+        }
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.FAILED
 
     def test_execute_with_step_integration(self):
         from unittest.mock import patch

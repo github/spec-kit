@@ -153,7 +153,11 @@ class CommandStep(StepBase):
         not possible (integration not found, CLI not installed, or
         dispatch not supported).
         """
-        if not integration_key:
+        if not integration_key or not isinstance(integration_key, str):
+            # A non-string integration (a list/dict/expression that resolved to
+            # one) would raise TypeError: unhashable type from get_integration's
+            # dict lookup below and abort the whole run. Treat it as "not
+            # dispatchable" so execute() falls through to its FAILED StepResult.
             return None
 
         try:
