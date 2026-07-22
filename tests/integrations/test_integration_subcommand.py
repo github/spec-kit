@@ -2307,7 +2307,7 @@ class TestIntegrationSwitch:
         assert opts["ai"] == "codex"
 
         template = project / ".specify" / "templates" / "plan-template.md"
-        assert "$speckit-plan" in template.read_text(encoding="utf-8")
+        assert "/speckit-plan" in template.read_text(encoding="utf-8")
 
 
 class TestIntegrationUpgrade:
