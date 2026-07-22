@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-10T00:00:00Z",
+  "updated_at": "2026-07-21T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/workflows/catalog.community.json",
   "workflows": {
     "pipeline": {
@@ -8,12 +8,12 @@
       "name": "Guided SDD Pipeline",
       "description": "Chains specify, clarify, plan, tasks, analyze, implement, and converge into one guided run with a single clarify gate and a post-implement convergence loop",
       "author": "domattioli",
-      "version": "1.0.0",
-      "url": "https://raw.githubusercontent.com/domattioli/spec-kit-workflow-pipeline/v1.0.0/workflow.yml",
+      "version": "1.1.0",
+      "url": "https://raw.githubusercontent.com/domattioli/spec-kit-workflow-pipeline/v1.1.0/workflow.yml",
       "repository": "https://github.com/domattioli/spec-kit-workflow-pipeline",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.8.5"
+        "speckit_version": ">=0.11.2"
       },
       "tags": [
         "sdd",
@@ -21,7 +21,7 @@
         "automation"
       ],
       "created_at": "2026-07-10T00:00:00Z",
-      "updated_at": "2026-07-10T00:00:00Z"
+      "updated_at": "2026-07-21T00:00:00Z"
     }
   }
 }
