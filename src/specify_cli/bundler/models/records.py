@@ -55,8 +55,13 @@ class InstalledBundleRecord:
     def from_dict(cls, data: Any) -> "InstalledBundleRecord":
         if not isinstance(data, dict):
             raise BundlerError("Each installed-bundle record must be a mapping.")
-        components_raw = data.get("contributed_components") or []
-        if not isinstance(components_raw, list):
+        components_raw = data.get("contributed_components")
+        if components_raw is None:
+            components_raw = []
+        elif not isinstance(components_raw, list):
+            # `or []` would coerce a FALSY non-list (0, '', False, {}) to []
+            # before this guard, silently accepting a corrupt record; only an
+            # absent/None value means "no components".
             raise BundlerError(
                 "Corrupt record: 'contributed_components' must be a list."
             )
@@ -121,8 +126,13 @@ def load_records(project_root: Path) -> list[InstalledBundleRecord]:
     if not isinstance(data, dict):
         raise BundlerError(f"Corrupt records file: {path}")
     _check_schema_version(data.get("schema_version"), path=path, required=True)
-    bundles = data.get("bundles") or []
-    if not isinstance(bundles, list):
+    bundles = data.get("bundles")
+    if bundles is None:
+        bundles = []
+    elif not isinstance(bundles, list):
+        # `or []` would coerce a FALSY non-list (0, '', False, {}) to [] before
+        # this guard, silently treating a corrupt file as "no bundles"; only an
+        # absent/None value means empty.
         raise BundlerError(
             f"Corrupt records file: {path} — 'bundles' must be a list."
         )
