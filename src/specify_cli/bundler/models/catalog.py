@@ -253,6 +253,16 @@ def _merge_config(by_id: dict[str, CatalogSource], config_path: Path, scope: Sco
     catalogs = data.get("catalogs") if isinstance(data, dict) else None
     if not catalogs:
         return
+    if not isinstance(catalogs, list):
+        # A non-empty scalar (``catalogs: 5``) passes the falsy check above and
+        # would raise a raw ``TypeError: 'int' object is not iterable`` from the
+        # loop below. Report the same actionable BundlerError the sibling reader
+        # of this file raises (commands_impl/catalog_config.py) so both readers
+        # of bundle-catalogs.yml agree.
+        raise BundlerError(
+            f"Malformed catalog config at {config_path}: 'catalogs' must be a "
+            f"list, got {type(catalogs).__name__}."
+        )
     for raw in catalogs:
         src = CatalogSource.from_dict(raw, scope)
         by_id[src.id] = src

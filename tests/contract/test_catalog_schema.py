@@ -43,6 +43,18 @@ def test_builtin_default_stack_when_no_config(tmp_path: Path):
     assert all(s.scope is Scope.BUILTIN for s in sources)
 
 
+def test_non_list_catalogs_raises_actionable_error(tmp_path: Path):
+    """A scalar ``catalogs:`` value raises a clean BundlerError, not a raw
+    'int object is not iterable' TypeError — matching what the sibling reader
+    (bundle catalog list) already reports for the same file."""
+    make_project(tmp_path)
+    (tmp_path / ".specify" / "bundle-catalogs.yml").write_text(
+        "catalogs: 5\n", encoding="utf-8"
+    )
+    with pytest.raises(BundlerError, match="must be a list"):
+        load_source_stack(tmp_path)
+
+
 def test_project_config_overrides_same_id(tmp_path: Path):
     make_project(tmp_path)
     config = {
