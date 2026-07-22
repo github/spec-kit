@@ -7499,6 +7499,63 @@ class TestWorkflowRemoveGuard:
         assert "[stage]permissiondenied" in output_compact
         assert "[reg]diskfull" in output_compact
 
+
+class TestWorkflowAddCaseInsensitiveSuffix:
+    """`workflow add` must detect a local YAML file case-insensitively, matching
+    `workflow run` (_commands.py:workflow_run) and the engine loader
+    (engine.py:WorkflowEngine.load_workflow), which both use `.suffix.lower()`.
+    Without it, `workflow run Sample.YAML` works but `workflow add Sample.YAML`
+    fails — an add/run inconsistency for an uppercase extension."""
+
+    def test_plain_path_accepts_uppercase_extension(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        src = temp_dir / "Sample.YAML"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        # Before the fix: `.suffix in (...)` is case-sensitive, so ".YAML" is not
+        # recognized as a local file; the path falls through to catalog lookup
+        # and fails. After the fix it installs like the lowercase happy path.
+        assert result.exit_code == 0, result.output
+        assert "installed" in result.output
+
+    def test_dev_path_accepts_uppercase_extension(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        src = temp_dir / "Sample.YAML"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", "--dev", str(src)])
+
+        # Before the fix the --dev branch rejects ".YAML" with
+        # "--dev source must be a workflow YAML file ...".
+        assert result.exit_code == 0, result.output
+        assert "installed" in result.output
+
+    def test_lowercase_extension_still_installs(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """Happy path (lowercase .yml) is unchanged by the case-normalization."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        src = temp_dir / "sample.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code == 0, result.output
+        assert "installed" in result.output
+
+
 class TestWorkflowAddSymlinkGuard:
     def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
         """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""

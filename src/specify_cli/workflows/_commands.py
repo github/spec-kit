@@ -1555,7 +1555,7 @@ def workflow_add(
     # precedence over --from so a URL that would be ignored is never fetched.
     if dev:
         dev_path = Path(source).expanduser()
-        if dev_path.is_file() and dev_path.suffix in (".yml", ".yaml"):
+        if dev_path.is_file() and dev_path.suffix.lower() in (".yml", ".yaml"):
             _validate_and_install_local(dev_path, str(dev_path))
             return
         if dev_path.is_dir():
@@ -1714,7 +1714,7 @@ def workflow_add(
     # Try as a local file/directory
     source_path = Path(source)
     if source_path.exists():
-        if source_path.is_file() and source_path.suffix in (".yml", ".yaml"):
+        if source_path.is_file() and source_path.suffix.lower() in (".yml", ".yaml"):
             _validate_and_install_local(source_path, str(source_path))
             return
         elif source_path.is_dir():
