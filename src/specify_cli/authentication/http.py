@@ -17,7 +17,7 @@ from fnmatch import fnmatch
 from typing import Callable
 from urllib.parse import urlparse
 
-from .._download_security import is_https_or_localhost_http
+from .._download_security import is_https_or_localhost_http, is_loopback_url
 from . import get_provider
 from .config import AuthConfigEntry, _default_config_path, find_entries_for_url, load_auth_config
 
@@ -61,11 +61,16 @@ def _hostname_in_hosts(hostname: str, hosts: tuple[str, ...]) -> bool:
 RedirectValidator = Callable[[str, str], None]
 
 
-def _validate_strict_redirect(_old_url: str, new_url: str) -> None:
-    if not is_https_or_localhost_http(new_url):
+def _validate_strict_redirect(old_url: str, new_url: str) -> None:
+    target_is_allowed = is_https_or_localhost_http(new_url)
+    remote_to_http_loopback = (
+        urlparse(new_url).scheme == "http"
+        and not is_loopback_url(old_url)
+    )
+    if not target_is_allowed or remote_to_http_loopback:
         raise urllib.error.URLError(
             f"unsafe redirect to {new_url}: target must use HTTPS with a hostname, "
-            "or HTTP for localhost (127.0.0.1, ::1)"
+            "or stay within localhost over HTTP (127.0.0.1, ::1)"
         )
 
 
@@ -73,9 +78,8 @@ class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
     """Redirect handler that guards every redirect it is installed for.
 
     1. Run any caller-provided redirect validator.
-    2. Reject redirects that are not HTTPS with a hostname, except HTTP to
-       localhost / 127.0.0.1 / ::1 (the exact hosts allowed by
-       ``is_https_or_localhost_http``).
+    2. Reject redirects that are not HTTPS with a hostname. HTTP loopback is
+       allowed only when the previous hop is also loopback.
     3. Drop ``Authorization`` when a redirect leaves trusted hosts or downgrades.
     """
 
@@ -175,8 +179,7 @@ def open_url(
 
     Redirect scheme safety: every attempt goes through
     ``_StripAuthOnRedirect``, which rejects redirects to non-HTTPS URLs except
-    HTTP to localhost / 127.0.0.1 / ::1 (the hosts allowed by
-    ``is_https_or_localhost_http``).
+    HTTP between localhost / 127.0.0.1 / ::1 URLs.
     """
     entries = find_entries_for_url(url, _load_config())
 

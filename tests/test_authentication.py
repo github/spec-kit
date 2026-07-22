@@ -559,6 +559,35 @@ class TestAzureDevOpsAuth:
         with patch("urllib.request.build_opener", return_value=mock_opener):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
+    def test_resolve_token_azure_ad_rejects_https_redirect(self, monkeypatch):
+        """The client-secret POST must never be redirected to another host."""
+        import urllib.error
+        from unittest.mock import MagicMock, patch
+        from urllib.request import Request
+
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("stop after setup")
+
+        with patch("urllib.request.build_opener", return_value=mock_opener) as build_opener:
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+        redirect_handler = build_opener.call_args.args[0]
+        request = Request("https://login.microsoftonline.com/tid/oauth2/v2.0/token")
+        with pytest.raises(urllib.error.URLError, match="must not be redirected"):
+            redirect_handler.redirect_request(
+                request,
+                io.BytesIO(b""),
+                307,
+                "Temporary Redirect",
+                {},
+                "https://evil.example/token",
+            )
+
     def test_resolve_token_azure_ad_invalid_utf8_returns_none(self, monkeypatch):
         """azure-ad returns None when the token response is not valid UTF-8."""
         from unittest.mock import MagicMock, patch
@@ -930,6 +959,47 @@ class TestRedirectStripping:
         with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
             handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
                                      "http://evil.example.com/archive.zip")
+
+    def test_redirect_rejects_remote_to_http_loopback(self):
+        """A remote response must not redirect a download into loopback."""
+        import io
+        import urllib.error
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(())
+        request = Request("https://example.com/archive.zip")
+
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(
+                request,
+                io.BytesIO(b""),
+                302,
+                "Found",
+                {},
+                "http://127.0.0.1/internal",
+            )
+
+    def test_redirect_allows_loopback_to_http_loopback(self):
+        """Local development may continue redirecting between loopback URLs."""
+        import io
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(())
+        request = Request("http://localhost:8000/archive.zip")
+        redirected = handler.redirect_request(
+            request,
+            io.BytesIO(b""),
+            302,
+            "Found",
+            {},
+            "http://127.0.0.1:8001/archive.zip",
+        )
+
+        assert redirected is not None
 
     def test_strict_redirect_error_describes_target_and_allowed_localhost(self):
         from specify_cli.authentication.http import _StripAuthOnRedirect

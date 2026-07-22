@@ -20,6 +20,12 @@ READ_CHUNK_SIZE = 1024 * 1024
 # METADATA covers fixed-shape single-object responses (an OAuth token, one
 # release's metadata): a few KiB in practice, 1 MiB is already generous.
 MAX_JSON_METADATA_BYTES = 1 * 1024 * 1024
+_LOOPBACK_HOSTS = frozenset(("localhost", "127.0.0.1", "::1"))
+
+
+def is_loopback_url(url: str) -> bool:
+    """Return whether *url* targets an explicitly allowed loopback host."""
+    return urlparse(url).hostname in _LOOPBACK_HOSTS
 
 
 def is_https_or_localhost_http(url: str) -> bool:
@@ -41,7 +47,7 @@ def is_https_or_localhost_http(url: str) -> bool:
     parsed = urlparse(url)
     if not parsed.hostname:
         return False
-    is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+    is_localhost = parsed.hostname in _LOOPBACK_HOSTS
     return parsed.scheme == "https" or (parsed.scheme == "http" and is_localhost)
 
 

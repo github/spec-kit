@@ -126,11 +126,17 @@ class AzureDevOpsAuth(AuthProvider):
         try:
             from specify_cli.authentication.http import _StripAuthOnRedirect
 
-            # A 307/308 redirect preserves the POST body, which carries the
-            # client_secret. Reuse the package HTTPS-downgrade guard (empty host
-            # list means no auth header to strip, just the scheme check) so the
-            # secret can never be forwarded to a non-HTTPS, non-loopback host.
-            opener = urllib.request.build_opener(_StripAuthOnRedirect(()))
+            def reject_token_redirect(_old_url: str, new_url: str) -> None:
+                # A 307/308 redirect preserves this POST body, including the
+                # client_secret. Refuse every redirect so credentials cannot
+                # leave the fixed Microsoft token endpoint.
+                raise urllib.error.URLError(
+                    f"Azure AD token request must not be redirected to {new_url}"
+                )
+
+            opener = urllib.request.build_opener(
+                _StripAuthOnRedirect((), reject_token_redirect)
+            )
             with opener.open(req, timeout=30) as resp:  # noqa: S310
                 payload = _json.loads(
                     read_response_limited(
