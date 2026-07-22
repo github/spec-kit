@@ -428,10 +428,17 @@ def extension_add(
 
         try:
             parsed = urlparse(from_url)
+            # Read .hostname inside the try: a bracketed-but-invalid IPv6
+            # authority (e.g. "https://[not-an-ip]/x.zip") parses cleanly under
+            # urlparse() on Python < 3.14 and only raises ValueError lazily on
+            # the first .hostname access (eager at urlparse() on 3.14+). Reading
+            # it here keeps that ValueError inside the guard instead of leaking a
+            # raw traceback past the CLI. Reuse the value below.
+            hostname = parsed.hostname
         except ValueError:
             console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
             raise typer.Exit(1)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
 
         if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
             console.print("[red]Error:[/red] URL must use HTTPS for security.")

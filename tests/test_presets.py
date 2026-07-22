@@ -5577,6 +5577,76 @@ class TestBundledPresetLocator:
         assert "Invalid URL" in output
         open_url.assert_not_called()
 
+    def test_preset_add_from_bracketed_non_ip_url_exits_cleanly(self, project_dir):
+        """A bracketed-but-invalid IPv6 host in --from must exit cleanly.
+
+        Unlike an unterminated bracket (which raises eager at urlparse()),
+        "[not-an-ip]" parses cleanly on Python < 3.14 and only raises ValueError
+        lazily on the first .hostname access -- the case the try/except guard
+        around .hostname protects against on CI interpreters.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(
+                app,
+                ["preset", "add", "--from", "https://[not-an-ip]/preset.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        output = strip_ansi(result.output)
+        assert "Invalid URL" in output
+        open_url.assert_not_called()
+
+    def test_preset_add_from_url_lazy_hostname_valueerror_exits_cleanly(self, project_dir, monkeypatch):
+        """Simulate the Python < 3.14 shape explicitly (independent of the running
+        interpreter): urlparse() succeeds but .hostname raises ValueError lazily.
+        This is the exact path the fix guards; it leaks a raw ValueError if
+        .hostname is read outside the try/except.
+        """
+        import urllib.parse
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        real_urlparse = urllib.parse.urlparse
+
+        class _LazyHostnameRaiser:
+            def __init__(self, parsed):
+                self._parsed = parsed
+
+            @property
+            def hostname(self):
+                raise ValueError("simulated lazy IPv6 hostname failure")
+
+            def __getattr__(self, name):
+                return getattr(self._parsed, name)
+
+        def _fake_urlparse(url, *args, **kwargs):
+            return _LazyHostnameRaiser(real_urlparse(url, *args, **kwargs))
+
+        monkeypatch.setattr(urllib.parse, "urlparse", _fake_urlparse)
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch("specify_cli.authentication.http.open_url") as open_url:
+            result = runner.invoke(
+                app,
+                ["preset", "add", "--from", "https://example.com/preset.zip"],
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+        assert "Invalid URL" in strip_ansi(result.output)
+        open_url.assert_not_called()
+
     def test_preset_add_bracketed_host_download_url_exits_cleanly(self, project_dir):
         """A catalog download_url with a bracketed non-IP host must render cleanly.
 

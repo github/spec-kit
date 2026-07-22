@@ -106,13 +106,28 @@ def preset_add(
             from urllib.parse import urlparse as _urlparse
 
             try:
-                _parsed = _urlparse(from_url)
+                # Read .hostname inside the try: a bracketed-but-invalid IPv6
+                # authority (e.g. "https://[not-an-ip]/p.zip") parses cleanly
+                # under urlparse() on Python < 3.14 and only raises ValueError
+                # lazily on the first .hostname access (eager at urlparse() on
+                # 3.14+). Guarding it here surfaces the clean "Invalid URL"
+                # message instead of leaking a raw ValueError traceback.
+                _urlparse(from_url).hostname
             except ValueError:
                 console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
                 raise typer.Exit(1)
 
-            def _is_allowed_download_url(parsed_url):
-                host = parsed_url.hostname
+            def _is_allowed_download_url(url):
+                # Parse and read .hostname inside the try: a bracketed-but-invalid
+                # IPv6 authority (e.g. "https://[not-an-ip]/p.zip") parses cleanly
+                # under urlparse() on Python < 3.14 and only raises ValueError
+                # lazily on the first .hostname access (eager at urlparse() on
+                # 3.14+). A malformed URL is simply not an allowed download URL.
+                try:
+                    parsed_url = _urlparse(url)
+                    host = parsed_url.hostname
+                except ValueError:
+                    return False
                 if not host:
                     return False
                 is_loopback = host == "localhost"
@@ -125,7 +140,7 @@ def preset_add(
                 return parsed_url.scheme == "https" or (parsed_url.scheme == "http" and is_loopback)
 
             def _validate_download_redirect(old_url, new_url):
-                if not _is_allowed_download_url(_urlparse(new_url)):
+                if not _is_allowed_download_url(new_url):
                     import urllib.error
 
                     raise urllib.error.URLError(
@@ -133,7 +148,7 @@ def preset_add(
                         "or HTTP for localhost/loopback"
                     )
 
-            if not _is_allowed_download_url(_parsed):
+            if not _is_allowed_download_url(from_url):
                 console.print(
                     "[red]Error:[/red] URL must use HTTPS with a hostname, "
                     "or HTTP for localhost/loopback."
@@ -167,7 +182,7 @@ def preset_add(
                         redirect_validator=_validate_download_redirect,
                     ) as response:
                         final_url = response.geturl() if hasattr(response, "geturl") else from_url
-                        if not _is_allowed_download_url(_urlparse(final_url)):
+                        if not _is_allowed_download_url(final_url):
                             console.print(
                                 "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
                                 f"{final_url}. Redirect targets must use HTTPS with a hostname, "
