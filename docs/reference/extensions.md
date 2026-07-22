@@ -227,7 +227,7 @@ Each hook entry supports the following fields:
 | `condition` | Optional expression evaluated by `HookExecutor` (using `config.<path>` or `env.<VAR>` with `is set`, `==`, or `!=`). Current command templates do not evaluate conditions and skip hooks with a non-empty condition. |
 Hook event names identify when a hook is invoked. They generally use `before_<command>` or `after_<command>`, such as `before_implement`, `after_implement`, `before_tasks`, and `after_tasks`.
 
-Extension manifests reject invalid hook priorities during installation. If an existing `.specify/extensions.yml` file contains a missing or corrupted `priority` value, `HookExecutor.get_hooks_for_event()` treats that entry as priority `10` when sorting.
+Extension manifests reject invalid hook priorities during installation. For existing `.specify/extensions.yml` entries, `HookExecutor.get_hooks_for_event()` sorts with `normalize_priority()`: missing values, booleans, non-numeric values rejected by `int()`, and values less than `1` fall back to `10`; numeric strings and finite floats are coerced with `int()`, while non-finite floats are unsupported and may fail instead of falling back.
 
 `HookExecutor.get_hooks_for_event()` returns hooks ordered by `priority`, with lower values first. However, current command templates read hook lists directly and surface them in their configured YAML order rather than using priority ordering.
 
