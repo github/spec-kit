@@ -251,14 +251,18 @@ def _merge_config(by_id: dict[str, CatalogSource], config_path: Path, scope: Sco
         return
     data = load_yaml(config_path)
     catalogs = data.get("catalogs") if isinstance(data, dict) else None
-    if not catalogs:
+    if catalogs is None:
         return
     if not isinstance(catalogs, list):
-        # A non-empty scalar (``catalogs: 5``) passes the falsy check above and
-        # would raise a raw ``TypeError: 'int' object is not iterable`` from the
-        # loop below. Report the same actionable BundlerError the sibling reader
-        # of this file raises (commands_impl/catalog_config.py) so both readers
-        # of bundle-catalogs.yml agree.
+        # Treat only an absent/``None`` ``catalogs`` as "nothing to merge"; any
+        # other non-list value (``catalogs: 5``, ``false``, ``0``, ``''``,
+        # ``{}``) is a malformed config and must raise, not be silently skipped
+        # by a falsy check. Otherwise a truthy scalar would raise a raw
+        # ``TypeError: 'int' object is not iterable`` from the loop below, while
+        # falsy non-lists would be swallowed. Report the same actionable
+        # BundlerError the sibling reader of this file raises
+        # (commands_impl/catalog_config.py) so both readers of
+        # bundle-catalogs.yml agree. An empty list stays valid (loop is a no-op).
         raise BundlerError(
             f"Malformed catalog config at {config_path}: 'catalogs' must be a "
             f"list, got {type(catalogs).__name__}."

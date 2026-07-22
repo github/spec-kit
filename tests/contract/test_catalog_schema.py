@@ -55,6 +55,30 @@ def test_non_list_catalogs_raises_actionable_error(tmp_path: Path):
         load_source_stack(tmp_path)
 
 
+@pytest.mark.parametrize("value", ["false", "0", "''", "{}"])
+def test_falsy_non_list_catalogs_still_raises(tmp_path: Path, value: str):
+    """A *falsy* non-list ``catalogs:`` value (false/0/''/{}) must also raise —
+    only an absent/``None`` value means "nothing to merge". A plain falsy check
+    would silently swallow these, diverging from the sibling reader."""
+    make_project(tmp_path)
+    (tmp_path / ".specify" / "bundle-catalogs.yml").write_text(
+        f"catalogs: {value}\n", encoding="utf-8"
+    )
+    with pytest.raises(BundlerError, match="must be a list"):
+        load_source_stack(tmp_path)
+
+
+@pytest.mark.parametrize("body", ["catalogs:\n", "catalogs: []\n"])
+def test_absent_or_empty_catalogs_is_noop(tmp_path: Path, body: str):
+    """An absent (``None``) or empty-list ``catalogs:`` is valid: it contributes
+    no project sources and falls back to the built-in default stack."""
+    make_project(tmp_path)
+    (tmp_path / ".specify" / "bundle-catalogs.yml").write_text(body, encoding="utf-8")
+    # Does not raise; still yields the built-in defaults.
+    sources = load_source_stack(tmp_path)
+    assert len(sources) > 0
+
+
 def test_project_config_overrides_same_id(tmp_path: Path):
     make_project(tmp_path)
     config = {
