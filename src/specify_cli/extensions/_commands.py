@@ -428,12 +428,8 @@ def extension_add(
 
         try:
             parsed = urlparse(from_url)
-            # Read .hostname inside the try: a bracketed-but-invalid IPv6
-            # authority (e.g. "https://[not-an-ip]/x.zip") parses cleanly under
-            # urlparse() on Python < 3.14 and only raises ValueError lazily on
-            # the first .hostname access (eager at urlparse() on 3.14+). Reading
-            # it here keeps that ValueError inside the guard instead of leaking a
-            # raw traceback past the CLI. Reuse the value below.
+            # Keep parsing and hostname extraction in the same guard so any
+            # ValueError is converted to the CLI's normal invalid-URL error.
             hostname = parsed.hostname
         except ValueError:
             console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
