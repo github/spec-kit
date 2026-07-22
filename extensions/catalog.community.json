@@ -2045,7 +2045,7 @@
       "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.13.0,<1.0.0",
-        "tools": [{ "name": "linear-mcp", "required": false }]
+        "tools": [{ "name": "linear-mcp", "required": true }]
       },
       "provides": {
         "commands": 5,
