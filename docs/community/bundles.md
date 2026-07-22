@@ -9,6 +9,7 @@ Accepted community bundle entries are published in [`bundles/catalog.community.j
 
 | Bundle | Purpose | Role or team | Provides | Required catalogs | URL |
 |--------|---------|--------------|----------|-------------------|-----|
+| SicarioSpec Security & Governance Bundle | Secure-by-default governance bundle for GitHub Spec Kit. Enforces data classification, threat modeling, and code-owned verification gates. | `security-engineer` | 1 extension, 11 presets | Documented | [sicario-spec](https://github.com/dfirs1car1o/sicario-spec) |
 
 ## What to Submit
 
