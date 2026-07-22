@@ -152,14 +152,21 @@ class CatalogEntry:
         if not isinstance(data, dict):
             raise BundlerError("Each catalog entry must be a mapping.")
         entry_id = str(data.get("id", "")).strip()
-        requires = data.get("requires") or {}
-        if not isinstance(requires, dict):
+        # `or {}` would coerce a FALSY non-mapping (0, '', False, []) to {} before
+        # the isinstance guard, silently accepting a corrupt catalog entry; only
+        # an absent/None value means "not present".
+        requires = data.get("requires")
+        if requires is None:
+            requires = {}
+        elif not isinstance(requires, dict):
             raise BundlerError(
                 f"Catalog entry '{entry_id or '<unknown>'}': 'requires' must be a "
                 "mapping when present."
             )
-        provides_raw = data.get("provides") or {}
-        if not isinstance(provides_raw, dict):
+        provides_raw = data.get("provides")
+        if provides_raw is None:
+            provides_raw = {}
+        elif not isinstance(provides_raw, dict):
             raise BundlerError(
                 f"Catalog entry '{entry_id or '<unknown>'}': 'provides' must be a "
                 "mapping when present."

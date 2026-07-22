@@ -207,3 +207,17 @@ def test_catalog_entry_rejects_non_mapping_provides():
     data["provides"] = "extensions"
     with pytest.raises(BundlerError, match="'provides' must be a mapping"):
         CatalogEntry.from_dict(data)
+
+
+@pytest.mark.parametrize("field", ["requires", "provides"])
+@pytest.mark.parametrize("bad", [[], "", 0, False])
+def test_catalog_entry_rejects_falsy_non_mapping(field, bad):
+    # `or {}` coerced a FALSY non-mapping ([], '', 0, False) to {} before the
+    # isinstance guard, silently accepting a corrupt entry; only absent/None
+    # means "not present". Mirrors the manifest requires/provides guard.
+    from specify_cli.bundler.models.catalog import CatalogEntry
+
+    data = catalog_entry_dict("demo")
+    data[field] = bad
+    with pytest.raises(BundlerError, match=f"'{field}' must be a mapping"):
+        CatalogEntry.from_dict(data)
