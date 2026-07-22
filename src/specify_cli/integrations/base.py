@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from .._invocation_style import is_dollar_skills_agent
 from .._toml_string import escape_toml_basic as _escape_toml_basic
 from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 
@@ -1521,13 +1520,12 @@ class SkillsIntegration(IntegrationBase):
         return project_root / folder / subdir
 
     def build_command_invocation(self, command_name: str, args: str = "") -> str:
-        """Build the agent's native invocation for a hyphenated skill name."""
+        """Skills use ``/speckit-<stem>`` (hyphenated directory name)."""
         stem = command_name
         if stem.startswith("speckit."):
             stem = stem[len("speckit."):]
 
-        prefix = "$" if is_dollar_skills_agent(self.key, True) else "/"
-        invocation = prefix + "speckit-" + stem.replace(".", "-")
+        invocation = "/speckit-" + stem.replace(".", "-")
         if args:
             invocation = f"{invocation} {args}"
         return invocation
@@ -1578,10 +1576,7 @@ class SkillsIntegration(IntegrationBase):
         guidance for converting dotted hook command names to hyphenated
         slash commands.  Subclasses may override — see ``ClaudeIntegration``.
         """
-        content = self._inject_hook_command_note(content)
-        if is_dollar_skills_agent(self.key, True):
-            content = content.replace("/speckit-", "$speckit-")
-        return content
+        return self._inject_hook_command_note(content)
 
     def setup(
         self,
