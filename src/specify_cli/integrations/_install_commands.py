@@ -6,7 +6,6 @@ import os
 import typer
 
 from .._console import console
-from .._invocation_style import is_dollar_skills_agent
 from .._utils import _display_project_path
 from ..integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
@@ -130,14 +129,6 @@ def integration_install(
         invoke_separator=_invoke_separator_for_integration(
             infra_integration, current, infra_key, infra_parsed,
             project_root=project_root,
-        ),
-        invoke_prefix=(
-            "$"
-            if is_dollar_skills_agent(
-                infra_key,
-                infra_integration.is_skills_mode(infra_parsed, project_root),
-            )
-            else "/"
         ),
     )
     if os.name != "nt":
