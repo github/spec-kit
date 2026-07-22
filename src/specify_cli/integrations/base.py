@@ -602,9 +602,7 @@ class IntegrationBase(ABC):
         return created
 
     @staticmethod
-    def resolve_command_refs(
-        content: str, separator: str = ".", prefix: str = "/"
-    ) -> str:
+    def resolve_command_refs(content: str, separator: str = ".") -> str:
         """Replace ``__SPECKIT_COMMAND_<NAME>__`` placeholders with invocations.
 
         Each placeholder encodes a command name in upper-case with
@@ -614,16 +612,10 @@ class IntegrationBase(ABC):
 
         * ``separator="."`` → ``/speckit.plan``, ``/speckit.git.commit``
         * ``separator="-"`` → ``/speckit-plan``, ``/speckit-git-commit``
-
-        *prefix* defaults to ``"/"`` but may be ``"$"`` for agents whose
-        native skills invocation uses dollar-prefixed chat commands.
         """
         return re.sub(
             r"__SPECKIT_COMMAND_([A-Z][A-Z0-9_]*)__",
-            lambda m: prefix
-            + "speckit"
-            + separator
-            + m.group(1).lower().replace("_", separator),
+            lambda m: "/speckit" + separator + m.group(1).lower().replace("_", separator),
             content,
         )
 
@@ -847,14 +839,7 @@ class IntegrationBase(ABC):
         content = CommandRegistrar.rewrite_project_relative_paths(content)
 
         # 8. Replace __SPECKIT_COMMAND_<NAME>__ with invocation strings
-        invocation_prefix = (
-            "$"
-            if is_dollar_skills_agent(agent_name, invoke_separator == "-")
-            else "/"
-        )
-        content = IntegrationBase.resolve_command_refs(
-            content, invoke_separator, invocation_prefix
-        )
+        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
 
         return content
 
@@ -1548,9 +1533,7 @@ class SkillsIntegration(IntegrationBase):
         return invocation
 
     @staticmethod
-    def _inject_hook_command_note(
-        content: str, invocation_prefix: str = "/"
-    ) -> str:
+    def _inject_hook_command_note(content: str) -> str:
         """Insert a dot-to-hyphen note before each hook output instruction.
 
         Targets the line ``- For each executable hook, output the following``
@@ -1559,11 +1542,6 @@ class SkillsIntegration(IntegrationBase):
         above them.
         """
         note = _HOOK_COMMAND_NOTE.rstrip("\n")
-        if invocation_prefix != "/":
-            note = note.replace(
-                "`/speckit-git-commit`",
-                f"`{invocation_prefix}speckit-git-commit`",
-            )
 
         def repl(m: re.Match[str]) -> str:
             indent = m.group(1)
@@ -1600,8 +1578,13 @@ class SkillsIntegration(IntegrationBase):
         guidance for converting dotted hook command names to hyphenated
         slash commands.  Subclasses may override — see ``ClaudeIntegration``.
         """
-        invocation_prefix = "$" if is_dollar_skills_agent(self.key, True) else "/"
-        return self._inject_hook_command_note(content, invocation_prefix)
+        uses_dollar_invocations = is_dollar_skills_agent(self.key, True)
+        if uses_dollar_invocations:
+            content = content.replace("$speckit-", "/speckit-")
+        content = self._inject_hook_command_note(content)
+        if uses_dollar_invocations:
+            content = content.replace("/speckit-", "$speckit-")
+        return content
 
     def setup(
         self,

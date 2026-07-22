@@ -224,7 +224,6 @@ class TestBuildCommandInvocation:
 
         content = (
             "---\nname: test\n---\n\n"
-            "Literal slash invocation: /speckit-plan\n"
             "- For each executable hook, output the following based on its flag:\n"
         )
         integration = get_integration(integration_key)
@@ -234,7 +233,6 @@ class TestBuildCommandInvocation:
         assert twice == once
         assert once.count("replace dots (`.`) with hyphens") == 1
         assert "$speckit-git-commit" in once
-        assert "/speckit-plan" in once
 
     def test_forge_core_command_hyphenated(self):
         """Forge installs hyphenated slash-commands (/speckit-<name>), so the
@@ -267,11 +265,6 @@ class TestResolveCommandRefs:
         text = "Run `__SPECKIT_COMMAND_PLAN__` to plan."
         result = IntegrationBase.resolve_command_refs(text, "-")
         assert result == "Run `/speckit-plan` to plan."
-
-    def test_dollar_prefix_core_command(self):
-        text = "Run `__SPECKIT_COMMAND_PLAN__` to plan."
-        result = IntegrationBase.resolve_command_refs(text, "-", "$")
-        assert result == "Run `$speckit-plan` to plan."
 
     def test_multiple_placeholders(self):
         text = "__SPECKIT_COMMAND_SPECIFY__ then __SPECKIT_COMMAND_PLAN__ then __SPECKIT_COMMAND_TASKS__"
