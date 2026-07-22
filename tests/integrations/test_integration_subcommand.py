@@ -1256,6 +1256,24 @@ class TestIntegrationInstall:
         assert "/speckit-specify" in script_content
         assert "/speckit.specify" not in script_content
 
+    def test_install_dollar_skill_into_bare_project_gets_native_shared_refs(
+        self, tmp_path
+    ):
+        """A dollar-style integration supplies its prefix without a default."""
+        project = tmp_path / "bare-codex"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        result = _run_in_project(
+            project, ["integration", "install", "codex", "--script", "sh"]
+        )
+
+        assert result.exit_code == 0, result.output
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        plan_content = plan.read_text(encoding="utf-8")
+        assert "$speckit-plan" in plan_content
+        assert "/speckit-plan" not in plan_content
+
     def test_install_defers_extension_commands_until_use(self, tmp_path):
         """Installing a second integration does not register enabled extensions.
 
