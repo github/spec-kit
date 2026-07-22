@@ -404,6 +404,17 @@ class TestExpressions:
         assert evaluate_expression('{{ [["a", "b"], "c"] }}', ctx) == [["a", "b"], "c"]
         assert evaluate_expression("{{ [[1, 2], [3, 4]] }}", ctx) == [[1, 2], [3, 4]]
 
+    def test_list_literal_ignores_trailing_and_empty_commas(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        # A trailing comma must not append a spurious None element.
+        assert evaluate_expression("{{ [1, 2,] }}", ctx) == [1, 2]
+        assert evaluate_expression("{{ [1,, 2] }}", ctx) == [1, 2]
+        # …but an intentional empty-string element is still preserved.
+        assert evaluate_expression("{{ ['', 'a'] }}", ctx) == ["", "a"]
+
     def test_operator_splitting_is_quote_aware(self):
         from specify_cli.workflows.expressions import (
             evaluate_condition,
