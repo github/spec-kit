@@ -521,10 +521,7 @@
       "documentation": "https://github.com/hindermath/spec-kit-preset-parallel-autonomous-run-governance/blob/v0.2.3/README.md",
       "license": "MIT",
       "requires": {
-        "speckit_version": ">=0.8.3",
-        "extensions": [
-          "autonomous-run-governance >=0.3.2"
-        ]
+        "speckit_version": ">=0.8.3"
       },
       "provides": {
         "templates": 9,
