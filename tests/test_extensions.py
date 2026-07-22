@@ -8238,6 +8238,42 @@ class TestHookInvocationRendering:
         assert execution["command"] == "my-extension.do-something"
         assert execution["invocation"] == "/speckit-my-extension-do-something"
 
+    def test_forge_hooks_render_hyphenated_invocation(self, project_dir):
+        """Forge projects should render /speckit-* invocations (like Cline)."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "forge"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "/speckit-tasks"
+
+    def test_forge_hooks_render_extension_command(self, project_dir):
+        """Forge projects should render /speckit-my-ext-cmd for extension hooks."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "forge"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "my-extension.do-something",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "my-extension.do-something"
+        assert execution["invocation"] == "/speckit-my-extension-do-something"
+
     def test_non_skill_command_keeps_slash_invocation(self, project_dir):
         """Custom hook commands should keep slash invocation style."""
         init_options = project_dir / ".specify" / "init-options.json"
