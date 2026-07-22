@@ -92,6 +92,7 @@ Force a specific script type:
 ```bash
 specify init <project_name> --script sh
 specify init <project_name> --script ps
+specify init <project_name> --script py
 ```
 
 ### Ignore Agent Tools Check
@@ -131,6 +132,7 @@ Scripts are installed into a variant subdirectory matching the chosen script typ
 
 - `.specify/scripts/bash/` — contains `.sh` scripts (default on Linux/macOS)
 - `.specify/scripts/powershell/` — contains `.ps1` scripts (default on Windows)
+- `.specify/scripts/python/` — contains `.py` scripts (chosen with `--script py`; also installs the platform shell fallback)
 
 ## Troubleshooting
 
