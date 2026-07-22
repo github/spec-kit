@@ -2812,29 +2812,6 @@ Real body starts here.
         assert "source: test-ext:commands/hello.md" in content
         assert "<!-- Extension:" not in content
 
-    def test_codex_skill_registration_uses_dollar_command_refs(
-        self, extension_dir, project_dir
-    ):
-        """Codex extension skills use the native dollar invocation prefix."""
-        skills_dir = project_dir / ".agents" / "skills"
-        skills_dir.mkdir(parents=True)
-        command = extension_dir / "commands" / "hello.md"
-        command.write_text(
-            "---\ndescription: Test hello command\n---\n\nRun __SPECKIT_COMMAND_PLAN__.",
-            encoding="utf-8",
-        )
-
-        manifest = ExtensionManifest(extension_dir / "extension.yml")
-        registrar = CommandRegistrar()
-        registrar.register_commands_for_agent(
-            "codex", manifest, extension_dir, project_dir
-        )
-
-        skill_file = skills_dir / "speckit-test-ext-hello" / "SKILL.md"
-        content = skill_file.read_text(encoding="utf-8")
-        assert "$speckit-plan" in content
-        assert "/speckit-plan" not in content
-
     def test_codex_skill_registration_resolves_script_placeholders(self, project_dir, temp_dir):
         """Codex SKILL.md overrides should resolve script placeholders."""
         import yaml

@@ -274,29 +274,25 @@ _POWERSHELL_FORMAT_COMMAND_RE = re.compile(
 )
 
 
-def _format_speckit_command(
-    command_name: str, separator: str, prefix: str = "/"
-) -> str:
+def _format_speckit_command(command_name: str, separator: str) -> str:
     name = command_name.strip().lstrip("/")
     if name.startswith("speckit."):
         name = name[len("speckit.") :]
     elif name.startswith("speckit-"):
         name = name[len("speckit-") :]
     name = name.replace(".", separator)
-    return f"{prefix}speckit{separator}{name}"
+    return f"/speckit{separator}{name}"
 
 
-def _resolve_dynamic_command_refs(
-    content: str, separator: str, prefix: str = "/"
-) -> str:
+def _resolve_dynamic_command_refs(content: str, separator: str) -> str:
     """Render script runtime command helpers for managed shared infra copies."""
 
     content = _BASH_FORMAT_COMMAND_RE.sub(
-        lambda match: _format_speckit_command(match.group(2), separator, prefix),
+        lambda match: _format_speckit_command(match.group(2), separator),
         content,
     )
     return _POWERSHELL_FORMAT_COMMAND_RE.sub(
-        lambda match: f"'{_format_speckit_command(match.group(2), separator, prefix)}'",
+        lambda match: f"'{_format_speckit_command(match.group(2), separator)}'",
         content,
     )
 
@@ -527,9 +523,7 @@ def install_shared_infra(
                     content = IntegrationBase.resolve_command_refs(
                         content, invoke_separator, invoke_prefix
                     )
-                    content = _resolve_dynamic_command_refs(
-                        content, invoke_separator, invoke_prefix
-                    )
+                    content = _resolve_dynamic_command_refs(content, invoke_separator)
                     planned_copies.append(
                         (
                             dst_path,

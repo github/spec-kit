@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from ._init_options import is_ai_skills_enabled, load_init_options
-from ._invocation_style import is_dollar_skills_agent
 from ._toml_string import escape_toml_basic as _escape_toml_basic
 from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ._utils import relative_extension_path_violation
@@ -660,20 +659,17 @@ class CommandRegistrar:
         # correct when a stale ``.bob/skills`` directory coexists with
         # ``.bob/commands``.
         _sep = agent_config.get("invoke_separator", ".")
-        registrar_writes_skills = agent_config.get("extension") == "/SKILL.md"
         try:
             from specify_cli.integrations import get_integration  # noqa: PLC0415
 
             _integ = get_integration(agent_name)
             if _integ is not None:
+                registrar_writes_skills = (
+                    agent_config.get("extension") == "/SKILL.md"
+                )
                 _sep = _integ.invoke_separator_for_mode(registrar_writes_skills)
         except Exception:
             pass
-        _prefix = (
-            "$"
-            if is_dollar_skills_agent(agent_name, registrar_writes_skills)
-            else "/"
-        )
 
         for cmd_info in commands:
             cmd_name = cmd_info["name"]
@@ -759,7 +755,7 @@ class CommandRegistrar:
             # (base.py itself imports CommandRegistrar lazily).
             from specify_cli.integrations.base import IntegrationBase  # noqa: PLC0415
 
-            body = IntegrationBase.resolve_command_refs(body, _sep, _prefix)
+            body = IntegrationBase.resolve_command_refs(body, _sep)
 
             output_name = self._compute_output_name(agent_name, cmd_name, agent_config)
 
