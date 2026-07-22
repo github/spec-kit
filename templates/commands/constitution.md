@@ -14,6 +14,29 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Scope Guard
+
+This command updates project governance only. It may modify:
+
+- `.specify/memory/constitution.md`
+- dependent templates under `.specify/templates/`
+- installed Spec Kit command files when required to keep them consistent with the
+  amended constitution
+
+It **MUST NOT** create or modify application source code, feature specifications, plans,
+tasks, tests, or other implementation artifacts.
+
+If the user input includes feature requests, implementation instructions, or other
+non-governance work:
+
+1. Extract that content as out-of-scope intent.
+2. Do not execute it during this command.
+3. Complete the constitution update using only the governance-related input.
+4. Report the out-of-scope intent under **Suggested Follow-ups**, with the appropriate
+   next command for the active integration (typically its specification command).
+
+Never invoke a suggested follow-up command automatically.
+
 ## Pre-Execution Checks
 
 **Check for extension hooks (before constitution update)**:
@@ -82,7 +105,6 @@ Follow this execution flow:
    - Read `.specify/templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
    - Read `.specify/templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
    - Read each installed Spec Kit command file for your agent (including this one) — named `speckit.*` or `speckit-*` (dot or hyphen depending on the agent), or laid out as `speckit-<name>/SKILL.md` for skills-based integrations, e.g. in `.github/agents/`, `.github/skills/`, `.claude/skills/`, or your agent's equivalent commands directory — to verify no outdated references (CLAUDE-only or other agent-specific names) remain when generic guidance is required.
-   - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
 
 5. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
    - Version change: old → new
@@ -103,6 +125,9 @@ Follow this execution flow:
 8. Output a final summary to the user with:
    - New version and bump rationale.
    - Any files flagged for manual follow-up.
+   - A **Suggested Follow-ups** section listing any out-of-scope intent captured by the
+     Scope Guard and its recommended command. Omit this section when there is no
+     out-of-scope intent.
    - Suggested commit message (e.g., `docs: amend constitution to vX.Y.Z (principle additions + governance update)`).
 
 Formatting & Style Requirements:

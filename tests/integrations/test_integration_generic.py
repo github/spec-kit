@@ -201,6 +201,26 @@ class TestGenericIntegration:
         content = implement_file.read_text(encoding="utf-8")
         assert ".specify/memory/constitution.md" in content
 
+    def test_constitution_command_rejects_implementation_scope(self, tmp_path):
+        """The constitution command must defer non-governance work."""
+        i = get_integration("generic")
+        m = IntegrationManifest("generic", tmp_path)
+        i.setup(tmp_path, m, parsed_options={"commands_dir": ".custom/cmds"})
+        constitution_file = (
+            tmp_path / ".custom" / "cmds" / "speckit.constitution.md"
+        )
+        assert constitution_file.exists()
+        content = constitution_file.read_text(encoding="utf-8")
+
+        assert "## Scope Guard" in content
+        assert "MUST NOT" in content
+        assert "application source code" in content
+        assert "runtime guidance documents" not in content
+        assert "README.md" not in content
+        assert "Do not execute it during this command." in content
+        assert "Never invoke a suggested follow-up command automatically." in content
+        assert "next command for the active integration" in content
+
     @pytest.mark.parametrize(
         "command_stem",
         [
