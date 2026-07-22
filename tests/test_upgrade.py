@@ -2,11 +2,12 @@
 
 Network isolation contract (SC-004 / FR-014): every test that exercises
 `specify self check` or `_fetch_latest_release_tag()` MUST mock the outbound
-urllib path it expects (`urlopen` for unauthenticated requests, `build_opener`
-for authenticated requests) so no real outbound call ever reaches api.github.com.
-Tests for non-network `self upgrade` behavior should keep that contract explicit
-with local mocks. Run this module under `pytest-socket` (if installed) with
-`--disable-socket` as an extra safety net.
+urllib path so no real call reaches api.github.com. Production always uses an
+isolated `build_opener`; this module's autouse fixture routes its `open()` back
+through the locally mocked `urlopen`. Tests for non-network `self upgrade`
+behavior should keep that contract explicit with local mocks. Run this module
+under `pytest-socket` (if installed) with `--disable-socket` as an extra safety
+net.
 """
 
 import urllib.error

@@ -516,6 +516,23 @@ class TestAzureDevOpsAuth:
         with patch("specify_cli.authentication.azure_devops.subprocess.run", side_effect=boom):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
+    @pytest.mark.parametrize("payload", [[], {"accessToken": None}, {"accessToken": 123}])
+    def test_resolve_token_azure_cli_unexpected_json_shape_returns_none(
+        self, payload
+    ):
+        from unittest.mock import MagicMock, patch
+
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-cli",
+        )
+        result = MagicMock(returncode=0, stdout=json.dumps(payload))
+
+        with patch(
+            "specify_cli.authentication.azure_devops.subprocess.run",
+            return_value=result,
+        ):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
     def test_resolve_token_azure_ad_success(self, monkeypatch):
         """azure-ad acquires token via OAuth2 client credentials."""
         from unittest.mock import patch, MagicMock
@@ -559,7 +576,13 @@ class TestAzureDevOpsAuth:
         with patch("urllib.request.build_opener", return_value=mock_opener):
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
-    def test_resolve_token_azure_ad_rejects_https_redirect(self, monkeypatch):
+    @pytest.mark.parametrize(
+        ("status", "reason"),
+        [(307, "Temporary Redirect"), (308, "Permanent Redirect")],
+    )
+    def test_resolve_token_azure_ad_rejects_https_redirect(
+        self, monkeypatch, status, reason
+    ):
         """The client-secret POST must never be redirected to another host."""
         import urllib.error
         from unittest.mock import MagicMock, patch
@@ -577,16 +600,71 @@ class TestAzureDevOpsAuth:
             assert AzureDevOpsAuth().resolve_token(entry) is None
 
         redirect_handler = build_opener.call_args.args[0]
-        request = Request("https://login.microsoftonline.com/tid/oauth2/v2.0/token")
+        request = Request(
+            "https://login.microsoftonline.com/tid/oauth2/v2.0/token",
+            data=b"grant_type=client_credentials&client_secret=secret-value",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert request.get_method() == "POST"
+        assert b"client_secret=secret-value" in request.data
         with pytest.raises(urllib.error.URLError, match="must not be redirected"):
             redirect_handler.redirect_request(
                 request,
                 io.BytesIO(b""),
-                307,
-                "Temporary Redirect",
+                status,
+                reason,
                 {},
                 "https://evil.example/token",
             )
+
+    def test_resolve_token_azure_ad_oversized_response_returns_none(
+        self, monkeypatch
+    ):
+        """Oversized token metadata is rejected before JSON parsing."""
+        from unittest.mock import MagicMock, patch
+
+        from specify_cli._download_security import MAX_JSON_METADATA_BYTES
+
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_resp = MagicMock()
+        mock_resp.read.side_effect = io.BytesIO(
+            b"x" * (MAX_JSON_METADATA_BYTES + 1)
+        ).read
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+
+        with patch("urllib.request.build_opener", return_value=mock_opener), patch(
+            "specify_cli.authentication.azure_devops._json.loads",
+            side_effect=AssertionError("oversized body must not be parsed"),
+        ):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
+
+    @pytest.mark.parametrize("payload", [[], {"access_token": None}, {"access_token": 123}])
+    def test_resolve_token_azure_ad_unexpected_json_shape_returns_none(
+        self, monkeypatch, payload
+    ):
+        from unittest.mock import MagicMock, patch
+
+        monkeypatch.setenv("MY_SECRET", "secret-value")
+        entry = AuthConfigEntry(
+            hosts=("dev.azure.com",), provider="azure-devops", auth="azure-ad",
+            tenant_id="tid", client_id="cid", client_secret_env="MY_SECRET",
+        )
+        mock_resp = MagicMock()
+        mock_resp.read.side_effect = io.BytesIO(json.dumps(payload).encode()).read
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_opener = MagicMock()
+        mock_opener.open.return_value = mock_resp
+
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            assert AzureDevOpsAuth().resolve_token(entry) is None
 
     def test_resolve_token_azure_ad_invalid_utf8_returns_none(self, monkeypatch):
         """azure-ad returns None when the token response is not valid UTF-8."""
@@ -960,7 +1038,41 @@ class TestRedirectStripping:
             handler.redirect_request(req, io.BytesIO(b""), 302, "Found", {},
                                      "http://evil.example.com/archive.zip")
 
-    def test_redirect_rejects_remote_to_http_loopback(self):
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "http://127.0.0.1/internal",
+            "https://localhost/internal",
+            "https://localhost./internal",
+            "https://service.localhost/internal",
+            "https://service.localhost./internal",
+            "https://127.0.0.2/internal",
+            "https://127.1/internal",
+            "https://2130706433/internal",
+            "https://0x7f000001/internal",
+            "https://017700000001/internal",
+            "https://0177.0.0.1/internal",
+            "https://[::1]/internal",
+            "https://[::1%25lo0]/internal",
+            "https://[::ffff:127.0.0.1]/internal",
+            "https://127%2e0%2e0%2e1/internal",
+            "https://%31%32%37.0.0.1/internal",
+            "https://127%2E1/internal",
+            "https://local%68ost/internal",
+            "https://[::ffff:127%2e0.0.1]/internal",
+            "https://[::ffff:7f00%3a1]/internal",
+            "https://[::ffff%3a127.0.0.1]/internal",
+            "https://ℓocalhost/internal",
+            "https://ｌｏｃａｌｈｏｓｔ/internal",
+            "https://127。0。0。1/internal",
+            "https://0.0.0.0/internal",
+            "https://0/internal",
+            "https://00.00.00.00/internal",
+            "https://[::]/internal",
+            "https://[::ffff:0.0.0.0]/internal",
+        ],
+    )
+    def test_redirect_rejects_remote_to_loopback(self, target):
         """A remote response must not redirect a download into loopback."""
         import io
         import urllib.error
@@ -978,10 +1090,27 @@ class TestRedirectStripping:
                 302,
                 "Found",
                 {},
-                "http://127.0.0.1/internal",
+                target,
             )
 
-    def test_redirect_allows_loopback_to_http_loopback(self):
+    @pytest.mark.parametrize(
+        ("source", "target"),
+        [
+            (
+                "http://localhost:8000/archive.zip",
+                "http://127.0.0.1:8001/archive.zip",
+            ),
+            (
+                "http://127.0.0.2:8000/archive.zip",
+                "http://127.255.255.254:8001/archive.zip",
+            ),
+            (
+                "https://[0:0:0:0:0:0:0:1]/archive.zip",
+                "http://[::1]:8001/archive.zip",
+            ),
+        ],
+    )
+    def test_redirect_allows_loopback_to_http_loopback(self, source, target):
         """Local development may continue redirecting between loopback URLs."""
         import io
         from urllib.request import Request
@@ -989,17 +1118,65 @@ class TestRedirectStripping:
         from specify_cli.authentication.http import _StripAuthOnRedirect
 
         handler = _StripAuthOnRedirect(())
-        request = Request("http://localhost:8000/archive.zip")
+        request = Request(source)
         redirected = handler.redirect_request(
             request,
             io.BytesIO(b""),
             302,
             "Found",
             {},
-            "http://127.0.0.1:8001/archive.zip",
+            target,
         )
 
         assert redirected is not None
+
+    def test_multi_hop_remote_to_loopback_chain_is_rejected_at_first_hop(self):
+        import io
+        import urllib.error
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(())
+        request = Request("https://example.com/archive.zip")
+
+        with pytest.raises(urllib.error.URLError, match="unsafe redirect"):
+            handler.redirect_request(
+                request,
+                io.BytesIO(b""),
+                302,
+                "Found",
+                {},
+                "https://localhost:4443/hop",
+            )
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "https://example.com:notaport/archive.zip",
+            "https://example.com:+443/archive.zip",
+            "https://example.com:65536/archive.zip",
+        ],
+    )
+    def test_malformed_redirect_port_raises_urlerror(self, target):
+        import io
+        import urllib.error
+        from urllib.request import Request
+
+        from specify_cli.authentication.http import _StripAuthOnRedirect
+
+        handler = _StripAuthOnRedirect(())
+        request = Request("https://example.com/archive.zip")
+
+        with pytest.raises(urllib.error.URLError, match="malformed redirect URL"):
+            handler.redirect_request(
+                request,
+                io.BytesIO(b""),
+                302,
+                "Found",
+                {},
+                target,
+            )
 
     def test_strict_redirect_error_describes_target_and_allowed_localhost(self):
         from specify_cli.authentication.http import _StripAuthOnRedirect

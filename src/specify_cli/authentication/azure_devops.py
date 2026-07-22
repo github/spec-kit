@@ -22,6 +22,16 @@ class _TokenResponseTooLarge(Exception):
     """Raised when an Azure AD token response exceeds the bounded read limit."""
 
 
+def _extract_token(payload: object, key: str) -> str | None:
+    """Return a normalized token from a JSON object, or None for other shapes."""
+    if not isinstance(payload, dict):
+        return None
+    token = payload.get(key)
+    if not isinstance(token, str):
+        return None
+    return token.strip() or None
+
+
 class AzureDevOpsAuth(AuthProvider):
     """Azure DevOps authentication provider.
 
@@ -79,8 +89,7 @@ class AzureDevOpsAuth(AuthProvider):
             if result.returncode != 0:
                 return None
             payload = _json.loads(result.stdout)
-            token = payload.get("accessToken", "").strip()
-            return token or None
+            return _extract_token(payload, "accessToken")
         except (
             OSError,
             subprocess.TimeoutExpired,
@@ -146,8 +155,7 @@ class AzureDevOpsAuth(AuthProvider):
                         label="Azure DevOps token response",
                     ).decode("utf-8")
                 )
-                token = payload.get("access_token", "").strip()
-                return token or None
+                return _extract_token(payload, "access_token")
         except (
             urllib.error.URLError,
             OSError,
