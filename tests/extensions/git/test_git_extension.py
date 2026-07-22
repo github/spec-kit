@@ -1114,6 +1114,73 @@ class TestAutoCommitBashCommitStyle:
         )
         assert "[Spec Kit] Add specification" in log.stdout
 
+    def test_explicit_fixed_style_uses_configured_message(self, tmp_path: Path):
+        """commit_style: fixed (explicit) still uses the configured static message,
+        not just the absent-key default."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: fixed\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "feat: this should be ignored"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+        assert "this should be ignored" not in log.stdout
+
+    def test_conventional_message_file_used(self, tmp_path: Path):
+        """--message-file reads the generated message from a file instead of argv,
+        avoiding shell interpolation of agent-controlled content."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = tmp_path / "commit-msg.txt"
+        msg_file.write_text("feat: add $(dangerous) `injection` test\n")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "--message-file", str(msg_file)
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add $(dangerous) `injection` test" in log.stdout
+
+    def test_message_file_missing_fails(self, tmp_path: Path):
+        """--message-file pointing at a nonexistent file fails clearly."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        missing = tmp_path / "does-not-exist.txt"
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "--message-file", str(missing)
+        )
+        assert result.returncode != 0
+        assert "not found" in result.stderr.lower()
+
     def test_conventional_uses_generated_message(self, tmp_path: Path):
         """commit_style: conventional uses the generated_message argument as the commit message."""
         project = _setup_project(tmp_path)
@@ -1331,6 +1398,73 @@ class TestAutoCommitPowerShellCommitStyle:
             cwd=project, capture_output=True, text=True,
         )
         assert "[Spec Kit] Add specification" in log.stdout
+
+    def test_explicit_fixed_style_uses_configured_message(self, tmp_path: Path):
+        """commit_style: fixed (explicit) still uses the configured static message,
+        not just the absent-key default."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: fixed\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "feat: this should be ignored"
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "[Spec Kit] Add specification" in log.stdout
+        assert "this should be ignored" not in log.stdout
+
+    def test_conventional_message_file_used(self, tmp_path: Path):
+        """-MessageFile reads the generated message from a file instead of argv,
+        avoiding shell interpolation of agent-controlled content."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+            '    message: "[Spec Kit] Add specification"\n'
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = tmp_path / "commit-msg.txt"
+        msg_file.write_text("feat: add $(dangerous) `injection` test\n")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file)
+        )
+        assert result.returncode == 0
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "feat: add $(dangerous) `injection` test" in log.stdout
+
+    def test_message_file_missing_fails(self, tmp_path: Path):
+        """-MessageFile pointing at a nonexistent file fails clearly."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        missing = tmp_path / "does-not-exist.txt"
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(missing)
+        )
+        assert result.returncode != 0
+        assert "not found" in (result.stdout + result.stderr).lower()
 
     def test_conventional_uses_generated_message(self, tmp_path: Path):
         """commit_style: conventional uses the generated_message argument as the commit message."""

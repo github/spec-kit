@@ -4,17 +4,38 @@
 # Checks per-command config keys in git-config.yml before committing.
 #
 # Usage: auto-commit.ps1 <event_name> [generated_message]
+#        auto-commit.ps1 <event_name> -MessageFile <path>
 #   e.g.: auto-commit.ps1 after_specify
-#   e.g.: auto-commit.ps1 after_specify "feat: add OAuth specification"  (commit_style: conventional)
+#   e.g.: auto-commit.ps1 after_specify -MessageFile C:\temp\commit-msg.txt  (commit_style: conventional)
+#
+# -MessageFile is the preferred way to supply an agent-generated commit
+# message: it reads the message from a file instead of a shell argument,
+# so message content (which may contain quotes, $(...), backticks, etc.)
+# is never interpolated into a shell command line.
 param(
     [Parameter(Position = 0, Mandatory = $true)]
     [string]$EventName,
 
     # Optional agent-generated commit message (used when commit_style: conventional is configured).
+    # Prefer -MessageFile over passing the message directly as a shell argument.
     [Parameter(Position = 1, Mandatory = $false)]
-    [string]$GeneratedMessage = ""
+    [string]$GeneratedMessage = "",
+
+    [Parameter(Mandatory = $false)]
+    [string]$MessageFile = ""
 )
 $ErrorActionPreference = 'Stop'
+
+if ($MessageFile) {
+    if (-not (Test-Path $MessageFile -PathType Leaf)) {
+        Write-Warning "[specify] Error: message file '$MessageFile' not found"
+        exit 1
+    }
+    $GeneratedMessage = (Get-Content -Path $MessageFile -Raw)
+    if ($null -ne $GeneratedMessage) {
+        $GeneratedMessage = $GeneratedMessage.TrimEnd("`r", "`n")
+    }
+}
 
 function Find-ProjectRoot {
     param([string]$StartDir)
@@ -168,7 +189,7 @@ if ($commitStyle -eq 'conventional') {
     if ($GeneratedMessage) {
         $commitMsg = $GeneratedMessage
     } else {
-        Write-Warning "[specify] Error: commit_style is 'conventional' but no generated commit message was supplied; aborting auto-commit (pass the generated message as arg 2, or set commit_style: fixed)"
+        Write-Warning "[specify] Error: commit_style is 'conventional' but no generated commit message was supplied; aborting auto-commit (pass -MessageFile <path>, or a raw message as arg 2, or set commit_style: fixed)"
         exit 1
     }
 }
