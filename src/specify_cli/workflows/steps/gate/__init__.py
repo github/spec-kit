@@ -26,7 +26,7 @@ class GateStep(StepBase):
     later with ``specify workflow resume``.
 
     The user's choice is stored in ``output.choice``.  ``on_reject``
-    controls abort / skip behaviour.
+    controls abort / skip / retry behaviour.
     """
 
     type_key = "gate"

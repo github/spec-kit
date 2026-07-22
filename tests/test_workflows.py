@@ -2100,6 +2100,15 @@ class TestInitStep:
 class TestGateStep:
     """Test the gate step type."""
 
+    def test_docstring_lists_every_on_reject_behaviour(self):
+        # The docstring must not contradict validate()/execute(): on_reject
+        # accepts 'abort', 'skip', AND 'retry' (execute() has a dedicated
+        # retry -> PAUSED branch), but the summary omitted 'retry'.
+        from specify_cli.workflows.steps.gate import GateStep
+
+        for behaviour in ("abort", "skip", "retry"):
+            assert behaviour in GateStep.__doc__
+
     @pytest.fixture(autouse=True)
     def _non_tty_stdin_by_default(self, monkeypatch):
         # Default every gate test to a non-TTY stdin so none can drop into
