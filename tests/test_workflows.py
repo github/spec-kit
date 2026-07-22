@@ -9739,6 +9739,17 @@ steps:
         registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
         assert registry.get("align-wf")["version"] == "1.0.0"
 
+    def test_step_registry_add_survives_non_dict_existing_entry(self, project_dir):
+        """StepRegistry.add must treat a corrupted non-dict existing entry as
+        absent rather than crash on existing.get() (parity with
+        WorkflowRegistry.add)."""
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.data["steps"]["my-step"] = "corrupted"
+        registry.add("my-step", {"version": "1.0.0"})
+        assert registry.get("my-step")["version"] == "1.0.0"
+
     @pytest.mark.parametrize(
         "contents",
         [
