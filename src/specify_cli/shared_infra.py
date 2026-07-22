@@ -305,7 +305,6 @@ def refresh_shared_templates(
     repo_root: Path,
     console: Any,
     invoke_separator: str,
-    invoke_prefix: str = "/",
     force: bool = False,
 ) -> None:
     """Refresh default-sensitive shared templates without touching scripts."""
@@ -337,9 +336,7 @@ def refresh_shared_templates(
                 continue
 
         content = src.read_text(encoding="utf-8")
-        content = IntegrationBase.resolve_command_refs(
-            content, invoke_separator, invoke_prefix
-        )
+        content = IntegrationBase.resolve_command_refs(content, invoke_separator)
         planned_updates.append((dst, rel, content))
 
     for dst, rel, content in planned_updates:
@@ -366,7 +363,6 @@ def install_shared_infra(
     console: Any,
     force: bool = False,
     invoke_separator: str = ".",
-    invoke_prefix: str = "/",
     refresh_managed: bool = False,
     refresh_hint: str | None = None,
 ) -> bool:
@@ -520,9 +516,7 @@ def install_shared_infra(
                     if not _ensure_or_bucket_dir(dst_path.parent):
                         continue
                     content = src_path.read_text(encoding="utf-8")
-                    content = IntegrationBase.resolve_command_refs(
-                        content, invoke_separator, invoke_prefix
-                    )
+                    content = IntegrationBase.resolve_command_refs(content, invoke_separator)
                     content = _resolve_dynamic_command_refs(content, invoke_separator)
                     planned_copies.append(
                         (
@@ -572,9 +566,7 @@ def install_shared_infra(
                     continue
 
                 content = src.read_text(encoding="utf-8")
-                content = IntegrationBase.resolve_command_refs(
-                    content, invoke_separator, invoke_prefix
-                )
+                content = IntegrationBase.resolve_command_refs(content, invoke_separator)
                 planned_templates.append((dst, rel, content))
 
     for dst_path, rel, content, mode in planned_copies:

@@ -1180,23 +1180,6 @@ class TestSharedInfraCommandRefs:
         assert "__SPECKIT_COMMAND_" not in content
         assert "/speckit-tasks" in content
 
-    def test_dollar_prefix_in_page_templates(self, tmp_path):
-        """Dollar-style skills agents get $speckit-<name> in page templates."""
-        from specify_cli import _install_shared_infra
-
-        project = tmp_path / "dollar-test"
-        project.mkdir()
-        (project / ".specify").mkdir()
-
-        _install_shared_infra(
-            project, "sh", invoke_separator="-", invoke_prefix="$"
-        )
-
-        plan = project / ".specify" / "templates" / "plan-template.md"
-        content = plan.read_text(encoding="utf-8")
-        assert "$speckit-plan" in content
-        assert "/speckit-plan" not in content
-
     @pytest.mark.parametrize("script_type", ["sh", "ps"])
     def test_dot_separator_in_shared_scripts(self, tmp_path, script_type):
         """Markdown agents get /speckit.<name> in shared script hints."""

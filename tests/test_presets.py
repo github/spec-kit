@@ -4090,39 +4090,6 @@ class TestPresetSkills:
         assert "__SPECKIT_COMMAND_" not in content, "raw command token leaked on restore"
         assert "/speckit-plan" in content
 
-    def test_restore_skill_preserves_dollar_command_refs(self, project_dir, temp_dir):
-        """Dollar-style core refs remain native when a preset skill is removed."""
-        from specify_cli.integrations.base import IntegrationBase
-
-        self._write_init_options(project_dir, ai="zcode")
-        skills_dir = project_dir / ".zcode" / "skills"
-        self._create_skill(skills_dir, "speckit-specify")
-
-        core_cmds = project_dir / ".specify" / "templates" / "commands"
-        core_cmds.mkdir(parents=True, exist_ok=True)
-        raw_core = (
-            "---\ndescription: Core specify\n---\n\n"
-            "Then run `__SPECKIT_COMMAND_PLAN__`.\n"
-        )
-        (core_cmds / "specify.md").write_text(
-            IntegrationBase.resolve_command_refs(raw_core, "-", "$")
-        )
-
-        preset_dir = self._create_command_preset(
-            temp_dir,
-            "dollar-cmdref-restore",
-            "speckit.specify",
-            "Override specify",
-            "Override body\n",
-        )
-        manager = PresetManager(project_dir)
-        manager.install_from_directory(preset_dir, "0.1.5")
-        manager.remove("dollar-cmdref-restore")
-
-        content = (skills_dir / "speckit-specify" / "SKILL.md").read_text()
-        assert "$speckit-plan" in content
-        assert "/speckit-plan" not in content
-
     def test_reconcile_override_skill_resolves_command_refs(self, project_dir, temp_dir):
         """Reconcile's project-override restore must resolve command tokens (issue #2717).
 

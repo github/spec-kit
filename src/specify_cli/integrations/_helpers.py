@@ -9,7 +9,6 @@ import typer
 
 from .._agent_config import SCRIPT_TYPE_CHOICES
 from .._console import console
-from .._invocation_style import is_dollar_skills_agent
 from ..integration_runtime import (
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
@@ -332,13 +331,6 @@ def _set_default_integration(
                 invoke_separator=_invoke_separator_for_integration(
                     integration, {"integration_settings": settings}, key, parsed_options,
                     project_root=project_root,
-                ),
-                invoke_prefix=(
-                    "$"
-                    if is_dollar_skills_agent(
-                        key, integration.is_skills_mode(parsed_options, project_root)
-                    )
-                    else "/"
                 ),
                 force=refresh_templates_force,
                 refresh_managed=True,
