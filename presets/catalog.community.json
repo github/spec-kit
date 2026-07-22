@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-21T00:00:00Z",
+  "updated_at": "2026-07-22T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -494,8 +494,7 @@
       "requires": {
         "speckit_version": ">=0.8.3",
         "extensions": [
-          "autonomous-run-governance >=0.3.2",
-          "intake-review-governance >=0.1.0"
+          "autonomous-run-governance >=0.3.2"
         ]
       },
       "provides": {
@@ -512,7 +511,7 @@
         "intake-review"
       ],
       "created_at": "2026-07-21T00:00:00Z",
-      "updated_at": "2026-07-21T00:00:00Z"
+      "updated_at": "2026-07-22T00:00:00Z"
     },
     "pirate": {
       "name": "Pirate Speak (Full)",
