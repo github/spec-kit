@@ -60,7 +60,13 @@ def dump_yaml(path: Path, data: Any, *, within: Path | None = None) -> Path:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:
-            yaml.safe_dump(data, handle, sort_keys=False, default_flow_style=False)
+            yaml.safe_dump(
+                data,
+                handle,
+                sort_keys=False,
+                default_flow_style=False,
+                allow_unicode=True,
+            )
     except OSError as exc:
         raise BundlerError(f"Could not write {path}: {exc}") from exc
     return path
