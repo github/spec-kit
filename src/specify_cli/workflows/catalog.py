@@ -523,8 +523,20 @@ class WorkflowCatalog:
 
         _validate_catalog_url(entry.url)
 
+        # Validate EVERY redirect hop, not just the final URL: _open_url follows
+        # redirects, so an https:// entry that 30x-redirects through http:// (or
+        # to a non-HTTPS host mid-chain) could otherwise let a network attacker
+        # rewrite the next hop and slip a payload past a final-URL-only check.
+        # redirect_validator runs before each hop; the geturl() check below is
+        # retained as a defense-in-depth backstop. Mirrors the presets/extensions
+        # catalog fix (#3523 / #3524).
+        def _validate_redirect(_old_url: str, new_url: str) -> None:
+            _validate_catalog_url(new_url)
+
         try:
-            with _open_url(entry.url, timeout=30) as resp:
+            with _open_url(
+                entry.url, timeout=30, redirect_validator=_validate_redirect
+            ) as resp:
                 _validate_catalog_url(resp.geturl())
                 data = json.loads(resp.read().decode("utf-8"))
         except Exception as exc:
@@ -1180,8 +1192,20 @@ class StepCatalog:
 
         _validate_url(entry.url)
 
+        # Validate EVERY redirect hop, not just the final URL: _open_url follows
+        # redirects, so an https:// entry that 30x-redirects through http:// (or
+        # to a non-HTTPS host mid-chain) could otherwise let a network attacker
+        # rewrite the next hop and slip a payload past a final-URL-only check.
+        # redirect_validator runs before each hop; the geturl() check below is
+        # retained as a defense-in-depth backstop. Mirrors the presets/extensions
+        # catalog fix (#3523 / #3524).
+        def _validate_redirect(_old_url: str, new_url: str) -> None:
+            _validate_url(new_url)
+
         try:
-            with _open_url(entry.url, timeout=30) as resp:
+            with _open_url(
+                entry.url, timeout=30, redirect_validator=_validate_redirect
+            ) as resp:
                 _validate_url(resp.geturl())
                 data = json.loads(resp.read().decode("utf-8"))
         except Exception as exc:

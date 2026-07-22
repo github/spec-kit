@@ -6161,7 +6161,9 @@ class TestWorkflowCatalog:
                 return "https://[::1"
 
         monkeypatch.setattr(
-            auth_http, "open_url", lambda url, timeout=30: _FakeResponse()
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(),
         )
 
         catalog = WorkflowCatalog(project_dir)
@@ -6175,6 +6177,41 @@ class TestWorkflowCatalog:
         # propagates instead of being masked by a stale-cache read.
         with pytest.raises(WorkflowCatalogError, match="malformed"):
             catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_validates_every_redirect_hop(self, project_dir, monkeypatch):
+        """A redirect_validator is passed to open_url and rejects a non-HTTPS
+        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
+        terminal-URL-only check would miss. Mirrors presets/extensions
+        (#3523 / #3524)."""
+        from specify_cli.workflows.catalog import (
+            WorkflowCatalog,
+            WorkflowCatalogEntry,
+            WorkflowCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+
+        captured = {}
+
+        def fake_open(url, timeout=30, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            # Simulate the hop urllib validates before following the redirect.
+            redirect_validator(
+                "https://good.example/catalog.json", "http://evil.test/hop"
+            )
+            raise AssertionError("redirect_validator should have raised")
+
+        monkeypatch.setattr(auth_http, "open_url", fake_open)
+
+        catalog = WorkflowCatalog(project_dir)
+        entry = WorkflowCatalogEntry(
+            url="https://good.example/catalog.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(WorkflowCatalogError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+        assert captured["rv"] is not None
 
     def test_add_catalog(self, project_dir):
         from specify_cli.workflows.catalog import WorkflowCatalog
@@ -6720,7 +6757,9 @@ class TestStepCatalog:
                 return "https://[not-an-ip]/x"
 
         monkeypatch.setattr(
-            auth_http, "open_url", lambda url, timeout=30: _FakeResponse()
+            auth_http,
+            "open_url",
+            lambda url, timeout=30, redirect_validator=None: _FakeResponse(),
         )
 
         catalog = StepCatalog(project_dir)
@@ -6734,6 +6773,41 @@ class TestStepCatalog:
         # propagates instead of being masked by a stale-cache read.
         with pytest.raises(StepCatalogError, match="malformed"):
             catalog._fetch_single_catalog(entry, force_refresh=True)
+
+    def test_fetch_validates_every_redirect_hop(self, project_dir, monkeypatch):
+        """A redirect_validator is passed to open_url and rejects a non-HTTPS
+        INTERMEDIATE hop — closing the https -> http -> attacker-https chain a
+        terminal-URL-only check would miss. Mirrors presets/extensions
+        (#3523 / #3524)."""
+        from specify_cli.workflows.catalog import (
+            StepCatalog,
+            StepCatalogEntry,
+            StepCatalogError,
+        )
+        from specify_cli.authentication import http as auth_http
+
+        captured = {}
+
+        def fake_open(url, timeout=30, redirect_validator=None):
+            captured["rv"] = redirect_validator
+            # Simulate the hop urllib validates before following the redirect.
+            redirect_validator(
+                "https://good.example/steps.json", "http://evil.test/hop"
+            )
+            raise AssertionError("redirect_validator should have raised")
+
+        monkeypatch.setattr(auth_http, "open_url", fake_open)
+
+        catalog = StepCatalog(project_dir)
+        entry = StepCatalogEntry(
+            url="https://good.example/steps.json",
+            name="test",
+            priority=1,
+            install_allowed=True,
+        )
+        with pytest.raises(StepCatalogError, match="HTTPS"):
+            catalog._fetch_single_catalog(entry, force_refresh=True)
+        assert captured["rv"] is not None
 
     def test_add_catalog(self, project_dir):
         from specify_cli.workflows.catalog import StepCatalog
