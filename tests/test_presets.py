@@ -5414,6 +5414,9 @@ class TestPresetEnableDisable:
 
 
 LEAN_PRESET_DIR = Path(__file__).parent.parent / "presets" / "lean"
+CORE_CONSTITUTION_COMMAND = (
+    Path(__file__).parent.parent / "templates" / "commands" / "constitution.md"
+)
 
 LEAN_COMMAND_NAMES = [
     "speckit.specify",
@@ -5422,6 +5425,31 @@ LEAN_COMMAND_NAMES = [
     "speckit.implement",
     "speckit.constitution",
 ]
+
+
+@pytest.mark.parametrize(
+    "command_path",
+    [
+        CORE_CONSTITUTION_COMMAND,
+        LEAN_PRESET_DIR / "commands" / "speckit.constitution.md",
+    ],
+    ids=["core", "lean"],
+)
+def test_constitution_commands_guard_against_non_governance_work(command_path):
+    """Constitution commands defer non-governance work instead of executing it."""
+    content = command_path.read_text()
+    lower_content = content.lower()
+    normalized_content = " ".join(lower_content.split())
+
+    assert "## Scope Guard" in content
+    assert "**MUST NOT**" in content
+    assert "Classify every part" in content
+    assert "application source files" in content
+    assert "non-governance intent" in content
+    assert "`Next Actions`" in content
+    assert "__SPECKIT_COMMAND_SPECIFY__" in content
+    assert "omit" in lower_content
+    assert "do not invoke it" in normalized_content or "without invoking it" in normalized_content
 
 
 class TestLeanPreset:
