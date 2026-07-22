@@ -253,6 +253,47 @@ def test_add_source_wraps_invalid_ipv6_as_bundler_error(tmp_path: Path):
         cc.add_source(project, "https://[::1/c.json", policy="install-allowed", priority=50)
 
 
+def test_add_source_wraps_bracketed_non_ip_host_as_bundler_error(tmp_path: Path):
+    # A bracketed-but-invalid IPv6 authority (e.g. "https://[not-an-ip]/c.json")
+    # parses cleanly under urlparse() on Python < 3.14 and only raises ValueError
+    # lazily on the first .hostname access; the raise moved eager into urlparse()
+    # in 3.14. add_source must surface its own BundlerError on every supported
+    # version, never leak a raw ValueError past the CLI's `except BundlerError`.
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    with pytest.raises(BundlerError, match="Invalid catalog url"):
+        cc.add_source(project, "https://[not-an-ip]/c.json", policy="install-allowed", priority=50)
+
+
+def test_add_source_wraps_lazy_hostname_valueerror(tmp_path: Path, monkeypatch):
+    # Simulate the Python < 3.14 shape explicitly (independent of the running
+    # interpreter): urlparse() succeeds but .hostname raises ValueError lazily.
+    # This is the exact path the fix guards; it fails with a raw ValueError if
+    # .hostname is read outside the try/except.
+    from urllib.parse import urlparse as _real_urlparse
+
+    class _LazyHostnameRaiser:
+        def __init__(self, parsed):
+            self._parsed = parsed
+
+        @property
+        def hostname(self):
+            raise ValueError("simulated lazy IPv6 hostname failure")
+
+        def __getattr__(self, name):
+            return getattr(self._parsed, name)
+
+    def _fake_urlparse(url, *args, **kwargs):
+        return _LazyHostnameRaiser(_real_urlparse(url, *args, **kwargs))
+
+    monkeypatch.setattr(cc, "urlparse", _fake_urlparse)
+
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    with pytest.raises(BundlerError, match="Invalid catalog url"):
+        cc.add_source(project, "https://example.com/c.json", policy="install-allowed", priority=50)
+
+
 def test_remove_source_does_not_crash_on_invalid_ipv6(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)
