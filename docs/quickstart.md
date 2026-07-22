@@ -3,7 +3,7 @@
 This guide will help you get started with Spec-Driven Development using Spec Kit. Throughout, we illustrate each step with a running example: **Taskify**, a small team productivity platform.
 
 > [!NOTE]
-> Automation scripts are provided as both Bash (`.sh`) and PowerShell (`.ps1`) variants. The `specify` CLI auto-selects based on your OS unless you pass `--script sh|ps`.
+> Automation scripts are provided as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. The `specify` CLI auto-selects a shell variant based on your OS unless you pass `--script sh|ps|py`.
 
 > [!NOTE]
 > Commands are shown here in `/speckit.*` form, but the exact invocation depends on your agent. Some skills-based agents use `$speckit-*` (e.g. Codex, ZCode) or `/skill:speckit-*` (e.g. Kimi). Use whichever form your agent exposes — the steps are otherwise identical.

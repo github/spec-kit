@@ -2,7 +2,7 @@
 
 This guide shows how to iterate on the `specify` CLI locally without publishing a release or committing to `main` first.
 
-> Scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants. The CLI auto-selects based on OS unless you pass `--script sh|ps`.
+> Scripts are available as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants. The CLI auto-selects a shell variant based on OS unless you pass `--script sh|ps|py`.
 
 ## 1. Clone and Switch Branches
 
