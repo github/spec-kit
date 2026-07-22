@@ -124,3 +124,13 @@ def test_string_mcp_rejected_not_split_per_character():
     data["requires"]["mcp"] = "github"
     with pytest.raises(BundlerError, match="'requires.mcp' must be a list of strings"):
         BundleManifest.from_dict(data)
+
+
+def test_string_integration_rejected_not_silently_dropped():
+    # A present-but-non-mapping 'integration' (a bare string) was silently
+    # dropped, leaving the bundle wrongly integration-agnostic. Reject it like
+    # the sibling requires/provides mapping fields.
+    data = valid_manifest_dict()
+    data["integration"] = "copilot"
+    with pytest.raises(BundlerError, match="'integration' must be a mapping when present"):
+        BundleManifest.from_dict(data)
