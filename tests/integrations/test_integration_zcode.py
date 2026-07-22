@@ -1,8 +1,5 @@
 """Tests for ZcodeIntegration — skills-based integration (Z.AI)."""
 
-from specify_cli.integrations import get_integration
-from specify_cli.integrations.manifest import IntegrationManifest
-
 from .test_integration_base_skills import SkillsIntegrationTests
 
 
@@ -11,17 +8,6 @@ class TestZcodeIntegration(SkillsIntegrationTests):
     FOLDER = ".zcode/"
     COMMANDS_SUBDIR = "skills"
     REGISTRAR_DIR = ".zcode/skills"
-
-    def test_constitution_skill_uses_dollar_follow_up(self, tmp_path):
-        integration = get_integration("zcode")
-        manifest = IntegrationManifest("zcode", tmp_path)
-        integration.setup(tmp_path, manifest, script_type="sh")
-
-        skill = tmp_path / ".zcode/skills/speckit-constitution/SKILL.md"
-        content = skill.read_text(encoding="utf-8")
-        assert "$speckit-specify <intent>" in content
-        assert "/speckit-specify <intent>" not in content
-
 
 class TestZcodeInvocation:
     """ZCode renders $speckit-* chat invocations (like Codex)."""

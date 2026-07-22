@@ -8,8 +8,8 @@ from pathlib import Path, PurePath
 import typer
 
 from .._console import console
-from .._invocation_style import is_dollar_skills_agent
 from ..integration_runtime import (
+    invoke_prefix_for_integration as _invoke_prefix_for_integration,
     invoke_separator_for_integration as _invoke_separator_for_integration,
     with_integration_setting as _with_integration_setting,
 )
@@ -328,12 +328,8 @@ def integration_switch(
             target_integration, current, target, parsed_options,
             project_root=project_root,
         ),
-        invoke_prefix=(
-            "$"
-            if is_dollar_skills_agent(
-                target, target_integration.is_skills_mode(parsed_options, project_root)
-            )
-            else "/"
+        invoke_prefix=_invoke_prefix_for_integration(
+            target_integration, target, parsed_options, project_root
         ),
         refresh_hint=(
             "To overwrite customizations, re-run with "
@@ -565,13 +561,8 @@ def integration_upgrade(
             infra_integration, current, infra_key, infra_parsed,
             project_root=project_root,
         ),
-        invoke_prefix=(
-            "$"
-            if is_dollar_skills_agent(
-                infra_key,
-                infra_integration.is_skills_mode(infra_parsed, project_root),
-            )
-            else "/"
+        invoke_prefix=_invoke_prefix_for_integration(
+            infra_integration, infra_key, infra_parsed, project_root
         ),
     )
     if os.name != "nt":
@@ -608,12 +599,8 @@ def integration_upgrade(
                         integration, {"integration_settings": settings}, key, parsed_options,
                         project_root=project_root,
                     ),
-                    invoke_prefix=(
-                        "$"
-                        if is_dollar_skills_agent(
-                            key, integration.is_skills_mode(parsed_options, project_root)
-                        )
-                        else "/"
+                    invoke_prefix=_invoke_prefix_for_integration(
+                        integration, key, parsed_options, project_root
                     ),
                     force=force,
                     refresh_managed=True,

@@ -10,8 +10,8 @@ from rich.markup import escape
 
 from .._agent_config import SCRIPT_TYPE_CHOICES
 from .._console import console
-from .._invocation_style import is_dollar_skills_agent
 from ..integration_runtime import (
+    invoke_prefix_for_integration as _invoke_prefix_for_integration,
     invoke_separator_for_integration as _invoke_separator_for_integration,
     resolve_integration_options as _resolve_integration_options_impl,
     with_integration_setting as _with_integration_setting,
@@ -334,12 +334,8 @@ def _set_default_integration(
                     integration, {"integration_settings": settings}, key, parsed_options,
                     project_root=project_root,
                 ),
-                invoke_prefix=(
-                    "$"
-                    if is_dollar_skills_agent(
-                        key, integration.is_skills_mode(parsed_options, project_root)
-                    )
-                    else "/"
+                invoke_prefix=_invoke_prefix_for_integration(
+                    integration, key, parsed_options, project_root
                 ),
                 force=refresh_templates_force,
                 refresh_managed=True,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from ._invocation_style import is_dollar_skills_agent
 from .integration_state import integration_setting, integration_settings
 
 
@@ -92,3 +93,14 @@ def invoke_separator_for_integration(
         return integration.effective_invoke_separator(stored_parsed, project_root)
 
     return integration.effective_invoke_separator(None, project_root)
+
+
+def invoke_prefix_for_integration(
+    integration: Any,
+    key: str,
+    parsed_options: dict[str, Any] | None = None,
+    project_root: Any = None,
+) -> str:
+    """Resolve the native invocation prefix for an integration's output mode."""
+    skills_mode = integration.is_skills_mode(parsed_options, project_root)
+    return "$" if is_dollar_skills_agent(key, skills_mode) else "/"

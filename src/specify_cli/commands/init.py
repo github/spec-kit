@@ -23,7 +23,6 @@ from .._assets import (
     get_speckit_version,
 )
 from .._console import StepTracker, console, select_with_arrows, show_banner
-from .._invocation_style import is_dollar_skills_agent
 from .._utils import check_tool
 
 
@@ -184,6 +183,7 @@ def register(app: typer.Typer) -> None:
             save_init_options,
         )
         from ..integration_runtime import (
+            invoke_prefix_for_integration as _invoke_prefix_for_integration,
             with_integration_setting as _with_integration_setting,
         )
         from ..integrations._commands import (
@@ -482,15 +482,11 @@ def register(app: typer.Typer) -> None:
                     invoke_separator=resolved_integration.effective_invoke_separator(
                         integration_parsed_options, project_root=project_path
                     ),
-                    invoke_prefix=(
-                        "$"
-                        if is_dollar_skills_agent(
-                            resolved_integration.key,
-                            resolved_integration.is_skills_mode(
-                                integration_parsed_options, project_path
-                            ),
-                        )
-                        else "/"
+                    invoke_prefix=_invoke_prefix_for_integration(
+                        resolved_integration,
+                        resolved_integration.key,
+                        integration_parsed_options,
+                        project_path,
                     ),
                 )
                 tracker.complete(
