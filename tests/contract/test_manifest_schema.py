@@ -156,11 +156,12 @@ def test_non_mapping_requires_rejected_including_falsy(bad):
         BundleManifest.from_dict(data)
 
 
-def test_absent_provides_and_requires_still_parse():
-    # Absent optional fields remain valid: provides defaults to empty, requires
-    # to an empty Requires — no regression from the None handling.
+def test_absent_provides_and_requires_do_not_raise_mapping_error():
+    # Absent (None) optional mappings default to empty and must NOT trigger the
+    # "must be a mapping when present" guard — that is reserved for present
+    # non-mappings. (Structural completeness, e.g. requires.speckit_version, is
+    # a separate concern checked by structural_errors().)
     data = valid_manifest_dict()
     data.pop("provides", None)
     data.pop("requires", None)
-    manifest = BundleManifest.from_dict(data)
-    assert manifest.structural_errors() == []
+    BundleManifest.from_dict(data)  # does not raise BundlerError
