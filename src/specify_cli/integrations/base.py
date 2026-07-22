@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from .manifest import IntegrationManifest
 
 _HOOK_COMMAND_NOTE = (
-    "- When constructing slash commands from hook command names, "
+    "- When constructing command invocations from hook command names, "
     "replace dots (`.`) with hyphens (`-`). "
     "For example, `speckit.git.commit` → `/speckit-git-commit`.\n"
 )
