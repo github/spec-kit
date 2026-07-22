@@ -9010,3 +9010,34 @@ class TestConfigManagerCrossExtensionEnvLeak:
         # Must not raise; must fall back to the "no siblings" path.
         cfg = ConfigManager(tmp_path, "testext")._get_env_config()
         assert cfg == {"url": "v"}
+
+
+def test_forge_extension_install_listing_hyphenates_command_names(
+    extension_dir, project_dir
+):
+    """The post-install 'Provided commands' listing must show hyphenated
+    /speckit-<name> command names for a Forge project (Forge registers
+    hyphenated names), mirroring the existing Cline handling."""
+    import json
+    import os
+
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+
+    init_options = project_dir / ".specify" / "init-options.json"
+    init_options.write_text(json.dumps({"ai": "forge", "script": "sh"}))
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = CliRunner().invoke(
+            app, ["extension", "add", str(extension_dir), "--dev"]
+        )
+    finally:
+        os.chdir(old_cwd)
+
+    assert result.exit_code == 0, result.output
+    # Forge registers hyphenated command names, so the summary must match.
+    assert "speckit-test-ext-hello" in result.output
+    assert "speckit.test-ext.hello" not in result.output
