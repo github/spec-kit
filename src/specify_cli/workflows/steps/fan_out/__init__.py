@@ -12,9 +12,10 @@ class FanOutStep(StepBase):
     """Dispatch a step template for each item in a collection.
 
     The engine executes the nested ``step:`` template once per item,
-    setting ``context.item`` for each iteration.  Execution is
-    currently sequential; ``max_concurrency`` is accepted but not
-    enforced.
+    setting ``context.item`` for each iteration.  ``max_concurrency``
+    controls parallelism: ``<= 1`` (the default) runs items
+    sequentially, while ``> 1`` runs up to that many items concurrently
+    on a bounded thread pool (see ``WorkflowEngine._run_fan_out``).
     """
 
     type_key = "fan-out"
