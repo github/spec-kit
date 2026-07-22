@@ -251,6 +251,48 @@ class TestCatalogFetch:
         ids = [r["id"] for r in results]
         assert "acme-coder" in ids
 
+    def test_poisoned_cache_shape_is_dropped_and_refetched(self, tmp_path, monkeypatch):
+        """A fresh-but-mis-shaped cache (e.g. integrations as a list) must be
+        dropped and refetched, not returned — otherwise it later crashes on
+        .items(). The cache path must clear the same shape checks as a fresh
+        fetch."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        (tmp_path / ".specify").mkdir()
+        cat = IntegrationCatalog(tmp_path)
+
+        catalog = {
+            "schema_version": "1.0",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "integrations": {
+                "acme-coder": {
+                    "id": "acme-coder", "name": "Acme Coder", "version": "2.0.0",
+                    "description": "Community integration", "author": "acme-org",
+                    "tags": ["cli"],
+                },
+            },
+        }
+        self._patch_urlopen(monkeypatch, catalog)
+        cat.search()  # populate the cache legitimately
+
+        # Poison the cached payload (integrations as a list), keeping the fresh
+        # metadata so the age check passes and the cache branch is taken.
+        cache_dir = tmp_path / ".specify" / "integrations" / ".cache"
+        data_files = [
+            f for f in cache_dir.glob("catalog-*.json")
+            if not f.name.endswith("-metadata.json")
+        ]
+        assert data_files, "cache was not populated"
+        data_files[0].write_text(
+            json.dumps({"schema_version": "1.0", "integrations": []}),
+            encoding="utf-8",
+        )
+
+        # The poisoned cache is dropped and the (valid) source is refetched.
+        results = cat.search()
+        assert "acme-coder" in [r["id"] for r in results]
+
     def test_search_by_tag(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))

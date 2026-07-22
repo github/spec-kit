@@ -153,7 +153,17 @@ class IntegrationCatalog(CatalogStackBase):
                     cached_at = cached_at.replace(tzinfo=timezone.utc)
                 age = (datetime.now(timezone.utc) - cached_at).total_seconds()
                 if age < self.CACHE_DURATION:
-                    return json.loads(cache_file.read_text(encoding="utf-8"))
+                    cached = json.loads(cache_file.read_text(encoding="utf-8"))
+                    # A poisoned/older-format cache must clear the same shape
+                    # checks as a fresh fetch — otherwise a payload like [] or
+                    # {"integrations": []} is returned and later crashes on
+                    # .items()/.get(). The ValueError is caught just below,
+                    # which drops the corrupt cache and refetches from source.
+                    if not isinstance(cached, dict) or not isinstance(
+                        cached.get("integrations"), dict
+                    ):
+                        raise ValueError("cached catalog has invalid shape")
+                    return cached
             except (json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError, OSError, UnicodeError):
                 # Cache is invalid or stale metadata; delete and refetch from source.
                 try:
