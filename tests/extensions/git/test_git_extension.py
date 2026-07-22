@@ -700,7 +700,7 @@ class TestCreateFeaturePowerShell:
 
     def test_persist_hint_matches_twins(self, tmp_path: Path):
         """The non-JSON SPECIFY_FEATURE hint must use the '# To persist in your
-        shell: $env:SPECIFY_FEATURE = '<name>'' form — matching the core
+        shell: $env:SPECIFY_FEATURE = '<name>' form — matching the core
         create-new-feature.ps1 twin and the bash/python twins of this script —
         not the old 'environment variable set to:' wording (the env var is only
         set in this child process, so the actionable output is the persist hint)."""
