@@ -698,6 +698,22 @@ class TestCreateFeaturePowerShell:
         assert rt.returncode == 0, rt.stderr
         assert "HAS_GIT" not in rt.stdout
 
+    def test_persist_hint_matches_twins(self, tmp_path: Path):
+        """The non-JSON SPECIFY_FEATURE hint must use the '# To persist in your
+        shell: $env:SPECIFY_FEATURE = '<name>'' form — matching the core
+        create-new-feature.ps1 twin and the bash/python twins of this script —
+        not the old 'environment variable set to:' wording (the env var is only
+        set in this child process, so the actionable output is the persist hint)."""
+        project = _setup_project(tmp_path)
+        result = _run_pwsh(
+            "create-new-feature-branch.ps1", project,
+            "-ShortName", "persist", "Persist hint feature",
+        )
+        assert result.returncode == 0, result.stderr
+        assert "# To persist in your shell:" in result.stdout
+        assert "$env:SPECIFY_FEATURE = '001-persist'" in result.stdout
+        assert "environment variable set to:" not in result.stdout
+
     def test_help_documents_branch_prefix(self, tmp_path: Path):
         """-Help documents both template config knobs."""
         project = _setup_project(tmp_path)
