@@ -293,6 +293,47 @@ class TestCatalogFetch:
         results = cat.search()
         assert "acme-coder" in [r["id"] for r in results]
 
+    def test_cache_missing_schema_version_is_dropped_and_refetched(self, tmp_path, monkeypatch):
+        """A cache that has a dict 'integrations' but no 'schema_version' must be
+        dropped and refetched — the cache path enforces the SAME contract as a
+        fresh fetch (which rejects a missing schema_version). Otherwise an
+        older/poisoned payload like {"integrations": {}} bypasses the format
+        contract and hides real catalog entries."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
+        (tmp_path / ".specify").mkdir()
+        cat = IntegrationCatalog(tmp_path)
+
+        catalog = {
+            "schema_version": "1.0",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "integrations": {
+                "acme-coder": {
+                    "id": "acme-coder", "name": "Acme Coder", "version": "2.0.0",
+                    "description": "Community integration", "author": "acme-org",
+                    "tags": ["cli"],
+                },
+            },
+        }
+        self._patch_urlopen(monkeypatch, catalog)
+        cat.search()  # populate the cache legitimately
+
+        cache_dir = tmp_path / ".specify" / "integrations" / ".cache"
+        data_files = [
+            f for f in cache_dir.glob("catalog-*.json")
+            if not f.name.endswith("-metadata.json")
+        ]
+        assert data_files, "cache was not populated"
+        # Well-shaped except for the missing schema_version key.
+        data_files[0].write_text(
+            json.dumps({"integrations": {}}),
+            encoding="utf-8",
+        )
+
+        results = cat.search()
+        assert "acme-coder" in [r["id"] for r in results]
+
     def test_search_by_tag(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
