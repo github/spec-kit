@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import runpy
 
 import pytest
 import yaml
@@ -1237,7 +1238,7 @@ class TestSharedInfraCommandRefs:
         assert "/speckit.plan" not in content
         assert "/speckit.tasks" not in content
 
-    @pytest.mark.parametrize("script_type", ["sh", "ps"])
+    @pytest.mark.parametrize("script_type", ["sh", "ps", "py"])
     def test_dollar_prefix_in_shared_scripts(self, tmp_path, script_type):
         """Dollar-style skills agents get native prefixes in shared script hints."""
         from specify_cli import _install_shared_infra
@@ -1250,6 +1251,23 @@ class TestSharedInfraCommandRefs:
             project, script_type, invoke_separator="-", invoke_prefix="$"
         )
 
+        if script_type == "py":
+            state = {
+                "integration": "codex",
+                "integration_settings": {
+                    "codex": {"invoke_separator": "-"},
+                },
+            }
+            (project / ".specify" / "integration.json").write_text(
+                json.dumps(state), encoding="utf-8"
+            )
+            common = project / ".specify" / "scripts" / "python" / "common.py"
+            namespace = runpy.run_path(str(common))
+            assert namespace["format_speckit_command"]("plan", project) == (
+                "$speckit-plan"
+            )
+            return
+
         content = self._combined_script_content(project, script_type)
         assert "$speckit-specify" in content
         assert "$speckit-plan" in content
@@ -1257,6 +1275,10 @@ class TestSharedInfraCommandRefs:
         assert "/speckit-specify" not in content
         assert "/speckit-plan" not in content
         assert "/speckit-tasks" not in content
+        if script_type == "sh":
+            assert r"\$speckit-specify" in content
+            assert r"\$speckit-plan" in content
+            assert r"\$speckit-tasks" in content
 
     def test_full_init_claude_resolves_page_templates(self, tmp_path):
         """Full CLI init with Claude (skills agent) produces hyphen refs in page templates."""
