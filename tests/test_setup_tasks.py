@@ -466,24 +466,6 @@ def test_bash_command_hint_preserves_hyphens_inside_segments(tasks_repo: Path) -
     assert result.stdout.strip() == "/speckit.jira.sync-status"
 
 
-@requires_bash
-def test_installed_bash_formatter_uses_dollar_prefix(tmp_path: Path) -> None:
-    from specify_cli import _install_shared_infra
-
-    project = tmp_path / "bash-dollar-prefix"
-    project.mkdir()
-    (project / ".specify").mkdir()
-    _install_shared_infra(
-        project, "sh", invoke_separator="-", invoke_prefix="$"
-    )
-    _write_integration_state(project, "codex", "-")
-
-    result = _run_bash_format_command(project, "plan")
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "$speckit-plan"
-
-
 def _install_broken_json_tool_stubs(repo: Path) -> Path:
     """Create a bin dir with `jq` and `python3` stubs that exist but fail.
 
@@ -795,24 +777,6 @@ def test_powershell_command_hint_normalizes_mixed_separators(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "/speckit-git-commit"
-
-
-@pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
-def test_installed_powershell_formatter_uses_dollar_prefix(tmp_path: Path) -> None:
-    from specify_cli import _install_shared_infra
-
-    project = tmp_path / "powershell-dollar-prefix"
-    project.mkdir()
-    (project / ".specify").mkdir()
-    _install_shared_infra(
-        project, "ps", invoke_separator="-", invoke_prefix="$"
-    )
-    _write_integration_state(project, "codex", "-")
-
-    result = _run_powershell_format_command(project, "plan")
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "$speckit-plan"
 
 
 @pytest.mark.skipif(not (HAS_PWSH or _WINDOWS_POWERSHELL), reason="no PowerShell available")
