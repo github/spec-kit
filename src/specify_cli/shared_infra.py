@@ -272,9 +272,6 @@ _BASH_FORMAT_COMMAND_RE = re.compile(
 _POWERSHELL_FORMAT_COMMAND_RE = re.compile(
     r"Format-SpecKitCommand\s+-CommandName\s+(['\"])([A-Za-z0-9_.-]+)\1(?:\s+-RepoRoot\s+[^\r\n]+)?"
 )
-_PYTHON_FORMAT_COMMAND_RETURN_RE = re.compile(
-    r'return f"/speckit\{separator\}\{name\}"'
-)
 
 
 def _format_speckit_command(
@@ -294,19 +291,12 @@ def _resolve_dynamic_command_refs(
 ) -> str:
     """Render script runtime command helpers for managed shared infra copies."""
 
-    bash_prefix = r"\$" if prefix == "$" else prefix
     content = _BASH_FORMAT_COMMAND_RE.sub(
-        lambda match: _format_speckit_command(
-            match.group(2), separator, bash_prefix
-        ),
+        lambda match: _format_speckit_command(match.group(2), separator, prefix),
         content,
     )
-    content = _POWERSHELL_FORMAT_COMMAND_RE.sub(
+    return _POWERSHELL_FORMAT_COMMAND_RE.sub(
         lambda match: f"'{_format_speckit_command(match.group(2), separator, prefix)}'",
-        content,
-    )
-    return _PYTHON_FORMAT_COMMAND_RETURN_RE.sub(
-        f'return f"{prefix}speckit{{separator}}{{name}}"',
         content,
     )
 
