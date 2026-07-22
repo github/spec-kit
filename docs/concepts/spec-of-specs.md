@@ -33,7 +33,8 @@ Treat this as a lightweight planning conversation with your agent, not a full sp
    boundaries are what keep each sub-spec small enough to fit in context.
 4. **Order by dependency.** Note which slices depend on others and sequence them so
    prerequisites come first. Slices with no dependency on each other can be built in
-   any order (or in parallel).
+   any order. To build independent slices in parallel, use separate worktrees so each
+   run has isolated active-feature state.
 5. **Record the result as a roadmap.** Capture the slices in a durable roadmap file
    (below) so every later sub-spec can point back to it.
 
