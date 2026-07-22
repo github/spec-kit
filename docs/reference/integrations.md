@@ -275,6 +275,7 @@ The currently declared multi-install safe integrations are:
 | `junie` | `.junie/commands` |
 | `kilocode` | `.kilocode/workflows` |
 | `kiro-cli` | `.kiro/prompts` |
+| `omp` | `.omp/commands` |
 | `qodercli` | `.qoder/commands` |
 | `qwen` | `.qwen/commands` |
 | `shai` | `.shai/commands` |
