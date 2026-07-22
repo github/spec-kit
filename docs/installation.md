@@ -77,9 +77,9 @@ specify init <project_name> --integration pi
 specify init <project_name> --integration omp
 ```
 
-### Specify Script Type (Shell vs PowerShell)
+### Specify Script Type (Shell, PowerShell, or Python)
 
-All automation scripts now have both Bash (`.sh`) and PowerShell (`.ps1`) variants.
+Automation scripts are available as Bash (`.sh`), PowerShell (`.ps1`), and Python (`.py`) variants.
 
 Auto behavior:
 
