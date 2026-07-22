@@ -142,4 +142,10 @@ def _collect_files(
                 # Skip symlinked files to avoid escaping the bundle directory.
                 continue
             collected.append(path)
-    return sorted(collected)
+    # Order by the canonical POSIX arcname (the same key build_bundle uses to
+    # NAME each member), not by pathlib.Path comparison. Path ordering is
+    # platform-dependent (Windows folds case and uses backslash separators),
+    # which would lay out zip members differently across build hosts and break
+    # the byte-for-byte reproducible-build guarantee even though the member
+    # names are identical.
+    return sorted(collected, key=lambda p: p.relative_to(bundle_dir).as_posix())
