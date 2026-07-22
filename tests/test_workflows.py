@@ -1985,6 +1985,19 @@ class TestGateStep:
         assert result.status == StepStatus.COMPLETED
         assert result.output["choice"] == "approve"
 
+    def test_interactive_prompt_rejects_non_decimal_digit(self, monkeypatch, capsys):
+        """A Unicode digit int() can't parse — e.g. the superscript '²', which
+        str.isdigit() accepts but int() rejects — must be treated as an invalid
+        choice, not crash the prompt loop with an uncaught ValueError."""
+        from specify_cli.workflows.steps.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        inputs = iter(["²", "1"])  # superscript-two, then a real "1"
+        monkeypatch.setattr("builtins.input", lambda _prompt="": next(inputs))
+
+        choice = GateStep._prompt("Review the spec.", ["approve", "reject"])
+        assert choice == "approve"
+
     def test_interactive_prompt_missing_show_file_does_not_crash(
         self, tmp_path, monkeypatch, capsys
     ):
