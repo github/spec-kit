@@ -275,6 +275,12 @@ _POWERSHELL_FORMAT_COMMAND_RE = re.compile(
 _PYTHON_FORMAT_COMMAND_RETURN_RE = re.compile(
     r'return f"/speckit\{separator\}\{name\}"'
 )
+_BASH_FORMATTER_RETURN_RE = re.compile(
+    r'''printf '/speckit%s%s\\n' "\$separator" "\$command_name"'''
+)
+_POWERSHELL_FORMATTER_RETURN_RE = re.compile(
+    r'return "/speckit\$separator\$name"'
+)
 
 
 def _format_speckit_command(
@@ -303,6 +309,15 @@ def _resolve_dynamic_command_refs(
     )
     content = _POWERSHELL_FORMAT_COMMAND_RE.sub(
         lambda match: f"'{_format_speckit_command(match.group(2), separator, prefix)}'",
+        content,
+    )
+    content = _BASH_FORMATTER_RETURN_RE.sub(
+        f'''printf '{prefix}speckit%s%s\\\\n' "$separator" "$command_name"''',
+        content,
+    )
+    powershell_prefix = "`$" if prefix == "$" else prefix
+    content = _POWERSHELL_FORMATTER_RETURN_RE.sub(
+        f'return "{powershell_prefix}speckit$separator$name"',
         content,
     )
     return _PYTHON_FORMAT_COMMAND_RETURN_RE.sub(
