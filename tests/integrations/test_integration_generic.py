@@ -215,9 +215,11 @@ class TestGenericIntegration:
         assert "## Scope Guard" in content
         assert "MUST NOT" in content
         assert "application source code" in content
+        assert "runtime guidance documents" not in content
+        assert "README.md" not in content
         assert "Do not execute it during this command." in content
         assert "Never invoke a suggested follow-up command automatically." in content
-        assert "/speckit.specify <intent>" in content
+        assert "next command for the active integration" in content
 
     @pytest.mark.parametrize(
         "command_stem",
