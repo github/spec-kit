@@ -364,6 +364,35 @@
       "created_at": "2026-05-05T08:00:00Z",
       "updated_at": "2026-06-22T00:00:00Z"
     },
+    "intake-authoring-governance": {
+      "name": "Intake Authoring Governance",
+      "id": "intake-authoring-governance",
+      "version": "0.1.0",
+      "description": "Creates traceable Spec Kit intake files and receipts from ordered text sources while preserving clarification, update, and delivery-authority boundaries.",
+      "author": "Thorsten Hindermann",
+      "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.1.0.zip",
+      "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.1.0/README.md",
+      "license": "MIT",
+      "requires": {
+        "speckit_version": ">=0.8.3"
+      },
+      "provides": {
+        "templates": 7,
+        "commands": 2,
+        "scripts": 2
+      },
+      "tags": [
+        "intake",
+        "authoring",
+        "governance",
+        "traceability",
+        "clarification"
+      ],
+      "created_at": "2026-07-22T00:00:00Z",
+      "updated_at": "2026-07-22T00:00:00Z"
+    },
     "intake-review-governance": {
       "name": "Intake Review Governance",
       "id": "intake-review-governance",
