@@ -2034,3 +2034,42 @@ class TestNonActiveAgentSkillRegistration:
         assert (
             copilot_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
         ).exists()
+
+    def test_remove_cleans_up_skills_for_non_active_agent(
+        self, project_dir, extension_dir
+    ):
+        """remove() must clean up skills rendered for a non-active agent too (#2948)."""
+        _create_init_options(project_dir, ai="claude", ai_skills=True)
+        claude_skills_dir = _create_skills_dir(project_dir, ai="claude")
+        _create_integration_json(
+            project_dir,
+            default_agent="claude",
+            installed=["claude", "copilot"],
+            skills_by_agent={"copilot": True},
+        )
+        copilot_skills_dir = _create_skills_dir(project_dir, ai="copilot")
+
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            extension_dir, "0.1.0", register_commands=False
+        )
+
+        # Precondition: both agents got the skill rendered.
+        assert (
+            claude_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()
+        assert (
+            copilot_skills_dir / "speckit-test-ext-hello" / "SKILL.md"
+        ).exists()
+
+        result = manager.remove(manifest.id, keep_config=False)
+        assert result is True
+
+        # Removal must clean up both agents' skill directories, not just
+        # the active one.
+        assert not (
+            claude_skills_dir / "speckit-test-ext-hello"
+        ).exists()
+        assert not (
+            copilot_skills_dir / "speckit-test-ext-hello"
+        ).exists()

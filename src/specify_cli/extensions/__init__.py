@@ -1299,19 +1299,19 @@ class ExtensionManager:
         Called during extension removal to clean up skill files that
         were created by ``_register_extension_skills()``.
 
-        If *skills_dir* is not provided and ``_get_skills_dir()`` returns
-        ``None`` (e.g. the user removed init-options.json or toggled
-        ai_skills after installation), we fall back to scanning all known
-        agent skills directories so that orphaned skill directories are
-        still cleaned up.  In that case each candidate directory is
-        verified against the SKILL.md ``metadata.source`` field before
-        removal to avoid accidentally deleting user-created skills with
-        the same name.
+        Skills may have been rendered for more than one agent (#2948),
+        so this always scans every known agent skills directory (plus
+        *skills_dir* or the resolved active-agent directory, if any)
+        rather than only a single resolved directory, to avoid orphaning
+        skills registered for a non-active agent. Each candidate
+        directory is verified against the SKILL.md ``metadata.source``
+        field before removal to avoid accidentally deleting user-created
+        skills with the same name.
 
         Args:
             skill_names: List of skill names to remove.
             extension_id: Extension ID used to verify ownership during
-                fallback candidate scanning.
+                candidate scanning.
             skills_dir: Optional explicit skills directory to use instead
                 of resolving via ``_get_skills_dir()``.  Useful when the
                 caller needs to target a specific agent's skills directory
@@ -1365,8 +1365,13 @@ class ExtensionManager:
                 except (OSError, UnicodeDecodeError, Exception):
                     continue
                 shutil.rmtree(skill_subdir)
-        else:
-            # Fallback: scan all possible agent skills directories
+        # Additionally always scan every other known agent skills
+        # directory: skills may have been rendered for more than one
+        # agent (#2948), so limiting cleanup to only the directory above
+        # would orphan skills registered for a non-active agent.
+        # Directories already handled above are silently skipped since
+        # their matching skill subdirectories no longer exist.
+        if True:
             from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
 
             candidate_dirs: set[Path] = set()
