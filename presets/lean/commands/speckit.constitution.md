@@ -13,8 +13,10 @@ $ARGUMENTS
 This command's own work is limited to creating or updating the project constitution and
 propagating constitution-driven changes to dependent Spec Kit artifacts.
 
-- Treat feature implementation, code generation, refactoring, build, and deployment requests as
-  non-governance intents. You **MUST NOT** execute them.
+- Classify every part of the user input as constitution content or a separate non-governance
+  intent. Feature implementation, code generation, refactoring, build, and deployment requests
+  are examples of non-governance intents.
+- You **MUST NOT** execute any non-governance intent. Defer each one to `Next Actions`.
 - You **MUST NOT** create, modify, or delete application source files or other artifacts
   unrelated to the constitution workflow.
 - If an instruction could be either constitution content or a non-governance intent, ask for

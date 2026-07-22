@@ -5410,6 +5410,7 @@ def test_constitution_commands_guard_against_non_governance_work(command_path):
 
     assert "## Scope Guard" in content
     assert "**MUST NOT**" in content
+    assert "Classify every part" in content
     assert "application source files" in content
     assert "non-governance intent" in content
     assert "`Next Actions`" in content
