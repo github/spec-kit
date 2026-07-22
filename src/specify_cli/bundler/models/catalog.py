@@ -257,7 +257,17 @@ def _merge_config(by_id: dict[str, CatalogSource], config_path: Path, scope: Sco
     if not config_path.exists():
         return
     data = load_yaml(config_path)
-    catalogs = data.get("catalogs") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        # A top-level non-mapping (a YAML list or scalar) is malformed. The
+        # sibling reader of the SAME file (commands_impl/catalog_config._read)
+        # raises here; #3623 already made the inner non-list `catalogs` value
+        # agree between the two readers, and this closes the remaining
+        # top-level-shape gap so both readers reject the same documents.
+        raise BundlerError(
+            f"Malformed catalog config at {config_path}: expected a mapping at "
+            f"the top level, got {type(data).__name__}."
+        )
+    catalogs = data.get("catalogs")
     if catalogs is None:
         return
     if not isinstance(catalogs, list):

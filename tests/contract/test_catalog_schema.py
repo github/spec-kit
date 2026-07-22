@@ -68,6 +68,17 @@ def test_falsy_non_list_catalogs_still_raises(tmp_path: Path, value: str):
         load_source_stack(tmp_path)
 
 
+@pytest.mark.parametrize("body", ["- a\n- b\n", "42\n"])
+def test_toplevel_non_mapping_raises(tmp_path: Path, body: str):
+    """A top-level non-mapping bundle-catalogs.yml (a YAML list or scalar) must
+    raise, matching the sibling reader (catalog_config._read) — not silently
+    fall back to the built-in default stack."""
+    make_project(tmp_path)
+    (tmp_path / ".specify" / "bundle-catalogs.yml").write_text(body, encoding="utf-8")
+    with pytest.raises(BundlerError, match="expected a mapping at the top level"):
+        load_source_stack(tmp_path)
+
+
 @pytest.mark.parametrize("body", ["catalogs:\n", "catalogs: []\n"])
 def test_absent_or_empty_catalogs_is_noop(tmp_path: Path, body: str):
     """An absent (``None``) or empty-list ``catalogs:`` is valid: it contributes
