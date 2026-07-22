@@ -20,8 +20,8 @@ This command updates project governance only. It may modify:
 
 - `.specify/memory/constitution.md`
 - dependent templates under `.specify/templates/`
-- installed Spec Kit command files and runtime guidance documents when required to keep
-  them consistent with the amended constitution
+- installed Spec Kit command files when required to keep them consistent with the
+  amended constitution
 
 It **MUST NOT** create or modify application source code, feature specifications, plans,
 tasks, tests, or other implementation artifacts.
@@ -105,7 +105,6 @@ Follow this execution flow:
    - Read `.specify/templates/spec-template.md` for scope/requirements alignment—update if constitution adds/removes mandatory sections or constraints.
    - Read `.specify/templates/tasks-template.md` and ensure task categorization reflects new or removed principle-driven task types (e.g., observability, versioning, testing discipline).
    - Read each installed Spec Kit command file for your agent (including this one) — named `speckit.*` or `speckit-*` (dot or hyphen depending on the agent), or laid out as `speckit-<name>/SKILL.md` for skills-based integrations, e.g. in `.github/agents/`, `.github/skills/`, `.claude/skills/`, or your agent's equivalent commands directory — to verify no outdated references (CLAUDE-only or other agent-specific names) remain when generic guidance is required.
-   - Read any runtime guidance docs (e.g., `README.md`, `docs/quickstart.md`, or agent-specific guidance files if present). Update references to principles changed.
 
 5. Produce a Sync Impact Report (prepend as an HTML comment at top of the constitution file after update):
    - Version change: old → new
