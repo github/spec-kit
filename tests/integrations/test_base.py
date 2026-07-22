@@ -236,6 +236,24 @@ class TestBuildCommandInvocation:
             == "/speckit-git-commit fix typo"
         )
 
+    def test_cline_core_command_hyphenated(self):
+        """Cline installs hyphenated slash-commands (/speckit-<name>), so the
+        dispatch invocation must be hyphenated too — not the dotted default it
+        would inherit from MarkdownIntegration."""
+        from specify_cli.integrations import get_integration
+        i = get_integration("cline")
+        assert i.build_command_invocation("speckit.plan") == "/speckit-plan"
+        assert i.build_command_invocation("plan") == "/speckit-plan"
+
+    def test_cline_extension_command_hyphenated(self):
+        from specify_cli.integrations import get_integration
+        i = get_integration("cline")
+        assert i.build_command_invocation("speckit.git.commit") == "/speckit-git-commit"
+        assert (
+            i.build_command_invocation("speckit.git.commit", "fix typo")
+            == "/speckit-git-commit fix typo"
+        )
+
 
 class TestResolveCommandRefs:
     """Tests for __SPECKIT_COMMAND_<NAME>__ placeholder resolution."""
