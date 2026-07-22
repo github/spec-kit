@@ -20,7 +20,8 @@ propagating constitution-driven changes to dependent Spec Kit artifacts.
 - If an instruction could be either constitution content or a non-governance intent, ask for
   clarification before making changes.
 - After updating the constitution, list each deferred intent in a `Next Actions` section with an
-  appropriate follow-up Spec Kit command, such as `/speckit.specify`, but do not invoke it.
+  appropriate follow-up Spec Kit command, such as `__SPECKIT_COMMAND_SPECIFY__`, but do not
+  invoke it.
 - Omit `Next Actions` when there are no non-governance intents.
 
 ## Outline
