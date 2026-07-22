@@ -13,7 +13,32 @@ from specify_cli.integrations.catalog import (
     IntegrationDescriptor,
     IntegrationDescriptorError,
     IntegrationValidationError,
+    _catalog_shape_error,
 )
+
+
+class TestCatalogShapeValidator:
+    """The shared shape validator used by BOTH the fresh-fetch and cache-read
+    paths, so a poisoned/older cache can't bypass the format contract the fresh
+    fetch enforces (dict + 'schema_version' + dict 'integrations')."""
+
+    def test_valid_payload_returns_none(self):
+        assert _catalog_shape_error({"schema_version": "1.0", "integrations": {}}) is None
+
+    def test_missing_schema_version_is_rejected(self):
+        # The exact bypass the two paths used to disagree on: a dict with a dict
+        # 'integrations' but no 'schema_version'.
+        assert _catalog_shape_error({"integrations": {}}) is not None
+
+    def test_missing_integrations_is_rejected(self):
+        assert _catalog_shape_error({"schema_version": "1.0"}) is not None
+
+    def test_non_dict_integrations_is_rejected(self):
+        assert _catalog_shape_error({"schema_version": "1.0", "integrations": []}) is not None
+
+    @pytest.mark.parametrize("payload", [[], "x", 5, None])
+    def test_non_dict_payload_is_rejected(self, payload):
+        assert _catalog_shape_error(payload) is not None
 
 
 # ---------------------------------------------------------------------------
@@ -290,47 +315,6 @@ class TestCatalogFetch:
         )
 
         # The poisoned cache is dropped and the (valid) source is refetched.
-        results = cat.search()
-        assert "acme-coder" in [r["id"] for r in results]
-
-    def test_cache_missing_schema_version_is_dropped_and_refetched(self, tmp_path, monkeypatch):
-        """A cache that has a dict 'integrations' but no 'schema_version' must be
-        dropped and refetched — the cache path enforces the SAME contract as a
-        fresh fetch (which rejects a missing schema_version). Otherwise an
-        older/poisoned payload like {"integrations": {}} bypasses the format
-        contract and hides real catalog entries."""
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
-        monkeypatch.delenv("SPECKIT_INTEGRATION_CATALOG_URL", raising=False)
-        (tmp_path / ".specify").mkdir()
-        cat = IntegrationCatalog(tmp_path)
-
-        catalog = {
-            "schema_version": "1.0",
-            "updated_at": "2026-01-01T00:00:00Z",
-            "integrations": {
-                "acme-coder": {
-                    "id": "acme-coder", "name": "Acme Coder", "version": "2.0.0",
-                    "description": "Community integration", "author": "acme-org",
-                    "tags": ["cli"],
-                },
-            },
-        }
-        self._patch_urlopen(monkeypatch, catalog)
-        cat.search()  # populate the cache legitimately
-
-        cache_dir = tmp_path / ".specify" / "integrations" / ".cache"
-        data_files = [
-            f for f in cache_dir.glob("catalog-*.json")
-            if not f.name.endswith("-metadata.json")
-        ]
-        assert data_files, "cache was not populated"
-        # Well-shaped except for the missing schema_version key.
-        data_files[0].write_text(
-            json.dumps({"integrations": {}}),
-            encoding="utf-8",
-        )
-
         results = cat.search()
         assert "acme-coder" in [r["id"] for r in results]
 
