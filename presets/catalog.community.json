@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-22T00:00:00Z",
+  "updated_at": "2026-07-23T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
@@ -367,13 +367,13 @@
     "intake-authoring-governance": {
       "name": "Intake Authoring Governance",
       "id": "intake-authoring-governance",
-      "version": "0.1.0",
-      "description": "Creates traceable Spec Kit intake files and receipts from ordered text sources while preserving clarification, update, and delivery-authority boundaries.",
+      "version": "0.1.1",
+      "description": "Creates traceable Spec Kit intakes from ordered text sources and now truthfully adopts legacy intakes without inventing predecessor receipts.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.1.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/archive/refs/tags/v0.1.1.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.1.0/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-intake-authoring-governance/blob/v0.1.1/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.3"
@@ -388,10 +388,10 @@
         "authoring",
         "governance",
         "traceability",
-        "clarification"
+        "legacy-adoption"
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "updated_at": "2026-07-22T00:00:00Z"
+      "updated_at": "2026-07-23T00:00:00Z"
     },
     "intake-review-governance": {
       "name": "Intake Review Governance",
