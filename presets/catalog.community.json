@@ -1,18 +1,19 @@
 {
   "schema_version": "1.0",
   "updated_at": "2026-07-23T00:00:00Z",
+
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/presets/catalog.community.json",
   "presets": {
     "a11y-governance": {
       "name": "A11Y Governance",
       "id": "a11y-governance",
-      "version": "0.4.0",
-      "description": "Adds accessibility (WCAG 2.2 AA), bilingual DE/EN delivery, CEFR-B2 readability, inclusive-content governance, didactic inline-code-comment review, and audit-ready Spec Kit run evidence.",
+      "version": "0.4.1",
+      "description": "Adds WCAG 2.2 AA governance, accessible text/JSON status parity, bilingual DE/EN delivery, CEFR-B2 readability, inclusive content, didactic-comment review, and audit-ready evidence.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-a11y-governance/archive/refs/tags/v0.4.1.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-a11y-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-a11y-governance/blob/v0.4.1/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -33,7 +34,7 @@
         "didactic-comments"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-06-14T00:00:00Z"
+      "updated_at": "2026-07-23T00:00:00Z"
     },
     "agent-parity-governance": {
       "name": "Agent Parity Governance",
