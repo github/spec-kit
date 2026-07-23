@@ -196,7 +196,7 @@ Some IDE-based agents (like Kilo Code, Cline) may show **duplicate slash command
 
 ```bash
 # Navigate to the agent's commands folder
-cd .kilocode/workflows/
+cd .kilo/commands/
 
 # List files and identify duplicates
 ls -la
@@ -248,8 +248,8 @@ specify extension update
 This happens with IDE-based agents (Kilo Code, Cline, etc.).
 
 ```bash
-# Find the agent folder (example: .kilocode/workflows/)
-cd .kilocode/workflows/
+# Find the agent folder (example: .kilo/commands/)
+cd .kilo/commands/
 
 # List all files
 ls -la

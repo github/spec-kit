@@ -64,13 +64,14 @@ class KilocodeIntegration(MarkdownIntegration):
     key = "kilocode"
     config = {
         "name": "Kilo Code",
-        "folder": ".kilocode/",
-        "commands_subdir": "workflows",
+        "folder": ".kilo/",
+        "commands_subdir": "commands",
         "install_url": None,
         "requires_cli": False,
     }
     registrar_config = {
-        "dir": ".kilocode/workflows",
+        "dir": ".kilo/commands",
+        "legacy_dir": ".kilocode/workflows",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": ".md",
@@ -201,8 +202,8 @@ Only add custom setup logic when the agent needs non-standard behavior. Integrat
 specify init my-project --integration <key>
 
 # Verify files were created in the commands directory configured by
-# config["folder"] + config["commands_subdir"] (for example, .kilocode/workflows/)
-ls -R my-project/.kilocode/workflows/
+# config["folder"] + config["commands_subdir"] (for example, .kilo/commands/)
+ls -R my-project/.kilo/commands/
 
 # Uninstall cleanly
 cd my-project && specify integration uninstall <key>
