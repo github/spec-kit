@@ -1740,6 +1740,35 @@ class TestExtensionSkillUnregistration:
         # The extension's own skill must be recognised and removed, not orphaned.
         assert not skill_dir.exists()
 
+    def test_skills_removed_with_dashes_via_fallback_scan(
+        self, skills_project, temp_dir
+    ):
+        """Same ``---`` guard, but exercised through the fallback scan branch.
+
+        The fast path resolves the skills dir from init-options; the fallback
+        branch scans every candidate agent dir when that resolution returns
+        None, and it re-reads metadata.source with an independently duplicated
+        parser. Deleting init-options.json after install forces removal down
+        the fallback path so a substring-split regression there is caught too.
+        """
+        project_dir, skills_dir = skills_project
+        ext_dir = _create_dashed_description_extension_dir(temp_dir)
+        manager = ExtensionManager(project_dir)
+        manifest = manager.install_from_directory(
+            ext_dir, "0.1.0", register_commands=False
+        )
+
+        skill_dir = skills_dir / "speckit-dash-ext-hello"
+        assert (skill_dir / "SKILL.md").exists()
+
+        # Drop init-options so _get_skills_dir() returns None and removal takes
+        # the fallback directory-scan branch instead of the fast path.
+        (project_dir / ".specify" / "init-options.json").unlink()
+
+        result = manager.remove(manifest.id, keep_config=False)
+        assert result is True
+        assert not skill_dir.exists()
+
     def test_other_skills_preserved_on_remove(self, skills_project, extension_dir):
         """Non-extension skills should not be affected by extension removal."""
         project_dir, skills_dir = skills_project
