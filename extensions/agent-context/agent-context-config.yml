@@ -13,7 +13,7 @@ context_file: ""
 #   - CLAUDE.md
 context_files: []
 
-# WHAT: Markers (Delimiters) for the managed Spec Kit section. All information injected by this extension will only be done in between these markers.
+# WHAT: Markers (delimiters) for the managed Spec Kit section. This extension injects information only between these markers.
 # REQUIREMENT: OPTIONAL. Only change if you wish to have a custom marker name.
 # EXAMPLE:
 # context_markers:
