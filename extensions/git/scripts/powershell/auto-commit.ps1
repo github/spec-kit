@@ -35,6 +35,13 @@ if ($MessageFile) {
     if ($null -ne $GeneratedMessage) {
         $GeneratedMessage = $GeneratedMessage.TrimEnd("`r", "`n")
     }
+    # The message file is a transport-only artifact: its content is now
+    # captured above, so remove it immediately. Otherwise, if it was written
+    # inside the worktree, it would be picked up as an untracked change by
+    # both the "any changes?" check below and by `git add .`, polluting the
+    # commit or defeating the no-changes short-circuit even when nothing
+    # else changed.
+    Remove-Item -Path $MessageFile -Force -ErrorAction SilentlyContinue
 }
 
 function Find-ProjectRoot {

@@ -1151,7 +1151,10 @@ class TestAutoCommitBashCommitStyle:
             '    message: "[Spec Kit] Add specification"\n'
         ))
         (project / "new-file.txt").write_text("content")
-        msg_file = tmp_path / "commit-msg.txt"
+        # Write the message file inside the worktree (as an agent invoking
+        # this from a working directory tool naturally would) to exercise
+        # the exclusion-from-staging behavior below.
+        msg_file = project / "commit-msg.txt"
         msg_file.write_text("feat: add $(dangerous) `injection` test\n")
         result = _run_bash(
             "auto-commit.sh", project, "after_specify", "--message-file", str(msg_file)
@@ -1162,6 +1165,67 @@ class TestAutoCommitBashCommitStyle:
             cwd=project, capture_output=True, text=True,
         )
         assert "feat: add $(dangerous) `injection` test" in log.stdout
+
+    def test_message_file_not_staged_or_left_behind(self, tmp_path: Path):
+        """--message-file written inside the worktree must never be staged or
+        committed itself, and must be removed once its content is consumed."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: real change\n")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "--message-file", str(msg_file)
+        )
+        assert result.returncode == 0
+        assert not msg_file.exists()
+        show = subprocess.run(
+            ["git", "show", "--stat", "--oneline", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "new-file.txt" in show.stdout
+        assert "commit-msg.txt" not in show.stdout
+
+    def test_message_file_alone_does_not_defeat_no_changes_shortcircuit(self, tmp_path: Path):
+        """If the message file is the only 'change' in the worktree (no real
+        edits), auto-commit must still report no changes rather than
+        committing the transport file by itself."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        # Baseline-commit the scaffolding (and config) so the tree is
+        # genuinely clean before introducing the message file — otherwise
+        # the untracked scaffold files would mask whether the message file
+        # alone is enough to (incorrectly) trigger a commit.
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "baseline"],
+            cwd=project, check=True, capture_output=True, env={**os.environ, **_GIT_ENV},
+        )
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: no real changes\n")
+        result = _run_bash(
+            "auto-commit.sh", project, "after_specify", "--message-file", str(msg_file)
+        )
+        assert result.returncode == 0
+        assert "No changes to commit" in result.stderr
+        assert not msg_file.exists()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "baseline" in log.stdout
 
     def test_message_file_missing_fails(self, tmp_path: Path):
         """--message-file pointing at a nonexistent file fails clearly."""
@@ -1436,7 +1500,7 @@ class TestAutoCommitPowerShellCommitStyle:
             '    message: "[Spec Kit] Add specification"\n'
         ))
         (project / "new-file.txt").write_text("content")
-        msg_file = tmp_path / "commit-msg.txt"
+        msg_file = project / "commit-msg.txt"
         msg_file.write_text("feat: add $(dangerous) `injection` test\n")
         result = _run_pwsh(
             "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file)
@@ -1447,6 +1511,67 @@ class TestAutoCommitPowerShellCommitStyle:
             cwd=project, capture_output=True, text=True,
         )
         assert "feat: add $(dangerous) `injection` test" in log.stdout
+
+    def test_message_file_not_staged_or_left_behind(self, tmp_path: Path):
+        """-MessageFile written inside the worktree must never be staged or
+        committed itself, and must be removed once its content is consumed."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        (project / "new-file.txt").write_text("content")
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: real change\n")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file)
+        )
+        assert result.returncode == 0
+        assert not msg_file.exists()
+        show = subprocess.run(
+            ["git", "show", "--stat", "--oneline", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "new-file.txt" in show.stdout
+        assert "commit-msg.txt" not in show.stdout
+
+    def test_message_file_alone_does_not_defeat_no_changes_shortcircuit(self, tmp_path: Path):
+        """If the message file is the only 'change' in the worktree (no real
+        edits), auto-commit must still report no changes rather than
+        committing the transport file by itself."""
+        project = _setup_project(tmp_path)
+        _write_config(project, (
+            "commit_style: conventional\n"
+            "auto_commit:\n"
+            "  default: false\n"
+            "  after_specify:\n"
+            "    enabled: true\n"
+        ))
+        # Baseline-commit the scaffolding (and config) so the tree is
+        # genuinely clean before introducing the message file — otherwise
+        # the untracked scaffold files would mask whether the message file
+        # alone is enough to (incorrectly) trigger a commit.
+        subprocess.run(["git", "add", "-A"], cwd=project, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "baseline"],
+            cwd=project, check=True, capture_output=True, env={**os.environ, **_GIT_ENV},
+        )
+        msg_file = project / "commit-msg.txt"
+        msg_file.write_text("feat: no real changes\n")
+        result = _run_pwsh(
+            "auto-commit.ps1", project, "after_specify", "-MessageFile", str(msg_file)
+        )
+        assert result.returncode == 0
+        assert "No changes to commit" in (result.stdout + result.stderr)
+        assert not msg_file.exists()
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert "baseline" in log.stdout
 
     def test_message_file_missing_fails(self, tmp_path: Path):
         """-MessageFile pointing at a nonexistent file fails clearly."""

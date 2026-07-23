@@ -39,6 +39,13 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             GENERATED_MESSAGE="$(cat "$_message_file")"
+            # The message file is a transport-only artifact: its content is
+            # now captured above, so remove it immediately. Otherwise, if it
+            # was written inside the worktree, it would be picked up as an
+            # untracked change by both the "any changes?" check below and by
+            # `git add .`, polluting the commit or defeating the no-changes
+            # short-circuit even when nothing else changed.
+            rm -f "$_message_file"
             shift 2
             ;;
         *)
