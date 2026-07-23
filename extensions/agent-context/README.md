@@ -40,7 +40,7 @@ While this extension is disabled (or not installed), nothing in Spec Kit creates
 | ------------------------------ | --------------------------------------------------------------------------------- |
 | `speckit.agent-context.update` | Refresh the managed section in the agent context file with the current plan path. |
 
-> NOTE: The command ID above is canonical. When invoking it as a slash command, use your agent's separator: `/speckit.agent-context.update` for dot-separator agents or `/speckit-agent-context-update` for hyphen-separator agents (e.g. Forge, Cline).
+> NOTE: The command ID above is canonical. Invoke it using the syntax for your integration: `/speckit.agent-context.update` for dot-command integrations; `/speckit-agent-context-update` for hyphen/skills integrations (including Forge and Cline); `$speckit-agent-context-update` for Codex or ZCode in skills mode; or `/skill:speckit-agent-context-update` for Kimi.
 
 ## Configuration
 
