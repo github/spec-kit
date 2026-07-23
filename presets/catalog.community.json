@@ -425,13 +425,13 @@
     "isaqb-architecture-governance": {
       "name": "iSAQB Architecture Governance",
       "id": "isaqb-architecture-governance",
-      "version": "0.2.0",
-      "description": "Adds general iSAQB/CPSA-F and arc42 software-architecture governance, including audit-ready Spec Kit run evidence for architecture goals, views, quality scenarios, ADRs, risks, and technical debt.",
+      "version": "0.2.1",
+      "description": "Adds iSAQB/CPSA-F and arc42 architecture governance with audit-ready evidence for goals, views, resumability, partial-failure scenarios, ADRs, risks, and technical debt.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.2.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/archive/refs/tags/v0.2.1.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-isaqb-architecture-governance/blob/v0.2.1/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -452,7 +452,7 @@
         "technical-debt"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-06-14T00:00:00Z"
+      "updated_at": "2026-07-23T00:00:00Z"
     },
     "jira": {
       "name": "Jira Issue Tracking",
