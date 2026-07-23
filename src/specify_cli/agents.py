@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from ._init_options import is_ai_skills_enabled, load_init_options
-from ._invocation_style import get_invocation_prefix, is_dollar_skills_agent
+from ._invocation_style import get_invocation_prefix
 from ._toml_string import escape_toml_basic as _escape_toml_basic
 from ._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 from ._utils import relative_extension_path_violation
