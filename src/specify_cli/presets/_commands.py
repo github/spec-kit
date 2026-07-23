@@ -106,23 +106,21 @@ def preset_add(
             from urllib.parse import urlparse as _urlparse
 
             try:
-                # Read .hostname inside the try: a bracketed-but-invalid IPv6
-                # authority (e.g. "https://[not-an-ip]/p.zip") parses cleanly
-                # under urlparse() on Python < 3.14 and only raises ValueError
-                # lazily on the first .hostname access (eager at urlparse() on
-                # 3.14+). Guarding it here surfaces the clean "Invalid URL"
-                # message instead of leaking a raw ValueError traceback.
+                # Read .hostname inside the try: parsing a malformed authority --
+                # or accessing .hostname on one, e.g. an invalid bracketed IPv6
+                # host like "https://[not-an-ip]/p.zip" -- can raise ValueError.
+                # Guarding both here surfaces the clean "Invalid URL" message
+                # instead of leaking a raw ValueError traceback.
                 _urlparse(from_url).hostname
             except ValueError:
                 console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
                 raise typer.Exit(1)
 
             def _is_allowed_download_url(url):
-                # Parse and read .hostname inside the try: a bracketed-but-invalid
-                # IPv6 authority (e.g. "https://[not-an-ip]/p.zip") parses cleanly
-                # under urlparse() on Python < 3.14 and only raises ValueError
-                # lazily on the first .hostname access (eager at urlparse() on
-                # 3.14+). A malformed URL is simply not an allowed download URL.
+                # Parse and read .hostname inside the try: parsing a malformed
+                # authority -- or accessing .hostname on one, e.g. an invalid
+                # bracketed IPv6 host like "https://[not-an-ip]/p.zip" -- can raise
+                # ValueError. A malformed URL is simply not an allowed download URL.
                 try:
                     parsed_url = _urlparse(url)
                     host = parsed_url.hostname

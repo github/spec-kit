@@ -428,8 +428,12 @@ def extension_add(
 
         try:
             parsed = urlparse(from_url)
-            # Keep parsing and hostname extraction in the same guard so any
-            # ValueError is converted to the CLI's normal invalid-URL error.
+            # Read .hostname inside the try: parsing a malformed authority -- or
+            # accessing .hostname on one, e.g. an invalid bracketed IPv6 host like
+            # "https://[not-an-ip]/x.zip" -- can raise ValueError. Keeping both the
+            # parse and the .hostname read inside the guard surfaces a clean
+            # "Invalid URL" message instead of leaking a raw traceback past the
+            # CLI. Reuse the value below.
             hostname = parsed.hostname
         except ValueError:
             console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")

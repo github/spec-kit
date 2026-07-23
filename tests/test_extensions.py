@@ -6607,10 +6607,10 @@ class TestExtensionAddCLI:
 
     def test_add_from_bracketed_non_ip_url_exits_cleanly(self, tmp_path):
         """A bracketed-but-invalid IPv6 host must produce a clean error, not a
-        ValueError traceback. Unlike an unterminated bracket (which raises eager
-        at urlparse()), "[not-an-ip]" parses cleanly on Python < 3.14 and only
-        raises ValueError lazily on the first .hostname access -- the case the
-        try/except guard around .hostname protects against on CI interpreters.
+        ValueError traceback. "https://[not-an-ip]/ext.zip" is a malformed
+        authority that raises ValueError during URL validation; the try/except
+        guard around parsing and the .hostname read must turn that into a clean
+        "Invalid URL" message.
         """
         from typer.testing import CliRunner
         from unittest.mock import patch
@@ -6634,10 +6634,11 @@ class TestExtensionAddCLI:
         assert "Invalid URL" in plain
 
     def test_add_from_url_lazy_hostname_valueerror_exits_cleanly(self, tmp_path, monkeypatch):
-        """Simulate the Python < 3.14 shape explicitly (independent of the running
-        interpreter): urlparse() succeeds but .hostname raises ValueError lazily.
-        This is the exact path the fix guards; it leaks a raw ValueError if
-        .hostname is read outside the try/except.
+        """Synthetic defensive coverage: monkeypatch urlparse() to return an
+        object whose .hostname raises ValueError lazily. This does not reproduce
+        any specific CPython behavior -- it just exercises the case where the
+        ValueError surfaces on the .hostname read rather than at parse time, so a
+        raw ValueError would leak if .hostname were read outside the try/except.
         """
         import urllib.parse
         from typer.testing import CliRunner
