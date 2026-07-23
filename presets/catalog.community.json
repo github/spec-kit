@@ -39,13 +39,13 @@
     "agent-parity-governance": {
       "name": "Agent Parity Governance",
       "id": "agent-parity-governance",
-      "version": "0.3.0",
-      "description": "Adds shared-guidance parity, audit-ready Spec-Kit run evidence, and agent-neutral model-routing guidance across a project's declared AI-agent instruction surfaces so agent guidance does not drift.",
+      "version": "0.4.0",
+      "description": "Adds shared-guidance and generated-command parity, fleet-completion evidence, secret-free runner/status metadata, audit-ready evidence, and agent-neutral model routing.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/archive/refs/tags/v0.3.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/archive/refs/tags/v0.4.0.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-agent-parity-governance/blob/v0.4.0/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -64,7 +64,7 @@
         "multi-agent"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-06-14T00:00:00Z"
+      "updated_at": "2026-07-23T00:00:00Z"
     },
     "aide-in-place": {
       "name": "AIDE In-Place Migration",
