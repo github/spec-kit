@@ -1,11 +1,11 @@
 # Coding Agent Context Extension Configuration
 
-# WHAT: Single project relative path to the main coding agent context file.
+# WHAT: The single agent context file relative to the project root (the directory containing .specify/). Absolute paths, backslash separators, and `..` path segments are rejected.
 # REQUIREMENT: OPTIONAL. Use this if you want to manually specify a single context file. If you leave this entry blank, it will use the default context file for the coding agent you picked when you set up Spec Kit. See `agent-context-defaults.json` for the defaults.
 # EXAMPLE: context_file: CLAUDE.md
 context_file: ""
 
-# WHAT: List of project relative paths to the coding agent context files. If you have both `context_file` and `context_files` filled, then this (`context_files`) takes precedence.
+# WHAT: List of agent context files relative to the project root (the directory containing .specify/). If you have both `context_file` and `context_files` filled, then this (`context_files`) takes precedence. Absolute paths, backslash separators, and `..` path segments are rejected.
 # REQUIREMENT: OPTIONAL. Use this if your project requires you to keep multiple agent context files in sync.
 # EXAMPLE:
 # context_files:
