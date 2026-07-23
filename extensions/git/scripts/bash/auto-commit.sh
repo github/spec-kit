@@ -94,7 +94,12 @@ if [ -f "$_config_file" ]; then
                     [ "$_val" = "false" ] && _enabled=false
                 fi
                 if echo "$_line" | grep -Eq '[[:space:]]+message:'; then
-                    _commit_msg=$(echo "$_line" | sed 's/^[^:]*:[[:space:]]*//' | sed 's/^["'\'']//' | sed 's/["'\'']*$//')
+                    # Trim trailing whitespace before stripping the closing quote:
+                    # a value like `message: "Done"  ` (trailing spaces after the
+                    # quote) would otherwise leave the quote dangling (`Done"  `),
+                    # since the closing-quote strip is anchored to end-of-string.
+                    # The PowerShell twin .Trim()s first; match it for parity.
+                    _commit_msg=$(echo "$_line" | sed 's/^[^:]*:[[:space:]]*//' | sed 's/[[:space:]]*$//' | sed 's/^["'\'']//' | sed 's/["'\'']*$//')
                 fi
             fi
         fi

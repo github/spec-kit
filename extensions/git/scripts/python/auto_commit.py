@@ -33,7 +33,15 @@ def _value_after_colon(line: str) -> str:
 
 
 def _strip_quotes(value: str) -> str:
-    """Strip one leading quote and all trailing quotes, mirroring the bash sed."""
+    """Strip surrounding whitespace, then one leading quote and all trailing quotes.
+
+    Trimming first matters when the YAML value has trailing whitespace after a
+    closing quote (``message: "Done"  ``): stripping quotes anchored to the end
+    of string would leave the closing quote dangling (``Done"  ``) because the
+    quote is no longer at the end. The PowerShell twin ``.Trim()``s before
+    stripping, so trim here too to keep all three script variants in parity.
+    """
+    value = value.strip()
     value = re.sub(r"^[\"']", "", value)
     return re.sub(r"[\"']*$", "", value)
 
