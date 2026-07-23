@@ -92,6 +92,27 @@ class TestLoadAuthConfig:
         assert entries[0].auth == "bearer"
         assert entries[0].token_env == "GH_TOKEN"
 
+    def test_padded_token_env_is_normalized_and_resolves(self, tmp_path, monkeypatch):
+        # token_env is validated on its stripped form but was stored raw, so a
+        # padded env-var name passed validation yet broke the verbatim
+        # os.environ.get() lookup — resolve_token silently returned None.
+        monkeypatch.setenv("GH_TOKEN", "secret-tok")
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["github.com"],
+                "provider": "github",
+                "auth": "bearer",
+                "token_env": "  GH_TOKEN  ",
+            }]
+        }))
+        entries = load_auth_config(cfg)
+        assert len(entries) == 1
+        # Stored normalized (matching how hosts are normalized), ...
+        assert entries[0].token_env == "GH_TOKEN"
+        # ... so the env lookup finds the token instead of returning None.
+        assert GitHubAuth().resolve_token(entries[0]) == "secret-tok"
+
     def test_valid_ado_config(self, tmp_path):
         cfg = tmp_path / "auth.json"
         cfg.write_text(json.dumps({
