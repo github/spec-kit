@@ -24,7 +24,7 @@ jobs:
           python-version: "3.14"
 
       - name: Run ruff check
-        run: uvx ruff check src tests
+        run: uvx ruff@0.15.0 check src tests
 
   pytest:
     runs-on: ${{ matrix.os }}
