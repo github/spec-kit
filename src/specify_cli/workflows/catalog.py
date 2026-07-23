@@ -894,7 +894,11 @@ class StepRegistry:
         import copy
         from datetime import datetime, timezone
 
-        existing = self.data["steps"].get(step_id, {})
+        raw_existing = self.data["steps"].get(step_id)
+        # Corrupted-but-parseable registries may hold non-dict entries; treat
+        # them as absent rather than crashing on existing.get() (mirrors
+        # WorkflowRegistry.add).
+        existing = raw_existing if isinstance(raw_existing, dict) else {}
         metadata_to_store = copy.deepcopy(metadata)
         metadata_to_store["installed_at"] = existing.get(
             "installed_at", datetime.now(timezone.utc).isoformat()

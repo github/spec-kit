@@ -535,6 +535,10 @@ def _evaluate_simple_expression(expr: str, namespace: dict[str, Any]) -> Any:
         items = [
             _evaluate_simple_expression(i.strip(), namespace)
             for i in _split_top_level_commas(inner)
+            # Drop empty segments from trailing/leading/double commas ([1, 2,] ->
+            # [1, 2], not [1, 2, None]). An intentional empty-string element
+            # ('') strips to "''" (truthy), so ['', 'a'] is preserved.
+            if i.strip()
         ]
         return items
 

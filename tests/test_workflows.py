@@ -404,6 +404,17 @@ class TestExpressions:
         assert evaluate_expression('{{ [["a", "b"], "c"] }}', ctx) == [["a", "b"], "c"]
         assert evaluate_expression("{{ [[1, 2], [3, 4]] }}", ctx) == [[1, 2], [3, 4]]
 
+    def test_list_literal_ignores_trailing_and_empty_commas(self):
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        ctx = StepContext()
+        # A trailing comma must not append a spurious None element.
+        assert evaluate_expression("{{ [1, 2,] }}", ctx) == [1, 2]
+        assert evaluate_expression("{{ [1,, 2] }}", ctx) == [1, 2]
+        # …but an intentional empty-string element is still preserved.
+        assert evaluate_expression("{{ ['', 'a'] }}", ctx) == ["", "a"]
+
     def test_operator_splitting_is_quote_aware(self):
         from specify_cli.workflows.expressions import (
             evaluate_condition,
@@ -1162,6 +1173,21 @@ class TestCommandStep:
             result = step.execute(config, ctx)
         assert result.output["integration"] == "gemini"
 
+    def test_execute_non_string_integration_fails_cleanly(self):
+        """A non-string integration (e.g. a list from an expression that resolved
+        to one) must FAIL the step cleanly, not crash the run with
+        'TypeError: unhashable type: list' from get_integration's dict lookup."""
+        from specify_cli.workflows.steps.command import CommandStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = CommandStep()
+        config = {
+            "id": "s", "command": "speckit.plan",
+            "integration": ["claude"], "input": {},
+        }
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.FAILED
+
     def test_step_override_model(self):
         from unittest.mock import patch
         from specify_cli.workflows.steps.command import CommandStep
@@ -1358,6 +1384,20 @@ class TestPromptStep:
         assert result.output["prompt"] == "Review auth.py for security issues"
         assert result.output["integration"] == "claude"
         assert result.output["dispatched"] is False
+
+    def test_execute_non_string_integration_fails_cleanly(self):
+        """A non-string integration must FAIL the step cleanly, not crash with
+        'TypeError: unhashable type: list' from get_integration's dict lookup."""
+        from specify_cli.workflows.steps.prompt import PromptStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        step = PromptStep()
+        config = {
+            "id": "p", "type": "prompt", "prompt": "do it",
+            "integration": ["claude"],
+        }
+        result = step.execute(config, StepContext())
+        assert result.status == StepStatus.FAILED
 
     def test_execute_with_step_integration(self):
         from unittest.mock import patch
@@ -1895,6 +1935,14 @@ def _force_gate_stdin(monkeypatch, *, tty: bool):
 class TestInitStep:
     """Test the init step type."""
 
+    def test_docstring_lists_every_valid_script_type(self):
+        # The `script` field docstring must not contradict the step's own
+        # VALID_SCRIPT_TYPES (which includes 'py'); validate() accepts all three.
+        from specify_cli.workflows.steps.init import InitStep, VALID_SCRIPT_TYPES
+
+        for script_type in VALID_SCRIPT_TYPES:
+            assert f"``{script_type}``" in InitStep.__doc__
+
     def test_builds_here_argv_and_bootstraps(self, tmp_path):
         from specify_cli.workflows.steps.init import InitStep
         from specify_cli.workflows.base import StepContext, StepStatus
@@ -2060,6 +2108,15 @@ class TestInitStep:
 class TestGateStep:
     """Test the gate step type."""
 
+    def test_docstring_lists_every_on_reject_behaviour(self):
+        # The docstring must not contradict validate()/execute(): on_reject
+        # accepts 'abort', 'skip', AND 'retry' (execute() has a dedicated
+        # retry -> PAUSED branch), but the summary omitted 'retry'.
+        from specify_cli.workflows.steps.gate import GateStep
+
+        for behaviour in ("abort", "skip", "retry"):
+            assert behaviour in GateStep.__doc__
+
     @pytest.fixture(autouse=True)
     def _non_tty_stdin_by_default(self, monkeypatch):
         # Default every gate test to a non-TTY stdin so none can drop into
@@ -2144,6 +2201,19 @@ class TestGateStep:
         assert str(review) in out
         assert result.status == StepStatus.COMPLETED
         assert result.output["choice"] == "approve"
+
+    def test_interactive_prompt_rejects_non_decimal_digit(self, monkeypatch, capsys):
+        """A Unicode digit int() can't parse — e.g. the superscript '²', which
+        str.isdigit() accepts but int() rejects — must be treated as an invalid
+        choice, not crash the prompt loop with an uncaught ValueError."""
+        from specify_cli.workflows.steps.gate import GateStep
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        inputs = iter(["²", "1"])  # superscript-two, then a real "1"
+        monkeypatch.setattr("builtins.input", lambda _prompt="": next(inputs))
+
+        choice = GateStep._prompt("Review the spec.", ["approve", "reject"])
+        assert choice == "approve"
 
     def test_interactive_prompt_missing_show_file_does_not_crash(
         self, tmp_path, monkeypatch, capsys
@@ -7733,6 +7803,63 @@ class TestWorkflowRemoveGuard:
         assert "[stage]permissiondenied" in output_compact
         assert "[reg]diskfull" in output_compact
 
+
+class TestWorkflowAddCaseInsensitiveSuffix:
+    """`workflow add` must detect a local YAML file case-insensitively, matching
+    `workflow run` (_commands.py:workflow_run) and the engine loader
+    (engine.py:WorkflowEngine.load_workflow), which both use `.suffix.lower()`.
+    Without it, `workflow run Sample.YAML` works but `workflow add Sample.YAML`
+    fails — an add/run inconsistency for an uppercase extension."""
+
+    def test_plain_path_accepts_uppercase_extension(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        src = temp_dir / "Sample.YAML"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        # Before the fix: `.suffix in (...)` is case-sensitive, so ".YAML" is not
+        # recognized as a local file; the path falls through to catalog lookup
+        # and fails. After the fix it installs like the lowercase happy path.
+        assert result.exit_code == 0, result.output
+        assert "installed" in result.output
+
+    def test_dev_path_accepts_uppercase_extension(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        src = temp_dir / "Sample.YAML"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", "--dev", str(src)])
+
+        # Before the fix the --dev branch rejects ".YAML" with
+        # "--dev source must be a workflow YAML file ...".
+        assert result.exit_code == 0, result.output
+        assert "installed" in result.output
+
+    def test_lowercase_extension_still_installs(self, temp_dir, monkeypatch, sample_workflow_yaml):
+        """Happy path (lowercase .yml) is unchanged by the case-normalization."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+        src = temp_dir / "sample.yml"
+        src.write_text(sample_workflow_yaml, encoding="utf-8")
+
+        monkeypatch.chdir(temp_dir)
+        result = CliRunner().invoke(app, ["workflow", "add", str(src)])
+
+        assert result.exit_code == 0, result.output
+        assert "installed" in result.output
+
+
 class TestWorkflowAddSymlinkGuard:
     def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
         """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""
@@ -8548,18 +8675,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self, amt=None):
-                if not hasattr(self, "_pos"):
-                    self._pos = 0
-                if amt is None:
-                    chunk = self._data[self._pos :]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + amt]
-                self._pos += len(chunk)
-                return chunk
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -8619,18 +8743,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/42"
 
-            def read(self, amt=None):
-                if not hasattr(self, "_pos"):
-                    self._pos = 0
-                if amt is None:
-                    chunk = self._data[self._pos :]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + amt]
-                self._pos += len(chunk)
-                return chunk
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -8670,18 +8791,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://api.github.com/repos/org/repo/releases/assets/55"
 
-            def read(self, amt=None):
-                if not hasattr(self, "_pos"):
-                    self._pos = 0
-                if amt is None:
-                    chunk = self._data[self._pos :]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + amt]
-                self._pos += len(chunk)
-                return chunk
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -8763,18 +8881,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/42"
 
-            def read(self, amt=None):
-                if not hasattr(self, "_pos"):
-                    self._pos = 0
-                if amt is None:
-                    chunk = self._data[self._pos :]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + amt]
-                self._pos += len(chunk)
-                return chunk
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -8826,18 +8941,15 @@ steps:
         class FakeResponse:
             def __init__(self, data, url=None):
                 self._data = data
+                self._pos = 0
                 self._url = url or "https://ghes.example/api/v3/repos/org/repo/releases/assets/55"
 
-            def read(self, amt=None):
-                if not hasattr(self, "_pos"):
-                    self._pos = 0
-                if amt is None:
-                    chunk = self._data[self._pos :]
-                    self._pos = len(self._data)
-                    return chunk
-                chunk = self._data[self._pos : self._pos + amt]
-                self._pos += len(chunk)
-                return chunk
+            def read(self, size=-1):
+                if size < 0:
+                    size = len(self._data) - self._pos
+                out = self._data[self._pos : self._pos + size]
+                self._pos += len(out)
+                return out
 
             def geturl(self):
                 return self._url
@@ -9972,6 +10084,17 @@ steps:
         registry.data["workflows"]["align-wf"] = "corrupted"
         registry.add("align-wf", {"version": "1.0.0", "source": "catalog"})
         assert registry.get("align-wf")["version"] == "1.0.0"
+
+    def test_step_registry_add_survives_non_dict_existing_entry(self, project_dir):
+        """StepRegistry.add must treat a corrupted non-dict existing entry as
+        absent rather than crash on existing.get() (parity with
+        WorkflowRegistry.add)."""
+        from specify_cli.workflows.catalog import StepRegistry
+
+        registry = StepRegistry(project_dir)
+        registry.data["steps"]["my-step"] = "corrupted"
+        registry.add("my-step", {"version": "1.0.0"})
+        assert registry.get("my-step")["version"] == "1.0.0"
 
     @pytest.mark.parametrize(
         "contents",
@@ -11630,6 +11753,10 @@ steps:
             _reject_insecure_download_redirect(
                 "https://example.com/wf.yml", "http://localhost:8000/wf.yml"
             )
+        with pytest.raises(urllib.error.URLError):
+            _reject_insecure_download_redirect(
+                "https://example.com/wf.yml", "https://127.0.0.2/wf.yml"
+            )
         # Allowed: HTTPS anywhere, or loopback HTTP that stays on loopback HTTP.
         _reject_insecure_download_redirect(
             "https://example.com/wf.yml", "https://cdn.example.com/wf.yml"
@@ -11639,6 +11766,9 @@ steps:
         )
         _reject_insecure_download_redirect(
             "http://127.0.0.1/source.yml", "http://127.0.0.1/wf.yml"
+        )
+        _reject_insecure_download_redirect(
+            "http://127.0.0.2/source.yml", "http://127.255.255.254/wf.yml"
         )
 
     def test_add_from_url_passes_redirect_validator(self, project_dir, monkeypatch):

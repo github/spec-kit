@@ -187,7 +187,7 @@ context_markers:
   end: "<!-- SPECKIT END -->"
 ```
 
-- The Specify CLI does **not** write this config. When `context_file` is empty, the extension's bundled scripts self-seed it by looking up the active integration's key in the extension's own `agent-context-defaults.json` map (`extensions/agent-context/scripts/bash/update-agent-context.sh` and `.ps1`). The CLI registry is never consulted — all agent→context-file knowledge lives inside the extension.
+- The Specify CLI does **not** write this config. When `context_file` is empty, the extension's bundled scripts self-seed it by looking up the active integration's key in the extension's own `agent-context-defaults.json` map (`extensions/agent-context/scripts/bash/update-agent-context.sh`, `.ps1`, and `extensions/agent-context/scripts/python/update_agent_context.py`). The CLI registry is never consulted — all agent→context-file knowledge lives inside the extension.
 - `context_markers.{start,end}` are read solely by the extension's scripts; they default to the Spec Kit markers shown above and can be customized by editing `agent-context-config.yml` directly.
 
 Existing projects created by older Spec Kit versions keep working: any previously written managed section or extension config is left intact and is only ever updated by the extension when run.
@@ -268,6 +268,25 @@ echo "✅ Done"
 
 ## Command File Formats
 
+### Script References (`scripts:` frontmatter)
+
+Core command templates (`templates/commands/*.md`) that invoke a helper script declare it in a `scripts:` frontmatter block with one line per supported script type. The `{SCRIPT}` placeholder in the command body is replaced at install time with the entry matching the project's selected script type (`--script sh|ps|py`):
+
+```yaml
+scripts:
+  sh: scripts/bash/setup-plan.sh --json
+  ps: scripts/powershell/setup-plan.ps1 -Json
+  py: scripts/python/setup_plan.py --json
+```
+
+| Key  | Script type            | Location                   |
+| ---- | ---------------------- | -------------------------- |
+| `sh` | POSIX shell (bash/zsh) | `scripts/bash/*.sh`        |
+| `ps` | PowerShell             | `scripts/powershell/*.ps1` |
+| `py` | Python                 | `scripts/python/*.py`      |
+
+All three entries must be present and behaviorally equivalent — agents parse the same stdout contract (`FEATURE_DIR:…`, `AVAILABLE_DOCS:…`, `--json` shapes) regardless of which one runs. (The bundled `agent-context` and `git` extension command templates also invoke helpers but do not yet use `scripts:` frontmatter — see [Script Types and Migration](#script-types-and-migration).)
+
 ### Markdown Format
 
 **Standard format:**
@@ -328,8 +347,28 @@ Different agents use different argument placeholders. The placeholder used in co
 - **TOML-based**: `{{args}}` (e.g., Gemini)
 - **YAML-based**: `{{args}}` (e.g., Goose)
 - **Custom**: some agents override the default (e.g., Forge uses `{{parameters}}`)
-- **Script placeholders**: `{SCRIPT}` (replaced with actual script path)
+- **Script placeholders**: `{SCRIPT}` (replaced with the resolved command from the template's `scripts:` frontmatter, per the project's `--script sh|ps|py` selection)
 - **Agent placeholders**: `__AGENT__` (replaced with agent name)
+
+## Script Types and Migration
+
+Spec Kit ships every core workflow script in three interchangeable variants — POSIX shell (`sh`), PowerShell (`ps`), and Python (`py`) — selected per project with `specify init --script sh|ps|py`. Each core command template that invokes a helper script carries all three in its `scripts:` frontmatter (templates that don't call a script, e.g. `constitution`/`specify`, have no `scripts:` block); see [Script References](#script-references-scripts-frontmatter).
+
+### Why Python is recommended
+
+- **No extra runtime.** The `specify` CLI is already Python, so the interpreter is guaranteed present — `py` adds no new dependency.
+- **Path toward a single source of truth.** The shell variants require paired `.sh` + `.ps1` maintenance and diverge on JSON handling (`jq` vs manual parsing). The Python variant avoids `jq` and is intended to eventually replace that dual-maintenance — but that consolidation has not happened yet: all three variants are still maintained in parallel (see the parity rule below).
+- **Parity-tested.** The Python ports are covered by tests — output-parity tests against the shell scripts where the contract is stdout-based, and direct unit tests elsewhere — so the stdout contract agents rely on stays stable.
+
+### Defaults and availability
+
+- `py` is available today for the core command templates (via their `scripts:` frontmatter). The bundled extensions (`agent-context`, `git`) ship Python script variants on disk, but their command templates still hard-code the Bash/PowerShell invocations, so `--script py` does not yet route those extension commands to Python — wiring `py` into the extension command templates is tracked separately.
+- Selection is per project: interactive `specify init` prompts for the script type, while non-interactive runs default to a shell variant by OS (`sh` on Linux/macOS, `ps` on Windows). `py` is chosen at the prompt or via `--script py`.
+- `sh` and `ps` remain fully supported. Nothing is removed, and `py` is not yet the default.
+
+### Parity rule for contributors
+
+All three script types are first-class: any change to a workflow script must update `sh`, `ps`, and `py` together and keep their tests (parity and unit) green. Making `py` the default and eventually retiring `sh`/`ps` is future work gated on adoption, tracked under the script-unification epic ([#3277](https://github.com/github/spec-kit/issues/3277)) — not something to act on from this doc.
 
 ## Special Processing Requirements
 

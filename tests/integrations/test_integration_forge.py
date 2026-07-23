@@ -475,3 +475,39 @@ class TestForgeCommandRegistrar:
             "Found '/speckit.specify' (dot notation) in generated Forge git.feature command body. "
             "Forge requires hyphen notation for ZSH compatibility."
         )
+
+
+class TestForgeInitNextSteps:
+    """The post-init 'Next steps' panel must show hyphenated /speckit-<name>
+    commands for Forge, since Forge only registers the hyphenated form
+    (see the generated command-file tests above)."""
+
+    def test_init_next_steps_show_hyphenated_commands(self, tmp_path):
+        import os
+
+        from typer.testing import CliRunner
+
+        from specify_cli import app
+
+        project = tmp_path / "forge-nextsteps"
+        project.mkdir()
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            result = CliRunner().invoke(
+                app,
+                ["init", "--here", "--integration", "forge", "--ignore-agent-tools"],
+                catch_exceptions=False,
+            )
+        finally:
+            os.chdir(old_cwd)
+
+        assert result.exit_code == 0, f"init failed: {result.output}"
+        # Forge registers /speckit-<name>; the next-steps panel must match.
+        assert "/speckit-plan" in result.output, (
+            f"Expected /speckit-plan in next steps but got:\n{result.output}"
+        )
+        # Must NOT show the dotted /speckit.plan form Forge can't invoke.
+        assert "/speckit.plan" not in result.output, (
+            f"Should not show dotted /speckit.plan for Forge:\n{result.output}"
+        )

@@ -138,7 +138,10 @@ class PromptStep(StepBase):
         context: StepContext,
     ) -> dict[str, Any] | None:
         """Dispatch *prompt* directly through the integration CLI."""
-        if not integration_key or not prompt:
+        if not integration_key or not isinstance(integration_key, str) or not prompt:
+            # A non-string integration would raise TypeError: unhashable type
+            # from get_integration's dict lookup and abort the run; treat it as
+            # not dispatchable so execute() falls through to its FAILED result.
             return None
 
         try:

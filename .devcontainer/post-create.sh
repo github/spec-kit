@@ -97,6 +97,17 @@ echo -e "\n🤖 Installing CodeBuddy CLI..."
 run_command "npm install -g @tencent-ai/codebuddy-code@latest"
 echo "✅ Done"
 
+echo -e "\n🤖 Installing Factory Droid CLI..."
+run_command "npm install -g droid@latest"
+
+if ! command -v droid >/dev/null 2>&1; then
+  echo -e "\033[0;31m[ERROR] Droid CLI installation did not create 'droid' in PATH.\033[0m" >&2
+  exit 1
+fi
+
+run_command "droid --version > /dev/null"
+echo "✅ Done"
+
 # Installing UV (Python package manager)
 echo -e "\n🐍 Installing UV - Python Package Manager..."
 run_command "pipx install uv"

@@ -111,8 +111,10 @@ class BundleManifest:
             license=str(bundle_raw.get("license", "")).strip(),
         )
 
-        requires_raw = data.get("requires") or {}
-        if not isinstance(requires_raw, dict):
+        requires_raw = data.get("requires")
+        if requires_raw is None:
+            requires_raw = {}
+        elif not isinstance(requires_raw, dict):
             raise BundlerError("'requires' must be a mapping when present.")
         requires = Requires(
             speckit_version=str(requires_raw.get("speckit_version", "")).strip(),
@@ -122,11 +124,18 @@ class BundleManifest:
 
         integration = None
         integration_raw = data.get("integration")
+        # Mirror the requires/provides guards above: a present-but-non-mapping
+        # 'integration' (e.g. a bare string "copilot") was silently dropped,
+        # leaving the bundle wrongly integration-agnostic. Reject it instead.
+        if integration_raw is not None and not isinstance(integration_raw, dict):
+            raise BundlerError("'integration' must be a mapping when present.")
         if isinstance(integration_raw, dict) and integration_raw.get("id"):
             integration = IntegrationRef(id=str(integration_raw["id"]).strip())
 
-        provides = data.get("provides") or {}
-        if not isinstance(provides, dict):
+        provides = data.get("provides")
+        if provides is None:
+            provides = {}
+        elif not isinstance(provides, dict):
             raise BundlerError("'provides' must be a mapping when present.")
 
         tags_raw = data.get("tags")

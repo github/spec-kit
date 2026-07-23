@@ -630,16 +630,22 @@ def extension_add(
         for warning in manifest.warnings:
             console.print(f"\n[yellow]⚠  Compatibility warning:[/yellow] {_escape_markup(str(warning))}")
 
-        is_cline = load_init_options(project_root).get("ai") == "cline"
+        selected_ai = load_init_options(project_root).get("ai")
+        is_cline = selected_ai == "cline"
+        is_forge = selected_ai == "forge"
 
         if is_cline:
             from specify_cli.integrations.cline import format_cline_command_name
+        if is_forge:
+            from specify_cli.integrations.forge import format_forge_command_name
 
         console.print("\n[bold cyan]Provided commands:[/bold cyan]")
         for cmd in manifest.commands:
             cmd_name = cmd['name']
             if is_cline:
                 cmd_name = format_cline_command_name(cmd_name)
+            elif is_forge:
+                cmd_name = format_forge_command_name(cmd_name)
             console.print(f"  • {_escape_markup(str(cmd_name))} - {_escape_markup(str(cmd.get('description', '')))}")
 
         # Report agent skills registration

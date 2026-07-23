@@ -2303,7 +2303,7 @@ class TestPresetCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -2312,12 +2312,12 @@ class TestPresetCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -5381,6 +5381,9 @@ class TestPresetEnableDisable:
 
 
 LEAN_PRESET_DIR = Path(__file__).parent.parent / "presets" / "lean"
+CORE_CONSTITUTION_COMMAND = (
+    Path(__file__).parent.parent / "templates" / "commands" / "constitution.md"
+)
 
 LEAN_COMMAND_NAMES = [
     "speckit.specify",
@@ -5389,6 +5392,31 @@ LEAN_COMMAND_NAMES = [
     "speckit.implement",
     "speckit.constitution",
 ]
+
+
+@pytest.mark.parametrize(
+    "command_path",
+    [
+        CORE_CONSTITUTION_COMMAND,
+        LEAN_PRESET_DIR / "commands" / "speckit.constitution.md",
+    ],
+    ids=["core", "lean"],
+)
+def test_constitution_commands_guard_against_non_governance_work(command_path):
+    """Constitution commands defer non-governance work instead of executing it."""
+    content = command_path.read_text()
+    lower_content = content.lower()
+    normalized_content = " ".join(lower_content.split())
+
+    assert "## Scope Guard" in content
+    assert "**MUST NOT**" in content
+    assert "Classify every part" in content
+    assert "application source files" in content
+    assert "non-governance intent" in content
+    assert "`Next Actions`" in content
+    assert "__SPECKIT_COMMAND_SPECIFY__" in content
+    assert "omit" in lower_content
+    assert "do not invoke it" in normalized_content or "without invoking it" in normalized_content
 
 
 class TestLeanPreset:
@@ -5603,42 +5631,24 @@ class TestBundledPresetLocator:
         assert "Invalid URL" in output
         open_url.assert_not_called()
 
-    def test_preset_add_from_url_lazy_hostname_valueerror_exits_cleanly(self, project_dir, monkeypatch):
-        """Synthetic defensive coverage: monkeypatch urlparse() to return an
-        object whose .hostname raises ValueError lazily. This does not reproduce
-        any specific CPython behavior -- it just exercises the case where the
-        ValueError surfaces on the .hostname read rather than at parse time, so a
-        raw ValueError would leak if .hostname were read outside the try/except.
+    def test_preset_add_from_url_out_of_range_port_exits_cleanly(self, project_dir):
+        """An out-of-range port raises ValueError lazily on .port access.
+
+        The up-front guard reads ``_parsed.port`` (urllib validates the port
+        range/syntax there) inside its try/except, so "https://example.com:99999/
+        preset.zip" must produce a clean "Invalid URL" message rather than
+        leaking a raw ValueError traceback past the CLI.
         """
-        import urllib.parse
         from typer.testing import CliRunner
         from unittest.mock import patch
         from specify_cli import app
-
-        real_urlparse = urllib.parse.urlparse
-
-        class _LazyHostnameRaiser:
-            def __init__(self, parsed):
-                self._parsed = parsed
-
-            @property
-            def hostname(self):
-                raise ValueError("simulated lazy IPv6 hostname failure")
-
-            def __getattr__(self, name):
-                return getattr(self._parsed, name)
-
-        def _fake_urlparse(url, *args, **kwargs):
-            return _LazyHostnameRaiser(real_urlparse(url, *args, **kwargs))
-
-        monkeypatch.setattr(urllib.parse, "urlparse", _fake_urlparse)
 
         runner = CliRunner()
         with patch.object(Path, "cwd", return_value=project_dir), \
              patch("specify_cli.authentication.http.open_url") as open_url:
             result = runner.invoke(
                 app,
-                ["preset", "add", "--from", "https://example.com/preset.zip"],
+                ["preset", "add", "--from", "https://example.com:99999/preset.zip"],
                 catch_exceptions=True,
             )
 
@@ -7528,10 +7538,10 @@ def test_preset_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, monke
     def fake_open(url, timeout=None, extra_headers=None):
         captured.append(url)
         resp = MagicMock()
-        resp.read.return_value = json.dumps({
+        resp.read.side_effect = io.BytesIO(json.dumps({
             "assets": [{"name": "pack.zip",
                         "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/9"}]
-        }).encode()
+        }).encode()).read
         yield resp
 
     monkeypatch.setattr(catalog, "_open_url", fake_open)

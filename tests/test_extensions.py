@@ -9,6 +9,7 @@ Tests cover:
 - Catalog stack (multi-catalog support)
 """
 
+import io
 import pytest
 import json
 import os
@@ -22,6 +23,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from tests.conftest import strip_ansi
+from tests.http_helpers import route_opener_open_through_urlopen  # noqa: F401
 from specify_cli import extensions as _ext_module
 from specify_cli.extensions import (
     CatalogEntry,
@@ -4978,7 +4980,7 @@ class TestExtensionCatalog:
         zip_bytes = zip_buf.getvalue()
 
         release_response = MagicMock()
-        release_response.read.return_value = json.dumps(
+        release_response.read.side_effect = io.BytesIO(json.dumps(
             {
                 "assets": [
                     {
@@ -4987,12 +4989,12 @@ class TestExtensionCatalog:
                     }
                 ]
             }
-        ).encode()
+        ).encode()).read
         release_response.__enter__ = lambda s: s
         release_response.__exit__ = MagicMock(return_value=False)
 
         asset_response = MagicMock()
-        asset_response.read.return_value = zip_bytes
+        asset_response.read.side_effect = io.BytesIO(zip_bytes).read
         asset_response.__enter__ = lambda s: s
         asset_response.__exit__ = MagicMock(return_value=False)
 
@@ -8312,6 +8314,42 @@ class TestHookInvocationRendering:
         assert execution["command"] == "my-extension.do-something"
         assert execution["invocation"] == "/speckit-my-extension-do-something"
 
+    def test_forge_hooks_render_hyphenated_invocation(self, project_dir):
+        """Forge projects should render /speckit-* invocations (like Cline)."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "forge"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "speckit.tasks",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "speckit.tasks"
+        assert execution["invocation"] == "/speckit-tasks"
+
+    def test_forge_hooks_render_extension_command(self, project_dir):
+        """Forge projects should render /speckit-my-ext-cmd for extension hooks."""
+        init_options = project_dir / ".specify" / "init-options.json"
+        init_options.parent.mkdir(parents=True, exist_ok=True)
+        init_options.write_text(json.dumps({"ai": "forge"}))
+
+        hook_executor = HookExecutor(project_dir)
+        execution = hook_executor.execute_hook(
+            {
+                "extension": "test-ext",
+                "command": "my-extension.do-something",
+                "optional": False,
+            }
+        )
+
+        assert execution["command"] == "my-extension.do-something"
+        assert execution["invocation"] == "/speckit-my-extension-do-something"
+
     def test_non_skill_command_keeps_slash_invocation(self, project_dir):
         """Custom hook commands should keep slash invocation style."""
         init_options = project_dir / ".specify" / "init-options.json"
@@ -8799,10 +8837,10 @@ def test_extension_wrapper_resolves_ghes_asset_when_host_configured(tmp_path, mo
     def fake_open(url, timeout=None, extra_headers=None):
         captured.append(url)
         resp = MagicMock()
-        resp.read.return_value = json.dumps({
+        resp.read.side_effect = io.BytesIO(json.dumps({
             "assets": [{"name": "ext.zip",
                         "url": "https://ghes.example/api/v3/repos/o/r/releases/assets/7"}]
-        }).encode()
+        }).encode()).read
         yield resp
 
     monkeypatch.setattr(catalog, "_open_url", fake_open)
@@ -9046,3 +9084,34 @@ class TestConfigManagerCrossExtensionEnvLeak:
         # Must not raise; must fall back to the "no siblings" path.
         cfg = ConfigManager(tmp_path, "testext")._get_env_config()
         assert cfg == {"url": "v"}
+
+
+def test_forge_extension_install_listing_hyphenates_command_names(
+    extension_dir, project_dir
+):
+    """The post-install 'Provided commands' listing must show hyphenated
+    /speckit-<name> command names for a Forge project (Forge registers
+    hyphenated names), mirroring the existing Cline handling."""
+    import json
+    import os
+
+    from typer.testing import CliRunner
+
+    from specify_cli import app
+
+    init_options = project_dir / ".specify" / "init-options.json"
+    init_options.write_text(json.dumps({"ai": "forge", "script": "sh"}))
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        result = CliRunner().invoke(
+            app, ["extension", "add", str(extension_dir), "--dev"]
+        )
+    finally:
+        os.chdir(old_cwd)
+
+    assert result.exit_code == 0, result.output
+    # Forge registers hyphenated command names, so the summary must match.
+    assert "speckit-test-ext-hello" in result.output
+    assert "speckit.test-ext.hello" not in result.output

@@ -15,6 +15,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Codex CLI](https://github.com/openai/codex)                                         | `codex`          | Skills-based integration; installs skills into `.agents/skills` and invokes them as `$speckit-<command>` |
 | [Cursor](https://cursor.sh/)                                                         | `cursor-agent`   |                                                                                                                                           |
 | [Devin for Terminal](https://cli.devin.ai/docs)                                      | `devin`          | Skills-based integration; installs skills into `.devin/skills/` and invokes them as `/speckit-<command>` |
+| [Factory Droid](https://docs.factory.ai/cli/getting-started/overview)               | `droid`          | Skills-based integration; installs skills into `.factory/skills/` and invokes them as `/speckit-<command>`                               |
 | [Firebender](https://firebender.com/)                                                | `firebender`     | IDE-based agent for Android Studio / IntelliJ                                                                                             |
 | [Forge](https://forgecode.dev/)                                                      | `forge`          |                                                                                                                                           |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli)                            | `gemini`         |                                                                                                                                           |
@@ -85,7 +86,7 @@ specify integration install <key>
 
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
-| `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
+| `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--force`                | Opt in to installing alongside integrations that are not declared multi-install safe |
 | `--integration-options`  | Integration-specific options (e.g. `--integration-options="--commands-dir .myagent/cmds"`) |
 
@@ -121,7 +122,7 @@ specify integration switch <key>
 
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
-| `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
+| `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--force`                | Force removal of modified files during uninstall; when the target is already installed, overwrite managed shared templates while changing the default |
 | `--refresh-shared-infra` | Also overwrite shared infrastructure files even if you customized them (otherwise customizations are preserved) |
 | `--integration-options`  | Options for the target integration when it is not already installed      |
@@ -149,7 +150,7 @@ specify integration upgrade [<key>]
 | Option                   | Description                                                              |
 | ------------------------ | ------------------------------------------------------------------------ |
 | `--force`                | Overwrite files even if they have been modified                          |
-| `--script sh\|ps`        | Script type: `sh` (bash/zsh) or `ps` (PowerShell)                        |
+| `--script sh\|ps\|py`    | Script type: `sh` (bash/zsh), `ps` (PowerShell), or `py` (Python)        |
 | `--integration-options`  | Options for the integration                                              |
 
 Reinstalls an installed integration with updated templates and commands (e.g., after upgrading Spec Kit). Defaults to the default integration; if a key is provided, it must be one of the installed integrations. Detects locally modified files and blocks the upgrade unless `--force` is used. Stale files from the previous install that are no longer needed are removed automatically. Shared templates stay aligned with the default integration even when upgrading a non-default integration.
@@ -256,31 +257,31 @@ Spec Kit tracks one default integration in `.specify/integration.json` with `def
 
 An integration is multi-install safe when it uses a static, unique agent root and command directory, stable command invocation settings, and a separate install manifest whose managed files do not overlap another safe integration. Registry tests enforce those path and manifest invariants. Shared Spec Kit templates remain aligned to the single default integration.
 
-The Isolation column below lists paths Spec Kit manages for that integration (skills/commands roots and any integration-owned rule files). It is not a full inventory of every file an agent may read.
-
-**Agent-context defaults are separate.** The optional agent-context extension maps each integration to a default context file in `extensions/agent-context/agent-context-defaults.json`. Those defaults are independent of multi-install safety: several agents may share a root file such as `AGENTS.md` when the extension is enabled. Multi-install safety does not require a unique context file per safe integration.
+The Command directory column below lists the directory each integration installs its commands or skills into. Context-file targeting is a separate concern from integration multi-install safety: `multi_install_safe` is an integration declaration about command/skill paths, whereas the optional agent-context extension manages a per-agent context file (for example `AGENTS.md` or `CLAUDE.md`) and can even synchronize several anchors at once via its `context_files` setting. Multiple agents mapping to the same context file is expected there and does not affect whether an integration is multi-install safe; see the agent-context extension for details.
 
 The currently declared multi-install safe integrations are:
 
-| Key | Isolation |
-| --- | --------- |
-| `auggie` | `.augment/commands`, `.augment/rules/specify-rules.md` |
-| `claude` | `.claude/skills`, `CLAUDE.md` |
-| `cline` | `.clinerules/workflows`, `.clinerules/specify-rules.md` |
-| `codebuddy` | `.codebuddy/commands`, `CODEBUDDY.md` |
-| `codex` | `.agents/skills`, `AGENTS.md` |
-| `cursor-agent` | `.cursor/skills`, `.cursor/rules/specify-rules.mdc` |
-| `firebender` | `.firebender/commands`, `.firebender/rules/specify-rules.mdc` |
-| `gemini` | `.gemini/commands`, `GEMINI.md` |
+| Key | Command directory |
+| --- | ----------------- |
+| `auggie` | `.augment/commands` |
+| `claude` | `.claude/skills` |
+| `cline` | `.clinerules/workflows` |
+| `codebuddy` | `.codebuddy/commands` |
+| `codex` | `.agents/skills` |
+| `cursor-agent` | `.cursor/skills` |
+| `firebender` | `.firebender/commands` |
+| `gemini` | `.gemini/commands` |
 | `grok` | `.grok/skills` |
-| `junie` | `.junie/commands`, `.junie/AGENTS.md` |
-| `kilocode` | `.kilocode/workflows`, `.kilocode/rules/specify-rules.md` |
-| `qodercli` | `.qoder/commands`, `QODER.md` |
-| `qwen` | `.qwen/commands`, `QWEN.md` |
-| `shai` | `.shai/commands`, `SHAI.md` |
-| `tabnine` | `.tabnine/agent/commands`, `TABNINE.md` |
-| `trae` | `.trae/skills`, `.trae/rules/project_rules.md` |
-| `zcode` | `.zcode/skills`, `ZCODE.md` |
+| `junie` | `.junie/commands` |
+| `kilocode` | `.kilocode/workflows` |
+| `kiro-cli` | `.kiro/prompts` |
+| `omp` | `.omp/commands` |
+| `qodercli` | `.qoder/commands` |
+| `qwen` | `.qwen/commands` |
+| `shai` | `.shai/commands` |
+| `tabnine` | `.tabnine/agent/commands` |
+| `trae` | `.trae/skills` |
+| `zcode` | `.zcode/skills` |
 
 Integrations that share a command directory with another integration, require dynamic install paths such as `--commands-dir`, or merge shared tool settings are not declared safe by default. They can still be installed alongside another integration with `--force`.
 

@@ -26,7 +26,7 @@ class GateStep(StepBase):
     later with ``specify workflow resume``.
 
     The user's choice is stored in ``output.choice``.  ``on_reject``
-    controls abort / skip behaviour.
+    controls abort / skip / retry behaviour.
     """
 
     type_key = "gate"
@@ -168,7 +168,11 @@ class GateStep(StepBase):
             except (EOFError, KeyboardInterrupt):
                 print()
                 return options[-1]  # default to last (usually reject)
-            if raw.isdigit() and 1 <= int(raw) <= len(options):
+            # isdecimal() (not isdigit()): int() accepts exactly the decimal-digit
+            # set, whereas isdigit() also returns True for superscripts/subscripts
+            # (e.g. "²") that int() then rejects with ValueError — crashing
+            # this interactive loop.
+            if raw.isdecimal() and 1 <= int(raw) <= len(options):
                 return options[int(raw) - 1]
             # Also accept the option name directly
             if raw.lower() in [o.lower() for o in options]:

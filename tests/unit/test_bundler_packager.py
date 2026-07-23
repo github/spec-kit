@@ -73,6 +73,23 @@ def test_build_is_deterministic(tmp_path: Path):
     assert first.artifact_path.read_bytes() == second.artifact_path.read_bytes()
 
 
+def test_member_order_is_platform_independent(tmp_path: Path):
+    # Members must be laid out in canonical POSIX-arcname order (the same key
+    # build_bundle uses to NAME them), not pathlib.Path order — which folds case
+    # on Windows and would otherwise reorder members across build hosts, breaking
+    # the byte-for-byte reproducibility guarantee. Mixed-case names make the
+    # difference observable: Path order on Windows groups differently than the
+    # canonical string sort.
+    bundle = _make_bundle(
+        tmp_path / "b",
+        extra_files={"Zeta.txt": "z", "apple.txt": "a", "Foo.txt": "f", "bar.txt": "b"},
+    )
+    result = build_bundle(bundle, output_dir=tmp_path / "out")
+    with zipfile.ZipFile(result.artifact_path) as archive:
+        names = archive.namelist()
+    assert names == sorted(names)
+
+
 def test_output_dir_inside_bundle_excludes_prior_artifacts(tmp_path: Path):
     bundle = _make_bundle(tmp_path / "b", extra_files={"a.txt": "a"})
     out_dir = bundle / "dist"

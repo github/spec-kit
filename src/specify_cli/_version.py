@@ -4,8 +4,8 @@ Pure helpers for comparing PEP 440 versions and fetching the latest GitHub
 release tag.  The ``self_app`` Typer sub-command group is co-located here so
 all version-related logic lives in one place.
 
-Dependencies: stdlib + packaging + ._console only (no other internal imports
-at module level, keeping this layer thin and circular-import-safe).
+Dependencies: stdlib + packaging + ._console + ._download_security only
+(keeping this layer thin and circular-import-safe).
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from pathlib import Path
 import typer
 from packaging.version import InvalidVersion, Version
 
+from ._download_security import MAX_JSON_METADATA_BYTES, read_response_limited
 from ._console import console
 
 GITHUB_API_LATEST = "https://api.github.com/repos/github/spec-kit/releases/latest"
@@ -119,7 +120,13 @@ def _fetch_latest_release_tag() -> tuple[str | None, str | None]:
             timeout=5,
             extra_headers={"Accept": "application/vnd.github+json"},
         ) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
+            payload = json.loads(
+                read_response_limited(
+                    resp,
+                    max_bytes=MAX_JSON_METADATA_BYTES,
+                    label="GitHub latest release",
+                ).decode("utf-8")
+            )
             tag = payload.get("tag_name")
             if not isinstance(tag, str) or not tag:
                 raise ValueError("GitHub API response missing valid tag_name")

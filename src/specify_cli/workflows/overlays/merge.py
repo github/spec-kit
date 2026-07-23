@@ -292,9 +292,21 @@ def _traverse_and_apply(
                         cases[case_key] = _traverse_and_apply(case_steps, edits_by_anchor, sources)
             result.append(step)
 
-        # Insert after (highest priority closest to anchor — reversed merge order).
-        for layer, edit in reversed(edits):
-            if edit.operation == "insert_after":
+        # Insert after: higher-priority overlays land closer to the anchor
+        # (reversed merge order), but a single overlay's own inserts must keep
+        # their declared order — mirroring the forward insert_before loop above.
+        # Reversing the whole flat list would also flip an overlay's own edits,
+        # so group contiguous same-layer edits and reverse the GROUP order only.
+        after_groups: list[list[tuple[OverlayLayer, OverlayEdit]]] = []
+        for layer, edit in edits:
+            if edit.operation != "insert_after":
+                continue
+            if after_groups and after_groups[-1][0][0] is layer:
+                after_groups[-1].append((layer, edit))
+            else:
+                after_groups.append([(layer, edit)])
+        for group in reversed(after_groups):
+            for layer, edit in group:
                 new_step = copy.deepcopy(edit.step)
                 _record_sources_recursively(new_step, layer.source, sources)
                 result.append(new_step)

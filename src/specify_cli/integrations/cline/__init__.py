@@ -77,6 +77,19 @@ class ClineIntegration(MarkdownIntegration):
         """Cline uses hyphenated filenames (e.g. speckit-git-commit.md)."""
         return format_cline_command_name(template_name) + ".md"
 
+    def build_command_invocation(self, command_name: str, args: str = "") -> str:
+        """Cline installs hyphenated slash-commands (``/speckit-<name>``), so the
+        dispatch invocation must match. The inherited MarkdownIntegration default
+        builds the dotted ``/speckit.<name>``, which references a command Cline
+        never registered. Reuse the same hyphenation as command_filename /
+        the injected frontmatter name (see ``format_cline_command_name``),
+        mirroring the forge integration.
+        """
+        invocation = "/" + format_cline_command_name(command_name)
+        if args:
+            invocation = f"{invocation} {args}"
+        return invocation
+
     def process_template(self, *args, **kwargs):
         """Ensure shared templates render Cline command references with hyphens."""
         kwargs.setdefault("invoke_separator", self.invoke_separator)
@@ -125,8 +138,14 @@ class ClineIntegration(MarkdownIntegration):
             content,
         )
 
-    def post_process_content(self, content: str) -> str:
-        """Apply Cline-specific transformations to command content."""
+    def post_process_command_content(self, content: str) -> str:
+        """Apply Cline-specific transformations to command content.
+
+        Overrides the ``IntegrationBase`` hook of the same name so that
+        ``CommandRegistrar.register_commands()`` (which dispatches to
+        ``post_process_command_content``) applies these transforms to
+        extension/preset command files too, not just core commands.
+        """
         updated = self._inject_hook_command_note(content)
         updated = self._rewrite_handoff_references(updated)
         return updated
@@ -156,7 +175,7 @@ class ClineIntegration(MarkdownIntegration):
             content_bytes = path.read_bytes()
             content = content_bytes.decode("utf-8")
 
-            updated = self.post_process_content(content)
+            updated = self.post_process_command_content(content)
 
             if updated != content:
                 path.write_bytes(updated.encode("utf-8"))

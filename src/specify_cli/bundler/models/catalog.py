@@ -152,14 +152,21 @@ class CatalogEntry:
         if not isinstance(data, dict):
             raise BundlerError("Each catalog entry must be a mapping.")
         entry_id = str(data.get("id", "")).strip()
-        requires = data.get("requires") or {}
-        if not isinstance(requires, dict):
+        # `or {}` would coerce a FALSY non-mapping (0, '', False, []) to {} before
+        # the isinstance guard, silently accepting a corrupt catalog entry; only
+        # an absent/None value means "not present".
+        requires = data.get("requires")
+        if requires is None:
+            requires = {}
+        elif not isinstance(requires, dict):
             raise BundlerError(
                 f"Catalog entry '{entry_id or '<unknown>'}': 'requires' must be a "
                 "mapping when present."
             )
-        provides_raw = data.get("provides") or {}
-        if not isinstance(provides_raw, dict):
+        provides_raw = data.get("provides")
+        if provides_raw is None:
+            provides_raw = {}
+        elif not isinstance(provides_raw, dict):
             raise BundlerError(
                 f"Catalog entry '{entry_id or '<unknown>'}': 'provides' must be a "
                 "mapping when present."
@@ -249,10 +256,34 @@ def load_source_stack(project_root: Path, user_config_dir: Path | None = None) -
 def _merge_config(by_id: dict[str, CatalogSource], config_path: Path, scope: Scope) -> None:
     if not config_path.exists():
         return
+    # ``load_yaml`` returns ``{}`` only for an empty document and the raw parse
+    # otherwise, so a non-mapping top level (a YAML list or scalar, including
+    # the falsy ``[]``/``false``/``0``/``''``) is caught here and raised —
+    # matching the sibling reader commands_impl/catalog_config._read. #3623
+    # aligned the inner non-list ``catalogs`` value between the two readers.
     data = load_yaml(config_path)
-    catalogs = data.get("catalogs") if isinstance(data, dict) else None
-    if not catalogs:
+    if not isinstance(data, dict):
+        raise BundlerError(
+            f"Malformed catalog config at {config_path}: expected a mapping at "
+            f"the top level, got {type(data).__name__}."
+        )
+    catalogs = data.get("catalogs")
+    if catalogs is None:
         return
+    if not isinstance(catalogs, list):
+        # Treat only an absent/``None`` ``catalogs`` as "nothing to merge"; any
+        # other non-list value (``catalogs: 5``, ``false``, ``0``, ``''``,
+        # ``{}``) is a malformed config and must raise, not be silently skipped
+        # by a falsy check. Otherwise a truthy scalar would raise a raw
+        # ``TypeError: 'int' object is not iterable`` from the loop below, while
+        # falsy non-lists would be swallowed. Report the same actionable
+        # BundlerError the sibling reader of this file raises
+        # (commands_impl/catalog_config.py) so both readers of
+        # bundle-catalogs.yml agree. An empty list stays valid (loop is a no-op).
+        raise BundlerError(
+            f"Malformed catalog config at {config_path}: 'catalogs' must be a "
+            f"list, got {type(catalogs).__name__}."
+        )
     for raw in catalogs:
         src = CatalogSource.from_dict(raw, scope)
         by_id[src.id] = src

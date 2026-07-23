@@ -14,6 +14,25 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Scope Guard
+
+This command's own work is limited to updating the project constitution and propagating
+constitution-driven changes to the dependent artifacts identified in this command.
+
+- Classify every part of the user input as either constitution content or a separate,
+  non-governance intent.
+- If the input includes feature implementation, code generation, refactoring, building, or
+  deployment requests, you **MUST NOT** execute them. Extract them as deferred intents instead.
+- You **MUST NOT** create, modify, or delete application source files, feature routes,
+  components, tests, deployment files, or other artifacts unrelated to the constitution
+  workflow and its required propagation.
+- If it is unclear whether an instruction is constitution content, ask for clarification before
+  making changes.
+- After completing the constitution update, include a `Next Actions` section for each deferred
+  intent. List the original intent and suggest the appropriate follow-up Spec Kit command, such
+  as `__SPECKIT_COMMAND_SPECIFY__`, without invoking it.
+- If there are no non-governance intents, omit the `Next Actions` section.
+
 ## Pre-Execution Checks
 
 **Check for extension hooks (before constitution update)**:
@@ -104,6 +123,7 @@ Follow this execution flow:
    - New version and bump rationale.
    - Any files flagged for manual follow-up.
    - Suggested commit message (e.g., `docs: amend constitution to vX.Y.Z (principle additions + governance update)`).
+   - A `Next Actions` section for any deferred non-governance intents.
 
 Formatting & Style Requirements:
 

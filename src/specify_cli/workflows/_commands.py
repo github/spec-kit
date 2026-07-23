@@ -20,6 +20,10 @@ import yaml
 from rich.markup import escape as _escape_markup
 
 from .._console import console, err_console
+from .._download_security import (
+    is_https_or_localhost_http,
+    is_safe_download_redirect,
+)
 from .._project import _resolve_init_dir_override
 
 workflow_app = typer.Typer(
@@ -383,27 +387,12 @@ _RESERVED_WORKFLOW_IDS: frozenset[str] = frozenset({"overlays", "runs", "steps"}
 def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
     """Reject insecure redirects before they are followed."""
     import urllib.error
-    from ipaddress import ip_address
-    from urllib.parse import urlparse
 
-    def _is_loopback_http(url: str) -> bool:
-        parsed = urlparse(url)
-        if parsed.scheme != "http":
-            return False
-        host = parsed.hostname or ""
-        if host == "localhost":
-            return True
-        try:
-            return ip_address(host).is_loopback
-        except ValueError:
-            return False
-
-    if urlparse(new_url).scheme == "https":
-        return
-    if _is_loopback_http(old_url) and _is_loopback_http(new_url):
+    if is_safe_download_redirect(old_url, new_url):
         return
     raise urllib.error.URLError(
-        "redirect target must use HTTPS; loopback HTTP may only redirect from loopback HTTP"
+        "redirect target must use HTTPS without entering a local target; "
+        "loopback HTTP may only redirect from another loopback URL"
     )
 
 
@@ -1555,7 +1544,7 @@ def workflow_add(
     # precedence over --from so a URL that would be ignored is never fetched.
     if dev:
         dev_path = Path(source).expanduser()
-        if dev_path.is_file() and dev_path.suffix in (".yml", ".yaml"):
+        if dev_path.is_file() and dev_path.suffix.lower() in (".yml", ".yaml"):
             _validate_and_install_local(dev_path, str(dev_path))
             return
         if dev_path.is_dir():
@@ -1579,24 +1568,15 @@ def workflow_add(
         else (source if source.startswith(("http://", "https://")) else None)
     )
     if download_url is not None:
-        from ipaddress import ip_address
         from urllib.parse import urlparse
         from specify_cli.authentication.http import open_url as _open_url
 
         try:
-            parsed_src = urlparse(download_url)
+            urlparse(download_url).port
         except ValueError:
             console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(download_url)}")
             raise typer.Exit(1)
-        src_host = parsed_src.hostname or ""
-        src_loopback = src_host == "localhost"
-        if not src_loopback:
-            try:
-                src_loopback = ip_address(src_host).is_loopback
-            except ValueError:
-                # Host is not an IP literal (e.g., a DNS name); keep default non-loopback.
-                pass
-        if parsed_src.scheme != "https" and not (parsed_src.scheme == "http" and src_loopback):
+        if not is_https_or_localhost_http(download_url):
             console.print("[red]Error:[/red] Only HTTPS URLs are allowed, except HTTP for localhost.")
             raise typer.Exit(1)
 
@@ -1647,16 +1627,7 @@ def workflow_add(
                 redirect_validator=_reject_insecure_download_redirect,
             ) as resp:
                 final_url = resp.geturl()
-                final_parsed = urlparse(final_url)
-                final_host = final_parsed.hostname or ""
-                final_lb = final_host == "localhost"
-                if not final_lb:
-                    try:
-                        final_lb = ip_address(final_host).is_loopback
-                    except ValueError:
-                        # Redirect host is not an IP literal; keep loopback as determined above.
-                        pass
-                if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_lb):
+                if not is_https_or_localhost_http(final_url):
                     console.print(
                         f"[red]Error:[/red] URL redirected to non-HTTPS: {_escape_markup(final_url)}"
                     )
@@ -1714,7 +1685,7 @@ def workflow_add(
     # Try as a local file/directory
     source_path = Path(source)
     if source_path.exists():
-        if source_path.is_file() and source_path.suffix in (".yml", ".yaml"):
+        if source_path.is_file() and source_path.suffix.lower() in (".yml", ".yaml"):
             _validate_and_install_local(source_path, str(source_path))
             return
         elif source_path.is_dir():
@@ -1788,27 +1759,17 @@ def _install_workflow_from_catalog(
         raise typer.Exit(1)
 
     # Validate URL scheme (HTTPS required, HTTP allowed for localhost only)
-    from ipaddress import ip_address
     from urllib.parse import urlparse
 
     try:
         parsed_url = urlparse(workflow_url)
-        url_host = parsed_url.hostname or ""
+        parsed_url.port
     except ValueError:
         console.print(
             f"[red]Error:[/red] Workflow '{safe_wf_id}' has a malformed install URL."
         )
         raise typer.Exit(1)
-    is_loopback = False
-    if url_host == "localhost":
-        is_loopback = True
-    else:
-        try:
-            is_loopback = ip_address(url_host).is_loopback
-        except ValueError:
-            # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-            pass
-    if parsed_url.scheme != "https" and not (parsed_url.scheme == "http" and is_loopback):
+    if not is_https_or_localhost_http(workflow_url):
         console.print(
             f"[red]Error:[/red] Workflow '{safe_wf_id}' has an invalid install URL. "
             "Only HTTPS URLs are allowed, except HTTP for localhost/loopback."
@@ -1862,16 +1823,7 @@ def _install_workflow_from_catalog(
         ) as response:
             # Validate final URL after redirects
             final_url = response.geturl()
-            final_parsed = urlparse(final_url)
-            final_host = final_parsed.hostname or ""
-            final_loopback = final_host == "localhost"
-            if not final_loopback:
-                try:
-                    final_loopback = ip_address(final_host).is_loopback
-                except ValueError:
-                    # Host is not an IP literal (e.g., a regular hostname); treat as non-loopback.
-                    pass
-            if final_parsed.scheme != "https" and not (final_parsed.scheme == "http" and final_loopback):
+            if not is_https_or_localhost_http(final_url):
                 _safe_discard_staged_workflow_file(staged_file, workflow_dir, existed_before)
                 console.print(
                     f"[red]Error:[/red] Workflow '{safe_wf_id}' redirected to non-HTTPS URL: {_escape_markup(final_url)}"
@@ -2694,28 +2646,17 @@ def workflow_step_add(
             )
             raise typer.Exit(1)
 
-    from urllib.parse import urlparse
     from specify_cli.authentication.http import open_url as _open_url
 
     def _safe_fetch(url: str) -> bytes:
-        parsed = urlparse(url)
-        is_localhost = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        if not is_https_or_localhost_http(url):
             raise ValueError(f"Refusing to fetch from non-HTTPS URL: {url}")
-        if not parsed.hostname:
-            raise ValueError(f"Refusing to fetch from URL with no hostname: {url}")
         with _open_url(
             url, timeout=30, redirect_validator=_reject_insecure_download_redirect
         ) as resp:
             final_url = resp.geturl()
-            final_parsed = urlparse(final_url)
-            final_is_localhost = final_parsed.hostname in ("localhost", "127.0.0.1", "::1")
-            if final_parsed.scheme != "https" and not (
-                final_parsed.scheme == "http" and final_is_localhost
-            ):
+            if not is_https_or_localhost_http(final_url):
                 raise ValueError(f"Redirect to non-HTTPS URL: {final_url}")
-            if not final_parsed.hostname:
-                raise ValueError(f"Redirect to URL with no hostname: {final_url}")
             return _read_response_within_limit(resp)
 
     _validate_step_id_or_exit(step_id)
