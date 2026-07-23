@@ -244,13 +244,13 @@
     "cross-platform-governance": {
       "name": "Cross-Platform Governance",
       "id": "cross-platform-governance",
-      "version": "0.2.0",
-      "description": "Adds Bash + PowerShell parity, Unix man-pages, bilingual comment-based help, Verb-Noun Cmdlet discipline, and audit-ready Spec Kit run evidence for scripting projects managed with Spec Kit.",
+      "version": "0.2.1",
+      "description": "Adds Bash/PowerShell and read-only check parity, root-path and native-override review, Unix man pages, bilingual help, Verb-Noun discipline, and audit-ready evidence.",
       "author": "Thorsten Hindermann",
       "repository": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
-      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.2.0.zip",
+      "download_url": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/archive/refs/tags/v0.2.1.zip",
       "homepage": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance",
-      "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/main/README.md",
+      "documentation": "https://github.com/hindermath/spec-kit-preset-cross-platform-governance/blob/v0.2.1/README.md",
       "license": "MIT",
       "requires": {
         "speckit_version": ">=0.8.0"
@@ -272,7 +272,7 @@
         "linux"
       ],
       "created_at": "2026-04-27T00:00:00Z",
-      "updated_at": "2026-06-14T00:00:00Z"
+      "updated_at": "2026-07-23T00:00:00Z"
     },
     "explicit-task-dependencies": {
       "name": "Explicit Task Dependencies",
