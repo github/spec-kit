@@ -10,10 +10,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 import re
 
-import yaml
-
 from .. import BundlerError
-from ..lib.yamlio import dump_yaml, ensure_within
+from ..lib.yamlio import dump_yaml, ensure_within, load_yaml
 from ..models.catalog import (
     CONFIG_FILENAME,
     BUILTIN_DEFAULT_STACK,
@@ -42,17 +40,11 @@ def _read(project_root: Path) -> list[dict]:
     path = ensure_within(project_root, _config_path(project_root))
     if not path.exists():
         return []
-    # Parse the RAW document, not the shared ``load_yaml`` (whose ``… or {}``
-    # coerces a falsy top-level value to ``{}``): an empty document is a no-op,
-    # but a falsy non-mapping (``[]``/``false``/``0``/``''``) is malformed and
-    # must raise like a truthy one, staying consistent with the other reader of
-    # this file (models/catalog._merge_config).
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise BundlerError(f"Invalid YAML in {path}: {exc}") from exc
-    except OSError as exc:
-        raise BundlerError(f"Could not read {path}: {exc}") from exc
+    # ``load_yaml`` returns ``{}`` only for an empty document and the raw parse
+    # otherwise, so a falsy non-mapping (``[]``/``false``/``0``/``''``) is caught
+    # by the isinstance guard below and raised like a truthy one, staying
+    # consistent with the other reader of this file (models/catalog._merge_config).
+    data = load_yaml(path)
     if data is None:
         return []
     if not isinstance(data, dict):

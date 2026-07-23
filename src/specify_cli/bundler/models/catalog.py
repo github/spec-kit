@@ -11,10 +11,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from .. import BundlerError
-from ..lib.yamlio import ensure_within
+from ..lib.yamlio import ensure_within, load_yaml
 
 CONFIG_FILENAME = "bundle-catalogs.yml"
 
@@ -258,21 +256,12 @@ def load_source_stack(project_root: Path, user_config_dir: Path | None = None) -
 def _merge_config(by_id: dict[str, CatalogSource], config_path: Path, scope: Scope) -> None:
     if not config_path.exists():
         return
-    # Parse the RAW document rather than the shared ``load_yaml`` helper, whose
-    # ``… or {}`` coerces a falsy top-level value to ``{}``: an empty document
-    # (``None``) is a no-op, but every non-mapping top-level — including the
-    # falsy ones ``[]``/``false``/``0``/``''`` that ``load_yaml`` would hide —
-    # is malformed and must raise, matching the sibling reader
-    # commands_impl/catalog_config._read (which does the same). #3623 already
+    # ``load_yaml`` returns ``{}`` only for an empty document and the raw parse
+    # otherwise, so a non-mapping top level (a YAML list or scalar, including
+    # the falsy ``[]``/``false``/``0``/``''``) is caught here and raised —
+    # matching the sibling reader commands_impl/catalog_config._read. #3623
     # aligned the inner non-list ``catalogs`` value between the two readers.
-    try:
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as exc:
-        raise BundlerError(f"Invalid YAML in {config_path}: {exc}") from exc
-    except OSError as exc:
-        raise BundlerError(f"Could not read {config_path}: {exc}") from exc
-    if data is None:
-        return
+    data = load_yaml(config_path)
     if not isinstance(data, dict):
         raise BundlerError(
             f"Malformed catalog config at {config_path}: expected a mapping at "

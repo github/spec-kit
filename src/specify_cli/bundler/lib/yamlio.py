@@ -39,17 +39,25 @@ def ensure_within(root: Path, candidate: Path) -> Path:
 
 
 def load_yaml(path: Path) -> Any:
-    """Parse a YAML file, returning ``{}`` for an empty document."""
+    """Parse a YAML file, returning ``{}`` for an empty document.
+
+    Only an *empty* document (``yaml.safe_load`` -> ``None``) becomes ``{}``.
+    A non-empty document is returned exactly as parsed — including a falsy
+    non-mapping such as ``[]``, ``false``, ``0``, or ``''`` — so callers can
+    validate the top-level shape (e.g. reject a non-mapping config) instead of
+    having it silently coerced to an empty mapping.
+    """
     path = Path(path)
     if not path.exists():
         raise BundlerError(f"File not found: {path}")
     try:
         with path.open("r", encoding="utf-8") as handle:
-            return yaml.safe_load(handle) or {}
+            data = yaml.safe_load(handle)
     except yaml.YAMLError as exc:
         raise BundlerError(f"Invalid YAML in {path}: {exc}") from exc
     except OSError as exc:
         raise BundlerError(f"Could not read {path}: {exc}") from exc
+    return {} if data is None else data
 
 
 def dump_yaml(path: Path, data: Any, *, within: Path | None = None) -> Path:
