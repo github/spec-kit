@@ -43,6 +43,15 @@ class TestDroidIntegration(SkillsIntegrationTests):
         i = get_integration(self.KEY)
         assert i.multi_install_safe is True
 
+    def test_is_slash_skills_agent(self):
+        """Droid is an always-skills agent whose commands install as
+        /speckit-<name>, so is_slash_skills_agent must report True — otherwise
+        hook invocations and the init next-steps panel render the dotted
+        /speckit.<name> form Droid never registers (mirrors grok/trae/zed/devin)."""
+        from specify_cli._invocation_style import is_slash_skills_agent
+
+        assert is_slash_skills_agent("droid", True) is True
+
     def test_install_url_points_to_factory(self):
         i = get_integration(self.KEY)
         url = i.config.get("install_url")
