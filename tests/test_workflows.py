@@ -686,6 +686,28 @@ class TestExpressions:
         ):
             evaluate_expression("{{ inputs.tags | map }}", ctx)
 
+    def test_filter_call_with_trailing_tokens_fails_loudly(self):
+        # A trailing operator/token after a filter's closing paren must not be
+        # silently discarded (the parser used an unanchored regex). It must
+        # fall through to the "unsupported form" ValueError, like the from_json
+        # branch's strict trailing-token handling.
+        import pytest
+        from specify_cli.workflows.expressions import evaluate_expression
+        from specify_cli.workflows.base import StepContext
+
+        # A comparison after a filter (binds looser than the pipe) was dropped,
+        # so `default('7') > '5'` silently returned '7'.
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.missing | default('7') > '5' }}", StepContext(inputs={})
+            )
+        # Trailing garbage after a valid filter call.
+        with pytest.raises(ValueError, match="unsupported form"):
+            evaluate_expression(
+                "{{ inputs.tags | join(',') extra }}",
+                StepContext(inputs={"tags": ["a", "b"]}),
+            )
+
     def test_chained_filters_apply_left_to_right(self):
         # Filters chain: each filter's result feeds the next. `map` yields a
         # list and `join` is the only filter that renders a list to a string,
