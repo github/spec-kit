@@ -2,7 +2,7 @@
 
 This bundled extension manages the **coding agent context/instruction file** (e.g. `CLAUDE.md`, `.github/copilot-instructions.md`, `AGENTS.md`, `GEMINI.md`, …) for the active integration.
 
-It owns the lifecycle of the managed section delimited by the configurable start/end markers (defaults: `<!-- SPECKIT START -->` / `<!-- SPECKIT END -->`). Everything else is untouched.
+It owns the lifecycle of the managed section delimited by the configurable start/end markers (defaults: `<!-- SPECKIT START -->` / `<!-- SPECKIT END -->`). For `.mdc` files, it also ensures the YAML frontmatter (the metadata block at the top of the file) contains `alwaysApply: true`. Otherwise, everything outside the managed section is untouched.
 
 > NOTE: Spec Kit itself never touches your agent context file. This extension is the only thing that does, and it's opt-in: install it if you want the block kept in sync, skip it if you'd rather manage that file yourself.
 
