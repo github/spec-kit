@@ -3629,6 +3629,24 @@ class TestWorkflowDefinition:
         resolved = WorkflowEngine()._resolve_inputs(definition, {})  # must not raise
         assert resolved == {}
 
+    @pytest.mark.parametrize(
+        "block", ["workflow:\nsteps: []\n", "workflow: hi\nsteps: []\n", "workflow: [a]\nsteps: []\n"]
+    )
+    def test_non_mapping_workflow_block_parses_then_validates(self, block):
+        # A present-but-non-mapping `workflow:` block must not crash construction
+        # with AttributeError; it should parse to an empty header so
+        # validate_workflow reports the missing id/name (it reads the parsed
+        # attributes, not the raw block).
+        from specify_cli.workflows.engine import WorkflowDefinition, validate_workflow
+
+        definition = WorkflowDefinition.from_string(block)  # must not raise
+        assert definition.id == ""
+        errors = validate_workflow(definition)
+        assert any("workflow.id" in e for e in errors)
+        # The raw value is left untouched on .data (used when the definition is
+        # written back out), so the guard normalizes only the local.
+        assert "workflow" in definition.data
+
     def test_from_string_invalid(self):
         from specify_cli.workflows.engine import WorkflowDefinition
 
