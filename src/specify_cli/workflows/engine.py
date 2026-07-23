@@ -1400,6 +1400,14 @@ class WorkflowEngine:
     ) -> dict[str, Any]:
         """Resolve workflow inputs against definitions and provided values."""
         resolved: dict[str, Any] = {}
+        # execute()/resume() accept UNVALIDATED definitions (load_workflow does
+        # not validate). A non-mapping ``inputs:`` block (bare ``inputs:`` ->
+        # None, or ``inputs: []``) is stored raw, so iterating ``.items()`` here
+        # would crash the run with AttributeError. Treat a non-mapping inputs
+        # block as "no inputs"; validate_workflow reports the malformed shape
+        # via its own isinstance check.
+        if not isinstance(definition.inputs, dict):
+            return {}
         for name, input_def in definition.inputs.items():
             if not isinstance(input_def, dict):
                 continue
