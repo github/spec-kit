@@ -654,6 +654,28 @@ class TestPresetManager:
         with pytest.raises(PresetValidationError, match="No preset.yml found"):
             manager.install_from_zip(zip_path, "0.1.5")
 
+    def test_install_from_zip_rejects_symlink_entry(
+        self, project_dir, pack_dir, temp_dir
+    ):
+        """Preset ZIPs delegate to the shared symlink-safe extractor."""
+        import stat
+
+        zip_path = temp_dir / "symlink-preset.zip"
+        link = zipfile.ZipInfo("templates/escape")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            for file_path in pack_dir.rglob("*"):
+                if file_path.is_file():
+                    zf.write(file_path, file_path.relative_to(pack_dir))
+            zf.writestr(link, "../../outside")
+
+        manager = PresetManager(project_dir)
+        with pytest.raises(PresetValidationError, match="Unsafe symlink"):
+            manager.install_from_zip(zip_path, "0.1.5")
+
+        assert not manager.registry.is_installed("test-pack")
+
     def test_remove(self, project_dir, pack_dir):
         """Test removing a preset."""
         manager = PresetManager(project_dir)
@@ -2370,6 +2392,102 @@ class TestPresetCatalog:
         resp.__exit__.return_value = False
         return zip_bytes, resp
 
+    def test_fetch_single_catalog_rejects_oversized_body_without_cache(
+        self, project_dir, monkeypatch
+    ):
+        """Catalog bounds are enforced at the preset call site."""
+        import specify_cli.presets as preset_module
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        entry = PresetCatalogEntry(
+            url="https://example.com/catalog.json",
+            name="default",
+            priority=1,
+            install_allowed=True,
+        )
+        body = b'{"schema_version":"1.0","presets":{}}'
+        response = MagicMock()
+        response.read.side_effect = io.BytesIO(body).read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        response.geturl.return_value = entry.url
+        monkeypatch.setattr(
+            preset_module,
+            "MAX_JSON_CATALOG_BYTES",
+            len(body) - 1,
+        )
+
+        with patch.object(catalog, "_open_url", return_value=response):
+            with pytest.raises(PresetError, match="exceeds maximum size"):
+                catalog._fetch_single_catalog(entry, force_refresh=True)
+
+        assert not catalog.cache_dir.exists() or not any(catalog.cache_dir.iterdir())
+
+    def test_download_pack_rejects_oversized_body_without_output(
+        self, project_dir, monkeypatch
+    ):
+        """Package bounds fail before checksum verification or disk writes."""
+        import specify_cli.presets as preset_module
+        from unittest.mock import patch
+        from specify_cli._download_security import (
+            read_response_limited as real_read_response_limited,
+        )
+
+        catalog = PresetCatalog(project_dir)
+        pack_info = {
+            "id": "test-pack",
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+        response = MagicMock()
+        response.read.side_effect = io.BytesIO(b"12345").read
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        def read_with_tiny_limit(stream, **kwargs):
+            kwargs.pop("max_bytes", None)
+            return real_read_response_limited(stream, max_bytes=4, **kwargs)
+
+        monkeypatch.setattr(
+            preset_module,
+            "read_response_limited",
+            read_with_tiny_limit,
+        )
+        with patch.object(preset_module, "verify_archive_sha256") as verify, \
+             patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url", return_value=response):
+            with pytest.raises(PresetError, match="exceeds maximum size"):
+                catalog.download_pack("test-pack", target_dir=project_dir)
+
+        verify.assert_not_called()
+        assert not (project_dir / "test-pack-1.0.0.zip").exists()
+
+    def test_download_pack_rejects_unsafe_output_filename(self, project_dir):
+        """Catalog-controlled IDs cannot escape the requested target directory."""
+        from unittest.mock import patch
+
+        catalog = PresetCatalog(project_dir)
+        outside_stem = project_dir.parent / "outside-preset"
+        pack_id = str(outside_stem)
+        pack_info = {
+            "id": pack_id,
+            "name": "Test Pack",
+            "version": "1.0.0",
+            "download_url": "https://example.com/test-pack.zip",
+            "_install_allowed": True,
+        }
+
+        with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+             patch.object(catalog, "_open_url") as open_url:
+            with pytest.raises(PresetError, match="filename"):
+                catalog.download_pack(pack_id, target_dir=project_dir)
+
+        open_url.assert_not_called()
+        assert not Path(f"{outside_stem}-1.0.0.zip").exists()
+
     def test_download_pack_accepts_matching_sha256(self, project_dir):
         """A catalog ``sha256`` that matches the preset archive is accepted."""
         import hashlib
@@ -2422,7 +2540,13 @@ class TestPresetCatalog:
         from unittest.mock import patch
 
         catalog = PresetCatalog(project_dir)
-        for bad_url in ("https://[::1", "https://[not-an-ip]/x"):
+        for bad_url in (
+            "https://[::1",
+            "https://[not-an-ip]/x",
+            "https://example.com:65536/x",
+            "https:///x",
+            123,
+        ):
             pack_info = {
                 "id": "test-pack",
                 "name": "Test Pack",
@@ -2430,9 +2554,11 @@ class TestPresetCatalog:
                 "download_url": bad_url,
                 "_install_allowed": True,
             }
-            with patch.object(catalog, "get_pack_info", return_value=pack_info):
+            with patch.object(catalog, "get_pack_info", return_value=pack_info), \
+                 patch.object(catalog, "_open_url") as open_url:
                 with pytest.raises(PresetError, match="malformed"):
                     catalog.download_pack("test-pack", target_dir=project_dir)
+                open_url.assert_not_called()
 
     def test_download_pack_without_sha256_skips_verification(self, project_dir):
         """A catalog entry with no ``sha256`` keeps working: verification is
@@ -5766,8 +5892,8 @@ class TestBundledPresetLocator:
         assert "redirected to a disallowed URL" in output
         assert "must use HTTPS with a hostname" in output
 
-    def test_preset_add_from_url_streams_download_to_zip(self, project_dir, monkeypatch):
-        """URL installs stream response bytes to disk before installing the ZIP."""
+    def test_preset_add_from_url_reads_in_bounded_chunks(self, project_dir, monkeypatch):
+        """URL installs read the response in bounded chunks."""
         from specify_cli.presets._commands import preset_add
 
         class FakeResponse(io.BytesIO):
@@ -5814,6 +5940,65 @@ class TestBundledPresetLocator:
             "speckit_version": "0.6.0",
             "priority": 7,
         }
+
+    def test_preset_add_from_url_rejects_oversized_download(
+        self, project_dir, monkeypatch, capsys
+    ):
+        """An oversized direct download fails before preset installation."""
+        import typer
+        from specify_cli._download_security import (
+            read_response_limited as real_read_response_limited,
+        )
+        from specify_cli.presets import _commands as preset_commands
+
+        class FakeResponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def geturl(self):
+                return "https://example.com/preset.zip"
+
+        def read_with_tiny_limit(response, **kwargs):
+            kwargs.pop("max_bytes", None)
+            return real_read_response_limited(response, max_bytes=4, **kwargs)
+
+        installed = False
+
+        def fake_install_from_zip(*_args, **_kwargs):
+            nonlocal installed
+            installed = True
+
+        monkeypatch.setattr(
+            preset_commands,
+            "read_response_limited",
+            read_with_tiny_limit,
+        )
+        monkeypatch.setattr(
+            "specify_cli._require_specify_project",
+            lambda: project_dir,
+        )
+        monkeypatch.setattr("specify_cli.get_speckit_version", lambda: "0.6.0")
+        monkeypatch.setattr(
+            "specify_cli.authentication.http.open_url",
+            lambda *_args, **_kwargs: FakeResponse(b"12345"),
+        )
+        monkeypatch.setattr(PresetManager, "install_from_zip", fake_install_from_zip)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            preset_commands.preset_add(
+                preset_id=None,
+                from_url="https://example.com/preset.zip",
+                dev=None,
+                priority=10,
+            )
+
+        assert exc_info.value.exit_code == 1
+        output = " ".join(strip_ansi(capsys.readouterr().out).split())
+        assert "exceeds maximum size of 4 bytes" in output
+        assert installed is False
 
     def test_bundled_preset_in_catalog(self):
         """Verify the lean preset is listed in catalog.json with bundled marker."""

@@ -28,6 +28,8 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from .._download_security import (
     MAX_JSON_CATALOG_BYTES,
+    build_safe_download_path,
+    is_https_or_localhost_http,
     read_response_limited,
     safe_extract_zip,
 )
@@ -2781,6 +2783,10 @@ class PresetCatalog:
             raise PresetError(
                 f"Preset '{pack_id}' has no download URL"
             )
+        if not isinstance(download_url, str):
+            raise PresetError(
+                f"Preset download URL is malformed: {download_url}"
+            )
 
         from urllib.parse import urlparse
 
@@ -2793,25 +2799,32 @@ class PresetCatalog:
         try:
             parsed = urlparse(download_url)
             hostname = parsed.hostname
+            parsed.port
         except ValueError:
             raise PresetError(
                 f"Preset download URL is malformed: {download_url}"
             ) from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+        if not hostname:
+            raise PresetError(
+                f"Preset download URL is malformed: {download_url}"
+            )
+        if not is_https_or_localhost_http(download_url):
             raise PresetError(
                 f"Preset download URL must use HTTPS: {download_url}"
             )
 
         if target_dir is None:
             target_dir = self.cache_dir / "downloads"
-        target_dir.mkdir(parents=True, exist_ok=True)
-
+        target_dir = Path(target_dir)
         version = pack_info.get("version", "unknown")
-        zip_filename = f"{pack_id}-{version}.zip"
-        zip_path = target_dir / zip_filename
+        zip_path = build_safe_download_path(
+            target_dir,
+            pack_id,
+            version,
+            error_type=PresetError,
+            label="preset",
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         extra_headers = None
         resolved_download_url = self._resolve_github_release_asset_api_url(download_url)

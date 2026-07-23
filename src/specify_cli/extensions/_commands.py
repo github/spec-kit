@@ -23,7 +23,13 @@ from rich.table import Table
 
 from .._console import console
 from .._assets import get_speckit_version
-from .._download_security import read_zip_member_limited
+from .._download_security import (
+    is_https_or_localhost_http,
+    open_zip_bounded,
+    portable_zip_path_key,
+    read_response_limited,
+    read_zip_member_limited,
+)
 
 extension_app = typer.Typer(
     name="extension",
@@ -436,14 +442,17 @@ def extension_add(
             # "Invalid URL" message instead of leaking a raw traceback past the
             # CLI. Reuse the value below.
             hostname = parsed.hostname
+            parsed.port
         except ValueError:
             console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
             raise typer.Exit(1)
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
+        if not hostname:
+            console.print(f"[red]Error:[/red] Invalid URL: {_escape_markup(from_url)}")
+            raise typer.Exit(1)
 
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        if not is_https_or_localhost_http(from_url):
             console.print("[red]Error:[/red] URL must use HTTPS for security.")
-            console.print("HTTP is only allowed for localhost URLs.")
+            console.print("HTTP is only allowed for loopback URLs.")
             raise typer.Exit(1)
 
         safe_url = _escape_markup(from_url)
@@ -526,7 +535,11 @@ def extension_add(
                     with dl_catalog._open_url(
                         download_url, timeout=60, extra_headers=extra_headers
                     ) as response:
-                        zip_data = response.read()
+                        zip_data = read_response_limited(
+                            response,
+                            error_type=ExtensionError,
+                            label=f"extension {from_url}",
+                        )
 
                     if not zipfile.is_zipfile(io.BytesIO(zip_data)):
                         console.print(
@@ -1225,7 +1238,7 @@ def extension_update(
                 try:
                     # 6. Validate extension ID from ZIP BEFORE modifying installation
                     # Handle both root-level and nested extension.yml (GitHub auto-generated ZIPs)
-                    with zipfile.ZipFile(zip_path, "r") as zf:
+                    with open_zip_bounded(zip_path) as zf:
                         import yaml
                         manifest_data = None
                         namelist = zf.namelist()
@@ -1234,21 +1247,61 @@ def extension_update(
                         # before install_from_zip()'s safe_extract_zip(), so a
                         # raw zf.open().read() here would bypass that bound and
                         # let a zip-bomb extension.yml exhaust memory.
-                        # First try root-level extension.yml
-                        if "extension.yml" in namelist:
-                            parsed_manifest = yaml.safe_load(
-                                read_zip_member_limited(zf, "extension.yml")
-                            )
-                            manifest_data = parsed_manifest if parsed_manifest is not None else {}
-                        else:
-                            # Look for extension.yml in a single top-level subdirectory
-                            # (e.g., "repo-name-branch/extension.yml")
-                            manifest_paths = [n for n in namelist if n.endswith("/extension.yml") and n.count("/") == 1]
-                            if len(manifest_paths) == 1:
-                                parsed_manifest = yaml.safe_load(
-                                    read_zip_member_limited(zf, manifest_paths[0])
+                        # Normalize separators before choosing the manifest so
+                        # this pre-scan cannot approve one entry while extraction
+                        # later overwrites it with a backslash alias.
+                        manifest_candidates = []
+                        for name in namelist:
+                            normalized_name = name.replace("\\", "/")
+                            parts = normalized_name.split("/")
+                            path_key = portable_zip_path_key(normalized_name)
+                            if (
+                                len(parts) in {1, 2}
+                                and path_key[-1] == "extension.yml"
+                            ):
+                                manifest_candidates.append(
+                                    (name, normalized_name, path_key)
                                 )
-                                manifest_data = parsed_manifest if parsed_manifest is not None else {}
+
+                        seen_manifest_keys = {}
+                        for name, _normalized_name, path_key in manifest_candidates:
+                            previous = seen_manifest_keys.get(path_key)
+                            if previous is not None:
+                                raise ValueError(
+                                    "Downloaded extension archive contains multiple "
+                                    "extension.yml manifests"
+                                )
+                            seen_manifest_keys[path_key] = name
+
+                        root_manifest = next(
+                            (
+                                name
+                                for name, normalized_name, _path_key
+                                in manifest_candidates
+                                if normalized_name == "extension.yml"
+                            ),
+                            None,
+                        )
+                        nested_manifests = [
+                            name
+                            for name, normalized_name, _path_key
+                            in manifest_candidates
+                            if normalized_name.endswith("/extension.yml")
+                            and normalized_name.count("/") == 1
+                        ]
+                        manifest_path = root_manifest
+                        if manifest_path is None and len(nested_manifests) == 1:
+                            manifest_path = nested_manifests[0]
+
+                        if manifest_path is not None:
+                            parsed_manifest = yaml.safe_load(
+                                read_zip_member_limited(zf, manifest_path)
+                            )
+                            manifest_data = (
+                                parsed_manifest
+                                if parsed_manifest is not None
+                                else {}
+                            )
 
                         if manifest_data is None:
                             raise ValueError("Downloaded extension archive is missing 'extension.yml'")
