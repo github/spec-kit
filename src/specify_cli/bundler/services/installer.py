@@ -50,7 +50,10 @@ class InstallResult:
 
     @property
     def changed(self) -> bool:
-        return bool(self.installed or self.refreshed)
+        # `uninstalled` is a mutating outcome too: a `bundle update` whose new
+        # manifest drops components (removing them via the refresh path) with no
+        # new install/refresh must still report changed=True, not a no-op.
+        return bool(self.installed or self.refreshed or self.uninstalled)
 
 
 def install_bundle(
