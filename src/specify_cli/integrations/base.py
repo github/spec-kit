@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from .._invocation_style import is_dollar_skills_agent
+from .._invocation_style import get_invocation_prefix, is_dollar_skills_agent
 from .._toml_string import escape_toml_basic as _escape_toml_basic
 from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
 
@@ -1602,7 +1602,7 @@ class SkillsIntegration(IntegrationBase):
         ``$speckit-git-commit``).  Subclasses may override -- see
         ``ClaudeIntegration``.
         """
-        invocation_prefix = "$" if is_dollar_skills_agent(self.key, True) else "/"
+        invocation_prefix = get_invocation_prefix(self.key, True)
         return self._inject_hook_command_note(content, invocation_prefix)
 
     def setup(
