@@ -1262,9 +1262,9 @@ class PresetManager:
 
         Looks up the agent's invoke separator and rewrites each
         ``__SPECKIT_COMMAND_<NAME>__`` placeholder into the matching
-        slash-command invocation — ``/speckit-<cmd>`` for a ``-`` separator,
-        ``/speckit.<cmd>`` for ``.`` — the same rendering the command layer
-        applies via ``CommandRegistrar.register_commands()``.
+        agent-native invocation -- ``/speckit-<cmd>`` or ``$speckit-<cmd>`` for
+        a ``-`` separator, ``/speckit.<cmd>`` for ``.`` -- the same rendering the
+        command layer applies via ``CommandRegistrar.register_commands()``.
 
         For dual-layout agents (e.g. Bob) the separator depends on the
         project's persisted skills state, so — when *project_root* is provided

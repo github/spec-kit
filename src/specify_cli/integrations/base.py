@@ -1597,8 +1597,10 @@ class SkillsIntegration(IntegrationBase):
         Called by external skill generators (presets, extensions) to let
         the integration inject agent-specific frontmatter or body
         transformations.  The base implementation injects shared skills
-        guidance for converting dotted hook command names to hyphenated
-        slash commands.  Subclasses may override — see ``ClaudeIntegration``.
+        guidance for converting dotted hook command names to the agent-native
+        hyphenated command invocation (e.g. ``/speckit-git-commit`` or
+        ``$speckit-git-commit``).  Subclasses may override -- see
+        ``ClaudeIntegration``.
         """
         invocation_prefix = "$" if is_dollar_skills_agent(self.key, True) else "/"
         return self._inject_hook_command_note(content, invocation_prefix)
