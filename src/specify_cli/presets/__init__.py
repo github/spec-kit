@@ -1263,12 +1263,14 @@ class PresetManager:
         Looks up the agent's invoke separator and rewrites each
         ``__SPECKIT_COMMAND_<NAME>__`` placeholder into the matching
         agent-native invocation -- ``/speckit-<cmd>`` or ``$speckit-<cmd>`` for
-        a ``-`` separator, ``/speckit.<cmd>`` for ``.`` -- the same rendering the
-        command layer applies via ``CommandRegistrar.register_commands()``.
+        a ``-`` separator, ``/speckit.<cmd>`` for ``.``, or
+        ``/skill:speckit-<cmd>`` for skill-colon agents (e.g. Kimi) -- the
+        same rendering the command layer applies via
+        ``CommandRegistrar.register_commands()``.
 
         For dual-layout agents (e.g. Bob) the separator depends on the
-        project's persisted skills state, so — when *project_root* is provided
-        — the separator is resolved from the integration via
+        project's persisted skills state, so -- when *project_root* is provided
+        -- the separator is resolved from the integration via
         ``invoke_separator_for_mode`` rather than the single static
         ``AGENT_CONFIGS`` value.
         """
