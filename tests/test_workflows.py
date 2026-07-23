@@ -7860,6 +7860,37 @@ class TestWorkflowAddCaseInsensitiveSuffix:
         assert "installed" in result.output
 
 
+class TestWorkflowInfoStepGraph:
+    """`workflow info` must render each step as `→ <id> [<type>]` with LITERAL
+    brackets. Rich parses an unescaped `[<type>]` as a style tag and silently
+    swallows it, so the step type would vanish from the output."""
+
+    def test_step_type_rendered_in_literal_brackets(self, temp_dir, monkeypatch):
+        import types
+
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+
+        fake = types.SimpleNamespace(
+            name="My WF", id="my-wf", version="1.0.0", author="", description="",
+            default_integration=None, inputs={},
+            steps=[{"id": "step-one", "type": "gate"}],
+        )
+        monkeypatch.setattr(WorkflowEngine, "load_workflow", lambda self, wid: fake)
+        monkeypatch.chdir(temp_dir)
+
+        result = CliRunner().invoke(app, ["workflow", "info", "my-wf"])
+
+        assert result.exit_code == 0, result.output
+        assert "step-one" in result.output
+        # The step type must survive as a literal bracketed token, not be eaten
+        # by Rich as an unknown style tag.
+        assert "[gate]" in result.output
+
+
 class TestWorkflowAddSymlinkGuard:
     def test_add_malformed_ipv6_url_exits_cleanly(self, temp_dir, monkeypatch):
         """A malformed IPv6 URL must produce a clean error, not a ValueError traceback."""

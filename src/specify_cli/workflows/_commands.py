@@ -2376,7 +2376,15 @@ def workflow_info(
             console.print(f"\n  [bold]Steps ({len(definition.steps)}):[/bold]")
             for step in definition.steps:
                 stype = step.get("type", "command")
-                console.print(f"    → {step.get('id', '?')} [{stype}]")
+                # Escape the literal bracket (\[) so Rich renders `[<type>]`
+                # instead of parsing it as a style tag named after the step
+                # type (which it silently swallows); escape id/type too, as
+                # the sibling workflow_list does. Mirrors the `\[disabled]`
+                # precedent above.
+                console.print(
+                    f"    → {_escape_markup(str(step.get('id', '?')))} "
+                    f"\\[{_escape_markup(str(stype))}]"
+                )
         return
 
     # Try catalog
