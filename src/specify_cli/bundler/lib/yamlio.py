@@ -39,25 +39,35 @@ def ensure_within(root: Path, candidate: Path) -> Path:
 
 
 def load_yaml(path: Path) -> Any:
-    """Parse a YAML file, returning ``{}`` for an empty document.
+    """Parse a YAML file, returning ``{}`` only for an *empty* document.
 
-    Only an *empty* document (``yaml.safe_load`` -> ``None``) becomes ``{}``.
-    A non-empty document is returned exactly as parsed — including a falsy
-    non-mapping such as ``[]``, ``false``, ``0``, or ``''`` — so callers can
-    validate the top-level shape (e.g. reject a non-mapping config) instead of
-    having it silently coerced to an empty mapping.
+    A non-empty document is returned exactly as parsed — including a
+    non-mapping such as ``[]``, ``false``, ``0``, ``''``, or an explicit null
+    (``null``/``~``) — so callers can validate the top-level shape (e.g. reject
+    a non-mapping config) instead of having it silently coerced to an empty
+    mapping.
+
+    ``yaml.safe_load`` returns ``None`` for *both* an empty document and an
+    explicit null scalar, so ``yaml.compose`` (which yields no node only for a
+    truly empty document) is used to tell them apart: an empty document becomes
+    ``{}`` while an explicit ``null``/``~`` is returned as ``None`` for the
+    caller to reject.
     """
     path = Path(path)
     if not path.exists():
         raise BundlerError(f"File not found: {path}")
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle)
-    except yaml.YAMLError as exc:
-        raise BundlerError(f"Invalid YAML in {path}: {exc}") from exc
+        text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise BundlerError(f"Could not read {path}: {exc}") from exc
-    return {} if data is None else data
+    try:
+        has_node = yaml.compose(text) is not None
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise BundlerError(f"Invalid YAML in {path}: {exc}") from exc
+    if data is None and not has_node:
+        return {}
+    return data
 
 
 def dump_yaml(path: Path, data: Any, *, within: Path | None = None) -> Path:

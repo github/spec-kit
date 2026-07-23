@@ -77,24 +77,35 @@ def test_falsy_non_list_catalogs_still_raises(tmp_path: Path, value: str):
         "false\n",     # falsy bool
         "0\n",         # falsy int
         "''\n",        # falsy empty string
+        "null\n",      # explicit null scalar (safe_load -> None, but a real node)
+        "~\n",         # explicit null scalar (alt spelling)
     ],
 )
 def test_toplevel_non_mapping_raises(tmp_path: Path, body: str):
-    """A top-level non-mapping bundle-catalogs.yml (list/scalar) must raise,
+    """A top-level non-mapping bundle-catalogs.yml (list/scalar/null) must raise,
     matching the sibling reader (catalog_config._read) — not silently fall back
     to the built-in default stack. This includes FALSY non-mappings ([], false,
-    0, ''); the shared load_yaml would coerce those to {} and hide them, so both
-    readers parse the raw document instead."""
+    0, '') and an explicit null (null/~); the shared load_yaml would coerce those
+    to {} and hide them, so it distinguishes them from a truly empty document."""
     make_project(tmp_path)
     (tmp_path / ".specify" / "bundle-catalogs.yml").write_text(body, encoding="utf-8")
     with pytest.raises(BundlerError, match="expected a mapping at the top level"):
         load_source_stack(tmp_path)
 
 
-@pytest.mark.parametrize("body", ["catalogs:\n", "catalogs: []\n"])
+@pytest.mark.parametrize(
+    "body",
+    [
+        "catalogs:\n",       # present key, null value
+        "catalogs: []\n",    # present key, empty list
+        "",                  # truly empty document
+        "# only a comment\n",  # comment-only == empty document
+    ],
+)
 def test_absent_or_empty_catalogs_is_noop(tmp_path: Path, body: str):
-    """An absent (``None``) or empty-list ``catalogs:`` is valid: it contributes
-    no project sources and falls back to the built-in default stack."""
+    """An empty document, comment-only file, or absent/empty-list ``catalogs:``
+    is valid: it contributes no project sources and falls back to the built-in
+    default stack (must not be confused with an explicit top-level null)."""
     make_project(tmp_path)
     (tmp_path / ".specify" / "bundle-catalogs.yml").write_text(body, encoding="utf-8")
     # Does not raise; still yields the built-in defaults.

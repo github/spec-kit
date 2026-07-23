@@ -41,12 +41,11 @@ def _read(project_root: Path) -> list[dict]:
     if not path.exists():
         return []
     # ``load_yaml`` returns ``{}`` only for an empty document and the raw parse
-    # otherwise, so a falsy non-mapping (``[]``/``false``/``0``/``''``) is caught
-    # by the isinstance guard below and raised like a truthy one, staying
-    # consistent with the other reader of this file (models/catalog._merge_config).
+    # otherwise, so a non-mapping top level — a falsy ``[]``/``false``/``0``/``''``
+    # or an explicit null (``load_yaml`` -> ``None``) — is caught by the isinstance
+    # guard below and raised like a truthy one, staying consistent with the other
+    # reader of this file (models/catalog._merge_config).
     data = load_yaml(path)
-    if data is None:
-        return []
     if not isinstance(data, dict):
         raise BundlerError(
             f"Malformed catalog config at {path}: expected a mapping at the top "
