@@ -154,6 +154,19 @@ def test_read_rejects_non_mapping_top_level(tmp_path: Path):
         cc._read(project)
 
 
+@pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
+def test_read_rejects_falsy_non_mapping_top_level(tmp_path: Path, body: str):
+    # A FALSY non-mapping top level ([], false, 0, '') must raise like a truthy
+    # one. The shared load_yaml would coerce these to {} and hide them, so _read
+    # parses the raw document — staying consistent with models/catalog._merge_config.
+    project = tmp_path / "proj"
+    (project / ".specify").mkdir(parents=True)
+    cc._config_path(project).write_text(body, encoding="utf-8")
+
+    with pytest.raises(BundlerError, match="expected a mapping at the top level"):
+        cc._read(project)
+
+
 def test_read_rejects_unknown_schema_version(tmp_path: Path):
     project = tmp_path / "proj"
     (project / ".specify").mkdir(parents=True)
