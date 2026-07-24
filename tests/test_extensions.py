@@ -1151,6 +1151,7 @@ class TestExtensionManager:
             link_outputs=False,
             create_missing_active_skills_dir=False,
             extension_id=None,
+            only_agent=None,
         ):
             captured["create_missing_active_skills_dir"] = (
                 create_missing_active_skills_dir
@@ -8719,7 +8720,7 @@ $ARGUMENTS
         from specify_cli import app
         from specify_cli.agents import CommandRegistrar
 
-        project_dir, ext_dir, claude_commands_dir = self._setup_mock_extension(tmp_path, "claude")
+        project_dir, ext_dir, agents_commands_dir = self._setup_mock_extension(tmp_path, "amp")
 
         # 3. Run specify extension add
         runner = CliRunner()
@@ -8736,8 +8737,8 @@ $ARGUMENTS
         assert "speckit-mock-ext-hello" not in result.output
 
         # Verify on-disk command names are dotted
-        hello_file = claude_commands_dir / "speckit.mock-ext.hello.md"
-        greet_file = claude_commands_dir / "speckit.mock-ext.greet.md"
+        hello_file = agents_commands_dir / "speckit.mock-ext.hello.md"
+        greet_file = agents_commands_dir / "speckit.mock-ext.greet.md"
 
         assert hello_file.exists()
         assert greet_file.exists()

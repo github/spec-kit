@@ -395,19 +395,14 @@ def _register_extensions_for_agent(
     """Register all enabled extensions' commands/skills for ``agent_key``.
 
     ``use`` / ``switch`` re-register enabled extensions for the agent they
-    activate; ``upgrade`` backfills them for the refreshed agent. Plain
-    ``install`` deliberately does not call this helper so adding a secondary
-    integration has no extension side effects until it is selected or upgraded.
-    See issue #2886.
+    activate (rescaffold); ``upgrade`` does so only for the *active*
+    integration. Plain ``install`` and upgrade of a non-active integration
+    deliberately skip this helper so a secondary integration has no extension
+    side effects until it is selected. See issues #2886 and #2948.
 
-    Known limitation: extension *skill* rendering is scoped to the active
-    agent (init-options track a single ``ai`` / ``ai_skills`` pair). A
-    skills-mode agent registered while it is *not* the active agent (e.g.
-    Copilot ``--skills`` registered while non-active) therefore
-    receives command files rather than skills here — matching ``extension
-    add``'s multi-agent behavior. ``use`` / ``switch`` avoid this because they
-    make the target the active agent first. Per-agent skills parity is tracked in
-    #2948.
+    Callers always pass the active agent (use/switch activate the target
+    before registering), so extension *skill* rendering — which is scoped to
+    the active ``ai`` / ``ai_skills`` init-options — matches ``agent_key``.
 
     Best-effort: never aborts the surrounding integration operation. Callers
     invoke it *after* the use/upgrade/switch transaction has committed so a
@@ -441,6 +436,71 @@ def _unregister_extensions_for_agent(
         phase="clean up extension artifacts for",
         continuing=continuing,
     )
+
+
+def _register_presets_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Register all enabled presets' command overrides/skills for ``agent_key``.
+
+    Presets follow the same single-active rule as extensions (#2948):
+    ``use`` / ``switch`` re-register enabled presets for the agent they
+    activate (rescaffold), so a preset installed while a different
+    integration was active is not left targeting that inactive integration.
+
+    Best-effort: never aborts the surrounding integration operation.
+    """
+    try:
+        from ..presets import PresetManager
+
+        preset_mgr = PresetManager(project_root)
+        preset_mgr.register_enabled_presets_for_agent(agent_key)
+    except Exception as preset_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "register preset artifacts for",
+            "integration",
+            agent_key,
+            preset_err,
+            continuing=continuing,
+        )
+
+
+def _unregister_presets_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Best-effort removal of ``agent_key``'s preset command/skill artifacts.
+
+    Mirrors ``_unregister_extensions_for_agent``: used by ``switch`` when
+    uninstalling the previous integration so its preset command overrides
+    and skill mirrors don't linger as orphans in the old agent's directory
+    once a different (possibly not-yet-installed) integration becomes
+    active (#2948).
+
+    Best-effort: never aborts the surrounding integration operation.
+    """
+    try:
+        from ..presets import PresetManager
+
+        preset_mgr = PresetManager(project_root)
+        preset_mgr.unregister_agent_artifacts(agent_key)
+    except Exception as preset_err:
+        from .. import _print_cli_warning
+
+        _print_cli_warning(
+            "clean up preset artifacts for",
+            "integration",
+            agent_key,
+            preset_err,
+            continuing=continuing,
+        )
 
 
 # ---------------------------------------------------------------------------

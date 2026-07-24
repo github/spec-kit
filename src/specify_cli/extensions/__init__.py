@@ -1071,6 +1071,92 @@ class ExtensionManager:
             return _ensure_usable(agent_skills_dir)
         return _ensure_usable(skills_dir)
 
+    def _register_commands_for_active_agent(
+        self,
+        manifest: ExtensionManifest,
+        extension_dir: Path,
+        link_outputs: bool = False,
+    ) -> Dict[str, List[str]]:
+        """Register extension commands for the active integration only.
+
+        Maintainer-requested behavior for #2948: ``extension add`` treats the
+        project as single-active — only the integration recorded in
+        init-options gets command files. Non-active integrations receive them
+        when selected via ``integration use`` / ``switch`` (rescaffold).
+
+        Projects without a recorded active integration at all (pre-init-options
+        layouts or direct library use, i.e. init-options.json does not
+        exist) fall back to detection-based registration for all agents. A
+        *recorded* active key that has no registrar config (e.g. ``generic``,
+        which is deliberately excluded from ``AGENT_CONFIGS``) is not treated
+        as "no active integration" — it must not cause registration to
+        target other detected agents.
+
+        An init-options.json that exists but is corrupted, unreadable, or
+        has a malformed/empty ``ai`` value (e.g. ``[]`` or ``null``) is also
+        not "no active integration" — fail closed (register nothing) rather
+        than fall back to registering every detected agent, which would
+        otherwise happen because a corrupted file loads the same as an
+        absent one.
+
+        Returns:
+            Mapping of agent name to registered command names, matching the
+            ``registered_commands`` registry shape.
+        """
+        from .. import load_init_options
+        from .._init_options import (
+            MISSING_INIT_OPTIONS_FILE,
+            resolve_active_agent_for_registration,
+        )
+
+        registrar = CommandRegistrar()
+        active_agent = resolve_active_agent_for_registration(self.project_root)
+
+        if active_agent is MISSING_INIT_OPTIONS_FILE:
+            return registrar.register_commands_for_all_agents(
+                manifest,
+                extension_dir,
+                self.project_root,
+                link_outputs=link_outputs,
+                create_missing_active_skills_dir=True,
+            )
+
+        if active_agent is None:
+            # init-options.json exists but could not provide a valid active
+            # agent (corrupted/unreadable/non-object JSON, or a malformed
+            # "ai" value). Fail closed instead of falling back to all agents
+            # or passing a non-string key into AGENT_CONFIGS.get() below,
+            # which would raise TypeError for unhashable values like a list.
+            return {}
+
+        init_options = load_init_options(self.project_root)
+
+        # A recorded active key with no registrar config (e.g. "generic",
+        # deliberately excluded from AGENT_CONFIGS) has nothing to register
+        # through this path, but it is still an active integration. Passing
+        # it as only_agent below naturally yields no matches instead of
+        # falling back to registering every detected agent.
+        agent_config = registrar.AGENT_CONFIGS.get(active_agent)
+        if (
+            agent_config
+            and is_ai_skills_enabled(init_options)
+            and agent_config.get("extension") != "/SKILL.md"
+        ):
+            # Active agent runs skills mode: extension artifacts render as
+            # skills via _register_extension_skills, not as command files.
+            return {}
+
+        # Route through the all-agents pass restricted to the active agent so
+        # detection and missing-skills-dir recovery safeguards still apply.
+        return registrar.register_commands_for_all_agents(
+            manifest,
+            extension_dir,
+            self.project_root,
+            link_outputs=link_outputs,
+            create_missing_active_skills_dir=True,
+            only_agent=active_agent,
+        )
+
     def _register_extension_skills(
         self,
         manifest: ExtensionManifest,
@@ -1271,6 +1357,50 @@ class ExtensionManager:
         except OSError:
             return False
 
+    def _extension_skill_trusted_root(self, candidate: Path) -> Optional[Path]:
+        """Return the project or home root allowed to contain *candidate*."""
+        candidate = Path(os.path.abspath(candidate))
+        for root in (
+            Path(os.path.abspath(self.project_root)),
+            Path(os.path.abspath(Path.home())),
+        ):
+            if candidate.is_relative_to(root):
+                return root
+        return None
+
+    def _extension_skill_candidate_dirs(self) -> Dict[Path, Path]:
+        """Return every configured skill output and its trusted root."""
+        from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
+        from ..agents import CommandRegistrar
+
+        candidates: Dict[Path, Path] = {}
+
+        def add_candidate(candidate: Path) -> None:
+            candidate = Path(os.path.abspath(candidate))
+            trusted_root = self._extension_skill_trusted_root(candidate)
+            if trusted_root is not None:
+                candidates[candidate] = trusted_root
+
+        for cfg in AGENT_CONFIG.values():
+            folder = cfg.get("folder", "")
+            if folder:
+                add_candidate(
+                    self.project_root / folder.rstrip("/") / "skills"
+                )
+        add_candidate(self.project_root / DEFAULT_SKILLS_DIR)
+
+        registrar = CommandRegistrar()
+        for agent_name, agent_config in registrar.AGENT_CONFIGS.items():
+            if agent_config.get("extension") != "/SKILL.md":
+                continue
+            add_candidate(
+                registrar._resolve_agent_dir(
+                    agent_name, agent_config, self.project_root
+                )
+            )
+
+        return candidates
+
     def _unregister_extension_skills(
         self,
         skill_names: List[str],
@@ -1282,31 +1412,46 @@ class ExtensionManager:
         Called during extension removal to clean up skill files that
         were created by ``_register_extension_skills()``.
 
-        If *skills_dir* is not provided and ``_get_skills_dir()`` returns
-        ``None`` (e.g. the user removed init-options.json or toggled
-        ai_skills after installation), we fall back to scanning all known
-        agent skills directories so that orphaned skill directories are
-        still cleaned up.  In that case each candidate directory is
-        verified against the SKILL.md ``metadata.source`` field before
-        removal to avoid accidentally deleting user-created skills with
-        the same name.
+        When *skills_dir* is omitted, project-local agent skill directories
+        are scanned. Home-scoped outputs require explicit agent provenance:
+        the legacy flat registry and ``metadata.source`` marker do not
+        identify which project created a global skill.
 
         Args:
             skill_names: List of skill names to remove.
             extension_id: Extension ID used to verify ownership during
                 fallback candidate scanning.
-            skills_dir: Optional explicit skills directory to use instead
-                of resolving via ``_get_skills_dir()``.  Useful when the
-                caller needs to target a specific agent's skills directory
-                regardless of the currently-active agent in init-options.
+            skills_dir: Optional explicit skills directory to scope
+                cleanup to. Useful when the caller needs to target a
+                specific agent's skills directory regardless of the
+                currently-active agent in init-options. When omitted,
+                every configured agent's skills directory is scanned
+                instead of resolving just the currently active one.
         """
         if not skill_names:
             return
 
-        if skills_dir is None:
-            skills_dir = self._get_skills_dir()
+        from ..shared_infra import _validate_safe_shared_directory
 
         if skills_dir:
+            # Reject the candidate directory itself (any path component,
+            # including the final one) if it's a symlink escaping the
+            # trusted project/home root, before probing or deleting anything
+            # inside it.
+            # A caller-supplied skills_dir (e.g. a specific agent's
+            # directory resolved without side effects) could have been
+            # replaced with a symlink between registration and removal;
+            # resolving it and only checking children relative to the
+            # already-resolved candidate (the previous approach) would
+            # silently follow the symlink instead of rejecting it.
+            trusted_root = self._extension_skill_trusted_root(skills_dir)
+            if trusted_root is None:
+                return
+            try:
+                _validate_safe_shared_directory(trusted_root, skills_dir)
+            except (ValueError, OSError):
+                return
+
             # Fast path: we know the exact skills directory
             for skill_name in skill_names:
                 # Guard against path traversal from a corrupted registry entry:
@@ -1315,10 +1460,19 @@ class ExtensionManager:
                 sn_path = Path(skill_name)
                 if sn_path.is_absolute() or len(sn_path.parts) != 1:
                     continue
+                skill_subdir = skills_dir / skill_name
+                # Validate every path component down to the skill's own
+                # subdirectory, not just the already-validated parent
+                # skills_dir: a per-skill child can itself be a symlink to
+                # another directory whose *resolved* target still lands
+                # inside this same (safe) skills root, which the previous
+                # resolve()+relative_to() containment check alone would
+                # not catch. Reject the symlink outright rather than
+                # following it, even when the target is otherwise
+                # in-bounds (#2948).
                 try:
-                    skill_subdir = (skills_dir / skill_name).resolve()
-                    skill_subdir.relative_to(skills_dir.resolve())  # raises if outside
-                except (OSError, ValueError):
+                    _validate_safe_shared_directory(trusted_root, skill_subdir)
+                except (ValueError, OSError):
                     continue
                 if not skill_subdir.is_dir():
                     continue
@@ -1351,31 +1505,48 @@ class ExtensionManager:
                 shutil.rmtree(skill_subdir)
         else:
             # Fallback: scan all possible agent skills directories
-            from .. import AGENT_CONFIG, DEFAULT_SKILLS_DIR
-
-            candidate_dirs: set[Path] = set()
-            for cfg in AGENT_CONFIG.values():
-                folder = cfg.get("folder", "")
-                if folder:
-                    candidate_dirs.add(
-                        self.project_root / folder.rstrip("/") / "skills"
-                    )
-            candidate_dirs.add(self.project_root / DEFAULT_SKILLS_DIR)
-
-            for skills_candidate in candidate_dirs:
+            for (
+                skills_candidate,
+                trusted_root,
+            ) in self._extension_skill_candidate_dirs().items():
+                # Only project-local skills directories are eligible: the
+                # flat (non-agent-scoped) registered_skills provenance
+                # cannot prove a home-directory skill belongs to this
+                # project, so deleting there could remove another
+                # project's files. Revisit if registry entries ever record
+                # the owning project/agent.
+                if trusted_root != Path(os.path.abspath(self.project_root)):
+                    continue
                 if not skills_candidate.is_dir():
+                    continue
+                # Reject the candidate directory itself (any path
+                # component) if it's a symlink escaping the project
+                # root, before probing or deleting anything inside it —
+                # same guard as the fast path above.
+                try:
+                    _validate_safe_shared_directory(
+                        trusted_root, skills_candidate
+                    )
+                except (ValueError, OSError):
                     continue
                 for skill_name in skill_names:
                     # Same path-traversal guard as the fast path above
                     sn_path = Path(skill_name)
                     if sn_path.is_absolute() or len(sn_path.parts) != 1:
                         continue
+                    skill_subdir = skills_candidate / skill_name
+                    # Validate every path component down to the skill's
+                    # own subdirectory, not just the already-validated
+                    # candidate parent: a per-skill child can itself be a
+                    # symlink to another directory whose resolved target
+                    # still lands inside this same candidate, which the
+                    # previous resolve()+relative_to() containment check
+                    # alone would not catch (#2948).
                     try:
-                        skill_subdir = (skills_candidate / skill_name).resolve()
-                        skill_subdir.relative_to(
-                            skills_candidate.resolve()
-                        )  # raises if outside
-                    except (OSError, ValueError):
+                        _validate_safe_shared_directory(
+                            trusted_root, skill_subdir
+                        )
+                    except (ValueError, OSError):
                         continue
                     if not skill_subdir.is_dir():
                         continue
@@ -1408,6 +1579,103 @@ class ExtensionManager:
                         # If we can't verify, skip to avoid accidental deletion
                         continue
                     shutil.rmtree(skill_subdir)
+
+    def _extension_owned_skill_names(
+        self, skill_names: List[str], extension_id: str
+    ) -> List[str]:
+        """Return the subset of *skill_names* still marker-verified anywhere.
+
+        ``registered_skills`` is a single flat list shared across every
+        agent this extension has ever been activated under (skills are
+        only ever rendered for the currently active agent, so there is no
+        per-agent registry key to consult). A name can therefore still be
+        globally owned by this extension even after it's removed from one
+        particular agent's directory, if an earlier activation under a
+        *different* agent left its own marker-verified mirror behind.
+
+        This scans the same candidate directories (every configured
+        agent's skills folder, deduped by shared path, plus the default
+        skills directory) as the fallback branch of
+        :meth:`_unregister_extension_skills`, but read-only: no directory
+        is created and a name is only kept if at least one candidate
+        directory contains a ``SKILL.md`` whose ``metadata.source`` field
+        matches this exact extension (the same ownership marker
+        :meth:`_register_extension_skills` writes), so an unrelated
+        directory or user-created skill of the same name can't cause a
+        false positive. Symlink/containment safety mirrors the existing
+        fallback scan: each candidate path is resolved and the resulting
+        skill subdirectory is required to stay within it before any file
+        is read.
+        """
+        if not skill_names:
+            return []
+
+        from ..shared_infra import _validate_safe_shared_directory
+
+        marker = f"extension:{extension_id}"
+        owned: set = set()
+        for (
+            skills_candidate,
+            trusted_root,
+        ) in self._extension_skill_candidate_dirs().items():
+            if len(owned) == len(skill_names):
+                break  # every name already confirmed owned somewhere
+            if not skills_candidate.is_dir():
+                continue
+            # Reject the candidate directory itself (any path component)
+            # if it's a symlink escaping the project root, before probing
+            # anything inside it. Resolving it and only checking children
+            # relative to the already-resolved candidate (the previous
+            # approach) would silently follow the symlink instead of
+            # rejecting it, letting a marker-matching SKILL.md outside the
+            # project be falsely attributed.
+            try:
+                _validate_safe_shared_directory(trusted_root, skills_candidate)
+            except (ValueError, OSError):
+                continue
+            for skill_name in skill_names:
+                if skill_name in owned:
+                    continue
+                sn_path = Path(skill_name)
+                if sn_path.is_absolute() or len(sn_path.parts) != 1:
+                    continue
+                skill_subdir = skills_candidate / skill_name
+                # Validate every path component down to the skill's own
+                # subdirectory, not just the already-validated candidate
+                # parent: a per-skill child can itself be a symlink to
+                # another directory whose resolved target still lands
+                # inside this same candidate, which the previous
+                # resolve()+relative_to() containment check alone would
+                # not catch (#2948).
+                try:
+                    _validate_safe_shared_directory(trusted_root, skill_subdir)
+                except (ValueError, OSError):
+                    continue
+                if not skill_subdir.is_dir():
+                    continue
+                skill_md = skill_subdir / "SKILL.md"
+                if not skill_md.is_file():
+                    continue
+                try:
+                    import yaml as _yaml
+
+                    raw = skill_md.read_text(encoding="utf-8")
+                    source = ""
+                    if raw.startswith("---"):
+                        parts = raw.split("---", 2)
+                        if len(parts) >= 3:
+                            fm = _yaml.safe_load(parts[1]) or {}
+                            source = (
+                                fm.get("metadata", {}).get("source", "")
+                                if isinstance(fm, dict)
+                                else ""
+                            )
+                except (OSError, UnicodeDecodeError, Exception):
+                    continue
+                if source == marker:
+                    owned.add(skill_name)
+
+        return [name for name in skill_names if name in owned]
 
     def check_compatibility(
         self, manifest: ExtensionManifest, speckit_version: str
@@ -1942,17 +2210,11 @@ class ExtensionManager:
         # the restored user config with packaged defaults.  Cleanup is deferred
         # until after registry.add() succeeds (see post-commit cleanup below).
 
-        # Register commands with AI agents
+        # Register commands with AI agents (active integration only, #2948)
         registered_commands = {}
         if register_commands:
-            registrar = CommandRegistrar()
-            # Register for all detected agents
-            registered_commands = registrar.register_commands_for_all_agents(
-                manifest,
-                dest_dir,
-                self.project_root,
-                link_outputs=link_commands,
-                create_missing_active_skills_dir=True,
+            registered_commands = self._register_commands_for_active_agent(
+                manifest, dest_dir, link_outputs=link_commands
             )
 
         # Auto-register extension commands as agent skills when skills mode
@@ -2228,31 +2490,51 @@ class ExtensionManager:
                 metadata.get("registered_skills", [])
             )
             if registered_skills:
-                # Only pass the resolved skills_dir when it actually exists.
-                # Otherwise let _unregister_extension_skills fall back to
-                # scanning all known agent skills directories, which is useful
-                # for cleaning up stale entries created by earlier installs.
-                skills_dir = agent_skills_dir if agent_skills_dir.is_dir() else None
+                # Always pass the explicit, agent-scoped skills_dir — even
+                # when it doesn't currently exist on disk. This method must
+                # stay scoped to *this* agent only; omitting skills_dir (a
+                # bare ``None``) tells _unregister_extension_skills "this is
+                # a genuinely unscoped removal", which triggers its
+                # all-configured-agents fallback scan — reserved for
+                # ExtensionManager.remove()'s full project cleanup. If this
+                # agent's directory doesn't exist, there is nothing under it
+                # to clean up; the fast path below is a safe no-op in that
+                # case (every candidate skill_subdir.is_dir() check fails).
                 self._unregister_extension_skills(
-                    registered_skills, ext_id, skills_dir=skills_dir
+                    registered_skills, ext_id, skills_dir=agent_skills_dir
                 )
 
-                # Only reconcile registry state when cleanup was scoped to a
-                # specific existing directory. When skills_dir is None,
-                # _unregister_extension_skills falls back to scanning multiple
-                # candidate directories, so agent_skills_dir cannot be used to
-                # infer what was removed.  When skills_dir is set,
-                # _unregister_extension_skills may intentionally skip deletion
-                # when ownership cannot be verified (e.g., corrupted/missing
-                # SKILL.md or mismatching metadata.source).  Only drop registry
-                # entries for skill directories that were actually removed so
-                # future cleanup attempts can still find skipped ones.
-                if skills_dir is not None:
-                    remaining_skills = [
-                        skill_name
-                        for skill_name in registered_skills
-                        if (skills_dir / skill_name).is_dir()
-                    ]
+                # Only reconcile registry state when this agent's directory
+                # actually exists. When it's absent, this agent never had
+                # any of these skills mirrored under its own directory in
+                # the first place, so there is nothing to conclude about
+                # global ``registered_skills`` tracking from that absence —
+                # other agents' directories may still legitimately hold
+                # live mirrors for these same names (the flat list is
+                # agent-agnostic). Recomputing "remaining" against an
+                # absent directory would incorrectly conclude every name
+                # was removed and drop them all from the registry, silently
+                # orphaning any still-live mirrors under other agents'
+                # directories from future cleanup/removal.
+                #
+                # When the directory does exist, _unregister_extension_skills
+                # may intentionally skip deletion when ownership cannot be
+                # verified (e.g., corrupted/missing SKILL.md or mismatching
+                # metadata.source). A name no longer present under *this*
+                # agent's directory isn't necessarily gone everywhere either
+                # — registered_skills is a single flat list shared across
+                # every agent this extension was ever activated under, so
+                # an earlier activation under a different, still-active
+                # agent may have left its own marker-verified mirror behind.
+                # Recompute across every safe, supported skills directory
+                # (the same helper used for the analogous toggle-cleanup
+                # case) rather than just this one, or a still-existing
+                # mirror elsewhere would be silently dropped from tracking
+                # and orphaned on later removal (#2948).
+                if agent_skills_dir.is_dir():
+                    remaining_skills = self._extension_owned_skill_names(
+                        registered_skills, ext_id
+                    )
                     if remaining_skills != registered_skills:
                         updates["registered_skills"] = remaining_skills
 
@@ -2263,11 +2545,10 @@ class ExtensionManager:
         """Register installed, enabled extensions for ``agent_name``.
 
         Command-file registration is scoped to the explicit ``agent_name``
-        argument, so this method can be used after install, upgrade, or switch.
-        Extension skill rendering is still scoped to the active ``ai`` /
-        ``ai_skills`` settings in init-options, so non-active skills-mode
-        targets receive command files here. Per-agent skills parity is tracked
-        separately in #2948.
+        argument. Since #2948, callers pass the active agent only (``use`` /
+        ``switch`` activate the target first; ``upgrade`` calls it only for
+        the active integration), so extension skill rendering — scoped to the
+        active ``ai`` / ``ai_skills`` init-options — matches ``agent_name``.
         """
         if not agent_name:
             return
@@ -2288,6 +2569,22 @@ class ExtensionManager:
             and bool(agent_config)
             and agent_config.get("extension") != "/SKILL.md"
         )
+        # Mirror image of skills_mode_active: this agent is command-backed,
+        # active, and currently in command mode. Used to detect a
+        # skills -> command toggle for this same agent, where the skills
+        # phase below returns empty (its directory no longer resolves) but
+        # a previously-written extension SKILL.md is now stale (#2948).
+        command_mode_active = (
+            active_agent == agent_name
+            and not ai_skills_enabled
+            and bool(agent_config)
+            and agent_config.get("extension") != "/SKILL.md"
+        )
+        agent_skills_dir = None
+        if agent_config and agent_config.get("extension") != "/SKILL.md":
+            from .. import _get_skills_dir as _resolve_agent_skills_dir
+
+            agent_skills_dir = _resolve_agent_skills_dir(self.project_root, agent_name)
 
         for ext_id, metadata in self.registry.list().items():
             if not metadata.get("enabled", True):
@@ -2304,6 +2601,10 @@ class ExtensionManager:
             # registration of the remaining enabled extensions for this agent.
             try:
                 updates: Dict[str, Any] = {}
+                # Set when a command -> skills toggle for this same agent
+                # defers stale command-mode cleanup until the skills
+                # replacement below confirms success (#2948).
+                deferred_stale_commands: Optional[List[str]] = None
 
                 if agent_config and not skills_mode_active:
                     registered = registrar.register_commands_for_agent(
@@ -2323,17 +2624,38 @@ class ExtensionManager:
                         new_registered.pop(agent_name, None)
                     if new_registered != registered_commands:
                         updates["registered_commands"] = new_registered
+                elif agent_config and skills_mode_active:
+                    # Toggled command -> skills for this same agent: the
+                    # commands phase above is skipped. A command file this
+                    # extension previously wrote for this agent while
+                    # command mode was active is still on disk and still
+                    # tracked, but it must NOT be removed yet — the skills
+                    # phase below is an independently fallible replacement
+                    # step, and deleting the old artifact before it
+                    # succeeds would leave neither the old command file nor
+                    # a new skill file if skills registration raises. The
+                    # actual removal is deferred until after the skills
+                    # phase below completes without raising (#2948).
+                    registered_commands = metadata.get("registered_commands", {})
+                    if isinstance(registered_commands, dict) and registered_commands.get(
+                        agent_name
+                    ):
+                        deferred_stale_commands = self._valid_name_list(
+                            registered_commands.get(agent_name)
+                        )
+                    else:
+                        deferred_stale_commands = None
+                else:
+                    deferred_stale_commands = None
 
                 # Extension *skills* are only ever rendered for the active agent:
                 # `_register_extension_skills` resolves the skills dir and
                 # frontmatter from init-options["ai"], ignoring ``agent_name``.
-                # When this method runs for a non-active agent — as install/upgrade
-                # now do for a secondary integration (#2886) — the skills pass would
-                # re-render the *active* agent's extension skills as a side effect,
+                # Running the skills pass for a non-active agent would re-render
+                # the *active* agent's extension skills as a side effect,
                 # resurrecting skill files the user deliberately deleted. Skip it
-                # unless the target is the active agent; `switch` is unaffected
-                # because it activates the target before registering. (Rendering
-                # skills for a non-active target is tracked separately in #2948.)
+                # unless the target is the active agent (defense in depth: since
+                # #2948 callers only pass the active agent anyway).
                 if agent_name == active_agent:
                     try:
                         registered_skills = self._register_extension_skills(
@@ -2364,6 +2686,140 @@ class ExtensionManager:
                                 dict.fromkeys(existing_skills + registered_skills)
                             )
                             updates["registered_skills"] = merged_skills
+                        elif command_mode_active and agent_skills_dir is not None:
+                            # Mirror image: toggled skills -> command for
+                            # this same agent. _register_extension_skills
+                            # returned empty because this agent's skills
+                            # directory no longer resolves once ai_skills is
+                            # off, but a SKILL.md this extension wrote while
+                            # skills mode was active may still be tracked
+                            # and still on disk. Remove it narrowly for this
+                            # agent's directory only (#2948).
+                            existing_skills = self._valid_name_list(
+                                metadata.get("registered_skills", [])
+                            )
+                            owned_here = [
+                                name
+                                for name in existing_skills
+                                if (agent_skills_dir / name).is_dir()
+                            ]
+                            # Only retire a skill mirror when the
+                            # replacement command for the same logical
+                            # command was actually written this call —
+                            # `registered` (from register_commands_for_agent
+                            # above) may be empty or a partial subset
+                            # (missing source file, safety rejection,
+                            # corrupted manifest), and removing a skill
+                            # mirror whose command replacement never
+                            # landed would leave neither artifact (#2948).
+                            replaced_skill_names = {
+                                HookExecutor._skill_name_from_command(cmd_name)
+                                for cmd_name in (registered or [])
+                            }
+                            to_remove = [
+                                name for name in owned_here
+                                if name in replaced_skill_names
+                            ]
+                            if to_remove:
+                                self._unregister_extension_skills(
+                                    to_remove, ext_id, skills_dir=agent_skills_dir
+                                )
+                                # registered_skills is a single flat list
+                                # shared across every agent this extension
+                                # was ever activated under (unlike presets'
+                                # per-agent dict), so a name removed from
+                                # *this* agent's directory may still have a
+                                # marker-verified mirror under a different,
+                                # previously-active agent's directory.
+                                # Recompute across every safe, supported
+                                # skills directory rather than just this
+                                # one, or a still-existing mirror elsewhere
+                                # would be silently dropped from tracking
+                                # and orphaned on later removal (#2948).
+                                remaining = self._extension_owned_skill_names(
+                                    existing_skills, ext_id
+                                )
+                                if remaining != existing_skills:
+                                    updates["registered_skills"] = remaining
+
+                        # The skills phase above completed without raising
+                        # (this ``else:`` is only reached on success), so a
+                        # deferred command -> skills toggle cleanup queued
+                        # above is now safe to apply: the replacement skill
+                        # registration is confirmed, so the stale
+                        # command-mode artifact can finally be removed
+                        # without risking a transient state where neither
+                        # artifact exists. Only retire a stale command
+                        # whose corresponding skill was actually returned
+                        # this call — `registered_skills` may be empty or
+                        # a partial subset (missing source file, safety
+                        # rejection, corrupted manifest), and unregistering
+                        # a command whose skill replacement never landed
+                        # would leave neither artifact (#2948).
+                        if deferred_stale_commands:
+                            replaced_skill_names = set(registered_skills or [])
+                            # Commands may carry aliases (CommandRegistrar.
+                            # register_commands_for_agent() tracks and
+                            # returns primary + alias names flattened
+                            # together into one list), but
+                            # _register_extension_skills() only ever
+                            # renders/returns the *primary* command name's
+                            # skill — running an alias's own name through
+                            # _skill_name_from_command() never matches
+                            # anything real, so an alias would stay
+                            # tracked/on-disk forever even after its
+                            # primary's skill replacement landed. Map each
+                            # stale name back to its manifest command's
+                            # primary so the whole primary+alias group is
+                            # retired or kept together, based solely on
+                            # whether the *primary*'s skill replacement
+                            # actually landed (#2948).
+                            alias_to_primary: Dict[str, str] = {}
+                            for cmd_info in manifest.commands:
+                                primary_name = cmd_info.get("name")
+                                if not isinstance(primary_name, str):
+                                    continue
+                                for alias in cmd_info.get("aliases", []) or []:
+                                    if isinstance(alias, str):
+                                        alias_to_primary[alias] = primary_name
+
+                            group_fully_replaced: Dict[str, bool] = {}
+                            for cmd_name in deferred_stale_commands:
+                                primary_name = alias_to_primary.get(cmd_name, cmd_name)
+                                if primary_name in group_fully_replaced:
+                                    continue
+                                group_fully_replaced[primary_name] = (
+                                    HookExecutor._skill_name_from_command(primary_name)
+                                    in replaced_skill_names
+                                )
+
+                            fully_replaced = [
+                                cmd_name for cmd_name in deferred_stale_commands
+                                if group_fully_replaced.get(
+                                    alias_to_primary.get(cmd_name, cmd_name), False
+                                )
+                            ]
+                            if fully_replaced:
+                                registrar.unregister_commands(
+                                    {agent_name: fully_replaced}, self.project_root
+                                )
+                                registered_commands = metadata.get(
+                                    "registered_commands", {}
+                                )
+                                if isinstance(registered_commands, dict) and (
+                                    registered_commands.get(agent_name)
+                                ):
+                                    new_registered = copy.deepcopy(registered_commands)
+                                    remaining_commands = [
+                                        c for c in new_registered[agent_name]
+                                        if c not in fully_replaced
+                                    ]
+                                    if remaining_commands:
+                                        new_registered[agent_name] = remaining_commands
+                                    else:
+                                        new_registered.pop(agent_name, None)
+                                    if new_registered != registered_commands:
+                                        updates["registered_commands"] = new_registered
 
                 if updates:
                     self.registry.update(ext_id, updates)
@@ -2532,6 +2988,7 @@ class CommandRegistrar:
         project_root: Path,
         link_outputs: bool = False,
         create_missing_active_skills_dir: bool = False,
+        only_agent: Optional[str] = None,
     ) -> Dict[str, List[str]]:
         """Register extension commands for all detected agents."""
         context_note = f"\n<!-- Extension: {manifest.id} -->\n<!-- Config: .specify/extensions/{manifest.id}/ -->\n"
@@ -2543,6 +3000,7 @@ class CommandRegistrar:
             context_note=context_note,
             link_outputs=link_outputs,
             create_missing_active_skills_dir=create_missing_active_skills_dir,
+            only_agent=only_agent,
             extension_id=manifest.id,
         )
 

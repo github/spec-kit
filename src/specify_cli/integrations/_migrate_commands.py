@@ -29,6 +29,7 @@ from ._helpers import (
     _read_integration_json,
     _refresh_init_options_speckit_version,
     _register_extensions_for_agent,
+    _register_presets_for_agent,
     _remove_integration_json,
     _resolve_integration_options,
     _resolve_integration_script_type,
@@ -36,6 +37,7 @@ from ._helpers import (
     _set_default_integration,
     _set_default_integration_or_exit,
     _unregister_extensions_for_agent,
+    _unregister_presets_for_agent,
     _update_init_options_for_integration,
     _write_integration_json,
 )
@@ -64,16 +66,22 @@ class _PresetRegistryUnreadableError(Exception):
     """
 
 
-def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str]:
-    """Return IDs of installed presets with artifacts registered for *agent_key*.
+def _installed_presets_affecting_agent(
+    project_root, agent_key: str
+) -> list[tuple[str, bool]]:
+    """Return ``(preset_id, enabled)`` for presets with artifacts for *agent_key*.
 
-    Presets register command overrides for every detected agent and mirror
-    skills for the active skills agent, tracking the result in each preset's
-    ``registered_commands`` / ``registered_skills`` metadata. There is no
-    agent-scoped preset re-registration mechanism, so a command↔skills *layout
-    change* cannot reconcile those artifacts (see ``integration_upgrade``).
-    Callers use this to detect the unsafe case and reject the migration rather
-    than silently orphaning preset files / leaving stale registry entries.
+    Preset registration is active-agent-only (#2948): command overrides are
+    written for the active non-skills agent and skills for the active skills
+    agent, tracked per preset in ``registered_commands`` /
+    ``registered_skills``. Entries for *other* agents may still exist from
+    when those agents were active. Across a command↔skills *layout change*,
+    only the active integration's presets are reconciled — the post-upgrade
+    rescaffold re-registers *enabled* presets in the new layout — so callers
+    use this to reject the unsafe cases (non-active agent, or a disabled
+    preset whose frozen artifacts the rescaffold must not touch) rather than
+    silently orphaning preset files / leaving stale registry entries (see
+    ``integration_upgrade``).
 
     Fails **closed**: a genuinely absent registry (no presets ever installed)
     returns an empty list, but if the registry file exists and cannot be read
@@ -103,7 +111,7 @@ def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str
             "preset registry structure is malformed"
         )
 
-    affected: list[str] = []
+    affected: list[tuple[str, bool]] = []
     for preset_id, meta in data.get("presets", {}).items():
         # A malformed entry means we cannot verify whether this preset owns
         # artifacts for the agent, so fail closed rather than skip it.
@@ -112,19 +120,36 @@ def _installed_presets_affecting_agent(project_root, agent_key: str) -> list[str
                 f"preset '{preset_id}' entry is malformed"
             )
         registered_commands = meta.get("registered_commands", {})
-        if not isinstance(registered_commands, dict):
+        if not isinstance(registered_commands, dict) or not all(
+            isinstance(names, list) for names in registered_commands.values()
+        ):
             raise _PresetRegistryUnreadableError(
                 f"preset '{preset_id}' registered_commands is malformed"
             )
         registered_skills = meta.get("registered_skills", [])
-        if not isinstance(registered_skills, (list, tuple)):
+        if isinstance(registered_skills, dict):
+            # Per-agent provenance ({agent: [skill names]}): only entries for
+            # *this* agent make the preset affect it. Values must be lists —
+            # anything else (e.g. null) leaves ownership undecidable, so fail
+            # closed rather than read it as "no artifacts".
+            if not all(
+                isinstance(names, list) for names in registered_skills.values()
+            ):
+                raise _PresetRegistryUnreadableError(
+                    f"preset '{preset_id}' registered_skills is malformed"
+                )
+            has_skills = bool(registered_skills.get(agent_key))
+        elif isinstance(registered_skills, (list, tuple)):
+            # Legacy flat list: not agent-scoped, so any recorded skill may
+            # belong to this agent — fail closed and count it as affecting.
+            has_skills = bool(registered_skills)
+        else:
             raise _PresetRegistryUnreadableError(
                 f"preset '{preset_id}' registered_skills is malformed"
             )
         has_commands = bool(registered_commands.get(agent_key))
-        has_skills = bool(registered_skills)
         if has_commands or has_skills:
-            affected.append(preset_id)
+            affected.append((preset_id, bool(meta.get("enabled", True))))
     return affected
 
 
@@ -218,6 +243,14 @@ def integration_switch(
                 "need re-registration."
             ),
         )
+        _register_presets_for_agent(
+            project_root,
+            target,
+            continuing=(
+                "The integration switch succeeded, but installed presets may "
+                "need re-registration."
+            ),
+        )
         console.print(f"\n[green]✓[/green] Default integration set to [bold]{target}[/bold].")
         raise typer.Exit(0)
 
@@ -273,6 +306,19 @@ def integration_switch(
             project_root,
             installed_key,
             continuing="Continuing with integration switch; old extension artifacts may need manual cleanup.",
+        )
+
+        # Unregister preset commands/skills for the old agent for the same
+        # reason: without this, a preset's command overrides (including
+        # custom preset commands) and skill mirrors rendered for
+        # installed_key would remain orphaned in its directory once a
+        # different, possibly not-yet-installed integration becomes active
+        # (#2948). Scoped strictly to installed_key; other agents' files,
+        # tracking, and the preset packs themselves are untouched.
+        _unregister_presets_for_agent(
+            project_root,
+            installed_key,
+            continuing="Continuing with integration switch; old preset artifacts may need manual cleanup.",
         )
 
         # Clear metadata so a failed Phase 2 doesn't leave stale references
@@ -396,6 +442,24 @@ def integration_switch(
                         f"[yellow]Warning:[/yellow] Failed to restore default "
                         f"integration '{fallback_key}': {restore_err}"
                     )
+                else:
+                    # Under active-only registration the fallback may never
+                    # have received any extension/preset artifacts (it was
+                    # installed while another integration was active), and
+                    # Phase 1 already unregistered the outgoing agent's
+                    # artifacts. Rescaffold so the restored default is
+                    # actually usable. Both helpers are best-effort and
+                    # cannot raise past this point.
+                    _register_extensions_for_agent(
+                        project_root,
+                        fallback_key,
+                        continuing="The switch was rolled back; installed extensions may need re-registration.",
+                    )
+                    _register_presets_for_agent(
+                        project_root,
+                        fallback_key,
+                        continuing="The switch was rolled back; installed presets may need re-registration.",
+                    )
             else:
                 _write_integration_json(
                     project_root, fallback_key, installed_keys, _integration_settings(current)
@@ -415,6 +479,11 @@ def integration_switch(
         project_root,
         target,
         continuing="The integration switch succeeded, but installed extensions may need re-registration.",
+    )
+    _register_presets_for_agent(
+        project_root,
+        target,
+        continuing="The integration switch succeeded, but installed presets may need re-registration.",
     )
 
     name = (target_integration.config or {}).get("name", target)
@@ -487,18 +556,26 @@ def integration_upgrade(
         integration, current, key, integration_options
     )
 
-    # Guard: reject a command↔skills layout change while preset overrides are
-    # installed for this agent (review #3415).  A dual-mode agent (e.g. Bob)
-    # can flip layout across an upgrade (``--skills`` / ``--legacy-commands``).
-    # Extension artifacts are reconciled after the flip (see below), but preset
-    # artifacts cannot be: there is no agent-scoped preset re-registration
-    # anywhere in the CLI, so migrating would delete a preset's old-layout
-    # files without recreating them in the new layout and leave the preset
-    # registry claiming artifacts that no longer exist.  Detect the intended
-    # layout (``is_skills_mode`` reflects the resolved flags/disk state, so a
-    # plain same-layout upgrade is unaffected) and bail out *before* any
-    # mutation with an actionable error so the project is never left in a
-    # half-migrated, inconsistent state.
+    # Guard: a command↔skills layout change is refused while preset overrides
+    # are installed for a *non-active* agent, or while the preset registry is
+    # unreadable (review #3415).  A dual-mode agent (e.g. Bob) can flip layout
+    # across an upgrade (``--skills`` / ``--legacy-commands``).  Extension
+    # artifacts are reconciled after the flip (see below), and for the
+    # *active* integration preset artifacts are too: the post-upgrade
+    # ``_register_presets_for_agent`` rescaffold re-registers every enabled
+    # preset in the new layout and retires the old layout's stale files
+    # (#2948), so an active-agent layout change proceeds — provided every
+    # affected preset is *enabled*: the rescaffold iterates enabled presets
+    # only, and a disabled preset's artifacts are deliberately frozen until
+    # removal (``preset disable``), so it can reconcile neither.  A
+    # non-active integration gets no such rescaffold (preset registration is
+    # active-only), so migrating it would delete a preset's old-layout files
+    # without recreating them and leave the preset registry claiming
+    # artifacts that no longer exist — bail out *before* any mutation with an
+    # actionable error.  An unreadable registry fails closed for either
+    # agent: the rescaffold cannot reconcile unknown state.  Detect the
+    # intended layout (``is_skills_mode`` reflects the resolved flags/disk
+    # state, so a plain same-layout upgrade is unaffected).
     if _manifest_tracks_skill_layout(old_manifest) != integration.is_skills_mode(
         parsed_options, project_root
     ):
@@ -517,23 +594,47 @@ def integration_upgrade(
                 "[cyan].specify/presets/.registry[/cyan] and retry."
             )
             raise typer.Exit(1)
-        if affected_presets:
-            preset_list = ", ".join(sorted(affected_presets))
+        if affected_presets and key != installed_key:
+            preset_list = ", ".join(sorted(pid for pid, _ in affected_presets))
             console.print(
-                f"[red]Error:[/red] Cannot change '{key}' command layout while "
-                f"preset override(s) are installed: [bold]{preset_list}[/bold]."
+                f"[red]Error:[/red] Cannot change the non-active integration "
+                f"'{key}' command layout while preset override(s) are installed "
+                f"for it: [bold]{preset_list}[/bold]."
             )
             console.print(
-                "Preset artifacts cannot yet be reconciled across a command↔skills "
-                "layout change, so the migration would orphan their files and leave "
-                "the preset registry inconsistent."
+                "Preset artifacts are only reconciled for the active "
+                "integration, so this migration would orphan the preset's "
+                "old-layout files and leave the preset registry inconsistent."
             )
             console.print(
-                "Remove the preset(s), run the upgrade, then reinstall them:\n"
+                "Switch to it first (which rescaffolds presets), or remove the "
+                "preset(s), run the upgrade, then reinstall them:\n"
                 f"  [cyan]specify preset remove <id>[/cyan]\n"
                 f"  [cyan]specify integration upgrade {key} "
                 f"--integration-options \"...\"[/cyan]\n"
                 f"  [cyan]specify preset add <id>[/cyan]"
+            )
+            raise typer.Exit(1)
+        disabled_affected = sorted(
+            pid for pid, enabled in affected_presets if not enabled
+        )
+        if disabled_affected:
+            preset_list = ", ".join(disabled_affected)
+            console.print(
+                f"[red]Error:[/red] Cannot change '{key}' command layout while "
+                f"disabled preset override(s) still own artifacts for it: "
+                f"[bold]{preset_list}[/bold]."
+            )
+            console.print(
+                "A disabled preset keeps its registered files until removal "
+                "and is skipped by the post-upgrade preset rescaffold, so the "
+                "migration would orphan its old-layout files and leave the "
+                "preset registry inconsistent."
+            )
+            console.print(
+                "Re-enable or remove the preset(s) first:\n"
+                "  [cyan]specify preset enable <id>[/cyan]  (reconciled by the upgrade)\n"
+                "  [cyan]specify preset remove <id>[/cyan]"
             )
             raise typer.Exit(1)
 
@@ -646,66 +747,50 @@ def integration_upgrade(
         if stale_removed:
             console.print(f"  Removed {len(stale_removed)} stale file(s) from previous install")
 
-    # Re-register enabled extensions for the upgraded agent so its extension
-    # commands are (re)created — including agents installed before this
-    # back-fill existed. Mirrors switch for command registration; see #2886.
-    # Done after the upgrade has fully settled (Phase 2 included) and outside
-    # the try/except above so this best-effort step cannot affect upgrade
-    # success.
+    # Re-register enabled extensions and presets only when upgrading the
+    # *active* integration, so its command artifacts are (re)created after
+    # the upgrade settled (Phase 2 included). Done outside the try/except
+    # above so this best-effort step cannot affect upgrade success. Non-active
+    # integrations are rescaffolded by `use` / `switch` instead — the #2886
+    # back-fill for non-active agents was removed at maintainer request
+    # (#2948).
     #
     # Layout-change reconciliation: a dual-mode agent (e.g. Bob) can flip
     # between the legacy commands layout and the skills layout across an
     # upgrade (``upgrade bob --integration-options "--skills"`` / reverse
-    # ``--legacy-commands``). Phase 2 above only removes stale files tracked by
-    # the *integration* manifest (core commands); extension artifacts are
-    # tracked separately in the extension registry, so the old layout's
-    # extension command/skill files would otherwise linger as orphans. When the
-    # layout actually changed, first unregister the agent's extension artifacts
-    # (removing old-layout files and clearing per-agent registry entries) so the
-    # re-registration below recreates them in the new layout. ``upgrade``s that
-    # don't change layout skip this to avoid needless remove/re-add churn.
+    # ``--legacy-commands``). Phase 2 above only removes stale files tracked
+    # by the *integration* manifest (core commands); extension and preset
+    # artifacts are tracked in their own registries. Their re-registration
+    # below retires each old-layout artifact itself, and only *after* its
+    # replacement in the new layout is confirmed — the deferred toggle
+    # cleanup in ``register_enabled_extensions_for_agent`` and the analogous
+    # handling in ``register_enabled_presets_for_agent`` — so a partial or
+    # failed re-registration never strips a still-tracked artifact. An eager
+    # ``unregister_agent_artifacts`` pass here would delete the old artifact
+    # and its tracking before the replacement exists, defeating that
+    # failure-safety (and, run for a *secondary* agent, could even delete the
+    # active agent's skills via its any-agent fallback scan). Disabled
+    # extensions are skipped by re-registration, leaving their artifacts
+    # frozen in place until re-enable/removal — consistent with how disabled
+    # presets are handled (their case is rejected by the guard near the top
+    # of this function, since the preset rescaffold cannot retire files it
+    # must not touch).
     #
-    # Only the *active* integration is reconciled this way (``installed_key ==
-    # key``).  ``ExtensionManager.unregister_agent_artifacts`` treats the
-    # per-extension ``registered_skills`` list as belonging to the passed agent
-    # and, when that agent's skills directory is absent, falls back to scanning
-    # every agent's skills directory — so running it for a *secondary*
-    # (non-active) agent could delete or untrack the *active* agent's extension
-    # skills.  The subsequent re-registration cannot repair that because
-    # extension skill rendering is intentionally scoped to the active agent
-    # (#2948).  Extension skills only ever exist for the active agent, so
-    # skipping the unregister for a secondary agent orphans nothing new: a
-    # secondary agent only has extension *command* files, which the
-    # re-registration below rewrites in place regardless of layout.
-    #
-    # Known limitation: preset command/skill artifacts are NOT reconciled on a
-    # layout change. There is no agent-scoped preset re-registration mechanism
-    # anywhere in the CLI — ``use`` / ``switch`` / ``upgrade`` never reconcile
-    # presets for any agent (presets are only (un)registered at preset
-    # install/remove time). Rather than silently orphan them, the guard near
-    # the top of this function rejects a layout-changing upgrade while preset
-    # overrides are installed, so control only reaches here (with a changed
-    # layout) when no preset artifacts are at stake. Full preset reconciliation
-    # would require a new cross-cutting PresetManager subsystem affecting every
-    # dual-layout agent, which is out of scope for this Bob migration.
-    if (
-        installed_key == key
-        and _manifest_tracks_skill_layout(old_manifest)
-        != _manifest_tracks_skill_layout(new_manifest)
-    ):
-        _unregister_extensions_for_agent(
+    # The cases the preset rescaffold cannot reconcile — a non-active
+    # integration (preset registration is active-only, #2948) and a disabled
+    # preset's frozen artifacts — are rejected by that same guard, so
+    # control never reaches here in those states.
+    if key == installed_key:
+        _register_extensions_for_agent(
             project_root,
             key,
-            continuing=(
-                "The integration layout changed, but old-layout extension "
-                "artifacts may need manual cleanup."
-            ),
+            continuing="The integration was upgraded, but installed extensions may need re-registration.",
         )
-    _register_extensions_for_agent(
-        project_root,
-        key,
-        continuing="The integration was upgraded, but installed extensions may need re-registration.",
-    )
+        _register_presets_for_agent(
+            project_root,
+            key,
+            continuing="The integration was upgraded, but installed presets may need re-registration.",
+        )
 
     name = (integration.config or {}).get("name", key)
     console.print(f"\n[green]✓[/green] Integration '{name}' upgraded successfully")
