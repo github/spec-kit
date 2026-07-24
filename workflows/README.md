@@ -111,7 +111,7 @@ Run a shell command and capture output:
 ```yaml
 - id: run-tests
   type: shell
-  run: "cd '{{ inputs.project_dir }}' && npm test"
+  run: "npm test"       # runs from the project root; no interpolation needed
   timeout: 1800   # Optional: max seconds before the command is killed (default 300)
 ```
 
