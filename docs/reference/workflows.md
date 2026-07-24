@@ -509,7 +509,7 @@ Expressions are resolved by **plain string substitution** — the value of `{{ .
 If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, backticks, or quotes, it can change or extend the command that actually runs. This matters most when the value is not fully under the workflow author's control:
 
 - **Workflow `inputs.*`** — supplied by whoever runs the workflow.
-- **A prior step's output**, e.g. `{{ steps.plan.output.value }}` — for a `prompt` step this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
+- **A prior step's output**, e.g. `{{ steps.plan.output.stdout }}` — for a `prompt` step this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
 
 There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step, so none of the practices below can be treated as a guarantee that a hostile value is neutralised. The only reliable control is to constrain what an interpolated value *can* be, and to keep values you cannot constrain out of `run` fields entirely. Scrutinise every `run` field that interpolates a value you do not control, and at minimum:
 
