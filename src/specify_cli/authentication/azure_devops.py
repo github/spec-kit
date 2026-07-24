@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json as _json
 import os
+import shutil
 import subprocess
 from typing import TYPE_CHECKING
 
@@ -71,9 +72,17 @@ class AzureDevOpsAuth(AuthProvider):
     def _acquire_via_az_cli() -> str | None:
         """Run ``az account get-access-token`` and return the access token."""
         try:
+            # Windows: ``subprocess.run`` calls ``CreateProcess``, which does
+            # not consult ``PATHEXT``, so a bare ``"az"`` (installed as
+            # ``az.cmd``) fails with ``WinError 2`` even after ``az login``.
+            # Resolve via ``shutil.which`` (which honors ``PATHEXT``) so the
+            # ``.cmd`` shim works. On POSIX this is a harmless lookup that
+            # returns the same executable; ``or "az"`` preserves the prior
+            # behavior (and the existing OSError path) when ``az`` is absent.
+            az = shutil.which("az") or "az"
             result = subprocess.run(  # noqa: S603, S607
                 [
-                    "az",
+                    az,
                     "account",
                     "get-access-token",
                     "--resource",
