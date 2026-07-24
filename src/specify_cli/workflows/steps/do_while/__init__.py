@@ -72,12 +72,14 @@ class DoWhileStep(StepBase):
             )
         elif not isinstance(config["condition"], str):
             # The engine re-evaluates 'condition' via evaluate_condition() after
-            # each iteration; it returns a non-string as-is and takes bool() of
-            # it -- so a list/dict/number condition silently resolves to a
-            # truthiness (e.g. condition: [1, 2] is always truthy, looping to
-            # max_iterations) with no error. Reject non-strings at validation,
-            # mirroring the prompt/shell/command 'must be a string' checks.
-            # "true"/"false" and an expression like "{{ ... }}" stay valid.
+            # each iteration. That call first delegates to
+            # evaluate_expression() -- which returns a non-string unchanged --
+            # and then coerces the result with bool(). So a list/dict/number
+            # condition silently resolves to its truthiness (e.g.
+            # condition: [1, 2] is always truthy, looping to max_iterations)
+            # with no error. Reject non-strings at validation, mirroring the
+            # prompt/shell/command 'must be a string' checks. "true"/"false"
+            # and an expression like "{{ ... }}" stay valid.
             errors.append(
                 f"Do-while step {config.get('id', '?')!r}: 'condition' must be a "
                 f"string, got {type(config['condition']).__name__}."
