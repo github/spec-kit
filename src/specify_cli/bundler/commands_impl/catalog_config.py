@@ -14,13 +14,12 @@ from .. import BundlerError
 from ..lib.yamlio import dump_yaml, ensure_within, load_yaml
 from ..models.catalog import (
     CONFIG_FILENAME,
+    CONFIG_SCHEMA_VERSION,
     BUILTIN_DEFAULT_STACK,
     CatalogSource,
     InstallPolicy,
     Scope,
 )
-
-CONFIG_SCHEMA_VERSION = "1.0"
 
 _BUILTIN_IDS = {raw["id"] for raw in BUILTIN_DEFAULT_STACK}
 
