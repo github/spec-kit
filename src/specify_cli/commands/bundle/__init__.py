@@ -715,14 +715,30 @@ def _local_manifest_source(arg: str):
 
         import yaml as _yaml
 
-        with zipfile.ZipFile(candidate) as archive:
+        try:
+            archive = zipfile.ZipFile(candidate)
+        except (zipfile.BadZipFile, OSError) as exc:
+            # A .zip-suffixed file that is not a valid archive would otherwise
+            # raise a raw BadZipFile that escapes bundle_install's `except
+            # BundlerError` and dumps a traceback. Report it cleanly, like the
+            # remote-download path already does for the same source.
+            raise BundlerError(
+                f"Artifact '{candidate}' is not a valid .zip bundle: {exc}"
+            ) from exc
+        with archive:
             try:
                 raw = archive.read("bundle.yml")
             except KeyError as exc:
                 raise BundlerError(
                     f"Artifact '{candidate}' does not contain a bundle.yml."
                 ) from exc
-        data = _yaml.safe_load(io.BytesIO(raw))
+        try:
+            data = _yaml.safe_load(io.BytesIO(raw))
+        except _yaml.YAMLError as exc:
+            # Malformed embedded bundle.yml — same rationale as above.
+            raise BundlerError(
+                f"Artifact '{candidate}' contains an invalid bundle.yml: {exc}"
+            ) from exc
         return BundleManifest.from_dict(data)
 
     if candidate.name == "bundle.yml" or candidate.suffix in (".yml", ".yaml"):

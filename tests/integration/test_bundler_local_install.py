@@ -53,6 +53,28 @@ def test_local_source_from_zip_artifact(tmp_path: Path):
     assert manifest.bundle.id == "demo-bundle"
 
 
+def test_local_source_corrupt_zip_raises_clean_error(tmp_path: Path):
+    """A .zip-suffixed file that is not a valid archive raises a clean
+    BundlerError, not a raw zipfile.BadZipFile that escapes the install
+    handler's `except BundlerError` and dumps a traceback."""
+    bad = tmp_path / "artifact.zip"
+    bad.write_text("this is not a zip", encoding="utf-8")
+    with pytest.raises(BundlerError, match="not a valid .zip bundle"):
+        _local_manifest_source(str(bad))
+
+
+def test_local_source_zip_with_malformed_bundle_yml_raises_clean_error(tmp_path: Path):
+    """A valid .zip whose embedded bundle.yml is malformed YAML raises a clean
+    BundlerError, not a raw yaml.YAMLError."""
+    import zipfile
+
+    artifact = tmp_path / "artifact.zip"
+    with zipfile.ZipFile(artifact, "w") as zf:
+        zf.writestr("bundle.yml", "key: [unterminated\n")  # invalid YAML
+    with pytest.raises(BundlerError, match="invalid bundle.yml"):
+        _local_manifest_source(str(artifact))
+
+
 def test_local_source_rejects_unknown_file(tmp_path: Path):
     weird = tmp_path / "thing.txt"
     weird.write_text("nope", encoding="utf-8")
