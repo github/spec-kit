@@ -6,6 +6,8 @@ Discovery answers *"is this worth building?"* Delivery answers *"how do we build
 
 ## Overview
 
+`assess` works equally well for a **freshly initialized, empty project** or for an **existing codebase** — you do not need any source code to assess an idea. The input is just an idea: pasted text, a URL, or a ticket work with no repo at all, and a codebase pointer lets you assess an idea for existing code. Neither is more "correct" than the other.
+
 Each idea lives in its own directory under `.specify/assessments/<slug>/`, with one Markdown artifact per stage:
 
 ```
