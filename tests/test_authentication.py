@@ -157,6 +157,26 @@ class TestLoadAuthConfig:
         assert entries[0].auth == "azure-ad"
         assert entries[0].tenant_id == "tid"
 
+    def test_padded_azure_ad_refs_are_normalized(self, tmp_path):
+        # The normalization also covers tenant_id / client_id / client_secret_env
+        # (used verbatim in the OAuth token URL/body and os.environ.get). Padded
+        # values were validated on their stripped form but stored raw.
+        cfg = tmp_path / "auth.json"
+        cfg.write_text(json.dumps({
+            "providers": [{
+                "hosts": ["dev.azure.com"],
+                "provider": "azure-devops",
+                "auth": "azure-ad",
+                "tenant_id": "  tid  ",
+                "client_id": "  cid  ",
+                "client_secret_env": "  SECRET  ",
+            }]
+        }))
+        entries = load_auth_config(cfg)
+        assert entries[0].tenant_id == "tid"
+        assert entries[0].client_id == "cid"
+        assert entries[0].client_secret_env == "SECRET"
+
     def test_azure_cli_config(self, tmp_path):
         cfg = tmp_path / "auth.json"
         cfg.write_text(json.dumps({
