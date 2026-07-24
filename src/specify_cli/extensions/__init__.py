@@ -2021,6 +2021,24 @@ class ExtensionManager:
             except OSError:
                 pass  # Best-effort; install already committed to the registry.
 
+        # Restore execute bits on shipped POSIX scripts. copytree here (and the
+        # zipfile.extractall in install_from_zip, which delegates to this method) does
+        # not restore a stripped Unix mode, so a bundled *.sh would land non-executable
+        # and a documented `.specify/extensions/<id>/scripts/...` invocation would fail
+        # with "Permission denied". This is the single sink every install route funnels
+        # through (extension add / update / bundle), so fixing it here covers them all.
+        # No-op on Windows (helper returns early).
+        #
+        # Deliberately the whole-project call, not a scoped one. The helper's contract
+        # is "make .specify scripts executable" — the same idempotent invariant that
+        # init and migrate restore — so re-establishing it after an install is exactly
+        # its job. A scoped variant would only spare re-walking already-correct files,
+        # a handful of stats that are negligible beside the copy/extract this method just
+        # did, and it would cost a per-caller scan-scope argument on an otherwise simple,
+        # widely-used interface. The simpler call wins.
+        from .. import ensure_executable_scripts
+        ensure_executable_scripts(self.project_root)
+
         return manifest
 
     def install_from_zip(
