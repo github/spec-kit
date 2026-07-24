@@ -492,7 +492,7 @@
     "blueprint-index": {
       "name": "Blueprint Index — Living Architecture Map",
       "id": "blueprint-index",
-      "description": "A living architecture map for spec-driven projects, kept honest by a deterministic, low-friction, machine-first CI gate (JSON, self-healable) that blocks only when the map contradicts the specs or code. Brownfield or greenfield.",
+      "description": "Living architecture map for brownfield and greenfield projects, with a deterministic CI gate that blocks contradictions between the map, specs, and code while warning on non-blocking drift.",
       "author": "ogil109",
       "version": "0.2.0",
       "download_url": "https://github.com/ogil109/spec-kit-blueprint/releases/download/v0.2.0/blueprint.zip",
