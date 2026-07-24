@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-07-21T00:00:00Z",
+  "updated_at": "2026-07-24T00:00:00Z",
   "catalog_url": "https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json",
   "extensions": {
     "aide": {
@@ -488,6 +488,46 @@
       "stars": 0,
       "created_at": "2026-04-17T00:00:00Z",
       "updated_at": "2026-04-17T00:00:00Z"
+    },
+    "blueprint-index": {
+      "name": "Blueprint Index — Living Architecture Map",
+      "id": "blueprint-index",
+      "description": "A living architecture map for spec-driven projects, kept honest by a deterministic, low-friction, machine-first CI gate (JSON, self-healable) that blocks only when the map contradicts the specs or code. Brownfield or greenfield.",
+      "author": "ogil109",
+      "version": "0.2.0",
+      "download_url": "https://github.com/ogil109/spec-kit-blueprint/releases/download/v0.2.0/blueprint.zip",
+      "repository": "https://github.com/ogil109/spec-kit-blueprint",
+      "homepage": "https://github.com/ogil109/spec-kit-blueprint/tree/main",
+      "documentation": "https://github.com/ogil109/spec-kit-blueprint/blob/main/README.md",
+      "changelog": "https://github.com/ogil109/spec-kit-blueprint/blob/main/CHANGELOG.md",
+      "license": "MIT",
+      "category": "process",
+      "effect": "read-write",
+      "requires": {
+        "speckit_version": ">=0.10.0",
+        "tools": [
+          { "name": "bash", "required": false },
+          { "name": "git", "required": false }
+        ]
+      },
+      "provides": {
+        "commands": 4,
+        "hooks": 0
+      },
+      "tags": [
+        "blueprint",
+        "architecture",
+        "coherence",
+        "drift",
+        "brownfield",
+        "autonomous",
+        "ci"
+      ],
+      "verified": false,
+      "downloads": 0,
+      "stars": 0,
+      "created_at": "2026-07-24T00:00:00Z",
+      "updated_at": "2026-07-24T00:00:00Z"
     },
     "branch-convention": {
       "name": "Branch Convention",
