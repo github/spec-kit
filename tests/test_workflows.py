@@ -3612,6 +3612,23 @@ class TestWorkflowDefinition:
         assert definition.id == "test-workflow"
         assert len(definition.inputs) == 2
 
+    @pytest.mark.parametrize(
+        "block",
+        [
+            "workflow:\n  id: w\n  name: W\nsteps: []\ninputs: []\n",   # list
+            "workflow:\n  id: w\n  name: W\nsteps: []\ninputs:\n",       # null
+        ],
+    )
+    def test_resolve_inputs_tolerates_non_mapping_inputs(self, block):
+        # execute()/resume() run UNVALIDATED definitions; a non-mapping `inputs:`
+        # block (list/null) is stored raw and would crash _resolve_inputs at
+        # `.items()`. It must be treated as "no inputs" instead.
+        from specify_cli.workflows.engine import WorkflowDefinition, WorkflowEngine
+
+        definition = WorkflowDefinition.from_string(block)
+        resolved = WorkflowEngine()._resolve_inputs(definition, {})  # must not raise
+        assert resolved == {}
+
     def test_from_string_invalid(self):
         from specify_cli.workflows.engine import WorkflowDefinition
 
