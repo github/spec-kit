@@ -2354,14 +2354,25 @@ def workflow_info(
         raise typer.Exit(1)
 
     if definition:
-        console.print(f"\n[bold cyan]{definition.name}[/bold cyan] ({definition.id})")
-        console.print(f"  Version:     {definition.version}")
+        # Escape every user-controlled field: workflow.yml values (name,
+        # version, author, description, integration, input names/types) are not
+        # trusted, and console.print has Rich markup enabled, so an unescaped
+        # `[...]` in any of them is parsed as a style tag and silently swallowed
+        # (same defect fixed for the step graph below; the sibling workflow_list
+        # already escapes all of these).
+        console.print(
+            f"\n[bold cyan]{_escape_markup(str(definition.name))}[/bold cyan] "
+            f"({_escape_markup(str(definition.id))})"
+        )
+        console.print(f"  Version:     {_escape_markup(str(definition.version))}")
         if definition.author:
-            console.print(f"  Author:      {definition.author}")
+            console.print(f"  Author:      {_escape_markup(str(definition.author))}")
         if definition.description:
-            console.print(f"  Description: {definition.description}")
+            console.print(f"  Description: {_escape_markup(str(definition.description))}")
         if definition.default_integration:
-            console.print(f"  Integration: {definition.default_integration}")
+            console.print(
+                f"  Integration: {_escape_markup(str(definition.default_integration))}"
+            )
         if installed:
             console.print("  [green]Installed[/green]")
 
@@ -2370,7 +2381,10 @@ def workflow_info(
             for name, inp in definition.inputs.items():
                 if isinstance(inp, dict):
                     req = "required" if inp.get("required") else "optional"
-                    console.print(f"    {name} ({inp.get('type', 'string')}) — {req}")
+                    console.print(
+                        f"    {_escape_markup(str(name))} "
+                        f"({_escape_markup(str(inp.get('type', 'string')))}) — {req}"
+                    )
 
         if definition.steps:
             console.print(f"\n  [bold]Steps ({len(definition.steps)}):[/bold]")
@@ -2395,15 +2409,23 @@ def workflow_info(
         info = None
 
     if info:
-        console.print(f"\n[bold cyan]{info.get('name', workflow_id)}[/bold cyan] ({workflow_id})")
-        console.print(f"  Version:     {info.get('version', '?')}")
+        # Catalog-derived fields are untrusted; escape them so bracketed content
+        # is rendered literally rather than parsed (and swallowed) as Rich markup.
+        console.print(
+            f"\n[bold cyan]{_escape_markup(str(info.get('name', workflow_id)))}[/bold cyan] "
+            f"({_escape_markup(str(workflow_id))})"
+        )
+        console.print(f"  Version:     {_escape_markup(str(info.get('version', '?')))}")
         if info.get("description"):
-            console.print(f"  Description: {info['description']}")
+            console.print(f"  Description: {_escape_markup(str(info['description']))}")
         if info.get("tags"):
-            console.print(f"  Tags:        {', '.join(info['tags'])}")
+            safe_tags = _escape_markup(", ".join(str(t) for t in info["tags"]))
+            console.print(f"  Tags:        {safe_tags}")
         console.print("  [yellow]Not installed[/yellow]")
     else:
-        console.print(f"[red]Error:[/red] Workflow '{workflow_id}' not found")
+        console.print(
+            f"[red]Error:[/red] Workflow '{_escape_markup(str(workflow_id))}' not found"
+        )
         raise typer.Exit(1)
 
 
