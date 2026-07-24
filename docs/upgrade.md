@@ -303,7 +303,7 @@ Alternatively, run the `/speckit.specify` command which creates `.specify/featur
 2. **For CLI-based agents**, verify files exist:
 
    ```bash
-   ls -la .claude/commands/      # Claude Code
+   ls -la .claude/skills/        # Claude Code
    ls -la .gemini/commands/      # Gemini
    ls -la .cursor/skills/      # Cursor
    ls -la .pi/prompts/           # Pi Coding Agent
@@ -352,7 +352,7 @@ This warning appears when you run `specify init --here` (or `specify init .`) in
 
 Only Spec Kit infrastructure files:
 
-- Agent command files (`.claude/commands/`, `.github/prompts/`, etc.)
+- Agent command/skill files (`.claude/skills/`, `.github/prompts/`, etc.)
 - Scripts in `.specify/scripts/`
 - Templates in `.specify/templates/`
 - Missing memory files such as `.specify/memory/constitution.md` may be created from templates; an existing constitution is preserved
@@ -441,7 +441,7 @@ Once you've run `specify init`, the slash commands (like `/speckit.specify`, `/s
    ls -la .github/prompts/
 
    # For Claude
-   ls -la .claude/commands/
+   ls -la .claude/skills/
 
    # For Pi
    ls -la .pi/prompts/
