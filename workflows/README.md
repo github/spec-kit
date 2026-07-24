@@ -111,9 +111,17 @@ Run a shell command and capture output:
 ```yaml
 - id: run-tests
   type: shell
-  run: "cd {{ inputs.project_dir }} && npm test"
+  run: "cd '{{ inputs.project_dir }}' && npm test"
   timeout: 1800   # Optional: max seconds before the command is killed (default 300)
 ```
+
+> ⚠️ **Quote your interpolations.** A `run` field is executed by the system
+> shell, and `{{ ... }}` expressions are substituted as raw text with no
+> automatic quoting. An unquoted `inputs.*` value or prior-step output (including
+> AI-generated `prompt` output) is parsed as shell syntax and can change the
+> command that runs. Quote every substitution (`'{{ inputs.url }}'`), constrain
+> inputs with `enum`, and gate commands built from untrusted values. See
+> [Interpolation and shell safety](../docs/reference/workflows.md#interpolation-and-shell-safety).
 
 `timeout` is the maximum time in seconds the command may run before it is
 killed and the step fails; it must be a positive number and defaults to

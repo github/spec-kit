@@ -502,6 +502,34 @@ args: "{{ inputs.spec }}"
 message: "{{ status | default('pending') }}"
 ```
 
+### Interpolation and shell safety
+
+Expressions are resolved by **plain string substitution** — the value of `{{ ... }}` is spliced into the surrounding text exactly as-is, with no quoting or escaping added. That is convenient for building `args` and `message` strings, but it has an important consequence for `shell` steps: a `run` field is handed to the system shell (`/bin/sh -c` on POSIX), so any interpolated value is interpreted as **shell syntax**, not just data.
+
+If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, backticks, or quotes, it can change or extend the command that actually runs. This matters most when the value is not fully under the workflow author's control:
+
+- **Workflow `inputs.*`** — supplied by whoever runs the workflow.
+- **A prior step's output**, e.g. `{{ steps.plan.output.value }}` — for a `prompt` step this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
+
+Guard interpolation in `run` fields:
+
+- **Quote every substitution** so the shell treats it as a single literal argument:
+
+  ```yaml
+  # Risky — the value is parsed as shell syntax
+  run: "git clone {{ inputs.url }}"
+
+  # Safer — the value is a single quoted argument
+  run: "git clone '{{ inputs.url }}'"
+  ```
+
+- **Constrain inputs with `enum`** whenever the valid values are a fixed set, so a caller cannot supply arbitrary shell text at all.
+- **Validate free-form values before use** — pass an untrusted string through a `command`/`prompt`/validation step (or a shell `case`/pattern check) before it reaches a `run` field, rather than interpolating raw agent or user output directly.
+- **Prefer passing data via the environment or files** over string interpolation for anything you cannot constrain — an environment variable referenced as `"$MY_VAR"` inside the `run` script is not re-parsed as command syntax the way an interpolated `{{ ... }}` value is.
+- **Gate sensitive commands** — put a `gate` step before any `shell` step whose command is built from `inputs.*` or agent output, so a human can review the resolved command before it runs.
+
+A `shell` step is an arbitrary-command primitive by design; these practices keep *which* command runs under the author's control even when the *values* it operates on are not.
+
 ## Shell Step Environment Variables
 
 Shell steps automatically receive the following environment variables:
