@@ -1650,6 +1650,7 @@ class PresetManager:
         source_dir: Path,
         speckit_version: str,
         priority: int = 10,
+        force: bool = False,
     ) -> PresetManifest:
         """Install preset from a local directory.
 
@@ -1657,6 +1658,7 @@ class PresetManager:
             source_dir: Path to preset directory
             speckit_version: Current spec-kit version
             priority: Resolution priority (lower = higher precedence, default 10)
+            force: If True and the preset is already installed, remove it first
 
         Returns:
             Installed preset manifest
@@ -1675,10 +1677,12 @@ class PresetManager:
         self.check_compatibility(manifest, speckit_version)
 
         if self.registry.is_installed(manifest.id):
-            raise PresetError(
-                f"Preset '{manifest.id}' is already installed. "
-                f"Use 'specify preset remove {manifest.id}' first."
-            )
+            if not force:
+                raise PresetError(
+                    f"Preset '{manifest.id}' is already installed. "
+                    f"Use 'specify preset remove {manifest.id}' first."
+                )
+            self.remove(manifest.id)
 
         dest_dir = self.presets_dir / manifest.id
         if dest_dir.exists():
@@ -1834,6 +1838,7 @@ class PresetManager:
         zip_path: Path,
         speckit_version: str,
         priority: int = 10,
+        force: bool = False,
     ) -> PresetManifest:
         """Install preset from ZIP file.
 
@@ -1841,6 +1846,7 @@ class PresetManager:
             zip_path: Path to preset ZIP file
             speckit_version: Current spec-kit version
             priority: Resolution priority (lower = higher precedence, default 10)
+            force: If True and the preset is already installed, remove it first
 
         Returns:
             Installed preset manifest
@@ -1883,7 +1889,7 @@ class PresetManager:
                     "No preset.yml found in ZIP file"
                 )
 
-            return self.install_from_directory(pack_dir, speckit_version, priority)
+            return self.install_from_directory(pack_dir, speckit_version, priority, force=force)
 
     def remove(self, pack_id: str) -> bool:
         """Remove an installed preset.

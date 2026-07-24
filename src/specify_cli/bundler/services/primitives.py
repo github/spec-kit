@@ -85,11 +85,17 @@ def _bundled_manifest_version(manifest_path: Path, root_key: str) -> str | None:
 
 
 class _KindManager(Protocol):
-    def is_installed(self, component: ComponentRef) -> bool: ...
+    def is_installed(self, component: ComponentRef) -> bool:
+        pass
 
-    def install(self, component: ComponentRef) -> None: ...
+    def install(self, component: ComponentRef) -> None:
+        pass
 
-    def remove(self, component: ComponentRef) -> None: ...
+    def refresh(self, component: ComponentRef) -> None:
+        pass
+
+    def remove(self, component: ComponentRef) -> None:
+        pass
 
 
 def primitive_manager(
@@ -151,6 +157,12 @@ class _PresetKindManager:
             return False
 
     def install(self, component: ComponentRef) -> None:
+        self._do_install(component, force=False)
+
+    def refresh(self, component: ComponentRef) -> None:
+        self._do_install(component, force=True)
+
+    def _do_install(self, component: ComponentRef, *, force: bool) -> None:
         from ... import get_speckit_version
         from ..._assets import _locate_bundled_preset
 
@@ -168,7 +180,9 @@ class _PresetKindManager:
                 component.version,
                 _bundled_manifest_version(bundled / "preset.yml", "preset"),
             )
-            self._manager.install_from_directory(bundled, speckit_version, priority)
+            self._manager.install_from_directory(
+                bundled, speckit_version, priority, **({"force": True} if force else {})
+            )
             return
 
         if not self._allow_network:
@@ -194,7 +208,9 @@ class _PresetKindManager:
         )
         zip_path = catalog.download_pack(component.id)
         try:
-            self._manager.install_from_zip(zip_path, speckit_version, priority)
+            self._manager.install_from_zip(
+                zip_path, speckit_version, priority, **({"force": True} if force else {})
+            )
         finally:
             with contextlib.suppress(Exception):
                 if zip_path.exists():
@@ -224,6 +240,12 @@ class _ExtensionKindManager:
             return False
 
     def install(self, component: ComponentRef) -> None:
+        self._do_install(component, force=False)
+
+    def refresh(self, component: ComponentRef) -> None:
+        self._do_install(component, force=True)
+
+    def _do_install(self, component: ComponentRef, *, force: bool) -> None:
         from ... import get_speckit_version
         from ..._assets import _locate_bundled_extension
 
@@ -242,7 +264,7 @@ class _ExtensionKindManager:
                 _bundled_manifest_version(bundled / "extension.yml", "extension"),
             )
             self._manager.install_from_directory(
-                bundled, speckit_version, priority=priority
+                bundled, speckit_version, priority=priority, force=force
             )
             return
 
@@ -272,7 +294,7 @@ class _ExtensionKindManager:
         zip_path = catalog.download_extension(component.id)
         try:
             self._manager.install_from_zip(
-                zip_path, speckit_version, priority=priority
+                zip_path, speckit_version, priority=priority, force=force
             )
         finally:
             with contextlib.suppress(Exception):
@@ -317,6 +339,11 @@ class _WorkflowKindManager:
                 "install", f"workflow '{component.id}'",
                 lambda: workflow_add(component.id),
             )
+
+    def refresh(self, component: ComponentRef) -> None:
+        # workflow_add is idempotent for already-installed workflows; delegate
+        # to the standard install path which handles version refresh correctly.
+        self.install(component)
 
     def _assert_pinned_version(self, component: ComponentRef) -> None:
         if not component.version:
@@ -377,6 +404,35 @@ class _StepKindManager:
                 "install", f"step '{component.id}'",
                 lambda: workflow_step_add(component.id),
             )
+
+    def refresh(self, component: ComponentRef) -> None:
+        # Preserve an existing step until we've validated we can perform refresh.
+        # For already-installed steps, keep a backup and restore it if the
+        # remove+reinstall path fails.
+        if not (self._allow_network and self.is_installed(component)):
+            self.install(component)
+            return
+
+        import shutil
+        import tempfile
+
+        step_dir = self._registry.steps_dir / component.id
+        metadata = self._registry.get(component.id)
+        backup_dir = Path(tempfile.mkdtemp(prefix="speckit-step-refresh-")) / component.id
+        try:
+            if step_dir.exists():
+                shutil.copytree(step_dir, backup_dir)
+            self.remove(component)
+            try:
+                self.install(component)
+            except BundlerError:
+                if backup_dir.exists():
+                    shutil.copytree(backup_dir, step_dir, dirs_exist_ok=True)
+                if metadata is not None and not self._registry.is_installed(component.id):
+                    self._registry.add(component.id, metadata)
+                raise
+        finally:
+            shutil.rmtree(backup_dir.parent, ignore_errors=True)
 
     def remove(self, component: ComponentRef) -> None:
         from ... import workflow_step_remove
