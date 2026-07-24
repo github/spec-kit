@@ -297,6 +297,8 @@ def test_read_response_limited_escapes_control_characters_in_label():
         "../outside",
         "..\\outside",
         "a" * 256,
+        "delete\x7f",
+        "csi\x9b[2J",
         "\ud800",
     ],
 )
@@ -719,6 +721,8 @@ def test_safe_extract_zip_rejects_conflicting_paths_before_writing(
         "CONOUT$.log",
         "nested/name?.txt",
         "nested/control\u0001.txt",
+        "nested/delete\u007f.txt",
+        "nested/csi\u009b[2J.txt",
     ],
 )
 def test_safe_extract_zip_rejects_nonportable_member_names(tmp_path, member_name):
@@ -752,16 +756,28 @@ def test_safe_extract_zip_rejects_excessively_long_paths(tmp_path, member_name):
     assert not out_dir.exists() or not any(out_dir.rglob("*"))
 
 
-def test_safe_extract_zip_escapes_control_characters_in_errors(tmp_path):
+@pytest.mark.parametrize(
+    ("control_character", "escaped_character"),
+    [
+        ("\x1b", "\\x1b"),
+        ("\x7f", "\\x7f"),
+        ("\x9b", "\\x9b"),
+    ],
+)
+def test_safe_extract_zip_escapes_unicode_control_characters_in_errors(
+    tmp_path,
+    control_character,
+    escaped_character,
+):
     zip_path = tmp_path / "terminal-control.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
-        zf.writestr("bad\x1b[2J.txt", "contents")
+        zf.writestr(f"bad{control_character}[2J.txt", "contents")
 
     with pytest.raises(ValueError) as exc_info:
         safe_extract_zip(zip_path, tmp_path / "out")
 
-    assert "\x1b" not in str(exc_info.value)
-    assert "\\x1b" in str(exc_info.value)
+    assert control_character not in str(exc_info.value)
+    assert escaped_character in str(exc_info.value)
 
 
 def test_safe_extract_zip_accepts_single_decomposed_unicode_name(tmp_path):

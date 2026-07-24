@@ -7359,6 +7359,77 @@ class TestExtensionUpdateCLI:
                 zf.writestr(extra_manifest_path, manifest_text)
 
     @pytest.mark.parametrize(
+        "manifest_path",
+        [
+            "../extension.yml",
+            "/extension.yml",
+            "./extension.yml",
+            "C:/extension.yml",
+        ],
+    )
+    def test_update_rejects_unsafe_manifest_path_before_removal(
+        self, tmp_path, manifest_path
+    ):
+        """Unsafe manifest paths fail before the installed extension is removed."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".claude" / "skills").mkdir(parents=True)
+
+        manager = ExtensionManager(project_dir)
+        v1_dir = self._create_extension_source(tmp_path, "1.0.0")
+        manager.install_from_directory(v1_dir, "0.1.0")
+        installed_extension_dir = manager.extensions_dir / "test-ext"
+        removed_paths = []
+        real_rmtree = shutil.rmtree
+
+        def track_rmtree(path, *args, **kwargs):
+            removed_paths.append(Path(path).resolve())
+            return real_rmtree(path, *args, **kwargs)
+
+        zip_path = tmp_path / "unsafe-manifest.zip"
+        self._create_catalog_zip(
+            zip_path,
+            "2.0.0",
+            manifest_path=manifest_path,
+        )
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(ExtensionCatalog, "get_extension_info", return_value={
+                 "id": "test-ext",
+                 "name": "Test Extension",
+                 "version": "2.0.0",
+                 "_install_allowed": True,
+             }), \
+             patch.object(
+                 ExtensionCatalog,
+                 "download_extension",
+                 return_value=zip_path,
+             ), \
+             patch.object(shutil, "rmtree", side_effect=track_rmtree), \
+             patch.object(ExtensionManager, "remove") as remove, \
+             patch.object(ExtensionManager, "install_from_zip") as install:
+            result = runner.invoke(
+                app,
+                ["extension", "update", "test-ext"],
+                input="y\n",
+                catch_exceptions=True,
+            )
+
+        assert result.exit_code == 1
+        assert "Unsafe path in ZIP archive" in result.output
+        remove.assert_not_called()
+        install.assert_not_called()
+        assert installed_extension_dir.resolve() not in removed_paths
+        assert not (manager.extensions_dir / ".backup" / "test-ext-update").exists()
+        assert ExtensionManager(project_dir).registry.get("test-ext")["version"] == "1.0.0"
+
+    @pytest.mark.parametrize(
         ("first_path", "second_path"),
         [
             ("repo/extension.yml", "repo\\extension.yml"),

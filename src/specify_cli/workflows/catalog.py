@@ -22,6 +22,8 @@ from typing import Any
 
 import yaml
 
+from .._download_security import MAX_JSON_CATALOG_BYTES, read_response_limited
+
 
 # ---------------------------------------------------------------------------
 # Errors
@@ -308,7 +310,8 @@ class WorkflowCatalog:
         try:
             parsed = urlparse(url)
             hostname = parsed.hostname
-        except ValueError:
+            _ = parsed.port
+        except (TypeError, ValueError):
             raise WorkflowValidationError(
                 f"Catalog URL is malformed: {url}"
             ) from None
@@ -505,7 +508,8 @@ class WorkflowCatalog:
             try:
                 parsed = urlparse(url)
                 hostname = parsed.hostname
-            except ValueError:
+                _ = parsed.port
+            except (TypeError, ValueError):
                 raise WorkflowCatalogError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
@@ -538,7 +542,14 @@ class WorkflowCatalog:
                 entry.url, timeout=30, redirect_validator=_validate_redirect
             ) as resp:
                 _validate_catalog_url(resp.geturl())
-                data = json.loads(resp.read().decode("utf-8"))
+                data = json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=WorkflowCatalogError,
+                        label="workflow catalog",
+                    ).decode("utf-8")
+                )
         except Exception as exc:
             # Fall back to cache if available
             if cache_file.exists():
@@ -982,7 +993,8 @@ class StepCatalog:
         try:
             parsed = urlparse(url)
             hostname = parsed.hostname
-        except ValueError:
+            _ = parsed.port
+        except (TypeError, ValueError):
             raise StepValidationError(
                 f"Catalog URL is malformed: {url}"
             ) from None
@@ -1178,7 +1190,8 @@ class StepCatalog:
             try:
                 parsed = urlparse(url)
                 hostname = parsed.hostname
-            except ValueError:
+                _ = parsed.port
+            except (TypeError, ValueError):
                 raise StepCatalogError(
                     f"Refusing to fetch catalog from malformed URL: {url}"
                 ) from None
@@ -1211,7 +1224,14 @@ class StepCatalog:
                 entry.url, timeout=30, redirect_validator=_validate_redirect
             ) as resp:
                 _validate_url(resp.geturl())
-                data = json.loads(resp.read().decode("utf-8"))
+                data = json.loads(
+                    read_response_limited(
+                        resp,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=StepCatalogError,
+                        label="step catalog",
+                    ).decode("utf-8")
+                )
         except Exception as exc:
             if cache_safe and cache_file.exists():
                 try:

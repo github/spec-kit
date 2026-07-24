@@ -209,6 +209,25 @@ def test_catalog_entry_rejects_non_boolean_verified():
         CatalogEntry.from_dict(data)
 
 
+def test_catalog_entry_preserves_sha256_through_provenance():
+    digest = "a" * 64
+    payload = catalog_payload(
+        {"demo": catalog_entry_dict("demo", sha256=f"sha256:{digest}")}
+    )
+
+    entry = load_catalog_payload(payload)["demo"]
+    source = CatalogSource(
+        id="team",
+        url="https://example.com/catalog.json",
+        priority=10,
+        install_policy=InstallPolicy.INSTALL_ALLOWED,
+        scope=Scope.PROJECT,
+    )
+
+    assert entry.sha256 == f"sha256:{digest}"
+    assert entry.with_provenance(source).sha256 == f"sha256:{digest}"
+
+
 def test_load_payload_rejects_id_key_mismatch():
     # The enclosing key is authoritative; an entry whose own id disagrees with
     # the key must be rejected so a catalog can't list a spoofed/unresolvable id.

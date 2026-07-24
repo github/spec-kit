@@ -304,7 +304,7 @@ def build_safe_download_path(
         filename_too_long
         or posix_path.name != filename
         or windows_path.name != filename
-        or any(ord(character) < 32 for character in filename)
+        or any(unicodedata.category(character) == "Cc" for character in filename)
         or any(
             character in _WINDOWS_INVALID_FILENAME_CHARS
             for character in filename
@@ -368,8 +368,12 @@ def read_zip_member_limited(
         )
 
 
-def _safe_zip_name(name: str, *, error_type: type[ErrorT]) -> str:
-    """Return a normalized ZIP member name or raise on traversal."""
+def normalize_zip_member_name(
+    name: str,
+    *,
+    error_type: type[ErrorT] = ValueError,
+) -> str:
+    """Return a normalized, portable ZIP member name or raise if unsafe."""
     if "\x00" in name:
         _raise(error_type, f"Unsafe path in ZIP archive: {name!r}")
 
@@ -407,7 +411,10 @@ def _safe_zip_name(name: str, *, error_type: type[ErrorT]) -> str:
         reserved_stem = part.partition(".")[0].partition(":")[0].rstrip(" ")
         if (
             len(part.encode("utf-8")) > MAX_ZIP_COMPONENT_BYTES
-            or any(ord(character) < 32 for character in part)
+            or any(
+                unicodedata.category(character) == "Cc"
+                for character in part
+            )
             or any(character in _WINDOWS_INVALID_FILENAME_CHARS for character in part)
             or part.startswith(" ")
             or part.endswith((" ", "."))
@@ -616,7 +623,10 @@ def safe_extract_zip(
         validated_paths: dict[tuple[str, ...], tuple[str, bool]] = {}
         total_size = 0
         for member in members:
-            normalized_name = _safe_zip_name(member.filename, error_type=error_type)
+            normalized_name = normalize_zip_member_name(
+                member.filename,
+                error_type=error_type,
+            )
             is_dir = member.is_dir() or normalized_name.endswith("/")
             path_key = portable_zip_path_key(normalized_name)
 

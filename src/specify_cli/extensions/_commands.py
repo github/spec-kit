@@ -25,6 +25,7 @@ from .._console import console
 from .._assets import get_speckit_version
 from .._download_security import (
     is_https_or_localhost_http,
+    normalize_zip_member_name,
     open_zip_bounded,
     portable_zip_path_key,
     read_response_limited,
@@ -1160,6 +1161,8 @@ def extension_update(
             backup_installed = UNSET  # Original installed list from extensions.yml
             backup_hooks = None  # None means backup step 4 not yet reached; {} or {...} means backup was captured
             backed_up_command_files = {}
+            # Validation failures must not rewrite an untouched installation.
+            installation_modified = False
 
             try:
                 # 1. Backup registry entry (always, even if extension dir doesn't exist)
@@ -1252,7 +1255,7 @@ def extension_update(
                         # later overwrites it with a backslash alias.
                         manifest_candidates = []
                         for name in namelist:
-                            normalized_name = name.replace("\\", "/")
+                            normalized_name = normalize_zip_member_name(name)
                             parts = normalized_name.split("/")
                             path_key = portable_zip_path_key(normalized_name)
                             if (
@@ -1322,6 +1325,7 @@ def extension_update(
                         )
 
                     # 7. Remove old extension (handles command file cleanup and registry removal)
+                    installation_modified = True
                     manager.remove(extension_id, keep_config=True)
 
                     # 8. Install new version
@@ -1387,6 +1391,18 @@ def extension_update(
             except Exception as e:
                 console.print(f"   [red]✗[/red] Failed: {_escape_markup(str(e))}")
                 failed_updates.append((ext_name, str(e)))
+
+                if not installation_modified:
+                    if backup_base.exists():
+                        try:
+                            shutil.rmtree(backup_base)
+                        except OSError as cleanup_error:
+                            console.print(
+                                "   [yellow]Warning:[/yellow] Could not remove "
+                                "untouched-update backup: "
+                                f"{_escape_markup(str(cleanup_error))}"
+                            )
+                    continue
 
                 # Rollback on failure
                 console.print(f"   [yellow]↩[/yellow] Rolling back {safe_ext_name}...")
