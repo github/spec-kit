@@ -25,7 +25,7 @@ The Specify CLI supports a wide range of AI coding agents. When you run `specify
 | [Hermes](https://github.com/NousResearch/hermes-agent)                               | `hermes`         | Skills-based integration; installs skills globally into `~/.hermes/skills/`                                                                |
 | [IBM Bob](https://www.ibm.com/products/bob)                                          | `bob`            | Skills-based integration by default; installs skills as `speckit-<command>/SKILL.md` under `.bob/skills/` and invokes them as `/speckit-<command>`. Pass `--integration-options="--legacy-commands"` to scaffold the deprecated Bob 1.x layout (`.bob/commands/*.md`) instead; that flag will be removed in a future release. Existing legacy installs can migrate with `specify integration upgrade bob --integration-options="--skills"`, which converts them to the skills layout and removes the old command files. If preset overrides are installed, the migration is rejected with an actionable error (preset artifacts cannot yet be reconciled across a layout change) — remove the preset(s), migrate, then reinstall them. |
 | [Junie](https://junie.jetbrains.com/)                                                | `junie`          |                                                                                                                                           |
-| [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | `kilocode`       |                                                                                                                                           |
+| [Kilo Code](https://github.com/Kilo-Org/kilocode)                                    | `kilocode`       | Installs commands into `.kilo/commands`; legacy `.kilocode/workflows` installs remain supported as a registration fallback                 |
 | [Kimi Code](https://code.kimi.com/)                                                  | `kimi`           | Skills-based integration; installs into `.kimi-code/skills/`. `--migrate-legacy` moves old `.kimi/skills/` installs to the new paths |
 | [Kiro CLI](https://kiro.dev/docs/cli/)                                               | `kiro-cli`       | Kiro CLI does not substitute `$ARGUMENTS` in file-based prompts, so Spec Kit ships a prose fallback at render time (see [Manage prompts](https://kiro.dev/docs/cli/chat/manage-prompts/) and issue [#1926](https://github.com/github/spec-kit/issues/1926)). Alias: `--integration kiro` |
 | [Lingma](https://lingma.aliyun.com/)                                                 | `lingma`         | Skills-based integration; skills are installed automatically                                                                               |
@@ -269,12 +269,14 @@ The currently declared multi-install safe integrations are:
 | `codebuddy` | `.codebuddy/commands` |
 | `codex` | `.agents/skills` |
 | `cursor-agent` | `.cursor/skills` |
+| `droid` | `.factory/skills` |
 | `firebender` | `.firebender/commands` |
 | `gemini` | `.gemini/commands` |
 | `grok` | `.grok/skills` |
 | `junie` | `.junie/commands` |
-| `kilocode` | `.kilocode/workflows` |
+| `kilocode` | `.kilo/commands` |
 | `kiro-cli` | `.kiro/prompts` |
+| `lingma` | `.lingma/skills` |
 | `omp` | `.omp/commands` |
 | `pi` | `.pi/prompts` |
 | `qodercli` | `.qoder/commands` |

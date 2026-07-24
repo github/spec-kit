@@ -2179,13 +2179,27 @@ class ExtensionManager:
             return []
         return [item for item in value if isinstance(item, str)]
 
-    def unregister_agent_artifacts(self, agent_name: str) -> None:
+    def unregister_agent_artifacts(
+        self,
+        agent_name: str,
+        *,
+        enabled_only: bool = False,
+        commands_only: bool = False,
+    ) -> None:
         """Remove extension files registered for a specific agent.
 
         Extension command files are tracked per agent in ``registered_commands``.
         Extension skills are scoped to the provided *agent_name*; they are removed
         from that agent's skills directory (resolved via its integration config)
         and the registry field is cleared.
+
+        Set ``enabled_only=True`` when a caller is about to re-register enabled
+        extensions and must preserve disabled extensions' existing artifacts and
+        registry entries.
+
+        Set ``commands_only=True`` for command-directory reconciliation where
+        skill artifacts are outside the target agent's lifecycle and must not
+        be touched.
 
         Skips cleanup when *agent_name* is not a supported agent to avoid
         losing registry entries while leaving orphaned files on disk.
@@ -2205,6 +2219,9 @@ class ExtensionManager:
         agent_skills_dir = resolve_skills_dir(self.project_root, agent_name)
 
         for ext_id, metadata in self.registry.list().items():
+            if enabled_only and not metadata.get("enabled", True):
+                continue
+
             updates: Dict[str, Any] = {}
 
             registered_commands = metadata.get("registered_commands", {})
@@ -2227,7 +2244,7 @@ class ExtensionManager:
             registered_skills = self._valid_name_list(
                 metadata.get("registered_skills", [])
             )
-            if registered_skills:
+            if registered_skills and not commands_only:
                 # Only pass the resolved skills_dir when it actually exists.
                 # Otherwise let _unregister_extension_skills fall back to
                 # scanning all known agent skills directories, which is useful

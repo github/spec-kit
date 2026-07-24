@@ -7,13 +7,14 @@ class KilocodeIntegration(MarkdownIntegration):
     key = "kilocode"
     config = {
         "name": "Kilo Code",
-        "folder": ".kilocode/",
-        "commands_subdir": "workflows",
+        "folder": ".kilo/",
+        "commands_subdir": "commands",
         "install_url": None,
         "requires_cli": False,
     }
     registrar_config = {
-        "dir": ".kilocode/workflows",
+        "dir": ".kilo/commands",
+        "legacy_dir": ".kilocode/workflows",
         "format": "markdown",
         "args": "$ARGUMENTS",
         "extension": ".md",
