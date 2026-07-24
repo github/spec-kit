@@ -141,6 +141,73 @@ class SkillsIntegrationTests:
             assert isinstance(fm["description"], str)
             assert len(fm["description"]) > 0, f"{f} has empty description"
 
+    def test_skill_frontmatter_preserves_multiline_description(
+        self, tmp_path, monkeypatch
+    ):
+        """A multiline (block-scalar) description must round-trip exactly.
+
+        The hand-built SKILL.md frontmatter used to only escape backslash and
+        quote, so a block-scalar description was emitted with raw newlines inside
+        a double-quoted scalar and reparsed with those newlines collapsed to
+        spaces. The description must survive byte-for-byte."""
+        i = get_integration(self.KEY)
+        template = tmp_path / "sample.md"
+        template.write_text(
+            "---\n"
+            "description: |\n"
+            "  first line\n"
+            "  second line\n"
+            "scripts:\n"
+            "  sh: scripts/bash/x.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) == 1
+
+        content = skill_files[0].read_text(encoding="utf-8")
+        fm = yaml.safe_load(content.split("---", 2)[1])
+        assert "\n" in fm["description"]
+        assert fm["description"] == "first line\nsecond line\n"
+
+    def test_skill_frontmatter_preserves_control_characters(
+        self, tmp_path, monkeypatch
+    ):
+        """A description carrying a C0/DEL control char must round-trip exactly.
+
+        A control character can reach ``description`` via a YAML escape in the
+        source template (``"a\\x08b"`` parses to a real U+0008). The old
+        hand-built frontmatter only escaped backslash and quote, so the raw
+        control char landed inside the emitted double-quoted scalar and made the
+        SKILL.md unparseable / lossy. ``quote_yaml_double`` must escape it so the
+        value survives byte-for-byte."""
+        i = get_integration(self.KEY)
+        template = tmp_path / "sample.md"
+        template.write_text(
+            "---\n"
+            'description: "a\\x08b\\ttab"\n'
+            "scripts:\n"
+            "  sh: scripts/bash/x.sh\n"
+            "---\n"
+            "Body\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(i, "list_command_templates", lambda: [template])
+
+        m = IntegrationManifest(self.KEY, tmp_path)
+        created = i.setup(tmp_path, m)
+        skill_files = [f for f in created if f.name == "SKILL.md"]
+        assert len(skill_files) == 1
+
+        content = skill_files[0].read_text(encoding="utf-8")
+        fm = yaml.safe_load(content.split("---", 2)[1])
+        assert fm["description"] == "a\x08b\ttab"
+
     def test_templates_are_processed(self, tmp_path):
         """Skill body must have placeholders replaced, not raw templates."""
         i = get_integration(self.KEY)
