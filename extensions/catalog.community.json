@@ -4818,17 +4818,18 @@
     "verify-review-ship": {
       "name": "Verify Review Ship",
       "id": "verify-review-ship",
-      "description": "Adds post-implementation verify, review, and ship readiness gates to Spec Kit workflows.",
+      "description": "Adds verify and review quality gates plus transactional merge, cleanup, and delivery summary.",
       "author": "Carlos Eduardo Gevaerd Araujo",
-      "version": "0.1.0",
-      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.1.0.zip",
+      "version": "0.3.0",
+      "download_url": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/archive/refs/tags/v0.3.0.zip",
+      "sha256": "a7326c899855f46ff28e9f03ede2f89c4db0fd2b8a64c85017b3ab639e004fd3",
       "repository": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
       "homepage": "https://github.com/cadugevaerd/spec-kit-verify-review-ship",
       "documentation": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/README.md",
       "changelog": "https://github.com/cadugevaerd/spec-kit-verify-review-ship/blob/main/CHANGELOG.md",
       "license": "MIT",
       "category": "process",
-      "effect": "read-only",
+      "effect": "read-write",
       "requires": {
         "speckit_version": ">=0.1.0"
       },
@@ -4840,14 +4841,14 @@
         "quality",
         "review",
         "shipping",
-        "workflow",
-        "testing"
+        "merge",
+        "workflow"
       ],
       "verified": false,
       "downloads": 0,
       "stars": 0,
       "created_at": "2026-07-10T00:00:00Z",
-      "updated_at": "2026-07-10T00:00:00Z"
+      "updated_at": "2026-07-24T00:00:00Z"
     },
     "verify-tasks": {
       "name": "Verify Tasks Extension",
