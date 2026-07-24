@@ -528,6 +528,46 @@ Each workflow run persists its state at `.specify/workflows/runs/<run_id>/`:
 
 This enables `specify workflow resume` to continue from the exact step where a run was paused (e.g., at a gate) or failed.
 
+### Gate Verdict Inputs
+
+`verdict_input` binds a gate's verdict to a named workflow input. The input must be declared in the workflow's `inputs` block; `specify workflow validate` reports an undeclared reference.
+
+**Input value semantics:**
+
+| Value | Behavior |
+|---|---|
+| Non-empty string, matches an option (case-insensitive) | Gate auto-decides; `output.choice` is set to the configured option spelling |
+| Non-empty string, no match | Gate fails immediately |
+| Non-string | Gate fails immediately |
+| Missing, `null`, or empty | Gate prompts on a TTY; pauses otherwise |
+
+**Default value semantics:** A non-empty `default` is consumed as a verdict on the first run — matching an option auto-decides the gate, not matching fails it immediately.
+
+```yaml
+inputs:
+  spec_verdict:
+    type: string
+    default: ""
+steps:
+  - id: review-spec
+    type: gate
+    message: "Approve the specification?"
+    options: [approve, reject]
+    on_reject: retry
+    verdict_input: spec_verdict
+```
+
+Supply a verdict when resuming:
+
+```bash
+specify workflow resume <run_id> --input spec_verdict=approve
+```
+
+For `on_reject: retry`, a bound reject verdict is consumed before the gate
+pauses: the named stored input is reset to `""`. A later resume therefore
+prompts or pauses again until another verdict is supplied. Approve, abort, and
+skip outcomes leave the input unchanged.
+
 ## FAQ
 
 ### What happens when a workflow hits a gate step?

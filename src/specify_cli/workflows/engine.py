@@ -297,7 +297,15 @@ def validate_workflow(definition: WorkflowDefinition) -> list[str]:
         errors.append("Workflow has no steps defined.")
 
     seen_ids: set[str] = set()
-    _validate_steps(definition.steps, seen_ids, errors)
+    # ``input_names`` is the set of declared workflow input names — used by
+    # ``_validate_steps`` to cross-reference gate ``verdict_input`` bindings.
+    # ``None`` means the inputs block itself is malformed (already reported
+    # above); the cross-check is then disabled so one authoring mistake does
+    # not cascade into N spurious "undeclared" errors.
+    input_names: set[str] | None = (
+        set(definition.inputs) if isinstance(definition.inputs, dict) else None
+    )
+    _validate_steps(definition.steps, seen_ids, errors, input_names)
 
     return errors
 
@@ -306,8 +314,15 @@ def _validate_steps(
     steps: list[dict[str, Any]],
     seen_ids: set[str],
     errors: list[str],
+    input_names: set[str] | None = None,
 ) -> None:
-    """Recursively validate a list of steps."""
+    """Recursively validate a list of steps.
+
+    ``input_names`` is the set of declared workflow input names (or ``None``
+    when the inputs block is malformed). Threaded through recursion so
+    cross-reference checks (e.g. gate ``verdict_input``) can verify that
+    referenced inputs exist.
+    """
     from . import STEP_REGISTRY
 
     for step_config in steps:
@@ -400,30 +415,52 @@ def _validate_steps(
                             f"unknown or not-yet-declared step id {wid!r}."
                         )
 
+        # Gate verdict_input: must reference a declared workflow input.
+        # ``_resolve_inputs`` iterates only over ``definition.inputs`` — a
+        # provided value for an undeclared name is silently dropped at both
+        # initial run and resume (resume merges then re-resolves through the
+        # same path). So an undeclared ``verdict_input`` can never receive a
+        # value through any channel; the gate would pause forever. Surface
+        # this wiring error at validation time, mirroring the fan-in
+        # ``wait_for`` unknown-id check above. Only check when the value is
+        # a non-empty string — malformed shapes are already reported by
+        # ``GateStep.validate()``; never pile on a confusing duplicate.
+        if step_type == "gate" and input_names is not None:
+            verdict_input = step_config.get("verdict_input")
+            if (
+                isinstance(verdict_input, str)
+                and verdict_input
+                and verdict_input not in input_names
+            ):
+                errors.append(
+                    f"Gate step {step_id!r}: 'verdict_input' references "
+                    f"undeclared input {verdict_input!r}."
+                )
+
         # Recursively validate nested steps
         for nested_key in ("then", "else", "steps"):
             nested = step_config.get(nested_key)
             if isinstance(nested, list):
-                _validate_steps(nested, seen_ids, errors)
+                _validate_steps(nested, seen_ids, errors, input_names)
 
         # Validate switch cases
         cases = step_config.get("cases")
         if isinstance(cases, dict):
             for _case_key, case_steps in cases.items():
                 if isinstance(case_steps, list):
-                    _validate_steps(case_steps, seen_ids, errors)
+                    _validate_steps(case_steps, seen_ids, errors, input_names)
 
         # Validate switch default
         default = step_config.get("default")
         if isinstance(default, list):
-            _validate_steps(default, seen_ids, errors)
+            _validate_steps(default, seen_ids, errors, input_names)
 
         # Validate fan-out nested step (template — not added to seen_ids
         # since the engine generates parentId:templateId:index at runtime)
         fan_step = step_config.get("step")
         if isinstance(fan_step, dict):
             fan_errors: list[str] = []
-            _validate_steps([fan_step], set(), fan_errors)
+            _validate_steps([fan_step], set(), fan_errors, input_names)
             errors.extend(fan_errors)
 
 
@@ -1054,6 +1091,7 @@ class WorkflowEngine:
                 or step_config.get("input", {}),
                 "output": result.output,
                 "status": result.status.value,
+                "error": result.error,
             }
             self._record_result(context, state, step_id, step_data)
 

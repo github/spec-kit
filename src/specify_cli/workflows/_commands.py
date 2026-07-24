@@ -883,6 +883,31 @@ def _require_specify_project(*args, **kwargs):
     return project_root
 
 
+def _failed_step_error(state: Any) -> str | None:
+    """First persisted step error for a failed/aborted run, if any.
+
+    Prefers the error on ``current_step_id`` (mirrors ``_gate_outcome``'s
+    approach); falls back to scanning for any step with ``status == "failed"``
+    carrying an error, so a stale ``current_step_id`` never hides the message.
+    Returns ``None`` for non-terminal statuses so the caller can print
+    unconditionally.
+    """
+    if getattr(state.status, "value", state.status) not in ("failed", "aborted"):
+        return None
+    results = getattr(state, "step_results", None) or {}
+    cur = results.get(getattr(state, "current_step_id", None))
+    if isinstance(cur, dict) and cur.get("error"):
+        return str(cur["error"])
+    for sd in results.values():
+        if (
+            isinstance(sd, dict)
+            and sd.get("status") == "failed"
+            and sd.get("error")
+        ):
+            return str(sd["error"])
+    return None
+
+
 def _workflow_run_payload(state: Any) -> dict[str, Any]:
     """Machine-readable summary of a run/resume outcome."""
     payload = {
@@ -1144,6 +1169,10 @@ def workflow_run(
     console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
     console.print(f"[dim]Run ID: {state.run_id}[/dim]")
 
+    err_msg = _failed_step_error(state)
+    if err_msg:
+        console.print(f"[red]Error:[/red] {_escape_markup(err_msg)}")
+
     if state.status.value == "paused":
         console.print(f"\nResume with: [cyan]specify workflow resume {state.run_id}[/cyan]")
 
@@ -1242,6 +1271,10 @@ def workflow_resume(
     }
     color = status_colors.get(state.status.value, "white")
     console.print(f"\n[{color}]Status: {state.status.value}[/{color}]")
+
+    err_msg = _failed_step_error(state)
+    if err_msg:
+        console.print(f"[red]Error:[/red] {_escape_markup(err_msg)}")
 
     raise typer.Exit(_run_outcome_exit_code(state.status.value))
 
