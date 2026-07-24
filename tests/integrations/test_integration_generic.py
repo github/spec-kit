@@ -55,6 +55,27 @@ class TestGenericIntegration:
         with pytest.raises(ValueError, match="--commands-dir is required"):
             i.setup(tmp_path, m, parsed_options={"commands_dir": ""})
 
+    @pytest.mark.parametrize("raw", ["--commands-dir=", "--commands-dir ''", '--commands-dir ""'])
+    def test_resolve_commands_dir_rejects_empty_raw_value(self, raw):
+        """An empty --commands-dir in raw_options must raise the same "required"
+        error as the parsed-options path — not return "" (which resolves to the
+        project root and writes command files there). Mirrors the parsed branch."""
+        from specify_cli.integrations.generic import GenericIntegration
+
+        with pytest.raises(ValueError, match="--commands-dir is required"):
+            GenericIntegration._resolve_commands_dir({}, {"raw_options": raw})
+
+    def test_resolve_commands_dir_accepts_nonempty_raw_value(self):
+        """A non-empty raw --commands-dir still resolves unchanged."""
+        from specify_cli.integrations.generic import GenericIntegration
+
+        assert GenericIntegration._resolve_commands_dir(
+            {}, {"raw_options": "--commands-dir .myagent/commands"}
+        ) == ".myagent/commands"
+        assert GenericIntegration._resolve_commands_dir(
+            {}, {"raw_options": "--commands-dir=.myagent/commands"}
+        ) == ".myagent/commands"
+
     def test_setup_writes_to_correct_directory(self, tmp_path):
         i = get_integration("generic")
         m = IntegrationManifest("generic", tmp_path)

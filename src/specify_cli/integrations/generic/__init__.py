@@ -63,10 +63,19 @@ class GenericIntegration(MarkdownIntegration):
             import shlex
             tokens = shlex.split(raw)
             for i, token in enumerate(tokens):
+                # Only accept a NON-EMPTY value, matching the parsed-options
+                # branch above (`if commands_dir:`). An empty value
+                # (``--commands-dir=`` or ``--commands-dir ""``) must fall
+                # through to the "required" error below, not be returned
+                # verbatim — otherwise it resolves to the project root and
+                # command files get written there instead of a dedicated dir.
                 if token == "--commands-dir" and i + 1 < len(tokens):
-                    return tokens[i + 1]
+                    if tokens[i + 1]:
+                        return tokens[i + 1]
                 if token.startswith("--commands-dir="):
-                    return token.split("=", 1)[1]
+                    candidate = token.split("=", 1)[1]
+                    if candidate:
+                        return candidate
 
         raise ValueError(
             "--commands-dir is required for the generic integration"
