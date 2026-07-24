@@ -2492,9 +2492,10 @@ class TestIfThenStep:
 
     @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, True])
     def test_validate_rejects_non_string_condition(self, bad):
-        # A non-string condition is returned as-is by evaluate_condition and
-        # bool()-coerced, so it silently resolves to a truthiness (e.g. [1, 2]
-        # is always True) instead of erroring on the authoring mistake.
+        # A non-string condition is returned unchanged by evaluate_expression,
+        # and evaluate_condition then bool()-coerces it, so it silently resolves
+        # to its truthiness (e.g. [1, 2] is always True) instead of erroring on
+        # the authoring mistake.
         from specify_cli.workflows.steps.if_then import IfThenStep
 
         step = IfThenStep()
