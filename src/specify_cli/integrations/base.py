@@ -29,6 +29,7 @@ import yaml
 
 from .._toml_string import escape_toml_basic as _escape_toml_basic
 from .._toml_string import has_illegal_toml_control as _has_illegal_toml_control
+from ._hooks import install_integration_hooks, remove_integration_hooks
 
 if TYPE_CHECKING:
     from .manifest import IntegrationManifest
@@ -902,6 +903,7 @@ class IntegrationBase(ABC):
 
         Returns ``(removed, skipped)`` file lists.
         """
+        remove_integration_hooks(self, project_root, manifest)
         return manifest.uninstall(project_root, force=force)
 
     # -- Convenience helpers for subclasses -------------------------------
@@ -1007,6 +1009,12 @@ class MarkdownIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
+
+        # Install agent runtime hooks
+        hook_files = install_integration_hooks(
+            self, project_root, manifest, parsed_options
+        )
+        created.extend(hook_files)
 
         return created
 
@@ -1214,6 +1222,12 @@ class TomlIntegration(IntegrationBase):
             )
             created.append(dst_file)
 
+
+        # Install agent runtime hooks
+        hook_files = install_integration_hooks(
+            self, project_root, manifest, parsed_options
+        )
+        created.extend(hook_files)
 
         return created
 
@@ -1451,6 +1465,12 @@ class YamlIntegration(IntegrationBase):
             created.append(dst_file)
 
 
+        # Install agent runtime hooks
+        hook_files = install_integration_hooks(
+            self, project_root, manifest, parsed_options
+        )
+        created.extend(hook_files)
+
         return created
 
 
@@ -1685,5 +1705,11 @@ class SkillsIntegration(IntegrationBase):
             )
             created.append(dst)
 
+
+        # Install agent runtime hooks
+        hook_files = install_integration_hooks(
+            self, project_root, manifest, parsed_options
+        )
+        created.extend(hook_files)
 
         return created
