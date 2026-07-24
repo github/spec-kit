@@ -3643,9 +3643,16 @@ class TestWorkflowDefinition:
         assert definition.id == ""
         errors = validate_workflow(definition)
         assert any("workflow.id" in e for e in errors)
-        # The raw value is left untouched on .data (used when the definition is
-        # written back out), so the guard normalizes only the local.
-        assert "workflow" in definition.data
+        # The RAW malformed value is preserved on .data (the guard only
+        # normalizes the local var, not self.data) — .data is what gets written
+        # back out when a definition is serialized. Assert it was NOT replaced
+        # with {} by comparing against the original parse and confirming it is
+        # still a non-mapping.
+        import yaml
+
+        raw_workflow = yaml.safe_load(block).get("workflow")
+        assert definition.data["workflow"] == raw_workflow
+        assert not isinstance(definition.data["workflow"], dict)
 
     def test_from_string_invalid(self):
         from specify_cli.workflows.engine import WorkflowDefinition
