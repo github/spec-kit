@@ -6334,8 +6334,9 @@ class TestWorkflowCatalog:
     @pytest.mark.parametrize("body", ["", "# only a comment\n", "null\n", "~\n"])
     def test_empty_or_null_config_is_noop(self, project_dir, body):
         """An empty document, comment-only file, or explicit top-level null is a
-        valid no-op (no project catalogs -> built-in defaults), and must NOT be
-        confused with a falsy non-mapping."""
+        valid no-op: the loader returns None so that config layer is skipped and
+        get_active_catalogs falls through to the next one. It must NOT be
+        confused with a falsy non-mapping, which raises."""
         from specify_cli.workflows.catalog import WorkflowCatalog
 
         config_path = project_dir / ".specify" / "workflow-catalogs.yml"

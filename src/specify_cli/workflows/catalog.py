@@ -337,12 +337,14 @@ class WorkflowCatalog:
             raise WorkflowValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
-        # An empty document (or explicit ``null``) parses to None -> no project
-        # catalogs, fall back to the built-in defaults. Do NOT coerce with
-        # ``or {}`` here: that also turns a FALSY non-mapping (top-level ``[]``,
-        # ``false``, ``0``, ``''``) into ``{}`` and silently swallows it, while a
-        # TRUTHY non-mapping (``5``, a bare list) correctly raises below -- an
-        # inconsistency. Only None means "no document".
+        # An empty document (or explicit ``null``) parses to None -> this config
+        # layer contributes nothing, so ``get_active_catalogs`` moves on to the
+        # next layer (this loader serves both the project and user configs;
+        # the built-in defaults apply only once every layer has returned None).
+        # Do NOT coerce with ``or {}`` here: that also turns a FALSY non-mapping
+        # (top-level ``[]``, ``false``, ``0``, ``''``) into ``{}`` and silently
+        # swallows it, while a TRUTHY non-mapping (``5``, a bare list) correctly
+        # raises below -- an inconsistency. Only None means "no document".
         if data is None:
             return None
         if not isinstance(data, dict):
