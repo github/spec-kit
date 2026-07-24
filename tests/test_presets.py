@@ -197,6 +197,28 @@ class TestPresetManifest:
             with pytest.raises(PresetValidationError, match="YAML mapping"):
                 PresetManifest(manifest_path)
 
+    def test_non_list_templates_raises_validation_error(self, temp_dir, valid_pack_data):
+        """A non-list provides.templates (e.g. a scalar) raises PresetValidationError,
+        not a raw 'int object is not iterable' TypeError — mirrors ExtensionManifest."""
+        valid_pack_data["provides"]["templates"] = 5
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.dump(valid_pack_data), encoding="utf-8")
+        with pytest.raises(PresetValidationError, match="templates.*expected a list"):
+            PresetManifest(manifest_path)
+
+    @pytest.mark.parametrize("bad_entry", [None, 5, "oops", ["nested"]])
+    def test_non_mapping_template_entry_raises_validation_error(
+        self, temp_dir, valid_pack_data, bad_entry
+    ):
+        """A non-mapping template entry (null/scalar/list) raises PresetValidationError,
+        not a raw 'argument of type ... is not iterable' TypeError from the
+        `"type" not in tmpl` membership test — mirrors ExtensionManifest."""
+        valid_pack_data["provides"]["templates"] = [bad_entry]
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.dump(valid_pack_data), encoding="utf-8")
+        with pytest.raises(PresetValidationError, match="must be a mapping"):
+            PresetManifest(manifest_path)
+
     def test_missing_schema_version(self, temp_dir, valid_pack_data):
         """Test missing schema_version field."""
         del valid_pack_data["schema_version"]
