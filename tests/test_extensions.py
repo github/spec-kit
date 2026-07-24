@@ -365,6 +365,21 @@ class TestExtensionManifest:
         with pytest.raises(ValidationError, match="Invalid extension ID"):
             ExtensionManifest(manifest_path)
 
+    def test_extension_id_with_trailing_newline_is_invalid(self, temp_dir, valid_manifest_data):
+        """A trailing newline must not pass the extension ID regex anchor."""
+        import yaml
+
+        valid_manifest_data["extension"]["id"] = "valid-id\n"
+        valid_manifest_data["provides"]["commands"] = []
+        valid_manifest_data["hooks"] = {}
+
+        manifest_path = temp_dir / "extension.yml"
+        with open(manifest_path, "w") as f:
+            yaml.dump(valid_manifest_data, f)
+
+        with pytest.raises(ValidationError, match="Invalid extension ID"):
+            ExtensionManifest(manifest_path)
+
     def test_invalid_version(self, temp_dir, valid_manifest_data):
         """Test manifest with invalid semantic version."""
         import yaml
@@ -7076,6 +7091,55 @@ class TestDownloadExtensionBundled:
         with patch.object(catalog, "get_extension_info", return_value=non_bundled_ext_info):
             with pytest.raises(ExtensionError, match="has no download URL"):
                 catalog.download_extension("some-ext")
+
+    def test_download_extension_rejects_trailing_newline_id(self, temp_dir):
+        """download_extension must require the whole extension ID to match."""
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        catalog = ExtensionCatalog(project_dir)
+
+        with pytest.raises(ExtensionError, match="Invalid extension ID"):
+            catalog.download_extension("valid-id\n")
+
+    def test_download_extension_rejects_symlinked_default_cache(self, temp_dir):
+        """The default download cache must not follow symlinked project paths."""
+        from unittest.mock import patch
+
+        if not can_create_symlink(temp_dir):
+            pytest.skip("symlinks are not available in this environment")
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        extensions_dir = project_dir / ".specify" / "extensions"
+        extensions_dir.mkdir(parents=True)
+        outside_cache = temp_dir / "outside-cache"
+        outside_cache.mkdir()
+
+        try:
+            os.symlink(outside_cache, extensions_dir / ".cache")
+        except OSError:
+            pytest.skip("directory symlinks are not available in this environment")
+
+        catalog = ExtensionCatalog(project_dir)
+        ext_info = {
+            "name": "Test Extension",
+            "id": "test-ext",
+            "version": "1.0.0",
+            "description": "Test",
+            "download_url": "https://example.com/test-ext.zip",
+        }
+
+        def fail_open_url(*args, **kwargs):
+            raise AssertionError("download should not be attempted with symlinked cache")
+
+        with patch.object(catalog, "get_extension_info", return_value=ext_info), \
+             patch.object(catalog, "_open_url", side_effect=fail_open_url):
+            with pytest.raises(ExtensionError, match="symlinked extension download cache"):
+                catalog.download_extension("test-ext")
+
+        assert not (outside_cache / "downloads" / "test-ext-1.0.0.zip").exists()
 
 
 class TestExtensionUpdateCLI:

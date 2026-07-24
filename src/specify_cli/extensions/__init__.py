@@ -51,6 +51,28 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
     }
 )
 EXTENSION_COMMAND_NAME_PATTERN = re.compile(r"^speckit\.([a-z0-9-]+)\.([a-z0-9-]+)$")
+EXTENSION_ID_PATTERN = re.compile(r"^[a-z0-9-]+$")
+
+# Characters allowed verbatim in a catalog-provided version when it is used to
+# build a download filename. Anything else (path separators, "..", control
+# chars, whitespace) is collapsed to "-" so an untrusted version cannot inject
+# a nested path or an unwritable filename — we sanitize rather than rely on the
+# post-hoc Path.resolve() containment check as the primary guard.
+_UNSAFE_VERSION_TOKEN_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_version_token(version: Any, fallback: str = "unknown") -> str:
+    """Reduce a catalog ``version`` to a filename-safe token.
+
+    Non-strings (JSON null, numbers) and blank values degrade to ``fallback``.
+    Path separators and traversal tokens are stripped so the result can never
+    span directories or escape the download target.
+    """
+    if not isinstance(version, str):
+        return fallback
+    token = _UNSAFE_VERSION_TOKEN_PATTERN.sub("-", version).strip("-.")
+    return token or fallback
+
 
 VALID_EFFECTS = frozenset({"read-only", "read-write"})
 
@@ -264,7 +286,7 @@ class ExtensionManifest:
                 raise ValidationError(f"Missing extension.{field}")
 
         # Validate extension ID format
-        if not re.match(r"^[a-z0-9-]+$", ext["id"]):
+        if not EXTENSION_ID_PATTERN.fullmatch(ext["id"]):
             raise ValidationError(
                 f"Invalid extension ID '{ext['id']}': "
                 "must be lowercase alphanumeric with hyphens only"
@@ -2607,6 +2629,54 @@ class ExtensionCatalog(CatalogStackBase):
         self.cache_file = self.cache_dir / "catalog.json"
         self.cache_metadata_file = self.cache_dir / "catalog-metadata.json"
 
+    def _ensure_default_download_cache_dir(self) -> Path:
+        """Create the default download cache without following symlink parents."""
+        root = self.project_root.resolve()
+        target_dir = self.cache_dir / "downloads"
+        try:
+            rel = target_dir.relative_to(self.project_root)
+        except ValueError:
+            raise ExtensionError("Default extension download cache escapes project root") from None
+
+        current = self.project_root
+        for part in rel.parts:
+            current = current / part
+            try:
+                label = current.relative_to(self.project_root).as_posix()
+            except ValueError:
+                label = str(current)
+
+            if current.is_symlink():
+                raise ExtensionError(
+                    f"Refusing to use symlinked extension download cache path: {label}"
+                )
+            if current.exists():
+                if not current.is_dir():
+                    raise ExtensionError(
+                        f"Extension download cache path is not a directory: {label}"
+                    )
+                try:
+                    current.resolve().relative_to(root)
+                except (OSError, ValueError):
+                    raise ExtensionError(
+                        f"Extension download cache path escapes project root: {label}"
+                    ) from None
+                continue
+
+            current.mkdir()
+            if current.is_symlink():
+                raise ExtensionError(
+                    f"Refusing to use symlinked extension download cache path: {label}"
+                )
+            try:
+                current.resolve().relative_to(root)
+            except (OSError, ValueError):
+                raise ExtensionError(
+                    f"Extension download cache path escapes project root: {label}"
+                ) from None
+
+        return target_dir
+
     def _make_request(self, url: str):
         """Build a urllib Request, adding auth headers when a provider matches.
 
@@ -3129,17 +3199,26 @@ class ExtensionCatalog(CatalogStackBase):
 
         results = []
 
+        def _search_text(value: Any) -> str:
+            return value if isinstance(value, str) else ""
+
+        def _search_tags(value: Any) -> List[str]:
+            if not isinstance(value, list):
+                return []
+            return [tag for tag in value if isinstance(tag, str)]
+
         for ext_data in all_extensions:
             ext_id = ext_data["id"]
+            tags = _search_tags(ext_data.get("tags", []))
 
             # Apply filters
             if verified_only and not ext_data.get("verified", False):
                 continue
 
-            if author and ext_data.get("author", "").lower() != author.lower():
+            if author and _search_text(ext_data.get("author")).lower() != author.lower():
                 continue
 
-            if tag and tag.lower() not in [t.lower() for t in ext_data.get("tags", [])]:
+            if tag and tag.lower() not in [t.lower() for t in tags]:
                 continue
 
             if query:
@@ -3147,11 +3226,11 @@ class ExtensionCatalog(CatalogStackBase):
                 query_lower = query.lower()
                 searchable_text = " ".join(
                     [
-                        ext_data.get("name", ""),
-                        ext_data.get("description", ""),
-                        ext_id,
+                        _search_text(ext_data.get("name")),
+                        _search_text(ext_data.get("description")),
+                        _search_text(ext_id),
                     ]
-                    + ext_data.get("tags", [])
+                    + tags
                 ).lower()
 
                 if query_lower not in searchable_text:
@@ -3196,6 +3275,14 @@ class ExtensionCatalog(CatalogStackBase):
         """
         import urllib.error
 
+        if not isinstance(extension_id, str) or not EXTENSION_ID_PATTERN.fullmatch(
+            extension_id
+        ):
+            raise ExtensionError(
+                f"Invalid extension ID '{extension_id}': "
+                "must be lowercase alphanumeric with hyphens only"
+            )
+
         # Get extension info from catalog
         ext_info = self.get_extension_info(extension_id)
         if not ext_info:
@@ -3237,12 +3324,17 @@ class ExtensionCatalog(CatalogStackBase):
 
         # Determine target path
         if target_dir is None:
-            target_dir = self.cache_dir / "downloads"
-        target_dir.mkdir(parents=True, exist_ok=True)
+            target_dir = self._ensure_default_download_cache_dir()
+        else:
+            target_dir.mkdir(parents=True, exist_ok=True)
 
-        version = ext_info.get("version", "unknown")
+        version = _safe_version_token(ext_info.get("version"))
         zip_filename = f"{extension_id}-{version}.zip"
         zip_path = target_dir / zip_filename
+        try:
+            zip_path.resolve().relative_to(target_dir.resolve())
+        except ValueError as e:
+            raise ExtensionError(f"Refusing unsafe extension ZIP path: {zip_filename}") from e
 
         extra_headers = None
         resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
