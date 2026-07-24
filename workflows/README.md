@@ -115,12 +115,16 @@ Run a shell command and capture output:
   timeout: 1800   # Optional: max seconds before the command is killed (default 300)
 ```
 
-> ⚠️ **Quote your interpolations.** A `run` field is executed by the system
-> shell, and `{{ ... }}` expressions are substituted as raw text with no
-> automatic quoting. An unquoted `inputs.*` value or prior-step output (including
-> AI-generated `prompt` output) is parsed as shell syntax and can change the
-> command that runs. Quote every substitution (`'{{ inputs.url }}'`), constrain
-> inputs with `enum`, and gate commands built from untrusted values. See
+> ⚠️ **Constrain interpolated values in `run` fields.** A `run` field is executed
+> by the system shell, and `{{ ... }}` expressions are substituted as raw text
+> with no automatic quoting or escaping. An `inputs.*` value or prior-step output
+> (including AI-generated `prompt` output) is parsed as shell syntax and can
+> change the command that runs. The only reliable control is to restrict such a
+> value at the source with an `enum`/allowlist, or to keep values you cannot
+> constrain out of `run` entirely. Quoting a substitution helps a trusted value
+> survive word-splitting but is **not** a security boundary — there is no
+> shell-escaping filter, and a value containing the matching quote can still
+> break out. See
 > [Interpolation and shell safety](../docs/reference/workflows.md#interpolation-and-shell-safety).
 
 `timeout` is the maximum time in seconds the command may run before it is

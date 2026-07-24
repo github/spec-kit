@@ -511,24 +511,22 @@ If an interpolated value can contain characters like `;`, `|`, `&`, `$( )`, back
 - **Workflow `inputs.*`** — supplied by whoever runs the workflow.
 - **A prior step's output**, e.g. `{{ steps.plan.output.value }}` — for a `prompt` step this is **text produced by the AI agent**, which can in turn be influenced by files, tickets, or web content the agent read. Treat agent output as untrusted when it flows into a `shell` step.
 
-Guard interpolation in `run` fields:
+There is **no shell-escaping filter** in the expression language and **no sandbox** around a `shell` step, so none of the practices below can be treated as a guarantee that a hostile value is neutralised. The only reliable control is to constrain what an interpolated value *can* be, and to keep values you cannot constrain out of `run` fields entirely. Scrutinise every `run` field that interpolates a value you do not control, and at minimum:
 
-- **Quote every substitution** so the shell treats it as a single literal argument:
+- **Constrain the value at the source with `enum`/an allowlist.** When `inputs.*` feeds a `run` field, restrict it to a fixed set of known-safe values so a caller cannot supply arbitrary shell text at all. This is the strongest control the engine offers — prefer it over any downstream mitigation.
 
   ```yaml
-  # Risky — the value is parsed as shell syntax
-  run: "git clone {{ inputs.url }}"
-
-  # Safer — the value is a single quoted argument
-  run: "git clone '{{ inputs.url }}'"
+  inputs:
+    target:
+      type: string
+      enum: [staging, production]   # caller cannot inject arbitrary text
   ```
 
-- **Constrain inputs with `enum`** whenever the valid values are a fixed set, so a caller cannot supply arbitrary shell text at all.
-- **Validate free-form values before use** — pass an untrusted string through a `command`/`prompt`/validation step (or a shell `case`/pattern check) before it reaches a `run` field, rather than interpolating raw agent or user output directly.
-- **Prefer passing data via the environment or files** over string interpolation for anything you cannot constrain — an environment variable referenced as `"$MY_VAR"` inside the `run` script is not re-parsed as command syntax the way an interpolated `{{ ... }}` value is.
-- **Gate sensitive commands** — put a `gate` step before any `shell` step whose command is built from `inputs.*` or agent output, so a human can review the resolved command before it runs.
+- **Keep unconstrained values out of `run`.** If a value cannot be constrained to an allowlist — most agent/`prompt` output — do not interpolate it into a `run` field. Branch on it with `if`/`switch` against fixed conditions, or act on it in a `command`/`prompt` step rather than a shell command built from it.
+- **Quoting is not a security boundary.** Surrounding a substitution with quotes (`'{{ inputs.x }}'`) helps the shell treat a *trusted* value as a single argument and avoids word-splitting on spaces, but a value that itself contains the matching quote character can still break out and inject shell syntax. Quote for correctness on constrained values; never rely on quoting to make an *unconstrained* substitution safe.
+- **Gates do not inspect the next step.** A `gate` step renders only its own `message`/`show_file` — it does not display, resolve, or sanitise the command that follows it, and approval never neutralises an injectable interpolation. If you place a gate before a sensitive `shell` step, surface the exact resolved command or data in the gate's `message`/`show_file` yourself so a human can scrutinise precisely what will run.
 
-A `shell` step is an arbitrary-command primitive by design; these practices keep *which* command runs under the author's control even when the *values* it operates on are not.
+A `shell` step is an arbitrary-command primitive by design; these practices reduce exposure and keep *which* command runs under the author's control, but they do not eliminate the risk of interpolating values you do not fully control.
 
 ## Shell Step Environment Variables
 
