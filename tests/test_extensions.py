@@ -4034,6 +4034,65 @@ class TestExtensionCatalog:
         results = catalog.search()
         assert len(results) == 2
 
+    def test_info_renders_non_numeric_downloads(self):
+        """A non-numeric ``downloads`` from an untrusted catalog must not crash
+        the info renderer with 'Cannot specify ',' with 's''; it renders as-is."""
+        from unittest.mock import MagicMock
+        from specify_cli.extensions._commands import _print_extension_info
+
+        manager = MagicMock()
+        manager.registry.is_installed.return_value = False
+        ext_info = {
+            "name": "Jira", "id": "jira", "version": "1.0.0",
+            "description": "desc", "downloads": "1500",  # string from catalog JSON
+        }
+        # Must not raise ValueError.
+        _print_extension_info(ext_info, manager)
+
+    def test_search_survives_non_numeric_downloads(self, temp_dir):
+        """`specify extension search` must not abort with a raw ValueError when a
+        catalog entry's ``downloads`` is a non-numeric string."""
+        import yaml as yaml_module
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {"catalogs": [{
+                    "name": "test-catalog",
+                    "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                    "priority": 1, "install_allowed": True,
+                }]}, f,
+            )
+
+        catalog = ExtensionCatalog(project_dir)
+        catalog_data = {
+            "schema_version": "1.0",
+            "extensions": {"jira": {
+                "name": "Jira", "id": "jira", "version": "1.0.0",
+                "description": "Jira integration", "author": "x",
+                "tags": ["jira"], "verified": True,
+                "downloads": "1500",  # non-numeric, straight from catalog JSON
+            }},
+        }
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(json.dumps({
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "catalog_url": "http://test.com",
+        }))
+
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(app, ["extension", "search"], catch_exceptions=True)
+        assert result.exit_code == 0, result.output
+        assert "Downloads: 1500" in result.output
+
     def test_search_by_query(self, temp_dir):
         """Test searching by query text."""
         import yaml as yaml_module

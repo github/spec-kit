@@ -790,8 +790,16 @@ def extension_search(
 
             # Stats
             stats = []
-            if ext.get('downloads') is not None:
-                stats.append(f"Downloads: {ext['downloads']:,}")
+            downloads = ext.get('downloads')
+            if downloads is not None:
+                # Catalog fields are untrusted; a non-numeric ``downloads``
+                # (e.g. the JSON string "1500") would crash the ``:,`` format
+                # with "Cannot specify ',' with 's'". Only group-format numbers.
+                stats.append(
+                    f"Downloads: {downloads:,}"
+                    if isinstance(downloads, (int, float))
+                    else f"Downloads: {downloads}"
+                )
             if ext.get('stars') is not None:
                 stats.append(f"Stars: {ext['stars']}")
             if stats:
@@ -971,8 +979,16 @@ def _print_extension_info(ext_info: dict, manager):
 
     # Statistics
     stats = []
-    if ext_info.get('downloads') is not None:
-        stats.append(f"Downloads: {ext_info['downloads']:,}")
+    downloads = ext_info.get('downloads')
+    if downloads is not None:
+        # Catalog fields are untrusted; a non-numeric ``downloads`` (e.g. the
+        # JSON string "1500") would crash the ``:,`` format with "Cannot
+        # specify ',' with 's'". Only group-format numbers.
+        stats.append(
+            f"Downloads: {downloads:,}"
+            if isinstance(downloads, (int, float))
+            else f"Downloads: {downloads}"
+        )
     if ext_info.get('stars') is not None:
         stats.append(f"Stars: {ext_info['stars']}")
     if stats:
