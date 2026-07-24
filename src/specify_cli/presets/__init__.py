@@ -29,6 +29,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import is_ai_skills_enabled
+from .._invocation_style import get_invocation_prefix
 from ..integrations.base import IntegrationBase
 from .._utils import dump_frontmatter, version_satisfies
 from ..shared_infra import (
@@ -1261,13 +1262,15 @@ class PresetManager:
 
         Looks up the agent's invoke separator and rewrites each
         ``__SPECKIT_COMMAND_<NAME>__`` placeholder into the matching
-        slash-command invocation — ``/speckit-<cmd>`` for a ``-`` separator,
-        ``/speckit.<cmd>`` for ``.`` — the same rendering the command layer
-        applies via ``CommandRegistrar.register_commands()``.
+        agent-native invocation -- ``/speckit-<cmd>`` or ``$speckit-<cmd>`` for
+        a ``-`` separator, ``/speckit.<cmd>`` for ``.``, or
+        ``/skill:speckit-<cmd>`` for skill-colon agents (e.g. Kimi) -- the
+        same rendering the command layer applies via
+        ``CommandRegistrar.register_commands()``.
 
         For dual-layout agents (e.g. Bob) the separator depends on the
-        project's persisted skills state, so — when *project_root* is provided
-        — the separator is resolved from the integration via
+        project's persisted skills state, so -- when *project_root* is provided
+        -- the separator is resolved from the integration via
         ``invoke_separator_for_mode`` rather than the single static
         ``AGENT_CONFIGS`` value.
         """
@@ -1288,7 +1291,8 @@ class PresetManager:
             separator = registrar.AGENT_CONFIGS.get(selected_ai, {}).get(
                 "invoke_separator", "."
             )
-        return IntegrationBase.resolve_command_refs(body, separator)
+        prefix = get_invocation_prefix(selected_ai, separator == "-")
+        return IntegrationBase.resolve_command_refs(body, separator, prefix)
 
     def _build_extension_skill_restore_index(self) -> Dict[str, Dict[str, Any]]:
         """Index extension-backed skill restore data by skill directory name."""

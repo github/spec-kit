@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import runpy
 
 import pytest
 import yaml
@@ -1180,6 +1181,23 @@ class TestSharedInfraCommandRefs:
         assert "__SPECKIT_COMMAND_" not in content
         assert "/speckit-tasks" in content
 
+    def test_dollar_prefix_in_page_templates(self, tmp_path):
+        """Dollar-style skills agents get $speckit-<name> in page templates."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / "dollar-test"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(
+            project, "sh", invoke_separator="-", invoke_prefix="$"
+        )
+
+        plan = project / ".specify" / "templates" / "plan-template.md"
+        content = plan.read_text(encoding="utf-8")
+        assert "$speckit-plan" in content
+        assert "/speckit-plan" not in content
+
     @pytest.mark.parametrize("script_type", ["sh", "ps"])
     def test_dot_separator_in_shared_scripts(self, tmp_path, script_type):
         """Markdown agents get /speckit.<name> in shared script hints."""
@@ -1219,6 +1237,48 @@ class TestSharedInfraCommandRefs:
         assert "/speckit.specify" not in content
         assert "/speckit.plan" not in content
         assert "/speckit.tasks" not in content
+
+    @pytest.mark.parametrize("script_type", ["sh", "ps", "py"])
+    def test_dollar_prefix_in_shared_scripts(self, tmp_path, script_type):
+        """Dollar-style skills agents get native prefixes in shared script hints."""
+        from specify_cli import _install_shared_infra
+
+        project = tmp_path / f"dollar-script-{script_type}"
+        project.mkdir()
+        (project / ".specify").mkdir()
+
+        _install_shared_infra(
+            project, script_type, invoke_separator="-", invoke_prefix="$"
+        )
+
+        if script_type == "py":
+            state = {
+                "integration": "codex",
+                "integration_settings": {
+                    "codex": {"invoke_separator": "-"},
+                },
+            }
+            (project / ".specify" / "integration.json").write_text(
+                json.dumps(state), encoding="utf-8"
+            )
+            common = project / ".specify" / "scripts" / "python" / "common.py"
+            namespace = runpy.run_path(str(common))
+            assert namespace["format_speckit_command"]("plan", project) == (
+                "$speckit-plan"
+            )
+            return
+
+        content = self._combined_script_content(project, script_type)
+        assert "$speckit-specify" in content
+        assert "$speckit-plan" in content
+        assert "$speckit-tasks" in content
+        assert "/speckit-specify" not in content
+        assert "/speckit-plan" not in content
+        assert "/speckit-tasks" not in content
+        if script_type == "sh":
+            assert r"\$speckit-specify" in content
+            assert r"\$speckit-plan" in content
+            assert r"\$speckit-tasks" in content
 
     def test_full_init_claude_resolves_page_templates(self, tmp_path):
         """Full CLI init with Claude (skills agent) produces hyphen refs in page templates."""

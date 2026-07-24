@@ -8,6 +8,7 @@ import typer
 from .._console import console
 from .._utils import _display_project_path
 from ..integration_runtime import (
+    invoke_prefix_for_integration as _invoke_prefix_for_integration,
     invoke_separator_for_integration as _invoke_separator_for_integration,
     with_integration_setting as _with_integration_setting,
 )
@@ -129,6 +130,9 @@ def integration_install(
         invoke_separator=_invoke_separator_for_integration(
             infra_integration, current, infra_key, infra_parsed,
             project_root=project_root,
+        ),
+        invoke_prefix=_invoke_prefix_for_integration(
+            infra_integration, infra_key, infra_parsed, project_root
         ),
     )
     if os.name != "nt":
