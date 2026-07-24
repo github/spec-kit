@@ -195,15 +195,13 @@ Some IDE-based agents (like Kilo Code, Cline) may show **duplicate slash command
 **Example for Kilo Code:**
 
 ```bash
-# Navigate to the agent's commands folder
-cd .kilo/commands/
-
-# List files and identify duplicates
-ls -la
+# List current and legacy Kilo command folders
+ls -la .kilo/commands/
+ls -la .kilocode/workflows/
 
 # Delete old versions (example filenames - yours may differ)
-rm speckit.specify-old.md
-rm speckit.plan-v1.md
+rm .kilocode/workflows/speckit.specify-old.md
+rm .kilocode/workflows/speckit.plan-v1.md
 ```
 
 Restart your IDE to refresh the command list.
@@ -248,14 +246,12 @@ specify extension update
 This happens with IDE-based agents (Kilo Code, Cline, etc.).
 
 ```bash
-# Find the agent folder (example: .kilo/commands/)
-cd .kilo/commands/
-
-# List all files
-ls -la
+# For Kilo Code, inspect both current and legacy command folders
+ls -la .kilo/commands/
+ls -la .kilocode/workflows/
 
 # Delete old command files
-rm speckit.old-command-name.md
+rm .kilocode/workflows/speckit.old-command-name.md
 
 # Restart your IDE
 ```

@@ -443,6 +443,26 @@ def _unregister_extensions_for_agent(
     )
 
 
+def _unregister_enabled_extension_commands_for_agent(
+    project_root: Path,
+    agent_key: str,
+    *,
+    continuing: str,
+) -> None:
+    """Best-effort removal of enabled extension command artifacts for ``agent_key``."""
+    _best_effort_extension_op(
+        project_root,
+        agent_key,
+        lambda mgr, key: mgr.unregister_agent_artifacts(
+            key,
+            enabled_only=True,
+            commands_only=True,
+        ),
+        phase="clean up enabled extension command artifacts for",
+        continuing=continuing,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI formatting helpers (re-exported from _commands.py)
 # ---------------------------------------------------------------------------
