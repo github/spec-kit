@@ -26,7 +26,8 @@ class GateStep(StepBase):
     later with ``specify workflow resume``.
 
     The user's choice is stored in ``output.choice``.  ``on_reject``
-    controls abort / skip / retry behaviour.
+    controls abort / skip / retry behaviour.  ``verdict_input`` can name a
+    workflow input to use as the choice when resuming non-interactively.
     """
 
     type_key = "gate"
@@ -42,6 +43,8 @@ class GateStep(StepBase):
 
         options = config.get("options", ["approve", "reject"])
         on_reject = config.get("on_reject", "abort")
+        has_verdict_input = "verdict_input" in config
+        verdict_input = config.get("verdict_input")
 
         # ``validate`` rejects a non-list (or empty) ``options``, and requires
         # every option to be a string, but the engine does not auto-validate
@@ -72,6 +75,17 @@ class GateStep(StepBase):
                 },
             )
 
+        if has_verdict_input and (
+            not isinstance(verdict_input, str) or not verdict_input
+        ):
+            return StepResult(
+                status=StepStatus.FAILED,
+                error=(
+                    f"Gate step {config.get('id', '?')!r}: 'verdict_input' must be "
+                    "a non-empty string."
+                ),
+            )
+
         show_file = config.get("show_file")
         if isinstance(show_file, str) and "{{" in show_file:
             show_file = evaluate_expression(show_file, context)
@@ -90,16 +104,48 @@ class GateStep(StepBase):
             "choice": None,
         }
 
-        # Non-interactive: pause for later resume (the file is not read here)
-        if not sys.stdin.isatty():
-            return StepResult(status=StepStatus.PAUSED, output=output)
+        choice: str | None = None
+        bound_verdict_input: str | None = None
+        if verdict_input is not None:
+            value = context.inputs.get(verdict_input)
+            if value is not None and value != "":
+                if not isinstance(value, str):
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        output=output,
+                        error=(
+                            f"Gate step {config.get('id', '?')!r}: verdict input "
+                            f"{verdict_input!r} must be a string, got "
+                            f"{type(value).__name__}."
+                        ),
+                    )
+                choice = next(
+                    (option for option in options if option.lower() == value.lower()),
+                    None,
+                )
+                if choice is None:
+                    return StepResult(
+                        status=StepStatus.FAILED,
+                        output=output,
+                        error=(
+                            f"Gate step {config.get('id', '?')!r}: verdict input "
+                            f"{verdict_input!r} value {value!r} does not match any "
+                            "configured option."
+                        ),
+                    )
+                bound_verdict_input = verdict_input
 
-        # Interactive: prompt the user. ``show_file`` contents are folded
-        # into the displayed message so the operator can review the
-        # referenced material before choosing. Composing the prompt text
-        # here keeps ``_prompt`` to its ``(message, options)`` contract, so
-        # adding review material never widens the interactive seam.
-        choice = self._prompt(self._compose_prompt(message, show_file), options)
+        if choice is None:
+            # Non-interactive: pause for later resume (the file is not read here)
+            if not sys.stdin.isatty():
+                return StepResult(status=StepStatus.PAUSED, output=output)
+
+            # Interactive: prompt the user. ``show_file`` contents are folded
+            # into the displayed message so the operator can review the
+            # referenced material before choosing. Composing the prompt text
+            # here keeps ``_prompt`` to its ``(message, options)`` contract, so
+            # adding review material never widens the interactive seam.
+            choice = self._prompt(self._compose_prompt(message, show_file), options)
         output["choice"] = choice
 
         # Match rejection case-insensitively. ``_prompt`` echoes the option's
@@ -119,6 +165,8 @@ class GateStep(StepBase):
                 )
             if on_reject == "retry":
                 # Pause so the next resume re-executes this gate
+                if bound_verdict_input is not None:
+                    context.inputs[bound_verdict_input] = ""
                 return StepResult(status=StepStatus.PAUSED, output=output)
             # on_reject == "skip" → completed, downstream steps decide
             return StepResult(status=StepStatus.COMPLETED, output=output)
@@ -233,6 +281,13 @@ class GateStep(StepBase):
             errors.append(
                 f"Gate step {config.get('id', '?')!r}: 'on_reject' must be "
                 f"'abort', 'skip', or 'retry'."
+            )
+        if "verdict_input" in config and (
+            not isinstance(config["verdict_input"], str) or not config["verdict_input"]
+        ):
+            errors.append(
+                f"Gate step {config.get('id', '?')!r}: 'verdict_input' must be "
+                "a non-empty string."
             )
         # Only inspect option text when every option is a string; otherwise the
         # `o.lower()` below would raise AttributeError on a non-string option

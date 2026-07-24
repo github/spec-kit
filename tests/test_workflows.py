@@ -2164,6 +2164,163 @@ class TestGateStep:
         assert result.output["message"] == "Review the spec."
         assert result.output["options"] == ["approve", "reject"]
 
+    @pytest.mark.parametrize(
+        "inputs", [{}, {"spec_verdict": None}, {"spec_verdict": ""}]
+    )
+    def test_missing_or_empty_verdict_input_uses_existing_pause_behavior(self, inputs):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Review the spec.",
+                "options": ["approve", "reject"],
+                "verdict_input": "spec_verdict",
+            },
+            StepContext(inputs=inputs),
+        )
+        assert result.status == StepStatus.PAUSED
+        assert result.output["choice"] is None
+
+    @pytest.mark.parametrize("inputs", [{}, {"spec_verdict": ""}])
+    def test_missing_or_empty_verdict_input_prompts_on_tty(self, monkeypatch, inputs):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        _force_gate_stdin(monkeypatch, tty=True)
+        monkeypatch.setattr(
+            GateStep, "_prompt", staticmethod(lambda _message, _options: "approve")
+        )
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Review the spec.",
+                "options": ["approve", "reject"],
+                "verdict_input": "spec_verdict",
+            },
+            StepContext(inputs=inputs),
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["choice"] == "approve"
+
+    def test_verdict_input_uses_canonical_option_spelling(self):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Review the spec.",
+                "options": ["Approve", "Reject"],
+                "verdict_input": "spec_verdict",
+            },
+            StepContext(inputs={"spec_verdict": "aPpRoVe"}),
+        )
+        assert result.status == StepStatus.COMPLETED
+        assert result.output["choice"] == "Approve"
+
+    @pytest.mark.parametrize(
+        ("value", "error_fragment"),
+        [(42, "must be a string"), ("maybe", "does not match")],
+    )
+    def test_invalid_verdict_input_value_fails(self, value, error_fragment):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext, StepStatus
+
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Review the spec.",
+                "options": ["approve", "reject"],
+                "verdict_input": "spec_verdict",
+            },
+            StepContext(inputs={"spec_verdict": value}),
+        )
+        assert result.status == StepStatus.FAILED
+        assert error_fragment in (result.error or "")
+
+    @pytest.mark.parametrize(
+        ("value", "error_fragment"),
+        [(42, "must be a string"), ("maybe", "does not match")],
+    )
+    def test_failed_gate_persists_error_in_step_results(
+        self, tmp_path, value, error_fragment
+    ):
+        """Engine persists result.error into step_results for failed gates."""
+        from specify_cli.workflows.engine import WorkflowEngine
+
+        wf_yaml = f"""
+schema_version: "1.0"
+workflow:
+  id: "gate-error-persist"
+  name: "Gate Error Persist"
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: {"number" if isinstance(value, int) else "string"}
+    default: {value}
+steps:
+  - id: review
+    type: gate
+    message: "Review the spec."
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: spec_verdict
+"""
+        wf_path = tmp_path / "wf.yml"
+        wf_path.write_text(wf_yaml, encoding="utf-8")
+        (tmp_path / ".specify").mkdir()
+        engine = WorkflowEngine(tmp_path)
+        definition = engine.load_workflow(str(wf_path))
+        state = engine.execute(definition, {})
+        assert state.status.value == "failed"
+        step_data = state.step_results["review"]
+        assert step_data["status"] == "failed"
+        assert error_fragment in (step_data.get("error") or "")
+
+    @pytest.mark.parametrize("invalid_value", ["", 42, None])
+    def test_validate_invalid_verdict_input(self, invalid_value):
+        from specify_cli.workflows.steps.gate import GateStep
+
+        errors = GateStep().validate({
+            "id": "review",
+            "message": "Review the spec.",
+            "verdict_input": invalid_value,
+        })
+        assert any("verdict_input" in error for error in errors)
+
+    @pytest.mark.parametrize(
+        ("on_reject", "status", "aborted"),
+        [
+            ("abort", "failed", True),
+            ("skip", "completed", False),
+            ("retry", "paused", False),
+        ],
+    )
+    def test_reject_verdict_input_preserves_reject_behavior(
+        self, on_reject, status, aborted
+    ):
+        from specify_cli.workflows.steps.gate import GateStep
+        from specify_cli.workflows.base import StepContext
+
+        context = StepContext(inputs={"spec_verdict": "reject"})
+        result = GateStep().execute(
+            {
+                "id": "review",
+                "message": "Review the spec.",
+                "options": ["approve", "reject"],
+                "on_reject": on_reject,
+                "verdict_input": "spec_verdict",
+            },
+            context,
+        )
+        assert result.status.value == status
+        assert result.output.get("aborted", False) is aborted
+        assert context.inputs["spec_verdict"] == (
+            "" if on_reject == "retry" else "reject"
+        )
+
     def test_validate_missing_message(self):
         from specify_cli.workflows.steps.gate import GateStep
 
@@ -4036,6 +4193,197 @@ steps:
 """)
         errors = validate_workflow(definition)
         assert not any("requires" in e for e in errors)
+
+
+class TestGateVerdictInputValidation:
+    """Gate verdict_input must reference a declared workflow input.
+
+    ``_resolve_inputs`` iterates only over ``definition.inputs`` — a provided
+    value for an undeclared name is silently dropped at both initial run and
+    resume. So an undeclared ``verdict_input`` can never receive a value; the
+    gate would pause forever. Surface this wiring error at validation time.
+    """
+
+    @staticmethod
+    def _errors(yaml_text):
+        from specify_cli.workflows.engine import (
+            WorkflowDefinition,
+            validate_workflow,
+        )
+
+        return validate_workflow(WorkflowDefinition.from_string(yaml_text))
+
+    def test_undeclared_verdict_input_is_rejected(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+    verdict_input: spec_verdit
+""")
+        assert any(
+            "'verdict_input' references undeclared input 'spec_verdit'" in e
+            for e in errors
+        )
+
+    def test_declared_verdict_input_passes(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+    verdict_input: spec_verdict
+""")
+        assert not any("verdict_input" in e for e in errors)
+
+    def test_gate_without_verdict_input_passes(self):
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+""")
+        assert not any("verdict_input" in e for e in errors)
+
+    def test_malformed_verdict_input_no_duplicate_error(self):
+        # Non-string verdict_input is already reported by GateStep.validate();
+        # the cross-reference check must not pile on a confusing duplicate.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+    verdict_input: 123
+""")
+        # Shape error from GateStep.validate()
+        assert any("verdict_input" in e and "non-empty string" in e for e in errors)
+        # No undeclared-input error (123 is not a string, so cross-check skips)
+        assert not any("undeclared input" in e for e in errors)
+
+    def test_verdict_input_in_switch_case(self):
+        # Recursion coverage: bad reference inside a switch case must surface.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: branch
+    type: switch
+    expression: "{{ inputs.flag }}"
+    cases:
+      yes:
+        - id: review
+          type: gate
+          message: "Review?"
+          options: [approve, reject]
+          verdict_input: ghost_input
+""")
+        assert any(
+            "'verdict_input' references undeclared input 'ghost_input'" in e
+            for e in errors
+        )
+
+    def test_verdict_input_in_if_branch(self):
+        # Recursion coverage: bad reference inside an if-then branch.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: maybe
+    type: if
+    condition: "{{ inputs.flag }}"
+    then:
+      - id: review
+        type: gate
+        message: "Review?"
+        options: [approve, reject]
+        verdict_input: ghost_input
+""")
+        assert any(
+            "'verdict_input' references undeclared input 'ghost_input'" in e
+            for e in errors
+        )
+
+    def test_verdict_input_in_fan_out_template(self):
+        # Recursion coverage: bad reference inside a fan-out step template.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+steps:
+  - id: fan
+    type: fan-out
+    items: [a, b]
+    step:
+      id: review
+      type: gate
+      message: "Review?"
+      options: [approve, reject]
+      verdict_input: ghost_input
+""")
+        assert any(
+            "'verdict_input' references undeclared input 'ghost_input'" in e
+            for e in errors
+        )
+
+    def test_malformed_inputs_block_no_cascade(self):
+        # When the inputs block itself is malformed (already reported), the
+        # cross-check is disabled so one authoring mistake does not cascade
+        # into N spurious "undeclared" errors.
+        errors = self._errors("""
+workflow:
+  id: wf
+  name: wf
+  version: "1.0.0"
+inputs:
+  - not_a_mapping
+steps:
+  - id: review
+    type: gate
+    message: "Review?"
+    options: [approve, reject]
+    verdict_input: spec_verdict
+""")
+        # Inputs-shape error is reported
+        assert any("'inputs' must be a mapping" in e for e in errors)
+        # No cascade of undeclared-input errors
+        assert not any("undeclared input" in e for e in errors)
 
 
 # ===== Workflow Engine Tests =====
@@ -8639,6 +8987,25 @@ steps:
     options: [approve, reject]
 """
 
+    _WF_GATE_VERDICT = """
+schema_version: "1.0"
+workflow:
+  id: "resume-gate-verdict-wf"
+  name: "Resume Gate Verdict WF"
+  version: "1.0.0"
+inputs:
+  spec_verdict:
+    type: string
+    default: ""
+steps:
+  - id: gate
+    type: gate
+    message: "Review"
+    options: [approve, reject]
+    on_reject: retry
+    verdict_input: spec_verdict
+"""
+
     def _engine(self, project_dir):
         from specify_cli.workflows.engine import WorkflowEngine
         return WorkflowEngine(project_dir)
@@ -8699,6 +9066,31 @@ steps:
         state = engine.execute(definition)
         with pytest.raises(ValueError):
             engine.resume(state.run_id, {"count": "not-a-number"})
+
+    def test_retry_verdict_input_is_consumed_and_can_be_replaced(self, project_dir):
+        import json as _json
+        from specify_cli.workflows.engine import WorkflowDefinition
+        from specify_cli.workflows.base import RunStatus
+
+        definition = WorkflowDefinition.from_string(self._WF_GATE_VERDICT)
+        engine = self._engine(project_dir)
+
+        state = engine.execute(definition, {"spec_verdict": "reject"})
+        assert state.status == RunStatus.PAUSED
+        assert state.inputs["spec_verdict"] == ""
+
+        inputs_file = (
+            project_dir / ".specify" / "workflows" / "runs" / state.run_id / "inputs.json"
+        )
+        assert _json.loads(inputs_file.read_text())["inputs"]["spec_verdict"] == ""
+
+        paused_again = engine.resume(state.run_id)
+        assert paused_again.status == RunStatus.PAUSED
+        assert paused_again.inputs["spec_verdict"] == ""
+
+        completed = engine.resume(state.run_id, {"spec_verdict": "approve"})
+        assert completed.status == RunStatus.COMPLETED
+        assert completed.step_results["gate"]["output"]["choice"] == "approve"
 
     def test_cli_resume_input_invalid_format_errors(self, project_dir):
         from typer.testing import CliRunner
@@ -9166,6 +9558,126 @@ steps:
         assert resumed.exit_code == 1, resumed.stdout
         payload = _json.loads(resumed.stdout)
         assert payload["status"] == "failed"
+
+    _WF_GATE_INVALID_VERDICT = """
+schema_version: "1.0"
+workflow:
+  id: "gate-invalid-verdict"
+  name: "Gate Invalid Verdict"
+  version: "1.0.0"
+inputs:
+  review_verdict:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Approve the review?"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: review_verdict
+"""
+
+    _WF_GATE_INVALID_TYPE = """
+schema_version: "1.0"
+workflow:
+  id: "gate-invalid-type"
+  name: "Gate Invalid Type"
+  version: "1.0.0"
+inputs:
+  review_verdict:
+    type: number
+    default: 1
+steps:
+  - id: review
+    type: gate
+    message: "Approve the review?"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: review_verdict
+"""
+
+    _WF_GATE_ABORT = """
+schema_version: "1.0"
+workflow:
+  id: "gate-abort"
+  name: "Gate Abort"
+  version: "1.0.0"
+inputs:
+  review_verdict:
+    type: string
+    default: ""
+steps:
+  - id: review
+    type: gate
+    message: "Approve the review?"
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: review_verdict
+"""
+
+    def test_run_invalid_verdict_prints_error(self, tmp_path, monkeypatch):
+        """Invalid verdict value prints explanatory error in human output."""
+        import re
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "workflow",
+                "run",
+                str(self._write(tmp_path, self._WF_GATE_INVALID_VERDICT)),
+                "--input",
+                "review_verdict=maybe",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Status: failed" in result.stdout
+        # Normalize whitespace to handle Rich console line wrapping
+        normalized = re.sub(r"\s+", " ", result.stdout)
+        assert "does not match any configured option" in normalized
+
+    def test_run_invalid_verdict_type_prints_error(self, tmp_path, monkeypatch):
+        """Non-string verdict value prints explanatory error in human output."""
+        import re
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            ["workflow", "run", str(self._write(tmp_path, self._WF_GATE_INVALID_TYPE))],
+        )
+        assert result.exit_code == 1
+        assert "Status: failed" in result.stdout
+        # Normalize whitespace to handle Rich console line wrapping
+        normalized = re.sub(r"\s+", " ", result.stdout)
+        assert "must be a string" in normalized
+
+    def test_run_gate_abort_prints_status_and_error(self, tmp_path, monkeypatch):
+        """Gate abort prints Status: aborted and the rejection message."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "workflow",
+                "run",
+                str(self._write(tmp_path, self._WF_GATE_ABORT)),
+                "--input",
+                "review_verdict=reject",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Status: aborted" in result.stdout
+        assert "Gate rejected by user" in result.stdout
 
 
 class TestWorkflowRunGateOutcomeJson:
