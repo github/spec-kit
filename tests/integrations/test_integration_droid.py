@@ -50,7 +50,12 @@ class TestDroidIntegration(SkillsIntegrationTests):
         /speckit.<name> form Droid never registers (mirrors grok/trae/zed/devin)."""
         from specify_cli._invocation_style import is_slash_skills_agent
 
+        # True in BOTH the enabled and disabled cases: Droid is *always* slash,
+        # not conditional. The disabled case is what distinguishes an
+        # ALWAYS_SLASH agent from a CONDITIONAL_SLASH one (which would be False
+        # when ai_skills is disabled).
         assert is_slash_skills_agent("droid", True) is True
+        assert is_slash_skills_agent("droid", False) is True
 
     def test_install_url_points_to_factory(self):
         i = get_integration(self.KEY)
