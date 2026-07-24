@@ -14,6 +14,7 @@ param(
     [string[]]$FeatureDescription
 )
 $ErrorActionPreference = 'Stop'
+$maxBranchLength = 244
 
 # Show help if requested
 if ($Help) {
@@ -24,7 +25,7 @@ if ($Help) {
     Write-Host "  -DryRun             Compute feature name and paths without creating directories or files"
     Write-Host "  -AllowExistingBranch  Reuse an existing feature directory if it already exists"
     Write-Host "  -ShortName <name>   Provide a custom short name (2-4 words) for the feature"
-    Write-Host "  -Number N           Specify branch number manually (overrides auto-detection)"
+    Write-Host "  -Number N           Prefer a feature number (auto-corrected if its specs prefix exists)"
     Write-Host "  -Timestamp          Use timestamp prefix (YYYYMMDD-HHMMSS) instead of sequential numbering"
     Write-Host "  -Help               Show this help message"
     Write-Host ""
@@ -67,10 +68,43 @@ function Get-HighestNumberFromSpecs {
     return $highest
 }
 
+function Test-SpecPrefixInUse {
+    param(
+        [string]$SpecsDir,
+        [string]$FeatureNum
+    )
+
+    if (-not (Test-Path -LiteralPath $SpecsDir -PathType Container)) {
+        return $false
+    }
+
+    return $null -ne (Get-ChildItem -LiteralPath $SpecsDir -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "$FeatureNum-*" } |
+        Select-Object -First 1)
+}
+
 function ConvertTo-CleanBranchName {
     param([string]$Name)
 
     return $Name.ToLower() -replace '[^a-z0-9]', '-' -replace '-{2,}', '-' -replace '^-', '' -replace '-$', ''
+}
+
+function Get-FittedBranchName {
+    param(
+        [string]$FeatureNum,
+        [string]$BranchSuffix
+    )
+
+    $fittedName = "$FeatureNum-$BranchSuffix"
+    if ($fittedName.Length -gt $maxBranchLength) {
+        $prefixLength = $FeatureNum.Length + 1
+        $maxSuffixLength = $maxBranchLength - $prefixLength
+        $truncatedSuffix = $BranchSuffix.Substring(0, [Math]::Min($BranchSuffix.Length, $maxSuffixLength))
+        $truncatedSuffix = $truncatedSuffix -replace '-$', ''
+        $fittedName = "$FeatureNum-$truncatedSuffix"
+    }
+
+    return $fittedName
 }
 # Load common functions (includes Get-RepoRoot and Resolve-Template)
 . "$PSScriptRoot/common.ps1"
@@ -176,26 +210,40 @@ if ($Timestamp) {
     }
 
     $featureNum = ('{0:000}' -f $resolvedNumber)
-    $branchName = "$featureNum-$branchSuffix"
+
+    # Treat an explicit number as a preference when its prefix is already used
+    # by a feature directory. Auto-detected numbers are already conflict-free.
+    $specConflict = $false
+    if ($hasNumber -and (Test-Path -LiteralPath $specsDir -PathType Container)) {
+        $requestedBranchName = Get-FittedBranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
+        $requestedDir = Join-Path $specsDir $requestedBranchName
+        if (-not $AllowExistingBranch -or -not (Test-Path -LiteralPath $requestedDir -PathType Container)) {
+            $specConflict = Test-SpecPrefixInUse -SpecsDir $specsDir -FeatureNum $featureNum
+        }
+    }
+
+    if ($specConflict) {
+        $requestedNum = $featureNum
+        $highestNumber = Get-HighestNumberFromSpecs -SpecsDir $specsDir
+        $resolvedNumber = $highestNumber
+        do {
+            if ($resolvedNumber -eq [long]::MaxValue) {
+                Write-Error "Error: feature number must be between 0 and $([long]::MaxValue), got '9223372036854775808'"
+                exit 1
+            }
+            $resolvedNumber++
+            $featureNum = ('{0:000}' -f $resolvedNumber)
+        } while (Test-SpecPrefixInUse -SpecsDir $specsDir -FeatureNum $featureNum)
+        [Console]::Error.WriteLine("[specify] Warning: -Number $requestedNum conflicts with an existing spec directory; using $featureNum instead")
+    }
+
 }
 
 # GitHub enforces a 244-byte limit on branch names
 # Validate and truncate if necessary
-$maxBranchLength = 244
-if ($branchName.Length -gt $maxBranchLength) {
-    # Calculate how much we need to trim from suffix
-    # Account for prefix length: timestamp (15) + hyphen (1) = 16, or sequential (3) + hyphen (1) = 4
-    $prefixLength = $featureNum.Length + 1
-    $maxSuffixLength = $maxBranchLength - $prefixLength
-
-    # Truncate suffix
-    $truncatedSuffix = $branchSuffix.Substring(0, [Math]::Min($branchSuffix.Length, $maxSuffixLength))
-    # Remove trailing hyphen if truncation created one
-    $truncatedSuffix = $truncatedSuffix -replace '-$', ''
-
-    $originalBranchName = $branchName
-    $branchName = "$featureNum-$truncatedSuffix"
-
+$originalBranchName = "$featureNum-$branchSuffix"
+$branchName = Get-FittedBranchName -FeatureNum $featureNum -BranchSuffix $branchSuffix
+if ($branchName -ne $originalBranchName) {
     [Console]::Error.WriteLine("[specify] Warning: Branch name exceeded GitHub's 244-byte limit")
     [Console]::Error.WriteLine("[specify] Original: $originalBranchName ($($originalBranchName.Length) bytes)")
     [Console]::Error.WriteLine("[specify] Truncated to: $branchName ($($branchName.Length) bytes)")
