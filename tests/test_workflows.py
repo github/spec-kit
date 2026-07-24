@@ -6317,6 +6317,32 @@ class TestWorkflowCatalog:
         assert len(entries) == 1
         assert entries[0].name == "custom"
 
+    @pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
+    def test_falsy_non_mapping_config_rejected(self, project_dir, body):
+        """A FALSY non-mapping top-level config ([], false, 0, '') must raise,
+        like a truthy non-mapping (5, a bare list) already does. The previous
+        ``yaml.safe_load(...) or {}`` coerced these to {} and silently swallowed
+        them, diverging from the truthy case."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="expected a mapping"):
+            catalog._load_catalog_config(config_path)
+
+    @pytest.mark.parametrize("body", ["", "# only a comment\n", "null\n", "~\n"])
+    def test_empty_or_null_config_is_noop(self, project_dir, body):
+        """An empty document, comment-only file, or explicit top-level null is a
+        valid no-op (no project catalogs -> built-in defaults), and must NOT be
+        confused with a falsy non-mapping."""
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+        catalog = WorkflowCatalog(project_dir)
+        assert catalog._load_catalog_config(config_path) is None
+
     @pytest.mark.parametrize("bad_priority", [True, False, float("inf")])
     def test_config_priority_bool_or_inf_rejected(self, project_dir, bad_priority):
         """`priority: true` must not be silently coerced to 1, and `priority: .inf`
