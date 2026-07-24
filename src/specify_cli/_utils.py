@@ -69,21 +69,14 @@ def run_command(
     cmd: list[str],
     check_return: bool = True,
     capture: bool = False,
-    shell: bool = False,
 ) -> str | None:
     """Run a command without invoking a shell and optionally capture output.
 
-    The ``shell`` parameter is kept in the signature so existing keyword
-    callers (and the re-export from ``specify_cli``) don't raise ``TypeError``,
-    but only the default ``shell=False`` is honoured. ``shell=True`` is
-    rejected with ``ValueError`` rather than silently ignored, so the
-    unsupported mode fails loudly instead of running with a different meaning.
+    Commands are always executed with ``shell=False`` and must be passed as an
+    argv ``list[str]``. There is deliberately no ``shell`` parameter: the
+    argv-list contract makes shell interpolation impossible by construction, so
+    the shell-injection surface cannot be re-enabled at a call site.
     """
-    if shell:
-        raise ValueError(
-            "run_command() does not support shell=True; pass argv as a list"
-        )
-
     try:
         if capture:
             result = subprocess.run(cmd, check=check_return, capture_output=True, text=True)
