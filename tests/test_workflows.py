@@ -2490,6 +2490,25 @@ class TestIfThenStep:
         errors = step.validate({"id": "test", "then": []})
         assert any("missing 'condition'" in e for e in errors)
 
+    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, True])
+    def test_validate_rejects_non_string_condition(self, bad):
+        # A non-string condition is returned as-is by evaluate_condition and
+        # bool()-coerced, so it silently resolves to a truthiness (e.g. [1, 2]
+        # is always True) instead of erroring on the authoring mistake.
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate({"id": "test", "condition": bad, "then": []})
+        assert any("'condition' must be a string" in e for e in errors), bad
+
+    @pytest.mark.parametrize("good", ["true", "false", "{{ inputs.flag }}"])
+    def test_validate_accepts_string_condition(self, good):
+        from specify_cli.workflows.steps.if_then import IfThenStep
+
+        step = IfThenStep()
+        errors = step.validate({"id": "test", "condition": good, "then": []})
+        assert not any("'condition' must be a string" in e for e in errors), good
+
     @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
     def test_execute_non_list_then_fails_loudly(self, bad_branch):
         """A non-list ``then`` must fail the step, not crash the run.
@@ -2880,6 +2899,14 @@ class TestWhileStep:
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
 
+    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, True])
+    def test_validate_rejects_non_string_condition(self, bad):
+        from specify_cli.workflows.steps.while_loop import WhileStep
+
+        step = WhileStep()
+        errors = step.validate({"id": "test", "condition": bad, "steps": []})
+        assert any("'condition' must be a string" in e for e in errors), bad
+
     def test_validate_invalid_max_iterations(self):
         from specify_cli.workflows.steps.while_loop import WhileStep
 
@@ -2993,6 +3020,14 @@ class TestDoWhileStep:
         errors = step.validate({"id": "test", "steps": []})
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
+
+    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, True])
+    def test_validate_rejects_non_string_condition(self, bad):
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        errors = step.validate({"id": "test", "condition": bad, "steps": []})
+        assert any("'condition' must be a string" in e for e in errors), bad
 
     def test_validate_steps_not_list(self):
         from specify_cli.workflows.steps.do_while import DoWhileStep
