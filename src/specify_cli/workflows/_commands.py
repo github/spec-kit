@@ -12,7 +12,7 @@ import json
 import os
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import typer
@@ -401,6 +401,12 @@ def _reject_insecure_download_redirect(old_url: str, new_url: str) -> None:
 # a ceiling any legitimate workflow definition should ever approach.
 _MAX_WORKFLOW_YAML_BYTES = 5 * 1024 * 1024  # 5 MiB
 _DOWNLOAD_CHUNK_SIZE = 65536
+# Custom step packages contain executable Python, metadata, and optional helper
+# files downloaded one-by-one rather than as an archive. Mirror the archive
+# ceilings so a catalog cannot turn individually valid files into an unbounded
+# aggregate download.
+_MAX_STEP_PACKAGE_FILES = 512
+_MAX_STEP_PACKAGE_BYTES = 50 * 1024 * 1024  # 50 MiB
 
 
 def _read_response_within_limit(response, max_bytes: int | None = None) -> bytes:
@@ -2636,14 +2642,39 @@ def workflow_step_add(
         )
         raise typer.Exit(1)
 
-    step_yml_url = info.get("step_yml_url") or info.get("url")
-    if not step_yml_url:
+    declared_step_yml_url = info.get("step_yml_url")
+    if declared_step_yml_url is not None and not isinstance(
+        declared_step_yml_url, str
+    ):
+        console.print(
+            f"[red]Error:[/red] Catalog entry for '{step_id}' has a malformed "
+            "step.yml URL; expected a non-empty string"
+        )
+        raise typer.Exit(1)
+    step_yml_url = declared_step_yml_url or info.get("url")
+    if step_yml_url is None or (
+        isinstance(step_yml_url, str) and not step_yml_url.strip()
+    ):
         console.print(f"[red]Error:[/red] Catalog entry for '{step_id}' has no URL")
+        raise typer.Exit(1)
+    if not isinstance(step_yml_url, str):
+        console.print(
+            f"[red]Error:[/red] Catalog entry for '{step_id}' has a malformed "
+            "step.yml URL; expected a non-empty string"
+        )
         raise typer.Exit(1)
 
     # Derive __init__.py URL: replace trailing step.yml with __init__.py
     # or use explicit init_url if provided.
     init_url = info.get("init_url")
+    if init_url is not None and (
+        not isinstance(init_url, str) or not init_url.strip()
+    ):
+        console.print(
+            f"[red]Error:[/red] Catalog entry for '{step_id}' has a malformed "
+            "__init__.py URL; expected a non-empty string"
+        )
+        raise typer.Exit(1)
     if not init_url:
         if step_yml_url.endswith("step.yml"):
             init_url = step_yml_url[: -len("step.yml")] + "__init__.py"
@@ -2653,6 +2684,41 @@ def workflow_step_add(
                 "Catalog entry should provide 'init_url' or a 'url' ending in 'step.yml'."
             )
             raise typer.Exit(1)
+
+    # Preflight the declared file count before creating a staging directory or
+    # issuing any request. The two required files are always part of the package;
+    # duplicate declarations for them in extra_files are ignored below and do
+    # not count twice.
+    extra_files = info.get("extra_files")
+    if extra_files is not None and not isinstance(extra_files, dict):
+        console.print(
+            "[yellow]Warning:[/yellow] Catalog entry 'extra_files' is not a mapping; "
+            "additional package files will not be downloaded."
+        )
+        extra_files = {}
+
+    def _is_required_package_file(rel_path: object) -> bool:
+        """Match portable path/case aliases of the two required package files."""
+        if not isinstance(rel_path, str):
+            return False
+        parts = PurePosixPath(rel_path.replace("\\", "/")).parts
+        return len(parts) == 1 and parts[0].casefold() in {
+            "step.yml",
+            "__init__.py",
+        }
+
+    declared_extra_count = sum(
+        1
+        for rel_path in (extra_files or {})
+        if not _is_required_package_file(rel_path)
+    )
+    package_file_count = 2 + declared_extra_count
+    if package_file_count > _MAX_STEP_PACKAGE_FILES:
+        console.print(
+            f"[red]Error:[/red] Step package declares {package_file_count} files, "
+            f"exceeding the {_MAX_STEP_PACKAGE_FILES}-file limit"
+        )
+        raise typer.Exit(1)
 
     from specify_cli.authentication.http import open_url as _open_url
 
@@ -2710,6 +2776,14 @@ def workflow_step_add(
             console.print(f"[red]Error:[/red] Failed to download step files: {exc}")
             raise typer.Exit(1)
 
+        package_bytes = len(step_yml_content) + len(init_py_content)
+        if package_bytes > _MAX_STEP_PACKAGE_BYTES:
+            console.print(
+                f"[red]Error:[/red] Step package exceeds the "
+                f"{_MAX_STEP_PACKAGE_BYTES}-byte total size limit"
+            )
+            raise typer.Exit(1)
+
         # Validate step.yml
         try:
             import yaml as _yaml
@@ -2754,13 +2828,6 @@ def workflow_step_add(
         # relative-path → URL. step.yml and __init__.py are ignored here (already
         # written). Paths are validated to stay within the step package directory to
         # prevent path-traversal attacks.
-        extra_files = info.get("extra_files")
-        if extra_files is not None and not isinstance(extra_files, dict):
-            console.print(
-                "[yellow]Warning:[/yellow] Catalog entry 'extra_files' is not a mapping; "
-                "additional package files will not be downloaded."
-            )
-            extra_files = {}
         for rel_path, file_url in (extra_files or {}).items():
             if not isinstance(rel_path, str) or not rel_path.strip():
                 console.print(
@@ -2768,7 +2835,7 @@ def workflow_step_add(
                     "empty or non-string path key"
                 )
                 raise typer.Exit(1)
-            if rel_path in ("step.yml", "__init__.py"):
+            if _is_required_package_file(rel_path):
                 continue  # already written above
             # Reject dot-path segments ('', '.', '..') that would refer to the
             # package directory itself (IsADirectoryError) or escape it.
@@ -2802,6 +2869,13 @@ def workflow_step_add(
             except Exception as exc:
                 console.print(
                     f"[red]Error:[/red] Failed to download extra file '{rel_path}': {exc}"
+                )
+                raise typer.Exit(1)
+            package_bytes += len(file_content)
+            if package_bytes > _MAX_STEP_PACKAGE_BYTES:
+                console.print(
+                    f"[red]Error:[/red] Step package exceeds the "
+                    f"{_MAX_STEP_PACKAGE_BYTES}-byte total size limit"
                 )
                 raise typer.Exit(1)
             try:

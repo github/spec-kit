@@ -139,6 +139,7 @@ class CatalogEntry:
     license: str
     download_url: str
     requires_speckit_version: str
+    sha256: str | None = None
     provides: dict[str, int] = field(default_factory=dict)
     repository: str | None = None
     tags: tuple[str, ...] = ()
@@ -181,6 +182,11 @@ class CatalogEntry:
             license=str(data.get("license", "")).strip(),
             download_url=str(data.get("download_url", "")).strip(),
             requires_speckit_version=str(requires.get("speckit_version", "")).strip(),
+            sha256=(
+                None
+                if data.get("sha256") is None
+                else str(data["sha256"]).strip()
+            ),
             provides=dict(provides_raw),
             repository=(str(data["repository"]) if data.get("repository") else None),
             tags=_parse_tags(data.get("tags"), entry_id),
@@ -193,6 +199,7 @@ class CatalogEntry:
             description=self.description, author=self.author, license=self.license,
             download_url=self.download_url,
             requires_speckit_version=self.requires_speckit_version,
+            sha256=self.sha256,
             provides=self.provides, repository=self.repository, tags=self.tags,
             verified=self.verified, source_id=source.id,
             source_policy=source.install_policy,

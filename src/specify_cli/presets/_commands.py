@@ -19,6 +19,7 @@ from .._console import console
 from .._download_security import (
     is_https_or_localhost_http,
     is_safe_download_redirect,
+    read_response_limited,
 )
 
 preset_app = typer.Typer(
@@ -126,15 +127,15 @@ def preset_add(
 
             if not is_https_or_localhost_http(from_url):
                 console.print(
-                    "[red]Error:[/red] URL must use HTTPS with a hostname, "
-                    "or HTTP for localhost/loopback."
+                    "[red]Error:[/red] URL must use HTTPS with a hostname and be "
+                    "a valid URL with a host. HTTP is only allowed for localhost, "
+                    "127.0.0.1, and ::1."
                 )
                 raise typer.Exit(1)
 
             console.print(f"Installing preset from [cyan]{_escape_markup(from_url)}[/cyan]...")
             import urllib.error
             import tempfile
-            import shutil
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 zip_path = Path(tmpdir) / "preset.zip"
@@ -162,16 +163,21 @@ def preset_add(
                             console.print(
                                 "[red]Error:[/red] Preset URL redirected to a disallowed URL: "
                                 f"{final_url}. Redirect targets must use HTTPS with a hostname, "
-                                "or HTTP for localhost/loopback."
+                                "or HTTP for localhost (127.0.0.1, ::1)."
                             )
                             raise typer.Exit(1)
-                        with zip_path.open("wb") as output:
-                            try:
-                                shutil.copyfileobj(response, output)
-                            except TypeError:
-                                output.write(response.read())
-                except urllib.error.URLError as e:
-                    console.print(f"[red]Error:[/red] Failed to download: {_escape_markup(str(e))}")
+                        zip_path.write_bytes(
+                            read_response_limited(
+                                response,
+                                error_type=PresetError,
+                                label=f"preset {from_url}",
+                            )
+                        )
+                except (urllib.error.URLError, PresetError) as e:
+                    console.print(
+                        f"[red]Error:[/red] Failed to download: "
+                        f"{_escape_markup(str(e))}"
+                    )
                     raise typer.Exit(1)
 
                 manifest = manager.install_from_zip(zip_path, speckit_version, priority)

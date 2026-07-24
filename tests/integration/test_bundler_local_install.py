@@ -7,7 +7,9 @@ proving the real in-process primitive dispatch (T044) works without a network.
 from __future__ import annotations
 
 import os
+import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -171,3 +173,62 @@ def test_download_manifest_rejects_non_https_url_even_offline(tmp_path: Path):
     )
     with pytest.raises(BundlerError, match="HTTPS"):
         _download_manifest(resolved, offline=True)
+
+
+def test_local_zip_uses_bounded_archive_open(tmp_path: Path):
+    artifact = tmp_path / "too-many-entries.zip"
+    with zipfile.ZipFile(artifact, "w") as archive:
+        archive.writestr("bundle.yml", yaml.safe_dump(valid_manifest_dict()))
+        for index in range(512):
+            archive.writestr(f"assets/{index}.txt", "")
+
+    with pytest.raises(BundlerError, match="too many entries"):
+        _local_manifest_source(str(artifact))
+
+
+def test_invalid_local_manifest_is_rejected_before_project_init(
+    tmp_path: Path,
+    monkeypatch,
+):
+    bundle_dir = tmp_path / "invalid-bundle"
+    data = valid_manifest_dict()
+    data["bundle"]["author"] = ""
+    write_manifest(bundle_dir, data)
+    empty_cwd = tmp_path / "empty"
+    empty_cwd.mkdir()
+    monkeypatch.chdir(empty_cwd)
+
+    runner = CliRunner()
+    with patch("specify_cli.commands.bundle._run_init") as run_init:
+        result = runner.invoke(
+            app,
+            ["bundle", "install", str(bundle_dir), "--offline"],
+        )
+
+    assert result.exit_code == 1
+    assert "Missing required field: bundle.author" in result.output
+    run_init.assert_not_called()
+
+
+def test_incompatible_local_manifest_is_rejected_before_project_init(
+    tmp_path: Path,
+    monkeypatch,
+):
+    bundle_dir = tmp_path / "incompatible-bundle"
+    data = valid_manifest_dict()
+    data["requires"]["speckit_version"] = ">=999.0.0"
+    write_manifest(bundle_dir, data)
+    empty_cwd = tmp_path / "empty"
+    empty_cwd.mkdir()
+    monkeypatch.chdir(empty_cwd)
+
+    runner = CliRunner()
+    with patch("specify_cli.commands.bundle._run_init") as run_init:
+        result = runner.invoke(
+            app,
+            ["bundle", "install", str(bundle_dir), "--offline"],
+        )
+
+    assert result.exit_code == 1
+    assert "requires Spec Kit >=999.0.0" in result.output
+    run_init.assert_not_called()

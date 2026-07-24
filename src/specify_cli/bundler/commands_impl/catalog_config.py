@@ -153,6 +153,8 @@ def add_source(
         # keeps that ValueError inside the guard instead of leaking a raw
         # traceback past the CLI's `except BundlerError`. Reuse the value below.
         hostname = parsed.hostname
+        # Accessing ``port`` performs urllib's syntax/range validation.
+        _ = parsed.port
     except ValueError as exc:
         raise BundlerError(f"Invalid catalog url: '{url}'.") from exc
     if not (parsed.scheme or parsed.path):

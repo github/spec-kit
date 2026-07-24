@@ -17,7 +17,6 @@ import re
 import shutil
 import stat
 import tempfile
-import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +28,13 @@ from packaging import version as pkg_version
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from .._assets import _locate_core_pack, _repo_root
+from .._download_security import (
+    MAX_JSON_CATALOG_BYTES,
+    build_safe_download_path,
+    is_https_or_localhost_http,
+    read_response_limited,
+    safe_extract_zip,
+)
 from .._init_options import is_ai_skills_enabled
 from .._invocation_style import is_dollar_skills_agent, is_slash_skills_agent
 from .._utils import dump_frontmatter, relative_extension_path_violation, version_satisfies
@@ -2053,21 +2059,7 @@ class ExtensionManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            # Extract ZIP safely (prevent Zip Slip attack)
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                # Validate all paths first before extracting anything
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    # Use is_relative_to for safe path containment check
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise ValidationError(
-                            f"Unsafe path in ZIP archive: {member} (potential path traversal)"
-                        )
-                # Only extract after all paths are validated
-                zf.extractall(temp_path)
+            safe_extract_zip(zip_path, temp_path, error_type=ValidationError)
 
             # Find extension directory (may be nested)
             extension_dir = temp_path
@@ -2879,7 +2871,14 @@ class ExtensionCatalog(CatalogStackBase):
                 final_url = response.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {entry.url}",
+                    )
+                )
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
@@ -3067,7 +3066,14 @@ class ExtensionCatalog(CatalogStackBase):
                 final_url = response.geturl()
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=ExtensionError,
+                        label=f"extension catalog {catalog_url}",
+                    )
+                )
 
             # Validate catalog structure. Reuses the same helper as
             # ``_fetch_single_catalog`` so all three branches (root type,
@@ -3212,6 +3218,10 @@ class ExtensionCatalog(CatalogStackBase):
         download_url = ext_info.get("download_url")
         if not download_url:
             raise ExtensionError(f"Extension '{extension_id}' has no download URL")
+        if not isinstance(download_url, str):
+            raise ExtensionError(
+                f"Extension download URL is malformed: {download_url}"
+            )
 
         # Validate download URL requires HTTPS (prevent man-in-the-middle attacks)
         from urllib.parse import urlparse
@@ -3225,12 +3235,16 @@ class ExtensionCatalog(CatalogStackBase):
         try:
             parsed = urlparse(download_url)
             hostname = parsed.hostname
+            parsed.port
         except ValueError:
             raise ExtensionError(
                 f"Extension download URL is malformed: {download_url}"
             ) from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (parsed.scheme == "http" and is_localhost):
+        if not hostname:
+            raise ExtensionError(
+                f"Extension download URL is malformed: {download_url}"
+            )
+        if not is_https_or_localhost_http(download_url):
             raise ExtensionError(
                 f"Extension download URL must use HTTPS: {download_url}"
             )
@@ -3238,11 +3252,16 @@ class ExtensionCatalog(CatalogStackBase):
         # Determine target path
         if target_dir is None:
             target_dir = self.cache_dir / "downloads"
-        target_dir.mkdir(parents=True, exist_ok=True)
-
+        target_dir = Path(target_dir)
         version = ext_info.get("version", "unknown")
-        zip_filename = f"{extension_id}-{version}.zip"
-        zip_path = target_dir / zip_filename
+        zip_path = build_safe_download_path(
+            target_dir,
+            extension_id,
+            version,
+            error_type=ExtensionError,
+            label="extension",
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         extra_headers = None
         resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
@@ -3255,7 +3274,11 @@ class ExtensionCatalog(CatalogStackBase):
             with self._open_url(
                 download_url, timeout=60, extra_headers=extra_headers
             ) as response:
-                zip_data = response.read()
+                zip_data = read_response_limited(
+                    response,
+                    error_type=ExtensionError,
+                    label=f"extension '{extension_id}' download",
+                )
 
             verify_archive_sha256(
                 zip_data, ext_info.get("sha256"), extension_id, ExtensionError

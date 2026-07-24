@@ -12,7 +12,6 @@ import json
 import hashlib
 import os
 import tempfile
-import zipfile
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +26,13 @@ import yaml
 from packaging import version as pkg_version
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
+from .._download_security import (
+    MAX_JSON_CATALOG_BYTES,
+    build_safe_download_path,
+    is_https_or_localhost_http,
+    read_response_limited,
+    safe_extract_zip,
+)
 from ..extensions import REINSTALL_COMMAND, ExtensionRegistry, normalize_priority
 from .._init_options import is_ai_skills_enabled
 from ..integrations.base import IntegrationBase
@@ -1856,18 +1862,7 @@ class PresetManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
 
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                temp_path_resolved = temp_path.resolve()
-                for member in zf.namelist():
-                    member_path = (temp_path / member).resolve()
-                    try:
-                        member_path.relative_to(temp_path_resolved)
-                    except ValueError:
-                        raise PresetValidationError(
-                            f"Unsafe path in ZIP archive: {member} "
-                            "(potential path traversal)"
-                        )
-                zf.extractall(temp_path)
+            safe_extract_zip(zip_path, temp_path, error_type=PresetValidationError)
 
             pack_dir = temp_path
             manifest_path = pack_dir / "preset.yml"
@@ -2451,7 +2446,14 @@ class PresetCatalog:
                 final_url = response.geturl()
                 if final_url != entry.url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=PresetError,
+                        label=f"preset catalog {entry.url}",
+                    )
+                )
 
             self._validate_catalog_payload(catalog_data, entry.url)
 
@@ -2613,7 +2615,14 @@ class PresetCatalog:
                 final_url = response.geturl()
                 if final_url != catalog_url:
                     self._validate_catalog_url(final_url)
-                catalog_data = json.loads(response.read())
+                catalog_data = json.loads(
+                    read_response_limited(
+                        response,
+                        max_bytes=MAX_JSON_CATALOG_BYTES,
+                        error_type=PresetError,
+                        label=f"preset catalog {catalog_url}",
+                    )
+                )
 
             # Validate catalog structure. Reuses the same helper as
             # ``_fetch_single_catalog`` so all three branches (root type,
@@ -2774,6 +2783,10 @@ class PresetCatalog:
             raise PresetError(
                 f"Preset '{pack_id}' has no download URL"
             )
+        if not isinstance(download_url, str):
+            raise PresetError(
+                f"Preset download URL is malformed: {download_url}"
+            )
 
         from urllib.parse import urlparse
 
@@ -2786,25 +2799,32 @@ class PresetCatalog:
         try:
             parsed = urlparse(download_url)
             hostname = parsed.hostname
+            parsed.port
         except ValueError:
             raise PresetError(
                 f"Preset download URL is malformed: {download_url}"
             ) from None
-        is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
-        if parsed.scheme != "https" and not (
-            parsed.scheme == "http" and is_localhost
-        ):
+        if not hostname:
+            raise PresetError(
+                f"Preset download URL is malformed: {download_url}"
+            )
+        if not is_https_or_localhost_http(download_url):
             raise PresetError(
                 f"Preset download URL must use HTTPS: {download_url}"
             )
 
         if target_dir is None:
             target_dir = self.cache_dir / "downloads"
-        target_dir.mkdir(parents=True, exist_ok=True)
-
+        target_dir = Path(target_dir)
         version = pack_info.get("version", "unknown")
-        zip_filename = f"{pack_id}-{version}.zip"
-        zip_path = target_dir / zip_filename
+        zip_path = build_safe_download_path(
+            target_dir,
+            pack_id,
+            version,
+            error_type=PresetError,
+            label="preset",
+        )
+        target_dir.mkdir(parents=True, exist_ok=True)
 
         extra_headers = None
         resolved_download_url = self._resolve_github_release_asset_api_url(download_url)
@@ -2814,7 +2834,11 @@ class PresetCatalog:
 
         try:
             with self._open_url(download_url, timeout=60, extra_headers=extra_headers) as response:
-                zip_data = response.read()
+                zip_data = read_response_limited(
+                    response,
+                    error_type=PresetError,
+                    label=f"preset '{pack_id}' download",
+                )
 
             verify_archive_sha256(
                 zip_data, pack_info.get("sha256"), pack_id, PresetError
