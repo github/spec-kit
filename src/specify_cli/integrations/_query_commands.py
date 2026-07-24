@@ -265,8 +265,33 @@ def integration_search(
     query: Optional[str] = typer.Argument(None, help="Search query (optional)"),
     tag: Optional[str] = typer.Option(None, "--tag", help="Filter by tag"),
     author: Optional[str] = typer.Option(None, "--author", help="Filter by author"),
+    markdown: bool = typer.Option(
+        False,
+        "--markdown",
+        help=(
+            "Output the full built-in integrations table as markdown "
+            "(ignores query and --tag/--author filters)"
+        ),
+    ),
 ):
-    """Search for integrations in the active catalog stack."""
+    """Search for integrations in the active catalog stack.
+
+    Or output the built-in reference table with --markdown.
+    """
+    if markdown:
+        if query or tag or author:
+            typer.echo(
+                "Warning: --markdown outputs the full built-in integrations table "
+                "and ignores query/--tag/--author filters.",
+                err=True,
+            )
+        from ..catalog_docs import render_integrations_table
+        try:
+            typer.echo(render_integrations_table(), nl=False)
+        except (FileNotFoundError, ValueError) as exc:
+            typer.echo(f"Error rendering integrations table: {exc}", err=True)
+            raise typer.Exit(1)
+        return
     from . import INTEGRATION_REGISTRY
     from .catalog import (
         IntegrationCatalog,
