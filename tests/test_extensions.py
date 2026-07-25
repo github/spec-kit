@@ -9115,3 +9115,56 @@ def test_forge_extension_install_listing_hyphenates_command_names(
     # Forge registers hyphenated command names, so the summary must match.
     assert "speckit-test-ext-hello" in result.output
     assert "speckit.test-ext.hello" not in result.output
+
+
+def test_forge_extension_info_hyphenates_command_names(
+    extension_dir, project_dir, monkeypatch
+):
+    """`extension info` for an installed extension must show hyphenated
+    /speckit-<name> command names on a Forge project, matching the names Forge
+    actually registers — the same parity `extension add`'s listing already has.
+    """
+    import io
+    import json
+    import os
+
+    from rich.console import Console
+
+    from specify_cli.extensions import _commands
+
+    init_options = project_dir / ".specify" / "init-options.json"
+    init_options.write_text(json.dumps({"ai": "forge", "script": "sh"}))
+
+    manager = ExtensionManager(project_dir)
+    manager.install_from_directory(
+        extension_dir, "1.0.0", register_commands=False
+    )
+
+    # Force the "installed locally, not in catalog" branch (the one that prints
+    # the local manifest's Commands section) and avoid any network catalog
+    # lookup.
+    monkeypatch.setattr(
+        _commands, "_resolve_catalog_extension", lambda *a, **k: (None, None)
+    )
+
+    # Call the handler directly against a plain captured Console. (Driving it
+    # through CliRunner reformats output via Rich's live console, which
+    # recurses under pytest's captured stdout — unrelated to this code path.)
+    buf = io.StringIO()
+    original_console = _commands.console
+    _commands.console = Console(file=buf, force_terminal=False, width=200)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_dir)
+        _commands.extension_info("test-ext")
+    except SystemExit:
+        pass
+    finally:
+        os.chdir(old_cwd)
+        _commands.console = original_console
+
+    output = buf.getvalue()
+    # The Commands section must render the hyphenated form Forge registers,
+    # not the manifest's dotted name.
+    assert "speckit-test-ext-hello" in output, output
+    assert "speckit.test-ext.hello" not in output, output

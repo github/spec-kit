@@ -879,9 +879,30 @@ def extension_info(
             console.print()
 
             if ext_manifest.commands:
+                # Print each command the way the active agent registers it.
+                # Cline and Forge hyphenate command names (e.g. Forge invokes
+                # `/speckit-jira-sync`, not the manifest's dotted
+                # `speckit.jira.sync`), so mirror the same formatting used by
+                # `extension add`'s "Provided commands" listing — otherwise the
+                # names shown here don't match what the user actually types.
+                selected_ai = load_init_options(project_root).get("ai")
+                if selected_ai == "cline":
+                    from specify_cli.integrations.cline import (
+                        format_cline_command_name as _format_command_name,
+                    )
+                elif selected_ai == "forge":
+                    from specify_cli.integrations.forge import (
+                        format_forge_command_name as _format_command_name,
+                    )
+                else:
+                    _format_command_name = None
+
                 console.print("[bold]Commands:[/bold]")
                 for cmd in ext_manifest.commands:
-                    console.print(f"  • {_escape_markup(str(cmd['name']))}: {_escape_markup(str(cmd.get('description', '')))}")
+                    cmd_name = cmd['name']
+                    if _format_command_name is not None:
+                        cmd_name = _format_command_name(cmd_name)
+                    console.print(f"  • {_escape_markup(str(cmd_name))}: {_escape_markup(str(cmd.get('description', '')))}")
                 console.print()
 
         # Show catalog status
