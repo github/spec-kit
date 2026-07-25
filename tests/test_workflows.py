@@ -2490,25 +2490,32 @@ class TestIfThenStep:
         errors = step.validate({"id": "test", "then": []})
         assert any("missing 'condition'" in e for e in errors)
 
-    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, True])
+    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_condition(self, bad):
-        # A non-string condition is returned unchanged by evaluate_expression,
-        # and evaluate_condition then bool()-coerces it, so it silently resolves
-        # to its truthiness (e.g. [1, 2] is always True) instead of erroring on
-        # the authoring mistake.
+        # A list/dict/number condition is returned unchanged by
+        # evaluate_expression, and evaluate_condition then bool()-coerces it, so
+        # it silently resolves to its truthiness (e.g. [1, 2] is always True)
+        # instead of erroring on the authoring mistake.
         from specify_cli.workflows.steps.if_then import IfThenStep
 
         step = IfThenStep()
         errors = step.validate({"id": "test", "condition": bad, "then": []})
-        assert any("'condition' must be a string" in e for e in errors), bad
+        assert any("'condition' must be a" in e for e in errors), bad
 
-    @pytest.mark.parametrize("good", ["true", "false", "{{ inputs.flag }}"])
-    def test_validate_accepts_string_condition(self, good):
+    @pytest.mark.parametrize(
+        "good",
+        [
+            "true", "false", "{{ inputs.flag }}",
+            True, False,  # unquoted YAML bool: resolved exactly, and it is the
+                          # default this step itself uses -- must stay valid
+        ],
+    )
+    def test_validate_accepts_string_or_bool_condition(self, good):
         from specify_cli.workflows.steps.if_then import IfThenStep
 
         step = IfThenStep()
         errors = step.validate({"id": "test", "condition": good, "then": []})
-        assert not any("'condition' must be a string" in e for e in errors), good
+        assert not any("'condition' must be a" in e for e in errors), good
 
     @pytest.mark.parametrize("bad_branch", [{"id": "x"}, "oops", 5])
     def test_execute_non_list_then_fails_loudly(self, bad_branch):
@@ -2900,13 +2907,23 @@ class TestWhileStep:
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
 
-    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, True])
+    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_condition(self, bad):
         from specify_cli.workflows.steps.while_loop import WhileStep
 
         step = WhileStep()
         errors = step.validate({"id": "test", "condition": bad, "steps": []})
-        assert any("'condition' must be a string" in e for e in errors), bad
+        assert any("'condition' must be a" in e for e in errors), bad
+
+    @pytest.mark.parametrize("good", [True, False, "true", "{{ inputs.go }}"])
+    def test_validate_accepts_string_or_bool_condition(self, good):
+        # ``condition: false`` unquoted is idiomatic YAML and is this step's own
+        # default, so a literal bool must not be rejected.
+        from specify_cli.workflows.steps.while_loop import WhileStep
+
+        step = WhileStep()
+        errors = step.validate({"id": "test", "condition": good, "steps": []})
+        assert not any("'condition' must be a" in e for e in errors), good
 
     def test_validate_invalid_max_iterations(self):
         from specify_cli.workflows.steps.while_loop import WhileStep
@@ -3022,13 +3039,23 @@ class TestDoWhileStep:
         assert any("missing 'condition'" in e for e in errors)
         # max_iterations is optional (defaults to 10)
 
-    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, True])
+    @pytest.mark.parametrize("bad", [["a", "b"], {"k": "v"}, 5, 1.5])
     def test_validate_rejects_non_string_condition(self, bad):
         from specify_cli.workflows.steps.do_while import DoWhileStep
 
         step = DoWhileStep()
         errors = step.validate({"id": "test", "condition": bad, "steps": []})
-        assert any("'condition' must be a string" in e for e in errors), bad
+        assert any("'condition' must be a" in e for e in errors), bad
+
+    @pytest.mark.parametrize("good", [True, False, "true", "{{ inputs.go }}"])
+    def test_validate_accepts_string_or_bool_condition(self, good):
+        # ``condition: false`` unquoted is idiomatic YAML; evaluate_condition
+        # resolves a literal bool exactly, so it must not be rejected.
+        from specify_cli.workflows.steps.do_while import DoWhileStep
+
+        step = DoWhileStep()
+        errors = step.validate({"id": "test", "condition": good, "steps": []})
+        assert not any("'condition' must be a" in e for e in errors), good
 
     def test_validate_steps_not_list(self):
         from specify_cli.workflows.steps.do_while import DoWhileStep
