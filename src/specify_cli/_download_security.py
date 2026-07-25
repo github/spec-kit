@@ -56,7 +56,17 @@ _ZIP_EOCD_SIGNATURE = b"PK\x05\x06"
 _ZIP64_LOCATOR_SIGNATURE = b"PK\x06\x07"
 _ZIP_CENTRAL_HEADER_SIZE = 46
 _ZIP_CENTRAL_SIGNATURE = b"PK\x01\x02"
+_ZIP_LOCAL_HEADER_SIZE = 30
+_ZIP_LOCAL_SIGNATURE = b"PK\x03\x04"
+_ZIP_EXTRA_HEADER = struct.Struct("<HH")
+_ZIP64_EXTRA_FIELD_ID = 0x0001
+_ZIP64_EXTRACT_VERSION = 45
+_ZIP_UINT16_MAX = (1 << 16) - 1
+_ZIP_UINT32_MAX = (1 << 32) - 1
 _ZIP_MAX_COMMENT_BYTES = (1 << 16) - 1
+_BOUNDED_ZIP_COMPRESSION_METHODS = frozenset(
+    (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+)
 
 
 def _ip_address_without_scope(
@@ -437,6 +447,107 @@ def portable_zip_path_key(name: str) -> tuple[str, ...]:
     )
 
 
+def _raise_zip64(error_type: type[ErrorT]) -> NoReturn:
+    _raise(
+        error_type,
+        "ZIP64 archives are not supported by the bounded extractor",
+    )
+
+
+def _preflight_zip_entry_features(
+    extract_version: int,
+    compression_method: int,
+    *,
+    error_type: type[ErrorT],
+) -> None:
+    """Enforce the formats whose output can be bounded by ``ZipExtFile``.
+
+    APPNOTE assigns extract version 4.5 to ZIP64 size extensions, so reject it
+    independently of the usual size sentinels and extra field. Python's BZIP2
+    and LZMA ``ZipExtFile`` paths do not pass the requested output length to the
+    decompressor; only STORED and DEFLATED preserve this module's hard memory
+    bound.
+    """
+    if extract_version == _ZIP64_EXTRACT_VERSION:
+        _raise_zip64(error_type)
+    if compression_method not in _BOUNDED_ZIP_COMPRESSION_METHODS:
+        _raise(
+            error_type,
+            f"Unsupported ZIP compression method {compression_method}; "
+            "the bounded extractor supports only STORED and DEFLATED",
+        )
+
+
+def _reject_zip64_extra_fields(
+    extra: bytes,
+    zip_path: Path,
+    *,
+    error_type: type[ErrorT],
+) -> None:
+    """Reject ZIP64 extra fields and malformed complete extra records."""
+    offset = 0
+    while offset + _ZIP_EXTRA_HEADER.size <= len(extra):
+        field_id, field_size = _ZIP_EXTRA_HEADER.unpack_from(extra, offset)
+        field_end = offset + _ZIP_EXTRA_HEADER.size + field_size
+        if field_id == _ZIP64_EXTRA_FIELD_ID:
+            _raise_zip64(error_type)
+        if field_end > len(extra):
+            _raise(error_type, f"Invalid ZIP archive: {zip_path}")
+        offset = field_end
+
+
+def _preflight_zip_local_header(
+    archive_file,
+    zip_path: Path,
+    *,
+    error_type: type[ErrorT],
+    archive_prefix_size: int,
+    central_directory_start: int,
+    local_header_offset: int,
+) -> None:
+    """Reject local-entry ZIP64 indicators before ``ZipFile`` is constructed."""
+    physical_offset = archive_prefix_size + local_header_offset
+    if (
+        physical_offset < archive_prefix_size
+        or physical_offset + _ZIP_LOCAL_HEADER_SIZE > central_directory_start
+    ):
+        _raise(error_type, f"Invalid ZIP archive: {zip_path}")
+
+    archive_file.seek(physical_offset)
+    header = archive_file.read(_ZIP_LOCAL_HEADER_SIZE)
+    if (
+        len(header) != _ZIP_LOCAL_HEADER_SIZE
+        or header[:4] != _ZIP_LOCAL_SIGNATURE
+    ):
+        _raise(error_type, f"Invalid ZIP archive: {zip_path}")
+
+    extract_version = struct.unpack_from("<H", header, 4)[0]
+    compression_method = struct.unpack_from("<H", header, 8)[0]
+    _preflight_zip_entry_features(
+        extract_version,
+        compression_method,
+        error_type=error_type,
+    )
+
+    compressed_size, uncompressed_size = struct.unpack_from("<LL", header, 18)
+    if (
+        compressed_size == _ZIP_UINT32_MAX
+        or uncompressed_size == _ZIP_UINT32_MAX
+    ):
+        _raise_zip64(error_type)
+
+    filename_size, extra_size = struct.unpack_from("<HH", header, 26)
+    extra_offset = physical_offset + _ZIP_LOCAL_HEADER_SIZE + filename_size
+    if extra_offset + extra_size > central_directory_start:
+        _raise(error_type, f"Invalid ZIP archive: {zip_path}")
+
+    archive_file.seek(extra_offset)
+    extra = archive_file.read(extra_size)
+    if len(extra) != extra_size:
+        _raise(error_type, f"Invalid ZIP archive: {zip_path}")
+    _reject_zip64_extra_fields(extra, zip_path, error_type=error_type)
+
+
 def _preflight_zip_central_directory(
     archive_file,
     zip_path: Path,
@@ -467,10 +578,7 @@ def _preflight_zip_central_directory(
     if eocd_offset >= 20:
         archive_file.seek(eocd_offset - 20)
         if archive_file.read(4) == _ZIP64_LOCATOR_SIGNATURE:
-            _raise(
-                error_type,
-                "ZIP64 archives are not supported by the bounded extractor",
-            )
+            _raise_zip64(error_type)
 
     (
         _signature,
@@ -489,14 +597,11 @@ def _preflight_zip_central_directory(
     ):
         _raise(error_type, "Multi-disk ZIP archives are not supported")
     if (
-        declared_entries == 0xFFFF
-        or central_directory_size == 0xFFFFFFFF
-        or central_directory_offset == 0xFFFFFFFF
+        declared_entries == _ZIP_UINT16_MAX
+        or central_directory_size == _ZIP_UINT32_MAX
+        or central_directory_offset == _ZIP_UINT32_MAX
     ):
-        _raise(
-            error_type,
-            "ZIP64 archives are not supported by the bounded extractor",
-        )
+        _raise_zip64(error_type)
     if declared_entries > max_entries:
         _raise(
             error_type,
@@ -516,11 +621,13 @@ def _preflight_zip_central_directory(
         or central_directory_offset > central_directory_start
     ):
         _raise(error_type, f"Invalid ZIP archive: {zip_path}")
+    archive_prefix_size = central_directory_start - central_directory_offset
 
-    archive_file.seek(central_directory_start)
     consumed = 0
     actual_entries = 0
+    local_header_offsets: list[int] = []
     while consumed < central_directory_size:
+        archive_file.seek(central_directory_start + consumed)
         remaining = central_directory_size - consumed
         if remaining < _ZIP_CENTRAL_HEADER_SIZE:
             _raise(error_type, f"Invalid ZIP archive: {zip_path}")
@@ -530,7 +637,25 @@ def _preflight_zip_central_directory(
             or header[:4] != _ZIP_CENTRAL_SIGNATURE
         ):
             _raise(error_type, f"Invalid ZIP archive: {zip_path}")
+
+        extract_version = struct.unpack_from("<H", header, 6)[0]
+        compression_method = struct.unpack_from("<H", header, 10)[0]
+        _preflight_zip_entry_features(
+            extract_version,
+            compression_method,
+            error_type=error_type,
+        )
+
+        compressed_size, uncompressed_size = struct.unpack_from("<LL", header, 20)
         disk_number_start = struct.unpack_from("<H", header, 34)[0]
+        local_header_offset = struct.unpack_from("<L", header, 42)[0]
+        if (
+            compressed_size == _ZIP_UINT32_MAX
+            or uncompressed_size == _ZIP_UINT32_MAX
+            or local_header_offset == _ZIP_UINT32_MAX
+            or disk_number_start == _ZIP_UINT16_MAX
+        ):
+            _raise_zip64(error_type)
         if disk_number_start != 0:
             _raise(error_type, "Multi-disk ZIP archives are not supported")
 
@@ -541,7 +666,13 @@ def _preflight_zip_central_directory(
         record_size = _ZIP_CENTRAL_HEADER_SIZE + variable_size
         if record_size > remaining:
             _raise(error_type, f"Invalid ZIP archive: {zip_path}")
-        archive_file.seek(variable_size, 1)
+        variable_data = archive_file.read(variable_size)
+        if len(variable_data) != variable_size:
+            _raise(error_type, f"Invalid ZIP archive: {zip_path}")
+        extra = variable_data[filename_size : filename_size + extra_size]
+        _reject_zip64_extra_fields(extra, zip_path, error_type=error_type)
+        local_header_offsets.append(local_header_offset)
+
         consumed += record_size
         actual_entries += 1
         if actual_entries > max_entries:
@@ -554,6 +685,16 @@ def _preflight_zip_central_directory(
     if actual_entries != declared_entries:
         _raise(error_type, f"Invalid ZIP archive: {zip_path}")
 
+    for local_header_offset in local_header_offsets:
+        _preflight_zip_local_header(
+            archive_file,
+            zip_path,
+            error_type=error_type,
+            archive_prefix_size=archive_prefix_size,
+            central_directory_start=central_directory_start,
+            local_header_offset=local_header_offset,
+        )
+
 
 @contextmanager
 def open_zip_bounded(
@@ -562,7 +703,7 @@ def open_zip_bounded(
     error_type: type[ErrorT] = ValueError,
     max_entries: int = MAX_ZIP_ENTRIES,
 ) -> Iterator[zipfile.ZipFile]:
-    """Open an untrusted ZIP only after an O(1)-memory central-dir preflight."""
+    """Open an untrusted ZIP after a bounded-memory header preflight."""
     _validate_non_negative_int(max_entries, "max_entries")
     zip_path = Path(zip_path)
     with ExitStack() as stack:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import stat
 import struct
 import weakref
@@ -517,6 +518,221 @@ def test_safe_extract_zip_rejects_zip64_before_zipfile_construction(
 
     with pytest.raises(ValueError, match="ZIP64"):
         safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    "indicator",
+    [
+        "central-sizes",
+        "central-offset",
+        "central-disk",
+        "local-sizes",
+    ],
+)
+def test_safe_extract_zip_rejects_entry_zip64_before_zipfile_construction(
+    tmp_path, monkeypatch, indicator
+):
+    contents = b"contents"
+    if indicator == "central-offset":
+        zip64_payload = struct.pack("<Q", 0)
+    elif indicator == "central-disk":
+        zip64_payload = struct.pack("<L", 0)
+    else:
+        zip64_payload = struct.pack("<QQ", len(contents), len(contents))
+
+    info = zipfile.ZipInfo("file.txt")
+    info.extra = struct.pack("<HH", 0xCAFE, len(zip64_payload)) + zip64_payload
+    zip_path = tmp_path / f"{indicator}.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(info, contents)
+
+    archive = bytearray(zip_path.read_bytes())
+    local_header = archive.index(b"PK\x03\x04")
+    central_header = archive.index(b"PK\x01\x02")
+    if indicator.startswith("central"):
+        filename_size = struct.unpack_from("<H", archive, central_header + 28)[0]
+        extra_offset = central_header + 46 + filename_size
+        struct.pack_into("<H", archive, extra_offset, 0x0001)
+        if indicator == "central-sizes":
+            struct.pack_into("<LL", archive, central_header + 20, 0xFFFFFFFF, 0xFFFFFFFF)
+        elif indicator == "central-offset":
+            struct.pack_into("<L", archive, central_header + 42, 0xFFFFFFFF)
+        else:
+            struct.pack_into("<H", archive, central_header + 34, 0xFFFF)
+    else:
+        filename_size = struct.unpack_from("<H", archive, local_header + 26)[0]
+        extra_offset = local_header + 30 + filename_size
+        struct.pack_into("<H", archive, extra_offset, 0x0001)
+        struct.pack_into("<LL", archive, local_header + 18, 0xFFFFFFFF, 0xFFFFFFFF)
+    zip_path.write_bytes(archive)
+
+    # The stdlib accepts each hybrid ZIP64 entry. The bounded opener must reject
+    # it during preflight, before handing the archive to ZipFile.
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.read("file.txt") == contents
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="ZIP64"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize("header_kind", ["central", "local"])
+def test_safe_extract_zip_rejects_zip64_extra_without_sentinel_before_zipfile(
+    tmp_path, monkeypatch, header_kind
+):
+    info = zipfile.ZipInfo("file.txt")
+    info.extra = struct.pack("<HH", 0xCAFE, 0)
+    zip_path = tmp_path / f"{header_kind}-extra.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(info, b"contents")
+
+    archive = bytearray(zip_path.read_bytes())
+    if header_kind == "central":
+        header_offset = archive.index(b"PK\x01\x02")
+        filename_size = struct.unpack_from("<H", archive, header_offset + 28)[0]
+        extra_offset = header_offset + 46 + filename_size
+    else:
+        header_offset = archive.index(b"PK\x03\x04")
+        filename_size = struct.unpack_from("<H", archive, header_offset + 26)[0]
+        extra_offset = header_offset + 30 + filename_size
+    struct.pack_into("<H", archive, extra_offset, 0x0001)
+    zip_path.write_bytes(archive)
+
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.read("file.txt") == b"contents"
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="ZIP64"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+def test_safe_extract_zip_rejects_force_zip64_local_header_before_zipfile(
+    tmp_path, monkeypatch
+):
+    zip_path = tmp_path / "forced-local-zip64.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        with zf.open("file.txt", "w", force_zip64=True) as target:
+            target.write(b"contents")
+
+    # For a small streamed member, ZipFile leaves the central directory and
+    # EOCD legacy-sized while placing ZIP64 sentinels and extra data locally.
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.read("file.txt") == b"contents"
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="ZIP64"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize("visible_version", ["central", "local"])
+def test_safe_extract_zip_rejects_masked_zip64_data_descriptor_version(
+    tmp_path, monkeypatch, visible_version
+):
+    class UnseekableBuffer(io.BytesIO):
+        def seek(self, *_args, **_kwargs):
+            raise io.UnsupportedOperation
+
+    stream = UnseekableBuffer()
+    with zipfile.ZipFile(stream, "w") as zf:
+        with zf.open("file.txt", "w", force_zip64=True) as target:
+            target.write(b"contents")
+
+    archive = bytearray(stream.getvalue())
+    local_header = archive.index(b"PK\x03\x04")
+    central_header = archive.index(b"PK\x01\x02")
+    assert struct.unpack_from("<H", archive, local_header + 6)[0] & 0x0008
+    assert struct.unpack_from("<H", archive, local_header + 4)[0] == 45
+    assert struct.unpack_from("<H", archive, central_header + 6)[0] == 45
+
+    # Hide the local size sentinels and ZIP64 extra ID while retaining the
+    # 64-bit data descriptor emitted by ZipFile. Leave version 4.5 visible in
+    # exactly one header to exercise both preflight checks.
+    struct.pack_into("<LL", archive, local_header + 18, 0, 0)
+    filename_size = struct.unpack_from("<H", archive, local_header + 26)[0]
+    local_extra = local_header + 30 + filename_size
+    struct.pack_into("<H", archive, local_extra, 0xCAFE)
+    if visible_version == "central":
+        struct.pack_into("<H", archive, local_header + 4, 20)
+    else:
+        struct.pack_into("<H", archive, central_header + 6, 20)
+
+    zip_path = tmp_path / f"masked-{visible_version}-zip64.zip"
+    zip_path.write_bytes(archive)
+    with zipfile.ZipFile(zip_path) as zf:
+        assert zf.read("file.txt") == b"contents"
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="ZIP64"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize("compression", [zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_safe_extract_zip_rejects_unbounded_compression_before_zipfile(
+    tmp_path, monkeypatch, compression
+):
+    zip_path = tmp_path / f"unsupported-{compression}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=compression) as zf:
+        zf.writestr("bomb.txt", b"A" * (1024 * 1024))
+
+    # Lie about the output size. For BZIP2/LZMA, ZipExtFile materializes the
+    # whole decompressor result before slicing it to the requested length.
+    archive = bytearray(zip_path.read_bytes())
+    central_header = archive.index(b"PK\x01\x02")
+    struct.pack_into("<L", archive, central_header + 24, 1)
+    zip_path.write_bytes(archive)
+    monkeypatch.setattr(
+        zipfile,
+        "ZipFile",
+        lambda *_args, **_kwargs: pytest.fail("ZipFile constructor was called"),
+    )
+
+    with pytest.raises(ValueError, match="supports only STORED and DEFLATED"):
+        safe_extract_zip(zip_path, tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    "compression",
+    [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED],
+)
+def test_safe_extract_zip_accepts_bounded_compression_methods(
+    tmp_path, compression
+):
+    zip_path = tmp_path / f"supported-{compression}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=compression) as zf:
+        zf.writestr("file.txt", b"contents")
+
+    out_dir = tmp_path / "out"
+    safe_extract_zip(zip_path, out_dir)
+
+    assert (out_dir / "file.txt").read_bytes() == b"contents"
+
+
+def test_safe_extract_zip_accepts_archive_with_prepended_data(tmp_path):
+    zip_path = tmp_path / "prefixed.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("file.txt", "contents")
+    zip_path.write_bytes(b"launcher-prefix" + zip_path.read_bytes())
+
+    out_dir = tmp_path / "out"
+    safe_extract_zip(zip_path, out_dir)
+
+    assert (out_dir / "file.txt").read_text(encoding="utf-8") == "contents"
 
 
 def test_safe_extract_zip_rejects_central_entry_from_another_disk(tmp_path):
