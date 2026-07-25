@@ -580,10 +580,10 @@ def preset_catalog_list():
             if entry.install_allowed
             else "[yellow]discovery only[/yellow]"
         )
-        console.print(f"  [bold]{entry.name}[/bold] (priority {entry.priority})")
+        console.print(f"  [bold]{_escape_markup(str(entry.name))}[/bold] (priority {entry.priority})")
         if entry.description:
-            console.print(f"     {entry.description}")
-        console.print(f"     URL: {entry.url}")
+            console.print(f"     {_escape_markup(str(entry.description))}")
+        console.print(f"     URL: {_escape_markup(str(entry.url))}")
         console.print(f"     Install: {install_str}")
         console.print()
 

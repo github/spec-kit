@@ -2424,10 +2424,10 @@ def workflow_catalog_list():
     console.print("\n[bold cyan]Workflow Catalog Sources:[/bold cyan]\n")
     for i, cfg in enumerate(configs):
         install_status = "[green]install allowed[/green]" if cfg["install_allowed"] else "[yellow]discovery only[/yellow]"
-        console.print(f"  [{i}] [bold]{cfg['name']}[/bold] — {install_status}")
-        console.print(f"      {cfg['url']}")
+        console.print(f"  [{i}] [bold]{_escape_markup(str(cfg['name']))}[/bold] — {install_status}")
+        console.print(f"      {_escape_markup(str(cfg['url']))}")
         if cfg.get("description"):
-            console.print(f"      [dim]{cfg['description']}[/dim]")
+            console.print(f"      [dim]{_escape_markup(str(cfg['description']))}[/dim]")
         console.print()
 
 
@@ -3067,10 +3067,10 @@ def workflow_step_catalog_list():
             if cfg["install_allowed"]
             else "[yellow]discovery only[/yellow]"
         )
-        console.print(f"  [{i}] [bold]{cfg['name']}[/bold] — {install_status}")
-        console.print(f"      {cfg['url']}")
+        console.print(f"  [{i}] [bold]{_escape_markup(str(cfg['name']))}[/bold] — {install_status}")
+        console.print(f"      {_escape_markup(str(cfg['url']))}")
         if cfg.get("description"):
-            console.print(f"      [dim]{cfg['description']}[/dim]")
+            console.print(f"      [dim]{_escape_markup(str(cfg['description']))}[/dim]")
         console.print()
 
 

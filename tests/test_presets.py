@@ -2637,6 +2637,28 @@ class TestPresetCatalogMultiCatalog:
         assert active[1].priority == 2
         assert active[1].install_allowed is False
 
+    def test_catalog_list_escapes_rich_markup(self, project_dir):
+        """User-editable catalog name/url/description must not be parsed as Rich markup."""
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        entry = PresetCatalogEntry(
+            url="https://example.com/[cat].json",
+            name="Bracket [Catalog]",
+            priority=1,
+            install_allowed=True,
+            description="desc [with] brackets",
+        )
+        runner = CliRunner()
+        with patch.object(Path, "cwd", return_value=project_dir), \
+             patch.object(PresetCatalog, "get_active_catalogs", return_value=[entry]):
+            result = runner.invoke(app, ["preset", "catalog", "list"])
+        assert result.exit_code == 0, result.output
+        assert "Bracket [Catalog]" in result.output
+        assert "https://example.com/[cat].json" in result.output
+        assert "desc [with] brackets" in result.output
+
     def test_env_var_overrides_catalogs(self, project_dir, monkeypatch):
         """Test that SPECKIT_PRESET_CATALOG_URL env var overrides defaults."""
         monkeypatch.setenv(
