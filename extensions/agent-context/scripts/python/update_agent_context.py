@@ -11,8 +11,9 @@ Usage: update_agent_context.py [plan_path]
 
 When ``plan_path`` is omitted, the script derives it from
 ``.specify/feature.json`` (written by /speckit-specify). Falls back to the most
-recently modified ``specs/*/plan.md`` only when feature.json is absent or its
-plan does not exist yet.
+recently modified ``plan.md`` anywhere under ``specs/`` (including nested scoped
+layouts such as ``specs/<scope>/<feature>/plan.md``) only when feature.json is
+absent or its plan does not exist yet.
 """
 
 from __future__ import annotations
@@ -173,7 +174,7 @@ def _resolve_plan_path(project_root: str) -> str:
     if not plan_path:
         root = Path(project_root).resolve()
         plans = sorted(
-            (root / "specs").glob("*/plan.md"),
+            (root / "specs").rglob("plan.md"),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
