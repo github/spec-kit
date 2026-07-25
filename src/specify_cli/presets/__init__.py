@@ -322,7 +322,7 @@ class PresetManifest:
 
         # Validate provides section
         provides = self.data["provides"]
-        if "templates" not in provides or not provides["templates"]:
+        if "templates" not in provides:
             raise PresetValidationError(
                 "Preset must provide at least one template"
             )
@@ -333,10 +333,20 @@ class PresetManifest:
         # install handler already catches, instead of a raw TypeError
         # ('int'/'NoneType' object is not iterable) that escapes to an
         # unhandled traceback. Mirrors the sibling ExtensionManifest guards.
+        #
+        # Order matters: the container's TYPE is checked before its emptiness,
+        # so a FALSY non-list (``templates: 0``/``false``/``null``/``''``/``{}``)
+        # reports the accurate type error rather than the misleading "must
+        # provide at least one template". An empty list still reports the
+        # latter, since that genuinely is a list with no templates.
         templates = provides["templates"]
         if not isinstance(templates, list):
             raise PresetValidationError(
                 "Invalid provides.templates: expected a list"
+            )
+        if not templates:
+            raise PresetValidationError(
+                "Preset must provide at least one template"
             )
         for tmpl in templates:
             if not isinstance(tmpl, dict):

@@ -197,13 +197,37 @@ class TestPresetManifest:
             with pytest.raises(PresetValidationError, match="YAML mapping"):
                 PresetManifest(manifest_path)
 
-    def test_non_list_templates_raises_validation_error(self, temp_dir, valid_pack_data):
-        """A non-list provides.templates (e.g. a scalar) raises PresetValidationError,
-        not a raw 'int object is not iterable' TypeError — mirrors ExtensionManifest."""
-        valid_pack_data["provides"]["templates"] = 5
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            5, "oops", {"a": 1},   # truthy non-lists
+            0, False, None, "", {},  # FALSY non-lists: must not fall through to
+                                     # the misleading "at least one template"
+        ],
+    )
+    def test_non_list_templates_raises_validation_error(
+        self, temp_dir, valid_pack_data, bad
+    ):
+        """A non-list provides.templates raises the accurate type error, not a raw
+        'int object is not iterable' TypeError and not the misleading "must provide
+        at least one template" (which a falsy non-list hit while the type check
+        sat behind the emptiness check) — mirrors ExtensionManifest."""
+        valid_pack_data["provides"]["templates"] = bad
         manifest_path = temp_dir / "preset.yml"
         manifest_path.write_text(yaml.dump(valid_pack_data), encoding="utf-8")
         with pytest.raises(PresetValidationError, match="templates.*expected a list"):
+            PresetManifest(manifest_path)
+
+    def test_empty_list_templates_still_reports_no_templates(
+        self, temp_dir, valid_pack_data
+    ):
+        """An EMPTY LIST is a well-typed container with no templates, so it keeps
+        the "must provide at least one template" message (regression guard for the
+        type-before-emptiness ordering)."""
+        valid_pack_data["provides"]["templates"] = []
+        manifest_path = temp_dir / "preset.yml"
+        manifest_path.write_text(yaml.dump(valid_pack_data), encoding="utf-8")
+        with pytest.raises(PresetValidationError, match="at least one template"):
             PresetManifest(manifest_path)
 
     @pytest.mark.parametrize("bad_entry", [None, 5, "oops", ["nested"]])
