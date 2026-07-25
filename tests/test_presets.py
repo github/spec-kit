@@ -7678,3 +7678,70 @@ class TestEnsureConstitutionResolverAware:
         assert "{CORE_TEMPLATE}" not in content
         assert "# Ensure Wrapper" in content
         assert "[PROJECT_NAME]" in content
+
+
+class TestPresetTagsNonString:
+    """Non-string catalog tags must not crash preset display commands.
+
+    Catalog payloads are user-editable YAML/JSON, so a `tags:` list can contain
+    numbers or other non-strings. The display path joins them; a raw
+    ``", ".join(...)`` blows up with ``TypeError: sequence item 0: expected str``.
+    Sibling command surfaces (extensions/integrations/workflows) already guard
+    this with ``str(t) for t in ...`` — presets must match.
+    """
+
+    def _seed_catalog(self, project_dir, tags):
+        catalog = PresetCatalog(project_dir)
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog_data = {
+            "schema_version": "1.0",
+            "presets": {
+                "numeric-tags": {
+                    "name": "Numeric Tags",
+                    "description": "Preset with non-string tags",
+                    "version": "1.0.0",
+                    "tags": tags,
+                },
+            },
+        }
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(json.dumps({
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        }))
+        return catalog
+
+    def test_search_renders_non_string_tags(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, [1, 2])
+        default_only = [PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True
+        )]
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs", return_value=default_only):
+            result = CliRunner().invoke(app, ["preset", "search", "Numeric"])
+
+        assert result.exit_code == 0, result.output
+        plain = strip_ansi(result.output)
+        assert "Tags: 1, 2" in plain
+
+    def test_info_renders_non_string_tags(self, project_dir):
+        from typer.testing import CliRunner
+        from unittest.mock import patch
+        from specify_cli import app
+
+        catalog = self._seed_catalog(project_dir, [1, 2])
+        default_only = [PresetCatalogEntry(
+            url=catalog.DEFAULT_CATALOG_URL, name="default", priority=1, install_allowed=True
+        )]
+
+        with patch.object(Path, "cwd", return_value=project_dir), \
+                patch.object(PresetCatalog, "get_active_catalogs", return_value=default_only):
+            result = CliRunner().invoke(app, ["preset", "info", "numeric-tags"])
+
+        assert result.exit_code == 0, result.output
+        plain = strip_ansi(result.output)
+        assert "Tags:        1, 2" in plain

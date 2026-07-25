@@ -2685,7 +2685,7 @@ class PresetCatalog:
                 continue
 
             if tag and tag.lower() not in [
-                t.lower() for t in pack_data.get("tags", [])
+                str(t).lower() for t in pack_data.get("tags", [])
             ]:
                 continue
 
@@ -2697,7 +2697,7 @@ class PresetCatalog:
                         pack_data.get("description", ""),
                         pack_id,
                     ]
-                    + pack_data.get("tags", [])
+                    + [str(t) for t in pack_data.get("tags", [])]
                 ).lower()
 
                 if query_lower not in searchable_text:
