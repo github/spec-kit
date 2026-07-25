@@ -803,8 +803,11 @@ def extension_search(
                     if isinstance(downloads, (int, float))
                     else f"Downloads: {_escape_markup(str(downloads))}"
                 )
-            if ext.get('stars') is not None:
-                stats.append(f"Stars: {ext['stars']}")
+            stars = ext.get('stars')
+            if stars is not None:
+                # Same untrusted-value/Rich-markup hazard as `downloads` above,
+                # in the same joined string.
+                stats.append(f"Stars: {_escape_markup(str(stars))}")
             if stats:
                 console.print(f"  [dim]{' | '.join(stats)}[/dim]")
 
@@ -995,8 +998,11 @@ def _print_extension_info(ext_info: dict, manager):
             if isinstance(downloads, (int, float))
             else f"Downloads: {_escape_markup(str(downloads))}"
         )
-    if ext_info.get('stars') is not None:
-        stats.append(f"Stars: {ext_info['stars']}")
+    stars = ext_info.get('stars')
+    if stars is not None:
+        # Same untrusted-value/Rich-markup hazard as `downloads` above, in the
+        # same joined string.
+        stats.append(f"Stars: {_escape_markup(str(stars))}")
     if stats:
         console.print(f"[bold]Statistics:[/bold] {' | '.join(stats)}")
         console.print()

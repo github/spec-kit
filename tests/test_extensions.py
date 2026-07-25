@@ -4058,6 +4058,20 @@ class TestExtensionCatalog:
         # Must not raise ValueError or rich.errors.MarkupError.
         _print_extension_info(ext_info, manager)
 
+    def test_info_renders_markup_bearing_stars(self):
+        """``stars`` sits in the same joined stats string as ``downloads`` and is
+        equally catalog-controlled, so it must be escaped too."""
+        from unittest.mock import MagicMock
+        from specify_cli.extensions._commands import _print_extension_info
+
+        manager = MagicMock()
+        manager.registry.is_installed.return_value = False
+        ext_info = {
+            "name": "Jira", "id": "jira", "version": "1.0.0",
+            "description": "desc", "stars": "[/red]x",
+        }
+        _print_extension_info(ext_info, manager)  # must not raise MarkupError
+
     @pytest.mark.parametrize("downloads", ["1500", "[/red]foo"])
     def test_search_survives_non_numeric_downloads(self, temp_dir, downloads):
         """`specify extension search` must not abort when a catalog entry's
