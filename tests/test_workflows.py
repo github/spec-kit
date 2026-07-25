@@ -7946,7 +7946,7 @@ class TestWorkflowInfoStepGraph:
         fake = types.SimpleNamespace(
             name="My [WF]",
             id="my-wf",
-            version="1.0.0",
+            version="1.0.0 [beta]",
             author="Jane [Doe]",
             description="Does [stuff] nicely",
             default_integration="claude [code]",
@@ -7962,6 +7962,7 @@ class TestWorkflowInfoStepGraph:
         # Each bracketed token must render literally rather than be consumed as
         # an unknown Rich style tag.
         assert "My [WF]" in result.output
+        assert "1.0.0 [beta]" in result.output
         assert "Jane [Doe]" in result.output
         assert "Does [stuff] nicely" in result.output
         assert "claude [code]" in result.output
@@ -7988,7 +7989,7 @@ class TestWorkflowInfoStepGraph:
             "get_workflow_info",
             lambda self, wid: {
                 "name": "Cat [WF]",
-                "version": "2.0.0",
+                "version": "2.0.0 [rc]",
                 "description": "From [catalog]",
                 "tags": ["a [b]", "c [d]"],
             },
@@ -7999,9 +8000,40 @@ class TestWorkflowInfoStepGraph:
 
         assert result.exit_code == 0, result.output
         assert "Cat [WF]" in result.output
+        assert "2.0.0 [rc]" in result.output
         assert "From [catalog]" in result.output
         assert "a [b]" in result.output
         assert "c [d]" in result.output
+
+    def test_not_found_id_escaped(self, temp_dir, monkeypatch):
+        """When the workflow is neither on disk nor in the catalog, the
+        not-found error echoes the requested ID. That ID is user input, so a
+        bracketed value must render literally instead of being parsed (and
+        swallowed) as a Rich style tag."""
+        from typer.testing import CliRunner
+        from specify_cli import app
+        from specify_cli.workflows.engine import WorkflowEngine
+        from specify_cli.workflows import catalog as catalog_mod
+
+        (temp_dir / ".specify" / "workflows").mkdir(parents=True)
+
+        def _not_on_disk(self, wid):
+            raise FileNotFoundError(wid)
+
+        monkeypatch.setattr(WorkflowEngine, "load_workflow", _not_on_disk)
+        monkeypatch.setattr(
+            catalog_mod.WorkflowCatalog,
+            "get_workflow_info",
+            lambda self, wid: None,
+        )
+        monkeypatch.chdir(temp_dir)
+
+        result = CliRunner().invoke(app, ["workflow", "info", "ghost [wf]"])
+
+        assert result.exit_code == 1, result.output
+        assert "not found" in result.output
+        # The bracketed ID must survive literally, not be eaten as markup.
+        assert "ghost [wf]" in result.output
 
 
 class TestWorkflowAddSymlinkGuard:
