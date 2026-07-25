@@ -6373,6 +6373,53 @@ class TestWorkflowCatalog:
         with pytest.raises(WorkflowValidationError, match="expected a mapping"):
             catalog._load_catalog_config(config_path)
 
+    @pytest.mark.parametrize("body", ["catalogs: {}\n", "catalogs: ''\n", "catalogs: 0\n", "catalogs: false\n"])
+    def test_falsy_non_list_catalogs_rejected(self, project_dir, body):
+        """A FALSY non-list ``catalogs:`` value must raise, like a truthy one
+        (``catalogs: 5``) already does. The shape check sat behind the emptiness
+        check, so these were silently swallowed as "no catalogs"."""
+        from specify_cli.workflows.catalog import WorkflowCatalog, WorkflowValidationError
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+        catalog = WorkflowCatalog(project_dir)
+        with pytest.raises(WorkflowValidationError, match="'catalogs' must be a list"):
+            catalog._load_catalog_config(config_path)
+
+    @pytest.mark.parametrize("body", ["catalogs:\n", "catalogs: []\n"])
+    def test_absent_or_empty_catalogs_is_noop(self, project_dir, body):
+        """An explicit ``catalogs:`` null or an empty list stays a valid no-op —
+        the layer contributes nothing and resolution falls through."""
+        from specify_cli.workflows.catalog import WorkflowCatalog
+
+        config_path = project_dir / ".specify" / "workflow-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+        catalog = WorkflowCatalog(project_dir)
+        assert catalog._load_catalog_config(config_path) is None
+
+    @pytest.mark.parametrize("body", ["[]\n", "false\n", "0\n", "''\n"])
+    def test_step_catalog_falsy_non_mapping_rejected(self, project_dir, body):
+        """StepCatalog._load_catalog_config is the twin of the workflow loader and
+        had the same ``or {}`` coercion, so falsy non-mappings bypassed its
+        isinstance guard. It must reject them like a truthy non-mapping."""
+        from specify_cli.workflows.catalog import StepCatalog, StepValidationError
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+        catalog = StepCatalog(project_dir)
+        with pytest.raises(StepValidationError, match="expected a mapping"):
+            catalog._load_catalog_config(config_path)
+
+    @pytest.mark.parametrize("body", ["", "# only a comment\n", "null\n", "~\n"])
+    def test_step_catalog_empty_or_null_is_noop(self, project_dir, body):
+        """...while an empty document or explicit null stays a valid no-op."""
+        from specify_cli.workflows.catalog import StepCatalog
+
+        config_path = project_dir / ".specify" / "step-catalogs.yml"
+        config_path.write_text(body, encoding="utf-8")
+        catalog = StepCatalog(project_dir)
+        assert catalog._load_catalog_config(config_path) is None
+
     @pytest.mark.parametrize("body", ["", "# only a comment\n", "null\n", "~\n"])
     def test_empty_or_null_config_is_noop(self, project_dir, body):
         """An empty document, comment-only file, or explicit top-level null is a

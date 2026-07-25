@@ -355,16 +355,25 @@ class WorkflowCatalog:
                 f"Invalid catalog config: expected a mapping, "
                 f"got {type(data).__name__}"
             )
-        catalogs_data = data.get("catalogs", [])
-        if not catalogs_data:
-            # Empty catalogs list (e.g. after removing last entry)
-            # is valid — fall back to built-in defaults.
+        # Same asymmetry as the top level above, one nesting level down: the
+        # shape check has to run BEFORE the emptiness check, or a FALSY non-list
+        # (``catalogs: {}``/``''``/``0``/``false``) is silently swallowed as
+        # "no catalogs" while a TRUTHY non-list (``catalogs: 5``) correctly
+        # raises. An absent key or an explicit ``catalogs:`` null means "nothing
+        # configured here" (matching the bundler's reader), and an empty list
+        # stays valid too.
+        catalogs_data = data.get("catalogs")
+        if catalogs_data is None:
             return None
         if not isinstance(catalogs_data, list):
             raise WorkflowValidationError(
                 f"Invalid catalog config: 'catalogs' must be a list, "
                 f"got {type(catalogs_data).__name__}"
             )
+        if not catalogs_data:
+            # Empty catalogs list (e.g. after removing last entry)
+            # is valid — fall back to built-in defaults.
+            return None
 
         entries: list[WorkflowCatalogEntry] = []
         for idx, item in enumerate(catalogs_data):
@@ -1028,24 +1037,33 @@ class StepCatalog:
         if not config_path.exists():
             return None
         try:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, OSError, UnicodeError) as exc:
             raise StepValidationError(
                 f"Failed to read catalog config {config_path}: {exc}"
             ) from exc
+        # Same two guards as WorkflowCatalog._load_catalog_config above, kept in
+        # lockstep: this is the step-catalog twin of that loader and read the
+        # same way. Dropping ``or {}`` stops a falsy non-mapping top level from
+        # being coerced past the isinstance check, and the ``catalogs`` shape
+        # check runs before the emptiness check for the same reason.
+        if data is None:
+            return None
         if not isinstance(data, dict):
             raise StepValidationError(
                 f"Invalid catalog config: expected a mapping, "
                 f"got {type(data).__name__}"
             )
-        catalogs_data = data.get("catalogs", [])
-        if not catalogs_data:
+        catalogs_data = data.get("catalogs")
+        if catalogs_data is None:
             return None
         if not isinstance(catalogs_data, list):
             raise StepValidationError(
                 f"Invalid catalog config: 'catalogs' must be a list, "
                 f"got {type(catalogs_data).__name__}"
             )
+        if not catalogs_data:
+            return None
 
         entries: list[StepCatalogEntry] = []
         for idx, item in enumerate(catalogs_data):
