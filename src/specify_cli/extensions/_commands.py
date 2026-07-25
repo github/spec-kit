@@ -794,11 +794,14 @@ def extension_search(
             if downloads is not None:
                 # Catalog fields are untrusted; a non-numeric ``downloads``
                 # (e.g. the JSON string "1500") would crash the ``:,`` format
-                # with "Cannot specify ',' with 's'". Only group-format numbers.
+                # with "Cannot specify ',' with 's'". Only group-format numbers,
+                # and escape the fallback: the joined stats are rendered as Rich
+                # markup, so a value like "[/red]foo" would raise MarkupError
+                # (matching how every other catalog field here is escaped).
                 stats.append(
                     f"Downloads: {downloads:,}"
                     if isinstance(downloads, (int, float))
-                    else f"Downloads: {downloads}"
+                    else f"Downloads: {_escape_markup(str(downloads))}"
                 )
             if ext.get('stars') is not None:
                 stats.append(f"Stars: {ext['stars']}")
@@ -983,11 +986,14 @@ def _print_extension_info(ext_info: dict, manager):
     if downloads is not None:
         # Catalog fields are untrusted; a non-numeric ``downloads`` (e.g. the
         # JSON string "1500") would crash the ``:,`` format with "Cannot
-        # specify ',' with 's'". Only group-format numbers.
+        # specify ',' with 's'". Only group-format numbers, and escape the
+        # fallback: the joined stats are rendered as Rich markup, so a value
+        # like "[/red]foo" would raise MarkupError (matching how every other
+        # catalog field here is escaped).
         stats.append(
             f"Downloads: {downloads:,}"
             if isinstance(downloads, (int, float))
-            else f"Downloads: {downloads}"
+            else f"Downloads: {_escape_markup(str(downloads))}"
         )
     if ext_info.get('stars') is not None:
         stats.append(f"Stars: {ext_info['stars']}")
