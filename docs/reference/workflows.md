@@ -539,7 +539,7 @@ This enables `specify workflow resume` to continue from the exact step where a r
 | Non-empty string, matches an option (case-insensitive) | Gate auto-decides; `output.choice` is set to the configured option spelling |
 | Non-empty string, no match | Gate fails immediately |
 | Non-string | Gate fails immediately |
-| Missing, `null`, or empty | Gate prompts on a TTY; pauses otherwise |
+| Missing or empty | Gate prompts on a TTY; pauses otherwise |
 
 **Default value semantics:** A non-empty `default` is consumed as a verdict on the first run — matching an option auto-decides the gate, not matching fails it immediately.
 
