@@ -55,6 +55,34 @@ class TestGenericIntegration:
         with pytest.raises(ValueError, match="--commands-dir is required"):
             i.setup(tmp_path, m, parsed_options={"commands_dir": ""})
 
+    @pytest.mark.parametrize("blank", ["  ", "\t"])
+    def test_resolve_commands_dir_rejects_blank_parsed_value(self, blank):
+        """A whitespace-only value must raise too: it resolves to a directory
+        literally named " ", scattering command files just like the empty case."""
+        from specify_cli.integrations.generic import GenericIntegration
+
+        with pytest.raises(ValueError, match="--commands-dir is required"):
+            GenericIntegration._resolve_commands_dir({"commands_dir": blank}, {})
+
+    @pytest.mark.parametrize(
+        "raw", ["--commands-dir ' '", "--commands-dir='  '", "--commands-dir '\t'"]
+    )
+    def test_resolve_commands_dir_rejects_blank_raw_value(self, raw):
+        """Same rule on the raw_options branch, so the two cannot drift apart."""
+        from specify_cli.integrations.generic import GenericIntegration
+
+        with pytest.raises(ValueError, match="--commands-dir is required"):
+            GenericIntegration._resolve_commands_dir({}, {"raw_options": raw})
+
+    @pytest.mark.parametrize("padded", ["  .myagent/cmds  ", "\t.myagent/cmds"])
+    def test_resolve_commands_dir_strips_padding(self, padded):
+        """A padded but real value is normalized rather than rejected."""
+        from specify_cli.integrations.generic import GenericIntegration
+
+        assert GenericIntegration._resolve_commands_dir(
+            {"commands_dir": padded}, {}
+        ) == ".myagent/cmds"
+
     @pytest.mark.parametrize("raw", ["--commands-dir=", "--commands-dir ''", '--commands-dir ""'])
     def test_resolve_commands_dir_rejects_empty_raw_value(self, raw):
         """An empty --commands-dir in raw_options must raise the same "required"

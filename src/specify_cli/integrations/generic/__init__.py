@@ -53,7 +53,15 @@ class GenericIntegration(MarkdownIntegration):
         """
         parsed_options = parsed_options or {}
 
+        # Accept a value only when it is non-BLANK, and normalize the padding.
+        # An empty value resolves to the project root (``project_root / ""``),
+        # and a whitespace-only one to a directory literally named " ", so
+        # either would silently scatter command files instead of failing with
+        # the documented "required" error. Both branches below apply the same
+        # rule so they cannot drift apart.
         commands_dir = parsed_options.get("commands_dir")
+        if isinstance(commands_dir, str):
+            commands_dir = commands_dir.strip()
         if commands_dir:
             return commands_dir
 
@@ -63,17 +71,12 @@ class GenericIntegration(MarkdownIntegration):
             import shlex
             tokens = shlex.split(raw)
             for i, token in enumerate(tokens):
-                # Only accept a NON-EMPTY value, matching the parsed-options
-                # branch above (`if commands_dir:`). An empty value
-                # (``--commands-dir=`` or ``--commands-dir ""``) must fall
-                # through to the "required" error below, not be returned
-                # verbatim — otherwise it resolves to the project root and
-                # command files get written there instead of a dedicated dir.
                 if token == "--commands-dir" and i + 1 < len(tokens):
-                    if tokens[i + 1]:
-                        return tokens[i + 1]
+                    candidate = tokens[i + 1].strip()
+                    if candidate:
+                        return candidate
                 if token.startswith("--commands-dir="):
-                    candidate = token.split("=", 1)[1]
+                    candidate = token.split("=", 1)[1].strip()
                     if candidate:
                         return candidate
 
