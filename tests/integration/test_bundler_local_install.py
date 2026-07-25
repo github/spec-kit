@@ -6,6 +6,7 @@ proving the real in-process primitive dispatch (T044) works without a network.
 """
 from __future__ import annotations
 
+import io
 import os
 from pathlib import Path
 
@@ -106,6 +107,64 @@ def test_local_source_zip_with_corrupt_entry_raises_clean_error(tmp_path: Path):
     zlib_bad.write_bytes(bytes(raw2))
     with pytest.raises(BundlerError, match="not a valid .zip bundle"):
         _local_manifest_source(str(zlib_bad))
+
+
+def test_local_source_encrypted_zip_raises_clean_error(tmp_path: Path):
+    """A password-protected artifact (``zip -e``) must report cleanly. CPython
+    raises RuntimeError("... is encrypted, password required for extraction") at
+    read() time -- not a BadZipFile/OSError, so it escaped the first boundary."""
+    import zipfile
+
+    artifact = tmp_path / "enc.zip"
+    with zipfile.ZipFile(artifact, "w") as zf:
+        zf.writestr("bundle.yml", "schema_version: '1.0'\n")
+    raw = bytearray(artifact.read_bytes())
+    raw[raw.find(b"PK\x03\x04") + 6] |= 0x01  # local header: encrypted bit
+    raw[raw.find(b"PK\x01\x02") + 8] |= 0x01  # central dir: encrypted bit
+    artifact.write_bytes(bytes(raw))
+    with pytest.raises(BundlerError, match="not a valid .zip bundle"):
+        _local_manifest_source(str(artifact))
+
+
+def test_local_source_unsupported_compression_raises_clean_error(tmp_path: Path):
+    """An unsupported compression method raises NotImplementedError at read()
+    time -- also not a BadZipFile/OSError."""
+    import zipfile
+
+    artifact = tmp_path / "comp.zip"
+    with zipfile.ZipFile(artifact, "w") as zf:
+        zf.writestr("bundle.yml", "schema_version: '1.0'\n")
+    raw = bytearray(artifact.read_bytes())
+    raw[raw.find(b"PK\x01\x02") + 10] = 99  # central dir compress_type
+    raw[raw.find(b"PK\x03\x04") + 8] = 99   # local header compress_type
+    artifact.write_bytes(bytes(raw))
+    with pytest.raises(BundlerError, match="not a valid .zip bundle"):
+        _local_manifest_source(str(artifact))
+
+
+def test_local_source_zip_error_message_escapes_archive_markup(tmp_path: Path):
+    """zipfile embeds bytes taken FROM THE ARCHIVE in some messages, e.g.
+    BadZipFile("File name in directory 'bundle.yml' and header b'[/red]abcd'
+    differ."). That text reaches the user through _fail(), which renders Rich
+    markup, so it must be escaped or a crafted member name raises MarkupError
+    instead of reporting the corruption."""
+    import zipfile
+
+    from rich.console import Console
+
+    artifact = tmp_path / "markup.zip"
+    with zipfile.ZipFile(artifact, "w") as zf:
+        zf.writestr("bundle.yml", "schema_version: '1.0'\n")
+    raw = bytearray(artifact.read_bytes())
+    name_at = raw.find(b"PK\x03\x04") + 30
+    raw[name_at:name_at + 10] = b"[/red]abcd"  # same length keeps offsets valid
+    artifact.write_bytes(bytes(raw))
+
+    with pytest.raises(BundlerError, match="not a valid .zip bundle") as excinfo:
+        _local_manifest_source(str(artifact))
+
+    # The message must survive Rich rendering (this is what _fail does).
+    Console(file=io.StringIO()).print(f"[red]Error:[/red] {excinfo.value}")
 
 
 def test_local_source_rejects_unknown_file(tmp_path: Path):

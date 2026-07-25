@@ -715,6 +715,7 @@ def _local_manifest_source(arg: str):
         import zlib
 
         import yaml as _yaml
+        from rich.markup import escape as _escape_markup
 
         # A .zip-suffixed file that is not a valid archive would otherwise raise
         # a raw BadZipFile that escapes bundle_install's `except BundlerError`
@@ -723,15 +724,37 @@ def _local_manifest_source(arg: str):
         #
         # The boundary has to cover the ENTRY READ too, not just the open:
         # ZipFile() validates only the central directory, so a corrupt member
-        # still fails later -- a bad CRC raises BadZipFile("Bad CRC-32 for
-        # file ...") and corrupt deflate data raises zlib.error. Neither is an
-        # OSError subclass, so both are listed explicitly.
-        _ZIP_READ_ERRORS = (zipfile.BadZipFile, OSError, zlib.error, EOFError)
+        # still fails later. None of these are OSError subclasses, so each is
+        # listed explicitly (verified against CPython's zipfile):
+        #   open  -- BadZipFile (bad magic/directory), NotImplementedError
+        #            (unsupported zip version), ValueError
+        #   read  -- BadZipFile ("Bad CRC-32 for file ..."), zlib.error (corrupt
+        #            deflate stream), EOFError (truncated), RuntimeError
+        #            ("... is encrypted, password required for extraction"),
+        #            NotImplementedError ("That compression method is not
+        #            supported")
+        _ZIP_OPEN_ERRORS = (
+            zipfile.BadZipFile,
+            OSError,
+            NotImplementedError,
+            ValueError,
+        )
+        _ZIP_READ_ERRORS = _ZIP_OPEN_ERRORS + (zlib.error, EOFError, RuntimeError)
+
+        # The messages below escape the interpolated EXCEPTION text: it reaches
+        # the user through _fail(), which renders Rich markup, and zipfile
+        # embeds raw bytes from the archive in some messages -- e.g.
+        # BadZipFile("File name in directory 'bundle.yml' and header
+        # b'[/red]abcd' differ."). Unescaped, a crafted member name would raise
+        # MarkupError instead of reporting the corruption. (``candidate`` is the
+        # user's own typed path and stays as-is, matching the other messages in
+        # this module.)
         try:
             archive = zipfile.ZipFile(candidate)
-        except (zipfile.BadZipFile, OSError) as exc:
+        except _ZIP_OPEN_ERRORS as exc:
             raise BundlerError(
-                f"Artifact '{candidate}' is not a valid .zip bundle: {exc}"
+                f"Artifact '{candidate}' is not a valid .zip bundle: "
+                f"{_escape_markup(str(exc))}"
             ) from exc
         try:
             with archive:
@@ -742,14 +765,16 @@ def _local_manifest_source(arg: str):
             ) from exc
         except _ZIP_READ_ERRORS as exc:
             raise BundlerError(
-                f"Artifact '{candidate}' is not a valid .zip bundle: {exc}"
+                f"Artifact '{candidate}' is not a valid .zip bundle: "
+                f"{_escape_markup(str(exc))}"
             ) from exc
         try:
             data = _yaml.safe_load(io.BytesIO(raw))
         except _yaml.YAMLError as exc:
             # Malformed embedded bundle.yml — same rationale as above.
             raise BundlerError(
-                f"Artifact '{candidate}' contains an invalid bundle.yml: {exc}"
+                f"Artifact '{candidate}' contains an invalid bundle.yml: "
+                f"{_escape_markup(str(exc))}"
             ) from exc
         return BundleManifest.from_dict(data)
 
