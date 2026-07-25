@@ -77,9 +77,19 @@ class AzureDevOpsAuth(AuthProvider):
             # ``az.cmd``) fails with ``WinError 2`` even after ``az login``.
             # Resolve via ``shutil.which`` (which honors ``PATHEXT``) so the
             # ``.cmd`` shim works. On POSIX this is a harmless lookup that
-            # returns the same executable; ``or "az"`` preserves the prior
-            # behavior (and the existing OSError path) when ``az`` is absent.
-            az = shutil.which("az") or "az"
+            # returns the same executable.
+            #
+            # Require an ABSOLUTE result: on Windows ``shutil.which`` prepends
+            # the current directory to the search path (unless
+            # ``NoDefaultCurrentDirectoryInExePath`` is set), so a stray
+            # ``.\az.cmd`` in the working directory would otherwise be resolved
+            # ahead of the real Azure CLI and run for a credential operation. A
+            # legitimate install always resolves to an absolute path, so this
+            # costs nothing; falling back to the bare ``"az"`` preserves the
+            # prior behavior (and the existing OSError path) when ``az`` is
+            # absent.
+            resolved = shutil.which("az")
+            az = resolved if resolved and os.path.isabs(resolved) else "az"
             result = subprocess.run(  # noqa: S603, S607
                 [
                     az,
