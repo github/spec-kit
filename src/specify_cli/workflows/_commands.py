@@ -898,7 +898,7 @@ def _failed_step_error(state: Any) -> str | None:
     cur = results.get(getattr(state, "current_step_id", None))
     if isinstance(cur, dict) and cur.get("error"):
         return str(cur["error"])
-    for sd in results.values():
+    for sd in reversed(results.values()):
         if (
             isinstance(sd, dict)
             and sd.get("status") == "failed"
