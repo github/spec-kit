@@ -920,6 +920,9 @@ def _workflow_run_payload(state: Any) -> dict[str, Any]:
     gate = _gate_outcome(state)
     if gate is not None:
         payload["gate"] = gate
+    error = _failed_step_error(state)
+    if error is not None:
+        payload["error"] = error
     return payload
 
 

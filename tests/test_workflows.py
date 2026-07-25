@@ -8813,6 +8813,18 @@ steps:
     run: "echo done"
 """
 
+    _WF_FAIL = """
+schema_version: "1.0"
+workflow:
+  id: "json-fail"
+  name: "JSON Fail"
+  version: "1.0.0"
+steps:
+  - id: boom
+    type: shell
+    run: "exit 3"
+"""
+
     def _write_wf(self, project_dir, text, name):
         path = project_dir / f"{name}.yml"
         path.write_text(text, encoding="utf-8")
@@ -8844,6 +8856,45 @@ steps:
         assert payload["status"] == "paused"
         assert payload["current_step_id"] == "ask"
         assert payload["current_step_index"] == 0
+
+    def test_run_json_failed_includes_error(self, project_dir):
+        # A run that ends in `failed` (a step failing, not an exception) must
+        # carry the persisted step error in the JSON payload so external
+        # callers get a reason, not a bare {"status": "failed"}.
+        wf = self._write_wf(project_dir, self._WF_FAIL, "boom")
+        result = self._invoke(project_dir, ["workflow", "run", str(wf), "--json"])
+        assert result.exit_code != 0
+        payload = json.loads(result.stdout)
+        assert payload["status"] == "failed"
+        assert payload.get("error")
+
+    def test_status_json_failed_includes_error(self, project_dir):
+        # `status --json` reuses the shared payload, so a failed run inspected
+        # after the fact surfaces the same error text as `run`/`resume`.
+        wf = self._write_wf(project_dir, self._WF_FAIL, "boom2")
+        rid = json.loads(
+            self._invoke(
+                project_dir, ["workflow", "run", str(wf), "--json"]
+            ).stdout
+        )["run_id"]
+        status = json.loads(
+            self._invoke(
+                project_dir, ["workflow", "status", rid, "--json"]
+            ).stdout
+        )
+        assert status["status"] == "failed"
+        assert status.get("error")
+
+    def test_run_json_completed_omits_error(self, project_dir):
+        # Successful runs must not carry an `error` key at all.
+        wf = self._write_wf(project_dir, self._WF_DONE, "noerr")
+        payload = json.loads(
+            self._invoke(
+                project_dir, ["workflow", "run", str(wf), "--json"]
+            ).stdout
+        )
+        assert payload["status"] == "completed"
+        assert "error" not in payload
 
     def test_run_json_output_has_no_markup_or_ansi(self, project_dir):
         wf = self._write_wf(project_dir, self._WF_DONE, "clean")
