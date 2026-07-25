@@ -75,6 +75,39 @@ def test_local_source_zip_with_malformed_bundle_yml_raises_clean_error(tmp_path:
         _local_manifest_source(str(artifact))
 
 
+def test_local_source_zip_with_corrupt_entry_raises_clean_error(tmp_path: Path):
+    """A .zip whose CENTRAL DIRECTORY is intact but whose member data is corrupt
+    must also become a BundlerError. ZipFile() only validates the directory, so
+    these surface at read() time: a bad CRC raises BadZipFile and corrupt deflate
+    data raises zlib.error -- neither an OSError, so both escaped the open-only
+    boundary as a traceback.
+    """
+    import zipfile
+
+    # Stored (uncompressed) member with a flipped payload byte -> CRC mismatch.
+    crc_bad = tmp_path / "crc.zip"
+    with zipfile.ZipFile(crc_bad, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("bundle.yml", "schema_version: '1.0'\n")
+    raw = bytearray(crc_bad.read_bytes())
+    idx = raw.find(b"schema_version")
+    raw[idx] ^= 0xFF
+    crc_bad.write_bytes(bytes(raw))
+    with pytest.raises(BundlerError, match="not a valid .zip bundle"):
+        _local_manifest_source(str(crc_bad))
+
+    # Deflated member with a mangled compressed stream -> zlib.error.
+    zlib_bad = tmp_path / "zlib.zip"
+    with zipfile.ZipFile(zlib_bad, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("bundle.yml", "schema_version: '1.0'\n")
+    raw2 = bytearray(zlib_bad.read_bytes())
+    start = raw2.find(b"bundle.yml") + len(b"bundle.yml")
+    for k in range(start, min(start + 12, len(raw2))):
+        raw2[k] ^= 0xFF
+    zlib_bad.write_bytes(bytes(raw2))
+    with pytest.raises(BundlerError, match="not a valid .zip bundle"):
+        _local_manifest_source(str(zlib_bad))
+
+
 def test_local_source_rejects_unknown_file(tmp_path: Path):
     weird = tmp_path / "thing.txt"
     weird.write_text("nope", encoding="utf-8")

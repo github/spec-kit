@@ -712,26 +712,38 @@ def _local_manifest_source(arg: str):
     if candidate.suffix == ".zip":
         import io
         import zipfile
+        import zlib
 
         import yaml as _yaml
 
+        # A .zip-suffixed file that is not a valid archive would otherwise raise
+        # a raw BadZipFile that escapes bundle_install's `except BundlerError`
+        # and dumps a traceback. Report it cleanly, like the remote-download
+        # path already does for the same source.
+        #
+        # The boundary has to cover the ENTRY READ too, not just the open:
+        # ZipFile() validates only the central directory, so a corrupt member
+        # still fails later -- a bad CRC raises BadZipFile("Bad CRC-32 for
+        # file ...") and corrupt deflate data raises zlib.error. Neither is an
+        # OSError subclass, so both are listed explicitly.
+        _ZIP_READ_ERRORS = (zipfile.BadZipFile, OSError, zlib.error, EOFError)
         try:
             archive = zipfile.ZipFile(candidate)
         except (zipfile.BadZipFile, OSError) as exc:
-            # A .zip-suffixed file that is not a valid archive would otherwise
-            # raise a raw BadZipFile that escapes bundle_install's `except
-            # BundlerError` and dumps a traceback. Report it cleanly, like the
-            # remote-download path already does for the same source.
             raise BundlerError(
                 f"Artifact '{candidate}' is not a valid .zip bundle: {exc}"
             ) from exc
-        with archive:
-            try:
+        try:
+            with archive:
                 raw = archive.read("bundle.yml")
-            except KeyError as exc:
-                raise BundlerError(
-                    f"Artifact '{candidate}' does not contain a bundle.yml."
-                ) from exc
+        except KeyError as exc:
+            raise BundlerError(
+                f"Artifact '{candidate}' does not contain a bundle.yml."
+            ) from exc
+        except _ZIP_READ_ERRORS as exc:
+            raise BundlerError(
+                f"Artifact '{candidate}' is not a valid .zip bundle: {exc}"
+            ) from exc
         try:
             data = _yaml.safe_load(io.BytesIO(raw))
         except _yaml.YAMLError as exc:
