@@ -379,6 +379,8 @@ class YamlIntegrationTests:
         "clarify",
         "constitution",
         "converge",
+        "flow-full",
+        "flow-quick",
         "implement",
         "models",
         "plan",

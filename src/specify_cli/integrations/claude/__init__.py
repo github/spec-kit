@@ -20,6 +20,8 @@ ARGUMENT_HINTS: dict[str, str] = {
     "checklist": "Domain or focus area for the checklist",
     "taskstoissues": "Optional filter or label for GitHub issues",
     "models": "Optional overrides (--global, manager=X, high=Y, medium=Z, low=W)",
+    "flow-quick": "Feature description (+ optional --bypass, --loop)",
+    "flow-full": "Feature description (+ optional --bypass, --loop)",
 }
 
 # Per-command frontmatter overrides for skills that should run in a forked

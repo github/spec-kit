@@ -41,6 +41,8 @@ _HOOK_COMMAND_NOTE = (
 
 _CORE_COMMAND_TEMPLATE_ORDER = (
     "models",
+    "flow-quick",
+    "flow-full",
     "analyze",
     "clarify",
     "constitution",

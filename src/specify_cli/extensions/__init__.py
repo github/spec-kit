@@ -43,6 +43,8 @@ _FALLBACK_CORE_COMMAND_NAMES = frozenset(
         "clarify",
         "constitution",
         "converge",
+        "flow-full",
+        "flow-quick",
         "implement",
         "models",
         "plan",

@@ -151,9 +151,9 @@ class TestCopilotIntegration:
         agents_dir = tmp_path / ".github" / "agents"
         assert agents_dir.is_dir()
         agent_files = sorted(agents_dir.glob("speckit.*.agent.md"))
-        assert len(agent_files) == 11
+        assert len(agent_files) == 13
         expected_commands = {
-            "analyze", "clarify", "constitution", "converge", "implement", "models",
+            "analyze", "clarify", "constitution", "converge", "flow-full", "flow-quick", "implement", "models",
             "plan", "checklist", "specify", "tasks", "taskstoissues",
         }
         actual_commands = {f.name.removeprefix("speckit.").removesuffix(".agent.md") for f in agent_files}
@@ -222,6 +222,8 @@ class TestCopilotIntegration:
             ".github/agents/speckit.clarify.agent.md",
             ".github/agents/speckit.constitution.agent.md",
             ".github/agents/speckit.converge.agent.md",
+            ".github/agents/speckit.flow-full.agent.md",
+            ".github/agents/speckit.flow-quick.agent.md",
             ".github/agents/speckit.implement.agent.md",
             ".github/agents/speckit.models.agent.md",
             ".github/agents/speckit.plan.agent.md",
@@ -233,6 +235,8 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.clarify.prompt.md",
             ".github/prompts/speckit.constitution.prompt.md",
             ".github/prompts/speckit.converge.prompt.md",
+            ".github/prompts/speckit.flow-full.prompt.md",
+            ".github/prompts/speckit.flow-quick.prompt.md",
             ".github/prompts/speckit.implement.prompt.md",
             ".github/prompts/speckit.models.prompt.md",
             ".github/prompts/speckit.plan.prompt.md",
@@ -286,6 +290,8 @@ class TestCopilotIntegration:
             ".github/agents/speckit.clarify.agent.md",
             ".github/agents/speckit.constitution.agent.md",
             ".github/agents/speckit.converge.agent.md",
+            ".github/agents/speckit.flow-full.agent.md",
+            ".github/agents/speckit.flow-quick.agent.md",
             ".github/agents/speckit.implement.agent.md",
             ".github/agents/speckit.models.agent.md",
             ".github/agents/speckit.plan.agent.md",
@@ -297,6 +303,8 @@ class TestCopilotIntegration:
             ".github/prompts/speckit.clarify.prompt.md",
             ".github/prompts/speckit.constitution.prompt.md",
             ".github/prompts/speckit.converge.prompt.md",
+            ".github/prompts/speckit.flow-full.prompt.md",
+            ".github/prompts/speckit.flow-quick.prompt.md",
             ".github/prompts/speckit.implement.prompt.md",
             ".github/prompts/speckit.models.prompt.md",
             ".github/prompts/speckit.plan.prompt.md",
@@ -378,7 +386,7 @@ class TestCopilotSkillsMode:
     """Tests for Copilot integration in --skills mode."""
 
     _SKILL_COMMANDS = [
-        "analyze", "clarify", "constitution", "converge", "implement", "models",
+        "analyze", "clarify", "constitution", "converge", "flow-full", "flow-quick", "implement", "models",
         "plan", "checklist", "specify", "tasks", "taskstoissues",
     ]
 
