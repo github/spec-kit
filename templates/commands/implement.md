@@ -172,9 +172,15 @@ You **MUST** consider the user input before proceeding (if not empty).
      - Tasks missing a `[C:...]` label default to `medium`.
      - The `manager` model from `models.json` never executes tasks — it only orchestrates. Models with `tier: "max"` are reserved for very few exceptional cases.
    - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together (parallel dispatch of subagents is encouraged when supported)
+   - **Respect dependencies**: Run sequential tasks in order; tasks marked [P] can run together
+   - **Parallel execution (MANDATORY when supported)**: If the agent can run subagents/tasks concurrently, you MUST parallelize [P] tasks instead of running them one by one:
+     - Within the current phase, group ready [P] tasks (dependencies met) into a batch. Exclude from the same batch any two tasks that touch the same file.
+     - Dispatch the whole batch concurrently — one subagent per task, each with the model from its `[C:complexity->model]` label and only the context it needs (task line, file paths, relevant plan/spec excerpts).
+     - Wait for the entire batch to finish before dispatching tasks that depend on it. Then form the next batch.
+     - Sequential tasks (no [P]) always run one at a time in order.
+     - If the agent has NO concurrency support, run [P] tasks sequentially and note it in the completion report.
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
-   - **File-based coordination**: Tasks affecting the same files must run sequentially
+   - **File-based coordination**: Tasks affecting the same files must run sequentially — never in the same parallel batch
    - **Validation checkpoints**: Verify each phase completion before proceeding
 
 7. Implementation execution rules:
