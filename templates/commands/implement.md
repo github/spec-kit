@@ -166,16 +166,26 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Execution flow**: Order and dependency requirements
 
 6. Execute implementation following the task plan:
-   - **Model-aware dispatch (per task)**: Each task carries a `[C:complexity->model]` label resolved from `models.json`:
-     - If the current agent can run subagents with a configurable model (e.g. Claude Code's agent/task tool with a `model` parameter), dispatch the task to a subagent running the labeled model. Give the subagent only the context it needs: the task line, relevant file paths, and the applicable plan/spec excerpts.
-     - If the agent CANNOT switch models per task, execute the task yourself and note in the completion report which model was recommended, so the user can re-run heavy tasks with the right model manually.
-     - Tasks missing a `[C:...]` label default to `medium`.
-     - The `manager` model from `models.json` never executes tasks — it only orchestrates. Models with `tier: "max"` are reserved for very few exceptional cases.
+   - **Read models.json and resolve candidates**: Load `.specify/models.json` (or `~/.specify/models.json`). Extract:
+     - `manager` id (never executes tasks)
+     - `by_complexity` ordered model lists for each complexity level
+     - `executors` map describing how each model can actually be selected
+   - **Model-aware dispatch (per task)**: Each task carries a `[C:complexity->model]` label. The right-hand side of the label is the preferred model recorded when tasks were generated; if it is not the first available candidate for that complexity, use the current ordered list from `models.json` as the source of truth. Resolve the executor as follows:
+     - Look up the task's complexity in `by_complexity`. The ordered list is the source of truth.
+     - Start with the first model. The remaining models are ordered fallbacks, not load-balancing targets.
+   - **Executor dispatch**: Resolve the candidate in `executors`:
+     - `native_subagent`: invoke the exact named agent only when `verified: true` and `status: ready`.
+     - `current_session`: execute in this conversation only when the recorded model matches the current runtime model.
+     - `manual`: pause and provide the recorded model-switch/continuation instructions; never claim automatic dispatch.
+     - Never launch an agent CLI or a second process of the current host to execute a task. Every automatic worker must be native to the agent/CLI hosting this conversation.
+   - **Availability fallback**: If the selected model fails because of usage/token exhaustion, rate limiting, model unavailability, provider outage, or context limits, preserve verified progress and retry with the next candidate that has a ready executor. Include the original task, changed files, test results, completed work, and remaining work so the fallback continues safely. Never retry a failed candidate in a loop. If the next executor is manual or pending restart, pause with exact instructions. If all candidates fail, stop and report every attempt. Do not switch models merely to mask an ordinary code or test failure.
+   - **Tasks missing a `[C:...]` label** default to `medium` complexity.
+   - **The `manager` model normally never executes tasks** — it orchestrates. It may also appear in a candidate list only when the discovered catalog is too small to reserve it or the user explicitly assigns it.
    - **Phase-by-phase execution**: Complete each phase before moving to the next
    - **Respect dependencies**: Run sequential tasks in order; tasks marked [P] can run together
    - **Parallel execution (MANDATORY when supported)**: If the agent can run subagents/tasks concurrently, you MUST parallelize [P] tasks instead of running them one by one:
      - Within the current phase, group ready [P] tasks (dependencies met) into a batch. Exclude from the same batch any two tasks that touch the same file.
-     - Dispatch the whole batch concurrently — one subagent per task, each with the model from its `[C:complexity->model]` label and only the context it needs (task line, file paths, relevant plan/spec excerpts).
+     - Dispatch the whole batch concurrently only when every selected candidate has a ready executor that supports independent execution. Each worker starts with the first candidate from its `by_complexity` list and receives only the context it needs.
      - Wait for the entire batch to finish before dispatching tasks that depend on it. Then form the next batch.
      - Sequential tasks (no [P]) always run one at a time in order.
      - If the agent has NO concurrency support, run [P] tasks sequentially and note it in the completion report.
