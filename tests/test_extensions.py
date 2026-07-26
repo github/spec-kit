@@ -6506,6 +6506,55 @@ class TestExtensionAddCLI:
             f"but was called with '{download_called_with[0]}'"
         )
 
+    def test_add_by_name_tolerates_non_string_catalog_name(self, tmp_path):
+        """Display-name resolution must not crash on a non-string catalog name.
+
+        Catalog JSON is user-editable, so ``catalog.search()`` may return an
+        entry whose ``name`` is a non-string (e.g. ``name: 123``). The
+        display-name filter calls ``.lower()`` on it; without coercion this
+        raises ``AttributeError`` and takes down ``extension info``/``add``.
+        The entry with the bad name must simply not match, yielding a clean
+        "not found" rather than a traceback.
+        """
+        from typer.testing import CliRunner
+        from unittest.mock import patch, MagicMock
+        from specify_cli import app
+
+        runner = CliRunner()
+
+        project_dir = tmp_path / "test-project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+        (project_dir / ".specify" / "extensions").mkdir(parents=True)
+
+        # Catalog search returns an entry with a non-string name.
+        mock_catalog = MagicMock()
+        mock_catalog.get_extension_info.return_value = None  # ID lookup fails
+        mock_catalog.search.return_value = [
+            {
+                "id": "acme-thing",
+                "name": 123,
+                "version": "1.0.0",
+                "description": "A thing",
+                "_install_allowed": True,
+            }
+        ]
+
+        with patch("specify_cli.extensions.ExtensionCatalog", return_value=mock_catalog), \
+             patch.object(Path, "cwd", return_value=project_dir):
+            result = runner.invoke(
+                app,
+                ["extension", "info", "Some Name"],
+                catch_exceptions=True,
+            )
+
+        # Must not crash with AttributeError; the bad-named entry just doesn't
+        # match, so resolution ends as a clean not-found error exit.
+        assert not isinstance(result.exception, AttributeError), (
+            f"non-string catalog name crashed resolution: {result.exception!r}"
+        )
+        assert result.exit_code != 0
+
     def test_add_bundled_extension_not_found_gives_clear_error(self, tmp_path):
         """extension add should give a clear error when a bundled extension is not found locally."""
         from typer.testing import CliRunner

@@ -166,9 +166,17 @@ def _resolve_catalog_extension(
         if ext_info:
             return (ext_info, None)
 
-        # Try by display name - search using argument as query, then filter for exact match
+        # Try by display name - search using argument as query, then filter for exact match.
+        # Coerce name defensively: catalog JSON is user-editable, so a hand-authored
+        # non-string/missing name must not crash the match (the ambiguous-match display
+        # below already str()-coerces name for the same reason).
         search_results = catalog.search(query=argument)
-        name_matches = [ext for ext in search_results if ext["name"].lower() == argument.lower()]
+        argument_lower = argument.lower()
+        name_matches = [
+            ext
+            for ext in search_results
+            if str(ext.get("name", "")).lower() == argument_lower
+        ]
 
         if len(name_matches) == 1:
             return (name_matches[0], None)
