@@ -35,7 +35,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 **Flag parsing**: extract flags from the user input before using the rest as the feature description:
 
-- `--bypass` — skip the implementation gate (no stop before implement).
+- `--bypass` — skip the implementation gate ONLY (no stop before implement). It does NOT suppress user questions: every phase still asks the user whatever it needs.
 - `--loop` — after implementing, loop implement ↔ converge until converged (max 5 iterations). Without it, converge runs exactly once.
 - Everything else in the input is the **feature description** passed to the specify phase. If the description is empty, STOP and ask the user what to build.
 
@@ -57,7 +57,7 @@ Run each phase by **fully following the instructions of the corresponding Spec K
 ### Phase rules (apply to every phase)
 
 - Announce each phase before starting: `▶ Flow [N/6]: <command>`.
-- **User interaction is never suppressed**: if any phase needs a user decision, clarification, or confirmation (per its own instructions), ASK and wait. Automation chains phases; it does not silence questions.
+- **User questions are NEVER suppressed — in ANY phase, under ANY flag**: if a phase needs a user decision, clarification, or confirmation (per its own instructions), ASK and WAIT for the answer before continuing. Never auto-answer, never assume defaults for something the phase would normally ask about, never skip a question because the flow is "automatic" or because `--bypass` was passed. `--bypass` removes ONLY the implementation gate, nothing else. Automation chains phases; it does not silence questions.
 - If a phase FAILS or its output is invalid, STOP the flow, report which phase failed and why, and tell the user how to resume (fix the issue, then re-run the individual command and continue manually, or re-run this flow).
 - Do not skip phases. Do not reorder phases.
 
