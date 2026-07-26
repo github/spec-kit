@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..base import SkillsIntegration
+from ... import _utils
 from ..._utils import dump_frontmatter
 
 # Mapping of command template stem → argument-hint text shown inline
@@ -64,6 +65,22 @@ class ClaudeIntegration(SkillsIntegration):
     }
     events_config_file = ".claude/settings.json"
     events_format = "json-nested"
+
+    def is_cli_available(self) -> bool:
+        """Claude Code can be installed in two local paths that may not be
+        on the system ``PATH``:
+
+          1. ``~/.claude/local/claude`` (after ``claude migrate-installer``)
+          2. ``~/.claude/local/node_modules/.bin/claude`` (npm-local install,
+             e.g. via nvm)
+
+        Checked here (rather than a hardcoded special case in
+        ``check_tool()``) so any future detection call site gets the same
+        behavior for free. See issues #123, #550, #2558.
+        """
+        if _utils.CLAUDE_LOCAL_PATH.is_file() or _utils.CLAUDE_NPM_LOCAL_PATH.is_file():
+            return True
+        return super().is_cli_available()
 
     @staticmethod
     def inject_argument_hint(content: str, hint: str) -> str:
