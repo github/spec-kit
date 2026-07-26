@@ -3139,19 +3139,26 @@ class ExtensionCatalog(CatalogStackBase):
             if author and ext_data.get("author", "").lower() != author.lower():
                 continue
 
-            if tag and tag.lower() not in [t.lower() for t in ext_data.get("tags", [])]:
-                continue
+            if tag:
+                raw_tags = ext_data.get("tags", [])
+                tags_list = raw_tags if isinstance(raw_tags, list) else []
+                if tag.lower() not in [
+                    t.lower() for t in tags_list if isinstance(t, str)
+                ]:
+                    continue
 
             if query:
                 # Search in name, description, and tags
                 query_lower = query.lower()
+                raw_tags = ext_data.get("tags", [])
+                tags_list = raw_tags if isinstance(raw_tags, list) else []
                 searchable_text = " ".join(
                     [
                         ext_data.get("name", ""),
                         ext_data.get("description", ""),
                         ext_id,
                     ]
-                    + ext_data.get("tags", [])
+                    + [t for t in tags_list if isinstance(t, str)]
                 ).lower()
 
                 if query_lower not in searchable_text:

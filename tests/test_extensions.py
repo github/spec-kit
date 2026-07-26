@@ -4169,6 +4169,71 @@ class TestExtensionCatalog:
         assert len(results) == 2
         assert {r["id"] for r in results} == {"jira", "linear"}
 
+    def test_search_tolerates_non_string_tags(self, temp_dir):
+        """Non-string catalog tags must not crash tag/query search.
+
+        Catalog JSON is user-editable, so ``tags`` may contain non-strings
+        (e.g. ``tags: [1, 2]``). The tag filter (``t.lower()``) and the query
+        searchable-text ``" ".join(...)`` both assume strings; a numeric tag
+        must be skipped rather than raising AttributeError/TypeError.
+        """
+        import yaml as yaml_module
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        # Mixed string / non-string tags, mirroring hand-edited catalog JSON.
+        catalog_data = {
+            "schema_version": "1.0",
+            "extensions": {
+                "jira": {
+                    "name": "Jira",
+                    "id": "jira",
+                    "version": "1.0.0",
+                    "description": "Jira",
+                    "tags": ["issue-tracking", 1, 2],
+                },
+            },
+        }
+
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": "http://test.com",
+                }
+            )
+        )
+
+        # Tag filter: numeric tags skipped, string tag still matches.
+        results = catalog.search(tag="issue-tracking")
+        assert {r["id"] for r in results} == {"jira"}
+
+        # Query search: numeric tags skipped, no crash, string fields match.
+        results = catalog.search(query="jira")
+        assert {r["id"] for r in results} == {"jira"}
+
     def test_search_verified_only(self, temp_dir):
         """Test searching verified extensions only."""
         import yaml as yaml_module
