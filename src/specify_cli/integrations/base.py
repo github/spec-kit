@@ -40,6 +40,7 @@ _HOOK_COMMAND_NOTE = (
 )
 
 _CORE_COMMAND_TEMPLATE_ORDER = (
+    "models",
     "analyze",
     "clarify",
     "constitution",

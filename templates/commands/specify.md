@@ -20,6 +20,27 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Pre-Execution Checks
 
+**Model configuration gate (MANDATORY — before anything else)**:
+- Check for a model configuration file, in this order:
+  1. `.specify/models.json` in the project root
+  2. `~/.specify/models.json` (user-level fallback)
+- If NEITHER file exists, **STOP immediately**. Do not proceed with any other step. Output:
+
+  ```
+  ## Model Configuration Required
+
+  No models.json found (.specify/models.json or ~/.specify/models.json).
+  Spec Kit needs to know which models are available to this agent before running.
+
+  Run `__SPECKIT_COMMAND_MODELS__` first, then re-run this command.
+  ```
+
+- If a file exists, read it (project file wins) and keep it in context for this command:
+  - `manager` is the only model that defines specs/plans/main ideas; it does not implement tasks.
+  - `by_complexity` maps task complexity (`high` | `medium` | `low`, plus optional specialized keys) to the models that should execute such tasks.
+  - Models with `tier: "max"` are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
+- If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
+
 **Check for extension hooks (before specification)**:
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_specify` key

@@ -380,6 +380,7 @@ class YamlIntegrationTests:
         "constitution",
         "converge",
         "implement",
+        "models",
         "plan",
         "checklist",
         "specify",

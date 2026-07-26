@@ -19,6 +19,7 @@ ARGUMENT_HINTS: dict[str, str] = {
     "constitution": "Principles or values for the project constitution",
     "checklist": "Domain or focus area for the checklist",
     "taskstoissues": "Optional filter or label for GitHub issues",
+    "models": "Optional overrides (--global, manager=X, high=Y, medium=Z, low=W)",
 }
 
 # Per-command frontmatter overrides for skills that should run in a forked

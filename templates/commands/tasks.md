@@ -25,6 +25,27 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Pre-Execution Checks
 
+**Model configuration gate (MANDATORY — before anything else)**:
+- Check for a model configuration file, in this order:
+  1. `.specify/models.json` in the project root
+  2. `~/.specify/models.json` (user-level fallback)
+- If NEITHER file exists, **STOP immediately**. Do not proceed with any other step. Output:
+
+  ```
+  ## Model Configuration Required
+
+  No models.json found (.specify/models.json or ~/.specify/models.json).
+  Spec Kit needs to know which models are available to this agent before running.
+
+  Run `__SPECKIT_COMMAND_MODELS__` first, then re-run this command.
+  ```
+
+- If a file exists, read it (project file wins) and keep it in context for this command:
+  - `manager` is the only model that defines specs/plans/main ideas; it does not implement tasks.
+  - `by_complexity` maps task complexity (`high` | `medium` | `low`, plus optional specialized keys) to the models that should execute such tasks.
+  - Models with `tier: "max"` are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
+- If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
+
 **Check for extension hooks (before tasks generation)**:
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_tasks` key
@@ -151,7 +172,7 @@ The tasks.md should be immediately executable - each task must be specific enoug
 Every task MUST strictly follow this format:
 
 ```text
-- [ ] [TaskID] [P?] [Story?] Description with file path
+- [ ] [TaskID] [P?] [Story?] [C:complexity->model] Description with file path
 ```
 
 **Format Components**:
@@ -165,14 +186,21 @@ Every task MUST strictly follow this format:
    - Foundational phase: NO story label
    - User Story phases: MUST have story label
    - Polish phase: NO story label
-5. **Description**: Clear action with exact file path
+5. **[C:...] complexity/model label**: REQUIRED for every task. Format: `[C:high->model-id]`, `[C:medium->model-id]`, `[C:low->model-id]`
+   - Assess each task's complexity as the manager model:
+     - `high` — complex logic, architectural decisions, large refactors, tricky concurrency/security
+     - `medium` — standard implementation, code edits, typical tests
+     - `low` — docs, renames, config, mechanical/boilerplate work
+   - Then map the complexity to a model id from the `by_complexity` section of the loaded `models.json` (pick the first listed model for that level, or a specialized key when it clearly fits, e.g. `review`)
+   - `tier: "max"` models are used in very few cases — only when a task is exceptionally hard; default `high` tasks to the non-max models listed under `high`
+6. **Description**: Clear action with exact file path
 
 **Examples**:
 
-- ✅ CORRECT: `- [ ] T001 Create project structure per implementation plan`
-- ✅ CORRECT: `- [ ] T005 [P] Implement authentication middleware in src/middleware/auth.py`
-- ✅ CORRECT: `- [ ] T012 [P] [US1] Create User model in src/models/user.py`
-- ✅ CORRECT: `- [ ] T014 [US1] Implement UserService in src/services/user_service.py`
+- ✅ CORRECT: `- [ ] T001 [C:low->haiku-4-5] Create project structure per implementation plan`
+- ✅ CORRECT: `- [ ] T005 [P] [C:medium->sonnet-5] Implement authentication middleware in src/middleware/auth.py`
+- ✅ CORRECT: `- [ ] T012 [P] [US1] [C:medium->sonnet-5] Create User model in src/models/user.py`
+- ✅ CORRECT: `- [ ] T014 [US1] [C:high->opus-4-8] Implement UserService in src/services/user_service.py`
 - ❌ WRONG: `- [ ] Create User model` (missing ID and Story label)
 - ❌ WRONG: `T001 [US1] Create model` (missing checkbox)
 - ❌ WRONG: `- [ ] [US1] Create User model` (missing Task ID)

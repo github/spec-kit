@@ -466,6 +466,7 @@ class TomlIntegrationTests:
         "constitution",
         "converge",
         "implement",
+        "models",
         "plan",
         "checklist",
         "specify",

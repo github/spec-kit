@@ -16,6 +16,27 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Pre-Execution Checks
 
+**Model configuration gate (MANDATORY — before anything else)**:
+- Check for a model configuration file, in this order:
+  1. `.specify/models.json` in the project root
+  2. `~/.specify/models.json` (user-level fallback)
+- If NEITHER file exists, **STOP immediately**. Do not proceed with any other step. Output:
+
+  ```
+  ## Model Configuration Required
+
+  No models.json found (.specify/models.json or ~/.specify/models.json).
+  Spec Kit needs to know which models are available to this agent before running.
+
+  Run `__SPECKIT_COMMAND_MODELS__` first, then re-run this command.
+  ```
+
+- If a file exists, read it (project file wins) and keep it in context for this command:
+  - `manager` is the only model that defines specs/plans/main ideas; it does not implement tasks.
+  - `by_complexity` maps task complexity (`high` | `medium` | `low`, plus optional specialized keys) to the models that should execute such tasks.
+  - Models with `tier: "max"` are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
+- If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
+
 **Check for extension hooks (before implementation)**:
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_implement` key
@@ -141,11 +162,17 @@ You **MUST** consider the user input before proceeding (if not empty).
    - **Task phases**: Setup, Tests, Core, Integration, Polish
    - **Task dependencies**: Sequential vs parallel execution rules
    - **Task details**: ID, description, file paths, parallel markers [P]
+   - **Complexity/model labels**: `[C:complexity->model]` markers assigning each task a complexity level and an executor model from `models.json`
    - **Execution flow**: Order and dependency requirements
 
 6. Execute implementation following the task plan:
+   - **Model-aware dispatch (per task)**: Each task carries a `[C:complexity->model]` label resolved from `models.json`:
+     - If the current agent can run subagents with a configurable model (e.g. Claude Code's agent/task tool with a `model` parameter), dispatch the task to a subagent running the labeled model. Give the subagent only the context it needs: the task line, relevant file paths, and the applicable plan/spec excerpts.
+     - If the agent CANNOT switch models per task, execute the task yourself and note in the completion report which model was recommended, so the user can re-run heavy tasks with the right model manually.
+     - Tasks missing a `[C:...]` label default to `medium`.
+     - The `manager` model from `models.json` never executes tasks — it only orchestrates. Models with `tier: "max"` are reserved for very few exceptional cases.
    - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
+   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together (parallel dispatch of subagents is encouraged when supported)
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding
