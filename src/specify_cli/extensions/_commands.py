@@ -711,6 +711,21 @@ def extension_add(
         if reg_skills:
             console.print(f"\n[green]✓[/green] {len(reg_skills)} agent skill(s) auto-registered")
 
+        # Scaffold config templates automatically
+        deployed, skipped, failed = manager.scaffold_config(manifest.id)
+        if deployed:
+            console.print("\n[bold cyan]Config scaffolded:[/bold cyan]")
+            for cfg in deployed:
+                console.print(f"  • .specify/{_escape_markup(str(cfg))}")
+        if skipped:
+            console.print(f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]")
+        if failed:
+            console.print(
+                f"\n[yellow]Warning:[/yellow] Config templates not scaffolded: "
+                f"{_escape_markup(', '.join(failed))}. "
+                "Verify the extension manifest and template files."
+            )
+
         console.print("\n[yellow]⚠[/yellow]  Configuration may be required")
         console.print(f"   Check: .specify/extensions/{_escape_markup(str(manifest.id))}/")
 
@@ -2217,6 +2232,30 @@ def extension_enable(
     # #1: regenerate native event config so the enabled extension's events
     # are re-emitted in installed integrations.
     _refresh_events_and_warn(project_root)
+
+    # Scaffold config templates on enable
+    try:
+        deployed, skipped, failed = manager.scaffold_config(extension_id)
+    except Exception as exc:
+        console.print(
+            f"\n[yellow]Warning:[/yellow] Failed to scaffold config for extension "
+            f"'{_escape_markup(str(display_name))}'."
+        )
+        console.print(f"[dim]Details: {_escape_markup(str(exc))}[/dim]")
+        deployed, skipped, failed = [], [], []
+    config_home = f".specify/extensions/{_escape_markup(str(extension_id))}"
+    if deployed:
+        console.print("\n[bold cyan]Config scaffolded:[/bold cyan]")
+        for cfg in deployed:
+            console.print(f"  • {config_home}/{_escape_markup(str(cfg))}")
+    if skipped:
+        console.print(f"\n[dim]Config files already exist (preserved): {_escape_markup(', '.join(skipped))}[/dim]")
+    if failed:
+        console.print(
+            f"\n[yellow]Warning:[/yellow] Config templates not scaffolded: "
+            f"{_escape_markup(', '.join(failed))}. "
+            "Verify the extension manifest and template files."
+        )
 
 
 @extension_app.command("disable")

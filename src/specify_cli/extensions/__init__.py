@@ -560,6 +560,14 @@ class ExtensionManifest:
         return self.data.get("provides", {}).get("commands", [])
 
     @property
+    def config(self) -> List[Dict[str, Any]]:
+        """Get list of provided config templates, normalized to dictionaries."""
+        raw = self.data.get("provides", {}).get("config", [])
+        if not isinstance(raw, list) or not all(isinstance(entry, dict) for entry in raw):
+            return []
+        return raw
+
+    @property
     def hooks(self) -> Dict[str, Any]:
         """Get hook definitions."""
         return self.data.get("hooks", {})
@@ -2469,6 +2477,84 @@ class ExtensionManager:
             return self.install_from_directory(
                 extension_dir, speckit_version, priority=priority, force=force
             )
+
+    def scaffold_config(self, extension_id: str) -> tuple[List[str], List[str], List[str]]:
+        """Deploy config templates from an installed extension to the project.
+
+        Reads the extension's manifest provides.config section and copies
+        each config template to the project's .specify/ directory. Existing
+        config files are never overwritten (user customizations are preserved).
+
+        Args:
+            extension_id: ID of the installed extension
+
+        Returns:
+            Tuple of (deployed, skipped_existing, failed) where each is a list
+            of config file names.
+        """
+        ext_dir = self.extensions_dir / extension_id
+        manifest_path = ext_dir / "extension.yml"
+        if not manifest_path.exists():
+            return [], [], []
+
+        manifest = ExtensionManifest(manifest_path)
+        deployed = []
+        skipped_existing = []
+        failed = []
+
+        provides = manifest.data.get("provides", {})
+        raw_config = provides.get("config", [])
+        config_is_malformed = (
+            "config" in provides
+            and (
+                not isinstance(raw_config, list)
+                or not all(isinstance(entry, dict) for entry in raw_config)
+            )
+        )
+        if config_is_malformed:
+            return deployed, skipped_existing, ["provides.config"]
+
+        ext_dir_resolved = ext_dir.resolve()
+        specify_dir_resolved = (self.project_root / ".specify").resolve()
+
+        for config_entry in manifest.config:
+            template_name = config_entry.get("template", "")
+            target_name = config_entry.get("name", template_name)
+            failure_name = target_name if isinstance(target_name, str) and target_name else "provides.config"
+            if not isinstance(template_name, str) or not template_name:
+                failed.append(failure_name)
+                continue
+            if not isinstance(target_name, str) or not target_name:
+                failed.append(failure_name)
+                continue
+
+            template_candidate = ext_dir / template_name
+            template_path = template_candidate.resolve()
+            target_path = (self.project_root / ".specify" / target_name).resolve()
+            try:
+                template_path.relative_to(ext_dir_resolved)
+                target_path.relative_to(specify_dir_resolved)
+            except ValueError:
+                failed.append(failure_name)
+                continue
+
+            if template_candidate.is_symlink() or not template_path.is_file():
+                failed.append(failure_name)
+                continue
+
+            if target_path.exists():
+                skipped_existing.append(target_name)
+                continue
+
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(template_path, target_path)
+            except OSError:
+                failed.append(target_name)
+                continue
+            deployed.append(target_name)
+
+        return deployed, skipped_existing, failed
 
     def remove(self, extension_id: str, keep_config: bool = False) -> bool:
         """Remove an installed extension.
