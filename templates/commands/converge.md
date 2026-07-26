@@ -50,6 +50,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
     Wait for the result of the hook command before proceeding to the Goal.
     ```
+
     After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
 
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
@@ -132,15 +133,30 @@ Load only the minimal necessary context from each artifact:
 
 ### 3. Build the Intent Inventory
 
-Create an internal model (do not echo raw artifacts):
+Create an internal model (do not echo raw artifact prose). The report **MUST** emit the
+stable keys and statuses from this model in the compact inventory ledger required by Step 6:
 
-- **Requirements inventory**: one stable key per FR-### / SC-### / user-story acceptance
-  scenario (e.g. `US1/AC2`), plus the plan decisions and constitution principles that
-  impose buildable obligations.
+- **Requirements inventory**: one stable key per buildable `FR-###`, buildable `SC-###`, and
+  user-story acceptance scenario (e.g. `US1/AC2`), plus the plan decisions and constitution
+  principles that impose buildable obligations.
+- **Per-key status**: initialize every applicable key as `unassessed`. End the assessment with
+  exactly one status per key: `checked:no-gap`, `checked:gap(F#)`, or `unassessed` when the
+  evidence could not be evaluated. A user story is **not** assessed on behalf of its individual
+  acceptance scenarios; each `USn/ACn` key is counted independently. When a user story or
+  scenario has no explicit ID, derive `US<story-position>/AC<scenario-position>` from its order
+  under the User Stories section; do not collapse it into a prose-only row.
+- **Plan and constitution keys**: use an explicit label from the artifact when present (for
+  example `plan: D1` or `Constitution II`). Otherwise, derive a stable ordinal key from its
+  artifact order (`plan: decision-01`, `Constitution principle-01`).
+- **Coverage denominators**: count applicable keys from the loaded artifacts before assessing
+  code. Keep separate totals for buildable FRs, buildable SCs, acceptance scenarios, plan
+  decisions, and applicable Constitution MUST principles. A category with no applicable keys is
+  reported as `0/0 (not applicable)` and does not block convergence. Do not derive, estimate, or
+  recall a denominator from model memory.
 - **Code-scope map**: from the file paths named in `plan.md` and `tasks.md`, plus a keyword
   search for the concepts each requirement describes, derive the set of source files and
-  components in scope for assessment. Bound the assessment to these — do **not** infer
-  scope beyond what the artifacts define.
+  components in scope for assessment. Bound the assessment to these — do **not** infer scope
+  beyond what the artifacts define.
 
 ### 4. Assess the Codebase and Classify Findings
 
@@ -185,17 +201,42 @@ Before appending anything, output a compact, severity-graded summary (no file wr
 |----|----------|----------|--------|----------|----------------|
 | F1 | missing  | HIGH     | FR-008 | Example: no append-only guard detected in path/to/module.py when writing tasks.md | Add append-only enforcement |
 
-**Summary metrics:**
+**Coverage metrics (all denominators are derived from the loaded artifacts):**
 
-- Requirements / acceptance criteria checked
-- Plan decisions checked
-- Constitution principles checked (or "skipped — template")
+- Buildable FRs checked: `<checked>/<total>`
+- Buildable SCs checked: `<checked>/<total>`
+- Acceptance scenarios checked: `<checked>/<total>`
+- Plan decisions checked: `<checked>/<total>`
+- Constitution MUST principles checked: `<checked>/<total>` (or `skipped — template`)
 - Findings by gap type (missing / partial / contradicts / unrequested)
 - Findings by severity
 
-### 7. Append Convergence Tasks (or report converged)
+**Intent inventory ledger:** emit every applicable stable key in compact category-grouped lines;
+do not replace acceptance-scenario keys with a user-story total. Use `✓` for `checked:no-gap`,
+`F#` for `checked:gap(F#)`, and `unassessed` for incomplete evidence. For example:
 
-**If there are one or more actionable findings** (`tasks_appended` outcome):
+```text
+FR: FR-001 ✓, FR-002 F1
+SC: SC-001 ✓
+Acceptance scenarios: US1/AC1 ✓, US1/AC2 F2, US3/AC4 unassessed
+Plan: plan: storage decision ✓
+Constitution: Constitution II ✓
+```
+
+### 7. Resolve the Convergence Outcome
+
+Evaluate outcomes in this exact order:
+
+**If any applicable key is `unassessed`, or any coverage numerator is below its denominator**
+(`incomplete_assessment` outcome):
+
+- Do **not** modify `tasks.md` at all — no Convergence phase, even if findings were already
+  discovered for other keys.
+- Report the incomplete category counts and each `unassessed` key in the inventory ledger.
+- State that the result is not converged and recommend resolving the missing evidence, then
+  rerunning `__SPECKIT_COMMAND_CONVERGE__`.
+
+**Otherwise, if there are one or more actionable findings** (`tasks_appended` outcome):
 
 Append to the **end** of `tasks.md`, per the append contract:
 
@@ -219,14 +260,18 @@ Append to the **end** of `tasks.md`, per the append contract:
 4. Never reuse or renumber existing IDs. If a prior Convergence phase exists, add a new,
    separately-numbered one below it — do not touch the old one.
 
-**If there are no actionable findings** (`converged` outcome):
+**Otherwise** (`converged` outcome):
 
+- All applicable coverage metrics are `total/total` and there are zero actionable findings.
 - Do **not** modify `tasks.md` at all — no empty phase header.
 - Report: **"✅ Converged — the implementation satisfies the spec, plan, and tasks."**
-- Include the summary counts of what was checked.
+- Include the coverage metrics and inventory ledger.
 
 ### 8. Provide Next Actions (Handoff)
 
+- On `incomplete_assessment`: state which keys need assessment and recommend resolving the
+  missing evidence, then rerunning `__SPECKIT_COMMAND_CONVERGE__`. Do not recommend
+  `__SPECKIT_COMMAND_IMPLEMENT__` from a partial assessment.
 - On `tasks_appended`: state how many tasks were appended under which phase, and recommend
   running `__SPECKIT_COMMAND_IMPLEMENT__` to complete them; note that a follow-up converge
   run will find fewer or no remaining items.
@@ -243,8 +288,8 @@ After producing the result, check if `.specify/extensions.yml` exists in the pro
 - For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:
   - If the hook has no `condition` field, or it is null/empty, treat the hook as executable
   - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the HookExecutor implementation
-- Report the convergence outcome (`converged` or `tasks_appended`) in-session before listing
-  any hooks, so users can decide whether to run optional follow-up commands.
+- Report the convergence outcome (`incomplete_assessment`, `converged`, or `tasks_appended`) in-session
+  before listing any hooks, so users can decide whether to run optional follow-up commands.
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
 
@@ -268,6 +313,7 @@ After producing the result, check if `.specify/extensions.yml` exists in the pro
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
     ```
+
     After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. Run it the same way you would run the command yourself in this agent/session (the invocation may differ from the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or `$speckit-...`). Emitting the block alone does not run the hook.
 
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
