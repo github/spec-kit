@@ -17,6 +17,24 @@
 
 ---
 
+> [!IMPORTANT]
+> **This is a personal fork of [github/spec-kit](https://github.com/github/spec-kit)** with extra features on top of the original toolkit:
+>
+> - **`/speckit.models` + models.json gate** — detects the full model catalog available to your agent, classifies models by capability, and writes `.specify/models.json`. Every other command (except `constitution`) requires it before running.
+> - **Complexity-based model orchestration** — every task in `tasks.md` carries a `[C:complexity->model]` label; `implement` dispatches each task to a subagent running the labeled model. A single `manager` model defines specs/plans and never implements.
+> - **Mandatory parallel dispatch** — `[P]` tasks run in concurrent batches (same-file conflicts excluded) when the agent supports subagents.
+> - **`/speckit.flow-quick` and `/speckit.flow-full`** — run the short or full workflow end-to-end automatically, with a single stop before implementation (`--bypass` to skip it, `--loop` to repeat implement ↔ converge until converged). Per-phase user questions are never suppressed.
+>
+> Install from this fork:
+>
+> ```bash
+> uv tool install specify-cli --from git+https://github.com/tOMAS-gen/spec-kit.git@main --force
+> ```
+>
+> The original documentation below still applies; the sections about the new commands are marked as **(fork)**.
+
+---
+
 ## Table of Contents
 
 - [🤔 What is Spec-Driven Development?](#-what-is-spec-driven-development)
@@ -171,6 +189,21 @@ Essential commands for the Spec-Driven Development workflow:
 | `/speckit.taskstoissues` | `speckit-taskstoissues`| Convert generated task lists into GitHub issues for tracking and execution |
 | `/speckit.implement`     | `speckit-implement`    | Execute all tasks to build the feature according to the plan               |
 | `/speckit.converge`      | `speckit-converge`     | Assess the codebase against spec/plan/tasks and append remaining work as new tasks |
+
+### Fork Commands (this fork only)
+
+| Command               | Agent Skill          | Description                                                                                                                        |
+| --------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `/speckit.models`     | `speckit-models`     | Detect the agent's full model catalog and write the `models.json` required by all other commands (run this FIRST, once per project or with `--global`) |
+| `/speckit.flow-quick` | `speckit-flow-quick` | Run the short flow end-to-end: specify → plan → tasks → **stop** → implement → converge. Flags: `--bypass` (skip the stop), `--loop` (implement ↔ converge until converged) |
+| `/speckit.flow-full`  | `speckit-flow-full`  | Run the full flow end-to-end: constitution → specify → clarify → plan → checklist → tasks → analyze → **stop** → implement → converge. Same `--bypass` / `--loop` flags |
+
+Typical fork workflow:
+
+```text
+/speckit.models                          # once — detect models, write models.json
+/speckit.flow-quick build a notes CLI    # everything else, chained automatically
+```
 
 ### Optional Commands
 
