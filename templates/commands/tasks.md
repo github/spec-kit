@@ -42,8 +42,8 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 - If a file exists, read it (project file wins) and keep it in context for this command:
   - `manager` is the only model that defines specs/plans/main ideas; it does not implement tasks.
-  - `by_complexity` maps task complexity (`high` | `medium` | `low`, plus optional specialized keys) to the models that should execute such tasks.
-  - Models with `tier: "max"` are reserved for very few cases (manager role, exceptional tasks) — never assign them to routine work.
+  - `by_complexity` maps task complexity (`high` | `medium` | `low`, plus optional specialized keys) to an **ordered list** of models that can execute such tasks. The first model is the primary; the rest are alternatives used in order if the primary is unavailable, rate-limited, or runs out of usage/tokens/context. `executors` records whether each model can run through a verified subagent native to the current host, only in the current session, or manually.
+  - The `manager` model is reserved for planning and orchestration when the catalog has enough alternatives; assign it to implementation only for an exceptionally hard task, a small catalog, or an explicit user override.
 - If the file exists but cannot be parsed as JSON, or is missing `manager` or `by_complexity`, STOP and tell the user to re-run `__SPECKIT_COMMAND_MODELS__` to regenerate it.
 
 **Check for extension hooks (before tasks generation)**:
@@ -192,7 +192,7 @@ Every task MUST strictly follow this format:
      - `medium` — standard implementation, code edits, typical tests
      - `low` — docs, renames, config, mechanical/boilerplate work
    - Then map the complexity to a model id from the `by_complexity` section of the loaded `models.json` (pick the first listed model for that level, or a specialized key when it clearly fits, e.g. `review`)
-   - `tier: "max"` models are used in very few cases — only when a task is exceptionally hard; default `high` tasks to the non-max models listed under `high`
+   - Use the first model listed for the selected complexity. Do not substitute the manager unless it appears in that candidate list.
 6. **Description**: Clear action with exact file path
 
 **Examples**:
