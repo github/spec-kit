@@ -4234,6 +4234,71 @@ class TestExtensionCatalog:
         results = catalog.search(query="jira")
         assert {r["id"] for r in results} == {"jira"}
 
+    def test_search_tolerates_non_string_author_and_name(self, temp_dir):
+        """Non-string catalog author/name must not crash author/query search.
+
+        Catalog JSON is user-editable, so ``author`` and ``name`` may be
+        non-strings. The author filter (``.lower()``) and the query
+        searchable-text ``" ".join(...)`` both assume strings; a numeric
+        value must be coerced rather than raising AttributeError/TypeError.
+        """
+        import yaml as yaml_module
+
+        project_dir = temp_dir / "project"
+        project_dir.mkdir()
+        (project_dir / ".specify").mkdir()
+
+        config_path = project_dir / ".specify" / "extension-catalogs.yml"
+        with open(config_path, "w") as f:
+            yaml_module.dump(
+                {
+                    "catalogs": [
+                        {
+                            "name": "test-catalog",
+                            "url": ExtensionCatalog.DEFAULT_CATALOG_URL,
+                            "priority": 1,
+                            "install_allowed": True,
+                        }
+                    ]
+                },
+                f,
+            )
+
+        catalog = ExtensionCatalog(project_dir)
+
+        # Numeric author/name, mirroring hand-edited catalog JSON.
+        catalog_data = {
+            "schema_version": "1.0",
+            "extensions": {
+                "jira": {
+                    "name": 123,
+                    "id": "jira",
+                    "version": "1.0.0",
+                    "description": "Jira",
+                    "author": 456,
+                },
+            },
+        }
+
+        catalog.cache_dir.mkdir(parents=True, exist_ok=True)
+        catalog.cache_file.write_text(json.dumps(catalog_data))
+        catalog.cache_metadata_file.write_text(
+            json.dumps(
+                {
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                    "catalog_url": "http://test.com",
+                }
+            )
+        )
+
+        # Author filter: non-string author coerced, no AttributeError.
+        results = catalog.search(author="456")
+        assert {r["id"] for r in results} == {"jira"}
+
+        # Query search: non-string name coerced into searchable text.
+        results = catalog.search(query="123")
+        assert {r["id"] for r in results} == {"jira"}
+
     def test_search_verified_only(self, temp_dir):
         """Test searching verified extensions only."""
         import yaml as yaml_module
