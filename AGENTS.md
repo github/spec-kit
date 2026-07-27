@@ -64,7 +64,7 @@ manifest.record_file("commands/speckit.plan.md", processed_content)
 manifest.record_existing(".vscode/settings.json")
 ```
 
-The manifest is persisted at `.specify/integrations/<key>.manifest.json` (one per integration, keyed by `key`) and stores a SHA-256 hash per file. When the user runs `specify integration uninstall <key>`, `teardown()` delegates to `manifest.uninstall()`, which removes only files whose current hash still matches the recorded value — so files the user later edited by hand are skipped, not clobbered (pass `force=True` to remove them anyway).
+The manifest is persisted at `.specify/integrations/<key>.manifest.json` (one per integration, keyed by `key`) and stores a SHA-256 hash per file. When the user runs `specify integration uninstall <key>`, `teardown()` delegates to `manifest.uninstall()`, which removes only files whose current hash still matches the recorded value — so files the user later edited by hand are skipped, not clobbered (use `specify integration uninstall <key> --force` to remove modified tracked files anyway).
 
 ### Why this matters
 
